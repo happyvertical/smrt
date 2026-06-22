@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { lookup as dnsLookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import {
   ObjectRegistry,
   type SmrtCollectionOptions,
@@ -12,6 +10,7 @@ import {
 import type { ContentFeedSource } from './content-feed-source';
 import { Mirror } from './content-types';
 import { Contents } from './contents';
+import { assertSafeRemoteUrl, type ResolveHostname } from './safe-remote-url';
 
 export interface ContentFeedSyncOptions extends SmrtCollectionOptions {
   fetch?: typeof fetch;
@@ -19,7 +18,7 @@ export interface ContentFeedSyncOptions extends SmrtCollectionOptions {
   maxResponseBytes?: number;
   fetchTimeoutMs?: number;
   allowPrivateNetworkHosts?: boolean;
-  resolveHostname?: typeof resolveHostname;
+  resolveHostname?: ResolveHostname;
   status?: 'published' | 'draft';
   now?: () => Date;
 }
@@ -34,15 +33,12 @@ export interface ContentFeedSyncResult {
 }
 
 type QueryableCollection = Pick<Contents, 'query'>;
-type ResolvedAddress = { address: string; family?: number };
 
 const DEFAULT_MAX_RESPONSE_BYTES = 2_000_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+const MAX_FEED_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const FALLBACK_MIRROR_META_TYPE = '@happyvertical/smrt-content:Mirror';
-
-async function resolveHostname(hostname: string): Promise<ResolvedAddress[]> {
-  return dnsLookup(hostname, { all: true, verbatim: false });
-}
 
 function getMirrorMetaType(): string {
   return (
@@ -87,89 +83,65 @@ function createDedupeKey(
   return `feed:${source.id ?? source.feedUrl}:${item.guid || normalizeUrlIdentity(item.url)}`;
 }
 
-function isBlockedIPv4(address: string): boolean {
-  const octets = address.split('.').map((part) => Number(part));
-  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) {
-    return true;
-  }
-
-  const [first, second] = octets;
-  return (
-    first === 0 ||
-    first === 10 ||
-    first === 127 ||
-    first >= 224 ||
-    (first === 100 && second >= 64 && second <= 127) ||
-    (first === 169 && second === 254) ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168) ||
-    (first === 198 && (second === 18 || second === 19))
-  );
-}
-
-function isBlockedIPv6(address: string): boolean {
-  const normalized = address.toLowerCase();
-  const mapped = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped?.[1]) return isBlockedIPv4(mapped[1]);
-
-  return (
-    normalized === '::' ||
-    normalized === '::1' ||
-    normalized.startsWith('fc') ||
-    normalized.startsWith('fd') ||
-    /^fe[89ab]/.test(normalized) ||
-    normalized.startsWith('ff')
-  );
-}
-
-function isBlockedAddress(address: string): boolean {
-  const family = isIP(address);
-  if (family === 4) return isBlockedIPv4(address);
-  if (family === 6) return isBlockedIPv6(address);
-  return true;
-}
-
 async function validateFeedFetchUrl(
   feedUrl: string,
   options: ContentFeedSyncOptions,
 ): Promise<URL> {
-  let url: URL;
-  try {
-    url = new URL(feedUrl);
-  } catch {
-    throw new Error('Feed URL must be an absolute URL');
-  }
-
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('Feed URL must use http or https');
-  }
-  if (url.username || url.password) {
-    throw new Error('Feed URL must not include credentials');
-  }
-  if (!url.hostname) {
-    throw new Error('Feed URL must include a hostname');
-  }
-
-  if (options.allowPrivateNetworkHosts) return url;
-
-  const addresses =
-    isIP(url.hostname) === 0
-      ? await (options.resolveHostname ?? resolveHostname)(url.hostname)
-      : [{ address: url.hostname }];
-
-  if (
-    !addresses.length ||
-    addresses.some(({ address }) => isBlockedAddress(address))
-  ) {
-    throw new Error('Feed URL must resolve to a public network address');
-  }
-
-  return url;
+  return assertSafeRemoteUrl(feedUrl, {
+    allowPrivateNetworkHosts: options.allowPrivateNetworkHosts,
+    resolveHostname: options.resolveHostname,
+  });
 }
 
 function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
   if (timeoutMs <= 0) return undefined;
   return AbortSignal.timeout(timeoutMs);
+}
+
+/**
+ * Fetch a feed following redirects manually so every hop's target is
+ * re-validated through {@link validateFeedFetchUrl}. `fetch()`'s default
+ * `redirect: 'follow'` would let an allowed public feed 30x-redirect to an
+ * internal/link-local/metadata host, defeating the up-front SSRF check
+ * (S5 #1388). Returns the response together with the final validated URL so
+ * the parser uses the redirect target as the feed base.
+ */
+async function fetchFeedWithRedirectGuard(
+  fetchImpl: typeof fetch,
+  startUrl: URL,
+  headers: Record<string, string>,
+  options: ContentFeedSyncOptions,
+): Promise<{ response: Response; finalUrl: URL }> {
+  let current = startUrl;
+
+  for (let hop = 0; hop <= MAX_FEED_REDIRECTS; hop += 1) {
+    const response = await fetchImpl(current, {
+      headers,
+      redirect: 'manual',
+      signal: createTimeoutSignal(
+        options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
+      ),
+    });
+
+    // Only the redirect statuses (not 304 Not Modified / 305 / 306) reroute the
+    // request; everything else (200, 304, 4xx, 5xx) is returned to the caller.
+    if (REDIRECT_STATUSES.has(response.status)) {
+      const location = response.headers.get('location');
+      if (!location) {
+        throw new Error('Feed redirect response missing Location header');
+      }
+      // Re-run the full SSRF validation against the resolved redirect target.
+      current = await validateFeedFetchUrl(
+        new URL(location, current).toString(),
+        options,
+      );
+      continue;
+    }
+
+    return { response, finalUrl: current };
+  }
+
+  throw new Error('Feed URL exceeded the maximum number of redirects');
 }
 
 async function readResponseText(
@@ -394,12 +366,12 @@ export async function syncContentFeedSource(
 
   try {
     const feedUrl = await validateFeedFetchUrl(source.feedUrl, options);
-    const response = await fetchImpl(feedUrl, {
+    const { response, finalUrl } = await fetchFeedWithRedirectGuard(
+      fetchImpl,
+      feedUrl,
       headers,
-      signal: createTimeoutSignal(
-        options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
-      ),
-    });
+      options,
+    );
 
     if (response.status === 304) {
       source.markFetchSucceeded(now);
@@ -423,7 +395,7 @@ export async function syncContentFeedSource(
         response,
         options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
       ),
-      feedUrl.toString(),
+      finalUrl.toString(),
     );
     source.format = parsed.format;
     source.homepageUrl = source.homepageUrl || parsed.homepageUrl;

@@ -292,4 +292,143 @@ describe('utilities', () => {
     logSpy.mockRestore();
     process.chdir(originalCwd);
   });
+
+  it('doctor reports a healthy project with all checks passing', async () => {
+    const projectDir = await mkdtemp(
+      resolve(process.cwd(), '.tmp-smrt-doctor-ok-'),
+    );
+    tempDirs.push(projectDir);
+
+    await mkdir(resolve(projectDir, 'src/lib/objects'), { recursive: true });
+    await mkdir(resolve(projectDir, 'src/lib/server'), { recursive: true });
+    await mkdir(resolve(projectDir, '.smrt'), { recursive: true });
+
+    // Private package => no publish-surface verification path.
+    await writeFile(
+      resolve(projectDir, 'package.json'),
+      JSON.stringify({
+        name: 'healthy-fixture',
+        private: true,
+        dependencies: {
+          '@happyvertical/smrt-core': '0.0.0-test',
+          '@sveltejs/kit': '0.0.0-test',
+        },
+      }),
+    );
+    await writeFile(
+      resolve(projectDir, 'smrt.config.ts'),
+      'export default {};\n',
+    );
+    await writeFile(
+      resolve(projectDir, 'vite.config.ts'),
+      [
+        "import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';",
+        'export default { plugins: [smrtPlugin()] };',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      resolve(projectDir, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { experimentalDecorators: true } }),
+    );
+    await writeFile(
+      resolve(projectDir, 'src/lib/objects/index.ts'),
+      'export {};\n',
+    );
+    await writeFile(
+      resolve(projectDir, 'src/lib/server/smrt.ts'),
+      'export {};\n',
+    );
+    await writeFile(resolve(projectDir, '.env'), '\n');
+    await writeFile(
+      resolve(projectDir, '.smrt/manifest.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        timestamp: Date.now(),
+        packageName: 'healthy-fixture',
+        objects: {},
+      }),
+    );
+
+    const originalCwd = process.cwd();
+    process.chdir(projectDir);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await utilityCommands.doctor.handler([], {});
+
+    const output = logSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('SMRT Doctor');
+    expect(output).toContain('package.json exists');
+    expect(output).toContain('SvelteKit detected');
+    expect(output).toContain('smrtPlugin in vite.config');
+    expect(output).toContain('experimentalDecorators enabled');
+    expect(output).toContain('.env file exists');
+    expect(output).toContain('Summary');
+
+    logSpy.mockRestore();
+    process.chdir(originalCwd);
+  });
+
+  it('doctor surfaces warnings for a bare project lacking optional config', async () => {
+    const projectDir = await mkdtemp(
+      resolve(process.cwd(), '.tmp-smrt-doctor-bare-'),
+    );
+    tempDirs.push(projectDir);
+
+    // Missing smrt-core dependency, no vite/tsconfig, no objects dir, no .env.
+    await writeFile(
+      resolve(projectDir, 'package.json'),
+      JSON.stringify({ name: 'bare-fixture', private: true }),
+    );
+    await writeFile(resolve(projectDir, '.env.example'), 'DATABASE_URL=\n');
+
+    const originalCwd = process.cwd();
+    process.chdir(projectDir);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(`exit:${code ?? ''}`);
+    }) as typeof process.exit);
+
+    // Issues present (missing smrt-core, missing config) => exits 1.
+    await expect(
+      utilityCommands.doctor.handler([], { fix: true }),
+    ).rejects.toThrow('exit:1');
+
+    const output = logSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('@happyvertical/smrt-core installed');
+    expect(output).toContain('Not a SvelteKit project');
+    expect(output).toContain('.env.example exists');
+    expect(output).toContain('Auto-fix is not yet implemented');
+    expect(output).toContain('Issues to fix');
+
+    exitSpy.mockRestore();
+    logSpy.mockRestore();
+    process.chdir(originalCwd);
+  });
+
+  it('introspect surfaces a guidance message when no manifests exist', async () => {
+    const projectDir = await mkdtemp(
+      resolve(process.cwd(), '.tmp-smrt-introspect-'),
+    );
+    tempDirs.push(projectDir);
+    await writeFile(
+      resolve(projectDir, 'package.json'),
+      JSON.stringify({ name: 'introspect-fixture', private: true }),
+    );
+
+    const originalCwd = process.cwd();
+    process.chdir(projectDir);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await utilityCommands.introspect.handler([], {});
+    const output = logSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('Introspecting SMRT project');
+
+    logSpy.mockRestore();
+    process.chdir(originalCwd);
+  });
 });

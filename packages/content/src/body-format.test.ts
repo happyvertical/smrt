@@ -46,6 +46,48 @@ describe('content body format utilities', () => {
     expect(html).not.toMatch(/javascript/i);
   });
 
+  it('strips event handlers glued to a preceding quote (S5 #1388)', () => {
+    // The HTML5 tree builder begins a new attribute right after the closing
+    // quote of the previous value, with no whitespace required. A sanitizer
+    // that only treats whitespace/slash as an attribute boundary leaves
+    // `src="x"onerror="..."` intact and the browser executes it.
+    const doubleQuoted = sanitizeHtml('<img src="x"onerror="alert(1)">');
+    expect(doubleQuoted).not.toMatch(/onerror/i);
+    expect(doubleQuoted).toContain('src="x"');
+
+    const singleQuoted = sanitizeHtml("<img src='x'onerror='alert(1)'>");
+    expect(singleQuoted).not.toMatch(/onerror/i);
+
+    const unquotedHandler = sanitizeHtml('<img src="x"onerror=alert(1)>');
+    expect(unquotedHandler).not.toMatch(/onerror/i);
+
+    const anchor = sanitizeHtml('<a href="x"onmouseover="alert(1)">y</a>');
+    expect(anchor).not.toMatch(/onmouseover/i);
+  });
+
+  it('neutralizes URL/style attributes glued to a preceding quote (S5 #1388)', () => {
+    const href = sanitizeHtml('<a title="x"href="javascript:alert(1)">y</a>');
+    expect(href).not.toMatch(/javascript/i);
+    expect(href).toContain('href="#"');
+
+    const src = sanitizeHtml('<img alt="x"src="javascript:alert(1)">');
+    expect(src).not.toMatch(/javascript/i);
+    expect(src).toContain('src="#"');
+
+    const formaction = sanitizeHtml(
+      '<button title="x"formaction="javascript:alert(1)">go</button>',
+    );
+    expect(formaction).not.toMatch(/javascript/i);
+
+    const srcset = sanitizeHtml('<img alt="x"srcset="javascript:alert(1) 1x">');
+    expect(srcset).not.toMatch(/javascript/i);
+
+    const style = sanitizeHtml(
+      '<div title="x"style="width:expression(alert(1))">z</div>',
+    );
+    expect(style).not.toMatch(/expression/i);
+  });
+
   it('sanitizes URL-bearing attributes with encoded protocols', () => {
     const html = sanitizeHtml(
       '<svg><a xlink:href="java&#x73;cript&#x3A;alert(1)">click</a></svg><form action="javascript:alert(2)"><button formaction="java&#115;cript:alert(3)">Go</button></form><video poster="javascript:alert(4)"></video><img srcset="javascript:alert(5) 1x, https://example.com/safe.jpg 2x" src="https://example.com/fallback.jpg">',
