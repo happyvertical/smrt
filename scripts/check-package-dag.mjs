@@ -80,7 +80,10 @@ function strongConnect(v) {
       onStack.delete(w);
       comp.push(w);
     } while (w !== v);
-    if (comp.length > 1) cycles.push(comp);
+    // A component of size > 1 is a cycle. A size-1 component is also a cycle if
+    // the node depends on itself (a self-loop — e.g. a package listing its own
+    // name under workspace:* deps), which Tarjan otherwise drops silently.
+    if (comp.length > 1 || edges.get(comp[0]).has(comp[0])) cycles.push(comp);
   }
 }
 for (const v of nodes) if (!index.has(v)) strongConnect(v);
