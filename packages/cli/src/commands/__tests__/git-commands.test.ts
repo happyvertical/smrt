@@ -21,6 +21,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseCliArgs } from '@happyvertical/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mergeObjects } from '../git.js';
 
@@ -265,6 +266,41 @@ describe('merge-json handler', () => {
     const printed = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
     expect(printed).toContain('"id": "a"');
     // Dry run must not rewrite ours.
+    expect(readFileSync(ours, 'utf-8')).toBe(oursBefore);
+  });
+
+  // Regression for #1385: the `'dry-run'` option is declared kebab-cased and
+  // `parseCliArgs` returns keys verbatim, so the real CLI yields
+  // `options['dry-run']`. The handler previously read `options.dryRun`, so the
+  // real `--dry-run` flag was ignored and the merge OVERWROTE the "ours" file
+  // instead of printing a preview. The handler-direct test above passed
+  // `{ dryRun: true }`, the camel key the CLI never produces, masking the bug.
+  it('does NOT overwrite ours when --dry-run is routed through parseCliArgs', async () => {
+    const base = write('base.json', '[]');
+    const ours = write('ours.json', JSON.stringify([{ id: 'a' }]));
+    const theirs = write('theirs.json', JSON.stringify([{ id: 'b' }]));
+    const oursBefore = readFileSync(ours, 'utf-8');
+
+    const { gitCommands } = await import('../git.js');
+    const mergeJson = gitCommands['merge-json'];
+
+    const parsed = parseCliArgs(
+      ['merge-json', base, ours, theirs, '--dry-run'],
+      [mergeJson as any],
+      {},
+    );
+    // Premise: the kebab key is produced, not a camelCase one.
+    expect(parsed.options['dry-run']).toBe(true);
+    expect((parsed.options as any).dryRun).toBeUndefined();
+
+    await expect(
+      mergeJson.handler(parsed.args, parsed.options),
+    ).rejects.toThrow();
+    expect(firstExit()).toBe(0);
+
+    const printed = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(printed).toContain('"id": "a"');
+    // The whole point: the dry run preview must not have rewritten ours.
     expect(readFileSync(ours, 'utf-8')).toBe(oursBefore);
   });
 
