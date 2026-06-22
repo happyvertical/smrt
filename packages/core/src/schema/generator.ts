@@ -15,6 +15,11 @@ import type {
 import { classnameToTablename } from '../utils/naming.js';
 import { getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
+import {
+  formatDefaultValue as formatDefaultValueShared,
+  quoteIdentifier,
+  quoteStringLiteral,
+} from './sql-identifiers.js';
 import type {
   ColumnDefinition,
   ForeignKeyDefinition,
@@ -361,7 +366,7 @@ export class SchemaGenerator {
         name: `trg_${tableName}_updated_at`,
         when: 'BEFORE',
         event: 'UPDATE',
-        body: `UPDATE "${tableName}" SET "updated_at" = current_timestamp WHERE "id" = NEW."id";`,
+        body: `UPDATE ${quoteIdentifier(tableName)} SET "updated_at" = current_timestamp WHERE "id" = NEW."id";`,
         description: 'Automatically update updated_at timestamp',
       },
     ];
@@ -994,7 +999,7 @@ export class SchemaGenerator {
         indexes.push({
           name: `idx_${tableName}_${fkColumn}_${className.toLowerCase()}`,
           columns: [fkColumn],
-          where: `_meta_type = '${className}'`,
+          where: `_meta_type = ${quoteStringLiteral(className)}`,
           description: `Partial index for ${fkColumn} in ${className} rows`,
         });
       }
@@ -1528,10 +1533,10 @@ export class SchemaGenerator {
     }
 
     const { tableName, columns } = schema;
-    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+    let sql = `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (\n`;
 
     for (const [columnName, columnDef] of Object.entries(columns)) {
-      const parts = [`  "${columnName}" ${columnDef.type}`];
+      const parts = [`  ${quoteIdentifier(columnName)} ${columnDef.type}`];
 
       if (columnDef.primaryKey) {
         parts.push('PRIMARY KEY');
@@ -1571,84 +1576,14 @@ export class SchemaGenerator {
    * @returns Formatted SQL default value expression
    */
   private formatDefaultValue(value: any, type: SQLDataType): string {
-    // Handle SQL functions and keywords (like current_timestamp, datetime('now'), CURRENT_DATE, etc.)
-    if (typeof value === 'string') {
-      // SQL function with parentheses (e.g., datetime('now'))
-      if (value.includes('(')) {
-        return value;
-      }
-      // SQL standard keywords (e.g., current_timestamp, CURRENT_DATE, CURRENT_TIME)
-      const sqlKeywords = [
-        'current_timestamp',
-        'current_date',
-        'current_time',
-        'now()',
-        'uuid_generate_v4()',
-      ];
-      if (sqlKeywords.some((keyword) => value.toLowerCase() === keyword)) {
-        return value;
-      }
-    }
-
-    // Handle different types - use plain literals (SQLite doesn't support CAST in DEFAULT)
-    if (type === 'TEXT') {
-      const stringValue = String(value);
-      return `'${stringValue.replace(/'/g, "''")}'`;
-    }
-
-    if (type === 'INTEGER' || type === 'REAL') {
-      // For null values, return NULL
-      if (value === null || value === undefined) {
-        return 'NULL';
-      }
-      return String(value);
-    }
-
-    if (type === 'BOOLEAN') {
-      return value ? 'TRUE' : 'FALSE';
-    }
-
-    if (type === 'TIMESTAMP') {
-      if (typeof value === 'string') {
-        return `'${value}'`;
-      }
-      return 'current_timestamp';
-    }
-
-    if (type === 'JSON') {
-      // Handle null/undefined
-      if (value === null || value === undefined) {
-        return "'null'";
-      }
-
-      // Handle string inputs - need to validate they're valid JSON
-      if (typeof value === 'string') {
-        // Empty string is not valid JSON
-        if (value === '') {
-          return "'null'";
-        }
-        // '[object Object]' is a common bug from accidental toString()
-        if (value === '[object Object]') {
-          return "'{}'";
-        }
-        // Try to parse as JSON to validate
-        try {
-          JSON.parse(value);
-          // It's valid JSON, use it as-is (escaped for SQL)
-          return `'${value.replace(/'/g, "''")}'`;
-        } catch {
-          // Not valid JSON - encode the string as a JSON string
-          const json = JSON.stringify(value);
-          return `'${json.replace(/'/g, "''")}'`;
-        }
-      }
-
-      // Objects and arrays - stringify them
-      const json = JSON.stringify(value);
-      return `'${json.replace(/'/g, "''")}'`;
-    }
-
-    // Fallback for other types
-    return `'${String(value).replace(/'/g, "''")}'`;
+    // Delegate to the shared, injection-safe formatter so all DDL paths
+    // converge on one set of rules (allowlisted keyword/function defaults
+    // instead of "contains `(`", type-driven quoting, no string-"null" fold).
+    // This path is engine-agnostic and never emits CAST expressions, so the
+    // output stays valid for SQLite and DuckDB. Non-string TIMESTAMP defaults
+    // fall back to lowercase `current_timestamp` to preserve prior output.
+    return formatDefaultValueShared(value, type, {
+      nonStringTimestampDefault: 'current_timestamp',
+    });
   }
 }

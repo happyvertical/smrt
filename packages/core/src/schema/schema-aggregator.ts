@@ -31,6 +31,7 @@ import { join } from 'node:path';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { quoteIdentifier } from './sql-identifiers.js';
 import { renderIndexTarget } from './utils.js';
 
 // ============================================================================
@@ -452,9 +453,11 @@ export class SchemaAggregator {
     engine: 'sqlite' | 'postgres' | 'duckdb' = 'sqlite',
   ): string {
     const target = renderIndexTarget(idx, engine);
+    const indexName = quoteIdentifier(idx.name);
+    const table = quoteIdentifier(tableName);
     return idx.unique
-      ? `CREATE UNIQUE INDEX IF NOT EXISTS "${idx.name}" ON "${tableName}" (${target});`
-      : `CREATE INDEX IF NOT EXISTS "${idx.name}" ON "${tableName}" (${target});`;
+      ? `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON ${table} (${target});`
+      : `CREATE INDEX IF NOT EXISTS ${indexName} ON ${table} (${target});`;
   }
 
   /**

@@ -6,6 +6,10 @@
 
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
+import {
+  formatDefaultValue as formatDefaultValueShared,
+  quoteIdentifier,
+} from '../schema/sql-identifiers.js';
 import type {
   ColumnDefinition,
   IndexDefinition,
@@ -411,8 +415,12 @@ export function getAllSchemas(): Record<
     if (tableSchema.indexes.length > 0) {
       indexSQL = tableSchema.indexes.map((idx) => {
         const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
-        const columnList = idx.columns.map((col) => `"${col}"`).join(', ');
-        return `CREATE ${indexType} IF NOT EXISTS "${idx.name}" ON "${tableName}" (${columnList});`;
+        const columnList = idx.columns
+          .map((col) => quoteIdentifier(col))
+          .join(', ');
+        return `CREATE ${indexType} IF NOT EXISTS ${quoteIdentifier(
+          idx.name,
+        )} ON ${quoteIdentifier(tableName)} (${columnList});`;
       });
     }
 
@@ -614,14 +622,14 @@ export function generateDDLFromColumns(
   columns: Record<string, ColumnDefinition>,
   isSTI = false,
 ): string {
-  let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+  let sql = `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (\n`;
 
   const columnLines: string[] = [];
   for (const [columnName, columnDef] of Object.entries(columns)) {
     const parts: string[] = [];
 
     // Column name and type
-    parts.push(`  "${columnName}" ${columnDef.type}`);
+    parts.push(`  ${quoteIdentifier(columnName)} ${columnDef.type}`);
 
     // Primary key
     if (columnDef.primaryKey) {
@@ -669,64 +677,20 @@ export function generateDDLFromColumns(
 }
 
 /**
- * Format default value for SQL DDL
+ * Format default value for SQL DDL.
+ *
+ * Thin wrapper over the shared, injection-safe formatter
+ * (`schema/sql-identifiers.ts`) so the registry schema-builder uses the same
+ * rules as the DDL strategies and schema generator: an allowlist of SQL
+ * keyword/function defaults (not "contains `(`"), type-driven literal quoting,
+ * and no folding of a literal string `"null"` into the SQL NULL keyword.
  *
  * @param value - Default value
  * @param type - Column SQL type
  * @returns Formatted SQL default value
  */
 export function formatDefaultValue(value: any, type: string): string {
-  // Handle NULL
-  if (value === null || value === undefined) {
-    return 'NULL';
-  }
-
-  // Handle SQL functions and keywords
-  if (typeof value === 'string') {
-    if (value.includes('(')) {
-      return value;
-    }
-    const sqlKeywords = [
-      'current_timestamp',
-      'current_date',
-      'current_time',
-      'now()',
-      'uuid_generate_v4()',
-      'null',
-    ];
-    if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
-      return value;
-    }
-  }
-
-  // Handle by type
-  if (type === 'TEXT' || type === 'VARCHAR') {
-    return `'${String(value).replace(/'/g, "''")}'`;
-  }
-  if (type === 'INTEGER' || type === 'REAL') {
-    return String(value);
-  }
-  if (type === 'BOOLEAN') {
-    return value ? 'TRUE' : 'FALSE';
-  }
-  if (type === 'JSON') {
-    if (typeof value === 'string') {
-      if (value === '') return "'null'";
-      if (value === '[object Object]') return "'{}'";
-      try {
-        JSON.parse(value);
-        return `'${value.replace(/'/g, "''")}'`;
-      } catch {
-        const json = JSON.stringify(value);
-        return `'${json.replace(/'/g, "''")}'`;
-      }
-    }
-    const json = JSON.stringify(value);
-    return `'${json.replace(/'/g, "''")}'`;
-  }
-
-  // Fallback: quote as string
-  return `'${String(value).replace(/'/g, "''")}'`;
+  return formatDefaultValueShared(value, type);
 }
 
 /**

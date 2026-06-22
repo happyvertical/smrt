@@ -6,6 +6,12 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
+import {
+  formatDefaultValue as formatDefaultValueShared,
+  isSafeIdentifierPath,
+  quoteIdentifier,
+  quoteStringLiteral,
+} from '../sql-identifiers.js';
 import type {
   ColumnDefinition,
   IndexDefinition,
@@ -16,6 +22,30 @@ import type {
 import type { DatabaseEngine, DDLStrategy } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * Validate the column + JSON path used to build a JSON-path index expression.
+ *
+ * The path segment is embedded as a SQL string literal inside a dialect
+ * function/operator (`json_extract("col", '$.path')` / `"col"->>'path'`), and
+ * the column as a delimited identifier. We escape both, but also reject paths
+ * or columns that aren't simple (dotted) identifiers so a malformed `@meta`
+ * field name can't smuggle structure into the expression even after escaping.
+ * These names are developer-controlled build-time inputs, so an invalid one is
+ * a programming error and throwing is the safest, loudest outcome.
+ */
+function assertSafeJsonPathTarget(jsonColumn: string, path: string): void {
+  if (!isSafeIdentifierPath(jsonColumn)) {
+    throw new Error(
+      `[DDL] Unsafe JSON-path index column "${jsonColumn}": must be a simple identifier`,
+    );
+  }
+  if (!isSafeIdentifierPath(path)) {
+    throw new Error(
+      `[DDL] Unsafe JSON-path index path "${path}": must be a simple (dotted) identifier`,
+    );
+  }
+}
 
 /**
  * Abstract base class for DDL strategies
@@ -32,7 +62,7 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
   generateCreateTable(schema: SchemaDefinition): string {
     const { tableName, columns, indexes = [] } = schema;
 
-    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+    let sql = `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (\n`;
 
     // Generate column definitions
     const columnDefs: string[] = [];
@@ -61,7 +91,10 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     columnName: string,
     columnDef: ColumnDefinition,
   ): string {
-    const parts: string[] = [`"${columnName}"`, this.mapType(columnDef.type)];
+    const parts: string[] = [
+      quoteIdentifier(columnName),
+      this.mapType(columnDef.type),
+    ];
 
     // Primary key
     if (columnDef.primaryKey) {
@@ -116,7 +149,7 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       }
 
       if (index.unique && index.columns.length > 0) {
-        const columns = index.columns.map((c) => `"${c}"`).join(', ');
+        const columns = index.columns.map((c) => quoteIdentifier(c)).join(', ');
         constraints.push(`UNIQUE(${columns})`);
       }
     }
@@ -166,9 +199,11 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
             jsonPath.column,
             jsonPath.path,
           )})`
-        : index.columns.map((c) => `"${c}"`).join(', ');
+        : index.columns.map((c) => quoteIdentifier(c)).join(', ');
 
-      let sql = `CREATE ${indexType} IF NOT EXISTS "${index.name}" ON "${tableName}" (${target})`;
+      let sql = `CREATE ${indexType} IF NOT EXISTS ${quoteIdentifier(
+        index.name,
+      )} ON ${quoteIdentifier(tableName)} (${target})`;
 
       // Partial index condition
       if (index.where) {
@@ -192,7 +227,8 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     jsonColumn: string,
     path: string,
   ): string {
-    return `"${jsonColumn}"->>'${path}'`;
+    assertSafeJsonPathTarget(jsonColumn, path);
+    return `${quoteIdentifier(jsonColumn)}->>${quoteStringLiteral(path)}`;
   }
 
   /**
@@ -230,8 +266,8 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     trigger: TriggerDefinition,
   ): string {
     // Default SQLite-style trigger syntax
-    let sql = `CREATE TRIGGER IF NOT EXISTS "${trigger.name}"\n`;
-    sql += `${trigger.when} ${trigger.event} ON "${tableName}"\n`;
+    let sql = `CREATE TRIGGER IF NOT EXISTS ${quoteIdentifier(trigger.name)}\n`;
+    sql += `${trigger.when} ${trigger.event} ON ${quoteIdentifier(tableName)}\n`;
 
     if (trigger.condition) {
       sql += `WHEN ${trigger.condition}\n`;
@@ -274,60 +310,22 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
   }
 
   /**
-   * Format default value for SQL
-   * Override in engine-specific strategies for different syntax
+   * Format default value for SQL.
+   *
+   * Delegates to the shared, injection-safe `formatDefaultValue`
+   * (`schema/sql-identifiers.ts`) so every DDL path uses one set of rules:
+   * an allowlist of SQL keyword/function defaults (not "contains `(`"),
+   * type-driven literal quoting, and no folding of the string `"null"` into
+   * the SQL NULL keyword. Boolean rendering is bridged through
+   * `formatBooleanDefault` so engine overrides (SQLite → 0/1) still apply.
    */
   formatDefaultValue(value: any, type: SQLDataType): string {
-    // Handle SQL functions and keywords (pass through unchanged)
-    if (typeof value === 'string') {
-      // Check for SQL function calls
-      if (value.includes('(')) {
-        return value;
-      }
-      // Check for SQL keywords
-      const sqlKeywords = [
-        'current_timestamp',
-        'current_date',
-        'current_time',
-        'now()',
-        'uuid_generate_v4()',
-        'null',
-      ];
-      if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
-        return value;
-      }
-    }
-
-    // Handle NULL
-    if (value === null || value === undefined) {
-      return 'NULL';
-    }
-
-    // Handle by type
-    switch (type) {
-      case 'TEXT':
-        return this.formatStringDefault(String(value));
-      case 'INTEGER':
-        return String(Math.floor(Number(value) || 0));
-      case 'REAL':
-        return String(Number(value) || 0);
-      case 'BOOLEAN':
-        return this.formatBooleanDefault(value);
-      case 'TIMESTAMP':
-        return this.formatTimestampDefault(value);
-      case 'JSON':
-        return this.formatJSONDefault(value);
-      default:
-        return this.formatStringDefault(String(value));
-    }
-  }
-
-  /**
-   * Format string default - escape single quotes
-   */
-  protected formatStringDefault(value: string): string {
-    const escaped = value.replace(/'/g, "''");
-    return `'${escaped}'`;
+    return formatDefaultValueShared(value, type, {
+      booleanLiterals: [
+        this.formatBooleanDefault(true),
+        this.formatBooleanDefault(false),
+      ],
+    });
   }
 
   /**
@@ -336,56 +334,6 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
    */
   protected formatBooleanDefault(value: any): string {
     return value ? 'TRUE' : 'FALSE';
-  }
-
-  /**
-   * Format timestamp default
-   */
-  protected formatTimestampDefault(value: any): string {
-    if (typeof value === 'string') {
-      return `'${value}'`;
-    }
-    return 'CURRENT_TIMESTAMP';
-  }
-
-  /**
-   * Format JSON default
-   *
-   * Ensures the default value is valid JSON for PostgreSQL/SQLite.
-   * Invalid inputs like empty strings or '[object Object]' are converted to 'null'.
-   * @see https://github.com/happyvertical/smrt/issues/735
-   */
-  protected formatJSONDefault(value: any): string {
-    // Handle null/undefined
-    if (value === null || value === undefined) {
-      return "'null'";
-    }
-
-    // Handle string inputs - need to validate they're valid JSON
-    if (typeof value === 'string') {
-      // Empty string is not valid JSON
-      if (value === '') {
-        return "'null'";
-      }
-      // '[object Object]' is a common bug from accidental toString()
-      if (value === '[object Object]') {
-        return "'{}'";
-      }
-      // Try to parse as JSON to validate
-      try {
-        JSON.parse(value);
-        // It's valid JSON, use it as-is (escaped for SQL)
-        return `'${value.replace(/'/g, "''")}'`;
-      } catch {
-        // Not valid JSON - encode the string as a JSON string
-        const json = JSON.stringify(value);
-        return `'${json.replace(/'/g, "''")}'`;
-      }
-    }
-
-    // Objects and arrays - stringify them
-    const json = JSON.stringify(value);
-    return `'${json.replace(/'/g, "''")}'`;
   }
 
   /**

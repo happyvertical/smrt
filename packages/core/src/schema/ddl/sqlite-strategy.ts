@@ -9,6 +9,11 @@
  * - UNIQUE can be inline or separate indexes
  */
 
+import {
+  isSafeIdentifierPath,
+  quoteIdentifier,
+  quoteStringLiteral,
+} from '../sql-identifiers.js';
 import type { SQLDataType } from '../types.js';
 import { BaseDDLStrategy } from './base-strategy.js';
 import type { DatabaseEngine } from './types.js';
@@ -25,7 +30,19 @@ export class SQLiteStrategy extends BaseDDLStrategy {
     jsonColumn: string,
     path: string,
   ): string {
-    return `json_extract("${jsonColumn}", '$.${path}')`;
+    if (!isSafeIdentifierPath(jsonColumn)) {
+      throw new Error(
+        `[DDL] Unsafe JSON-path index column "${jsonColumn}": must be a simple identifier`,
+      );
+    }
+    if (!isSafeIdentifierPath(path)) {
+      throw new Error(
+        `[DDL] Unsafe JSON-path index path "${path}": must be a simple (dotted) identifier`,
+      );
+    }
+    return `json_extract(${quoteIdentifier(jsonColumn)}, ${quoteStringLiteral(
+      `$.${path}`,
+    )})`;
   }
 
   /**
@@ -48,57 +65,15 @@ export class SQLiteStrategy extends BaseDDLStrategy {
   }
 
   /**
-   * Format boolean as 0/1 for SQLite
+   * Format boolean as 0/1 for SQLite.
+   *
+   * `formatDefaultValue` is inherited from BaseDDLStrategy, which delegates to
+   * the shared safe formatter and bridges this override in as the boolean
+   * literals — so SQLite booleans render as 0/1 and no CAST expression is ever
+   * emitted in a DEFAULT clause.
    */
   protected formatBooleanDefault(value: any): string {
     return value ? '1' : '0';
-  }
-
-  /**
-   * Format default value for SQLite
-   *
-   * CRITICAL: SQLite does NOT support CAST expressions in DEFAULT values.
-   * We use plain literals instead.
-   */
-  formatDefaultValue(value: any, type: SQLDataType): string {
-    // Handle SQL functions and keywords
-    if (typeof value === 'string') {
-      if (value.includes('(')) {
-        return value;
-      }
-      const sqlKeywords = [
-        'current_timestamp',
-        'current_date',
-        'current_time',
-        'null',
-      ];
-      if (sqlKeywords.some((kw) => value.toLowerCase() === kw)) {
-        return value;
-      }
-    }
-
-    // Handle NULL
-    if (value === null || value === undefined) {
-      return 'NULL';
-    }
-
-    // Handle by type - NO CAST expressions!
-    switch (type) {
-      case 'TEXT':
-        return this.formatStringDefault(String(value));
-      case 'INTEGER':
-        return String(Math.floor(Number(value) || 0));
-      case 'REAL':
-        return String(Number(value) || 0);
-      case 'BOOLEAN':
-        return this.formatBooleanDefault(value);
-      case 'TIMESTAMP':
-        return this.formatTimestampDefault(value);
-      case 'JSON':
-        return this.formatJSONDefault(value);
-      default:
-        return this.formatStringDefault(String(value));
-    }
   }
 
   /**
