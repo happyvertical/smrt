@@ -1,8 +1,12 @@
+import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
+import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
 import type { SubscriptionPlan } from '../models/SubscriptionPlan.js';
 import type { TenantSubscription } from '../models/TenantSubscription.js';
 import type {
   EntitlementResolution,
+  EntitlementResolutionContext,
   PlanThreshold,
+  SmrtClassOptions,
   Subscriber,
   SubscriptionResolverOptions,
   ThresholdEvaluation,
@@ -15,6 +19,7 @@ import {
   isValidThreshold,
 } from '../utils.js';
 import { evaluateThreshold } from './threshold-evaluator.js';
+import { TenantUsageMeter } from './usage-meter.js';
 
 export interface SubscriptionPlanReader {
   get(criteria: { id: string }): Promise<SubscriptionPlan | null>;
@@ -77,6 +82,41 @@ export class SubscriptionResolver {
   constructor(private readonly readers: SubscriptionResolverReaders) {}
 
   /**
+   * Build the default resolver readers once for a request or app lifecycle and
+   * reuse the returned resolver across entitlement checks.
+   */
+  static async create(
+    classOptions: SmrtClassOptions = {},
+  ): Promise<SubscriptionResolver> {
+    const [plans, subscriptions, usage] = await Promise.all([
+      SubscriptionPlanCollection.create(classOptions),
+      TenantSubscriptionCollection.create(classOptions),
+      TenantUsageMeter.create(classOptions),
+    ]);
+    return new SubscriptionResolver({ plans, subscriptions, usage });
+  }
+
+  /**
+   * Load the subscription/plan pair used by entitlement resolution. Callers
+   * that need both the entitlement snapshot and the backing records can load
+   * this once, then pass it back via `options.context`.
+   */
+  async loadEntitlementContext(
+    subscriberOrTenantId: Subscriber | string,
+    options: SubscriptionResolverOptions = {},
+  ): Promise<EntitlementResolutionContext> {
+    const subscriber = toSubscriber(subscriberOrTenantId);
+    const now = options.now ?? new Date();
+    const subscription = await this.resolveSubscription(
+      subscriber,
+      now,
+      options.context,
+    );
+    const plan = await this.resolvePlan(subscription, options.context);
+    return { subscription, plan };
+  }
+
+  /**
    * Polymorphic entitlement resolution. Works for both `'tenant'`-kind and
    * `'external'`-kind subscribers and is the preferred surface — the
    * `resolveTenantEntitlements(tenantId)` method below is a thin wrapper.
@@ -86,15 +126,14 @@ export class SubscriptionResolver {
     options: SubscriptionResolverOptions = {},
   ): Promise<EntitlementResolution> {
     const now = options.now ?? new Date();
-    const subscription = await this.findCurrentSubscription(subscriber, now);
+    const { subscription, plan } = await this.loadEntitlementContext(
+      subscriber,
+      { ...options, now },
+    );
 
     if (!subscription) {
       return emptyResolution(subscriber);
     }
-
-    const plan = subscription.planId
-      ? await this.readers.plans.get({ id: subscription.planId })
-      : null;
 
     if (!plan || !plan.isActive() || !subscription.isEntitled(now)) {
       return {
@@ -170,6 +209,34 @@ export class SubscriptionResolver {
         `${subject} exceeded subscription threshold ${blocked.threshold.metricKey}`,
       );
     }
+  }
+
+  private async resolveSubscription(
+    subscriber: Subscriber,
+    now: Date,
+    context?: EntitlementResolutionContext,
+  ): Promise<TenantSubscription | null> {
+    if (hasContextValue(context, 'subscription')) {
+      const subscription = context?.subscription ?? null;
+      assertSubscriptionMatchesSubscriber(subscription, subscriber);
+      return subscription;
+    }
+    return this.findCurrentSubscription(subscriber, now);
+  }
+
+  private async resolvePlan(
+    subscription: TenantSubscription | null,
+    context?: EntitlementResolutionContext,
+  ): Promise<SubscriptionPlan | null> {
+    if (!subscription?.planId) {
+      return null;
+    }
+    if (hasContextValue(context, 'plan')) {
+      const plan = context?.plan ?? null;
+      assertPlanMatchesSubscription(plan, subscription);
+      return plan;
+    }
+    return this.readers.plans.get({ id: subscription.planId });
   }
 
   /**
@@ -302,6 +369,55 @@ function emptyResolution(subscriber: Subscriber): EntitlementResolution {
     thresholdEvaluations: [],
     allowed: false,
   };
+}
+
+function hasContextValue<K extends keyof EntitlementResolutionContext>(
+  context: EntitlementResolutionContext | undefined,
+  key: K,
+): boolean {
+  return context !== undefined && Object.hasOwn(context, key);
+}
+
+function assertSubscriptionMatchesSubscriber(
+  subscription: TenantSubscription | null,
+  subscriber: Subscriber,
+): void {
+  if (!subscription) {
+    return;
+  }
+  const subscriptionSubscriber = subscription.getSubscriber();
+  if (
+    !subscriptionSubscriber ||
+    !sameSubscriber(subscriptionSubscriber, subscriber)
+  ) {
+    throw new Error(
+      'Provided entitlement context subscription does not match requested subscriber',
+    );
+  }
+}
+
+function assertPlanMatchesSubscription(
+  plan: SubscriptionPlan | null,
+  subscription: TenantSubscription,
+): void {
+  if (!plan?.id || !subscription.planId) {
+    return;
+  }
+  if (plan.id !== subscription.planId) {
+    throw new Error(
+      'Provided entitlement context plan does not match subscription.planId',
+    );
+  }
+}
+
+function sameSubscriber(left: Subscriber, right: Subscriber): boolean {
+  if (left.kind !== right.kind || left.tenantId !== right.tenantId) {
+    return false;
+  }
+  if (left.kind === 'tenant') {
+    return true;
+  }
+  return right.kind === 'external' && left.externalId === right.externalId;
 }
 
 function uniqueMetricKeys(metricKeys: string[]): string[] {

@@ -1,3 +1,4 @@
+export type { EntitlementResolutionContext } from '../types.js';
 export {
   type SubscriptionPlanReader,
   SubscriptionResolver,
