@@ -23,8 +23,41 @@
 
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { discoverSmrtPackages } from './discover-smrt-packages.js';
+import { createLogger } from '@happyvertical/logger';
+import {
+  discoverSmrtPackages,
+  resolveManifestPath,
+} from './discover-smrt-packages.js';
+
+const logger = createLogger({ level: 'info' });
+
+/**
+ * Log a manifest-load failure during base-class discovery without aborting the
+ * whole scan. ENOENT (a package that simply hasn't built/published a manifest)
+ * is benign and logged at debug; malformed JSON or other read errors are
+ * surfaced at warn so a stale/corrupt manifest is not silently ignored.
+ */
+function logBaseClassLoadError(
+  pkgName: string,
+  manifestPath: string,
+  error: unknown,
+): void {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? (error as { code?: string }).code
+      : undefined;
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (code === 'ENOENT') {
+    logger.debug(
+      `[discoverBaseClasses] No manifest for ${pkgName} at ${manifestPath}; skipping.`,
+    );
+  } else {
+    logger.warn(
+      `[discoverBaseClasses] Failed to load manifest for ${pkgName} at ${manifestPath}: ${message}`,
+    );
+  }
+}
 
 /**
  * Framework base classes that should be skipped during manifest generation
@@ -77,17 +110,22 @@ export async function discoverBaseClasses(
   // Discover external SMRT packages
   const smrtDependencies = discoverSmrtPackages();
 
-  // Load external base classes from SMRT package manifests
+  // Load external base classes from SMRT package manifests.
+  // Resolve each manifest the same way discovery does (honoring `.smrt/` and
+  // `src/manifest/` in addition to `dist/`), so a workspace package not yet
+  // built to dist/ still contributes its base classes (#1378). A hardcoded
+  // `node_modules/{pkg}/dist/manifest.json` path silently degraded inheritance
+  // detection for source-only packages.
   for (const pkgName of smrtDependencies) {
-    try {
-      const manifestPath = resolve(
-        cwd,
-        'node_modules',
-        pkgName,
-        'dist',
-        'manifest.json',
+    const manifestPath = resolveManifestPath(pkgName, cwd);
+    if (!manifestPath) {
+      logger.debug(
+        `[discoverBaseClasses] No SMRT manifest resolved for ${pkgName}; skipping.`,
       );
+      continue;
+    }
 
+    try {
       const manifestContent = await readFile(manifestPath, 'utf-8');
       const manifest = JSON.parse(manifestContent);
 
@@ -104,7 +142,9 @@ export async function discoverBaseClasses(
           }
         }
       }
-    } catch (error) {}
+    } catch (error) {
+      logBaseClassLoadError(pkgName, manifestPath, error);
+    }
   }
 
   return baseClasses;
@@ -137,17 +177,19 @@ export function discoverBaseClassesSync(
   // Discover external SMRT packages
   const smrtDependencies = discoverSmrtPackages();
 
-  // Load external base classes from SMRT package manifests
+  // Load external base classes from SMRT package manifests. Same resolution as
+  // the async variant (honors `.smrt/` and `src/manifest/`, not just `dist/`),
+  // so source-only workspace packages still contribute base classes (#1378).
   for (const pkgName of smrtDependencies) {
-    try {
-      const manifestPath = resolve(
-        cwd,
-        'node_modules',
-        pkgName,
-        'dist',
-        'manifest.json',
+    const manifestPath = resolveManifestPath(pkgName, cwd);
+    if (!manifestPath) {
+      logger.debug(
+        `[discoverBaseClassesSync] No SMRT manifest resolved for ${pkgName}; skipping.`,
       );
+      continue;
+    }
 
+    try {
       // Use fs.readFileSync for synchronous loading (works in ESM)
       const manifestContent = readFileSync(manifestPath, 'utf-8');
       const manifest = JSON.parse(manifestContent);
@@ -165,7 +207,9 @@ export function discoverBaseClassesSync(
           }
         }
       }
-    } catch (error) {}
+    } catch (error) {
+      logBaseClassLoadError(pkgName, manifestPath, error);
+    }
   }
 
   return baseClasses;
