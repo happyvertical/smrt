@@ -60,17 +60,6 @@ import {
   type StiDiscriminatorRepairConflict,
 } from './sti-upgrade.js';
 
-/**
- * Column definition type for migration comparison
- */
-interface ColumnDef {
-  type: string;
-  notNull?: boolean;
-  defaultValue?: any;
-  unique?: boolean;
-  primaryKey?: boolean;
-}
-
 function formatSchemaCommandFailureHeader(
   error: unknown,
   fallback: string,
@@ -123,15 +112,6 @@ function migrationResultError(result: MigrationResult): Error {
   });
 }
 
-/**
- * Index definition type for migration comparison
- */
-interface IndexDef {
-  name: string;
-  columns: string[];
-  unique?: boolean;
-}
-
 type DDLPreviewEngine = 'sqlite' | 'duckdb' | 'json' | 'postgres';
 
 export function resolveVitestEntrypoint(fromDir = process.cwd()): string {
@@ -153,137 +133,6 @@ function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
     default:
       return 'sqlite';
   }
-}
-
-/**
- * Parse expected columns from a schema definition
- * Handles both DDL string parsing and columns object format
- */
-function parseExpectedColumns(schema: {
-  ddl: string;
-  tableName: string;
-  indexes?: string[];
-}): Record<string, ColumnDef> {
-  const columns: Record<string, ColumnDef> = {};
-
-  // Try to extract columns from DDL using regex
-  // Match: CREATE TABLE ... ( column definitions )
-  const createTableMatch = schema.ddl.match(
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?\s*\(([\s\S]+?)\)(?:\s*;)?$/im,
-  );
-
-  if (!createTableMatch) {
-    return columns;
-  }
-
-  const columnSection = createTableMatch[2];
-
-  // Split by comma, but not commas inside parentheses (for CHECK constraints)
-  const parts: string[] = [];
-  let depth = 0;
-  let current = '';
-
-  for (const char of columnSection) {
-    if (char === '(') depth++;
-    else if (char === ')') depth--;
-
-    if (char === ',' && depth === 0) {
-      parts.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  if (current.trim()) {
-    parts.push(current.trim());
-  }
-
-  for (const part of parts) {
-    // Skip foreign key constraints, primary key constraints, etc.
-    if (
-      /^\s*(FOREIGN\s+KEY|PRIMARY\s+KEY|UNIQUE|CHECK|CONSTRAINT)/i.test(part)
-    ) {
-      continue;
-    }
-
-    // Parse column definition: "column_name" TYPE [constraints]
-    // Handle both quoted and unquoted column names
-    const colMatch = part.match(
-      /^["']?(\w+)["']?\s+(\w+(?:\s*\([^)]+\))?)\s*(.*)?$/i,
-    );
-
-    if (colMatch) {
-      const colName = colMatch[1];
-      const colType = colMatch[2].toUpperCase();
-      const constraints = colMatch[3] || '';
-
-      columns[colName] = {
-        type: colType,
-        notNull:
-          /NOT\s+NULL/i.test(constraints) || /PRIMARY\s+KEY/i.test(constraints),
-        unique: /UNIQUE/i.test(constraints),
-        primaryKey: /PRIMARY\s+KEY/i.test(constraints),
-      };
-
-      // Extract default value - handle SQL escaped quotes ('' -> ')
-      const defaultMatch = constraints.match(
-        /DEFAULT\s+(?:'((?:[^']|'{2})*)'|(\d+(?:\.\d+)?)|(\w+))/i,
-      );
-      if (defaultMatch) {
-        const rawDefault =
-          defaultMatch[1] ?? defaultMatch[2] ?? defaultMatch[3];
-        // Unescape SQL single-quoted strings: '' -> '
-        columns[colName].defaultValue =
-          defaultMatch[1] !== undefined
-            ? rawDefault.replace(/''/g, "'")
-            : rawDefault;
-      }
-    }
-  }
-
-  return columns;
-}
-
-/**
- * Parse expected indexes from a schema definition
- * Handles index SQL strings in the indexes array
- */
-function parseExpectedIndexes(schema: {
-  ddl: string;
-  tableName: string;
-  indexes?: string[];
-}): IndexDef[] {
-  const indexes: IndexDef[] = [];
-
-  if (!schema.indexes || schema.indexes.length === 0) {
-    return indexes;
-  }
-
-  for (const indexSQL of schema.indexes) {
-    // Parse: CREATE [UNIQUE] INDEX index_name ON table_name (columns)
-    // Support both quoted and unquoted identifiers
-    const match = indexSQL.match(
-      /CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([^"]+)"|'([^']+)'|(\w+))\s+ON\s+(?:"[^"]+"|'[^']+'|\w+)\s*\(([^)]+)\)/i,
-    );
-
-    if (match) {
-      const isUnique = !!match[1];
-      // Index name can be in group 2 (double-quoted), 3 (single-quoted), or 4 (unquoted)
-      const indexName = match[2] ?? match[3] ?? match[4];
-      const columnsStr = match[5];
-      const columns = columnsStr
-        .split(',')
-        .map((c) => c.trim().replace(/["']/g, ''));
-
-      indexes.push({
-        name: indexName,
-        columns,
-        unique: isUnique,
-      });
-    }
-  }
-
-  return indexes;
 }
 
 /**
@@ -311,67 +160,6 @@ function formatStiConflictIdentity(
       : '';
 
   return `${identity}${ids}`;
-}
-
-/**
- * Normalize SQL types for comparison
- * Different databases use different type names for the same logical type.
- * Preserves size distinctions (BIGINT vs INTEGER, VARCHAR(50) vs TEXT) to avoid
- * hiding important schema differences.
- */
-function normalizeType(type: string): string {
-  const upper = type.toUpperCase().trim();
-
-  // Normalize integer types - preserve size distinctions
-  if (/^(INTEGER|INT)$/i.test(upper)) {
-    return 'INTEGER';
-  }
-  if (/^BIGINT$/i.test(upper)) {
-    return 'BIGINT';
-  }
-  if (/^SMALLINT$/i.test(upper)) {
-    return 'SMALLINT';
-  }
-  if (/^TINYINT$/i.test(upper)) {
-    return 'TINYINT';
-  }
-
-  // Normalize text types - preserve length-limited types
-  // Only normalize truly unbounded text types to TEXT
-  if (/^(TEXT|CLOB|STRING)$/i.test(upper)) {
-    return 'TEXT';
-  }
-  // Keep VARCHAR and CHAR with their size specs (e.g., VARCHAR(50))
-  if (/^(VARCHAR|CHAR)/i.test(upper)) {
-    return upper; // Preserve as-is to detect size mismatches
-  }
-
-  // Normalize decimal/float types
-  if (/^(REAL|FLOAT|DOUBLE|DECIMAL|NUMERIC|NUMBER)/i.test(upper)) {
-    return 'REAL';
-  }
-
-  // Normalize boolean types
-  if (/^(BOOLEAN|BOOL)/i.test(upper)) {
-    return 'BOOLEAN';
-  }
-
-  // Normalize date/time types
-  if (/^(DATETIME|TIMESTAMP|DATE|TIME)/i.test(upper)) {
-    return 'TIMESTAMP';
-  }
-
-  // Normalize blob types
-  if (/^(BLOB|BINARY|BYTEA)/i.test(upper)) {
-    return 'BLOB';
-  }
-
-  // Normalize JSON types
-  if (/^(JSON|JSONB)/i.test(upper)) {
-    return 'JSON';
-  }
-
-  return upper;
 }
 
 /**
