@@ -10,7 +10,10 @@ import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
-import { discoverSmrtPackages } from './discover-smrt-packages.js';
+import {
+  discoverSmrtPackages,
+  resolveManifestPath,
+} from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
 
 async function importScanner() {
@@ -497,15 +500,16 @@ export default ${exportName};
     const externalBaseClasses: string[] = [];
 
     for (const pkgName of packages) {
-      try {
-        const manifestPath = resolve(
-          process.cwd(),
-          'node_modules',
-          pkgName,
-          'dist',
-          'manifest.json',
-        );
+      // Resolve the manifest the same way discovery does (honors `.smrt/` and
+      // `src/manifest/`, not just `dist/`) so source-only workspace packages
+      // still contribute base classes (#1378).
+      const manifestPath = resolveManifestPath(pkgName, process.cwd());
+      if (!manifestPath) {
+        console.log(`[smrt]   ${pkgName}: no SMRT manifest resolved`);
+        continue;
+      }
 
+      try {
         const manifestContent = readFileSync(manifestPath, 'utf-8');
         const manifest = JSON.parse(manifestContent);
 

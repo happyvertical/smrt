@@ -186,7 +186,7 @@ function resolvePackageDir(
   return null;
 }
 
-function resolveManifestPath(
+export function resolveManifestPath(
   packageName: string,
   baseDir: string = process.cwd(),
 ): string | null {
