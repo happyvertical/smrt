@@ -291,7 +291,7 @@ describe('DDL strategy identifier safety (CREATE TABLE / INDEX)', () => {
         },
       ],
     });
-    for (const engine of ['sqlite', 'postgres', 'duckdb'] as const) {
+    for (const engine of ['sqlite', 'postgres', 'duckdb', 'json'] as const) {
       expect(() => getDDLStrategy(engine).generateIndexes(schema)).toThrow(
         /Unsafe JSON-path index column/,
       );
