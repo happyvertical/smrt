@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { MigrationTracker } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
+import { parseCliArgs } from '@happyvertical/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dbRollbackCommand } from '../db-rollback.js';
 
@@ -367,5 +368,79 @@ describe('db:rollback (real SQLite)', () => {
     const history = await readHistory();
     expect(history[0].status).toBe('rolled_back');
     expect(questionMock).toHaveBeenCalled();
+  });
+
+  /**
+   * Regression for the data-loss BLOCKER (#1385): the `'dry-run'` option is
+   * declared kebab-cased, and `parseCliArgs` returns keys verbatim, so the real
+   * CLI produces `options['dry-run']`. The handler previously read
+   * `options.dryRun` (always undefined on the CLI path), so `--dry-run` fell
+   * through and executed real rollbacks. The handler-direct tests above passed a
+   * `{ dryRun: true }` key the real CLI never produces, masking the hole — these
+   * tests route through `parseCliArgs` like the actual command dispatcher.
+   */
+  describe('--dry-run via parseCliArgs (regression #1385)', () => {
+    function route(argv: string[]) {
+      const parsed = parseCliArgs(
+        ['db:rollback', ...argv],
+        [dbRollbackCommand as any],
+        {},
+      );
+      return dbRollbackCommand.handler(parsed.args, parsed.options);
+    }
+
+    it('produces the kebab option key, not a camelCase one', () => {
+      const parsed = parseCliArgs(
+        ['db:rollback', '--dry-run', '--force'],
+        [dbRollbackCommand as any],
+        {},
+      );
+      // Proves the premise: the real CLI never yields `dryRun`.
+      expect(parsed.options['dry-run']).toBe(true);
+      expect((parsed.options as any).dryRun).toBeUndefined();
+    });
+
+    it('does NOT execute any rollback when --dry-run is passed (data-loss guard)', async () => {
+      await seedMigrations([
+        nonReversibleDef('dry_one'),
+        nonReversibleDef('dry_two'),
+      ]);
+
+      // Stub the destructive boundaries: the reversible path goes through
+      // MigrationTracker.rollback; the non-reversible path issues a raw UPDATE
+      // via db.query. Neither must fire under --dry-run.
+      const rollbackSpy = vi.spyOn(MigrationTracker.prototype, 'rollback');
+
+      await route(['--dry-run', '--force']);
+
+      expect(rollbackSpy).not.toHaveBeenCalled();
+      expect(output()).toContain('Dry-run');
+
+      // Real DB state is the ground truth: nothing was marked rolled_back.
+      const history = await readHistory();
+      expect(history.every((m) => m.status === 'completed')).toBe(true);
+
+      rollbackSpy.mockRestore();
+    });
+
+    it('emits structured dry-run JSON without mutating history via the CLI path', async () => {
+      await seedMigrations([nonReversibleDef('dry_json')]);
+
+      await route(['--dry-run', '--json', '--force']);
+
+      const parsed = lastJson();
+      expect(parsed.dryRun).toBe(true);
+      const history = await readHistory();
+      expect(history.every((m) => m.status === 'completed')).toBe(true);
+    });
+
+    it('still executes the rollback when --dry-run is absent (CLI path)', async () => {
+      await seedMigrations([nonReversibleDef('wet_one')]);
+
+      await route(['--force']);
+
+      const history = await readHistory();
+      expect(history[0].status).toBe('rolled_back');
+    });
   });
 });
