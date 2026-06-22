@@ -6,11 +6,17 @@
  */
 
 import { access } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createLogger } from '@happyvertical/logger';
 import glob from 'fast-glob';
 import type { TemplateConfig } from './template-loader.js';
+
+// This package is pure ESM ("type":"module"), where `require`/`module` are not
+// defined. Recreate `require` so `require.resolve` works in the built artifact;
+// the dev test path used to be papered over by Vite's CJS interop shim.
+const require = createRequire(import.meta.url);
 
 const logger = createLogger({ level: 'info' });
 
@@ -26,7 +32,7 @@ export async function resolveNpmPackage(packagePath: string): Promise<string> {
   // Try to resolve as module
   try {
     const resolved = require.resolve(packagePath, {
-      paths: [process.cwd(), ...module.paths],
+      paths: [process.cwd(), ...(require.resolve.paths(packagePath) ?? [])],
     });
     return resolved;
   } catch {

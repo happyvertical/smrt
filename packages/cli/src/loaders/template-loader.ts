@@ -7,6 +7,7 @@
  * - Local filesystem paths (../path/to/template, /absolute/path)
  */
 
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadGitTemplate } from './git-loader.js';
@@ -18,6 +19,10 @@ import {
 } from './npm-loader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// This package is pure ESM ("type":"module"), where `require`/`module` are not
+// defined. Recreate `require` so `require.resolve` works in the built artifact.
+const require = createRequire(import.meta.url);
 
 /**
  * Context passed to placeholder functions
@@ -183,8 +188,9 @@ async function findBundledTemplate(name: string): Promise<string | null> {
   // Try resolving as npm package (@happyvertical/smrt-template-sveltekit)
   try {
     const npmPackage = `@happyvertical/smrt-${packageDir}`;
-    const resolved = require.resolve(`${npmPackage}/template.config.js`, {
-      paths: [process.cwd(), ...module.paths],
+    const specifier = `${npmPackage}/template.config.js`;
+    const resolved = require.resolve(specifier, {
+      paths: [process.cwd(), ...(require.resolve.paths(specifier) ?? [])],
     });
     return dirname(resolved);
   } catch {
