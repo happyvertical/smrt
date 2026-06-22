@@ -367,6 +367,9 @@ describe('ManifestAdapter conversion', () => {
   describe('collection pluralization', () => {
     const cases: Array<[string, string]> = [
       ['City', 'cities'],
+      // Vowel + y → +s, not +ies (regression: Day must not become "daies").
+      ['Day', 'days'],
+      ['Key', 'keys'],
       ['Box', 'boxes'],
       ['Bus', 'buses'],
       ['Dish', 'dishes'],
