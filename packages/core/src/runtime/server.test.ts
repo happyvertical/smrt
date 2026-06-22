@@ -178,6 +178,110 @@ describe('Express-style route adapters', () => {
     const res = await dispatch(new Request(`${BASE}/api/v1/fail`));
     expect(res.status).toBe(500);
   });
+
+  it('settles an async rejecting handler as 500 instead of hanging (#1378)', async () => {
+    const { server, dispatch } = makeServer({ cors: false });
+    server.get('/async-fail', async () => {
+      await Promise.resolve();
+      throw new Error('async fail');
+    });
+
+    // Race against a timeout: a hung (never-settling) response would lose the
+    // race. The fix must let the dispatch promise settle to a 500.
+    const result = await Promise.race([
+      dispatch(new Request(`${BASE}/api/v1/async-fail`)).then((r) => r.status),
+      new Promise<'TIMEOUT'>((resolve) =>
+        setTimeout(() => resolve('TIMEOUT'), 1000),
+      ),
+    ]);
+    expect(result).toBe(500);
+  });
+
+  it('500s an async handler that resolves without responding (#1378)', async () => {
+    const { server, dispatch } = makeServer({ cors: false });
+    // Handler completes but never calls res.json/send/end.
+    server.get('/no-response', async () => {
+      await Promise.resolve();
+    });
+
+    const result = await Promise.race([
+      dispatch(new Request(`${BASE}/api/v1/no-response`)).then((r) => r.status),
+      new Promise<'TIMEOUT'>((resolve) =>
+        setTimeout(() => resolve('TIMEOUT'), 1000),
+      ),
+    ]);
+    expect(result).toBe(500);
+  });
+
+  it('awaits a slow async handler that eventually responds', async () => {
+    const { server, dispatch } = makeServer({ cors: false });
+    server.post('/slow', async (_req, res) => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      res.status(202).json({ queued: true });
+    });
+
+    const res = await dispatch(
+      new Request(`${BASE}/api/v1/slow`, { method: 'POST' }),
+    );
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ queued: true });
+  });
+});
+
+describe('request body parsing (#1378)', () => {
+  it('returns 400 (not 500) for a malformed JSON body', async () => {
+    const { server, dispatch } = makeServer({ cors: false });
+    server.addRoute('POST', '/echo', async (req) => {
+      const data = await req.json();
+      return new Response(JSON.stringify(data));
+    });
+
+    const res = await dispatch(
+      new Request(`${BASE}/api/v1/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{ not: valid json',
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('treats an empty JSON body as no body (handler runs, body undefined)', async () => {
+    const { server, dispatch } = makeServer({ cors: false });
+    server.addRoute('POST', '/maybe', async (req) => {
+      return new Response(JSON.stringify({ hasBody: req.body !== undefined }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const res = await dispatch(
+      new Request(`${BASE}/api/v1/maybe`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ hasBody: false });
+  });
+
+  it('still parses a well-formed JSON body', async () => {
+    const { server, dispatch } = makeServer({ cors: false });
+    server.addRoute('POST', '/echo', async (req) => {
+      const data = await req.json();
+      return new Response(JSON.stringify(data));
+    });
+
+    const res = await dispatch(
+      new Request(`${BASE}/api/v1/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ok: true }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+  });
 });
 
 describe('CORS handling', () => {

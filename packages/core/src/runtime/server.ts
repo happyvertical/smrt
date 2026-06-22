@@ -8,6 +8,18 @@ import type { SmrtRequest, SmrtServerOptions } from './types';
 
 const logger = createLogger({ level: 'info' });
 
+/**
+ * Signals a malformed client request (e.g. invalid JSON body) so that
+ * {@link SmrtServer.handleRequest} can answer 400 instead of a generic 500
+ * (#1378). Internal to this module.
+ */
+class BadRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BadRequestError';
+  }
+}
+
 export class SmrtServer {
   private options: Required<SmrtServerOptions>;
   private routes: Map<string, (req: SmrtRequest) => Promise<Response>> =
@@ -73,6 +85,20 @@ export class SmrtServer {
   ) {
     const smrtHandler = async (req: SmrtRequest): Promise<Response> => {
       return new Promise((resolve, reject) => {
+        // Tracks whether the handler ever produced a response. A handler that
+        // returns/resolves without calling json/send/end would otherwise leave
+        // this promise pending forever (server hang) — we 500 instead (#1378).
+        let settled = false;
+        const settle = (response: Response) => {
+          if (settled) return;
+          settled = true;
+          resolve(response);
+        };
+        const fail = (error: unknown) => {
+          if (settled) return;
+          settled = true;
+          reject(error);
+        };
         // Create Express-style response object
         const res = {
           status: (code: number) => {
@@ -80,7 +106,7 @@ export class SmrtServer {
             return res;
           },
           json: (data: any) => {
-            resolve(
+            settle(
               new Response(JSON.stringify(data), {
                 status: res.statusCode || 200,
                 headers: {
@@ -92,7 +118,7 @@ export class SmrtServer {
           },
           send: (data: any) => {
             const body = typeof data === 'string' ? data : JSON.stringify(data);
-            resolve(
+            settle(
               new Response(body, {
                 status: res.statusCode || 200,
                 headers: {
@@ -106,7 +132,7 @@ export class SmrtServer {
             );
           },
           end: (data?: any) => {
-            resolve(
+            settle(
               new Response(data || '', {
                 status: res.statusCode || 200,
                 headers: res.headers,
@@ -122,11 +148,24 @@ export class SmrtServer {
           headers: {} as Record<string, string>,
         };
 
-        try {
-          handler(req, res);
-        } catch (error) {
-          reject(error);
-        }
+        // Await the handler so async rejections propagate. Express-style
+        // handlers signal completion via res.json/send/end; a sync throw or an
+        // async rejection is surfaced as 500 by handleRequest. Promise.resolve
+        // wraps both sync and async handlers uniformly (#1378).
+        Promise.resolve()
+          .then(() => handler(req, res))
+          .then(() => {
+            // Handler completed without producing a response (never called
+            // json/send/end). Resolve a 500 rather than hanging forever.
+            if (!settled) {
+              settle(
+                new Response('Internal Server Error', {
+                  status: 500,
+                }),
+              );
+            }
+          })
+          .catch((error) => fail(error));
       });
     };
 
@@ -270,6 +309,11 @@ export class SmrtServer {
 
       return response;
     } catch (error) {
+      // A malformed request (e.g. invalid JSON body) is the client's fault →
+      // 400, not 500 (#1378).
+      if (error instanceof BadRequestError) {
+        return new Response(error.message, { status: 400 });
+      }
       logger.error('[smrt] Request error', { error });
       return new Response('Internal Server Error', { status: 500 });
     }
@@ -293,7 +337,10 @@ export class SmrtServer {
       query[key] = value;
     });
 
-    // Parse body if present
+    // Parse body if present. `request.body` is a stream and stays truthy even
+    // for an empty body, so reading text first lets us treat an empty body as
+    // "no body" (undefined) and surface only genuinely malformed JSON as a 400
+    // rather than letting request.json() throw a generic 500 (#1378).
     let body: any;
     if (
       request.body &&
@@ -302,10 +349,21 @@ export class SmrtServer {
         request.method === 'PATCH')
     ) {
       const contentType = request.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        body = await request.json();
+      const rawBody = await request.text();
+      if (rawBody.trim() === '') {
+        // Empty body → no body. Leave `body` undefined.
+      } else if (contentType.includes('application/json')) {
+        try {
+          body = JSON.parse(rawBody);
+        } catch (error) {
+          throw new BadRequestError(
+            `Invalid JSON request body: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
       } else {
-        body = await request.text();
+        body = rawBody;
       }
     }
 
