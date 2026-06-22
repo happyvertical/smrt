@@ -22,7 +22,7 @@ export interface SessionLocals {
   /** The authenticated user (null if not authenticated) */
   user: User | null;
   /** Active membership for the current tenant (null if none) */
-  membership: Membership | null;
+  membership?: Membership | null;
   /** User's resolved permissions */
   permissions: string[];
   /** Current tenant context (null if no tenant selected) */

@@ -117,7 +117,7 @@ export interface CliResource {
 
 export interface ResolvedSession {
   user: SessionLocals['user'];
-  membership: SessionLocals['membership'];
+  membership?: SessionLocals['membership'];
   permissions: string[];
   tenantId: string | null;
   sessionId: string | null;

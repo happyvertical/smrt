@@ -345,6 +345,50 @@ describe('smrt-subscriptions', () => {
     expect(getPlan).toHaveBeenCalledTimes(1);
   });
 
+  it('treats undefined context values as absent and falls back to readers', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'team',
+      name: 'Team',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-team' });
+    plan.setFeatureGrants(['smrt:billing']);
+
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-team',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-team' });
+
+    const getPlan = vi.fn(async () => plan);
+    const findCurrentForTenant = vi.fn(async () => subscription);
+    const resolver = new SubscriptionResolver({
+      plans: { get: getPlan },
+      subscriptions: { findCurrentForTenant },
+      usage: {
+        async summarize() {
+          throw new Error('usage should not be read without thresholds');
+        },
+      },
+    });
+
+    const resolution = await resolver.resolveTenantEntitlements('tenant-1', {
+      context: { plan: undefined, subscription: undefined },
+      now: new Date('2026-06-15T00:00:00Z'),
+    });
+
+    expect(resolution).toMatchObject({
+      tenantId: 'tenant-1',
+      planKey: 'team',
+      featureKeys: ['smrt:billing'],
+      allowed: true,
+    });
+    expect(findCurrentForTenant).toHaveBeenCalledTimes(1);
+    expect(getPlan).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects unverifiable context plans instead of trusting stale entitlements', async () => {
     const plan = new SubscriptionPlan({
       planKey: 'wrong',

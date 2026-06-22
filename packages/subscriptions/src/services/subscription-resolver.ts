@@ -375,7 +375,7 @@ function hasContextValue<K extends keyof EntitlementResolutionContext>(
   context: EntitlementResolutionContext | undefined,
   key: K,
 ): boolean {
-  return context !== undefined && Object.hasOwn(context, key);
+  return context?.[key] !== undefined;
 }
 
 function assertSubscriptionMatchesSubscriber(
