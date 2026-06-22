@@ -191,6 +191,41 @@ describe('SmrtCollection memory (collection-scoped)', () => {
     expect(await widgets.recall({ scope: 'wipe', key: 'a' })).toBeNull();
     expect(await widgets.recall({ scope: 'wipe', key: 'b' })).toBeNull();
   });
+
+  // #1378: a corrupted _smrt_contexts.value must not throw out of recall paths.
+  it('recall() skips a corrupted value (treats it as a miss)', async () => {
+    await widgets.remember({ scope: 'corrupt', key: 'bad', value: { ok: 1 } });
+    // Corrupt the stored JSON directly (systemDb === the test db).
+    await db.query(
+      `UPDATE _smrt_contexts SET value = $1 WHERE scope = $2 AND key = $3`,
+      '{not valid json',
+      'corrupt',
+      'bad',
+    );
+
+    let recalled: unknown;
+    await expect(
+      (async () => {
+        recalled = await widgets.recall({ scope: 'corrupt', key: 'bad' });
+      })(),
+    ).resolves.toBeUndefined();
+    expect(recalled).toBeNull();
+  });
+
+  it('recallAll() skips a corrupted row and returns the rest', async () => {
+    await widgets.remember({ scope: 'mix', key: 'good', value: 42 });
+    await widgets.remember({ scope: 'mix', key: 'bad', value: { ok: 1 } });
+    await db.query(
+      `UPDATE _smrt_contexts SET value = $1 WHERE scope = $2 AND key = $3`,
+      '<<<corrupt>>>',
+      'mix',
+      'bad',
+    );
+
+    const all = await widgets.recallAll({ scope: 'mix' });
+    expect(all.get('good')).toBe(42);
+    expect(all.has('bad')).toBe(false);
+  });
 });
 
 describe('SmrtCollection memory requires initialization', () => {
