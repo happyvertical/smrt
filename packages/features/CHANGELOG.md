@@ -1,5 +1,13 @@
 # @happyvertical/smrt-features
 
+## 0.29.40
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.29.40
+  - @happyvertical/smrt-users@0.29.40
+
 ## 0.29.39
 
 ### Patch Changes

@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.29.40
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - add DOM lib to tsconfig so tsc build resolves DOM globals (vitest)
+
+  ### Other Changes
+
+  - refactor: remove dead schema-parsing helpers from utilities.ts (cli)
+  - @happyvertical/smrt-scanner@0.29.40
+  - @happyvertical/smrt-config@0.29.40
+  - @happyvertical/smrt-types@0.29.40
+
 ## 0.29.39
 
 ### Patch Changes
