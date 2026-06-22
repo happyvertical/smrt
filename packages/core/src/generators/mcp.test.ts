@@ -133,6 +133,32 @@ class MCPNestedResultAgent extends SmrtObject {
   }
 }
 
+// Custom action whose public METHOD name itself contains an underscore (#1378).
+// Tool name becomes `mcpunderscoremethodagent_record_payment`; handleToolCall
+// must split on the FIRST underscore so `action` is `record_payment`, not
+// `record`.
+@smrt({
+  mcp: {
+    include: ['record_payment'],
+  },
+})
+class MCPUnderscoreMethodAgent extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safeOptions } = options;
+    Object.assign(this, safeOptions);
+  }
+
+  async record_payment(options: any = {}): Promise<any> {
+    return {
+      action: 'record_payment',
+      amount: options.amount ?? 0,
+    };
+  }
+}
+
 describe('MCPGenerator with Custom Actions', () => {
   let generator: MCPGenerator;
 
@@ -282,6 +308,49 @@ describe('MCPGenerator with Custom Actions', () => {
 
       // Restore original method
       (generator as any).getCollection = originalGetCollection;
+    });
+
+    it('routes a snake_case method tool by splitting on the first underscore (#1378)', async () => {
+      const mockObject = new MCPUnderscoreMethodAgent({
+        db: null,
+        ai: null,
+        fs: null,
+        id: 'pay-id',
+        name: 'Payer',
+      });
+      const mockCollection = {
+        get: vi.fn().mockResolvedValue(mockObject),
+      };
+
+      // Tool name is `<objectname>_record_payment`. A naive split('_') would
+      // take the action as `record` and fail to find the method; the fix slices
+      // at the first underscore so `action` is the full `record_payment`.
+      const request = {
+        method: 'tools/call',
+        params: {
+          name: 'mcpunderscoremethodagent_record_payment',
+          arguments: {
+            id: 'pay-id',
+            options: { amount: 42 },
+          },
+        },
+      };
+
+      (generator as any).getCollection = vi
+        .fn()
+        .mockReturnValue(mockCollection);
+      (generator as any).collections = new Map([
+        ['MCPUnderscoreMethodAgent', mockCollection],
+      ]);
+
+      const response = await generator.handleToolCall(request);
+
+      expect(response.content[0].type).toBe('text');
+      const result = JSON.parse(response.content[0].text);
+      // Routed to the right method, not "Object type ... not found" or
+      // "Method 'record' not found".
+      expect(result.action).toBe('record_payment');
+      expect(result.amount).toBe(42);
     });
 
     it('should handle custom actions without ID (collection-level)', async () => {
