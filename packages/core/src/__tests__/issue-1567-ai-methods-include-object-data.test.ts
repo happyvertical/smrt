@@ -135,6 +135,13 @@ describe('Issue #1567: AI methods include the object field data', () => {
     // The huge value is cut off, not sent whole.
     expect(prompt).not.toContain('X'.repeat(2000));
 
+    // The budget is a hard ceiling: the injected content body (marker included)
+    // never exceeds maxDataLength.
+    const contentBody = prompt
+      .split('--- Beginning of content ---\n')[1]
+      ?.split('\n--- End of content ---')[0] as string;
+    expect(contentBody.length).toBeLessThanOrEqual(100);
+
     // The control option is stripped; real AI options still pass through.
     const opts = message.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(opts).not.toHaveProperty('maxDataLength');

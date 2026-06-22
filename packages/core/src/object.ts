@@ -2063,7 +2063,13 @@ export class SmrtObject extends SmrtClass {
       maxLength > 0 &&
       serialized.length > maxLength
     ) {
-      serialized = `${serialized.slice(0, maxLength)}\n… [truncated: object data exceeded ${maxLength} characters]`;
+      const marker = `\n… [truncated: object data exceeded ${maxLength} characters]`;
+      // Reserve room for the marker so the returned string never exceeds
+      // maxLength — the budget is a hard ceiling, not "data + marker". For a
+      // budget smaller than the marker itself, emit just the marker (an
+      // unusably small budget still yields a clear truncation signal).
+      const keep = Math.max(0, maxLength - marker.length);
+      serialized = `${serialized.slice(0, keep)}${marker}`;
     }
 
     return serialized;
