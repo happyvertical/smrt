@@ -166,6 +166,42 @@ export class Widget extends SmrtObject {
     expect(result.reason).toMatch(/not valid JSON/);
   });
 
+  it('reports scan-error when a source file fails to parse', async () => {
+    // A @smrt() class with a syntax error parses to errors:[...], body:[], so it
+    // is dropped from BOTH the re-scanned `expected` set and `dist`. The
+    // `expected ⊆ dist` comparison would wave that through as `ok`; the guard
+    // must instead surface the parse error (regression for the #1483 hole).
+    writeFileSync(
+      join(pkgDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-fixture',
+        version: '0.0.0',
+        exports: { './manifest': './dist/manifest.json' },
+      }),
+    );
+    mkdirSync(join(pkgDir, 'src'), { recursive: true });
+    // Unterminated string literal → oxc emits a severity:'error' parse error.
+    writeFileSync(
+      join(pkgDir, 'src', 'broken.ts'),
+      [
+        "import { smrt, SmrtObject } from '@happyvertical/smrt-core';",
+        "@smrt({ tableName: 'broken' })",
+        'export class Broken extends SmrtObject {',
+        "  label: string = 'unterminated",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    // A complete manifest would otherwise let `expected ⊆ dist` pass as `ok`.
+    writeDistManifest(['@happyvertical/smrt-fixture:Broken']);
+
+    const result = await verifyManifestCompleteness({ packageDir: pkgDir });
+
+    expect(result.status).toBe('scan-error');
+    expect(result.reason).toMatch(/parse error/i);
+    expect(result.reason).toMatch(/broken\.ts/);
+  });
+
   it('skips framework-infrastructure packages by basename', async () => {
     const skipDir = join(pkgDir, 'core');
     mkdirSync(skipDir, { recursive: true });

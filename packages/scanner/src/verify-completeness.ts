@@ -20,6 +20,12 @@
  * comparison is `expected ⊆ dist`: enrichment passes that add keys to `dist`
  * (e.g. STI children) never trigger a false failure.
  *
+ * Parse errors are handled before the set comparison: a syntactically broken
+ * source file drops its objects from `expected` AND `dist` symmetrically, which
+ * a naive `expected ⊆ dist` would wave through as `ok`. The scan's
+ * `severity:'error'` entries therefore short-circuit to a distinct `scan-error`
+ * status so a broken source can never masquerade as a complete manifest.
+ *
  * @see https://github.com/happyvertical/smrt/issues/1483
  */
 
@@ -69,6 +75,7 @@ export type VerifyManifestStatus =
   | 'ok'
   | 'incomplete'
   | 'missing-manifest'
+  | 'scan-error'
   | 'skipped';
 
 export interface VerifyManifestCompletenessOptions {
@@ -188,6 +195,33 @@ export async function verifyManifestCompleteness(
   // adapter the build uses (vite-plugin scanWithOxc).
   const scanner = new OxcScanner({ cwd: packageDir, include, exclude });
   const { results, resolved } = await scanner.scanAndResolve();
+
+  // A source file with a syntax error parses to `errors:[...], body:[]`, so any
+  // @smrt() class in it is dropped from BOTH the re-scanned `expected` set and
+  // (having never built) the published `dist`. Because the completeness check is
+  // `expected ⊆ dist`, the object vanishes symmetrically and the guard would
+  // return `ok` — silently defeating the #1483 guarantee for the exact case
+  // (broken source) that most needs catching. Surface scan errors as a distinct
+  // non-`ok` status instead of computing `expected` from a partial scan.
+  const scanErrors = results.errors.filter((e) => e.severity === 'error');
+  if (scanErrors.length > 0) {
+    const detail = scanErrors
+      .map((e) => {
+        const where = e.line ? `${e.filePath}:${e.line}` : e.filePath;
+        return `${where} — ${e.message}`;
+      })
+      .join('; ');
+    return {
+      status: 'scan-error',
+      packageName,
+      manifestPath,
+      missing: [],
+      expectedCount: 0,
+      distCount: 0,
+      reason: `source scan reported ${scanErrors.length} parse error(s): ${detail}`,
+    };
+  }
+
   const adapter = new ManifestAdapter();
   const expected = adapter.toManifest(resolved, {
     packageName,
