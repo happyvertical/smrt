@@ -149,6 +149,23 @@ describe('npm-loader (real filesystem)', () => {
       const resolved = await resolveNpmPackage('local-template-pkg');
       expect(resolved).toContain('local-template-pkg');
     });
+
+    // Regression for the ESM crash (#1385): the loader used bare `require`/
+    // `module` in a "type":"module" package. The fix recreates `require` via
+    // createRequire and uses `require.resolve.paths(...)`. cwd is the empty
+    // temp dir, so a successful resolve here must have gone through the
+    // module-resolution paths (where the dependency is actually installed),
+    // exercising the new `require.resolve.paths` code path rather than the
+    // node_modules/<cwd> access fallback.
+    it('resolves an installed dependency via require.resolve (not cwd access)', async () => {
+      // `fast-glob` is a real dependency of this package but is NOT under the
+      // temp project cwd, so the access() fallback cannot find it.
+      const resolved = await resolveNpmPackage('fast-glob');
+      expect(resolved).toContain('fast-glob');
+      // The access() fallback would return `${cwd}/node_modules/...`; the
+      // require.resolve path points at the real install location instead.
+      expect(resolved).not.toContain(join(tempDir, 'node_modules'));
+    });
   });
 
   describe('findTemplateInPackages', () => {
@@ -217,4 +234,39 @@ describe('npm-loader (real filesystem)', () => {
       expect(templates).toEqual([]);
     });
   });
+});
+
+/**
+ * Regression guard for the ESM `require`/`module` crash (#1385).
+ *
+ * Both npm-loader and template-loader live in a pure-ESM ("type":"module")
+ * package, where the CommonJS `require`/`module` globals are undefined. The
+ * shipped dist had no shim, so `smrt gnode create --template <npm-pkg>` threw
+ * `ReferenceError` against the built artifact (the test suite ran through
+ * Vite's transform, which silently shims `require`/`module`).
+ *
+ * The in-process tests above run under Vite's shim and therefore cannot observe
+ * the native-ESM failure. This static check asserts the source uses
+ * `createRequire(import.meta.url)` and has eliminated the bare `module.paths`
+ * ESM-global reference — it fails on the exact pre-fix code.
+ */
+describe('loader ESM require safety (regression #1385)', () => {
+  const loaderFiles = ['npm-loader.ts', 'template-loader.ts'];
+
+  for (const file of loaderFiles) {
+    it(`${file} recreates require via createRequire and avoids the bare module global`, async () => {
+      const { readFileSync } = await import('node:fs');
+      const { fileURLToPath } = await import('node:url');
+      const { dirname, join: joinPath } = await import('node:path');
+      const here = dirname(fileURLToPath(import.meta.url));
+      const src = readFileSync(joinPath(here, file), 'utf-8');
+
+      // The fix: import createRequire and bind a real `require`.
+      expect(src).toContain("import { createRequire } from 'node:module'");
+      expect(src).toContain('createRequire(import.meta.url)');
+
+      // The bug: spreading the undefined ESM `module` global's `.paths`.
+      expect(src).not.toMatch(/\.\.\.module\.paths/);
+    });
+  }
 });
