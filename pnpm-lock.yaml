@@ -140,25 +140,16 @@ importers:
 
   packages/ads:
     dependencies:
-      '@happyvertical/smrt-assets':
-        specifier: workspace:*
-        version: link:../assets
-      '@happyvertical/smrt-commerce':
-        specifier: workspace:*
-        version: link:../commerce
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-properties':
-        specifier: workspace:*
-        version: link:../properties
-      '@happyvertical/smrt-tags':
-        specifier: workspace:*
-        version: link:../tags
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
     devDependencies:
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -183,21 +174,9 @@ importers:
 
   packages/affiliates:
     dependencies:
-      '@happyvertical/smrt-ads':
-        specifier: workspace:*
-        version: link:../ads
-      '@happyvertical/smrt-commerce':
-        specifier: workspace:*
-        version: link:../commerce
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-profiles':
-        specifier: workspace:*
-        version: link:../profiles
-      '@happyvertical/smrt-properties':
-        specifier: workspace:*
-        version: link:../properties
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -342,6 +321,9 @@ importers:
 
   packages/app-cli:
     dependencies:
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)
@@ -349,9 +331,6 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-users':
-        specifier: workspace:*
-        version: link:../users
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -609,9 +588,6 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-profiles':
-        specifier: workspace:*
-        version: link:../profiles
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -1688,12 +1664,6 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-profiles':
-        specifier: workspace:*
-        version: link:../profiles
-      '@happyvertical/smrt-projects':
-        specifier: workspace:*
-        version: link:../projects
       '@happyvertical/smrt-prompts':
         specifier: workspace:*
         version: link:../prompts
@@ -1728,9 +1698,6 @@ importers:
 
   packages/scanner:
     dependencies:
-      '@happyvertical/smrt-core':
-        specifier: workspace:*
-        version: link:../core
       fast-glob:
         specifier: 3.3.3
         version: 3.3.3
@@ -1796,9 +1763,6 @@ importers:
 
   packages/sites:
     dependencies:
-      '@happyvertical/smrt-agents':
-        specifier: workspace:*
-        version: link:../agents
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1944,9 +1908,6 @@ importers:
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
-      '@happyvertical/smrt-jobs':
-        specifier: workspace:*
-        version: link:../jobs
       '@happyvertical/smrt-languages':
         specifier: workspace:*
         version: link:../languages

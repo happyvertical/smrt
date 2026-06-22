@@ -203,6 +203,23 @@ pre-push:
         Either use an emitted token or fix the name.
         Run: node scripts/check-svelte-tokens.mjs
 
+    no-smrt-peers:
+      # DAG guardrail (#1582): no @happyvertical/smrt-* peerDependencies — they
+      # drive pnpm's per-peer-set physical fan-out. Template scaffolds are exempt.
+      run: node scripts/check-no-smrt-peers.mjs
+      fail_text: |
+        ❌ A @happyvertical/smrt-* package is declared as a peerDependency.
+        Use a dependency / devDependency / @crossPackageRef indirection.
+        Run: pnpm check:no-smrt-peers
+
+    deps-acyclic:
+      # DAG guardrail (#1582): the smrt package graph (deps + peers) must stay
+      # acyclic. Node-only; `pnpm deps:check` is the deeper source-import variant.
+      run: pnpm check:package-dag
+      fail_text: |
+        ❌ The @happyvertical/smrt-* dependency graph has a cycle.
+        Break it (extract a leaf / invert the edge). Run: pnpm check:package-dag
+
     validate-all-workflows:
       run: |
         echo "🔍 Validating ALL workflow files before push..."

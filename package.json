@@ -34,6 +34,8 @@
     "check:typography": "node scripts/check-typography.mjs",
     "check:hardcoded-strings": "node scripts/check-hardcoded-strings.mjs",
     "check:coverage": "node scripts/check-coverage.mjs",
+    "check:no-smrt-peers": "node scripts/check-no-smrt-peers.mjs",
+    "check:package-dag": "node scripts/check-package-dag.mjs",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "changeset": "changeset",
     "changeset:auto": "npx tsx scripts/auto-changeset.ts",
@@ -47,7 +49,8 @@
     "docs:site:dev": "pnpm --dir docs dev",
     "deps:graph": "(echo '```mermaid' && npx depcruise packages/*/src --config .dependency-cruiser.cjs --output-type mermaid --include-only '^packages' --collapse '^packages/[^/]+' && echo '```') > SKILL_TREE.md",
     "deps:modules": "for pkg in packages/*; do [ -d \"$pkg/src\" ] && (cd \"$pkg\" && (echo '```mermaid' && npx depcruise src --config ../../.dependency-cruiser.cjs --output-type mermaid --include-only '^src' && echo '```') > SKILL_TREE.md); done",
-    "deps:all": "pnpm run deps:graph && pnpm run deps:modules"
+    "deps:all": "pnpm run deps:graph && pnpm run deps:modules",
+    "deps:check": "depcruise packages/*/src --config .dependency-cruiser.cjs --collapse '^packages/[^/]+'"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",

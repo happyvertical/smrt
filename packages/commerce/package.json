@@ -65,8 +65,6 @@
     "@happyvertical/smrt-ui": "workspace:*"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-ledgers": "workspace:*",
-    "@happyvertical/smrt-profiles": "workspace:*",
     "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {

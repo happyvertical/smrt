@@ -32,18 +32,6 @@
     "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*"
   },
-  "peerDependencies": {
-    "@happyvertical/smrt-profiles": "workspace:*",
-    "@happyvertical/smrt-projects": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-profiles": {
-      "optional": true
-    },
-    "@happyvertical/smrt-projects": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",

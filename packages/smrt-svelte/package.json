@@ -90,28 +90,21 @@
     "access": "public"
   },
   "dependencies": {
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-languages": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-agents": "workspace:*",
-    "@happyvertical/smrt-jobs": "workspace:*",
     "@huggingface/transformers": ">=3.0.0",
     "@mlc-ai/web-llm": ">=0.2.0",
     "@remotion/whisper-web": ">=4.0.0",
     "@xenova/transformers": "^2.17.2",
     "chrono-node": "^2.9.0",
-    "svelte": "^5.18.2",
-    "@happyvertical/smrt-languages": "workspace:*"
+    "svelte": "^5.18.2"
   },
   "peerDependenciesMeta": {
-    "@happyvertical/smrt-agents": {
-      "optional": true
-    },
-    "@happyvertical/smrt-jobs": {
-      "optional": true
-    },
     "@huggingface/transformers": {
       "optional": true
     },
@@ -125,9 +118,6 @@
       "optional": true
     },
     "chrono-node": {
-      "optional": true
-    },
-    "@happyvertical/smrt-languages": {
       "optional": true
     }
   },

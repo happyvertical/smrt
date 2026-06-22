@@ -72,17 +72,9 @@
     "@happyvertical/smrt-ui": "workspace:*"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-agents": "workspace:*",
-    "@happyvertical/smrt-profiles": "workspace:*",
     "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {
-    "@happyvertical/smrt-agents": {
-      "optional": true
-    },
-    "@happyvertical/smrt-profiles": {
-      "optional": true
-    },
     "svelte": {
       "optional": true
     }

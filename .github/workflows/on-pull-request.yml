@@ -197,6 +197,15 @@ jobs:
       - name: Run standards check
         run: node scripts/check-standards.mjs
 
+      # DAG guardrails (#1582). Node-only, no node_modules: inter-smrt
+      # peerDependencies drive pnpm's per-peer-set physical fan-out, and a
+      # cross-package cycle is what let the smrt-svelte keystone re-form.
+      - name: Check no smrt-* peerDependencies
+        run: node scripts/check-no-smrt-peers.mjs
+
+      - name: Check smrt package graph is acyclic
+        run: node scripts/check-package-dag.mjs
+
       # Fails if any --smrt-* token consumed by smrt-svelte components is never
       # emitted by a theme-delivery path (issue #1431). Node-only, no deps.
       - name: Check smrt-svelte design tokens

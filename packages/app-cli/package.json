@@ -30,15 +30,8 @@
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "dependencies": {
+    "@happyvertical/smrt-users": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.25.2"
-  },
-  "peerDependencies": {
-    "@happyvertical/smrt-users": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-users": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
