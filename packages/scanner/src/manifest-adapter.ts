@@ -1255,12 +1255,20 @@ export class ManifestAdapter {
   }
 
   /**
-   * Simple pluralization for collection names
+   * Simple pluralization for collection names.
+   *
+   * This produces the manifest's `collection` label only; the authoritative DDL
+   * table name is derived independently by core (`classnameToTablename` →
+   * the `pluralize` library), so this needs to stay self-consistent rather than
+   * cover every irregular plural. Note the `y → ies` rule fires only after a
+   * consonant, so vowel+y words pluralise correctly (`Day` → `days`, not
+   * `daies`).
    */
   private pluralize(name: string): string {
     // Lowercase the name first for consistent collection/table names
     const lower = name.toLowerCase();
-    if (lower.endsWith('y')) {
+    // Consonant + y → ies (City → cities); vowel + y → +s (Day → days).
+    if (/[^aeiou]y$/.test(lower)) {
       return `${lower.slice(0, -1)}ies`;
     }
     if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
