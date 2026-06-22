@@ -2436,7 +2436,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     if (result) {
-      return JSON.parse(result.value);
+      // Guard against a corrupted _smrt_contexts row: a single malformed value
+      // must not throw an uncaught SyntaxError out of recall(). Treat it as a
+      // miss and continue to the ancestor fallback (#1378).
+      try {
+        return JSON.parse(result.value);
+      } catch (error) {
+        logger.warn('Skipping corrupted _smrt_contexts value in recall()', {
+          ownerClass: this._itemClass.name,
+          scope: options.scope,
+          key: options.key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     // Hierarchical fallback to parent scopes
@@ -2515,7 +2527,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const { rows } = await this.systemDb.query(query, ...params);
 
     for (const row of rows) {
-      results.set(row.key, JSON.parse(row.value));
+      // Skip a corrupted row rather than aborting the whole recallAll() (#1378).
+      try {
+        results.set(row.key, JSON.parse(row.value));
+      } catch (error) {
+        logger.warn('Skipping corrupted _smrt_contexts value in recallAll()', {
+          ownerClass: this._itemClass.name,
+          scope: options.scope,
+          key: row.key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     return results;
