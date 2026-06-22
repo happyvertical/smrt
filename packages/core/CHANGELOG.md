@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.29.39
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: add public SmrtServer.dispatch(); tests use public API over reach-ins (core)
+  - chore: drop core interim floor; enforce real T1 80% after #1500 uplift (coverage)
+  - test: cover test-utils, prebuild, runtime server, consumer + vite-plugin hooks (core)
+  - test: cover errors subclasses + schema-manager/generator/migration branches (core)
+  - test: cover mcp-advisor index + all 12 advisor tools (#1500) (core)
+  - test: cover manifest generator/loader/store + builder + package discovery branches (core)
+  - test: cover rest/cli/swagger/mcp generator output branches (#1500) (core)
+  - test: cover ORM inheritance-resolver/validator/schema-builder + object/collection branches (core)
+  - @happyvertical/smrt-scanner@0.29.39
+  - @happyvertical/smrt-config@0.29.39
+  - @happyvertical/smrt-types@0.29.39
+
 ## 0.29.38
 
 ### Patch Changes

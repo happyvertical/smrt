@@ -157,6 +157,15 @@ export class SmrtServer {
   }
 
   /**
+   * Dispatch a request in-process and return the Response, without binding a
+   * socket. Supported public entry point for embedding the router and for
+   * tests that exercise routing/auth/CORS without spawning an HTTP server.
+   */
+  async dispatch(request: Request): Promise<Response> {
+    return this.handleRequest(request);
+  }
+
+  /**
    * Convert stream to string
    */
   private async streamToString(stream: http.IncomingMessage): Promise<string> {
