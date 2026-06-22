@@ -140,16 +140,3 @@ export function clearConfigCache(): void {
     setExplorer(null);
   }
 }
-
-/**
- * Return whether the config has been loaded and cached.
- *
- * Checks `globalThis.__smrtLoaderCachedConfig` without triggering a load.
- * Primarily used internally; consumers can call {@link getConfig} which
- * returns `null` when the config has not yet been loaded.
- *
- * @returns `true` if a cached config object exists.
- */
-export function isConfigLoaded(): boolean {
-  return getCachedConfig() !== null;
-}
