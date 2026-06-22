@@ -1,11 +1,12 @@
 /**
  * Coverage tests for registry/inheritance-resolver.ts.
  *
- * IMPORTANT: ObjectRegistry.getInheritanceChain / getAllFields / getAllMethods
- * are INLINE re-implementations in registry.ts — they do NOT call the
- * inheritance-resolver module. So inheritance.test.ts (which goes through
- * ObjectRegistry) leaves this module at ~26%. These tests import the module
- * functions DIRECTLY to cover their real branches.
+ * As of #1378, ObjectRegistry.getInheritanceChain / getAllFields /
+ * getAllMethods / mergeFieldConfigs DELEGATE to this module — the inline copies
+ * in registry.ts (which had drifted on SmrtHierarchical `parentId`
+ * normalization) were removed. These tests import the module functions DIRECTLY
+ * to cover their real branches; a separate suite below additionally exercises
+ * the ObjectRegistry delegation so the public path can never silently re-drift.
  *
  * The module functions read/write the same globalThis registry + caches the
  * decorator populates, so we register real `@smrt()` fixtures and, for the
@@ -20,6 +21,7 @@ import {
   IRConstraintChild,
   IRLeaf,
   IRSolo,
+  IRTreeNode,
 } from '../../__tests__/fixtures/inheritance-resolver-fixtures.js';
 import { ConfigurationError } from '../../errors';
 import { SmrtObject } from '../../object';
@@ -402,5 +404,53 @@ describe('inheritance-resolver: end-to-end constraint merge via getAllFields', (
     expect(amount._meta.max).toBe(80);
     // Reference the parent fixture so the import is load-bearing.
     expect(typeof IRConstraintChild).toBe('function');
+  });
+});
+
+// Regression suite for #1378: the public ObjectRegistry methods must delegate
+// to this module. Before the fix, ObjectRegistry.getAllFields ran an inline
+// copy that omitted the SmrtHierarchical `parentId` normalization, so the
+// public path and the module path disagreed. These tests go through
+// ObjectRegistry (not the module functions) to lock the delegation in place.
+describe('ObjectRegistry delegates to inheritance-resolver (#1378)', () => {
+  it('getAllFields normalizes inherited SmrtHierarchical parentId to a nullable self-FK', async () => {
+    // Reference the fixture so its import is load-bearing.
+    expect(typeof IRTreeNode).toBe('function');
+
+    const fields = await ObjectRegistry.getAllFields('IRTreeNode');
+    const parentId = fields.get('parentId');
+    expect(parentId).toBeDefined();
+    // This is the behavior the inline copy lacked: a self-referential,
+    // nullable foreignKey back to the child class.
+    expect(parentId.type).toBe('foreignKey');
+    expect(parentId.related).toBe('IRTreeNode');
+    expect(parentId.required).toBe(false);
+    expect(parentId._meta?.nullable).toBe(true);
+  });
+
+  it('getAllFields (ObjectRegistry) matches the module function for the same class', async () => {
+    // Clear caches so both calls recompute from scratch.
+    ObjectRegistry.invalidateAllInheritanceCaches();
+    const viaRegistry = await ObjectRegistry.getAllFields('IRLeaf');
+    ObjectRegistry.invalidateAllInheritanceCaches();
+    const viaModule = await getAllFields('IRLeaf');
+    expect(Array.from(viaRegistry.keys()).sort()).toEqual(
+      Array.from(viaModule.keys()).sort(),
+    );
+  });
+
+  it('getInheritanceChain (ObjectRegistry) returns the qualified chain', () => {
+    const chain = ObjectRegistry.getInheritanceChain('IRLeaf');
+    expect(chain).toEqual([
+      '@happyvertical/smrt-core:IRBase',
+      '@happyvertical/smrt-core:IRMiddle',
+      '@happyvertical/smrt-core:IRLeaf',
+    ]);
+  });
+
+  it('getAllMethods (ObjectRegistry) merges the chain with child override', async () => {
+    const methods = await ObjectRegistry.getAllMethods('IRLeaf');
+    expect(methods.has('baseMethod')).toBe(true);
+    expect(methods.has('middleMethod')).toBe(true);
   });
 });
