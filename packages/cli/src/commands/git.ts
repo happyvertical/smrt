@@ -545,7 +545,12 @@ export const gitCommands: Record<string, CLICommand> = {
         // Format output (preserve pretty-printing)
         const output = JSON.stringify(merged, null, 2);
 
-        if (options.dryRun) {
+        // Declared kebab option ('dry-run') arrives verbatim from parseCliArgs;
+        // reading `options.dryRun` here previously caused --dry-run to overwrite
+        // the "ours" file instead of printing a preview. Keep the camel fallback
+        // for handler-direct callers/tests.
+        const dryRun = options['dry-run'] ?? options.dryRun;
+        if (dryRun) {
           // Dry run - output to stdout
           console.log(output);
         } else {
