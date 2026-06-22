@@ -1,5 +1,60 @@
 # @happyvertical/smrt-core
 
+## 0.29.41
+
+### Patch Changes
+
+- ### Features
+
+  - inject object field data into is()/do()/describe() prompts (core)
+
+  ### Bug Fixes
+
+  - address npm publish review feedback (release)
+  - publish smrt packages to npmjs (release)
+  - honor maxDataLength as a hard ceiling for AI prompt data (core)
+  - address review context compatibility
+  - validate reusable entitlement context plans
+  - add reusable subscription entitlement context
+  - reuse request-scoped membership and usage summaries
+  - require a simple identifier for JSON-path index columns (core)
+  - narrow DuckDB unique-constraint match to exclude FK violations (core)
+  - guard vite-plugin watcher handlers and drop dead static-manifest code (core)
+  - stop formatDataJs mutating its input when merging \_meta_data (core)
+  - resolve base-class manifests via discovery (honor .smrt/src), log catches (core)
+  - route MCP tools by first underscore so snake_case methods resolve (core)
+  - delegate MigrationGenerator create-table fallback to DDL strategy (#1378) (core)
+  - consolidate DDL formatters into one injection-safe util (#1378) (core)
+  - await express handlers and 400 on bad body in runtime server (core)
+  - scope DispatchBus retry()/cleanup() to the active tenant (core)
+  - guard Dispatch JSON fields so one poison row can't stall the batch (core)
+  - guard collection recall()/recallAll() against corrupted context rows (core)
+  - preserve error contract, match PG/DuckDB constraints, guard recall parses in object.ts (core)
+  - overlay subdir git templates from the subdir, not repo root (cli)
+  - use createRequire in ESM template loaders (runtime crash) (cli)
+  - honor --dry-run in git merge-json (data-loss) (cli)
+  - honor --order-by and --from-file in generated CRUD commands (cli)
+  - honor --dry-run in db:rollback (data-loss) (cli)
+  - only pluralize y->ies after a consonant (scanner)
+  - surface parse errors in manifest completeness guard (scanner)
+  - infer negative numeric defaults (integer/decimal) (scanner)
+  - redact camelCase <vendor>Key secrets in SSG export (config)
+
+  ### Other Changes
+
+  - refactor: delegate ObjectRegistry inheritance methods to the resolver module (core)
+  - test: use public formatDefaultValue for JSON-default assertions (#1378) (core)
+  - refactor: extract shared quoteIdentifier into db-command-utils (cli)
+  - test: include \*.spec.ts in vitest discovery (scanner)
+  - docs: refresh AGENTS.md to real module surface (scanner)
+  - docs: fix stale package header + add JSDoc to knowledge types (types)
+  - test: discover \*.spec.ts integration tests (config)
+  - refactor: remove unused isConfigLoaded export (config)
+  - docs: drop phantom env-var config layer, fix API signatures (config)
+  - @happyvertical/smrt-scanner@0.29.41
+  - @happyvertical/smrt-config@0.29.41
+  - @happyvertical/smrt-types@0.29.41
+
 ## 0.29.40
 
 ### Patch Changes

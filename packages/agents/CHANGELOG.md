@@ -1,5 +1,17 @@
 # @happyvertical/smrt-agents
 
+## 0.29.41
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.29.41
+  - @happyvertical/smrt-secrets@0.29.41
+  - @happyvertical/smrt-tenancy@0.29.41
+  - @happyvertical/smrt-users@0.29.41
+  - @happyvertical/smrt-config@0.29.41
+  - @happyvertical/smrt-types@0.29.41
+
 ## 0.29.40
 
 ### Patch Changes
