@@ -1977,14 +1977,19 @@ export class SmrtObject extends SmrtClass {
       return 'not_null';
     }
 
-    // UNIQUE
+    // UNIQUE — match unique/primary-key wording specifically. Do NOT match a
+    // bare "Constraint Error ... violates", because DuckDB phrases foreign-key
+    // failures the same way ("Constraint Error: violates foreign key
+    // constraint"); a broad match would misreport an FK violation as a unique
+    // one. Unmatched constraint kinds (FK, CHECK) fall through to a generic
+    // DatabaseError, preserving the original error contract.
     // SQLite:     "UNIQUE constraint failed: t.col"
     // PostgreSQL: "duplicate key value violates unique constraint ..."
     // DuckDB:     "Constraint Error: ... violates unique/primary key constraint"
     if (
       /UNIQUE constraint failed/i.test(message) ||
-      /duplicate key value violates unique/i.test(message) ||
-      (/constraint error/i.test(message) && /violates/i.test(message))
+      /violates unique constraint/i.test(message) ||
+      /violates primary key constraint/i.test(message)
     ) {
       return 'unique';
     }
