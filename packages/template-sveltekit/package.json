@@ -29,7 +29,7 @@
     "directory": "packages/template-sveltekit"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-core": "^0.29.1"
+    "@happyvertical/smrt-core": "workspace:*"
   },
   "scripts": {
     "test": "vitest run",
