@@ -25,6 +25,7 @@ import { configExportCommand } from './config-export.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  quoteIdentifier,
 } from './db-command-utils.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -133,15 +134,6 @@ function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
     default:
       return 'sqlite';
   }
-}
-
-/**
- * Quote a SQL identifier (table name, column name, etc.)
- * Uses double quotes which is ANSI SQL standard and works across SQLite, PostgreSQL, and DuckDB
- */
-function quoteIdentifier(name: string): string {
-  // Escape any double quotes in the identifier by doubling them
-  return `"${name.replace(/"/g, '""')}"`;
 }
 
 function formatStiConflictIdentity(
