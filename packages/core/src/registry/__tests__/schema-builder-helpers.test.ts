@@ -31,11 +31,25 @@ describe('schema-builder: formatDefaultValue', () => {
     expect(formatDefaultValue(undefined, 'TEXT')).toBe('NULL');
   });
 
-  it('passes through SQL function calls (anything containing "(")', () => {
+  it('passes through well-formed SQL function-call defaults', () => {
+    // #1378: the formatter now allowlists *well-formed* function calls
+    // (identifier + a balanced arg list of literals/nested calls) instead of
+    // accepting "anything containing `(`".
     expect(formatDefaultValue('uuid_generate_v4()', 'UUID')).toBe(
       'uuid_generate_v4()',
     );
-    expect(formatDefaultValue('coalesce(a, b)', 'TEXT')).toBe('coalesce(a, b)');
+    expect(formatDefaultValue("coalesce('a', 'b')", 'TEXT')).toBe(
+      "coalesce('a', 'b')",
+    );
+  });
+
+  it('quotes a TEXT default that merely contains parentheses', () => {
+    // #1378 regression: bare-identifier "calls" and free text with parens are
+    // no longer passed through raw — they are quoted as data.
+    expect(formatDefaultValue('coalesce(a, b)', 'TEXT')).toBe(
+      "'coalesce(a, b)'",
+    );
+    expect(formatDefaultValue('Acme (Inc)', 'TEXT')).toBe("'Acme (Inc)'");
   });
 
   it('passes through recognized SQL keywords case-insensitively', () => {
@@ -45,7 +59,13 @@ describe('schema-builder: formatDefaultValue', () => {
     expect(formatDefaultValue('current_date', 'TIMESTAMP')).toBe(
       'current_date',
     );
-    expect(formatDefaultValue('NULL', 'TEXT')).toBe('NULL');
+  });
+
+  it('does NOT fold a literal string "null"/"NULL" for TEXT into SQL NULL', () => {
+    // #1378 regression: the keyword allowlist previously contained `null`, so a
+    // TEXT default of the *string* "NULL" silently became the SQL NULL keyword.
+    expect(formatDefaultValue('NULL', 'TEXT')).toBe("'NULL'");
+    expect(formatDefaultValue('null', 'TEXT')).toBe("'null'");
   });
 
   it('single-quotes and escapes TEXT/VARCHAR values', () => {
