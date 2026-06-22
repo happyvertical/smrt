@@ -116,9 +116,9 @@ const sanitized = sanitizeConfig(config);
 | `setConfig(overrides)` | Runtime overrides (highest priority) |
 | `clearCache()` | Reset cached config (global — affects all modules) |
 | `defineConfig(config)` | Type-safe config file helper |
-| `exportConfig(options?)` | SSG-safe export (defaults to no secrets) |
+| `exportConfig(config, options?)` | SSG-safe export (defaults to no secrets) |
 | `sanitizeConfig(config)` | Strip secret-matching keys |
-| `mergeExportedConfig(configs)` | Merge multiple exported configs |
+| `mergeExportedConfig(baseConfig, exportedConfig)` | Merge an exported config over a base |
 | `parseExportedConfig(raw)` | Parse an exported config string |
 
 ### Priority Order
@@ -127,8 +127,7 @@ Configuration merging (highest to lowest):
 
 1. Runtime overrides via `setConfig()`
 2. Config file (`smrt.config.{js,ts,json}`)
-3. Environment variables
-4. Package/module defaults
+3. Package/module defaults
 
 ### Key Types
 

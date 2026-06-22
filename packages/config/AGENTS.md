@@ -5,7 +5,7 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 ## How It Works
 
 1. **cosmiconfig loader** searches for `smrt.config.{js,ts,json}` (via `loadConfig()`)
-2. **Priority**: runtime (highest) > file config > env vars > defaults
+2. **Priority**: runtime (highest) > file config > defaults
 3. **globalThis caching**: `globalThis.__smrtConfigCache` — all modules share one config instance
 
 ## Key Functions
