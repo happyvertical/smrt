@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.34.4
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: adopt Button primitive, flip jobs strict (#1589) (#1611) (jobs)
+  - @happyvertical/smrt-config@0.34.4
+  - @happyvertical/smrt-types@0.34.4
+  - @happyvertical/smrt-scanner@0.34.4
+
 ## 0.34.3
 
 ### Patch Changes
