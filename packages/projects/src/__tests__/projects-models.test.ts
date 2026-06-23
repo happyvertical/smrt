@@ -211,6 +211,36 @@ describe('smrt-projects models', () => {
       ).rejects.toThrow(/must be saved/i);
     });
 
+    it('createIssue()/createPullRequest() persist the created model (regression: initialize before save)', async () => {
+      // Regression for a latent defect: these methods construct a model from
+      // `this.options` and call save() directly. Without an explicit
+      // initialize() the new model's DB connection is unset and save() throws
+      // "Database accessed before initialization". See Repository.createIssue.
+      const repos = await RepositoryCollection.create({ db });
+      const repo = await repos.create({ owner: 'acme', name: 'widgets' });
+      await repo.save();
+      (repo as any)._client = repoClient();
+
+      const issue = await repo.createIssue({ title: 'New' } as any);
+      expect(issue).toBeInstanceOf(Issue);
+      expect(issue.number).toBe(7);
+      expect(issue.id).toBeTruthy();
+      // Persisted and retrievable through its collection.
+      const issues = await IssueCollection.create({ db });
+      expect((await issues.findByNumber(repo.id as string, 7))?.title).toBe(
+        'Synced title',
+      );
+
+      const pr = await repo.createPullRequest({ title: 'New PR' } as any);
+      expect(pr).toBeInstanceOf(PullRequest);
+      expect(pr.number).toBe(8);
+      // STI child row is correctly discriminated on retrieval.
+      const prs = await PullRequestCollection.create({ db });
+      expect((await prs.findByNumber(repo.id as string, 8))?.headRef).toBe(
+        'feature',
+      );
+    });
+
     it('getIssues()/getPullRequests() delegate discovery to the provider client', async () => {
       const repos = await RepositoryCollection.create({ db });
       const repo = await repos.create({ owner: 'acme', name: 'widgets' });
@@ -231,10 +261,16 @@ describe('smrt-projects models', () => {
 
     it('getByFullName() static finder resolves a persisted repository', async () => {
       const repos = await RepositoryCollection.create({ db });
-      await (await repos.create({ owner: 'acme', name: 'widgets' })).save();
+      await (
+        await repos.create({
+          owner: 'acme',
+          name: 'widgets',
+          fullName: 'acme/widgets',
+        })
+      ).save();
       const found = await Repository.getByFullName('acme', 'widgets', { db });
-      expect(found?.fullName).toBeDefined();
       expect(found?.name).toBe('widgets');
+      expect(found?.fullName).toBe('acme/widgets');
     });
   });
 
