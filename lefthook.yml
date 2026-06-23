@@ -193,6 +193,18 @@ pre-push:
         var(--smrt-font-family[-mono], <value>).
         Run: node scripts/check-typography.mjs
 
+    raw-primitives:
+      # Bans raw <button>/<input>/<select>/<textarea>/<form> in domain .svelte
+      # markup — use the shared primitives (smrt-ui visual / smrt-svelte forms).
+      # Report-only in #1589 Wave 0; flips strict per package as they migrate.
+      run: node scripts/check-raw-primitives.mjs
+      fail_text: |
+        ❌ Raw interactive element found in a strict UI package!
+
+        Use the shared primitives: <button> → Button (@happyvertical/smrt-ui);
+        <input>/<textarea>/<select>/<form> → @happyvertical/smrt-svelte.
+        Run: node scripts/check-raw-primitives.mjs
+
     svelte-tokens:
       # Repo-wide: every consumed --smrt-* token must be emitted by a theme path
       # (or defined inline). Catches dangling/malformed refs in any package.
