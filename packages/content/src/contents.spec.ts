@@ -710,6 +710,62 @@ it('should leave unpinned references untracked but reportable', async () => {
   });
 });
 
+it('restoring an unpinned snapshot over a currently-pinned edge clears the pin (drift resets)', async () => {
+  // Round-2 [P2 data-integrity], PR #1592: `content.save()` during restore
+  // only reconciles the reference target-id SET; it leaves the pin of an edge
+  // that already exists untouched. So restoring a snapshot whose edge is
+  // UNPINNED (`targetVersion: null`) over a live edge that is currently PINNED
+  // must explicitly re-apply the null pin to CLEAR it — otherwise the stale
+  // live pin survives and drift never resets. The restore now reapplies EVERY
+  // snapshot edge (null pins included), not just the non-null ones.
+  const dbUrl = getTestDbUrl('reference-restore-clears-pin');
+  const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+  const contents = await Contents.create({ db });
+  await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_ASSIGNMENTS_SCHEMA });
+
+  const source = await contents.create({
+    name: 'restore-pin-source',
+    title: 'Restore pin source',
+    body: 'Source body',
+    status: 'draft',
+  });
+  const target = await contents.create({
+    name: 'restore-pin-target',
+    title: 'Restore pin target',
+    body: 'Target v1',
+    status: 'draft',
+  });
+  await target.createVersion({ kind: 'publication', summary: 'v1' });
+
+  // 1) Reference the target UNPINNED, then snapshot the source at v1. The
+  //    snapshot edge therefore carries `targetVersion: null`.
+  await source.addReference(target);
+  await source.createVersion({ kind: 'manual', summary: 'unpinned-snapshot' });
+
+  // 2) Now PIN the live edge to v1 (e.g. the editor later pinned the citation).
+  await source.addReference(target, { targetVersion: 1 });
+  const driftBeforeRestore = await source.getReferenceDrift();
+  expect(driftBeforeRestore[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: 1,
+  });
+
+  // 3) Restore the v1 snapshot (which was unpinned). The pin must be cleared.
+  await source.restoreFromVersion(1);
+
+  const driftAfterRestore = await source.getReferenceDrift();
+  expect(driftAfterRestore).toHaveLength(1);
+  expect(driftAfterRestore[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: null, // pin cleared by the restore (was 1 before the fix)
+    currentVersion: 1,
+    isDrifted: false,
+  });
+});
+
 it('should create URL reference targets with the source tenantId', async () => {
   const contents = await Contents.create({
     db: {

@@ -285,17 +285,23 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
 
     await content.save();
 
-    // Re-apply citation pins. `save()` re-created the edges (unpinned) from the
-    // pending `referenceIds`; match those resolved targets back to the snapshot
-    // edges by id and re-pin. We pass the resolved Content object (not the raw
-    // id) because `addReference(string)` treats the string as a URL, not a
-    // content id. `addReference` is idempotent on (source, target) and updates
-    // the pin in place, so this only adjusts targetVersion.
-    const pinnedEdges = snapshotEdges.filter(
-      (edge) => edge.targetVersion !== null,
-    );
+    // Re-apply the citation pin of EVERY snapshot edge — including UNPINNED
+    // ones (`targetVersion: null`). `save()` only reconciles the target-id set
+    // (adds missing / removes extra edges) and leaves the pin of an edge that
+    // already existed untouched. So restoring an *unpinned* snapshot over an
+    // edge that is currently *pinned* must explicitly clear that pin, otherwise
+    // the live pin survives the restore and drift never resets. Passing
+    // `addReference(target, { targetVersion: null })` clears the pin in place
+    // (the junction's `attach` updates the row when `null !== existing`), while
+    // a non-null value (re)sets it — so "restore to vN" reconstructs exactly
+    // the pins that existed at vN.
+    //
+    // We pass the resolved Content object (not the raw id) because
+    // `addReference(string)` treats the string as a URL, not a content id.
+    // `addReference` is idempotent on (source, target) and only adjusts
+    // targetVersion.
     if (
-      pinnedEdges.length > 0 &&
+      snapshotEdges.length > 0 &&
       typeof content.getReferences === 'function' &&
       typeof content.addReference === 'function'
     ) {
@@ -305,7 +311,7 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
           .filter((reference) => reference.id)
           .map((reference) => [reference.id as string, reference]),
       );
-      for (const edge of pinnedEdges) {
+      for (const edge of snapshotEdges) {
         const target = resolvedById.get(edge.targetId);
         if (target) {
           await content.addReference(target, {
