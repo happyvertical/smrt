@@ -21,8 +21,11 @@
  *
  * Phased rollout (Wave 0 = this baseline):
  *   - Every package is REPORT-ONLY (warn): occurrences are listed but do not
- *     fail. Packages migrate in Waves 1-5 of #1589; flipping a package to strict
- *     means adding it to STRICT_PACKAGES once it is clean.
+ *     fail. Packages migrate in Waves 1-5 of #1589; a package opts into STRICT
+ *     enforcement once it is clean by declaring `"smrtRawPrimitives": "strict"`
+ *     in ITS OWN package.json (read below). This per-package flag — rather than a
+ *     central allowlist in this file — keeps each migration PR touching only its
+ *     own package, so concurrent #1589 PRs never conflict on a shared line.
  *
  * What is allowed (never flagged):
  *   - PRIMITIVE-SOURCE files (PRIMITIVE_SOURCE_FRAGMENTS): smrt-ui's own
@@ -50,10 +53,42 @@ const ROOT = resolve(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');
 
 /**
- * Packages held to ERROR. Everything else is report-only for now (#1589 Wave 0
- * establishes the baseline; later waves flip packages strict as they migrate).
+ * Packages held to ERROR. A package opts in by declaring
+ * `"smrtRawPrimitives": "strict"` in its own package.json — so the strict list
+ * is DERIVED from the per-package flags rather than maintained centrally here.
+ * Everything without the flag stays report-only (#1589 Wave 0 baseline; later
+ * waves flip packages strict in their own migration PR as they go clean).
+ *
+ * Why per-package instead of a central Set: every #1589 migration PR would
+ * otherwise edit this one line, so two PRs branched from a `main` lacking each
+ * other's entry 3-way-conflict on it. Reading the flag from each package's own
+ * package.json keeps every PR's footprint inside its own package, so they merge
+ * independently in any order.
  */
-const STRICT_PACKAGES = new Set(['subscriptions', 'social']);
+function readStrictPackages() {
+  const strict = new Set();
+  let entries;
+  try {
+    entries = readdirSync(PACKAGES, { withFileTypes: true });
+  } catch {
+    return strict;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    let pkgJson;
+    try {
+      pkgJson = JSON.parse(
+        readFileSync(join(PACKAGES, entry.name, 'package.json'), 'utf8'),
+      );
+    } catch {
+      continue; // no/invalid package.json — not a publishable package
+    }
+    if (pkgJson.smrtRawPrimitives === 'strict') strict.add(entry.name);
+  }
+  return strict;
+}
+
+const STRICT_PACKAGES = readStrictPackages();
 
 /**
  * Packages skipped entirely — dev/playground hosts, not shippable product
