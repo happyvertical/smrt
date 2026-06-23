@@ -7,6 +7,7 @@ import {
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
 import AILoadingOverlay from './browser-ai/svelte/components/AILoadingOverlay.svelte';
+import { logger } from './internal/logger.js';
 import type {
   AIConfig,
   AILoadingState,
@@ -194,7 +195,12 @@ $effect(() => {
 // those adapters' listener `Set`s and leak one set per navigation (R1). The
 // warm cache itself survives — dispose() leaves cached adapters intact.
 onDestroy(() => {
-  appState.dispose();
+  // dispose() is async; isolate + log its rejection so a failing adapter
+  // teardown surfaces as a logged error instead of an unhandled promise
+  // rejection during Provider teardown.
+  void appState.dispose().catch((error) => {
+    logger.error('AppState dispose failed during Provider teardown', { error });
+  });
 });
 </script>
 

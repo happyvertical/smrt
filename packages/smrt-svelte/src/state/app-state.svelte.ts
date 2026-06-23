@@ -1019,6 +1019,10 @@ export class SmrtAppStateManager {
    */
   async unloadLLM(): Promise<void> {
     const adapter = this._state.ai.llm.adapter;
+    // Capture the model id BEFORE unloadModel(): a real WebLLM adapter clears
+    // `currentModel` on unload, so reading it afterward would key the cache
+    // downgrade off `undefined` and leave the actual `'ready'` entry stale (R2).
+    const unloadedModel = adapter?.currentModel ?? undefined;
     await adapter?.unloadModel();
 
     // Downgrade (or remove) the warm-cache entry for the unloaded model so a
@@ -1027,7 +1031,7 @@ export class SmrtAppStateManager {
     // model is now gone (R2). `unloadModel()` keeps the adapter instance
     // reusable, so downgrade to `'uninitialized'` rather than dispose it.
     if (adapter) {
-      updateLLMCacheState(adapter.type, adapter.currentModel ?? undefined, {
+      updateLLMCacheState(adapter.type, unloadedModel, {
         initState: 'uninitialized',
         downloadProgress: null,
         error: null,
