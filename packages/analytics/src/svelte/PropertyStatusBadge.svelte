@@ -15,7 +15,7 @@ const label = $derived(
 </script>
 
 <span class="status-badge" class:connected={status === 'active'} class:pending={status === 'pending'} class:disconnected={status === 'inactive'}>
-	<span class="status-dot"></span>
+	<span class="status-dot" aria-hidden="true"></span>
 	{label}
 </span>
 
@@ -37,29 +37,29 @@ const label = $derived(
 	}
 
 	.connected {
-		background: var(--color-success-bg, #dcfce7);
-		color: var(--color-success-text, #166534);
+		background: var(--smrt-color-success-container);
+		color: var(--smrt-color-on-success-container);
 	}
 
 	.connected .status-dot {
-		background: var(--color-success-main, #22c55e);
+		background: var(--smrt-color-success);
 	}
 
 	.pending {
-		background: var(--color-warning-bg, #fef9c3);
-		color: var(--color-warning-text, #854d0e);
+		background: var(--smrt-color-warning-container);
+		color: var(--smrt-color-on-warning-container);
 	}
 
 	.pending .status-dot {
-		background: var(--color-warning-main, #eab308);
+		background: var(--smrt-color-warning);
 	}
 
 	.disconnected {
-		background: var(--color-neutral-bg, #f3f4f6);
-		color: var(--color-neutral-text, #4b5563);
+		background: var(--smrt-color-surface-container);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.disconnected .status-dot {
-		background: var(--color-neutral-main, #9ca3af);
+		background: var(--smrt-color-outline);
 	}
 </style>

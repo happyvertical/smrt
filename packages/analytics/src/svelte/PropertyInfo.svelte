@@ -78,8 +78,8 @@ const lastSyncFormatted = $derived.by(() => {
 <style>
 	.property-info {
 		padding: 1rem;
-		background: var(--color-surface, #fff);
-		border: 1px solid var(--color-border, #e5e7eb);
+		background: var(--smrt-color-surface);
+		border: 1px solid var(--smrt-color-outline-variant);
 		border-radius: 0.5rem;
 	}
 
@@ -104,7 +104,7 @@ const lastSyncFormatted = $derived.by(() => {
 		display: flex;
 		justify-content: space-between;
 		padding: 0.375rem 0;
-		border-bottom: 1px solid var(--color-border-light, #f3f4f6);
+		border-bottom: 1px solid var(--smrt-color-outline-variant);
 	}
 
 	.detail-row:last-child {
@@ -113,27 +113,27 @@ const lastSyncFormatted = $derived.by(() => {
 
 	dt {
 		font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-		color: var(--color-text-secondary, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	dd {
 		margin: 0;
 		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
 		font-weight: var(--smrt-typography-weight-medium, 500);
-		color: var(--color-text-primary, #111827);
+		color: var(--smrt-color-on-surface);
 	}
 
 	code {
 		font-family: var(--smrt-font-family-mono, monospace);
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		padding: 0.125rem 0.25rem;
-		background: var(--color-neutral-bg, #f3f4f6);
+		background: var(--smrt-color-surface-container);
 		border-radius: 0.25rem;
 	}
 
 	.no-property {
 		margin: 0;
-		color: var(--color-text-secondary, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 	}
 </style>
