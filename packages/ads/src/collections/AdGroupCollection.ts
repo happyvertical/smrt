@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { AdGroup } from '../models/AdGroup.js';
 import { AdGroupStatus } from '../types/index.js';
 
@@ -141,24 +142,28 @@ export class AdGroupCollection extends SmrtCollection<AdGroup> {
   }
 
   /**
-   * Find global ad groups (no tenant association)
+   * Find global ad groups (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global ad groups
    */
   async findGlobal(): Promise<AdGroup[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<AdGroup>(this);
   }
 
   /**
-   * Find ad groups for a tenant including global (shared) ad groups
+   * Find ad groups for a tenant including global (shared) ad groups.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to include
    * @returns Array of tenant-specific and global ad groups
    */
   async findWithGlobals(tenantId: string): Promise<AdGroup[]> {
-    return this.query(
-      `SELECT * FROM ad_groups WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<AdGroup>(this, tenantId, 'AdGroup.findWithGlobals');
   }
 }

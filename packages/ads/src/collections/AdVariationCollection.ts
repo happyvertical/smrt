@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { AdVariation } from '../models/AdVariation.js';
 import { AdVariationStatus } from '../types/index.js';
 
@@ -147,24 +148,32 @@ export class AdVariationCollection extends SmrtCollection<AdVariation> {
   }
 
   /**
-   * Find global ad variations (no tenant association)
+   * Find global ad variations (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global ad variations
    */
   async findGlobal(): Promise<AdVariation[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<AdVariation>(this);
   }
 
   /**
-   * Find ad variations for a tenant including global (shared) variations
+   * Find ad variations for a tenant including global (shared) variations.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to include
    * @returns Array of tenant-specific and global ad variations
    */
   async findWithGlobals(tenantId: string): Promise<AdVariation[]> {
-    return this.query(
-      `SELECT * FROM ad_variations WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<AdVariation>(
+      this,
+      tenantId,
+      'AdVariation.findWithGlobals',
     );
   }
 }
