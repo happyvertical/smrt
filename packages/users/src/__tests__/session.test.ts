@@ -554,7 +554,7 @@ describe('SessionService', () => {
     expect(userSessions.length).toBe(0);
   });
 
-  it('should switch tenant context', async () => {
+  it('should switch tenant context by ROTATING the session id', async () => {
     const user = await users.create({ email: 'switch@example.com' });
     await user.save();
 
@@ -583,16 +583,136 @@ describe('SessionService', () => {
     const sessionId = await sessionService.createSession(user.id!, tenant1.id!);
 
     // Check initial tenant
-    let context = await sessionService.loadSessionContext(sessionId);
+    const context = await sessionService.loadSessionContext(sessionId);
     expect(context?.tenantId).toBe(tenant1.id);
 
-    // Switch tenant
-    const switched = await sessionService.switchTenant(sessionId, tenant2.id!);
-    expect(switched).toBe(true);
+    // Switch tenant — a successful non-null switch ROTATES the session id.
+    const result = await sessionService.switchTenant(sessionId, tenant2.id!);
+    expect(result.switched).toBe(true);
+    expect(result.rotated).toBe(true);
+    // A brand-new id is minted...
+    expect(result.sessionId).toBeDefined();
+    expect(result.sessionId).not.toBe(sessionId);
+    expect(result.session?.tenantId).toBe(tenant2.id);
 
-    // Check new tenant
-    context = await sessionService.loadSessionContext(sessionId);
-    expect(context?.tenantId).toBe(tenant2.id);
+    // ...the OLD session is no longer valid...
+    expect(await sessionService.loadSessionContext(sessionId)).toBeNull();
+
+    // ...and the NEW session carries the new tenant.
+    const newContext = await sessionService.loadSessionContext(
+      result.sessionId as string,
+    );
+    expect(newContext?.tenantId).toBe(tenant2.id);
+    expect(newContext?.user.id).toBe(user.id);
+  });
+
+  it('carries device context onto the rotated session', async () => {
+    const user = await users.create({ email: 'switch-device@example.com' });
+    await user.save();
+
+    const tenant = await tenants.create({ name: 'Device Org' });
+    await tenant.save();
+
+    const role = await roles.create({ name: 'Member' });
+    await role.save();
+    await (
+      await memberships.create({
+        userId: user.id!,
+        tenantId: tenant.id!,
+        roleId: role.id!,
+      })
+    ).save();
+
+    const sessionService = await SessionService.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+
+    const sessionId = await sessionService.createSession(user.id!, undefined, {
+      userAgent: 'Mozilla/5.0 RotationTest',
+      ipAddress: '203.0.113.7',
+    });
+
+    const result = await sessionService.switchTenant(sessionId, tenant.id!);
+    expect(result.rotated).toBe(true);
+    expect(result.session?.userAgent).toBe('Mozilla/5.0 RotationTest');
+    expect(result.session?.ipAddress).toBe('203.0.113.7');
+  });
+
+  it('fail-closes WITHOUT creating a new session for a non-member switch', async () => {
+    const user = await users.create({ email: 'switch-nonmember@example.com' });
+    await user.save();
+
+    const home = await tenants.create({ name: 'Home Org' });
+    await home.save();
+    const foreign = await tenants.create({ name: 'Foreign Org' });
+    await foreign.save();
+
+    // Member of home only.
+    const role = await roles.create({ name: 'Member' });
+    await role.save();
+    await (
+      await memberships.create({
+        userId: user.id!,
+        tenantId: home.id!,
+        roleId: role.id!,
+      })
+    ).save();
+
+    const sessionService = await SessionService.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+
+    const sessionId = await sessionService.createSession(user.id!, home.id!);
+    const sessionsBefore = await sessionService.getUserSessions(user.id!);
+
+    // Switch into a tenant the user is NOT a member of.
+    const result = await sessionService.switchTenant(sessionId, foreign.id!);
+    expect(result.switched).toBe(false);
+    expect(result.rotated).toBe(false);
+    expect(result.sessionId).toBeNull();
+    expect(result.session).toBeNull();
+
+    // No new session was minted, and the original session is untouched.
+    const sessionsAfter = await sessionService.getUserSessions(user.id!);
+    expect(sessionsAfter.length).toBe(sessionsBefore.length);
+
+    const context = await sessionService.loadSessionContext(sessionId);
+    expect(context?.tenantId).toBe(home.id);
+  });
+
+  it('clears the tenant context (null) in place without rotating', async () => {
+    const user = await users.create({ email: 'switch-clear@example.com' });
+    await user.save();
+
+    const tenant = await tenants.create({ name: 'Clear Org' });
+    await tenant.save();
+
+    const role = await roles.create({ name: 'Member' });
+    await role.save();
+    await (
+      await memberships.create({
+        userId: user.id!,
+        tenantId: tenant.id!,
+        roleId: role.id!,
+      })
+    ).save();
+
+    const sessionService = await SessionService.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+
+    const sessionId = await sessionService.createSession(user.id!, tenant.id!);
+
+    const result = await sessionService.switchTenant(sessionId, null);
+    expect(result.switched).toBe(true);
+    expect(result.rotated).toBe(false);
+    // The id is unchanged on a clear.
+    expect(result.sessionId).toBe(sessionId);
+
+    // Same session still valid, now with no tenant.
+    const context = await sessionService.loadSessionContext(sessionId);
+    expect(context).toBeDefined();
+    expect(context?.tenantId).toBeNull();
   });
 
   it('should check hasPermission', async () => {

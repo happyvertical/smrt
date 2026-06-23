@@ -11,7 +11,7 @@ import {
 } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { Membership } from '../models/Membership.js';
-import { DEFAULT_SESSION_TTL } from '../models/Session.js';
+import { DEFAULT_SESSION_TTL, type Session } from '../models/Session.js';
 import type { User } from '../models/User.js';
 import { PermissionResolver } from './PermissionResolver.js';
 
@@ -29,6 +29,29 @@ export interface SessionContext {
   tenantId: string | null;
   /** Session ID */
   sessionId: string;
+}
+
+/**
+ * Result of {@link SessionService.switchTenant}.
+ *
+ * A successful switch into a non-null tenant ROTATES the session id (#1354
+ * follow-up): a brand-new {@link Session} is minted and the old one is revoked,
+ * so a captured pre-switch id stops validating. Callers MUST persist `sessionId`
+ * (e.g. re-set the session cookie) after a rotation.
+ */
+export interface SwitchTenantResult {
+  /** Whether the switch succeeded (true also for a `null` clear). */
+  switched: boolean;
+  /**
+   * The session id to use going forward: the NEW id after a rotation, the
+   * unchanged id after a `null` clear, or `null` when the switch failed
+   * (unknown session or non-member — fail-closed).
+   */
+  sessionId: string | null;
+  /** The resulting session (new on rotation; existing on clear; null on failure). */
+  session: Session | null;
+  /** True only when a fresh session id was minted (non-null tenant switch). */
+  rotated: boolean;
 }
 
 /**
@@ -209,28 +232,79 @@ export class SessionService {
    * query, so it must never be set to a tenant the session's user is not an
    * active member of — otherwise a caller could read/write another tenant's data
    * by feeding an arbitrary id here (e.g. straight from untrusted form data).
-   * Fail-closed (#1400): returns `false` without switching when the session is
-   * unknown or the user has no active membership in the target tenant. Passing
-   * `null` clears the tenant context and is always allowed.
+   *
+   * Fail-closed (#1400): the user's ACTIVE membership in the target tenant is
+   * verified BEFORE any write. A non-member switch returns
+   * `{ switched: false, ... }` and mutates nothing.
+   *
+   * Session-id ROTATION (#1354 follow-up): a successful switch into a non-null
+   * tenant mints a BRAND-NEW session (fresh secure id, fresh TTL) for the same
+   * user with the new tenant, then REVOKES the old session — so any captured
+   * pre-switch session id immediately stops validating, shrinking the blast
+   * radius of a leaked id across a privilege/tenant boundary. The device context
+   * (user agent, IP, custom data) carries over to the new session. Callers MUST
+   * persist the returned `sessionId` (e.g. re-set the cookie).
+   *
+   * Passing `null` clears the tenant context, is always allowed, and stays
+   * in-place (no rotation — there is no privilege boundary being crossed).
+   *
+   * @returns A {@link SwitchTenantResult}; check `switched` for success.
    */
   async switchTenant(
     sessionId: string,
     tenantId: string | null,
-  ): Promise<boolean> {
-    const session = await this.sessionCollection.findValidSession(sessionId);
-    if (!session) return false;
+  ): Promise<SwitchTenantResult> {
+    const failClosed: SwitchTenantResult = {
+      switched: false,
+      sessionId: null,
+      session: null,
+      rotated: false,
+    };
 
-    if (tenantId !== null) {
-      const membership = await this.membershipCollection.findByUserAndTenant(
-        session.userId,
-        tenantId,
-      );
-      if (!membership || !membership.isActive()) {
-        return false;
-      }
+    const session = await this.sessionCollection.findValidSession(sessionId);
+    if (!session) return failClosed;
+
+    // Clearing the tenant context crosses no privilege boundary, so keep the
+    // existing session in place (no rotation needed).
+    if (tenantId === null) {
+      const ok = await this.sessionCollection.setSessionTenant(sessionId, null);
+      if (!ok) return failClosed;
+      const updated = await this.sessionCollection.findValidSession(sessionId);
+      return {
+        switched: true,
+        sessionId,
+        session: updated,
+        rotated: false,
+      };
     }
 
-    return this.sessionCollection.setSessionTenant(sessionId, tenantId);
+    // Fail-closed membership check BEFORE any write.
+    const membership = await this.membershipCollection.findByUserAndTenant(
+      session.userId,
+      tenantId,
+    );
+    if (!membership || !membership.isActive()) {
+      return failClosed;
+    }
+
+    // Rotate: mint a fresh session for the new tenant, carrying over the device
+    // context, then revoke the old one.
+    const rotated = await this.sessionCollection.createSession({
+      userId: session.userId,
+      tenantId,
+      ttl: this.defaultTTL,
+      userAgent: session.userAgent,
+      ipAddress: session.ipAddress,
+      data: session.data,
+    });
+    await this.sessionCollection.revokeSession(sessionId);
+
+    return {
+      switched: true,
+      sessionId: rotated.id as string,
+      session: rotated,
+      rotated: true,
+    };
   }
 
   /**

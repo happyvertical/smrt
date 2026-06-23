@@ -77,13 +77,22 @@ await switchSessionTenant(event, tenantId, { db });
   structural regression test (`security-audit-1400.test.ts`) enumerates the
   registry to assert no authority model exposes a mutating op. (`cli` stays
   enabled — local-operator surface, outside the network/agent threat model.)
-- **`switchTenant` is fail-closed.** `SessionService.switchTenant` /
-  `switchSessionTenant` verify the session's user has an ACTIVE membership in the
-  target tenant before writing `session.tenantId` (the tenant-isolation key for
-  every `@TenantScoped` query). A non-member switch returns `false` without
-  mutating the session; `null` clears the context and is always allowed. The
-  low-level `SessionCollection.setSessionTenant` is the UNGUARDED primitive —
-  never call it with an untrusted tenant id.
+- **`switchTenant` is fail-closed AND rotates the session id.**
+  `SessionService.switchTenant` / `switchSessionTenant` verify the session's user
+  has an ACTIVE membership in the target tenant before any write (the tenant id
+  is the isolation key for every `@TenantScoped` query). A non-member/unknown-
+  session switch returns `{ switched: false, sessionId: null, ... }` and mutates
+  nothing. On a successful switch into a NON-null tenant the session id is
+  ROTATED: a fresh `Session` (new secure id, fresh TTL, same user, new tenant,
+  device context carried over) is minted and the old session is REVOKED — so a
+  captured pre-switch id immediately stops validating, shrinking the blast radius
+  of a leaked id across a tenant boundary. `switchTenant` returns a
+  `SwitchTenantResult` (`{ switched, sessionId, session, rotated }`); callers MUST
+  persist the returned `sessionId`. `switchSessionTenant` does this for you by
+  re-setting the session cookie (preserving httpOnly/secure/sameSite) to the new
+  id. A `null` clear stays in place (no rotation, no cookie change). The
+  low-level `SessionCollection.setSessionTenant` is the UNGUARDED primitive (used
+  for the null-clear path) — never call it with an untrusted tenant id.
 - **OIDC `email_verified` is enforced.** `UserCollection.getOrCreateFromOidc`
   refuses to provision a user when the IdP explicitly returns
   `email_verified: false` (opt out with `{ allowUnverifiedEmail: true }`). An

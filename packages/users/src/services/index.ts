@@ -68,6 +68,7 @@ export {
   type SessionContext,
   SessionService,
   type SessionServiceOptions,
+  type SwitchTenantResult,
 } from './SessionService.js';
 export {
   type EnsureTenantResult,

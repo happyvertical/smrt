@@ -457,6 +457,12 @@ export async function destroySessionCookie(
  * target tenant id is therefore safe to take straight from untrusted form data,
  * but callers MUST honour the boolean result rather than assuming success.
  *
+ * Session-id ROTATION (#1354 follow-up): a successful switch into a non-null
+ * tenant mints a fresh session and revokes the old one. This helper transparently
+ * re-sets the session COOKIE to the new id (same flags), so the old cookie value
+ * stops working and the browser carries the rotated id forward. A `null` clear
+ * leaves the id (and cookie) unchanged.
+ *
  * @example
  * ```typescript
  * // +page.server.ts
@@ -485,6 +491,10 @@ export async function switchSessionTenant(
   tenantId: string | null,
   options: SmrtClassOptions & {
     cookieName?: string;
+    cookiePath?: string;
+    cookieDomain?: string;
+    cookieSecure?: boolean;
+    cookieSameSite?: 'strict' | 'lax' | 'none';
     ttl?: number;
   },
 ): Promise<boolean> {
@@ -495,7 +505,28 @@ export async function switchSessionTenant(
   if (!sessionId) return false;
 
   const service = await getOrCreateSessionService(options, ttl);
-  return service.switchTenant(sessionId, tenantId);
+  const result = await service.switchTenant(sessionId, tenantId);
+
+  // On rotation the old id is now revoked; point the cookie at the new id so
+  // the previous cookie value can no longer be replayed. Preserve cookie flags.
+  if (result.rotated && result.sessionId) {
+    const cookiePath = options.cookiePath ?? '/';
+    const cookieSameSite = options.cookieSameSite ?? 'lax';
+    const cookieSecure =
+      options.cookieSecure ?? event.url.protocol === 'https:';
+
+    event.cookies.set(cookieName, result.sessionId, {
+      path: cookiePath,
+      // undefined => SvelteKit scopes the cookie to the request host.
+      domain: options.cookieDomain,
+      httpOnly: true,
+      secure: cookieSecure,
+      sameSite: cookieSameSite,
+      maxAge: ttl,
+    });
+  }
+
+  return result.switched;
 }
 
 function getOidcProviderName(
