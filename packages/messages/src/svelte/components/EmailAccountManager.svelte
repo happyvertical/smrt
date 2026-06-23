@@ -275,7 +275,7 @@ function getProviderLabel(type: string): string {
       <button
         type="button"
         class="dismiss-btn"
-        aria-label="Dismiss error"
+        aria-label={t(M['messages.email_account_manager.dismiss_error'])}
         onclick={() => actionError = null}
       >&times;</button>
     </div>

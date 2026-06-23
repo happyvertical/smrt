@@ -182,7 +182,7 @@ function getPatternPlaceholder(type: string): string {
       <button
         type="button"
         class="dismiss-btn"
-        aria-label="Dismiss error"
+        aria-label={t(M['messages.email_filter_manager.dismiss_error'])}
         onclick={() => filterError = null}
       >&times;</button>
     </div>
