@@ -11,12 +11,21 @@
 import { Asset } from '@happyvertical/smrt-assets';
 import { field, smrt } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import {
   promptMessageOptions,
   smrtImagesGenerateAltTextPrompt,
 } from './prompts';
 import type { ImageOptions } from './types';
 
+// The @TenantScoped decorator registers only the exact class name it's applied
+// to — it does NOT propagate to STI subclasses. Asset is `@TenantScoped`, but
+// without re-declaring it here `isTenantScopedClass('Image')` is false, so the
+// tenancy interceptor would neither tenant-filter Image's `list()` queries nor
+// guard its raw SQL. Re-declaring it (matching Asset's `mode: 'optional'`)
+// registers Image too, so the interceptor scopes Image collection reads by
+// tenant. The inherited `tenantId` field needs no re-declaration. (#1407)
+@TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get', 'create', 'update', 'generateAltText'] },

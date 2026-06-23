@@ -167,6 +167,69 @@ describe('ImageCategorizer', () => {
 
       expect(result.description).toBe('d');
     });
+
+    // ── #1407 remediation: validate the parsed object shape ──────────────────
+
+    it('defaults tags/subjects to [] when a valid JSON response omits them', async () => {
+      // Valid JSON, but `tags` and `subjects` are missing entirely. The old
+      // code returned this object as-is, so a later `for…of result.tags` threw
+      // "tags is not iterable".
+      chatMock.mockResolvedValue({
+        content: '{"description":"A red car","confidence":0.7}',
+      });
+
+      const categorizer = new ImageCategorizer(aiOptions);
+      const result = await categorizer.categorize(makeImage());
+
+      expect(result.tags).toEqual([]);
+      expect(result.subjects).toEqual([]);
+      expect(Array.isArray(result.tags)).toBe(true);
+      expect(result.description).toBe('A red car');
+      expect(result.confidence).toBe(0.7);
+    });
+
+    it('coerces a non-array tags field to [] rather than trusting the model', async () => {
+      // The model returned a string where an array was expected.
+      chatMock.mockResolvedValue({
+        content: '{"tags":"beach, ocean","description":"d","subjects":null}',
+      });
+
+      const categorizer = new ImageCategorizer(aiOptions);
+      const result = await categorizer.categorize(makeImage());
+
+      expect(result.tags).toEqual([]);
+      expect(result.subjects).toEqual([]);
+    });
+
+    it('extracts the first balanced JSON object when prose AND a second brace follow', async () => {
+      // The greedy /\{[\s\S]*\}/ would span to the LAST brace, producing
+      // invalid JSON. Balanced extraction stops at the first object's match.
+      chatMock.mockResolvedValue({
+        content:
+          '{"tags":["cat"],"description":"A cat","confidence":0.5,"subjects":["animal"]} ' +
+          'Note: confidence is approximate {not json}.',
+      });
+
+      const categorizer = new ImageCategorizer(aiOptions);
+      const result = await categorizer.categorize(makeImage());
+
+      expect(result.tags).toEqual(['cat']);
+      expect(result.description).toBe('A cat');
+      expect(result.subjects).toEqual(['animal']);
+    });
+
+    it('does not mistake a brace inside a string value for the object end', async () => {
+      chatMock.mockResolvedValue({
+        content:
+          '{"tags":["a"],"description":"price is {discounted}","confidence":1,"subjects":[]}',
+      });
+
+      const categorizer = new ImageCategorizer(aiOptions);
+      const result = await categorizer.categorize(makeImage());
+
+      expect(result.description).toBe('price is {discounted}');
+      expect(result.tags).toEqual(['a']);
+    });
   });
 
   describe('autoTag()', () => {
@@ -286,6 +349,34 @@ describe('ImageCategorizer', () => {
 
       expect(image.alt).toHaveLength(125);
       expect(image.description).toBe(longDesc);
+    });
+
+    it('does not throw "tags is not iterable" when the AI omits tags (#1407)', async () => {
+      // Valid JSON with description but no `tags` array. Pre-fix, autoTag's
+      // `for (const tag of result.tags)` threw because tags was undefined.
+      chatMock.mockResolvedValue({
+        content: '{"description":"A persisted scene","confidence":0.6}',
+      });
+
+      const image = await images.create({
+        name: 'no-tags.jpg',
+        mimeType: 'image/jpeg',
+        width: 640,
+        height: 480,
+        description: '',
+        alt: '',
+      });
+      await image.save();
+
+      const categorizer = new ImageCategorizer(aiOptions);
+      await expect(categorizer.autoTag(image, assets)).resolves.toBeUndefined();
+
+      // Description still applied; no tags persisted (none were returned).
+      expect(image.description).toBe('A persisted scene');
+      const rows = (await db.list('asset_tags', {
+        asset_id: image.id,
+      })) as Array<{ tag_slug: string }>;
+      expect(rows).toEqual([]);
     });
   });
 });

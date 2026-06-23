@@ -10,6 +10,73 @@ import type { AssetCollection } from '@happyvertical/smrt-assets';
 import type { Image } from './image';
 import type { CategoryResult } from './types';
 
+/**
+ * Extract the first balanced top-level JSON object substring from arbitrary
+ * model output. Unlike a greedy `/\{[\s\S]*\}/` (which spans from the first
+ * `{` to the *last* `}` and so swallows trailing prose or a second object,
+ * producing invalid JSON), this scans brace depth from the first `{` and stops
+ * at its matching `}`, skipping braces that appear inside string literals.
+ *
+ * @returns the balanced `{...}` substring, or `null` if none is found.
+ */
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Coerce an arbitrary parsed value into a well-formed `CategoryResult`,
+ * defaulting each field so a malformed or partial AI response can never
+ * produce a non-iterable `tags`/`subjects` or a missing `description`.
+ */
+function normalizeCategoryResult(
+  parsed: unknown,
+  fallbackDescription: string,
+): CategoryResult {
+  const p = (parsed ?? {}) as Record<string, unknown>;
+  return {
+    tags: Array.isArray(p.tags) ? (p.tags as string[]) : [],
+    description:
+      typeof p.description === 'string' && p.description
+        ? p.description
+        : fallbackDescription,
+    confidence: typeof p.confidence === 'number' ? p.confidence : 0,
+    subjects: Array.isArray(p.subjects) ? (p.subjects as string[]) : [],
+  };
+}
+
 export class ImageCategorizer {
   constructor(private readonly options: { ai: AIClientOptions }) {}
 
@@ -44,18 +111,23 @@ Respond in JSON format:
     const response = await ai.chat([{ role: 'user', content: prompt }]);
     const text = response.content;
 
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as CategoryResult;
+    const fallbackDescription = image.description || image.name;
+
+    const jsonText = extractFirstJsonObject(text);
+    if (jsonText) {
+      try {
+        return normalizeCategoryResult(
+          JSON.parse(jsonText),
+          fallbackDescription,
+        );
+      } catch {
+        // Malformed JSON — fall through to default below.
       }
-    } catch {
-      // Fall through to default
     }
 
     return {
       tags: [],
-      description: image.description || image.name,
+      description: fallbackDescription,
       confidence: 0,
       subjects: [],
     };
@@ -80,8 +152,10 @@ Respond in JSON format:
 
     await image.save();
 
-    // Add tags via the asset collection
-    for (const tag of result.tags) {
+    // Add tags via the asset collection. Guard against a non-array `tags`
+    // (e.g. a hand-built CategoryResult or future code path that bypasses
+    // `normalizeCategoryResult`) so the loop never throws "not iterable".
+    for (const tag of result.tags ?? []) {
       await assetCollection.addTag(image.id!, tag);
     }
   }
