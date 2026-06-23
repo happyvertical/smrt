@@ -127,8 +127,14 @@ function markupOnly(source) {
     .replace(/<!--[\s\S]*?-->/g, blank);
 }
 
-/** Escape-hatch annotation: `<!-- raw-primitive-allow: <reason> -->`. */
-const ALLOW_RE = /<!--\s*raw-primitive-allow\b[^>]*?-->/gi;
+/**
+ * Escape-hatch annotation: `<!-- raw-primitive-allow: <reason> -->`.
+ *
+ * A `:` followed by a non-empty reason is REQUIRED (the `:\s*\S`) — a bare
+ * `<!-- raw-primitive-allow -->` does NOT match, so the exemption is never
+ * silent: the author must say why the raw element is justified.
+ */
+const ALLOW_RE = /<!--\s*raw-primitive-allow:\s*\S[^>]*?-->/gi;
 
 /**
  * Collect raw-primitive violations in a single `.svelte` file's source.
