@@ -14,6 +14,7 @@ let {
 
 <div class="smrt-plan-picker">
   {#each plans as plan (plan.id)}
+    <!-- raw-primitive-allow: pressable selection card (aria-pressed toggle with multi-line plan summary), not a standard action button -->
     <button
       aria-pressed={plan.planKey === selectedPlanKey}
       class:selected={plan.planKey === selectedPlanKey}

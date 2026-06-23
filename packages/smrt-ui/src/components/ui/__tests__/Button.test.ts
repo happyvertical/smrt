@@ -93,6 +93,38 @@ describe('Button', () => {
     expect(link).toHaveClass('button');
   });
 
+  it('passes target/rel through to the anchor in link mode (#1589)', () => {
+    // External links migrated from `<a target="_blank" rel="...">` to Button
+    // must keep their new-tab + opener-isolation semantics on the rendered <a>.
+    render(Button, {
+      props: {
+        children: textSnippet('Open'),
+        href: 'https://example.com',
+        target: '_blank',
+        rel: 'noreferrer',
+      },
+    });
+    const link = screen.getByRole('link', { name: 'Open' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+
+  it('drops anchor-only attrs in button mode (no invalid <button target>) (#1608)', () => {
+    // In button mode the anchor-only props must NOT reach the <button> — they
+    // are pulled out of `rest` so the runtime matches the "ignored in button
+    // mode" doc and never emits invalid HTML.
+    render(Button, {
+      props: {
+        children: textSnippet('Save'),
+        target: '_blank',
+        rel: 'noreferrer',
+      },
+    });
+    const button = screen.getByRole('button', { name: 'Save' });
+    expect(button).not.toHaveAttribute('target');
+    expect(button).not.toHaveAttribute('rel');
+  });
+
   it('is not navigable when disabled in link mode', async () => {
     const { container } = render(Button, {
       props: { children: textSnippet('Home'), href: '/home', disabled: true },

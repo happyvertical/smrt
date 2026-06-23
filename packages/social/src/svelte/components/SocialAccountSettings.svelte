@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { SocialPlatformType } from '../../social-account.js';
 import { M } from '../i18n.js';
 import type { SocialAccountSettingsItem } from '../types.js';
@@ -46,7 +47,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
       <p>{accounts.length === 1 ? t(M['social.account_settings.configured_one'], { count: accounts.length }) : t(M['social.account_settings.configured_other'], { count: accounts.length })}</p>
     </div>
     {#if onRefresh}
-      <button type="button" class="secondary" onclick={() => onRefresh?.()} disabled={loading}>Refresh</button>
+      <Button variant="secondary" onclick={() => onRefresh?.()} disabled={loading}>Refresh</Button>
     {/if}
   </header>
 
@@ -54,9 +55,9 @@ function statusLabel(account: SocialAccountSettingsItem): string {
     <div class="connect-row" aria-label={t(M['social.account_settings.connect_aria'])}>
       {#each platforms as item}
         {#if connectHrefs[item.platform]}
-          <a class="connect-button" href={connectHrefs[item.platform]}>{item.label}</a>
+          <Button variant="primary" href={connectHrefs[item.platform]}>{item.label}</Button>
         {:else}
-          <button type="button" class="connect-button" disabled>{item.label}</button>
+          <Button variant="primary" disabled>{item.label}</Button>
         {/if}
       {/each}
     </div>
@@ -92,13 +93,13 @@ function statusLabel(account: SocialAccountSettingsItem): string {
           <div class="account-actions">
             <span class:attention={account.needsAttention} class="status">{statusLabel(account)}</span>
             {#if account.platformUrl}
-              <a class="secondary" href={account.platformUrl} target="_blank" rel="noreferrer">Open</a>
+              <Button variant="secondary" href={account.platformUrl} target="_blank" rel="noreferrer">Open</Button>
             {/if}
             {#if onTest}
-              <button type="button" class="secondary" onclick={() => onTest?.(account)}>Test</button>
+              <Button variant="secondary" onclick={() => onTest?.(account)}>Test</Button>
             {/if}
             {#if !readonly && onDeactivate && account.isActive}
-              <button type="button" class="danger" onclick={() => onDeactivate?.(account)}>Deactivate</button>
+              <Button variant="danger" onclick={() => onDeactivate?.(account)}>Deactivate</Button>
             {/if}
           </div>
         </article>
@@ -187,39 +188,6 @@ function statusLabel(account: SocialAccountSettingsItem): string {
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 0.5rem;
-  }
-
-  button,
-  a {
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-md, 8px);
-    background: var(--smrt-color-surface, #fff);
-    color: var(--smrt-color-on-surface, #111827);
-    cursor: pointer;
-    font: inherit;
-    font-size: var(--smrt-typography-label-large-size, 0.82rem);
-    line-height: 1;
-    padding: 0.55rem 0.7rem;
-    text-decoration: none;
-  }
-
-  button:disabled {
-    cursor: not-allowed;
-    opacity: 0.55;
-  }
-
-  .connect-button {
-    background: var(--smrt-color-primary, #2563eb);
-    border-color: var(--smrt-color-primary, #2563eb);
-    color: var(--smrt-color-on-primary, #fff);
-  }
-
-  .secondary {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-  }
-
-  .danger {
-    color: var(--smrt-color-error, #b91c1c);
   }
 
   .empty {
