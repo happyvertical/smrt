@@ -6,13 +6,9 @@
  * sendEmail callback (an external side effect), which we stub to capture the
  * generated link.
  *
- * NOTE: `initiate()`'s brand-new-user branch builds a `Person` without a
- * `typeId` and saves it, which fails Profile's required-FK validation — a
- * pre-existing defect in magicLinkService.ts (the file previously had no
- * coverage). These tests therefore exercise the service against a
- * pre-existing, correctly-typed identity (the "returning user" path), which
- * still covers rate limiting, token generation, email delivery, and the full
- * verify() flow.
+ * Covers both the brand-new-user branch (which seeds the canonical 'person'
+ * ProfileType and creates the profile) and the returning-user branch, plus
+ * rate limiting, token generation, email delivery, and the full verify() flow.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -95,6 +91,35 @@ describe('createMagicLinkService.initiate', () => {
 
   beforeEach(() => {
     dbUrl = getTestDbUrl('magic-link-initiate');
+  });
+
+  it('creates a profile + identity for a brand-new user', async () => {
+    const { service, sentLinks } = makeService(dbUrl);
+    const email = `new-${randomUUID()}@example.com`;
+
+    const result = await service.initiate(email, { nip05Username: 'newbie' });
+
+    expect(result.success).toBe(true);
+    expect(result.created).toBe(true);
+    expect(result.profile?.email).toBe(email.toLowerCase());
+    expect(result.profile?.id).toBeDefined();
+    expect(result.nostrIdentity?.nip05Username).toBe('newbie');
+    expect(sentLinks).toHaveLength(1);
+
+    // The canonical 'person' type was seeded and backs the new profile.
+    const db = { type: 'sqlite' as const, url: dbUrl };
+    const types = await ProfileTypeCollection.create({ db });
+    const personType = await types.getBySlug('person');
+    expect(personType).not.toBeNull();
+    expect(String((result.profile as any)?.typeId)).toBe(
+      String(personType?.id),
+    );
+
+    // The freshly issued link verifies end-to-end.
+    const token = tokenFromLink(sentLinks[0]);
+    const verified = await service.verify(token);
+    expect(verified.success).toBe(true);
+    expect(verified.profile?.id).toBe(result.profile?.id);
   });
 
   it('reuses an existing identity and sends a link', async () => {
