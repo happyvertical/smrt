@@ -1,5 +1,48 @@
 # @happyvertical/smrt-core
 
+## 0.34.1
+
+### Patch Changes
+
+- ### Features
+
+  - add SmrtCollection.getStiChildMetaType() for STI-aware raw scoping (#1600) (core)
+
+  ### Bug Fixes
+
+  - initialize directly-constructed models before save (#1600) (projects)
+  - stop reciprocal addRelationship from recursing forever (#1600) (profiles)
+  - seed person type when magic link creates a new user (#1600) (profiles)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (video)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (tags)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (properties)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (projects)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (profiles)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (places)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (ledgers)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (facts)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (events)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (content)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (commerce)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (assets)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (agents)
+  - route tenant-global query helpers through smrt-tenancy (#1600) (ads)
+  - consume promoted smrt-tenancy tenant-global helpers (#1600) (messages)
+
+  ### Other Changes
+
+  - style: format coverage-uplift test files (#1600) (profiles)
+  - test: route test clients through public getClient() (#1600) (projects)
+  - test: drop private registry reach-ins in validator/handler tests (#1600) (profiles)
+  - test: raise line coverage to T3 floor (#1600) (projects)
+  - test: raise line coverage to T2 floor (#1600) (profiles)
+  - test: raise line coverage to T3 floor (#1600) (video)
+  - test: update contents-collection unit test for shared tenant-global helper (#1600) (content)
+  - refactor: promote shared tenant-global query helpers (#1600) (tenancy)
+  - @happyvertical/smrt-config@0.34.1
+  - @happyvertical/smrt-types@0.34.1
+  - @happyvertical/smrt-scanner@0.34.1
+
 ## 1.0.0
 
 ### Minor Changes
