@@ -116,6 +116,29 @@ describe('Button', () => {
     await expectNoA11yViolations(container);
   });
 
+  it('keeps a disabled link non-navigable even when the caller passes tabindex/aria-disabled', async () => {
+    const { container } = render(Button, {
+      props: {
+        children: textSnippet('Home'),
+        href: '/home',
+        disabled: true,
+        // Passthrough props that must NOT win over the disabled semantics:
+        // `rest` is spread after the component's own attributes on the <a>.
+        tabindex: 0,
+        'aria-disabled': false,
+      },
+    });
+    const anchor = container.querySelector('a');
+    if (anchor === null)
+      throw new Error('expected a rendered <a> in link mode');
+    expect(anchor).toHaveAttribute('tabindex', '-1');
+    expect(anchor).toHaveAttribute('aria-disabled', 'true');
+    expect(anchor).not.toHaveAttribute('href');
+    await userEvent.tab();
+    expect(anchor).not.toHaveFocus();
+    await expectNoA11yViolations(container);
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(Button, {
       props: { children: textSnippet('Accessible') },
