@@ -93,6 +93,52 @@ describe('Button', () => {
     expect(link).toHaveClass('button');
   });
 
+  it('is not navigable when disabled in link mode', async () => {
+    const { container } = render(Button, {
+      props: { children: textSnippet('Home'), href: '/home', disabled: true },
+    });
+    // A disabled link-mode Button must be genuinely non-navigable: it drops its
+    // href (no navigation target), leaves the tab order, and is announced as
+    // disabled. Previously it kept a live href + tab stop and only blocked the
+    // mouse via CSS pointer-events, so keyboard/AT users could still activate
+    // it (flagged by the PR #1599 auto-review).
+    const anchor = container.querySelector('a');
+    if (anchor === null)
+      throw new Error('expected a rendered <a> in link mode');
+    expect(anchor).not.toHaveAttribute('href');
+    expect(anchor).toHaveAttribute('tabindex', '-1');
+    expect(anchor).toHaveAttribute('aria-disabled', 'true');
+    // No href => no implicit link role => not reachable as a link by AT.
+    expect(screen.queryByRole('link')).toBeNull();
+    // ...and keyboard focus can't land on it, so Enter can't navigate.
+    await userEvent.tab();
+    expect(anchor).not.toHaveFocus();
+    await expectNoA11yViolations(container);
+  });
+
+  it('keeps a disabled link non-navigable even when the caller passes tabindex/aria-disabled', async () => {
+    const { container } = render(Button, {
+      props: {
+        children: textSnippet('Home'),
+        href: '/home',
+        disabled: true,
+        // Passthrough props that must NOT win over the disabled semantics:
+        // `rest` is spread after the component's own attributes on the <a>.
+        tabindex: 0,
+        'aria-disabled': false,
+      },
+    });
+    const anchor = container.querySelector('a');
+    if (anchor === null)
+      throw new Error('expected a rendered <a> in link mode');
+    expect(anchor).toHaveAttribute('tabindex', '-1');
+    expect(anchor).toHaveAttribute('aria-disabled', 'true');
+    expect(anchor).not.toHaveAttribute('href');
+    await userEvent.tab();
+    expect(anchor).not.toHaveFocus();
+    await expectNoA11yViolations(container);
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(Button, {
       props: { children: textSnippet('Accessible') },

@@ -63,21 +63,34 @@ const buttonOnlyProps = new Set([
   'formTarget',
 ]);
 
-// Filter out button-specific props for link mode
+// Attributes the disabled link sets itself. `rest` is spread *after* the
+// explicit attributes on the <a>, so without excluding these a caller-supplied
+// `tabindex` / `aria-disabled` in `rest` would win and make a "disabled" link
+// focusable or announced as enabled again (PR #1602 review). Only stripped
+// while disabled, so an enabled link still honors a caller's tabindex.
+const disabledControlledProps = new Set(['tabindex', 'aria-disabled']);
+
+// Filter out button-specific props (always) and the self-controlled disabled
+// attributes (while disabled) for link mode.
 const linkProps = $derived(() => {
   return Object.fromEntries(
-    Object.entries(rest).filter(([key]) => !buttonOnlyProps.has(key)),
+    Object.entries(rest).filter(
+      ([key]) =>
+        !buttonOnlyProps.has(key) &&
+        !(isDisabled && disabledControlledProps.has(key)),
+    ),
   ) as HTMLAnchorAttributes;
 });
 </script>
 
 {#if isLink}
   <a
-    {href}
+    href={isDisabled ? undefined : href}
     class="button {variant} {size} {className}"
     class:disabled={isDisabled}
     class:full-width={fullWidth}
     class:loading
+    tabindex={isDisabled ? -1 : undefined}
     aria-disabled={isDisabled}
     aria-busy={loading}
     onclick={onclick as HTMLAnchorAttributes['onclick']}
