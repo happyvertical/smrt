@@ -32,12 +32,12 @@ const {
 }: Props = $props();
 
 // Auto-generate label from field name if not provided
-const _displayLabel =
+const displayLabel =
   label ||
   fieldName
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (str) => str.toUpperCase());
-const _fieldId = `field-${fieldName}`;
+const fieldId = `field-${fieldName}`;
 
 function handleUpdate(newValue: any) {
   if (onUpdate && !readonly) {
@@ -45,22 +45,22 @@ function handleUpdate(newValue: any) {
   }
 }
 
-function _handleStringInput(event: Event) {
+function handleStringInput(event: Event) {
   const target = event.target as HTMLInputElement;
   handleUpdate(target.value);
 }
 
-function _handleNumberInput(event: Event) {
+function handleNumberInput(event: Event) {
   const target = event.target as HTMLInputElement;
   handleUpdate(Number.parseFloat(target.value) || 0);
 }
 
-function _handleBooleanInput(event: Event) {
+function handleBooleanInput(event: Event) {
   const target = event.target as HTMLInputElement;
   handleUpdate(target.checked);
 }
 
-function _handleArrayInput(event: Event) {
+function handleArrayInput(event: Event) {
   const target = event.target as HTMLTextAreaElement;
   try {
     // Simple array handling - comma separated values
@@ -74,7 +74,7 @@ function _handleArrayInput(event: Event) {
   }
 }
 
-function _handleObjectInput(event: Event) {
+function handleObjectInput(event: Event) {
   const target = event.target as HTMLTextAreaElement;
   try {
     const objectValue = JSON.parse(target.value);
@@ -169,7 +169,7 @@ function _handleObjectInput(event: Event) {
   .field-textarea {
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: 0.375rem;
+    border-radius: var(--smrt-radius-sm, 0.375rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     transition: border-color 0.2s, box-shadow 0.2s;
   }

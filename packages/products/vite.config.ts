@@ -99,7 +99,23 @@ const libEntries = {
 	'lib/mock-smrt-client': resolve(packageDir, 'src/lib/mock-smrt-client.ts'),
 } as const;
 
-export default defineConfig(async () => {
+/**
+ * Vite mode → output target for the triple-consumption build.
+ *
+ * - `library`   (default): tree of ESM entries + .d.ts in `dist/lib`. This is
+ *   what `npm run build` / turbo run and what consumers import. Externalizes
+ *   workspace + node deps so nothing is bundled.
+ * - `standalone`: the browser app from `index.html` (mounts `App.svelte`)
+ *   into `dist/app`. Bundles everything for the browser (no `external`).
+ * - `federation`: module-federation remote exposing the browser-safe
+ *   components from `src/lib/federation-entry.ts` into `dist/federation`.
+ *
+ * Previously `build.lib` was unconditional, so `--mode standalone` /
+ * `--mode federation` silently re-ran the library build and emitted nothing
+ * to `dist/app` or `dist/federation` — the standalone + federation consumption
+ * paths were dead. Each mode now produces its own artifact.
+ */
+export default defineConfig(async ({ mode }) => {
 	// Import smrtPlugin for SMRT object scanning
 	const { importWorkspaceModule } = await import(
 		'../core/src/utils/import-workspace-module.js'
@@ -113,6 +129,93 @@ export default defineConfig(async () => {
 		purpose: 'products package Vite config',
 	});
 
+	// SMRT object scanning is shared by every mode.
+	const smrt = smrtPlugin({
+		include: ['src/**/*.ts'],
+		exclude: ['**/*.test.ts', '**/*.spec.ts'],
+		generateTypes: true,
+		hmr: false,
+	});
+
+	// The standalone app + federation remote bundle cross-package SMRT models
+	// (smrt-assets, smrt-tenancy) for the browser rather than externalizing
+	// them, so they need smrtConsumer() to emit `.smrt/register.js` for
+	// runtime class loading. The library build externalizes those packages and
+	// does not.
+	const loadSmrtConsumer = async () => {
+		const { smrtConsumer } = await importWorkspaceModule<
+			typeof import('@happyvertical/smrt-core/consumer-plugin')
+		>({
+			packageName: '@happyvertical/smrt-core/consumer-plugin',
+			distEntry: 'packages/core/dist/consumer-plugin.js',
+			sourceEntry: 'packages/core/src/consumer-plugin/index.ts',
+			purpose: 'products package consumer plugin',
+		});
+		return smrtConsumer({ projectRoot: packageDir });
+	};
+
+	// Standalone browser app: build index.html → dist/app. The app must bundle
+	// its dependencies for the browser, so we deliberately do NOT pass the
+	// library `external` predicate here.
+	if (mode === 'standalone') {
+		return {
+			build: {
+				outDir: resolve(packageDir, 'dist/app'),
+				emptyOutDir: true,
+				sourcemap: true,
+				target: 'es2022',
+				reportCompressedSize: false,
+				rollupOptions: {
+					input: resolve(packageDir, 'index.html'),
+				},
+			},
+			plugins: [svelte(), await loadSmrtConsumer(), smrt],
+		};
+	}
+
+	// Module-federation remote: expose browser-safe components → dist/federation.
+	if (mode === 'federation') {
+		const { default: federation } = await import(
+			'@originjs/vite-plugin-federation'
+		);
+		const { flattenedExposes } = await import(
+			'./src/federation/expose.config.js'
+		);
+		const { sharedDependencies } = await import(
+			'./src/federation/shared.config.js'
+		);
+		return {
+			build: {
+				outDir: resolve(packageDir, 'dist/federation'),
+				emptyOutDir: true,
+				sourcemap: true,
+				// Module federation requires a modern target that supports
+				// top-level await for the shared-scope bootstrap.
+				target: 'esnext',
+				minify: false,
+				reportCompressedSize: false,
+			},
+			plugins: [
+				svelte(),
+				await loadSmrtConsumer(),
+				smrt,
+				federation({
+					name: 'smrt_products',
+					filename: 'remoteEntry.js',
+					exposes: {
+						'./federation-entry': resolve(
+							packageDir,
+							'src/lib/federation-entry.ts',
+						),
+						...flattenedExposes,
+					},
+					shared: sharedDependencies,
+				}),
+			],
+		};
+	}
+
+	// Default + `library` mode: the published ESM library surface.
 	return {
 		build: {
 			lib: {
@@ -139,12 +242,7 @@ export default defineConfig(async () => {
 			// Svelte plugin for .svelte component files
 			svelte(),
 			// SMRT plugin for SMRT object scanning and code generation
-			smrtPlugin({
-				include: ['src/**/*.ts'],
-				exclude: ['**/*.test.ts', '**/*.spec.ts'],
-				generateTypes: true,
-				hmr: false,
-			}),
+			smrt,
 			// TypeScript declarations
 			dts({
 				outDir: resolve(packageDir, 'dist/lib'),

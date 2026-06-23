@@ -1,8 +1,10 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { onMount } from 'svelte';
-import { productStore } from '$lib/stores/product-store.svelte';
+import ProductCard from '../components/ProductCard.svelte';
+import ProductForm from '../components/ProductForm.svelte';
 import { M } from '../i18n.js';
+import { productStore } from '../stores/product-store.svelte';
 import type { ProductData } from '../types';
 
 const { t } = useI18n();
@@ -14,13 +16,13 @@ interface Props {
 
 const { readonly = false, showCreateForm = false }: Props = $props();
 
-const searchQuery = $state('');
-const selectedCategory = $state('');
-let _showForm = $state(false);
+let searchQuery = $state('');
+let selectedCategory = $state('');
+let showForm = $state(false);
 let editingProduct = $state<ProductData | null>(null);
 
 // Reactive filtered products
-const _filteredProducts = $derived.by(() => {
+const filteredProducts = $derived.by(() => {
   let products = productStore.items;
 
   if (searchQuery) {
@@ -38,38 +40,45 @@ onMount(() => {
   productStore.loadProducts();
 });
 
-function _handleCreateProduct() {
+function handleCreateProduct() {
   editingProduct = null;
-  _showForm = true;
+  showForm = true;
 }
 
-function _handleEditProduct(product: ProductData) {
+function handleEditProduct(product: ProductData) {
   editingProduct = product;
-  _showForm = true;
+  showForm = true;
 }
 
-async function _handleDeleteProduct(id: string) {
+async function handleDeleteProduct(id: string) {
   if (confirm('Are you sure you want to delete this product?')) {
     try {
       await productStore.deleteProduct(id);
-    } catch (error) {}
+    } catch {
+      // deleteProduct already recorded the message on productStore.error;
+      // the error-state region below renders it. Swallow the re-thrown
+      // rejection so it doesn't become an unhandled promise rejection.
+    }
   }
 }
 
-async function _handleSubmitProduct(productData: Partial<ProductData>) {
+async function handleSubmitProduct(productData: Partial<ProductData>) {
   try {
     if (editingProduct?.id) {
       await productStore.updateProduct(editingProduct.id, productData);
     } else {
       await productStore.createProduct(productData);
     }
-    _showForm = false;
+    showForm = false;
     editingProduct = null;
-  } catch (error) {}
+  } catch {
+    // Keep the form open on failure; productStore.error holds the message
+    // and the error-state region renders it.
+  }
 }
 
-function _handleCancelForm() {
-  _showForm = false;
+function handleCancelForm() {
+  showForm = false;
   editingProduct = null;
 }
 </script>
@@ -97,6 +106,7 @@ function _handleCancelForm() {
         type="text"
         bind:value={searchQuery}
         placeholder={t(M['products.product_catalog.search_placeholder'])}
+        aria-label={t(M['products.product_catalog.search_placeholder'])}
         class="search-input"
       />
       
@@ -120,18 +130,18 @@ function _handleCancelForm() {
   </div>
   
   {#if productStore.loading}
-    <div class="loading-state">
+    <div class="loading-state" role="status" aria-live="polite">
       <p>{t(M['products.product_catalog.loading'])}</p>
     </div>
   {:else if productStore.error}
-    <div class="error-state">
+    <div class="error-state" role="alert" aria-live="assertive">
       <p>Error: {productStore.error}</p>
       <button type="button" onclick={() => productStore.loadProducts()}>
         Retry
       </button>
     </div>
   {:else if filteredProducts.length === 0}
-    <div class="empty-state">
+    <div class="empty-state" role="status" aria-live="polite">
       {#if productStore.items.length === 0}
         <p>{t(M['products.product_catalog.empty'])}</p>
         {#if !readonly}
@@ -281,7 +291,7 @@ function _handleCancelForm() {
   }
   
   .form-container {
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     border-radius: var(--smrt-radius-md, 8px);
     max-width: 500px;
     width: 90vw;

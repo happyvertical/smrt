@@ -39,7 +39,7 @@ function validateForm() {
   return Object.keys(errors).length === 0;
 }
 
-function _handleSubmit(event: Event) {
+function handleSubmit(event: Event) {
   event.preventDefault();
 
   if (!validateForm()) {
@@ -172,7 +172,7 @@ function _handleSubmit(event: Event) {
   .product-form {
     max-width: 500px;
     padding: 1.5rem;
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
   }
@@ -263,7 +263,7 @@ function _handleSubmit(event: Event) {
   }
   
   .cancel-btn {
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     border-color: var(--smrt-color-outline-variant, #d1d5db);
     color: var(--smrt-color-on-surface, #374151);
   }
