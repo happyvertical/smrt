@@ -68,10 +68,23 @@ export class SessionCollection extends SmrtCollection<Session> {
 
     // Check if session is still valid
     if (!session.isValid()) {
-      // If expired but still marked active, update status
+      // If expired but still marked active, flip the status with an atomic
+      // guarded UPDATE rather than a read-then-save(). A non-atomic save()
+      // rewrites the whole row and could clobber a concurrent revoke/extend on
+      // a lock-less backend; the WHERE clause makes the EXPIRED transition a
+      // no-op once another writer has already changed the status or expiry.
       if (session.isExpired() && session.status === SessionStatus.ACTIVE) {
-        session.status = SessionStatus.EXPIRED;
-        await session.save();
+        const now = new Date().toISOString();
+        await this.db.query(
+          `UPDATE ${this.tableName}
+           SET status = ?, updated_at = ?
+           WHERE id = ? AND status = ? AND expires_at < ?`,
+          SessionStatus.EXPIRED,
+          now,
+          sessionId,
+          SessionStatus.ACTIVE,
+          now,
+        );
       }
       return null;
     }

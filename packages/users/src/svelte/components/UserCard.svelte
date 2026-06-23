@@ -34,7 +34,8 @@ const statusClass = $derived.by(() => {
       return 'status-pending';
     case 'suspended':
       return 'status-error';
-    case 'deactivated':
+    case 'inactive':
+      // `inactive` is the real UserStatus value (there is no `deactivated`).
       return 'status-disabled';
     default:
       return '';

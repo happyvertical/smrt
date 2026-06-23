@@ -79,7 +79,11 @@ export interface SessionHandlerOptions extends SmrtClassOptions {
   skipPaths?: string[];
   /** Whether to auto-extend sessions on each request (default: false) */
   autoExtend?: boolean;
-  /** Cookie domain (default: undefined, uses request domain) */
+  /**
+   * Cookie domain (default: undefined, uses request domain). The session
+   * handler only reads the cookie; this is consumed by `createSessionCookie`
+   * / `destroySessionCookie` when the same options object is shared with them.
+   */
   cookieDomain?: string;
   /** Cookie path (default: '/') */
   cookiePath?: string;
@@ -220,8 +224,6 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
   const cookieName = options.cookieName ?? 'sid';
   const ttl = options.ttl ?? DEFAULT_SESSION_TTL;
   const skipPaths = options.skipPaths ?? [];
-  const cookiePath = options.cookiePath ?? '/';
-  const cookieSameSite = options.cookieSameSite ?? 'lax';
 
   // Lazy-initialized session service
   let sessionService: SessionService | null = null;
@@ -363,6 +365,7 @@ export async function createSessionCookie(
     CreateSessionCookieOptions & {
       cookieName?: string;
       cookiePath?: string;
+      cookieDomain?: string;
       cookieSecure?: boolean;
       cookieSameSite?: 'strict' | 'lax' | 'none';
     },
@@ -384,6 +387,8 @@ export async function createSessionCookie(
 
   event.cookies.set(cookieName, sessionId, {
     path: cookiePath,
+    // undefined => SvelteKit scopes the cookie to the request host.
+    domain: options.cookieDomain,
     httpOnly: true,
     secure: cookieSecure,
     sameSite: cookieSameSite,
@@ -417,6 +422,7 @@ export async function destroySessionCookie(
   options: SmrtClassOptions & {
     cookieName?: string;
     cookiePath?: string;
+    cookieDomain?: string;
     ttl?: number;
   },
 ): Promise<void> {
@@ -436,7 +442,11 @@ export async function destroySessionCookie(
     }
   }
 
-  event.cookies.delete(cookieName, { path: cookiePath });
+  // A cookie set with a domain must be cleared with the same domain attribute.
+  event.cookies.delete(cookieName, {
+    path: cookiePath,
+    domain: options.cookieDomain,
+  });
 }
 
 /**
@@ -956,7 +966,8 @@ export function createTerminalAuthStartHandler(
         ? options.verificationOrigin(event)
         : (options.verificationOrigin ?? event.url.origin);
     const result = await service.createRequest(origin);
-    return jsonResponse(result, 201);
+    // Carries the device/user codes — must never be cached by an intermediary.
+    return jsonResponse(result, 201, NO_STORE_HEADERS);
   };
 }
 
@@ -980,7 +991,8 @@ export function createTerminalAuthTokenHandler(
 
     const service = await getOrCreateTerminalAuthService(options);
     const result = await service.exchangeDeviceCode(deviceCode);
-    return jsonResponse(result);
+    // Carries the bearer session token — must never be cached by an intermediary.
+    return jsonResponse(result, 200, NO_STORE_HEADERS);
   };
 }
 
@@ -1176,12 +1188,26 @@ export function mountTerminalLoginPage(
   };
 }
 
-function jsonResponse(body: unknown, status = 200): Response {
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  extraHeaders?: Record<string, string>,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...extraHeaders },
   });
 }
+
+/**
+ * Cache headers for terminal-auth responses that carry live credentials
+ * (device/user codes, bearer session tokens). Mirrors the `private, no-store`
+ * guard on the resource-list handler so no intermediary or CDN caches a token.
+ */
+const NO_STORE_HEADERS: Record<string, string> = {
+  'cache-control': 'private, no-store',
+  pragma: 'no-cache',
+};
 
 export {
   TerminalAuthError,

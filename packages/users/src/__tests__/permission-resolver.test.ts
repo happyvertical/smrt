@@ -379,6 +379,46 @@ describe('Groups', () => {
     const hasRole = await groupRoles.hasRole(group.id!, role.id!);
     expect(hasRole).toBe(true);
   });
+
+  it('resolves tenant-scoped group ids via the registry-resolved Group table', async () => {
+    // getGroupIdsForTenant joins group_members to the Group table. The join
+    // target is resolved from the registry (not a hardcoded `groups` literal),
+    // so this exercises that the resolved table name is correct and the
+    // tenant filter still scopes results.
+    const tenantA = await tenants.create({ name: 'Tenant A' });
+    await tenantA.save();
+    const tenantB = await tenants.create({ name: 'Tenant B' });
+    await tenantB.save();
+
+    const user = await users.create({ email: 'multi-tenant@example.com' });
+    await user.save();
+
+    const groupA = await groups.create({
+      tenantId: tenantA.id,
+      name: 'A Team',
+    });
+    await groupA.save();
+    const groupB = await groups.create({
+      tenantId: tenantB.id,
+      name: 'B Team',
+    });
+    await groupB.save();
+
+    await groupMembers.addMember(groupA.id!, user.id!);
+    await groupMembers.addMember(groupB.id!, user.id!);
+
+    const idsForA = await groupMembers.getGroupIdsForTenant(
+      user.id!,
+      tenantA.id!,
+    );
+    expect(idsForA).toEqual([groupA.id]);
+
+    const idsForB = await groupMembers.getGroupIdsForTenant(
+      user.id!,
+      tenantB.id!,
+    );
+    expect(idsForB).toEqual([groupB.id]);
+  });
 });
 
 describe('PermissionResolver', () => {

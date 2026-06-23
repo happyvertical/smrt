@@ -5,12 +5,31 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { GroupMember } from '../models/GroupMember.js';
+import { GroupCollection } from './GroupCollection.js';
 
 /**
  * Collection for managing GroupMember objects
  */
 export class GroupMemberCollection extends SmrtCollection<GroupMember> {
   static readonly _itemClass = GroupMember;
+
+  /** Memoized Group collection, used to resolve the Group table name. */
+  private groupCollection?: GroupCollection;
+
+  /**
+   * Resolve the database table name for the `Group` model from the registry
+   * (via a shared-connection GroupCollection) rather than hardcoding `groups`.
+   * A `@smrt({ tableName })` override or table prefix on Group would otherwise
+   * make raw joins reference a non-existent or foreign table.
+   */
+  private async getGroupTableName(): Promise<string> {
+    if (!this.groupCollection) {
+      this.groupCollection = await GroupCollection.create({
+        db: this.options.db,
+      });
+    }
+    return this.groupCollection.tableName;
+  }
 
   /**
    * Find all members of a group
@@ -92,12 +111,14 @@ export class GroupMemberCollection extends SmrtCollection<GroupMember> {
     userId: string,
     tenantId: string,
   ): Promise<string[]> {
-    // Query group_members joined with groups to filter by tenant
-    // Use raw database query to get unhydrated results
+    // Query group_members joined with the Group table to filter by tenant.
+    // Use raw database query to get unhydrated results. Both table names are
+    // trusted registry-resolved identifiers, not user input.
+    const groupTable = await this.getGroupTableName();
     const sql = `
       SELECT gm.group_id
       FROM ${this.tableName} gm
-      INNER JOIN groups g ON g.id = gm.group_id
+      INNER JOIN ${groupTable} g ON g.id = gm.group_id
       WHERE gm.user_id = ? AND g.tenant_id = ?
     `;
     const result = await this.db.query(sql, userId, tenantId);
