@@ -1,5 +1,33 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - scope tenant/global queries on STI collections (#1596) (messages)
+  - recognize STI descendants of @TenantScoped bases (#1596) (tenancy)
+
+  ### Features
+
+  - Button class passthrough + ratchet escape-hatch (#1589 Wave 0) (smrt-ui)
+
+  ### Bug Fixes
+
+  - exact-match direct tenancy lookups, return config copies (tenancy)
+  - require a reason in raw-primitive-allow annotations (review) (ratchet)
+
+  ### Other Changes
+
+  - chore: install lefthook hooks in git worktrees
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.32.1
 
 ### Patch Changes
