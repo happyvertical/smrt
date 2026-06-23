@@ -13,9 +13,16 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { InvoiceStatus, type RecognizeRevenueOptions } from '../types/index.js';
 
 /**
- * Sub-cent rounding tolerance, matching the smrt-ledgers EPSILON. Used when
- * comparing caller-supplied totals against recomputed line-item totals so
- * floating-point fuzz doesn't trip the forged-total guard.
+ * Sub-cent rounding tolerance for the invoice's own integrity checks (forged
+ * total / over-payment / payment-status consistency). Used when comparing
+ * caller-supplied totals against recomputed line-item totals so floating-point
+ * fuzz doesn't trip the guards.
+ *
+ * NOTE: this is intentionally looser than the smrt-ledgers `BALANCE_EPSILON`
+ * (0.001). To keep a no-line-item invoice ledger-postable, {@link
+ * Invoice.assertTotalArithmetic} SNAPS `totalAmount` to exactly
+ * `subtotal + taxAmount` after the tolerance check, so every journal built in
+ * {@link Invoice.recognizeRevenue} balances under the tighter ledger epsilon.
  */
 const INVOICE_EPSILON = 0.01;
 
@@ -540,6 +547,31 @@ export class Invoice extends SmrtObject {
   }
 
   /**
+   * Whether `amountPaid` covers `totalAmount` within the sub-cent rounding
+   * tolerance. This is the SINGLE source of truth for "is this invoice fully
+   * paid" — both {@link updatePaymentStatus} (which decides PAID) and
+   * {@link assertPaymentStatusConsistent} (which validates PAID on save) call
+   * it, so the deciding comparison and the validating comparison can never
+   * drift apart. A strict `amountPaid >= totalAmount` here would diverge from
+   * the epsilon-tolerant guard: a float-summed total paid exactly (e.g.
+   * `0.1 × 3` line items paid `0.3`) reads as "not covered" by `>=` but
+   * "covered" by the guard, so `updatePaymentStatus` would set PARTIAL and the
+   * save-time guard would then reject it — leaving a genuinely-paid invoice
+   * unsaveable (S5 audit #1390 follow-up).
+   */
+  private isFullyPaid(): boolean {
+    return this.amountPaid - this.totalAmount >= -INVOICE_EPSILON;
+  }
+
+  /**
+   * Whether `amountPaid` is a non-trivial partial payment of `totalAmount`.
+   * Derived from {@link isFullyPaid} so the two stay mutually exclusive.
+   */
+  private isPartiallyPaid(): boolean {
+    return this.amountPaid > INVOICE_EPSILON && !this.isFullyPaid();
+  }
+
+  /**
    * After amounts are recomputed and amountPaid is re-derived from allocations,
    * assert the persisted `status` is consistent with the derived
    * amountPaid-vs-totalAmount relationship. This blocks the raw
@@ -554,8 +586,8 @@ export class Invoice extends SmrtObject {
    */
   private assertPaymentStatusConsistent(): void {
     const label = this.invoiceNumber || this.id || '<new>';
-    const fullyPaid = this.amountPaid - this.totalAmount >= -INVOICE_EPSILON;
-    const partiallyPaid = this.amountPaid > INVOICE_EPSILON && !fullyPaid;
+    const fullyPaid = this.isFullyPaid();
+    const partiallyPaid = this.isPartiallyPaid();
 
     if (this.status === InvoiceStatus.PAID && !fullyPaid) {
       throw new Error(
@@ -588,8 +620,19 @@ export class Invoice extends SmrtObject {
   }
 
   /**
-   * Enforce `totalAmount === subtotal + taxAmount` (within rounding tolerance).
-   * Used when the invoice has no line items to recompute from.
+   * Enforce `totalAmount === subtotal + taxAmount` (within rounding tolerance),
+   * then SNAP `totalAmount` to the exact arithmetic. Used when the invoice has
+   * no line items to recompute from.
+   *
+   * The snap closes the invoice-vs-ledger epsilon gap (S5 audit #1390
+   * follow-up): the invoice guard tolerates `INVOICE_EPSILON` (0.01) but the
+   * smrt-ledgers balance check uses a tighter `BALANCE_EPSILON` (0.001). A
+   * no-line-item invoice with, say, subtotal 100.00 / total 100.005 passes this
+   * guard, yet `recognizeRevenue` would build DR 100.005 / CR 100.00 and
+   * `journal.post()` would reject it as unbalanced — voiding the journal and
+   * permanently blocking revenue recognition. Snapping `totalAmount` to
+   * `subtotal + taxAmount` here (after the tolerance check) means the persisted
+   * total and every journal built from it are always ledger-consistent.
    */
   private assertTotalArithmetic(): void {
     const expected = this.subtotal + this.taxAmount;
@@ -599,6 +642,7 @@ export class Invoice extends SmrtObject {
           `must equal subtotal + taxAmount (${expected}).`,
       );
     }
+    this.totalAmount = expected;
   }
 
   /**
@@ -745,7 +789,11 @@ export class Invoice extends SmrtObject {
       return;
     }
 
-    if (amountPaid >= this.totalAmount) {
+    // Use the SAME epsilon-tolerant "fully paid" test the save-time guard
+    // (assertPaymentStatusConsistent) applies, so a float-summed total paid
+    // exactly (e.g. 0.1×3 line items paid 0.3) is treated as PAID by both —
+    // not PARTIAL here and then rejected on save (S5 audit #1390 follow-up).
+    if (this.isFullyPaid()) {
       this.status = InvoiceStatus.PAID;
       this.paidDate = new Date();
     } else if (amountPaid > 0) {

@@ -23,13 +23,14 @@ export interface Props {
 
 const { invoice, currency = 'CAD', href, onclick }: Props = $props();
 
-// Format money
-function formatMoney(cents: number): string {
+// Format money. Amounts are decimal dollars (the commerce models store DECIMAL
+// dollars — AGENTS.md "Currency in decimal fields"), not integer cents.
+function formatMoney(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
-  }).format(cents / 100);
+  }).format(amount);
 }
 
 // Format date

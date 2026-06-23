@@ -7,6 +7,13 @@ import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
+ * Sub-unit rounding tolerance for the over-fulfillment cap, matching the rest
+ * of the package's EPSILON convention. Quantities are decimal, so a tiny
+ * float-summation overshoot must not trip the guard.
+ */
+const FULFILLMENT_QUANTITY_EPSILON = 0.01;
+
+/**
  * FulfillmentLineItem tracks which contract line items are included
  * in a specific fulfillment and how much was fulfilled.
  *
@@ -67,6 +74,76 @@ export class FulfillmentLineItem extends SmrtObject {
     if (options.quantityFulfilled !== undefined)
       this.quantityFulfilled = options.quantityFulfilled;
     if (options.notes !== undefined) this.notes = options.notes;
+  }
+
+  /**
+   * Save-time over-fulfillment guard (S5 audit #1390 follow-up):
+   *  - `quantityFulfilled` must be a finite, positive number, and
+   *  - the sum of all FulfillmentLineItems against the referenced
+   *    ContractLineItem (this row included) must not exceed the ordered
+   *    `ContractLineItem.quantity`.
+   *
+   * Without this, a caller could ship 50 of 10 ordered — the direct parallel
+   * to the PaymentAllocation over-allocation hole #1390 closed. The cap is
+   * enforced against the persisted ContractLineItem row; a `contractLineItemId`
+   * that doesn't resolve to a real line item is a hard error (the cap can't be
+   * enforced otherwise, and the field carries a `@foreignKey` requirement).
+   */
+  override async save(): Promise<this> {
+    if (
+      !Number.isFinite(this.quantityFulfilled) ||
+      this.quantityFulfilled <= 0
+    ) {
+      throw new Error(
+        `FulfillmentLineItem ${this.id ?? '<new>'}: quantityFulfilled must be a ` +
+          `positive number (got ${this.quantityFulfilled}).`,
+      );
+    }
+
+    if (this.contractLineItemId) {
+      const orderedRow = await this.db.get('contract_line_items', {
+        id: this.contractLineItemId,
+      });
+      if (!orderedRow) {
+        throw new Error(
+          `FulfillmentLineItem ${this.id ?? '<new>'}: referenced ContractLineItem ` +
+            `'${this.contractLineItemId}' does not exist — refusing to fulfill ` +
+            'against a missing line item (the over-fulfillment cap cannot be ' +
+            'enforced otherwise).',
+        );
+      }
+      const ordered = Number(orderedRow.quantity);
+
+      const { FulfillmentLineItemCollection } = await import(
+        '../collections/FulfillmentLineItemCollection.js'
+      );
+      const siblings = await (FulfillmentLineItemCollection as any).create(
+        this.options,
+      );
+      const existing = await siblings.findByContractLineItem(
+        this.contractLineItemId,
+      );
+      const otherFulfilled = existing.reduce(
+        (sum: number, item: FulfillmentLineItem) =>
+          item.id === this.id ? sum : sum + item.quantityFulfilled,
+        0,
+      );
+
+      if (
+        Number.isFinite(ordered) &&
+        otherFulfilled + this.quantityFulfilled - ordered >
+          FULFILLMENT_QUANTITY_EPSILON
+      ) {
+        throw new Error(
+          `FulfillmentLineItem ${this.id ?? '<new>'}: fulfilling ` +
+            `${this.quantityFulfilled} would over-fulfill contract line ` +
+            `'${this.contractLineItemId}' — already fulfilled ${otherFulfilled} ` +
+            `of ${ordered} ordered.`,
+        );
+      }
+    }
+
+    return super.save() as Promise<this>;
   }
 }
 

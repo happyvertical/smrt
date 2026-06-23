@@ -6,6 +6,7 @@
 export { ContractCollection } from './ContractCollection.js';
 export { CustomerCollection } from './CustomerCollection.js';
 export { FulfillmentCollection } from './FulfillmentCollection.js';
+export { FulfillmentLineItemCollection } from './FulfillmentLineItemCollection.js';
 export {
   InvoiceCollection,
   type InvoiceNumberOptions,

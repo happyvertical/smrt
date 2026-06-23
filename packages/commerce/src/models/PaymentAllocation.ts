@@ -127,12 +127,14 @@ export class PaymentAllocation extends SmrtObject {
   }
 
   /**
-   * Save-time integrity guard (S5 audit #1390):
-   *  - allocation `amount` must be a finite, positive number, and
+   * Save-time integrity guard (S5 audit #1390 + follow-up):
+   *  - allocation `amount` must be a finite, positive number,
    *  - the sum of all allocations against the referenced Payment (this row
    *    included) must not exceed the Payment's amount — over-applying a
    *    payment across invoices would falsify both payment and invoice
-   *    balances.
+   *    balances, and
+   *  - the sum of all allocations against the referenced Invoice (this row
+   *    included) must not exceed the Invoice's `totalAmount`.
    *
    * The Payment-amount cap is enforced against the persisted Payment row. An
    * allocation always carries a `@foreignKey('Payment')` paymentId, so a
@@ -141,6 +143,16 @@ export class PaymentAllocation extends SmrtObject {
    * entirely, letting a caller over-apply (or fabricate) funds simply by
    * pointing at a non-existent payment. An empty `paymentId` is still rejected
    * by the underlying FK requirement; the positivity check always applies.
+   *
+   * The Invoice-total cap (follow-up) closes a complementary hole: the
+   * per-Payment cap lets allocations from *different* payments each pass their
+   * own check while jointly summing above the invoice total. The next
+   * `Invoice.save()` would then recompute `amountPaid` from these allocations,
+   * trip `assertNonNegativeAmounts` (amountPaid > totalAmount), and leave the
+   * invoice permanently unsaveable while the over-allocations persist. Capping
+   * here keeps allocations from ever exceeding what the invoice owes. The cap
+   * is skipped only when the invoice row can't be resolved (e.g. ledger-less /
+   * not-yet-persisted) so it never blocks an otherwise-valid allocation.
    */
   override async save(): Promise<this> {
     if (!Number.isFinite(this.amount) || this.amount <= 0) {
@@ -179,6 +191,43 @@ export class PaymentAllocation extends SmrtObject {
           `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-apply ` +
             `payment '${this.paymentId}' — already allocated ${otherTotal} of ${payment.amount}.`,
         );
+      }
+    }
+
+    if (this.invoiceId) {
+      const { InvoiceCollection } = await import(
+        '../collections/InvoiceCollection.js'
+      );
+      const invoices = await (InvoiceCollection as any).create(this.options);
+      const invoice = await invoices.get({ id: this.invoiceId });
+      // Only enforce when the invoice resolves and carries a real total —
+      // a missing/zero-total invoice (not yet persisted, ledger-less test
+      // fixture) skips the cap rather than blocking a valid allocation.
+      if (invoice && Number.isFinite(invoice.totalAmount)) {
+        const { PaymentAllocationCollection } = await import(
+          '../collections/PaymentAllocationCollection.js'
+        );
+        const allocations = await (PaymentAllocationCollection as any).create(
+          this.options,
+        );
+        const existingForInvoice = await allocations.findByInvoice(
+          this.invoiceId,
+        );
+        const otherInvoiceTotal = existingForInvoice.reduce(
+          (sum: number, alloc: PaymentAllocation) =>
+            alloc.id === this.id ? sum : sum + alloc.amount,
+          0,
+        );
+        if (
+          otherInvoiceTotal + this.amount - invoice.totalAmount >
+          ALLOCATION_EPSILON
+        ) {
+          throw new Error(
+            `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-pay ` +
+              `invoice '${this.invoiceId}' — already allocated ${otherInvoiceTotal} of ` +
+              `${invoice.totalAmount}.`,
+          );
+        }
       }
     }
 

@@ -44,13 +44,14 @@ const {
   emptyMessage = 'No line items',
 }: Props = $props();
 
-// Format cents to dollars
-function formatMoney(cents: number): string {
+// Format decimal-dollar amounts. The commerce models store DECIMAL dollars
+// (AGENTS.md "Currency in decimal fields"), not integer cents.
+function formatMoney(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
-  }).format(cents / 100);
+  }).format(amount);
 }
 
 // Source type labels

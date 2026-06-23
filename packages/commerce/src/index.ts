@@ -71,6 +71,7 @@ export {
   type CreatePayoutFromPaymentArgs,
   CustomerCollection,
   FulfillmentCollection,
+  FulfillmentLineItemCollection,
   InvoiceCollection,
   InvoiceLineItemCollection,
   type InvoiceNumberOptions,

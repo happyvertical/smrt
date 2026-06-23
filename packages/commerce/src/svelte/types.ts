@@ -28,9 +28,9 @@ export interface LineItem {
   description: string;
   /** Quantity */
   quantity: number;
-  /** Unit price in cents */
+  /** Unit price in decimal dollars */
   unitPrice: number;
-  /** Total amount in cents (quantity * unitPrice) */
+  /** Total amount in decimal dollars (quantity * unitPrice) */
   amount: number;
   /** Optional category */
   category?: string;
@@ -47,7 +47,7 @@ export interface UnbilledItem {
   description: string;
   /** Date of item */
   date: Date | string;
-  /** Amount in cents */
+  /** Amount in decimal dollars */
   amount: number;
   /** Category */
   category?: string;
