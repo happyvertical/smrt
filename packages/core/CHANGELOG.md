@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - rotate session id on tenant switch, keep fail-closed check (users)
+  - make tenant-level DENY a hard tenant-wide permission block (users)
+
+  ### Bug Fixes
+
+  - close tenant-scoping gaps in findGlobal/findWithGlobals (images)
+  - repair standalone/federation builds, slugify, dark-mode CSS, dead code (products)
+  - tenant-scope orientation queries, harden categorizer + camera/timer leaks (images)
+  - theme tokens, timezone day-bucketing, zero-baseline trend, table a11y (analytics)
+  - net tenant-DENY vs cascade; revoke-first rotation; cookie TTL from session (users)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.31.1
 
 ### Patch Changes
