@@ -5,6 +5,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Account } from '../models/Account';
 import type { AccountSearchFilters } from '../types';
+import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class AccountCollection extends SmrtCollection<Account> {
   static readonly _itemClass = Account;
@@ -117,14 +118,13 @@ export class AccountCollection extends SmrtCollection<Account> {
     return this.list({ where: { tenantId } });
   }
 
+  // Account is the @TenantScoped STI base — see MessageCollection. Route through
+  // the raw helpers; no `_meta_type` so the base returns ALL account subtypes.
   async findGlobal(): Promise<Account[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Account>(this);
   }
 
   async findWithGlobals(tenantId: string): Promise<Account[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Account>(this, tenantId, 'Account.findWithGlobals');
   }
 }

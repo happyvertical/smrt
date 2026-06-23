@@ -6,6 +6,7 @@
 
 import { EmailAttachment } from '../models/EmailAttachment';
 import { AttachmentCollection } from './AttachmentCollection';
+import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 /**
  * @deprecated Use AttachmentCollection instead
@@ -65,16 +66,18 @@ export class EmailAttachmentCollection extends AttachmentCollection {
     return this.list({ where: { tenantId } }) as Promise<EmailAttachment[]>;
   }
 
+  // EmailAttachment is a CTI subclass of the @TenantScoped Attachment (own
+  // `email_attachments` table, no `_meta_type`) and inherits its recognition
+  // (#1596); route global / cross-global lookups through the raw helpers.
   override async findGlobal(): Promise<EmailAttachment[]> {
-    return this.list({ where: { tenantId: null } }) as Promise<
-      EmailAttachment[]
-    >;
+    return queryGlobal<EmailAttachment>(this);
   }
 
   override async findWithGlobals(tenantId: string): Promise<EmailAttachment[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    ) as Promise<EmailAttachment[]>;
+    return queryWithGlobals<EmailAttachment>(
+      this,
+      tenantId,
+      'EmailAttachment.findWithGlobals',
+    );
   }
 }

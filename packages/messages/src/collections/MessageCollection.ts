@@ -7,6 +7,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Message } from '../models/Message';
 import type { MessageSearchFilters } from '../types';
+import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class MessageCollection extends SmrtCollection<Message> {
   static readonly _itemClass = Message;
@@ -260,14 +261,15 @@ export class MessageCollection extends SmrtCollection<Message> {
     return this.list({ where: { tenantId } });
   }
 
+  // Message is the @TenantScoped STI base, so an explicit `tenant_id IS NULL`
+  // filter via list() throws and unflagged raw SQL is blocked under an active
+  // tenant context (#1596). Route through the raw helpers — no `_meta_type`
+  // scope so the base collection still returns ALL message subtypes.
   async findGlobal(): Promise<Message[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Message>(this);
   }
 
   async findWithGlobals(tenantId: string): Promise<Message[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Message>(this, tenantId, 'Message.findWithGlobals');
   }
 }
