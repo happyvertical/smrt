@@ -18,14 +18,27 @@ Multi-tenant user management with RBAC, hierarchical tenants, session handling, 
 | MembershipOverride | Per-user permission grant/deny. **DENY always wins.** |
 | TenantPermissionOverride | Tenant-level cascade overrides. Effect: INHERIT/GRANT/DENY. |
 
-## Permission Resolution — 4-Level Cascade
+## Permission Resolution — Precedence (broad → specific, most-specific wins)
 
-PermissionResolver evaluates in order (each level can add/remove permissions):
+`PermissionResolver.resolvePermissions` builds the effective set in this order;
+each later layer overrides earlier ones:
 
-1. **Tenant hierarchy** — walk ancestors, apply TenantPermissionOverride at each level
-2. **Membership role** — base permissions from user's role in tenant
-3. **Group roles** — permissions from all groups user belongs to **in that tenant**
-4. **Membership overrides** — final GRANT/DENY per-user (DENY takes absolute precedence)
+1. **Tenant-inherited** — walk ancestors, apply each `TenantPermissionOverride`
+   down the cascade (GRANT adds, DENY removes within the hierarchy)
+2. **Membership role** — base permissions from the user's role in the tenant
+3. **Group roles** — permissions from all groups the user belongs to **in that tenant**
+4. **Tenant-level DENY** *(removes; overrides role/group grants, tenant-wide)* — a
+   `TenantPermissionOverride` with effect `DENY` is a HARD, tenant-wide block: it
+   subtracts the DENY'd slug even if a role or group granted it (steps 2–3). It
+   sits just **above** the per-user membership overrides and **below** role/group.
+5. **Membership GRANT override** *(re-adds; most specific)* — a per-user GRANT can
+   re-add a slug a tenant DENY'd in step 4, because it is more specific.
+6. **Membership DENY override** *(absolute; always wins)* — a per-user DENY removes
+   the slug last and is never overridden.
+
+So a permission a role grants but the tenant DENYs is **removed**, unless that
+exact user also has a membership-GRANT override for it. A membership-DENY always
+wins. Tenant-DENY of an inherited/cascade grant still blocks it (unchanged).
 
 **Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
 

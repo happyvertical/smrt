@@ -748,6 +748,228 @@ describe('PermissionResolver', () => {
     expect(result.deniedPermissionIds).toContain(inheritedPermission.id);
   });
 
+  it('tenant-level DENY removes a permission the role grants', async () => {
+    // NEW behavior: a tenant-DENY is a hard, tenant-wide block that overrides
+    // role/group grants — not just the inherited cascade. This case fails on
+    // the pre-change resolver, which only let tenant-DENY shrink inheritance.
+    const user = await users.create({ email: 'tenant-deny-role@example.com' });
+    await user.save();
+
+    const tenant = await tenants.create({ name: 'Tenant Deny Role Org' });
+    await tenant.save();
+
+    const role = await roles.create({ name: 'Admin' });
+    await role.save();
+
+    const deletePerm = await permissions.create({
+      slug: 'articles.delete',
+      name: 'Delete Articles',
+    });
+    await deletePerm.save();
+
+    // Role grants delete...
+    await rolePermissions.addPermission(role.id!, deletePerm.id!);
+
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId: tenant.id,
+      roleId: role.id,
+    });
+    await membership.save();
+
+    // ...but the tenant DENYs it for everyone.
+    await tenantOverrides.denyPermission(tenant.id!, deletePerm.id!);
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, tenant.id!);
+
+    expect(result.permissions.has('articles.delete')).toBe(false);
+  });
+
+  it('tenant-level DENY removes a permission a group role grants', async () => {
+    // Same hard tenant-wide block, but the grant comes from a group role rather
+    // than the membership role.
+    const user = await users.create({ email: 'tenant-deny-group@example.com' });
+    await user.save();
+
+    const tenant = await tenants.create({ name: 'Tenant Deny Group Org' });
+    await tenant.save();
+
+    const baseRole = await roles.create({ name: 'Basic' });
+    await baseRole.save();
+
+    const groupRole = await roles.create({ name: 'Special Group Role' });
+    await groupRole.save();
+
+    const groupPerm = await permissions.create({
+      slug: 'special.access',
+      name: 'Special Access',
+    });
+    await groupPerm.save();
+
+    await rolePermissions.addPermission(groupRole.id!, groupPerm.id!);
+
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId: tenant.id,
+      roleId: baseRole.id,
+    });
+    await membership.save();
+
+    const group = await groups.create({
+      tenantId: tenant.id,
+      name: 'Special Group',
+    });
+    await group.save();
+
+    await groupRoles.addRole(group.id!, groupRole.id!);
+    await groupMembers.addMember(group.id!, user.id!);
+
+    // Tenant DENYs the group-granted permission.
+    await tenantOverrides.denyPermission(tenant.id!, groupPerm.id!);
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, tenant.id!);
+
+    expect(result.permissions.has('special.access')).toBe(false);
+  });
+
+  it("membership GRANT override re-adds a tenant-DENY'd permission (most specific wins)", async () => {
+    // Precedence: tenant-DENY sits ABOVE role/group but BELOW the most-specific
+    // membership overrides, so a membership GRANT can re-add a tenant-DENY'd slug.
+    const user = await users.create({
+      email: 'tenant-deny-regrant@example.com',
+    });
+    await user.save();
+
+    const tenant = await tenants.create({ name: 'Tenant Deny Regrant Org' });
+    await tenant.save();
+
+    const role = await roles.create({ name: 'Editor' });
+    await role.save();
+
+    const perm = await permissions.create({
+      slug: 'articles.publish',
+      name: 'Publish Articles',
+    });
+    await perm.save();
+
+    await rolePermissions.addPermission(role.id!, perm.id!);
+
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId: tenant.id,
+      roleId: role.id,
+    });
+    await membership.save();
+
+    // Tenant DENYs it, but this user gets a more-specific membership GRANT.
+    await tenantOverrides.denyPermission(tenant.id!, perm.id!);
+    await membershipOverrides.grantPermission(membership.id!, perm.id!);
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, tenant.id!);
+
+    expect(result.permissions.has('articles.publish')).toBe(true);
+  });
+
+  it('membership DENY stays absolute even with a tenant-DENY and role grant', async () => {
+    // A membership DENY is the final, most-specific layer and always wins —
+    // even alongside a tenant-DENY of the same slug.
+    const user = await users.create({
+      email: 'tenant-deny-absolute@example.com',
+    });
+    await user.save();
+
+    const tenant = await tenants.create({ name: 'Tenant Deny Absolute Org' });
+    await tenant.save();
+
+    const role = await roles.create({ name: 'Admin' });
+    await role.save();
+
+    const perm = await permissions.create({
+      slug: 'articles.destroy',
+      name: 'Destroy Articles',
+    });
+    await perm.save();
+
+    await rolePermissions.addPermission(role.id!, perm.id!);
+
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId: tenant.id,
+      roleId: role.id,
+    });
+    await membership.save();
+
+    await tenantOverrides.denyPermission(tenant.id!, perm.id!);
+    await membershipOverrides.denyPermission(membership.id!, perm.id!);
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, tenant.id!);
+
+    expect(result.permissions.has('articles.destroy')).toBe(false);
+    expect(result.deniedPermissionIds).toContain(perm.id);
+  });
+
+  it('tenant-DENY still blocks an inherited cascade grant (existing behavior)', async () => {
+    // Regression guard for the original tenant-DENY semantics: a permission
+    // granted by a parent tenant and cascaded down is still removed when the
+    // child tenant DENYs it — even for a member with a role.
+    const parent = await tenants.create({
+      cascadePermissions: true,
+      name: 'Cascade Parent Org',
+    });
+    await parent.save();
+
+    const child = await tenants.create({
+      inheritPermissions: true,
+      name: 'Cascade Child Org',
+      parentTenantId: parent.id!,
+    });
+    await child.save();
+
+    const user = await users.create({
+      email: 'tenant-deny-cascade@example.com',
+    });
+    await user.save();
+
+    const role = await roles.create({ name: 'Member' });
+    await role.save();
+
+    const inheritedPerm = await permissions.create({
+      slug: 'reports.view',
+      name: 'View Reports',
+    });
+    await inheritedPerm.save();
+
+    // Parent grants + cascades; child DENYs.
+    await tenantOverrides.grantPermission(parent.id!, inheritedPerm.id!);
+    await tenantOverrides.denyPermission(child.id!, inheritedPerm.id!);
+
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId: child.id,
+      roleId: role.id,
+    });
+    await membership.save();
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+
+    expect(result.permissions.has('reports.view')).toBe(false);
+  });
+
   it('should return empty permissions for non-member', async () => {
     const user = await users.create({ email: 'nonmember@example.com' });
     await user.save();
