@@ -23,13 +23,14 @@ export interface CreateAssetModalProps {
   open: boolean;
   /** Pre-loaded file (from paste or drag) */
   initialFile?: File | null;
-  /** Callback when creation is complete */
+  /** Callback when creation is complete. May be async; a rejection keeps the
+   * form populated and surfaces an error instead of clearing silently. */
   oncreate: (data: {
     file: File;
     name: string;
     description: string;
     altText: string;
-  }) => void;
+  }) => void | Promise<void>;
   /** Callback when modal is closed */
   onclose: () => void;
 }
@@ -47,6 +48,8 @@ let description = $state('');
 let altText = $state('');
 let dragOver = $state(false);
 let previewUrl: string | null = $state(null);
+let submitting = $state(false);
+let error = $state('');
 
 // Sync initial file
 $effect(() => {
@@ -100,10 +103,24 @@ function handleFileSelect(e: Event) {
   }
 }
 
-function handleSubmit() {
-  if (!file) return;
-  oncreate({ file, name, description, altText });
-  resetForm();
+async function handleSubmit() {
+  if (!file || submitting) return;
+  submitting = true;
+  error = '';
+  try {
+    // Await in case `oncreate` performs an async upload; awaiting a sync
+    // (void) return is a harmless no-op. Only clear the form on success so a
+    // rejected upload keeps the user's input and surfaces the failure.
+    await oncreate({ file, name, description, altText });
+    resetForm();
+  } catch (err) {
+    error =
+      err instanceof Error
+        ? err.message
+        : t(M['assets.create_asset_modal.upload_failed']);
+  } finally {
+    submitting = false;
+  }
 }
 
 function handleClose() {
@@ -116,6 +133,7 @@ function resetForm() {
   name = '';
   description = '';
   altText = '';
+  error = '';
 }
 
 function formatSize(bytes: number): string {
@@ -196,15 +214,28 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
         </div>
       {/if}
 
+  {#if error}
+    <p class="create-error" role="alert" aria-live="assertive">{error}</p>
+  {/if}
+
   {#snippet footer()}
-    <Button variant="ghost" size="sm" onclick={handleClose}>Cancel</Button>
-    <Button variant="primary" size="sm" onclick={handleSubmit} disabled={!file}>
-      Upload
+    <Button variant="ghost" size="sm" onclick={handleClose} disabled={submitting}>Cancel</Button>
+    <Button variant="primary" size="sm" onclick={handleSubmit} disabled={!file || submitting}>
+      {submitting ? 'Uploading…' : 'Upload'}
     </Button>
   {/snippet}
 </Modal>
 
 <style>
+  .create-error {
+    margin: var(--smrt-spacing-2, 0.5rem) 0 0;
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    background: var(--smrt-color-error-container, #fde8e6);
+    color: var(--smrt-color-on-error-container, #410002);
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
+  }
+
   /* Dropzone */
   .dropzone {
     display: flex;

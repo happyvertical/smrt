@@ -50,6 +50,9 @@ let {
   onconfirm,
   initialView = 'grid',
   showFolders = false,
+  onSave,
+  onCreate,
+  onDelete,
 }: AssetManagerProps = $props();
 
 function getInitialManagerState() {
@@ -63,6 +66,7 @@ let view = $state<AssetViewMode>(initialManagerState.view);
 let selectedIds = $state<Set<string>>(new Set());
 let assets = $state<PersistedAsset[]>([]);
 let loading = $state(false);
+let actionError = $state('');
 let showCreateModal = $state(false);
 let showDetail = $state(false);
 let detailAsset = $state<PersistedAsset | null>(null);
@@ -148,8 +152,14 @@ async function handleDetailSave(
     caption?: string;
   },
 ) {
-  Object.assign(asset, updates);
-  console.log('Save asset:', asset.id, updates);
+  try {
+    await onSave?.(asset, updates);
+    Object.assign(asset, updates);
+    actionError = '';
+  } catch (err) {
+    actionError =
+      err instanceof Error ? err.message : 'Failed to save the asset.';
+  }
 }
 
 function handleAssetDblClick(asset: PersistedAsset) {
@@ -168,25 +178,30 @@ function handleUpload() {
   showCreateModal = true;
 }
 
-function handleCreate(data: {
+async function handleCreate(data: {
   file: File;
   name: string;
   description: string;
   altText: string;
 }) {
-  console.log('Create asset:', data);
+  // Let a rejection propagate: CreateAssetModal awaits this and surfaces the
+  // error while keeping the form populated. Only close the modal on success.
+  await onCreate?.(data);
   showCreateModal = false;
 }
 
-function handleDelete(toDelete: PersistedAsset[]) {
-  assets = assets.filter(
-    (asset) => !toDelete.some((item) => item.id === asset.id),
-  );
-  console.log(
-    'Delete assets:',
-    toDelete.map((asset) => asset.id),
-  );
-  selectedIds = new Set();
+async function handleDelete(toDelete: PersistedAsset[]) {
+  try {
+    await onDelete?.(toDelete);
+    assets = assets.filter(
+      (asset) => !toDelete.some((item) => item.id === asset.id),
+    );
+    selectedIds = new Set();
+    actionError = '';
+  } catch (err) {
+    actionError =
+      err instanceof Error ? err.message : 'Failed to delete the asset(s).';
+  }
 }
 
 function handlePaste(event: ClipboardEvent) {
@@ -238,6 +253,11 @@ function handleManagerDrop(event: DragEvent) {
   ondragleave={handleManagerDragLeave}
   ondrop={handleManagerDrop}
 >
+  {#if actionError}
+    <p class="asset-manager__error" role="alert" aria-live="assertive">
+      {actionError}
+    </p>
+  {/if}
   <!-- Toolbar -->
   <AssetToolbar
     {view}
@@ -329,6 +349,15 @@ function handleManagerDrop(event: DragEvent) {
 </div>
 
 <style>
+  .asset-manager__error {
+    margin: 0 0 var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+    border-radius: var(--smrt-radius-medium, 0.5rem);
+    background: var(--smrt-color-error-container, #fde8e6);
+    color: var(--smrt-color-on-error-container, #410002);
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
+  }
+
   .asset-manager {
     position: relative;
     display: flex;

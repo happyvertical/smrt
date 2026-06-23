@@ -79,6 +79,7 @@ export const M = defineMessages({
   'assets.create_asset_modal.upload_asset': 'Upload Asset',
   'assets.create_asset_modal.preview_alt': 'Preview',
   'assets.create_asset_modal.remove_file': 'Remove file',
+  'assets.create_asset_modal.upload_failed': 'Upload failed. Please try again.',
 
   // AssetDetailPreview (playground)
   'assets.asset_detail_preview.modal_preview': 'Modal Preview',

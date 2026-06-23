@@ -338,6 +338,12 @@ function getAltText(asset: PersistedAsset): string {
     to { transform: rotate(360deg); }
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
+  }
+
   @media (max-width: 640px) {
     .grid {
       grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

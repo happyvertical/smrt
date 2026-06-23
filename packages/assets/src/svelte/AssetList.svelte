@@ -429,8 +429,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     to { transform: rotate(360deg); }
   }
 
-  .list-table__row:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -2px;
+  @media (prefers-reduced-motion: reduce) {
+    .spinner {
+      animation: none;
+    }
   }
 </style>

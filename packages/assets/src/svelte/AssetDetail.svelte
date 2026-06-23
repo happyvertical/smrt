@@ -275,9 +275,7 @@ function formatDate(date: Date | string | undefined): string {
               </button>
             {/if}
           </div>
-          {#if copyFeedback}
-            <div class="copy-feedback">{copyFeedback}</div>
-          {/if}
+          <div class="copy-feedback" role="status" aria-live="polite">{copyFeedback}</div>
         </section>
 
         <!-- Content References (injected) -->
@@ -497,6 +495,13 @@ function formatDate(date: Date | string | undefined): string {
     color: var(--smrt-color-success, #22c55e);
     font-weight: var(--smrt-typography-weight-medium, 500);
     animation: fadeIn 150ms ease;
+  }
+
+  /* The live region stays in the DOM (empty) so screen readers announce
+     copy results; collapse its spacing/animation when there's no message. */
+  .copy-feedback:empty {
+    margin-top: 0;
+    animation: none;
   }
 
   @keyframes fadeIn {
