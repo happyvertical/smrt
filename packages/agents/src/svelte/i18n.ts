@@ -43,4 +43,20 @@ export const M = defineMessages({
   'agents.schedule_list.loading_schedules': 'Loading schedules...',
   'agents.schedule_list.no_schedules_found': 'No schedules found',
   'agents.schedule_list.run_now': 'Run Now',
+
+  // components/AgentAdminPanel.svelte
+  'ui.agent_admin_panel.no_panel_message': 'No admin panel registered for',
+  'ui.agent_admin_panel.no_panel_hint':
+    "Import the agent's admin package to register its panels.",
+
+  // components/AgentAdminTabs.svelte
+  'ui.agent_admin_tabs.no_slots':
+    'No configuration slots available for this agent.',
+  'ui.agent_admin_tabs.tablist_label': 'Agent configuration tabs',
+
+  // components/AgentSettingsShell.svelte
+  'ui.agent_settings_shell.no_agents_message':
+    'No agents configured for this site.',
+  'ui.agent_settings_shell.no_agents_hint':
+    'Agents are discovered by matching their context field to the site domain.',
 });

@@ -3,15 +3,15 @@
  *
  * Top-of-stack Svelte 5 integration layer for SMRT: the app `Provider`, auth /
  * AI hooks, browser-AI adapters, server-side i18n, and the domain-aware
- * composite components (admin, memberships, roles, module, workspace, forms).
+ * composite components (module, workspace, forms).
  *
  * Domain-agnostic UI primitives, the i18n client, the theme system, and the
  * module UI registry now live in `@happyvertical/smrt-ui` — import those from
- * there (e.g. `@happyvertical/smrt-ui/ui`, `@happyvertical/smrt-ui/i18n`).
+ * there (e.g. `@happyvertical/smrt-ui/ui`, `@happyvertical/smrt-ui/i18n`). The
+ * agent-admin shells (AgentAdminPanel / AgentAdminTabs / AgentSettingsShell)
+ * moved to `@happyvertical/smrt-agents/svelte`.
  */
 
-// Admin components
-export * from './components/admin/index.js';
 // Form components
 export * from './components/forms/index.js';
 // Module components (for dynamic module UI rendering)

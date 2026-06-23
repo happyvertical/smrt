@@ -1,6 +1,6 @@
 # @happyvertical/smrt-svelte
 
-Top-of-stack Svelte 5 integration layer for SMRT: the app `Provider`, auth / AI hooks, browser AI (STT/TTS/LLM), forms, server-side i18n, and the domain-aware composites (admin, module, workspace). The domain-agnostic UI primitives, i18n client, theme system, and module UI registry now live in `@happyvertical/smrt-ui` (#1582) — import those from there (e.g. `@happyvertical/smrt-ui/ui`, `@happyvertical/smrt-ui/i18n`).
+Top-of-stack Svelte 5 integration layer for SMRT: the app `Provider`, auth / AI hooks, browser AI (STT/TTS/LLM), forms, server-side i18n, and the domain-aware composites (module, workspace). The domain-agnostic UI primitives, i18n client, theme system, and module UI registry now live in `@happyvertical/smrt-ui` (#1582) — import those from there (e.g. `@happyvertical/smrt-ui/ui`, `@happyvertical/smrt-ui/i18n`). The agent-admin shells (`AgentAdminPanel` / `AgentAdminTabs` / `AgentSettingsShell`) moved to `@happyvertical/smrt-agents/svelte` (#1589) so this package no longer depends on `smrt-agents`.
 
 ## The UI split — primitive-adoption contract (#1589)
 
@@ -69,7 +69,6 @@ the top-of-stack, domain-aware pieces:
 |----------|------------|
 | AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
 | Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
-| Admin (`/admin`) | `AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell` (import `@happyvertical/smrt-agents/ui`) |
 | Module | `ModulePanel` |
 | Workspace (`/workspace`) | `WorkspaceShell`, `NavTree`, `Breadcrumbs`, `ToolsDock`, `RoleShell` |
 
@@ -219,7 +218,7 @@ await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has n
 ## Dependencies
 
 - `@happyvertical/smrt-types` (shared types) — includes the identity data contracts (`User`, `Role`, `Membership`, `Tenant`) the role/membership components type against, so no dependency on `smrt-users` / `smrt-profiles` is needed
-- `@happyvertical/smrt-ui` (UI runtime: primitives, theme system, i18n client, module registry) and `@happyvertical/smrt-agents` (admin shells type against its `/ui` contracts) are hard `dependencies`.
+- `@happyvertical/smrt-ui` (UI runtime: primitives, theme system, i18n client, module registry) is a hard `dependency`. The agent-admin shells that used to type against `@happyvertical/smrt-agents/ui` moved to `@happyvertical/smrt-agents/svelte` (#1589), so `smrt-agents` is no longer a dependency here — this drops smrt-svelte below smrt-agents in the package DAG.
 - `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.
 - `@happyvertical/logger` (SDK) is a `dependency` — the browser-safe console logger used for voice/AI error reporting in the form components.
 - Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`, `@xenova/transformers`) and `chrono-node`.
