@@ -5,20 +5,12 @@
  * that demonstrates the intended functionality.
  */
 
-export interface ProductData {
-  id?: string;
-  name: string;
-  description?: string;
-  category: string;
-  manufacturer?: string;
-  model?: string;
-  price?: number;
-  inStock?: boolean;
-  specifications?: Record<string, any>;
-  tags?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-}
+// Re-use the canonical UI ProductData shape so the mock client, the stores,
+// and the components all agree on one type. The shape uses snake_case
+// timestamps (`created_at`/`updated_at`) to match the SMRT server payload.
+import type { ProductData } from './types';
+
+export type { ProductData } from './types';
 
 export interface ApiResponse<T> {
   data: T;
@@ -39,8 +31,8 @@ const mockProducts: ProductData[] = [
     inStock: true,
     specifications: { weight: '1.2kg', color: 'Black' },
     tags: ['demo', 'sample'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
   {
     id: '2',
@@ -53,8 +45,8 @@ const mockProducts: ProductData[] = [
     inStock: false,
     specifications: { size: 'small' },
     tags: ['budget', 'affordable'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   },
 ];
 
@@ -102,8 +94,8 @@ class MockApiClient {
         inStock: productData.inStock ?? true,
         specifications: productData.specifications || {},
         tags: productData.tags || [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
       mockProducts.push(newProduct);
@@ -129,7 +121,7 @@ class MockApiClient {
       const updatedProduct = {
         ...mockProducts[index],
         ...updates,
-        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
       mockProducts[index] = updatedProduct;
@@ -164,7 +156,11 @@ class MockApiClient {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       const categories = Array.from(
-        new Set(mockProducts.map((p) => p.category).filter(Boolean)),
+        new Set(
+          mockProducts
+            .map((p) => p.category)
+            .filter((c): c is string => Boolean(c)),
+        ),
       );
 
       return {

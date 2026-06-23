@@ -97,7 +97,12 @@ export interface PropertyStatsWithTrend {
   yesterdayPageviews: number;
   yesterdayUsers: number;
   trend: 'up' | 'down' | 'flat';
-  trendPercent: number;
+  /**
+   * Day-over-day percentage change. `null` when today grew from a zero
+   * yesterday-baseline (a "new" surge with no finite percentage); the UI
+   * renders this as "new" rather than 0%.
+   */
+  trendPercent: number | null;
 }
 
 // ============================================================================

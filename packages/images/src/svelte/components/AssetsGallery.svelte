@@ -109,18 +109,25 @@ async function loadImages(reset = false) {
 // Initial load — must be in onMount to avoid SSR fetch errors
 onMount(() => loadImages(true));
 
-// Debounce search on filter changes using idiomatic Svelte 5 $effect cleanup
-let searchTimeout: ReturnType<typeof setTimeout> | undefined;
+// Debounce search on filter changes. Schedule the timer in the effect *body*
+// (not the cleanup) and clear it in the returned cleanup, so a pending reload
+// is cancelled — never fired — when the component unmounts. Skip the very first
+// run because onMount() already performs the initial load.
+let didInitialFilterRun = false;
 $effect(() => {
   // Register reactive deps
   const _q = searchQuery;
   const _o = orientationFilter;
   const _w = minWidth;
   const _h = minHeight;
-  return () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => loadImages(true), 500);
-  };
+
+  if (!didInitialFilterRun) {
+    didInitialFilterRun = true;
+    return;
+  }
+
+  const id = setTimeout(() => loadImages(true), 500);
+  return () => clearTimeout(id);
 });
 
 function handleSelect(image: ImageLike) {

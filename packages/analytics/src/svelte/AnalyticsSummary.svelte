@@ -52,8 +52,8 @@ const { stats }: Props = $props();
 	.analytics-empty {
 		text-align: center;
 		padding: 2rem;
-		color: var(--color-text-secondary, #6b7280);
-		background: var(--color-neutral-bg, #f9fafb);
+		color: var(--smrt-color-on-surface-variant);
+		background: var(--smrt-color-surface-container);
 		border-radius: 0.5rem;
 	}
 

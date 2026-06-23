@@ -61,12 +61,39 @@ describe('slugify', () => {
     expect(slugify('Organic   Cotton')).toBe('organic-cotton');
   });
 
-  it('removes punctuation that is not a word character or space', () => {
-    expect(slugify('Café & Crème (2024)')).toBe('caf-crme-2024');
+  it('removes punctuation while folding accented letters to ASCII', () => {
+    // NFKD decomposes "é" into "e" + combining mark; the mark is not a
+    // letter/number so it is stripped, leaving the readable ASCII base.
+    expect(slugify('Café & Crème (2024)')).toBe('cafe-creme-2024');
   });
 
-  it('preserves underscores and digits as word characters', () => {
-    expect(slugify('SKU_001 Variant')).toBe('sku_001-variant');
+  it('strips underscores (not Unicode letters or numbers) but keeps digits', () => {
+    expect(slugify('SKU_001 Variant')).toBe('sku001-variant');
+  });
+
+  // Regression: a CJK/Cyrillic-only title must NOT collapse to an empty
+  // string. The previous ASCII-only `[^\w ]` regex stripped every
+  // non-Latin character, so a title like "已经" produced "" and every such
+  // product collided on the (slug, context, _meta_type) unique index.
+  it('preserves CJK characters instead of producing an empty slug', () => {
+    expect(slugify('已经')).toBe('已经');
+    expect(slugify('已经 Cotton')).toBe('已经-cotton');
+  });
+
+  it('preserves Cyrillic letters', () => {
+    expect(slugify('Привет Мир')).toBe('привет-мир');
+  });
+
+  // Regression: leading/trailing punctuation used to leave dangling hyphens
+  // (e.g. "-trim-me-"); they must be trimmed off both ends.
+  it('trims leading and trailing hyphens left by edge punctuation', () => {
+    expect(slugify('--Trim Me--')).toBe('trim-me');
+    expect(slugify('!!!Edge!!!')).toBe('edge');
+  });
+
+  it('returns an empty string for input with no letters or numbers', () => {
+    expect(slugify('   ')).toBe('');
+    expect(slugify('—–-')).toBe('');
   });
 });
 

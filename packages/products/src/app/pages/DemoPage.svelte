@@ -5,12 +5,15 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import AutoForm from '../../lib/components/auto-generated/AutoForm.svelte';
+import ProductCard from '../../lib/components/ProductCard.svelte';
+import ProductForm from '../../lib/components/ProductForm.svelte';
 import { M } from '../../lib/i18n.js';
 import type { ProductData } from '../../lib/types';
 
 const { t } = useI18n();
 
-const _currentTab = $state<'auto' | 'custom' | 'comparison'>('auto');
+let currentTab = $state<'auto' | 'custom' | 'comparison'>('auto');
 
 // Sample data for demonstration
 const sampleProduct: ProductData = $state({
@@ -27,15 +30,15 @@ const sampleProduct: ProductData = $state({
   tags: ['demo', 'widget', 'smrt'],
 });
 
-let _autoFormData = $state({ ...sampleProduct });
-let _customFormData = $state({ ...sampleProduct });
+let autoFormData = $state({ ...sampleProduct });
+let customFormData = $state({ ...sampleProduct });
 
-function _handleAutoSubmit(data: ProductData) {
-  _autoFormData = { ...data };
+function handleAutoSubmit(data: ProductData) {
+  autoFormData = { ...data };
 }
 
-function _handleCustomSubmit(data: ProductData) {
-  _customFormData = { ...data };
+function handleCustomSubmit(data: ProductData) {
+  customFormData = { ...data };
 }
 </script>
 
@@ -112,7 +115,7 @@ function _handleCustomSubmit(data: ProductData) {
             <h3>{t(M['products.demo_page.custom_form_heading'])}</h3>
             <ProductForm
               product={customFormData}
-              onSave={handleCustomSubmit}
+              onSubmit={handleCustomSubmit}
             />
           </div>
 
@@ -224,19 +227,19 @@ function _handleCustomSubmit(data: ProductData) {
     padding: 0.75rem 1.5rem;
     background: color-mix(in srgb, var(--smrt-color-surface, #fff) 90%, transparent);
     border: 2px solid transparent;
-    border-radius: 0.5rem;
+    border-radius: var(--smrt-radius-md, 0.5rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .nav-btn:hover {
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     transform: translateY(-2px);
   }
 
   .nav-btn.active {
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     border-color: var(--smrt-color-primary, #3b82f6);
     color: var(--smrt-color-primary, #3b82f6);
   }
@@ -249,7 +252,7 @@ function _handleCustomSubmit(data: ProductData) {
     max-width: 1200px;
     margin: 0 auto;
     background: color-mix(in srgb, var(--smrt-color-surface, #fff) 95%, transparent);
-    border-radius: 1rem;
+    border-radius: var(--smrt-radius-xl, 1rem);
     padding: 2rem;
     margin-bottom: 2rem;
   }
@@ -282,7 +285,7 @@ function _handleCustomSubmit(data: ProductData) {
   .comparison-column {
     padding: 1.5rem;
     background: var(--smrt-color-surface-container-low, #f9fafb);
-    border-radius: 0.5rem;
+    border-radius: var(--smrt-radius-md, 0.5rem);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
   }
 
@@ -334,7 +337,7 @@ function _handleCustomSubmit(data: ProductData) {
   .framework-info li {
     padding: 0.75rem;
     background: var(--smrt-color-surface-container, #f3f4f6);
-    border-radius: 0.375rem;
+    border-radius: var(--smrt-radius-sm, 0.375rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 

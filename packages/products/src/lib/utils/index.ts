@@ -22,9 +22,12 @@ export function formatDate(date: string | Date): string {
 
 export function slugify(text: string): string {
   return text
+    .normalize('NFKD')
+    .replace(/[^\p{L}\p{N} ]+/gu, '')
+    .trim()
     .toLowerCase()
-    .replace(/[^\w ]+/g, '')
-    .replace(/ +/g, '-');
+    .replace(/ +/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 export function generateId(): string {

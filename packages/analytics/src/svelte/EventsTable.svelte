@@ -40,13 +40,14 @@ function statusClass(status: string): string {
 		<p class="events-empty">{t(M['analytics.events_table.empty'])}</p>
 	{:else}
 		<table class="events-table">
+			<caption class="events-caption">{t(M['analytics.events_table.caption'])}</caption>
 			<thead>
 				<tr>
-					<th>Event</th>
-					<th>Page</th>
-					<th>Client</th>
-					<th>Time</th>
-					<th>Status</th>
+					<th scope="col">Event</th>
+					<th scope="col">Page</th>
+					<th scope="col">Client</th>
+					<th scope="col">Time</th>
+					<th scope="col">Status</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -54,7 +55,7 @@ function statusClass(status: string): string {
 					<tr>
 						<td class="event-name">{event.eventName}</td>
 						<td class="event-page">{event.pagePath ?? '-'}</td>
-						<td class="event-client" title={event.clientId}>{event.clientId.slice(0, 8)}</td>
+						<td class="event-client" title={event.clientId}>{(event.clientId ?? '').slice(0, 8)}</td>
 						<td class="event-time">{formatTimestamp(event.eventTimestamp)}</td>
 						<td><span class="status-pill {statusClass(event.status)}">{event.status}</span></td>
 					</tr>
@@ -78,12 +79,25 @@ function statusClass(status: string): string {
 		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
 	}
 
+	/* Visually hidden but available to assistive tech (table accessible name). */
+	.events-caption {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
 	.events-table th {
 		text-align: left;
 		padding: 0.5rem 0.75rem;
 		font-weight: var(--smrt-typography-weight-semibold, 600);
-		color: var(--color-text-secondary, #6b7280);
-		border-bottom: 2px solid var(--color-border, #e5e7eb);
+		color: var(--smrt-color-on-surface-variant);
+		border-bottom: 2px solid var(--smrt-color-outline-variant);
 		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
 		text-transform: uppercase;
 		letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
@@ -91,12 +105,12 @@ function statusClass(status: string): string {
 
 	.events-table td {
 		padding: 0.5rem 0.75rem;
-		border-bottom: 1px solid var(--color-border-light, #f3f4f6);
-		color: var(--color-text-primary, #111827);
+		border-bottom: 1px solid var(--smrt-color-outline-variant);
+		color: var(--smrt-color-on-surface);
 	}
 
 	.events-table tbody tr:hover {
-		background: var(--color-hover, #f9fafb);
+		background: var(--smrt-color-surface-container);
 	}
 
 	.event-name {
@@ -108,18 +122,18 @@ function statusClass(status: string): string {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		color: var(--color-text-secondary, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.event-client {
 		font-family: var(--smrt-font-family-mono, monospace);
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
-		color: var(--color-text-secondary, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.event-time {
 		white-space: nowrap;
-		color: var(--color-text-secondary, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
 	}
 
@@ -132,30 +146,30 @@ function statusClass(status: string): string {
 	}
 
 	.status-sent {
-		background: var(--color-success-bg, #dcfce7);
-		color: var(--color-success-text, #166534);
+		background: var(--smrt-color-success-container);
+		color: var(--smrt-color-on-success-container);
 	}
 
 	.status-failed {
-		background: var(--color-error-bg, #fee2e2);
-		color: var(--color-error-text, #991b1b);
+		background: var(--smrt-color-error-container);
+		color: var(--smrt-color-on-error-container);
 	}
 
 	.status-pending {
-		background: var(--color-warning-bg, #fef9c3);
-		color: var(--color-warning-text, #854d0e);
+		background: var(--smrt-color-warning-container);
+		color: var(--smrt-color-on-warning-container);
 	}
 
 	.events-empty {
 		text-align: center;
 		padding: 2rem;
-		color: var(--color-text-secondary, #6b7280);
+		color: var(--smrt-color-on-surface-variant);
 	}
 
 	.events-overflow {
 		text-align: center;
 		padding: 0.5rem;
-		color: var(--color-text-tertiary, #9ca3af);
+		color: var(--smrt-color-on-surface-variant);
 		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 	}
 </style>
