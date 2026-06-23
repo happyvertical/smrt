@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-dev-mcp",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "description": "Development MCP server for SMRT framework knowledge, review context, architecture context, and code generation",
   "type": "module",
   "main": "./dist/index.js",

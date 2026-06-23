@@ -6,6 +6,35 @@
 
 - ### Breaking Changes
 
+  - T2 a11y/security remediation (#1391) (chat)
+
+  ### Bug Fixes
+
+  - use disclosure group for message actions, not an incomplete ARIA menu (chat)
+  - capture LLM model before unload; isolate Provider dispose rejection (smrt-svelte)
+  - remediate T2 review findings (crash, timeout honesty, schedule slot) (jobs)
+  - harden browser-AI cache lifecycle and voice-input a11y/errors (#1403) (smrt-svelte)
+  - key Pagination ellipses by index and fix stale token-script docs (smrt-ui)
+  - correct theme token colors, ripple namespace, and createTheme CSS (smrt-ui)
+  - repair dialog focus trap, overlay alerts, role-selector keyboard nav (smrt-ui)
+
+  ### Other Changes
+
+  - docs: explain cwd-based studio.css resolution in css-generator test (smrt-ui)
+  - test: cover the non-finite parseDelay guard (jobs)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
   - extract domain-agnostic Svelte UI runtime to break the keystone cycle (#1584) (smrt-ui)
 
   ### Bug Fixes

@@ -9,6 +9,15 @@
 - @happyvertical/smrt-types@1.0.0
 - @happyvertical/smrt-ui@1.0.0
 
+## 1.0.0
+
+### Patch Changes
+
+- @happyvertical/smrt-agents@1.0.0
+- @happyvertical/smrt-languages@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-ui@1.0.0
+
 ## 0.29.41
 
 ### Patch Changes
