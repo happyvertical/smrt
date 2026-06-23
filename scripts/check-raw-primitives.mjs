@@ -88,7 +88,16 @@ function listFiles(dir, exts) {
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      // Skip dependency + build/cache trees. `.svelte-kit` in particular holds
+      // generated `__package__` copies of every component — scanning them would
+      // double-count (and they are not the authored source anyway).
+      if (
+        entry.name === 'node_modules' ||
+        entry.name === 'dist' ||
+        entry.name === '.svelte-kit' ||
+        entry.name === '.turbo'
+      )
+        continue;
       out.push(...listFiles(full, exts));
     } else if (exts.some((e) => entry.name.endsWith(e))) {
       out.push(full);
@@ -214,7 +223,7 @@ console.error(
     '  <button>  → Button         (@happyvertical/smrt-ui)\n' +
     '  <input>/<textarea>/<select>/<form> → Input/Textarea/Select/Form\n' +
     '                              (@happyvertical/smrt-svelte)\n' +
-    'Primitive-source files (smrt-ui/src/components, smrt-svelte/src/components/\n' +
-    'forms) are exempt — see PRIMITIVE_SOURCE_FRAGMENTS in this script.',
+    'Primitive-source files (smrt-ui/src, smrt-svelte/src/components/forms) are\n' +
+    'exempt — see PRIMITIVE_SOURCE_FRAGMENTS in this script.',
 );
 process.exit(1);
