@@ -118,54 +118,44 @@ export function unregisterTenantScopedClass(className: string): void {
 }
 
 /**
- * Return `true` if the named class is registered as tenant-scoped.
+ * Strip a qualified `@scope/pkg:ClassName` name down to its bare class name.
  *
- * Checks two sources in order:
- * 1. The local registry populated by `@TenantScoped()`.
- * 2. The core `ObjectRegistry` populated by `@smrt({ tenantScoped: true })`.
- *
- * @param className - The class name to look up (e.g., `'Document'`).
- * @returns `true` if the class is tenant-scoped by either mechanism.
- *
- * @see getTenantScopedConfig
- * @see registerTenantScopedClass
+ * `@TenantScoped` registers classes by their simple name (`target.name`), but
+ * `ObjectRegistry.getInheritanceChain()` emits **qualified** names where a
+ * class has package context. When walking the chain (see
+ * `getInheritedTenantScopedConfig`) we therefore probe the local registry with
+ * both the qualified entry and its simple suffix so qualified ancestors resolve
+ * against the simple-name keys used by `@TenantScoped`.
  */
-export function isTenantScopedClass(className: string): boolean {
-  // Check local registry first (explicit @TenantScoped decorator)
-  if (tenantScopedClasses.has(className)) {
-    return true;
-  }
-  // Check core registry (@smrt({ tenantScoped: true }) pattern - Issue #688)
-  return ObjectRegistry.isTenantScoped(className);
+function toSimpleClassName(className: string): string {
+  const idx = className.lastIndexOf(':');
+  return idx === -1 ? className : className.slice(idx + 1);
 }
 
 /**
- * Retrieve the resolved tenancy configuration for a class.
+ * Resolve a class's OWN tenancy configuration — no STI inheritance.
  *
- * Checks two sources in order, with the local registry taking precedence:
- * 1. The local registry populated by `@TenantScoped()`.
+ * Checks the two registration mechanisms in order, with the local registry
+ * taking precedence:
+ * 1. The local registry populated by `@TenantScoped()` (keyed by simple name).
  * 2. The core `ObjectRegistry` populated by `@smrt({ tenantScoped: true })`.
  *
- * When found in the core registry, the raw config is normalised into a
- * `TenantScopedConfig` with the same shape as locally registered classes.
- *
- * @param className - The class name to look up.
- * @returns The `TenantScopedConfig` if the class is tenant-scoped, or
- *   `undefined` if it is not registered in either source.
- *
- * @see isTenantScopedClass
- * @see getAllTenantScopedClasses
+ * Both the given name and its simple form are probed against the local registry
+ * so a qualified inheritance-chain entry still matches the simple-name keys the
+ * decorator writes. Core-registry config is normalised into `TenantScopedConfig`.
  */
-export function getTenantScopedConfig(
+function getDirectTenantScopedConfig(
   className: string,
 ): TenantScopedConfig | undefined {
-  // Check local registry first (explicit @TenantScoped decorator)
-  const localConfig = tenantScopedClasses.get(className);
+  // 1. Local registry (explicit @TenantScoped decorator).
+  const localConfig =
+    tenantScopedClasses.get(className) ??
+    tenantScopedClasses.get(toSimpleClassName(className));
   if (localConfig) {
     return localConfig;
   }
 
-  // Check core registry (@smrt({ tenantScoped: true }) pattern - Issue #688)
+  // 2. Core registry (@smrt({ tenantScoped: true }) pattern - Issue #688).
   const coreConfig = ObjectRegistry.getTenantScopedConfig(className);
   if (coreConfig) {
     // Convert core config to TenantScopedConfig format
@@ -179,6 +169,94 @@ export function getTenantScopedConfig(
   }
 
   return undefined;
+}
+
+/**
+ * Resolve tenancy configuration inherited from an STI/ancestor class.
+ *
+ * `@TenantScoped` (and `@smrt({ tenantScoped })`) register ONLY the exact class
+ * decorated — recognition does NOT propagate to subclasses. Before #1596 this
+ * meant an STI child with its own collection (the child is the collection's
+ * `_itemClass`) was treated as non-tenant-scoped at runtime: the interceptor
+ * skipped tenant filtering on its `list()`/`get()` (cross-tenant reads), skipped
+ * tenant population in `beforeSave`, and skipped the raw-SQL policy. Manual
+ * re-declaration on every child was the fragile pattern that already bit images
+ * (#1407) and messages.
+ *
+ * We now walk the STI inheritance chain so any descendant of a tenant-scoped
+ * base is recognized automatically and inherits the base's config. A subclass
+ * of a tenant-scoped class is always itself tenant-scoped — there is no safe
+ * reason for it to opt out — so the walk intentionally covers any inheritance
+ * (the motivating leak is STI child collections, but this is correct for CTI
+ * hierarchies too).
+ *
+ * Ancestors are walked from nearest-to-self toward the root, returning the
+ * first tenant-scoped ancestor's config so a closer ancestor wins. The class's
+ * OWN declaration is resolved by the direct lookup in `getTenantScopedConfig`
+ * and always takes precedence over anything inherited here.
+ */
+function getInheritedTenantScopedConfig(
+  className: string,
+): TenantScopedConfig | undefined {
+  // getInheritanceChain returns [root, ..., self] (qualified names where the
+  // class has package context). It is cached by core and only reached here when
+  // the direct lookup misses, so the per-call cost on non-tenant classes is a
+  // cache hit plus this short loop. Returns [] for unregistered classes.
+  const chain = ObjectRegistry.getInheritanceChain(className);
+  // chain[length - 1] is the class itself (already covered by the direct
+  // lookup); walk its ancestors from nearest to root.
+  for (let i = chain.length - 2; i >= 0; i--) {
+    const ancestorConfig = getDirectTenantScopedConfig(chain[i]);
+    if (ancestorConfig) {
+      return ancestorConfig;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Retrieve the resolved tenancy configuration for a class.
+ *
+ * Resolution order:
+ * 1. The class's OWN declaration — local `@TenantScoped()` registry first, then
+ *    the core `@smrt({ tenantScoped: true })` registry.
+ * 2. STI inheritance — the nearest tenant-scoped ancestor's config (#1596).
+ *
+ * A class that declares its own tenancy never reaches step 2, so an explicit
+ * child `@TenantScoped` always overrides the inherited base config.
+ *
+ * @param className - The class name to look up.
+ * @returns The `TenantScopedConfig` if the class is tenant-scoped directly or
+ *   by inheritance, or `undefined` if it is not.
+ *
+ * @see isTenantScopedClass
+ * @see getAllTenantScopedClasses
+ */
+export function getTenantScopedConfig(
+  className: string,
+): TenantScopedConfig | undefined {
+  // A class's own @TenantScoped / @smrt({ tenantScoped }) declaration wins.
+  const direct = getDirectTenantScopedConfig(className);
+  if (direct) {
+    return direct;
+  }
+  // Otherwise inherit recognition from a tenant-scoped STI ancestor (#1596).
+  return getInheritedTenantScopedConfig(className);
+}
+
+/**
+ * Return `true` if the named class is tenant-scoped — directly (via
+ * `@TenantScoped()` / `@smrt({ tenantScoped: true })`) or by inheriting from a
+ * tenant-scoped STI ancestor (#1596).
+ *
+ * @param className - The class name to look up (e.g., `'Document'`).
+ * @returns `true` if the class is tenant-scoped by any mechanism.
+ *
+ * @see getTenantScopedConfig
+ * @see registerTenantScopedClass
+ */
+export function isTenantScopedClass(className: string): boolean {
+  return getTenantScopedConfig(className) !== undefined;
 }
 
 /**
