@@ -5,6 +5,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { EmailFolder } from '../models/EmailFolder';
 import type { EmailFolderSearchFilters } from '../types';
+import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class EmailFolderCollection extends SmrtCollection<EmailFolder> {
   static readonly _itemClass = EmailFolder;
@@ -211,19 +212,24 @@ export class EmailFolderCollection extends SmrtCollection<EmailFolder> {
   }
 
   /**
-   * Find all global email folders (no tenant)
+   * Find all global email folders (no tenant).
+   *
+   * EmailFolder is @TenantScoped (CTI, own `email_folders` table). Under an
+   * active tenant context list({ tenantId: null }) throws and unflagged raw SQL
+   * is blocked (#1596); route through the raw helpers.
    */
   async findGlobal(): Promise<EmailFolder[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<EmailFolder>(this);
   }
 
   /**
-   * Find email folders for a tenant including global folders
+   * Find email folders for a tenant including global folders.
    */
   async findWithGlobals(tenantId: string): Promise<EmailFolder[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<EmailFolder>(
+      this,
+      tenantId,
+      'EmailFolder.findWithGlobals',
     );
   }
 }

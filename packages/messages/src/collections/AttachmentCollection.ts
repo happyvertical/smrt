@@ -4,6 +4,7 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Attachment } from '../models/Attachment';
+import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class AttachmentCollection extends SmrtCollection<Attachment> {
   static readonly _itemClass = Attachment;
@@ -156,14 +157,18 @@ export class AttachmentCollection extends SmrtCollection<Attachment> {
     return this.list({ where: { tenantId } });
   }
 
+  // Attachment is @TenantScoped (CTI, own `attachments` table). Under an active
+  // tenant context list({ tenantId: null }) throws and unflagged raw SQL is
+  // blocked (#1596); route through the raw helpers.
   async findGlobal(): Promise<Attachment[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Attachment>(this);
   }
 
   async findWithGlobals(tenantId: string): Promise<Attachment[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<Attachment>(
+      this,
+      tenantId,
+      'Attachment.findWithGlobals',
     );
   }
 }

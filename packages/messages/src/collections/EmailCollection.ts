@@ -8,6 +8,15 @@
 import { Email } from '../models/Email';
 import type { EmailSearchFilters } from '../types';
 import { MessageCollection } from './MessageCollection';
+import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
+
+/**
+ * Qualified STI discriminator for Email rows in the shared `messages` table.
+ * Raw SQL on this tenant-scoped child collection must scope by `_meta_type` so
+ * it never returns sibling Message subtypes (base Message, Tweet, SlackMessage).
+ * See `findGlobal` / `findWithGlobals`. (#1596)
+ */
+const EMAIL_META_TYPE = '@happyvertical/smrt-messages:Email';
 
 export class EmailCollection extends MessageCollection {
   static override readonly _itemClass = Email;
@@ -266,14 +275,20 @@ export class EmailCollection extends MessageCollection {
     return this.list({ where: { tenantId } }) as Promise<Email[]>;
   }
 
+  // Now that Email inherits Message's @TenantScoped recognition (#1596), an
+  // explicit `tenant_id IS NULL` filter via list() throws and unflagged raw SQL
+  // is blocked under an active tenant context — so route global / cross-global
+  // lookups through the shared raw helpers, scoped to the Email `_meta_type`.
   override async findGlobal(): Promise<Email[]> {
-    return this.list({ where: { tenantId: null } }) as Promise<Email[]>;
+    return queryGlobal<Email>(this, EMAIL_META_TYPE);
   }
 
   override async findWithGlobals(tenantId: string): Promise<Email[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    ) as Promise<Email[]>;
+    return queryWithGlobals<Email>(
+      this,
+      tenantId,
+      'Email.findWithGlobals',
+      EMAIL_META_TYPE,
+    );
   }
 }
