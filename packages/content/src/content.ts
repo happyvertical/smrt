@@ -1245,20 +1245,89 @@ export class Content
     );
   }
 
+  /**
+   * Fingerprint of the *content-bearing* publication surface only.
+   *
+   * This must converge: two byte-identical `save()`s of published content
+   * have to produce the same fingerprint so the publication-version writer
+   * (`save()`) does not append a redundant `ContentVersion` on every save.
+   *
+   * It therefore deliberately excludes everything that grows or carries a
+   * timestamp/ordering with each save — `versionHistory`, `reviews`,
+   * `corrections`, and any `generatedAt`/`createdAt`/`id` fields. The earlier
+   * implementation fingerprinted the full transparency snapshot (which embeds
+   * the growing `versionHistory`), so the stored fingerprint of vN predated vN
+   * and the next save's recomputed fingerprint always differed → unbounded
+   * redundant publication versions (#1387 blocker).
+   *
+   * The surface mirrors `buildReviewFingerprint`'s content block, plus the
+   * pinned reference edges (`{ targetId, targetVersion }`) — a pin change is a
+   * meaningful republication — and the publication profile key.
+   */
   private async buildPublicationSnapshotFingerprint(
     governance: ResolvedContentGovernance,
   ): Promise<string | null> {
-    const transparency = await this.buildTransparencySnapshot({
-      snapshotKind: 'published',
-      governance,
-    });
-
-    if (!transparency) {
+    if (!governance.isGoverned || !governance.transparencyEnabled) {
       return null;
     }
 
-    const { generatedAt, ...stableSnapshot } = transparency;
-    return createFingerprint(stableSnapshot);
+    const referenceCollection = await this.getReferenceCollection();
+    const [referenceEdges, facts, factLinks] = await Promise.all([
+      this.id ? referenceCollection.getForSource(this.id) : Promise.resolve([]),
+      governance.factLinkingEnabled
+        ? this.getFacts({ latestOnly: true, includeSuperseded: false })
+        : Promise.resolve([]),
+      governance.factLinkingEnabled ? this.getFactLinks() : Promise.resolve([]),
+    ]);
+
+    return createFingerprint({
+      scope: 'content-publication',
+      publicationProfileKey: governance.publicationProfileKey || null,
+      content: {
+        id: this.id || null,
+        type: this.type,
+        variant: this.variant,
+        title: this.title,
+        description: this.description,
+        body: this.body,
+        author: this.author,
+        state: this.state,
+        publishDate: this.publish_date,
+        language: this.language,
+        category: this.category,
+        tags: this.tags,
+        metadata: this.metadata,
+      },
+      // Pinned reference edges only — ordering-independent so it converges.
+      references: referenceEdges
+        .map((edge) => ({
+          targetId: edge.targetId || null,
+          targetVersion: edge.targetVersion ?? null,
+        }))
+        .sort((a, b) => String(a.targetId).localeCompare(String(b.targetId))),
+      facts: facts
+        .map((fact: any) => ({
+          id: fact.id || null,
+          previousFactId: fact.previousFactId || null,
+          status: fact.status || null,
+          textRefined: fact.textRefined || '',
+          sourceCount: fact.sourceCount ?? 0,
+          confidence: fact.confidence ?? null,
+          metadata:
+            typeof fact?.getMetadata === 'function' ? fact.getMetadata() : {},
+        }))
+        .sort((a: any, b: any) => String(a.id).localeCompare(String(b.id))),
+      factLinks: factLinks
+        .map((link: any) => ({
+          factId: link.factId || null,
+          relationship: link.relationship || null,
+          metadata:
+            typeof link?.getMetadata === 'function' ? link.getMetadata() : {},
+        }))
+        .sort((a: any, b: any) =>
+          String(a.factId).localeCompare(String(b.factId)),
+        ),
+    });
   }
 
   private async getLatestPublicationSnapshotFingerprint(): Promise<
@@ -1677,15 +1746,40 @@ export class Content
   }
 
   /**
+   * Returns the raw reference edges with their citation pins
+   * (`{ targetId, targetVersion }`). Unlike `getReferences()` (which resolves
+   * to `Content` objects and loses the per-edge `targetVersion`), this keeps
+   * the pin so callers — notably version snapshots — can reconstruct pinned
+   * citations on restore. See `ContentVersionCollection.restoreIntoContent`.
+   */
+  public async getReferenceEdges(): Promise<
+    Array<{ targetId: string; targetVersion: number | null }>
+  > {
+    if (!this.id) {
+      return [];
+    }
+
+    const references = await this.getReferenceCollection();
+    const linkedReferences = await references.getForSource(this.id);
+    return linkedReferences
+      .filter((edge) => Boolean(edge.targetId))
+      .map((edge) => ({
+        targetId: edge.targetId as string,
+        targetVersion: edge.targetVersion ?? null,
+      }));
+  }
+
+  /**
    * Returns one entry per reference edge with the pinned `targetVersion` and
    * the target's latest version. Drift exists when both are present and
    * differ — callers can use this to surface "the source you cited has been
    * updated" affordances in editors or review tools.
    *
-   * `currentVersion` is sourced from `getLatestForContent`, which returns
-   * the most recent `ContentVersion` of **any kind** (manual or publication).
-   * Consumers that only care about published drift should filter the result
-   * by loading the matching `ContentVersion` and inspecting `kind`.
+   * `currentVersion` is the target's latest **publication** `ContentVersion`,
+   * because pins are taken against the latest publication (see `addReference`).
+   * Auto-created `correction`/`draft`/`manual` versions bump the shared
+   * `(content_id, version)` counter but do NOT republish, so comparing against
+   * the max version of *any* kind produced false drift positives (#1387 #4).
    *
    * Unpinned references (`citedVersion === null`) are included with
    * `currentVersion` populated when available so callers can choose to
@@ -1712,10 +1806,12 @@ export class Content
     const versions = await this.getContentVersionCollection();
     const targetIds = linkedReferences.map((reference) => reference.targetId);
 
-    // Single query for all target versions; pick the max per contentId.
-    // Avoids N+1 when an article cites many sources.
+    // Single query for all target *publication* versions; pick the max per
+    // contentId. Pins are taken against the latest publication, so only
+    // publication versions count as drift (#1387 #4). Filtering by kind here
+    // also avoids the N+1 of loading each version to inspect its kind.
     const allVersions = await versions.list({
-      where: { contentId: targetIds },
+      where: { contentId: targetIds, kind: 'publication' },
       orderBy: 'version DESC',
     });
     const latestByContentId = new Map<string, number>();

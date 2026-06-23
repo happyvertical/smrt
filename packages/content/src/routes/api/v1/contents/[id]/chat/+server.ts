@@ -13,12 +13,18 @@ import {
 
 const logger = createLogger({ level: 'info' });
 
-export const GET: RequestHandler = async ({ params, locals }) => {
+export const GET: RequestHandler = async ({ params, request, locals }) => {
   const smrtLocals = locals as ContentChatRouteLocals;
   const { id } = params;
 
   if (!id) {
     return json({ error: 'Content ID is required' }, { status: 400 });
+  }
+  // This GET mutates state (getOrCreateContentEditorChatSession creates a
+  // session/room), so it needs the same CSRF-style origin guard the POST path
+  // already enforces (#1387 minor).
+  if (!requestHasTrustedOrigin(request)) {
+    return json({ error: 'Invalid request origin' }, { status: 403 });
   }
 
   try {

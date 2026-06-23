@@ -257,4 +257,11 @@ describe('content utilities', () => {
       body: 'No frontmatter here',
     });
   });
+
+  it('degrades gracefully on malformed YAML frontmatter instead of throwing (#1387)', () => {
+    // `yaml.parse` THROWS on this; the previous `|| {}` did not catch it.
+    const malformed = '---\nkey: [unclosed\n  : : :\n---\nBody text here';
+    expect(() => stringToContent(malformed)).not.toThrow();
+    expect(stringToContent(malformed)).toEqual({ body: 'Body text here' });
+  });
 });

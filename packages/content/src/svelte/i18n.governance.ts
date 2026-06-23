@@ -84,6 +84,11 @@ export const M = defineMessages({
   'content.governance_panel.published_history': 'Published history',
   'content.governance_panel.no_corrections_issued': 'No corrections issued.',
   'content.governance_panel.no_versions_saved': 'No versions saved yet.',
+  'content.governance_panel.restore_confirm_title': 'Restore this version?',
+  'content.governance_panel.restore_confirm_message':
+    'Restore content to version {version}? Current unsaved content will be overwritten.',
+  'content.governance_panel.restore_confirm_action': 'Restore',
+  'content.governance_panel.restore_confirm_cancel': 'Cancel',
   'content.governance_panel.what_was_wrong': 'What was wrong?',
   'content.governance_panel.provide_corrected_wording':
     'Provide the corrected claim or wording',

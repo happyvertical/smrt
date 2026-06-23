@@ -403,10 +403,6 @@ describe('ContentVersionsTool component', () => {
   });
 
   it('loads versions and refreshes after confirming a restore', async () => {
-    vi.stubGlobal(
-      'confirm',
-      vi.fn(() => true),
-    );
     clientMocks.getVersions.mockResolvedValue({
       data: [
         {
@@ -429,9 +425,22 @@ describe('ContentVersionsTool component', () => {
       expect(target.textContent).toContain('Ready to publish');
     });
 
+    // The "Restore" button now opens a ConfirmDialog (no native confirm()).
+    // The destructive action only fires after confirming in the dialog.
     findButton(target, 'Restore').dispatchEvent(
       new MouseEvent('click', { bubbles: true }),
     );
+    flushSync();
+
+    expect(clientMocks.restoreVersion).not.toHaveBeenCalled();
+
+    const dialog = target.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    const confirmButton = dialog?.querySelector(
+      'button.btn-filled',
+    ) as HTMLButtonElement;
+    expect(confirmButton).toBeTruthy();
+    confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     await vi.waitFor(() => {
       expect(clientMocks.restoreVersion).toHaveBeenCalledWith('content-1', 3);

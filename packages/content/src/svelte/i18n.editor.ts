@@ -71,6 +71,11 @@ export const M = defineMessages({
     'Reference ID or URL',
   'content.content_editor.file_key': 'File Key:',
   'content.content_editor.agent_chat_unavailable': 'Agent chat unavailable',
+  'content.content_editor.reference_drop_failed':
+    'Could not add the dropped file as a reference. Please try again.',
+  'content.content_editor.image_select_failed':
+    'Could not add the selected image. Please try again.',
+  'content.content_editor.dismiss_message': 'Dismiss',
 
   // ContentImageBrowser
   'content.content_image_browser.no_images_attached': 'No images attached.',

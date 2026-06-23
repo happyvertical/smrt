@@ -179,11 +179,11 @@ async function recheckFactClaims(claimIds: string[]) {
 
 <div class="governance-tool">
   {#if error}
-    <p class="tool-error">{error}</p>
+    <p class="tool-error" role="alert" aria-live="assertive">{error}</p>
   {/if}
 
   {#if notice}
-    <p class="tool-notice">{notice}</p>
+    <p class="tool-notice" role="status" aria-live="polite">{notice}</p>
   {/if}
 
   {#if !savedContentId}

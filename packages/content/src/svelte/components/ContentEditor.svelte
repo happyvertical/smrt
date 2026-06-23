@@ -349,6 +349,10 @@ let selectedEvidenceIds = $state<string[]>([]);
 let evidenceBusy = $state<string | null>(null);
 let evidenceError = $state<string | null>(null);
 let evidenceNotice = $state<string | null>(null);
+// Surfaces reference-drop / image-attach failures that were previously
+// swallowed by empty catch blocks (#1387 #6), reusing the evidence-message
+// error styling for a consistent in-editor notice.
+let editorError = $state<string | null>(null);
 let bulkEvidenceStatus = $state<FactEvidenceStatus>('supports');
 const evidenceStatuses: FactEvidenceStatus[] = [
   'supports',
@@ -706,8 +710,11 @@ async function handleRefDrop(e: DragEvent) {
           formData.referenceIds = [...formData.referenceIds, newId];
         }
       } else {
+        editorError = t(M['content.content_editor.reference_drop_failed']);
       }
-    } catch (err) {}
+    } catch (err) {
+      editorError = t(M['content.content_editor.reference_drop_failed']);
+    }
   }
 
   // Handle dropped URL or plain text (add as reference ID)
@@ -830,6 +837,7 @@ function handleImageSelect(selected: ImageLike | File | string) {
     try {
       await resolveSelectedImage(selected);
     } catch (err) {
+      editorError = t(M['content.content_editor.image_select_failed']);
     } finally {
       showImageUploader = false;
     }
@@ -870,6 +878,7 @@ async function handleInlineImageSelect(selected: ImageLike | File | string) {
       selectedBodyImageIndex = Math.max(bodyImages.length, 0);
     }
   } catch (err) {
+    editorError = t(M['content.content_editor.image_select_failed']);
   } finally {
     showInlineImageUploader = false;
   }
@@ -879,6 +888,7 @@ async function resolveBodyDropImage(selected: ImageLike | File | string) {
   try {
     return await resolveSelectedImage(selected);
   } catch (err) {
+    editorError = t(M['content.content_editor.image_select_failed']);
     return null;
   }
 }
@@ -916,6 +926,21 @@ function removeAsset(id: string) {
       class="editor-main-col"
       onsubmit={handleSubmit}
     >
+      {#if editorError}
+        <div class="editor-message editor-message--error" role="alert" aria-live="assertive">
+          <span>{editorError}</span>
+          <button
+            type="button"
+            class="editor-message__dismiss"
+            onclick={() => {
+              editorError = null;
+            }}
+            aria-label={t(M['content.content_editor.dismiss_message'])}
+          >
+            ×
+          </button>
+        </div>
+      {/if}
       <div class="editor-toolbar">
         <div class="editor-toolbar-left">
           <div class="mui-field">
@@ -1755,6 +1780,32 @@ function removeAsset(id: string) {
     color: var(--smrt-color-primary);
   }
 
+  .editor-message {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-2, 0.5rem);
+    margin: 0 0 var(--smrt-spacing-3, 0.75rem);
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+  }
+
+  .editor-message--error {
+    color: var(--smrt-color-on-error-container);
+    background: color-mix(in srgb, var(--smrt-color-error) 12%, transparent);
+  }
+
+  .editor-message__dismiss {
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
+    line-height: 1;
+    padding: 0 0.25rem;
+  }
+
   .reference-detail-header a,
   .reference-detail-header span,
   .resource-claim-body,
@@ -2116,7 +2167,7 @@ function removeAsset(id: string) {
     top: 0.25rem;
     left: 0.25rem;
     background: var(--smrt-color-primary, #3b82f6);
-    color: white;
+    color: var(--smrt-color-on-primary, #ffffff);
     font-size: var(--smrt-typography-label-small-size, 0.65rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.15rem 0.4rem;

@@ -69,4 +69,15 @@ describe('content chat route helpers', () => {
       ),
     ).toBe(false);
   });
+
+  it('tolerates a missing request/headers without throwing (#1387)', () => {
+    // Non-fetch callers (and the GET handler under test harnesses) may invoke
+    // this without a real Request; it must degrade to "no signals to check"
+    // instead of dereferencing undefined.headers.
+    expect(() =>
+      requestHasTrustedOrigin(undefined as unknown as Request),
+    ).not.toThrow();
+    expect(requestHasTrustedOrigin(undefined as unknown as Request)).toBe(true);
+    expect(requestHasTrustedOrigin({} as unknown as Request)).toBe(true);
+  });
 });

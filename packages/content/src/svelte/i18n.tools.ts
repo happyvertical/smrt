@@ -131,4 +131,9 @@ export const M = defineMessages({
   'content.versions_tool.save_to_manage_versions':
     'Save this content to manage versions.',
   'content.versions_tool.no_versions_saved': 'No versions saved yet.',
+  'content.versions_tool.restore_confirm_title': 'Restore this version?',
+  'content.versions_tool.restore_confirm_message':
+    'Restore content to version {version}? Current unsaved content will be overwritten.',
+  'content.versions_tool.restore_confirm_action': 'Restore',
+  'content.versions_tool.restore_confirm_cancel': 'Cancel',
 });

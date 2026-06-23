@@ -634,7 +634,9 @@ it('should pin and update the cited version on a content reference', async () =>
     status: 'draft',
   });
 
-  await target.createVersion({ summary: 'v1' });
+  // Drift compares against the latest PUBLICATION version (pins are taken
+  // against publications), so these snapshots must be publication-kind (#1387 #4).
+  await target.createVersion({ kind: 'publication', summary: 'v1' });
 
   await source.addReference(target, { targetVersion: 1 });
 
@@ -650,7 +652,7 @@ it('should pin and update the cited version on a content reference', async () =>
   // Target gets a new version — citation still pinned to v1.
   target.body = 'Target v2';
   await target.save();
-  await target.createVersion({ summary: 'v2' });
+  await target.createVersion({ kind: 'publication', summary: 'v2' });
 
   const driftAfterUpdate = await source.getReferenceDrift();
   expect(driftAfterUpdate[0]).toMatchObject({
@@ -693,7 +695,9 @@ it('should leave unpinned references untracked but reportable', async () => {
     status: 'draft',
   });
 
-  await target.createVersion({ summary: 'v1' });
+  // Publication-kind so the unpinned reference still reports the target's
+  // latest publication version as `currentVersion` (#1387 #4).
+  await target.createVersion({ kind: 'publication', summary: 'v1' });
   await source.addReference(target);
 
   const drift = await source.getReferenceDrift();

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
@@ -127,12 +128,22 @@ function getStateBadge(value: unknown) {
   }
 }
 
+let pendingDelete = $state<any | null>(null);
+
 function handleDeleteContent(content: any) {
-  if (
-    confirm(`Are you sure you want to delete "${getDisplayTitle(content)}"?`)
-  ) {
-    onDelete(content);
+  pendingDelete = content;
+}
+
+function confirmDelete() {
+  const target = pendingDelete;
+  pendingDelete = null;
+  if (target) {
+    onDelete(target);
   }
+}
+
+function cancelDelete() {
+  pendingDelete = null;
 }
 </script>
 
@@ -248,10 +259,10 @@ function handleDeleteContent(content: any) {
               <td><span class="badge state-{getStateBadge(content.state)}">{content.state}</span></td>
               <td class="actions-cell">
                 {#if getViewHref?.(content)}
-                  <a class="icon-btn" href={getViewHref(content) || '#'} title={t(M['content.content_list.view_published_article'])}>🔎</a>
+                  <a class="icon-btn" href={getViewHref(content) || '#'} title={t(M['content.content_list.view_published_article'])} aria-label={t(M['content.content_list.view_published_article'])}>🔎</a>
                 {/if}
-                <button class="icon-btn" type="button" onclick={() => onEdit(content)} title={t(M['content.content_list.edit'])}>✏️</button>
-                <button class="icon-btn delete-icon" type="button" onclick={() => handleDeleteContent(content)} title={t(M['content.content_list.delete'])}>🗑️</button>
+                <button class="icon-btn" type="button" onclick={() => onEdit(content)} title={t(M['content.content_list.edit'])} aria-label={t(M['content.content_list.edit'])}>✏️</button>
+                <button class="icon-btn delete-icon" type="button" onclick={() => handleDeleteContent(content)} title={t(M['content.content_list.delete'])} aria-label={t(M['content.content_list.delete'])}>🗑️</button>
               </td>
             </tr>
           {/each}
@@ -371,8 +382,21 @@ function handleDeleteContent(content: any) {
       {/each}
     </div>
   {/if}
-  
+
 </div>
+
+<ConfirmDialog
+  open={pendingDelete !== null}
+  title={t(M['content.content_list.delete_confirm_title'])}
+  message={t(M['content.content_list.delete_confirm_message'], {
+    title: pendingDelete ? getDisplayTitle(pendingDelete) : '',
+  })}
+  confirmLabel={t(M['content.content_list.delete'])}
+  cancelLabel={t(M['content.content_list.cancel'])}
+  destructive
+  onconfirm={confirmDelete}
+  oncancel={cancelDelete}
+/>
 
 <style>
   .content-list-wrapper {

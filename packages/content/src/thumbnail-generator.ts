@@ -400,6 +400,11 @@ export class ThumbnailGenerator {
       // Could be base64 or URL - try base64 first
       if (imageData.startsWith('http')) {
         const response = await fetch(imageData);
+        if (!response.ok) {
+          throw new Error(
+            `AI image generation URL fetch failed: ${response.status} ${response.statusText}`,
+          );
+        }
         buffer = Buffer.from(await response.arrayBuffer());
       } else {
         buffer = Buffer.from(imageData, 'base64');
@@ -475,7 +480,8 @@ export class ThumbnailGenerator {
       db: this.options.db,
     });
 
-    // Create the image record
+    // Create the image record. `SmrtCollection.create()` already persists
+    // (upsert) the row, so a follow-up `image.save()` was redundant (#1387).
     const image = await images.create({
       name: metadata.name,
       mimeType: metadata.mimeType,
@@ -483,8 +489,6 @@ export class ThumbnailGenerator {
       height: metadata.height,
       sourceUri: `data:${metadata.mimeType};base64,${buffer.toString('base64')}`,
     });
-
-    await image.save();
 
     return image;
   }

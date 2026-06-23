@@ -1126,3 +1126,233 @@ describe('Content governance', () => {
     }
   });
 });
+
+describe('Content publication snapshot + reference drift (#1387)', () => {
+  // Transparency-enabled governance WITHOUT publish-readiness enforcement, so
+  // publishing only exercises the publication-snapshot/version path.
+  function configureTransparencyGovernance() {
+    configureContentGovernance({
+      assignments: [
+        {
+          contentType: 'article',
+          enabled: true,
+          factLinkingEnabled: false,
+          transparencyEnabled: true,
+          publicationProfileKey: 'publication',
+          enforcePublishReadiness: false,
+        },
+      ],
+      profiles: [
+        {
+          key: 'publication',
+          label: 'Publication',
+          requirements: [],
+        },
+      ],
+    });
+  }
+
+  function countPublicationVersions(versions: Array<{ kind: string }>): number {
+    return versions.filter((version) => version.kind === 'publication').length;
+  }
+
+  it('creates exactly one publication version for byte-identical re-saves', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+      configureTransparencyGovernance();
+
+      const content = new Content({
+        name: 'budget-story',
+        title: 'City passes budget',
+        body: 'The council passed the budget on Tuesday.',
+        type: 'article',
+        status: 'published',
+        db,
+      });
+      await content.initialize();
+
+      // First publish → one publication version.
+      await content.save();
+      // Two more byte-identical saves must NOT append redundant versions.
+      await content.save();
+      await content.save();
+
+      const versions = await content.getVersions();
+      expect(countPublicationVersions(versions)).toBe(1);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('creates a new publication version only when content actually changes', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+      configureTransparencyGovernance();
+
+      const content = new Content({
+        name: 'budget-story',
+        title: 'City passes budget',
+        body: 'The council passed the budget on Tuesday.',
+        type: 'article',
+        status: 'published',
+        db,
+      });
+      await content.initialize();
+
+      await content.save();
+      await content.save(); // no-op, still one
+      expect(countPublicationVersions(await content.getVersions())).toBe(1);
+
+      // A real body change should append a second publication version.
+      content.body = 'The council passed the amended budget on Wednesday.';
+      await content.save();
+      const afterEdit = await content.getVersions();
+      expect(countPublicationVersions(afterEdit)).toBe(2);
+
+      // ...and re-saving that edited state must not keep growing.
+      await content.save();
+      expect(countPublicationVersions(await content.getVersions())).toBe(2);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('preserves citation pins across a restore round-trip', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+      configureTransparencyGovernance();
+
+      const article = new Content({
+        name: 'pinned-article',
+        title: 'Article that pins a source',
+        body: 'Body referencing a source.',
+        type: 'article',
+        status: 'draft',
+        db,
+      });
+      await article.initialize();
+      await article.save();
+
+      const source = new Content({
+        name: 'pinned-source',
+        title: 'Source document',
+        body: 'Source body.',
+        type: 'minutes',
+        status: 'published',
+        db,
+      });
+      await source.initialize();
+      await source.save();
+
+      // Pin the citation to v2 of the source.
+      await article.addReference(source, { targetVersion: 2 });
+
+      const driftBefore = await article.getReferenceDrift();
+      expect(driftBefore).toHaveLength(1);
+      expect(driftBefore[0].citedVersion).toBe(2);
+
+      // Snapshot the pinned state, then drop the reference entirely.
+      const snapshotVersion = await article.createVersion({ kind: 'manual' });
+      await article.removeReference(source.id as string);
+      expect(await article.getReferenceDrift()).toHaveLength(0);
+
+      // Restore → the pin (targetVersion: 2) must come back, not unpinned.
+      await article.restoreFromVersion(snapshotVersion.version);
+
+      const driftAfter = await article.getReferenceDrift();
+      expect(driftAfter).toHaveLength(1);
+      expect(driftAfter[0].targetId).toBe(source.id);
+      expect(driftAfter[0].citedVersion).toBe(2);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('does not report drift when a non-publication version bumps the counter', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+      configureTransparencyGovernance();
+
+      const article = new Content({
+        name: 'drift-article',
+        title: 'Citing article',
+        body: 'Cites a published source.',
+        type: 'article',
+        status: 'draft',
+        db,
+      });
+      await article.initialize();
+      await article.save();
+
+      // Source is an `article` so the transparency governance assigns it a
+      // real publication ContentVersion on publish.
+      const source = new Content({
+        name: 'drift-source',
+        title: 'Published source',
+        body: 'Original source body.',
+        type: 'article',
+        status: 'published',
+        db,
+      });
+      await source.initialize();
+      await source.save();
+      // Source's first publication version is v1.
+      const sourcePublication = await source.getVersions();
+      const publicationNumber = sourcePublication.find(
+        (version) => version.kind === 'publication',
+      )?.version as number;
+      expect(publicationNumber).toBe(1);
+
+      // Pin the article's citation to the source's publication version.
+      await article.addReference(source, { targetVersion: publicationNumber });
+      expect((await article.getReferenceDrift())[0].isDrifted).toBe(false);
+
+      // Bump the shared (content_id, version) counter on the source with a
+      // NON-publication (manual draft) version — nothing was republished.
+      await source.createVersion({ kind: 'draft' });
+      const afterManual = await source.getVersions();
+      expect(afterManual.length).toBeGreaterThan(1);
+
+      // Drift must still be false: the latest PUBLICATION version is unchanged.
+      const drift = await article.getReferenceDrift();
+      expect(drift).toHaveLength(1);
+      expect(drift[0].citedVersion).toBe(publicationNumber);
+      expect(drift[0].currentVersion).toBe(publicationNumber);
+      expect(drift[0].isDrifted).toBe(false);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+});

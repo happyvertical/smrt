@@ -22,7 +22,10 @@ function getRequestOrigin(request: Request): string | null {
 }
 
 export function requestHasTrustedOrigin(request: Request): boolean {
-  const headers = request.headers;
+  // Tolerate a missing request/headers (e.g. non-fetch callers) the same way as
+  // a request that carries no origin signals — the origin checks below only
+  // apply when there is something to check.
+  const headers = request?.headers;
   if (!headers || typeof headers.get !== 'function') {
     return true;
   }

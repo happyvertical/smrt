@@ -37,7 +37,14 @@ export function stringToContent(data: string) {
       const frontmatterYAML = data
         .substring(frontmatterStart + separator.length, frontmatterEnd)
         .trim();
-      frontmatter = yaml.parse(frontmatterYAML) || {}; // Handle potential YAML parsing errors
+      // yaml.parse() THROWS on malformed YAML — `|| {}` only covers an
+      // empty/null parse. Wrap so a bad frontmatter block degrades to "no
+      // frontmatter" instead of crashing the caller (#1387).
+      try {
+        frontmatter = yaml.parse(frontmatterYAML) || {};
+      } catch {
+        frontmatter = {};
+      }
       body = data.substring(frontmatterEnd + separator.length).trim();
     }
   }
