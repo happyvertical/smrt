@@ -73,11 +73,12 @@ const linkProps = $derived(() => {
 
 {#if isLink}
   <a
-    {href}
+    href={isDisabled ? undefined : href}
     class="button {variant} {size} {className}"
     class:disabled={isDisabled}
     class:full-width={fullWidth}
     class:loading
+    tabindex={isDisabled ? -1 : undefined}
     aria-disabled={isDisabled}
     aria-busy={loading}
     onclick={onclick as HTMLAnchorAttributes['onclick']}
