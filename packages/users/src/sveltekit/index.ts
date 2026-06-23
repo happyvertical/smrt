@@ -514,6 +514,18 @@ export async function switchSessionTenant(
     const cookieSameSite = options.cookieSameSite ?? 'lax';
     const cookieSecure =
       options.cookieSecure ?? event.url.protocol === 'https:';
+    // Match the cookie lifetime to the rotated session's ACTUAL expiry rather
+    // than the request `ttl` — a cached SessionService (keyed on db config only)
+    // may have been created with a different defaultTTL, so `ttl` here can
+    // diverge from the session the service actually minted.
+    const maxAge = result.session
+      ? Math.max(
+          0,
+          Math.round(
+            (new Date(result.session.expiresAt).getTime() - Date.now()) / 1000,
+          ),
+        )
+      : ttl;
 
     event.cookies.set(cookieName, result.sessionId, {
       path: cookiePath,
@@ -522,7 +534,7 @@ export async function switchSessionTenant(
       httpOnly: true,
       secure: cookieSecure,
       sameSite: cookieSameSite,
-      maxAge: ttl,
+      maxAge,
     });
   }
 

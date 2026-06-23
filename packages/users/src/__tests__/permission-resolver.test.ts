@@ -970,6 +970,58 @@ describe('PermissionResolver', () => {
     expect(result.permissions.has('reports.view')).toBe(false);
   });
 
+  it('child-tenant GRANT overrides a parent-tenant DENY (most-specific tenant wins)', async () => {
+    // Netting guard for the hard tenant-wide DENY block: a parent tenant DENYs a
+    // permission org-wide but a child sub-tenant explicitly re-GRANTs it. The
+    // child GRANT is more specific and must win — the parent DENY must NOT be
+    // applied as a hard block over the child's own grant. Pre-netting-fix the
+    // unconditionally-collected parent DENY wrongly stripped it.
+    const parent = await tenants.create({
+      cascadePermissions: true,
+      name: 'Deny Parent Org',
+    });
+    await parent.save();
+
+    const child = await tenants.create({
+      inheritPermissions: true,
+      name: 'Grant Child Org',
+      parentTenantId: parent.id!,
+    });
+    await child.save();
+
+    const user = await users.create({
+      email: 'parent-deny-child-grant@example.com',
+    });
+    await user.save();
+
+    const role = await roles.create({ name: 'Member' });
+    await role.save();
+
+    const perm = await permissions.create({
+      slug: 'reports.export',
+      name: 'Export Reports',
+    });
+    await perm.save();
+
+    // Parent DENYs (and cascades); child re-GRANTs.
+    await tenantOverrides.denyPermission(parent.id!, perm.id!);
+    await tenantOverrides.grantPermission(child.id!, perm.id!);
+
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId: child.id,
+      roleId: role.id,
+    });
+    await membership.save();
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+
+    expect(result.permissions.has('reports.export')).toBe(true);
+  });
+
   it('should return empty permissions for non-member', async () => {
     const user = await users.create({ email: 'nonmember@example.com' });
     await user.save();

@@ -287,8 +287,12 @@ export class SessionService {
       return failClosed;
     }
 
-    // Rotate: mint a fresh session for the new tenant, carrying over the device
-    // context, then revoke the old one.
+    // Rotate FAIL-CLOSED: revoke the old session FIRST, then mint the fresh one.
+    // If the second write fails the caller ends up needing to re-auth (the old
+    // id is already invalid) rather than retaining a still-valid stale-tenant
+    // session — so a captured pre-switch id provably stops validating before we
+    // ever report success.
+    await this.sessionCollection.revokeSession(sessionId);
     const rotated = await this.sessionCollection.createSession({
       userId: session.userId,
       tenantId,
@@ -297,7 +301,6 @@ export class SessionService {
       ipAddress: session.ipAddress,
       data: session.data,
     });
-    await this.sessionCollection.revokeSession(sessionId);
 
     return {
       switched: true,

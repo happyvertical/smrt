@@ -39,6 +39,9 @@ each later layer overrides earlier ones:
 So a permission a role grants but the tenant DENYs is **removed**, unless that
 exact user also has a membership-GRANT override for it. A membership-DENY always
 wins. Tenant-DENY of an inherited/cascade grant still blocks it (unchanged).
+The hard block reflects the tenant cascade's **net** resolution, not an
+unconditional union of every DENY in the chain — so a more-specific tenant GRANT
+(e.g. a child sub-tenant re-granting a permission its parent DENYs) still wins.
 
 **Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
 

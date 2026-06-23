@@ -290,8 +290,14 @@ export class PermissionResolver {
       }
 
       // Record the slugs DENY'd at any tenant level so callers can enforce the
-      // hard tenant-wide block over role/group grants.
+      // hard tenant-wide block over role/group grants — but NET against the
+      // cascade's own resolution: a slug a more-specific tenant GRANT re-added
+      // (so it survives in the net-granted `inheritedPermissions`) must NOT be
+      // in the hard-block set, because the cascade already decided GRANT
+      // (most-specific wins). Without this guard a parent-DENY + child-GRANT
+      // slug would wrongly override the child GRANT and any role/group grant.
       for (const permId of deniedPermissionIds) {
+        if (inheritedPermissions.has(permId)) continue;
         const perm = permissionsMap.get(permId);
         if (perm?.slug) {
           result.deniedPermissions.add(perm.slug);
