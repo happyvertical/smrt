@@ -388,6 +388,29 @@ jobs:
           fi
           git commit -m "chore(release): v$RELEASE_VERSION [skip ci]"
 
+          # Route @happyvertical/smrt-* publishes to npmjs.org (each package's
+          # publishConfig.registry target). The repo .npmrc maps the whole
+          # @happyvertical scope to GitHub Packages so CI can *install* the SDK
+          # deps (@happyvertical/ai, …); during `pnpm publish` that scope mapping
+          # overrides each package's publishConfig.registry and sends the smrt
+          # packages to npm.pkg.github.com (E403 — wrong registry, npm token can't
+          # write there). The SDK is already installed by this point, so re-point
+          # the scope to npmjs for publishing only (project + user .npmrc, so it
+          # wins regardless of which pnpm reads first). Publishing only packs and
+          # uploads — it does not re-resolve the SDK deps — so npmjs is safe here.
+          for rc in .npmrc "${HOME}/.npmrc"; do
+            if [ -f "$rc" ]; then
+              # `-i.bak` + rm is the portable in-place form (GNU and BSD sed);
+              # editing in place avoids any redirect-clobber of the auth lines.
+              sed -i.bak '/^@happyvertical:registry=/d' "$rc"
+              rm -f "$rc.bak"
+            fi
+            # Re-point in BOTH files so the npmjs mapping wins regardless of
+            # which .npmrc pnpm consults first.
+            printf '%s\n' "@happyvertical:registry=https://registry.npmjs.org" >> "$rc"
+          done
+          echo "✓ Re-pointed @happyvertical scope to npmjs.org for publish"
+
           pnpm run changeset:publish
 
           git tag -f "v$RELEASE_VERSION"
