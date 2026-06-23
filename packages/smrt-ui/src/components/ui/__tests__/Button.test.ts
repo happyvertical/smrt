@@ -68,6 +68,31 @@ describe('Button', () => {
     expect(link).toHaveAttribute('href', '/home');
   });
 
+  it('appends a custom class while keeping the base button styling (#1589)', () => {
+    render(Button, {
+      props: { children: textSnippet('Save'), class: 'topic-action-btn' },
+    });
+    const button = screen.getByRole('button', { name: 'Save' });
+    // Caller's class is applied (so custom-styled buttons can adopt Button)...
+    expect(button).toHaveClass('topic-action-btn');
+    // ...without dropping the primitive's own base/variant styling.
+    expect(button).toHaveClass('button');
+    expect(button).toHaveClass('primary');
+  });
+
+  it('appends a custom class in link mode too', () => {
+    render(Button, {
+      props: {
+        children: textSnippet('Home'),
+        href: '/home',
+        class: 'nav-link',
+      },
+    });
+    const link = screen.getByRole('link', { name: 'Home' });
+    expect(link).toHaveClass('nav-link');
+    expect(link).toHaveClass('button');
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(Button, {
       props: { children: textSnippet('Accessible') },
