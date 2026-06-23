@@ -6,6 +6,26 @@
 
 - ### Breaking Changes
 
+  - move agent-admin composites to smrt-agents (smrt-svelte)
+
+  ### Bug Fixes
+
+  - admin registry types + side-effect-free svelte/admin subpath (review) (agents)
+  - prevent caller props from overriding disabled link semantics (smrt-ui)
+  - make disabled link-mode Button non-navigable (smrt-ui)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
   - scope tenant/global queries on STI collections (#1596) (messages)
   - recognize STI descendants of @TenantScoped bases (#1596) (tenancy)
 
