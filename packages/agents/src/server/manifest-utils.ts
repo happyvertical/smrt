@@ -10,7 +10,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { createLogger } from '@happyvertical/logger';
 import { type AgentManifestInfo, AgentUIRegistry } from '../ui.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Shape of a package manifest's `objects` entry
@@ -85,7 +88,7 @@ export function loadManifestsFromPackages(
         }
       }
     } catch {
-      console.warn(
+      logger.warn(
         `[smrt-agents/server] Could not load manifest for ${pkg} — skipping`,
       );
     }
@@ -132,7 +135,7 @@ export function loadManifestsFromConfig(
   const resolvedConfigPath = configPath || resolve(root, 'smrt.config.js');
 
   if (!existsSync(resolvedConfigPath)) {
-    console.warn(
+    logger.warn(
       `[smrt-agents/server] Config file not found: ${resolvedConfigPath}`,
     );
     return new Map();
@@ -140,7 +143,7 @@ export function loadManifestsFromConfig(
 
   const packages = extractAgentPackagesFromConfig(resolvedConfigPath);
   if (packages.length === 0) {
-    console.warn(
+    logger.warn(
       `[smrt-agents/server] No agents found in config: ${resolvedConfigPath}`,
     );
     return new Map();

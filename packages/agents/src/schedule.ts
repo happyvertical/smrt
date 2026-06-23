@@ -174,53 +174,6 @@ export class AgentSchedule extends SmrtObject {
   }
 
   /**
-   * Record a successful run
-   */
-  async recordSuccess(): Promise<void> {
-    this.lastRun = new Date();
-    this.lastStatus = 'success';
-    this.lastError = null;
-    this.runCount++;
-    this.successCount++;
-    this.runningCount = Math.max(0, this.runningCount - 1);
-    this.calculateNextRun();
-    await this.save();
-  }
-
-  /**
-   * Record a failed run
-   */
-  async recordFailure(error: string): Promise<void> {
-    this.lastRun = new Date();
-    this.lastStatus = 'failed';
-    this.lastError = error;
-    this.runCount++;
-    this.failureCount++;
-    this.runningCount = Math.max(0, this.runningCount - 1);
-    this.calculateNextRun();
-    await this.save();
-  }
-
-  /**
-   * Check if the schedule is due to run
-   */
-  isDue(): boolean {
-    if (!this.enabled || this.status !== 'active') {
-      return false;
-    }
-
-    if (!this.nextRun) {
-      return false;
-    }
-
-    if (this.runningCount >= this.maxConcurrent) {
-      return false;
-    }
-
-    return new Date() >= this.nextRun;
-  }
-
-  /**
    * Calculate the next run time based on cron expression
    */
   calculateNextRun(): void {
@@ -315,23 +268,6 @@ export class AgentScheduleCollection extends SmrtCollection<AgentSchedule> {
   }
 
   /**
-   * List schedules that are due to run
-   */
-  async listDue(options: { limit?: number } = {}): Promise<AgentSchedule[]> {
-    const now = new Date().toISOString();
-    return this.query(
-      `SELECT * FROM _smrt_agent_schedules
-       WHERE enabled = 1
-       AND status = 'active'
-       AND next_run <= ?
-       AND running_count < max_concurrent
-       ORDER BY next_run ASC
-       LIMIT ?`,
-      [now, options.limit || 100],
-    );
-  }
-
-  /**
    * List schedules for a specific agent type
    */
   async listByAgentType(
@@ -353,52 +289,25 @@ export class AgentScheduleCollection extends SmrtCollection<AgentSchedule> {
       limit: options.limit,
     });
   }
-
-  /**
-   * Get schedule statistics
-   */
-  async stats(): Promise<{
-    total: number;
-    active: number;
-    paused: number;
-    disabled: number;
-    error: number;
-    dueNow: number;
-  }> {
-    const now = new Date().toISOString();
-
-    const result = await this._db.query(
-      `SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
-        SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END) as paused,
-        SUM(CASE WHEN status = 'disabled' THEN 1 ELSE 0 END) as disabled,
-        SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error,
-        SUM(CASE WHEN enabled = 1 AND status = 'active' AND next_run <= ? THEN 1 ELSE 0 END) as due_now
-       FROM _smrt_agent_schedules`,
-      [now],
-    );
-
-    const row = result.rows[0] || {};
-    return {
-      total: (row.total as number) ?? 0,
-      active: (row.active as number) ?? 0,
-      paused: (row.paused as number) ?? 0,
-      disabled: (row.disabled as number) ?? 0,
-      error: (row.error as number) ?? 0,
-      dueNow: (row.due_now as number) ?? 0,
-    };
-  }
 }
 
-// Parse a cron expression and get the next run date
-// Supports standard 5-field cron format: minute hour day-of-month month day-of-week
-// Examples:
-// - '0 2 * * *' - 2:00 AM daily
-// - '0 0 * * 0' - Midnight on Sundays
-// - 'x/15 * * * *' - Every 15 minutes (where x is asterisk)
-// - '0 9 1 * *' - 9:00 AM on the 1st of every month
-function getNextCronDate(cron: string, _timezone: string = 'UTC'): Date {
+/**
+ * Parse a cron expression and get the next run date.
+ *
+ * Supports standard 5-field cron format: minute hour day-of-month month
+ * day-of-week. Day-of-month / day-of-week follow POSIX OR semantics when both
+ * are restricted (see the loop body). Matched against the host's local time
+ * (not timezone-aware).
+ *
+ * Examples:
+ * - '0 2 * * *' - 2:00 AM daily
+ * - '0 0 * * 0' - Midnight on Sundays
+ * - 'x/15 * * * *' - Every 15 minutes (where x is asterisk)
+ * - '0 9 1 * *' - 9:00 AM on the 1st of every month
+ *
+ * Exported for unit testing of the matching logic.
+ */
+export function getNextCronDate(cron: string, _timezone: string = 'UTC'): Date {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) {
     throw new Error(
@@ -416,13 +325,38 @@ function getNextCronDate(cron: string, _timezone: string = 'UTC'): Date {
   // Move to next minute at minimum
   candidate.setMinutes(candidate.getMinutes() + 1);
 
+  // Standard cron DOM/DOW semantics:
+  // When both day-of-month and day-of-week are restricted (not *),
+  // a date matches if EITHER condition is met (OR logic). When only one
+  // is restricted, only that field applies; when both are `*`, every day
+  // matches. POSIX: `0 0 13 * 5` fires on the 13th OR any Friday.
+  const dayIsWildcard = dayExpr === '*';
+  const dowIsWildcard = dowExpr === '*';
+
   // Search for next matching date (limit to 1 year)
   const maxIterations = 525600; // ~1 year in minutes
   for (let i = 0; i < maxIterations; i++) {
+    const dayMatches = matchesCronField(candidate.getDate(), dayExpr);
+    // getDay() returns 0 for Sunday; standard cron accepts both 0 and 7
+    const dow = candidate.getDay();
+    const dowMatches =
+      matchesCronField(dow, dowExpr) ||
+      (dow === 0 && matchesCronField(7, dowExpr));
+
+    let dayOfMonthOrWeekMatches: boolean;
+    if (!dayIsWildcard && !dowIsWildcard) {
+      dayOfMonthOrWeekMatches = dayMatches || dowMatches;
+    } else if (!dayIsWildcard) {
+      dayOfMonthOrWeekMatches = dayMatches;
+    } else if (!dowIsWildcard) {
+      dayOfMonthOrWeekMatches = dowMatches;
+    } else {
+      dayOfMonthOrWeekMatches = true;
+    }
+
     if (
       matchesCronField(candidate.getMonth() + 1, monthExpr) &&
-      matchesCronField(candidate.getDate(), dayExpr) &&
-      matchesCronField(candidate.getDay(), dowExpr) &&
+      dayOfMonthOrWeekMatches &&
       matchesCronField(candidate.getHours(), hourExpr) &&
       matchesCronField(candidate.getMinutes(), minuteExpr)
     ) {

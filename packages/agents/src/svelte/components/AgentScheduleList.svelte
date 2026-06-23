@@ -51,6 +51,15 @@ function handleRowClick(schedule: AgentScheduleData) {
   onScheduleClick?.(schedule);
 }
 
+function handleRowKeydown(schedule: AgentScheduleData, event: KeyboardEvent) {
+  if (!onScheduleClick) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    // Prevent Space from scrolling the page when activating the row.
+    event.preventDefault();
+    onScheduleClick(schedule);
+  }
+}
+
 function handleToggle(schedule: AgentScheduleData, event: Event) {
   event.stopPropagation();
   if (schedule.enabled) {
@@ -111,6 +120,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
           <tr
             class="schedule-list__row"
             onclick={() => handleRowClick(schedule)}
+            onkeydown={(event) => handleRowKeydown(schedule, event)}
             role={onScheduleClick ? 'button' : undefined}
             tabindex={onScheduleClick ? 0 : undefined}
           >
@@ -322,7 +332,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .running-indicator {
-    color: var(--color-primary, #3b82f6);
+    color: var(--smrt-color-primary, #005ac1);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
@@ -332,12 +342,12 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 
   .actions {
     display: flex;
-    gap: var(--spacing-xs, 0.25rem);
+    gap: var(--smrt-spacing-xs, 0.25rem);
   }
 
   .schedule-list__cell--loading,
   .schedule-list__cell--empty {
-    padding: var(--spacing-xl, 2rem);
+    padding: var(--smrt-spacing-xl, 2rem);
     text-align: center;
   }
 
@@ -345,15 +355,15 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-sm, 0.5rem);
-    color: var(--color-text-secondary, #6b7280);
+    gap: var(--smrt-spacing-sm, 0.5rem);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .schedule-list__spinner {
     width: 20px;
     height: 20px;
-    border: 2px solid var(--color-neutral-gray200, #e5e7eb);
-    border-top-color: var(--color-primary, #3b82f6);
+    border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-top-color: var(--smrt-color-primary, #005ac1);
     border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
@@ -365,6 +375,6 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .schedule-list__empty {
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #43474e);
   }
 </style>
