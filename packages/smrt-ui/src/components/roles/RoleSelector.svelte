@@ -1,5 +1,17 @@
 <script lang="ts">
+/**
+ * RoleSelector — a trigger button and a single-select listbox of roles.
+ *
+ * Implements keyboard support per the WAI-ARIA listbox pattern, mirroring the
+ * roving-focus approach in `ui/Dropdown.svelte`: the trigger opens on
+ * ArrowDown/ArrowUp/Enter/Space; the open list moves focus onto the selected
+ * (or first) option; ArrowUp/Down/Home/End move roving focus; Enter/Space pick
+ * the focused option; Escape closes and refocuses the trigger; Tab closes.
+ * Click-outside also dismisses.
+ */
+
 import type { Role } from '@happyvertical/smrt-types';
+import { tick } from 'svelte';
 
 export interface Props {
   roles: Role[];
@@ -20,28 +32,98 @@ const {
 }: Props = $props();
 
 let open = $state(false);
+let wrapEl = $state<HTMLElement | null>(null);
+let triggerEl = $state<HTMLButtonElement | null>(null);
+let optionEls = $state<Array<HTMLButtonElement | null>>([]);
 const selectedRole = $derived(roles.find((r) => r.id === value));
+
+async function openList() {
+  if (disabled || roles.length === 0) return;
+  open = true;
+  await tick();
+  // Focus the selected option if there is one, otherwise the first.
+  const selectedIndex = roles.findIndex((r) => r.id === value);
+  const target = selectedIndex >= 0 ? selectedIndex : 0;
+  optionEls[target]?.focus();
+}
+
+function closeList(refocus = true) {
+  open = false;
+  if (refocus) triggerEl?.focus();
+}
 
 function handleSelect(roleId: string) {
   onchange(roleId);
-  open = false;
+  closeList();
 }
 
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    open = false;
+function focusByOffset(offset: number) {
+  if (roles.length === 0) return;
+  const current = optionEls.indexOf(
+    document.activeElement as HTMLButtonElement | null,
+  );
+  const from = current < 0 ? 0 : current;
+  const next = (from + offset + roles.length) % roles.length;
+  optionEls[next]?.focus();
+}
+
+function onTriggerKeydown(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    openList();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    openList();
   }
 }
+
+function onListKeydown(e: KeyboardEvent) {
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      focusByOffset(1);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      focusByOffset(-1);
+      break;
+    case 'Home':
+      e.preventDefault();
+      optionEls[0]?.focus();
+      break;
+    case 'End':
+      e.preventDefault();
+      optionEls[roles.length - 1]?.focus();
+      break;
+    case 'Escape':
+      e.preventDefault();
+      closeList();
+      break;
+    case 'Tab':
+      closeList(false);
+      break;
+  }
+}
+
+// Dismiss on outside click while open.
+$effect(() => {
+  if (!open) return;
+  const onDocPointer = (event: MouseEvent) => {
+    if (wrapEl && !wrapEl.contains(event.target as Node)) closeList(false);
+  };
+  document.addEventListener('click', onDocPointer, true);
+  return () => document.removeEventListener('click', onDocPointer, true);
+});
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
-<div class="role-selector" class:disabled>
+<div class="role-selector" class:disabled bind:this={wrapEl}>
   <button
+    bind:this={triggerEl}
     type="button"
     class="trigger"
     class:open
-    onclick={() => (open = !open)}
+    onclick={() => (open ? closeList(false) : openList())}
+    onkeydown={onTriggerKeydown}
     {disabled}
     aria-haspopup="listbox"
     aria-expanded={open}
@@ -56,7 +138,7 @@ function handleKeydown(e: KeyboardEvent) {
     {:else}
       <span class="placeholder">{placeholder}</span>
     {/if}
-    <svg class="chevron" viewBox="0 0 20 20" fill="currentColor">
+    <svg class="chevron" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
       <path
         fill-rule="evenodd"
         d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
@@ -66,14 +148,23 @@ function handleKeydown(e: KeyboardEvent) {
   </button>
 
   {#if open}
-    <div class="dropdown" role="listbox">
-      {#each roles as role (role.id)}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      class="dropdown"
+      role="listbox"
+      tabindex={-1}
+      aria-label={placeholder}
+      onkeydown={onListKeydown}
+    >
+      {#each roles as role, i (role.id)}
         <button
+          bind:this={optionEls[i]}
           type="button"
           class="option"
           class:selected={role.id === value}
           onclick={() => handleSelect(role.id!)}
           role="option"
+          tabindex={-1}
           aria-selected={role.id === value}
         >
           <div class="option-content">
@@ -115,7 +206,7 @@ function handleKeydown(e: KeyboardEvent) {
     text-align: left;
   }
 
-  .trigger:focus {
+  .trigger:focus-visible {
     outline: none;
     border-color: var(--smrt-color-primary, #005ac1);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
@@ -179,8 +270,10 @@ function handleKeydown(e: KeyboardEvent) {
     text-align: left;
   }
 
-  .option:hover {
+  .option:hover,
+  .option:focus-visible {
     background: var(--smrt-color-surface-container-high, #f3f4f6);
+    outline: none;
   }
 
   .option.selected {
