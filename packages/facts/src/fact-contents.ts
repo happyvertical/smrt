@@ -6,6 +6,7 @@
  */
 
 import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { FactContent } from './fact-content';
 
 // Decorator with empty config — only needed so the scanner detects the
@@ -30,14 +31,28 @@ export class FactContentCollection extends SmrtJunction<FactContent> {
     return this.list({ where: { tenantId } });
   }
 
+  /**
+   * Find all global (tenant-less) fact-content links.
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
+   */
   async findGlobal(): Promise<FactContent[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<FactContent>(this);
   }
 
+  /**
+   * Find fact-content links for a tenant including global links.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
+   */
   async findWithGlobals(tenantId: string): Promise<FactContent[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<FactContent>(
+      this,
+      tenantId,
+      'FactContent.findWithGlobals',
     );
   }
 }

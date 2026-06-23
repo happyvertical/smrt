@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { FactSource } from './fact-source';
 
 export class FactSourceCollection extends SmrtCollection<FactSource> {
@@ -63,19 +64,27 @@ export class FactSourceCollection extends SmrtCollection<FactSource> {
   }
 
   /**
-   * Find all global (tenant-less) sources
+   * Find all global (tenant-less) sources.
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    */
   async findGlobal(): Promise<FactSource[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<FactSource>(this);
   }
 
   /**
-   * Find sources for a tenant including global sources
+   * Find sources for a tenant including global sources.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    */
   async findWithGlobals(tenantId: string): Promise<FactSource[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<FactSource>(
+      this,
+      tenantId,
+      'FactSource.findWithGlobals',
     );
   }
 }

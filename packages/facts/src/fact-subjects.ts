@@ -6,6 +6,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { FactSubject } from './fact-subject';
 import type { SubjectRole } from './types';
 
@@ -89,19 +90,27 @@ export class FactSubjectCollection extends SmrtCollection<FactSubject> {
   }
 
   /**
-   * Find all global (tenant-less) subjects
+   * Find all global (tenant-less) subjects.
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    */
   async findGlobal(): Promise<FactSubject[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<FactSubject>(this);
   }
 
   /**
-   * Find subjects for a tenant including global subjects
+   * Find subjects for a tenant including global subjects.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    */
   async findWithGlobals(tenantId: string): Promise<FactSubject[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<FactSubject>(
+      this,
+      tenantId,
+      'FactSubject.findWithGlobals',
     );
   }
 }

@@ -11,6 +11,7 @@ import {
   type ResolvedPromptAI,
   resolvePrompt,
 } from '@happyvertical/smrt-prompts';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Fact } from './fact';
 import { FactSourceCollection } from './fact-sources';
 import { FactSubjectCollection } from './fact-subjects';
@@ -237,20 +238,24 @@ export class FactCollection extends SmrtCollection<Fact> {
   }
 
   /**
-   * Find all global (tenant-less) facts
+   * Find all global (tenant-less) facts.
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    */
   async findGlobal(): Promise<Fact[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Fact>(this);
   }
 
   /**
-   * Find facts for a tenant including global facts
+   * Find facts for a tenant including global facts.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    */
   async findWithGlobals(tenantId: string): Promise<Fact[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Fact>(this, tenantId, 'Fact.findWithGlobals');
   }
 
   /**
