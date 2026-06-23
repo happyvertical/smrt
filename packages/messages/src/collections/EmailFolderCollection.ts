@@ -3,9 +3,9 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { EmailFolder } from '../models/EmailFolder';
 import type { EmailFolderSearchFilters } from '../types';
-import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class EmailFolderCollection extends SmrtCollection<EmailFolder> {
   static readonly _itemClass = EmailFolder;

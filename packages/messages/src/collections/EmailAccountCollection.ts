@@ -4,18 +4,10 @@
  * Extends AccountCollection with email-specific query methods.
  */
 
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { EmailAccount } from '../models/EmailAccount';
 import type { EmailAccountSearchFilters, ProviderType } from '../types';
 import { AccountCollection } from './AccountCollection';
-import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
-
-/**
- * Qualified STI discriminator for EmailAccount rows in the shared `accounts`
- * table. Raw SQL on this tenant-scoped child collection must scope by
- * `_meta_type` so it never returns sibling Account subtypes (base Account,
- * TwitterAccount, SlackAccount). See `findGlobal` / `findWithGlobals`. (#1596)
- */
-const EMAIL_ACCOUNT_META_TYPE = '@happyvertical/smrt-messages:EmailAccount';
 
 export class EmailAccountCollection extends AccountCollection {
   static override readonly _itemClass = EmailAccount;
@@ -225,10 +217,11 @@ export class EmailAccountCollection extends AccountCollection {
   }
 
   // EmailAccount inherits Account's @TenantScoped recognition (#1596); see
-  // EmailCollection for why these route through the raw helpers scoped to the
-  // EmailAccount `_meta_type`.
+  // EmailCollection for why these route through the raw helpers. They auto-scope
+  // to the EmailAccount `_meta_type` (via getStiChildMetaType) so the shared
+  // `accounts` table never returns sibling Account subtypes. (#1600)
   override async findGlobal(): Promise<EmailAccount[]> {
-    return queryGlobal<EmailAccount>(this, EMAIL_ACCOUNT_META_TYPE);
+    return queryGlobal<EmailAccount>(this);
   }
 
   override async findWithGlobals(tenantId: string): Promise<EmailAccount[]> {
@@ -236,7 +229,6 @@ export class EmailAccountCollection extends AccountCollection {
       this,
       tenantId,
       'EmailAccount.findWithGlobals',
-      EMAIL_ACCOUNT_META_TYPE,
     );
   }
 }
