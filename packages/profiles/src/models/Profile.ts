@@ -335,14 +335,20 @@ export class Profile extends SmrtObject {
         contextProfileId: contextProfile?.id,
       });
       await relationship.save();
-    }
 
-    // Handle reciprocal relationships
-    if (relationshipType.reciprocal) {
-      const handler =
-        ProfileRelationshipType.getReciprocalHandler(relationshipSlug);
-      if (handler) {
-        await handler(this, toProfile, contextProfile);
+      // Handle reciprocal relationships. A reciprocal handler creates the
+      // inverse edge by calling addRelationship() back on `toProfile`. Gating
+      // this on `!exists` is what terminates the recursion: the inverse call
+      // creates its own edge and re-enters, but by then the original edge
+      // already exists, so the handler is skipped and the cycle stops. Firing
+      // it unconditionally instead recurses forever (the bundled friend /
+      // spouse / partner / colleague / sibling handlers all call back here).
+      if (relationshipType.reciprocal) {
+        const handler =
+          ProfileRelationshipType.getReciprocalHandler(relationshipSlug);
+        if (handler) {
+          await handler(this, toProfile, contextProfile);
+        }
       }
     }
   }
