@@ -4,6 +4,7 @@
   "description": "Background job processing for SMRT objects with persistence and scheduling",
   "author": "HappyVertical",
   "type": "module",
+  "smrtRawPrimitives": "strict",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

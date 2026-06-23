@@ -111,6 +111,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
       <tr>
         {#if selectable}
           <th class="job-list__cell job-list__cell--checkbox">
+            <!-- raw-primitive-allow: the CheckboxInput form primitive lives in @happyvertical/smrt-svelte, which transitively depends on smrt-jobs (smrt-svelte to smrt-languages to smrt-jobs), so importing it would close a DAG cycle (#1582); this select-all control also needs the use:setIndeterminate action, which cannot be applied to a component -->
             <input
               type="checkbox"
               checked={allSelected}
@@ -171,6 +172,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           >
             {#if selectable}
               <td class="job-list__cell job-list__cell--checkbox">
+                <!-- raw-primitive-allow: the CheckboxInput form primitive lives in @happyvertical/smrt-svelte, which transitively depends on smrt-jobs (smrt-svelte to smrt-languages to smrt-jobs), so importing it would close a DAG cycle (#1582); native checkbox keeps full keyboard/AT a11y -->
                 <input
                   type="checkbox"
                   checked={isSelected}
