@@ -16,6 +16,13 @@
  *  6. [speculative] PaymentAllocation rejects allocations from different
  *     payments that jointly over-pay an invoice.
  *
+ * Round-2 review findings (PR #1592):
+ *  - [P1 tenant-isolation] FulfillmentLineItem loads the ordered ContractLineItem
+ *    tenant-scoped (a foreign-tenant id fails closed) and rejects a line item
+ *    that belongs to a different contract than the parent Fulfillment.
+ *  - [P2 zero-total] PaymentAllocation skips the invoice-total cap for a
+ *    total=0 invoice (does not throw) per the documented intent.
+ *
  * Real in-memory SQLite (no DB mocking), per repo testing conventions. Money
  * math is executed, not asserted from comments.
  */
@@ -25,6 +32,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
+import { ContractLineItemCollection } from '../collections/ContractLineItemCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { FulfillmentCollection } from '../collections/FulfillmentCollection.js';
 import { FulfillmentLineItemCollection } from '../collections/FulfillmentLineItemCollection.js';
@@ -331,26 +339,27 @@ describe('FulfillmentLineItem over-fulfillment cap (#1389 major)', () => {
     }
   });
 
-  // ContractLineItem has no dedicated collection, so build the ordered line by
-  // instantiating the model directly (SmrtObject supports `new` + initialize +
-  // save). `collection.create()` already persists (it calls save internally),
-  // so the over-fulfillment guard fires inside `create()` — the rejection
-  // assertions wrap the `create` call, not a later save.
+  // The ordered ContractLineItem is built through its dedicated
+  // `ContractLineItemCollection` (added in PR #1592 round 2 so the
+  // over-fulfillment guard can load it tenant-scoped). `collection.create()`
+  // already persists (it calls save internally), so the over-fulfillment guard
+  // fires inside the FulfillmentLineItem `create()` — the rejection assertions
+  // wrap the `create` call, not a later save.
   async function seed() {
     const customer = await customers.create({ profileId: 'of' });
     await customer.save();
     const contract = await contracts.create({ customerId: customer.id });
     await contract.save();
 
-    const { ContractLineItem } = await import('../models/ContractLineItem.js');
-    const orderedLine = new ContractLineItem({
+    const lineItems = await ContractLineItemCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    const orderedLine = await lineItems.create({
       contractId: contract.id,
       description: 'Widget',
       quantity: 10, // ordered 10
       unitPrice: 5,
     });
-    await orderedLine.initialize();
     await orderedLine.save();
 
     const fulfillment = await fulfillments.create({ contractId: contract.id });
@@ -414,6 +423,132 @@ describe('FulfillmentLineItem over-fulfillment cap (#1389 major)', () => {
         quantityFulfilled: 0,
       }),
     ).rejects.toThrow(/positive number/);
+  });
+
+  // -------------------------------------------------------------------------
+  // Round-2 [P1 tenant-isolation]: the ContractLineItem is loaded
+  // tenant-scoped and must belong to the parent Fulfillment's contract.
+  // -------------------------------------------------------------------------
+
+  it('rejects a ContractLineItem that belongs to a different contract than the Fulfillment', async () => {
+    // Contract A with an ordered line; Contract B with its own Fulfillment.
+    const { orderedLine: lineInContractA } = await seed();
+
+    const customerB = await customers.create({ profileId: 'of-b' });
+    await customerB.save();
+    const contractB = await contracts.create({ customerId: customerB.id });
+    await contractB.save();
+    const fulfillmentForB = await fulfillments.create({
+      contractId: contractB.id,
+    });
+    await fulfillmentForB.save();
+
+    // Point contract B's Fulfillment at contract A's line item. Quantity is
+    // well within A's ordered 10, so ONLY the cross-contract guard can reject.
+    await expect(
+      fulfillmentItems.create({
+        fulfillmentId: fulfillmentForB.id,
+        contractLineItemId: lineInContractA.id,
+        quantityFulfilled: 1,
+      }),
+    ).rejects.toThrow(/different contract/);
+  });
+
+  it('rejects a cross-tenant ContractLineItem id (fails closed to "does not exist")', async () => {
+    const { enableTenancy, disableTenancy, withTenant } = await import(
+      '@happyvertical/smrt-tenancy'
+    );
+    try {
+      enableTenancy();
+
+      // Tenant A owns a contract + ordered line + fulfillment.
+      const { lineId, fulfillmentId } = await withTenant(
+        { tenantId: 'tenant-a' },
+        async () => {
+          const customer = await customers.create({ profileId: 'of-ta' });
+          await customer.save();
+          const contract = await contracts.create({ customerId: customer.id });
+          await contract.save();
+
+          const lineItems = await ContractLineItemCollection.create({
+            db: { type: 'sqlite', url: dbPath },
+          });
+          const orderedLine = await lineItems.create({
+            contractId: contract.id,
+            description: 'Widget-A',
+            quantity: 10,
+            unitPrice: 5,
+          });
+          await orderedLine.save();
+
+          const fulfillment = await fulfillments.create({
+            contractId: contract.id,
+          });
+          await fulfillment.save();
+
+          return {
+            lineId: orderedLine.id as string,
+            fulfillmentId: fulfillment.id as string,
+          };
+        },
+      );
+
+      // Tenant B tries to fulfill against tenant A's line item id. The
+      // tenant-scoped load filters the foreign-tenant row out, so the guard
+      // sees it as missing and rejects — a foreign-tenant quantity can never
+      // be read to size (or bypass) the over-fulfillment cap.
+      await withTenant({ tenantId: 'tenant-b' }, async () => {
+        await expect(
+          fulfillmentItems.create({
+            fulfillmentId,
+            contractLineItemId: lineId,
+            quantityFulfilled: 1,
+          }),
+        ).rejects.toThrow(/does not exist/);
+      });
+    } finally {
+      disableTenancy();
+    }
+  });
+
+  it('allows an in-contract line item under the same tenant (happy path)', async () => {
+    const { enableTenancy, disableTenancy, withTenant } = await import(
+      '@happyvertical/smrt-tenancy'
+    );
+    try {
+      enableTenancy();
+      await withTenant({ tenantId: 'tenant-a' }, async () => {
+        const customer = await customers.create({ profileId: 'of-happy' });
+        await customer.save();
+        const contract = await contracts.create({ customerId: customer.id });
+        await contract.save();
+
+        const lineItems = await ContractLineItemCollection.create({
+          db: { type: 'sqlite', url: dbPath },
+        });
+        const orderedLine = await lineItems.create({
+          contractId: contract.id,
+          description: 'Widget-Happy',
+          quantity: 10,
+          unitPrice: 5,
+        });
+        await orderedLine.save();
+
+        const fulfillment = await fulfillments.create({
+          contractId: contract.id,
+        });
+        await fulfillment.save();
+
+        const item = await fulfillmentItems.create({
+          fulfillmentId: fulfillment.id,
+          contractLineItemId: orderedLine.id,
+          quantityFulfilled: 4,
+        });
+        await expect(item.save()).resolves.toBeTruthy();
+      });
+    } finally {
+      disableTenancy();
+    }
   });
 });
 
@@ -511,5 +646,33 @@ describe('PaymentAllocation invoice-level cap (#1389 speculative)', () => {
       amount: 40, // 60 + 40 = 100 == total, allowed
     });
     await expect(a2.save()).resolves.toBeTruthy();
+  });
+
+  // Round-2 [P2 zero-total]: a freshly-created total=0 invoice must SKIP the
+  // invoice-total cap (the documented "zero/missing total skips the cap"
+  // intent), not be capped at 0. `Number.isFinite(0) === true`, so the prior
+  // `isFinite` guard wrongly fired `over-pay invoice` for any allocation
+  // against a total=0 invoice; the `> ALLOCATION_EPSILON` gate skips it.
+  it('does not throw when allocating against a total=0 invoice', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-ZERO',
+      subtotal: 0,
+      taxAmount: 0,
+      totalAmount: 0,
+    });
+    await invoice.save();
+    expect(invoice.totalAmount).toBe(0);
+
+    // Payment large enough to clear the per-payment cap, so ONLY the
+    // invoice-total cap could (wrongly) reject here.
+    const payment = await payments.create({ amount: 50, currency: 'USD' });
+    await payment.save();
+
+    const allocation = await allocations.create({
+      paymentId: payment.id,
+      invoiceId: invoice.id,
+      amount: 50,
+    });
+    await expect(allocation.save()).resolves.toBeTruthy();
   });
 });

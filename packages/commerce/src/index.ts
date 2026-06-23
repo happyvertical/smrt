@@ -68,6 +68,7 @@ import './__smrt-register__.js';
 // Collections
 export {
   ContractCollection,
+  ContractLineItemCollection,
   type CreatePayoutFromPaymentArgs,
   CustomerCollection,
   FulfillmentCollection,

@@ -4,6 +4,7 @@
  */
 
 export { ContractCollection } from './ContractCollection.js';
+export { ContractLineItemCollection } from './ContractLineItemCollection.js';
 export { CustomerCollection } from './CustomerCollection.js';
 export { FulfillmentCollection } from './FulfillmentCollection.js';
 export { FulfillmentLineItemCollection } from './FulfillmentLineItemCollection.js';
