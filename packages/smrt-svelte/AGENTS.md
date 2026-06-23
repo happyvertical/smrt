@@ -2,6 +2,27 @@
 
 Top-of-stack Svelte 5 integration layer for SMRT: the app `Provider`, auth / AI hooks, browser AI (STT/TTS/LLM), forms, server-side i18n, and the domain-aware composites (admin, module, workspace). The domain-agnostic UI primitives, i18n client, theme system, and module UI registry now live in `@happyvertical/smrt-ui` (#1582) — import those from there (e.g. `@happyvertical/smrt-ui/ui`, `@happyvertical/smrt-ui/i18n`).
 
+## The UI split — primitive-adoption contract (#1589)
+
+SMRT's shared UI primitives are split by concern: **`smrt-ui` owns the
+domain-agnostic VISUAL primitives** (`Button`, `Card`, `Modal`, `Badge`,
+`Avatar`, `Chip`, `Dropdown`, …) and **`smrt-svelte` (here) owns the FORM
+primitives** (`Input`, `Textarea`, `Select`, `Checkbox`/`Toggle`, `Form`, and the
+specialized date/measurement/address/file inputs — they carry i18n + spoken-input
+logic that keeps them above the leaf).
+
+Two consequences:
+
+- **This package is the canonical consumer.** smrt-svelte's own composites and
+  workspace shell must adopt smrt-ui visual primitives — use `Button`, not a raw
+  `<button>`. Only `src/components/forms/` (the form primitives themselves)
+  legitimately holds raw `<input>`/`<select>`/`<textarea>`.
+- **Domain packages import visual primitives from `smrt-ui` and form primitives
+  from `smrt-svelte`**, and must not hand-roll raw interactive markup.
+
+Enforced by `scripts/check-raw-primitives.mjs` (report-only during the #1589
+migration; flips strict per package as it adopts the primitives).
+
 ## Provider (Root Component)
 
 Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and AI capabilities.

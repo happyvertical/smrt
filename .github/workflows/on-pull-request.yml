@@ -247,6 +247,13 @@ jobs:
       - name: Check raw typography
         run: node scripts/check-typography.mjs
 
+      # Bans raw <button>/<input>/<select>/<textarea>/<form> in domain
+      # .svelte markup — use the shared primitives (smrt-ui visual /
+      # smrt-svelte form). Report-only in #1589 Wave 0; flips strict per
+      # package as it migrates. Node-only, no deps.
+      - name: Check raw UI primitives
+        run: node scripts/check-raw-primitives.mjs
+
       # Flags hardcoded user-facing strings in .svelte markup (Sweep S13,
       # #1418). Report-only in phase 1 (no package fully extracted yet); fails
       # only for packages in the script's STRICT_PACKAGES set. Node-only, no deps.
