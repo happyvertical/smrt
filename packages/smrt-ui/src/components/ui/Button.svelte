@@ -26,6 +26,12 @@ export interface Props extends Omit<HTMLButtonAttributes, 'class' | 'href'> {
   fullWidth?: boolean;
   /** Loading state */
   loading?: boolean;
+  /**
+   * Extra class(es) appended after the base `button {variant} {size}` styling.
+   * Lets callers adopt Button for custom-styled buttons without losing their
+   * own CSS (issue #1589) — the base button styling still applies.
+   */
+  class?: string;
 }
 
 const {
@@ -36,6 +42,7 @@ const {
   loading = false,
   type = 'button',
   fullWidth = false,
+  class: className = '',
   onclick,
   children,
   ...rest
@@ -67,7 +74,7 @@ const linkProps = $derived(() => {
 {#if isLink}
   <a
     {href}
-    class="button {variant} {size}"
+    class="button {variant} {size} {className}"
     class:disabled={isDisabled}
     class:full-width={fullWidth}
     class:loading
@@ -88,7 +95,7 @@ const linkProps = $derived(() => {
     {type}
     disabled={isDisabled}
     aria-busy={loading}
-    class="button {variant} {size}"
+    class="button {variant} {size} {className}"
     class:full-width={fullWidth}
     class:loading
     {onclick}

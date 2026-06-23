@@ -31,6 +31,13 @@
  *   - `<script>` / `<style>` blocks and `<!-- -->` comments are blanked before
  *     scanning, so an element name mentioned in JS, CSS, or a comment is never
  *     matched (line numbers are preserved).
+ *   - `__tests__` directories — test fixtures are not shippable product UI.
+ *   - An element immediately preceded by an escape-hatch annotation:
+ *       <!-- raw-primitive-allow: <reason> -->
+ *     for genuinely-structural / semantic controls that no primitive should own
+ *     (e.g. a click-catching backdrop, a custom mic toggle). The reason is
+ *     required so the exception is self-documenting and reviewable — the same
+ *     spirit as the color ratchet's value-allowlist.
  *
  * Run: `node scripts/check-raw-primitives.mjs` or `pnpm check:raw-primitives`.
  * Exit code: 0 if no strict-package violations, 1 otherwise.
@@ -88,14 +95,15 @@ function listFiles(dir, exts) {
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      // Skip dependency + build/cache trees. `.svelte-kit` in particular holds
-      // generated `__package__` copies of every component — scanning them would
-      // double-count (and they are not the authored source anyway).
+      // Skip dependency, build/cache, and test-fixture trees. `.svelte-kit`
+      // holds generated `__package__` copies of every component; `__tests__`
+      // holds test fixtures — neither is authored, shippable product UI.
       if (
         entry.name === 'node_modules' ||
         entry.name === 'dist' ||
         entry.name === '.svelte-kit' ||
-        entry.name === '.turbo'
+        entry.name === '.turbo' ||
+        entry.name === '__tests__'
       )
         continue;
       out.push(...listFiles(full, exts));
@@ -120,17 +128,42 @@ function markupOnly(source) {
 }
 
 /**
+ * Escape-hatch annotation: `<!-- raw-primitive-allow: <reason> -->`.
+ *
+ * A `:` followed by a non-empty reason is REQUIRED (the `:\s*\S`) — a bare
+ * `<!-- raw-primitive-allow -->` does NOT match, so the exemption is never
+ * silent: the author must say why the raw element is justified.
+ */
+const ALLOW_RE = /<!--\s*raw-primitive-allow:\s*\S[^>]*?-->/gi;
+
+/**
  * Collect raw-primitive violations in a single `.svelte` file's source.
  *
  * Matches against the whole markup (NOT line-by-line) so a multi-line opening
  * tag — `<button\n  class="...">`, where the terminating whitespace is the
  * newline — is still caught; line numbers are derived from the match index.
+ *
+ * An element is exempt when a `raw-primitive-allow` annotation sits immediately
+ * before it (only whitespace between the annotation and the element). The
+ * annotations are read from the ORIGINAL source — `markupOnly` blanks comments
+ * but preserves character positions, so indices line up.
  */
 function findViolations(source) {
   const text = markupOnly(source);
+  const allowEnds = [...source.matchAll(ALLOW_RE)].map(
+    (m) => m.index + m[0].length,
+  );
   const hits = [];
   for (const m of text.matchAll(RAW_ELEMENT_RE)) {
     const idx = m.index;
+    // Exempt if an allow annotation immediately precedes this element.
+    if (
+      allowEnds.some(
+        (end) => end <= idx && /^\s*$/.test(source.slice(end, idx)),
+      )
+    ) {
+      continue;
+    }
     const line = text.slice(0, idx).split('\n').length;
     const lineStart = text.lastIndexOf('\n', idx - 1) + 1;
     const nl = text.indexOf('\n', idx);
@@ -220,9 +253,11 @@ for (const { file, hits } of strictViolations.sort((a, b) =>
 console.error(
   '\nReplace raw interactive elements with the shared primitives so components\n' +
     'get consistent a11y / focus / disabled-state behavior (#1589):\n' +
-    '  <button>  → Button         (@happyvertical/smrt-ui)\n' +
+    '  <button>  → Button         (@happyvertical/smrt-ui; pass `class` for custom styling)\n' +
     '  <input>/<textarea>/<select>/<form> → Input/Textarea/Select/Form\n' +
     '                              (@happyvertical/smrt-svelte)\n' +
+    'For a genuinely-structural control no primitive should own (backdrop, custom\n' +
+    'toggle), annotate it: <!-- raw-primitive-allow: <reason> --> on the line above.\n' +
     'Primitive-source files (smrt-ui/src, smrt-svelte/src/components/forms) are\n' +
     'exempt — see PRIMITIVE_SOURCE_FRAGMENTS in this script.',
 );
