@@ -3,6 +3,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal } from '@happyvertical/smrt-tenancy';
 import { Character } from './character.js';
 
 export class CharacterCollection extends SmrtCollection<Character> {
@@ -13,9 +14,15 @@ export class CharacterCollection extends SmrtCollection<Character> {
     return (await this.list({ where: { tenantId } })) as Character[];
   }
 
-  /** Find all global characters (without a tenant) */
+  /**
+   * Find all global characters (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
+   */
   async findGlobal(): Promise<Character[]> {
-    return (await this.list({ where: { tenantId: null } })) as Character[];
+    return queryGlobal<Character>(this);
   }
 
   /** Find characters by performer */
