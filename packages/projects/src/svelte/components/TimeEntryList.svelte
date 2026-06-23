@@ -85,6 +85,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
     {#if selectable && selectableEntries.length > 0}
       <div class="list-header">
         <label class="select-all">
+          <!-- raw-primitive-allow: select-all checkbox needs the indeterminate state; must stay native -->
           <input
             type="checkbox"
             checked={allSelected}
@@ -114,6 +115,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
           {#if selectable && selectableEntries.length > 0}
             <div class="checkbox-cell">
               {#if isSelectable}
+                <!-- raw-primitive-allow: native row checkbox; no Provider-free checkbox primitive, kept native to match the indeterminate select-all -->
                 <input
                   type="checkbox"
                   checked={isSelected}

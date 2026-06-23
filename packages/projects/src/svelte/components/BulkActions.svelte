@@ -5,6 +5,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 
 const { t } = useI18n();
@@ -39,55 +40,41 @@ const visible = $derived(selectedCount > 0);
       <span class="count">{selectedCount}</span>
       <span class="label">{selectedCount === 1 ? 'item' : 'items'} selected</span>
       {#if onclear}
-        <button type="button" class="clear-btn" onclick={onclear} disabled={loading}>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="clear-action"
+          onclick={onclear}
+          disabled={loading}
+        >
           Clear
-        </button>
+        </Button>
       {/if}
     </div>
 
     <div class="actions">
       {#if onapprove}
-        <button
-          type="button"
-          class="btn btn-filled"
-          onclick={onapprove}
-          disabled={loading}
-        >
+        <Button variant="primary" onclick={onapprove} disabled={loading}>
           {t(M['projects.bulk_actions.approve_all'])}
-        </button>
+        </Button>
       {/if}
 
       {#if onreject}
-        <button
-          type="button"
-          class="btn btn-error"
-          onclick={onreject}
-          disabled={loading}
-        >
+        <Button variant="danger" onclick={onreject} disabled={loading}>
           {t(M['projects.bulk_actions.reject_all'])}
-        </button>
+        </Button>
       {/if}
 
       {#if onexport}
-        <button
-          type="button"
-          class="btn btn-outlined"
-          onclick={onexport}
-          disabled={loading}
-        >
+        <Button variant="secondary" onclick={onexport} disabled={loading}>
           Export
-        </button>
+        </Button>
       {/if}
 
       {#if ondelete}
-        <button
-          type="button"
-          class="btn btn-error-outlined"
-          onclick={ondelete}
-          disabled={loading}
-        >
+        <Button variant="danger" onclick={ondelete} disabled={loading}>
           Delete
-        </button>
+        </Button>
       {/if}
     </div>
   </div>
@@ -122,87 +109,18 @@ const visible = $derived(selectedCount > 0);
     color: var(--smrt-color-on-secondary-container);
   }
 
-  .clear-btn {
-    background: none;
-    border: none;
+  /* Keep the bespoke text-link look for the migrated Clear Button. The
+     :global() pierces into the Button child's rendered <button>, which carries
+     its own scope hash (see #1589 scoping rule). */
+  .selection-info :global(.clear-action) {
     padding: 0.25rem 0.5rem;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
-    color: var(--smrt-color-primary);
-    cursor: pointer;
     text-decoration: underline;
-  }
-
-  .clear-btn:hover:not(:disabled) {
-    color: var(--smrt-color-primary);
-    opacity: 0.8;
-  }
-
-  .clear-btn:disabled {
-    opacity: 0.38;
-    cursor: not-allowed;
   }
 
   .actions {
     display: flex;
     gap: 0.5rem;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-label-large-weight, 500);
-    letter-spacing: var(--smrt-typography-label-large-tracking, 0.1px);
-    border-radius: var(--smrt-radius-full, 9999px);
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s var(--smrt-easing-standard);
-  }
-
-  .btn:disabled {
-    opacity: 0.38;
-    cursor: not-allowed;
-  }
-
-  .btn-filled {
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-  }
-
-  .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .btn-error {
-    background: var(--smrt-color-error);
-    color: var(--smrt-color-on-error);
-  }
-
-  .btn-error:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .btn-error-outlined {
-    background: transparent;
-    border: 1px solid var(--smrt-color-error);
-    color: var(--smrt-color-error);
-  }
-
-  .btn-error-outlined:hover:not(:disabled) {
-    background: var(--smrt-color-error-container);
-  }
-
-  .btn-outlined {
-    background: transparent;
-    border: 1px solid var(--smrt-color-outline);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .btn-outlined:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-highest);
   }
 
   @media (max-width: 640px) {
@@ -216,7 +134,7 @@ const visible = $derived(selectedCount > 0);
       flex-wrap: wrap;
     }
 
-    .actions .btn {
+    .actions :global(.button) {
       flex: 1;
       min-width: 100px;
     }

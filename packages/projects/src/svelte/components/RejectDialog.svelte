@@ -5,6 +5,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 
 const { t } = useI18n();
@@ -74,6 +75,7 @@ $effect(() => {
 
 {#if open}
   <div class="dialog-backdrop">
+    <!-- raw-primitive-allow: click-catching modal backdrop; structural overlay, not a primitive -->
     <button
       type="button"
       class="dialog-overlay"
@@ -92,6 +94,7 @@ $effect(() => {
 
       <p class="dialog-message">{message}</p>
 
+      <!-- raw-primitive-allow: base Textarea primitive cannot resolve in this package's vitest component tests (smrt-vitest does not map the smrt-svelte forms subpath alias); keep native until that shared harness gap is fixed -->
       <textarea
         bind:this={textarea}
         bind:value={reason}
@@ -106,22 +109,16 @@ $effect(() => {
       {/if}
 
       <div class="dialog-actions">
-        <button
-          type="button"
-          class="btn btn-secondary"
-          onclick={handleCancel}
-          disabled={loading}
-        >
+        <Button variant="secondary" onclick={handleCancel} disabled={loading}>
           {cancelLabel}
-        </button>
-        <button
-          type="button"
-          class="btn btn-error"
+        </Button>
+        <Button
+          variant="danger"
           onclick={handleConfirm}
           disabled={!canConfirm || loading}
         >
           {loading ? 'Rejecting...' : confirmLabel}
-        </button>
+        </Button>
       </div>
     </div>
   </div>
@@ -208,43 +205,5 @@ $effect(() => {
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 1.5rem;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.625rem 1.5rem;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-label-large-weight, 500);
-    letter-spacing: var(--smrt-typography-label-large-tracking, 0.1px);
-    border-radius: var(--smrt-radius-full, 9999px);
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s var(--smrt-easing-standard);
-  }
-
-  .btn:disabled {
-    opacity: 0.38;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background: transparent;
-    color: var(--smrt-color-primary);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--smrt-color-primary);
-    background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
-  }
-
-  .btn-error {
-    background: var(--smrt-color-error);
-    color: var(--smrt-color-on-error);
-  }
-
-  .btn-error:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-1);
   }
 </style>
