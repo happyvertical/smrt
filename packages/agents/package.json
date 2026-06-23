@@ -34,6 +34,11 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./svelte/admin": {
+      "types": "./dist/svelte/admin.d.ts",
+      "svelte": "./dist/svelte/admin.js",
+      "import": "./dist/svelte/admin.js"
     }
   },
   "files": [

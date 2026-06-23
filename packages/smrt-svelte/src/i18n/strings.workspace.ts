@@ -1,8 +1,10 @@
 /**
- * Workspace / admin / browser-AI message catalog (i18n, Sweep S13 #1418).
+ * Workspace / browser-AI message catalog (i18n, Sweep S13 #1418).
  *
  * English code defaults for user-facing strings in the workspace shell and
- * browser-AI test components. Keys use the `ui` namespace and follow
+ * browser-AI test components. (The agent-admin shells + their `ui.agent_admin_*`
+ * keys moved to `@happyvertical/smrt-agents` in #1589.) Keys use the `ui`
+ * namespace and follow
  * `ui.<component_snake>.<descriptor_snake>`. Client-safe (no languages root
  * import). Registered via `defineMessages` so the client `t` / `<Trans>` fall
  * back to these defaults when no server snapshot is present.

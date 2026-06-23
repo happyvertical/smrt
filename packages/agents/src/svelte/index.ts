@@ -48,6 +48,17 @@ export type ScheduleStatusBadgeProps = ComponentProps<
   typeof ScheduleStatusBadge
 >;
 
+// Registry types the admin shells type against — re-exported for parity with
+// the former `@happyvertical/smrt-svelte/admin` barrel (these live in
+// smrt-agents/ui). Also available side-effect-free from
+// `@happyvertical/smrt-agents/svelte/admin`.
+export type {
+  AdminPanelBaseProps,
+  AgentUIComponentRegistry,
+  AgentUISlot,
+  AgentUISlots,
+} from '../ui.js';
+
 // Export types and utilities
 export type {
   AgentDashboardProps as AgentDashboardPropsLegacy,
