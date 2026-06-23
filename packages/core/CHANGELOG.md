@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - extract domain-agnostic Svelte UI runtime to break the keystone cycle (#1584) (smrt-ui)
+
+  ### Bug Fixes
+
+  - publish @happyvertical/smrt-\* to npmjs, not GitHub Packages (release)
+  - use workspace:\* for template smrt peer deps (release)
+  - break inter-smrt peerDependency cycles into a DAG (deps)
+  - enforce simple-identifier jsonPath column in SQLite DDL too (core)
+
+  ### Other Changes
+
+  - refactor: extract cross-package identity contracts to smrt-types (#1583) (types)
+  - chore: address review on jsonPath column guard (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.29.41
 
 ### Patch Changes

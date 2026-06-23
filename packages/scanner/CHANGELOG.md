@@ -1,5 +1,7 @@
 # @happyvertical/smrt-scanner
 
+## 1.0.0
+
 ## 0.29.41
 
 ### Patch Changes
