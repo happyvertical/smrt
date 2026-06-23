@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.32.2
+
+### Patch Changes
+
+- ### Features
+
+  - Button class passthrough + ratchet escape-hatch (#1589 Wave 0) (smrt-ui)
+
+  ### Bug Fixes
+
+  - require a reason in raw-primitive-allow annotations (review) (ratchet)
+  - @happyvertical/smrt-config@0.32.2
+  - @happyvertical/smrt-types@0.32.2
+  - @happyvertical/smrt-scanner@0.32.2
+
 ## 0.32.1
 
 ### Patch Changes
