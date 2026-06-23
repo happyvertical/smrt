@@ -548,16 +548,22 @@ export class Invoice extends SmrtObject {
 
   /**
    * Whether `amountPaid` covers `totalAmount` within the sub-cent rounding
-   * tolerance. This is the SINGLE source of truth for "is this invoice fully
-   * paid" — both {@link updatePaymentStatus} (which decides PAID) and
+   * tolerance. This is the SINGLE source of truth for the **PAID** decision —
+   * both {@link updatePaymentStatus} (which decides PAID) and
    * {@link assertPaymentStatusConsistent} (which validates PAID on save) call
-   * it, so the deciding comparison and the validating comparison can never
-   * drift apart. A strict `amountPaid >= totalAmount` here would diverge from
-   * the epsilon-tolerant guard: a float-summed total paid exactly (e.g.
+   * it, so the PAID-deciding comparison and the PAID-validating comparison can
+   * never drift apart. A strict `amountPaid >= totalAmount` here would diverge
+   * from the epsilon-tolerant guard: a float-summed total paid exactly (e.g.
    * `0.1 × 3` line items paid `0.3`) reads as "not covered" by `>=` but
    * "covered" by the guard, so `updatePaymentStatus` would set PARTIAL and the
    * save-time guard would then reject it — leaving a genuinely-paid invoice
    * unsaveable (S5 audit #1390 follow-up).
+   *
+   * NOTE: the claim is scoped to PAID. The PARTIAL branch is NOT unified the
+   * same way — {@link updatePaymentStatus} treats any `amountPaid > 0` as
+   * PARTIAL, whereas {@link isPartiallyPaid} (used by the save-time guard)
+   * requires `amountPaid > INVOICE_EPSILON`. That pre-existing asymmetry only
+   * matters for a sub-cent dust payment and is intentionally left as-is.
    */
   private isFullyPaid(): boolean {
     return this.amountPaid - this.totalAmount >= -INVOICE_EPSILON;

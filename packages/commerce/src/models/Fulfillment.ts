@@ -16,12 +16,16 @@ import {
  * status. A status re-saved unchanged (no-op) and a brand-new row are always
  * permitted; this map governs *changes* only.
  *
- * Flow: PENDING → PROCESSING → SHIPPED → DELIVERED, with CANCELLED reachable
- * from any non-terminal state. DELIVERED and CANCELLED are terminal. This
- * guards against raw mass-assignment (the open `api:{create,update}` surface,
- * or a stale caller) forcing, e.g., a DELIVERED shipment back to PENDING or a
- * CANCELLED one back into SHIPPED. Mirrors the Contract/Payment/Payout guards
- * added in S5 audit #1390 — Fulfillment was the one money/state model missed.
+ * Forward order: PENDING → PROCESSING → SHIPPED → DELIVERED, but progress may
+ * SKIP intermediate states — not every order has a PROCESSING step, so
+ * PENDING → SHIPPED and PENDING/PROCESSING → DELIVERED are deliberately legal.
+ * The map only forbids moving BACKWARD (e.g. SHIPPED → PENDING) and leaving a
+ * terminal state. CANCELLED is reachable from any non-terminal state.
+ * DELIVERED and CANCELLED are terminal. This guards against raw mass-assignment
+ * (the open `api:{create,update}` surface, or a stale caller) forcing, e.g., a
+ * DELIVERED shipment back to PENDING or a CANCELLED one back into SHIPPED.
+ * Mirrors the Contract/Payment/Payout guards added in S5 audit #1390 —
+ * Fulfillment was the one money/state model missed.
  */
 const FULFILLMENT_STATUS_TRANSITIONS: Record<
   FulfillmentStatus,

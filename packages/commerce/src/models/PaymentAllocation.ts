@@ -200,10 +200,14 @@ export class PaymentAllocation extends SmrtObject {
       );
       const invoices = await (InvoiceCollection as any).create(this.options);
       const invoice = await invoices.get({ id: this.invoiceId });
-      // Only enforce when the invoice resolves and carries a real total —
-      // a missing/zero-total invoice (not yet persisted, ledger-less test
-      // fixture) skips the cap rather than blocking a valid allocation.
-      if (invoice && Number.isFinite(invoice.totalAmount)) {
+      // Only enforce when the invoice resolves and carries a real positive
+      // total — a missing/zero-total invoice (not yet persisted, ledger-less
+      // test fixture) skips the cap rather than blocking a valid allocation.
+      // `Number.isFinite(0)` is `true`, so the prior `isFinite` guard wrongly
+      // capped a freshly-created total=0 invoice at 0 and rejected every
+      // allocation against it; gate on `> ALLOCATION_EPSILON` to match the
+      // documented "zero/missing total skips the cap" intent.
+      if (invoice && invoice.totalAmount > ALLOCATION_EPSILON) {
         const { PaymentAllocationCollection } = await import(
           '../collections/PaymentAllocationCollection.js'
         );
