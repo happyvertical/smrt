@@ -3,15 +3,18 @@
  * UserMenu - User profile menu dropdown
  * refactored for Material 3
  *
- * Accessibility:
+ * Accessibility (WAI-ARIA menu-button pattern):
  * - Proper ARIA attributes for menu state
- * - Keyboard navigation (Escape to close)
- * - Click outside to close
- * - Focus management
+ * - Roving tabindex over the menu items
+ * - Arrow Up/Down, Home/End to move between items; Escape closes + refocuses
+ *   the trigger; Tab closes; click-outside dismisses
+ * - Focus management (first item focused on open, trigger refocused on close)
  */
+
 import type { Profile } from '@happyvertical/smrt-profiles';
 import { ripple } from '@happyvertical/smrt-ui';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { tick } from 'svelte';
 import { M } from '../i18n.js';
 
 const { t } = useI18n();
@@ -46,26 +49,92 @@ const userEmail = $derived(profile?.email ?? user?.email);
 
 let open = $state(false);
 let triggerButton: HTMLButtonElement;
+let itemEls = $state<Array<HTMLAnchorElement | null>>([]);
 const instanceId = $props.id();
 const menuId = `user-menu-${instanceId}`;
 
+/** Focus a menu item by index, wrapping out-of-range values. */
+function focusItem(index: number) {
+  const items = itemEls.filter((el): el is HTMLAnchorElement => el != null);
+  if (items.length === 0) return;
+  const wrapped = (index + items.length) % items.length;
+  items[wrapped]?.focus();
+}
+
+async function openMenu(focusLast = false) {
+  open = true;
+  await tick();
+  focusItem(focusLast ? -1 : 0);
+}
+
 function toggle() {
-  open = !open;
-  if (!open && triggerButton) {
-    triggerButton.focus();
+  if (open) {
+    close();
+  } else {
+    void openMenu();
   }
 }
 
-function close() {
+function close(refocusTrigger = true) {
   if (open) {
     open = false;
-    // Return focus to trigger button
-    triggerButton?.focus();
+    if (refocusTrigger) {
+      // Return focus to trigger button
+      triggerButton?.focus();
+    }
+  }
+}
+
+/** Roving-focus navigation inside the open menu. */
+function handleMenuKeydown(event: KeyboardEvent) {
+  const items = itemEls.filter((el): el is HTMLAnchorElement => el != null);
+  // `document.activeElement` is `Element | null`; the cast satisfies indexOf's
+  // arg type (reference comparison is null-safe — a null active element yields
+  // -1). Kept as indexOf (not findIndex) so the biome formatter can't rewrite it.
+  const current = items.indexOf(document.activeElement as HTMLAnchorElement);
+
+  switch (event.key) {
+    case 'ArrowDown':
+      event.preventDefault();
+      focusItem(current + 1);
+      break;
+    case 'ArrowUp':
+      event.preventDefault();
+      focusItem(current - 1);
+      break;
+    case 'Home':
+      event.preventDefault();
+      focusItem(0);
+      break;
+    case 'End':
+      event.preventDefault();
+      focusItem(-1);
+      break;
+    case 'Escape':
+      event.preventDefault();
+      close();
+      break;
+    case 'Tab':
+      // Let focus leave naturally but collapse the menu.
+      close(false);
+      break;
+  }
+}
+
+/** Open the menu from the trigger via keyboard (ArrowDown/Up/Enter/Space). */
+function handleTriggerKeydown(event: KeyboardEvent) {
+  if (open) return;
+  if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    void openMenu();
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    void openMenu(true);
   }
 }
 
 /**
- * Handle keyboard navigation
+ * Handle window-level Escape so it works even if focus has left the menu.
  */
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && open) {
@@ -81,7 +150,7 @@ function handleClickOutside(event: MouseEvent) {
   const target = event.target as Node;
   const menu = document.getElementById(menuId);
   if (menu && !menu.contains(target) && !triggerButton.contains(target)) {
-    close();
+    close(false);
   }
 }
 
@@ -107,6 +176,7 @@ function getInitials(name: string): string {
     id="{menuId}-trigger"
     class="user-menu-trigger"
     onclick={toggle}
+    onkeydown={handleTriggerKeydown}
     type="button"
     use:ripple
     aria-haspopup="menu"
@@ -128,8 +198,10 @@ function getInitials(name: string): string {
       id="{menuId}-dropdown"
       class="dropdown"
       role="menu"
+      tabindex={-1}
       aria-orientation="vertical"
       aria-labelledby="{menuId}-trigger"
+      onkeydown={handleMenuKeydown}
     >
       {#if userEmail}
         <div class="user-info" role="none">
@@ -138,11 +210,12 @@ function getInitials(name: string): string {
         </div>
         <hr class="divider" />
       {/if}
-      
-      <a 
-        href={profileUrl} 
-        class="dropdown-item" 
-        onclick={close} 
+
+      <a
+        bind:this={itemEls[0]}
+        href={profileUrl}
+        class="dropdown-item"
+        onclick={() => close(false)}
         use:ripple
         role="menuitem"
         tabindex="-1"
@@ -152,10 +225,11 @@ function getInitials(name: string): string {
         </svg>
         Profile
       </a>
-      <a 
-        href={settingsUrl} 
-        class="dropdown-item" 
-        onclick={close} 
+      <a
+        bind:this={itemEls[1]}
+        href={settingsUrl}
+        class="dropdown-item"
+        onclick={() => close(false)}
         use:ripple
         role="menuitem"
         tabindex="-1"
@@ -166,10 +240,11 @@ function getInitials(name: string): string {
         Settings
       </a>
       <hr class="divider" />
-      <a 
-        href={signoutUrl} 
-        class="dropdown-item danger" 
-        onclick={close} 
+      <a
+        bind:this={itemEls[2]}
+        href={signoutUrl}
+        class="dropdown-item danger"
+        onclick={() => close(false)}
         use:ripple
         role="menuitem"
         tabindex="-1"

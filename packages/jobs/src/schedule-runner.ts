@@ -718,8 +718,11 @@ export function validateCronExpression(cron: string): string[] {
  * - Day-of-week accepts 0-7 where both 0 and 7 represent Sunday
  *
  * Out-of-range fields are rejected eagerly (see {@link validateCronExpression}).
+ *
+ * Exported for unit testing of the matching logic (not re-exported from the
+ * package index — the public surface is unchanged).
  */
-function getNextCronDate(cron: string): Date {
+export function getNextCronDate(cron: string): Date {
   const [minuteExpr, hourExpr, dayExpr, monthExpr, dowExpr] =
     validateCronExpression(cron);
 

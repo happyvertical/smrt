@@ -32,6 +32,15 @@ let { history = [], loading = false, onEntryClick, empty }: Props = $props();
 function handleEntryClick(entry: AgentRunHistoryEntry) {
   onEntryClick?.(entry);
 }
+
+function handleEntryKeydown(entry: AgentRunHistoryEntry, event: KeyboardEvent) {
+  if (!onEntryClick) return;
+  if (event.key === 'Enter' || event.key === ' ') {
+    // Prevent Space from scrolling the page when activating the row.
+    event.preventDefault();
+    onEntryClick(entry);
+  }
+}
 </script>
 
 <div class="run-history-container">
@@ -73,6 +82,7 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
           <tr
             class="run-history__row"
             onclick={() => handleEntryClick(entry)}
+            onkeydown={(event) => handleEntryKeydown(entry, event)}
             role={onEntryClick ? 'button' : undefined}
             tabindex={onEntryClick ? 0 : undefined}
           >

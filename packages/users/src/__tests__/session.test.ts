@@ -278,6 +278,50 @@ describe('SessionCollection', () => {
     expect(remaining.length).toBe(1);
   });
 
+  it('atomically flips an expired-but-active session to EXPIRED on read', async () => {
+    const user = await users.create({ email: 'lazyexpire@example.com' });
+    await user.save();
+
+    // An already-past session still stored as ACTIVE (e.g. the TTL elapsed
+    // between writes). The first findValidSession() must reap it.
+    const expired = await sessions.create({
+      id: generateSessionId(),
+      userId: user.id!,
+      status: SessionStatus.ACTIVE,
+      expiresAt: new Date(Date.now() - 60000),
+    });
+    await expired.save();
+
+    const found = await sessions.findValidSession(expired.id!);
+    expect(found).toBeNull();
+
+    // The status must be persisted as EXPIRED, not merely computed at read time.
+    const reloaded = await sessions.get(expired.id!);
+    expect(reloaded?.status).toBe(SessionStatus.EXPIRED);
+  });
+
+  it('does not clobber a concurrent revoke when reaping an expired session', async () => {
+    const user = await users.create({ email: 'expirerace@example.com' });
+    await user.save();
+
+    // Session expired by time AND already revoked by a concurrent writer. The
+    // guarded UPDATE (WHERE status = ACTIVE) must be a no-op so the REVOKED
+    // status survives instead of being overwritten with EXPIRED.
+    const session = await sessions.create({
+      id: generateSessionId(),
+      userId: user.id!,
+      status: SessionStatus.REVOKED,
+      expiresAt: new Date(Date.now() - 60000),
+    });
+    await session.save();
+
+    const found = await sessions.findValidSession(session.id!);
+    expect(found).toBeNull();
+
+    const reloaded = await sessions.get(session.id!);
+    expect(reloaded?.status).toBe(SessionStatus.REVOKED);
+  });
+
   it('should set tenant context for session', async () => {
     const user = await users.create({ email: 'tenant@example.com' });
     await user.save();

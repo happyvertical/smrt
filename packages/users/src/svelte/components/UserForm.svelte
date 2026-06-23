@@ -40,6 +40,14 @@ let status = $state(initialFormState.status);
 let appliedUser: User | null = initialFormState.user;
 let appliedProfile: Profile | null = initialFormState.profile;
 
+// Drive the options from the enum so the form can never offer a value that
+// isn't a real UserStatus (previously offered `deactivated`, which is not an
+// enum member, and omitted `inactive`).
+const statusOptions = Object.values(UserStatus).map((value) => ({
+  value,
+  label: value.charAt(0).toUpperCase() + value.slice(1),
+}));
+
 $effect(() => {
   if (appliedUser === user && appliedProfile === profile) {
     return;
@@ -75,10 +83,9 @@ function handleSubmit(e: Event) {
   <div class="field">
     <label for="status">Status</label>
     <select id="status" bind:value={status} disabled={loading}>
-      <option value="active">Active</option>
-      <option value="pending">Pending</option>
-      <option value="suspended">Suspended</option>
-      <option value="deactivated">Deactivated</option>
+      {#each statusOptions as option (option.value)}
+        <option value={option.value}>{option.label}</option>
+      {/each}
     </select>
   </div>
 

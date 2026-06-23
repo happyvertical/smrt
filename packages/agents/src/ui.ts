@@ -488,6 +488,10 @@ export const AGENTS_MODULE_META: SmrtModuleMeta = {
   displayName: 'Agents',
   description: 'Agent framework for building autonomous actors',
   uiSlots: AGENTS_UI_SLOTS,
-  models: ['Agent', 'AgentSchedule', 'AgentRun'],
-  collections: ['AgentCollection', 'AgentScheduleCollection'],
+  models: ['Agent', 'AgentConfig', 'AgentSchedule', 'TenantAgent'],
+  collections: [
+    'AgentConfigCollection',
+    'AgentScheduleCollection',
+    'TenantAgentCollection',
+  ],
 };

@@ -61,6 +61,7 @@ export interface Props {
   let channelId = $state('');
   let isDirty = $state(false);
   let isSending = $state(false);
+  let sendError = $state<string | null>(null);
   let showCc = $state(false);
   let showBcc = $state(false);
   let appliedInitialState: Partial<ComposeState> | undefined;
@@ -88,6 +89,7 @@ export interface Props {
     channelId = nextState.channelId ?? '';
     isDirty = nextState.isDirty;
     isSending = nextState.isSending;
+    sendError = null;
     showCc = ccRecipients.length > 0;
     showBcc = bccRecipients.length > 0;
   });
@@ -114,11 +116,20 @@ export interface Props {
     isDirty = true;
   }
 
-  function handleSend() {
+  async function handleSend() {
     if (isSending) return;
 
     isSending = true;
-    onsend?.(getCurrentState());
+    sendError = null;
+    try {
+      // onsend may be sync or async; awaiting handles both a thrown error and a
+      // rejected promise so the form never latches in the "Sending…" state.
+      await onsend?.(getCurrentState());
+    } catch (e) {
+      sendError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isSending = false;
+    }
   }
 
   function handleSaveDraft() {
@@ -241,6 +252,12 @@ export interface Props {
     />
   {/if}
 
+  {#if sendError}
+    <div class="send-error" role="alert" aria-live="assertive">
+      {sendError}
+    </div>
+  {/if}
+
   <div class="actions">
     <button
       type="submit"
@@ -340,6 +357,14 @@ export interface Props {
   .char-count.over-limit {
     color: var(--smrt-color-error, #ba1a1a);
     font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+
+  .send-error {
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-sm, 8px);
+    background: var(--smrt-color-error-container, #ffdad6);
+    color: var(--smrt-color-on-error-container, #410002);
+    font-size: var(--smrt-typography-body-small-size, 12px);
   }
 
   .actions {

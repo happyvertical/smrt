@@ -109,6 +109,31 @@ export interface AssetManagerProps {
   initialView?: AssetViewMode;
   /** Whether to show folder navigation */
   showFolders?: boolean;
+  /**
+   * Persist an asset edit from the detail drawer. Consumer-supplied — when
+   * omitted, edits apply to local state only (preview/demo). Awaited; a
+   * rejection surfaces an error and skips the local update.
+   */
+  onSave?: (
+    asset: PersistedAsset,
+    updates: Record<string, unknown>,
+  ) => void | Promise<void>;
+  /**
+   * Persist a newly created asset. Consumer-supplied; awaited. A rejection
+   * propagates to the create modal, which surfaces it and keeps the form.
+   */
+  onCreate?: (data: {
+    file: File;
+    name: string;
+    description: string;
+    altText: string;
+  }) => void | Promise<void>;
+  /**
+   * Persist asset deletion. Consumer-supplied — when omitted, deletion applies
+   * to local state only. Awaited; a rejection surfaces an error and skips the
+   * local removal.
+   */
+  onDelete?: (assets: PersistedAsset[]) => void | Promise<void>;
 }
 
 /** Props for AssetToolbar */

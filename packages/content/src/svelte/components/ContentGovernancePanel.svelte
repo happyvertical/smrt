@@ -1,4 +1,5 @@
 <script lang="ts">
+import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import {
   type ContentCorrectionData,
@@ -111,6 +112,7 @@ let selectedClaimIds = $state<string[]>([]);
 let catalogError = $state<string | null>(null);
 let workflowError = $state<string | null>(null);
 let workflowNotice = $state<string | null>(null);
+let pendingRestoreVersion = $state<number | null>(null);
 let catalogLoaded = $state(false);
 let loadedContentId = $state<string | null>(null);
 let resolvedDraftGovernanceKey = $state<string | null>(null);
@@ -909,12 +911,27 @@ async function createSnapshot() {
   }
 }
 
-async function restoreVersion(versionNumber: number) {
+function requestRestoreVersion(versionNumber: number) {
   if (!savedContentId) {
     return;
   }
+  pendingRestoreVersion = versionNumber;
+}
 
-  if (!confirm(`Restore content version ${versionNumber}?`)) {
+function cancelRestoreVersion() {
+  pendingRestoreVersion = null;
+}
+
+function confirmRestoreVersion() {
+  const versionNumber = pendingRestoreVersion;
+  pendingRestoreVersion = null;
+  if (versionNumber !== null) {
+    void restoreVersion(versionNumber);
+  }
+}
+
+async function restoreVersion(versionNumber: number) {
+  if (!savedContentId) {
     return;
   }
 
@@ -1242,7 +1259,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             </div>
 
             {#if catalogError}
-              <p class="workflow-error">{catalogError}</p>
+              <p class="workflow-error" role="alert" aria-live="assertive">{catalogError}</p>
             {/if}
 
             <div class="fact-catalog">
@@ -1322,11 +1339,11 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     <div class="editor-drawer-content">
 
     {#if workflowError}
-      <p class="workflow-error">{workflowError}</p>
+      <p class="workflow-error" role="alert" aria-live="assertive">{workflowError}</p>
     {/if}
 
     {#if workflowNotice}
-      <p class="workflow-notice">{workflowNotice}</p>
+      <p class="workflow-notice" role="status" aria-live="polite">{workflowNotice}</p>
     {/if}
 
     {#if !savedContentId}
@@ -1757,7 +1774,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                         version.version !== null &&
                         version.version !== undefined
                       ) {
-                        void restoreVersion(version.version);
+                        requestRestoreVersion(version.version);
                       }
                     }}
                   >
@@ -1772,6 +1789,18 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     </details>
   {/if}
 </div>
+
+<ConfirmDialog
+  open={pendingRestoreVersion !== null}
+  title={t(M['content.governance_panel.restore_confirm_title'])}
+  message={t(M['content.governance_panel.restore_confirm_message'], {
+    version: pendingRestoreVersion ?? '',
+  })}
+  confirmLabel={t(M['content.governance_panel.restore_confirm_action'])}
+  cancelLabel={t(M['content.governance_panel.restore_confirm_cancel'])}
+  onconfirm={confirmRestoreVersion}
+  oncancel={cancelRestoreVersion}
+/>
 
 <style>
   .editor-drawer {

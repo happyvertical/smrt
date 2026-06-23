@@ -33,6 +33,11 @@ const {
 
 type ActiveSection = 'whitelist' | 'blacklist';
 let activeSection = $state<ActiveSection>('whitelist');
+let filterError = $state<string | null>(null);
+
+function toErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 // Whitelist form state
 let showWhitelistForm = $state(false);
@@ -70,6 +75,7 @@ async function saveWhitelistEntry() {
   if (!wlPattern.trim() || !onaddwhitelist) return;
   try {
     savingWhitelist = true;
+    filterError = null;
     await onaddwhitelist({
       pattern: wlPattern.trim(),
       type: wlType,
@@ -78,6 +84,7 @@ async function saveWhitelistEntry() {
     });
     resetWhitelistForm();
   } catch (e) {
+    filterError = toErrorMessage(e);
   } finally {
     savingWhitelist = false;
   }
@@ -86,14 +93,18 @@ async function saveWhitelistEntry() {
 async function removeWhitelistEntry(entry: WhitelistEntry) {
   if (isReadonly || !onremovewhitelist) return;
   try {
+    filterError = null;
     await onremovewhitelist(entry);
-  } catch (e) {}
+  } catch (e) {
+    filterError = toErrorMessage(e);
+  }
 }
 
 async function saveBlacklistEntry() {
   if (!blPattern.trim() || !onaddblacklist) return;
   try {
     savingBlacklist = true;
+    filterError = null;
     await onaddblacklist({
       pattern: blPattern.trim(),
       type: blType,
@@ -102,6 +113,7 @@ async function saveBlacklistEntry() {
     });
     resetBlacklistForm();
   } catch (e) {
+    filterError = toErrorMessage(e);
   } finally {
     savingBlacklist = false;
   }
@@ -110,8 +122,11 @@ async function saveBlacklistEntry() {
 async function removeBlacklistEntry(entry: BlacklistEntry) {
   if (isReadonly || !onremoveblacklist) return;
   try {
+    filterError = null;
     await onremoveblacklist(entry);
-  } catch (e) {}
+  } catch (e) {
+    filterError = toErrorMessage(e);
+  }
 }
 
 function getTypeIcon(type: string): string {
@@ -160,6 +175,18 @@ function getPatternPlaceholder(type: string): string {
       <span class="count">{blacklist.length}</span>
     </button>
   </div>
+
+  {#if filterError}
+    <div class="filter-error" role="alert" aria-live="assertive">
+      {filterError}
+      <button
+        type="button"
+        class="dismiss-btn"
+        aria-label={t(M['messages.email_filter_manager.dismiss_error'])}
+        onclick={() => filterError = null}
+      >&times;</button>
+    </div>
+  {/if}
 
   <!-- Whitelist Section -->
   {#if activeSection === 'whitelist'}
@@ -683,5 +710,26 @@ function getPatternPlaceholder(type: string): string {
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface-container, #f0f1f9);
     border-radius: var(--smrt-radius-md, 8px);
+  }
+
+  .filter-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--smrt-radius-md, 8px);
+    background: var(--smrt-color-error-container, #fce4ec);
+    color: var(--smrt-color-error, #ba1a1a);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+  }
+
+  .dismiss-btn {
+    background: transparent;
+    border: none;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    cursor: pointer;
+    color: inherit;
+    padding: 0 0.25rem;
   }
 </style>

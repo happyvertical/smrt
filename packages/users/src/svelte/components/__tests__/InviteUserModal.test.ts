@@ -70,4 +70,16 @@ describe('InviteUserModal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onclose).toHaveBeenCalledTimes(1);
   });
+
+  // Regression for #1399 blocker #2: the hand-rolled dialog had no focus
+  // trap/restore. Adopting the smrt-ui Modal renders a native <dialog> (top
+  // layer + trap + inert), which supplies the trap and Escape handling the
+  // previous markup lacked.
+  it('renders inside a native <dialog> for the focus trap', () => {
+    const { container } = render(InviteUserModal, { props: baseProps() });
+    const dialog = container.querySelector('dialog');
+    expect(dialog).not.toBeNull();
+    // The form lives inside the dialog, so focus is trapped within it.
+    expect(dialog?.querySelector('form')).not.toBeNull();
+  });
 });

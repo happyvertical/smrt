@@ -109,10 +109,15 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       contentVariant: content.variant,
       db: this.db,
     });
-    const [references, assets, factsState] = await Promise.all([
+    const [references, referenceEdges, assets, factsState] = await Promise.all([
       typeof content.getReferences === 'function'
         ? content.getReferences()
         : [],
+      // Capture per-edge citation pins so restore can reconstruct them.
+      // `getReferences()` resolves to Content objects and loses targetVersion.
+      typeof content.getReferenceEdges === 'function'
+        ? content.getReferenceEdges()
+        : Promise.resolve([]),
       typeof content.getAssets === 'function' ? content.getAssets() : [],
       typeof content.getFactsState === 'function' &&
       governance.factLinkingEnabled
@@ -149,6 +154,9 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       metadata: content.metadata,
       thumbnailAssetId: content.thumbnailAssetId,
       referenceIds: references.map((reference) => reference.id).filter(Boolean),
+      // Full edges with citation pins; `referenceIds` retained for back-compat
+      // with snapshots written before pin-aware restore (#1387 #3).
+      referenceEdges: referenceEdges.filter((edge) => Boolean(edge.targetId)),
       assetIds: assets.map((asset) => asset.id).filter(Boolean),
       factIds: factsState.factIds,
       factLinks: factsState.factLinks,
@@ -229,8 +237,46 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       }
     }
 
-    if (Array.isArray(snapshot.referenceIds)) {
-      (content as any).referenceIds = [...snapshot.referenceIds];
+    // Reference edges with citation pins (#1387 #3). Newer snapshots carry
+    // `referenceEdges` ({ targetId, targetVersion }); older ones only have
+    // `referenceIds`. Either way, seed the pending `referenceIds` from the
+    // target ids so `save()` reconciles the set (adds missing, removes extra),
+    // then re-apply the saved pins below so restoring "to vN" reconstructs the
+    // citation pins that existed at vN instead of dropping them to unpinned.
+    const snapshotEdges: Array<{
+      targetId: string;
+      targetVersion: number | null;
+    }> = Array.isArray(snapshot.referenceEdges)
+      ? snapshot.referenceEdges
+          .filter(
+            (edge: any) =>
+              edge &&
+              typeof edge.targetId === 'string' &&
+              edge.targetId.length > 0,
+          )
+          .map((edge: any) => ({
+            targetId: edge.targetId as string,
+            targetVersion:
+              typeof edge.targetVersion === 'number'
+                ? edge.targetVersion
+                : null,
+          }))
+      : Array.isArray(snapshot.referenceIds)
+        ? snapshot.referenceIds
+            .filter(
+              (id: unknown): id is string =>
+                typeof id === 'string' && id.length > 0,
+            )
+            .map((targetId: string) => ({ targetId, targetVersion: null }))
+        : [];
+
+    if (
+      Array.isArray(snapshot.referenceEdges) ||
+      Array.isArray(snapshot.referenceIds)
+    ) {
+      (content as any).referenceIds = snapshotEdges.map(
+        (edge) => edge.targetId,
+      );
     }
 
     if (Array.isArray(snapshot.assetIds)) {
@@ -238,6 +284,42 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
     }
 
     await content.save();
+
+    // Re-apply the citation pin of EVERY snapshot edge — including UNPINNED
+    // ones (`targetVersion: null`). `save()` only reconciles the target-id set
+    // (adds missing / removes extra edges) and leaves the pin of an edge that
+    // already existed untouched. So restoring an *unpinned* snapshot over an
+    // edge that is currently *pinned* must explicitly clear that pin, otherwise
+    // the live pin survives the restore and drift never resets. Passing
+    // `addReference(target, { targetVersion: null })` clears the pin in place
+    // (the junction's `attach` updates the row when `null !== existing`), while
+    // a non-null value (re)sets it — so "restore to vN" reconstructs exactly
+    // the pins that existed at vN.
+    //
+    // We pass the resolved Content object (not the raw id) because
+    // `addReference(string)` treats the string as a URL, not a content id.
+    // `addReference` is idempotent on (source, target) and only adjusts
+    // targetVersion.
+    if (
+      snapshotEdges.length > 0 &&
+      typeof content.getReferences === 'function' &&
+      typeof content.addReference === 'function'
+    ) {
+      const resolvedReferences = await content.getReferences();
+      const resolvedById = new Map(
+        resolvedReferences
+          .filter((reference) => reference.id)
+          .map((reference) => [reference.id as string, reference]),
+      );
+      for (const edge of snapshotEdges) {
+        const target = resolvedById.get(edge.targetId);
+        if (target) {
+          await content.addReference(target, {
+            targetVersion: edge.targetVersion,
+          });
+        }
+      }
+    }
 
     const governance = await resolveEffectiveContentGovernance({
       contentType: content.type,

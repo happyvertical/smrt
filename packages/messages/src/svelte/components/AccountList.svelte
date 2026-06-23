@@ -26,7 +26,16 @@ const {
   onremove,
 }: Props = $props();
 
-function handleAccountClick(account: AccountData) {
+function handleAccountClick(event: MouseEvent, account: AccountData) {
+  // Action buttons (Sync/Activate/Deactivate/Remove) render inside the
+  // AccountCard, which sits inside this role="button" wrapper. A click on one
+  // of them bubbles up here and would also fire onaccountclick. Ignore clicks
+  // that originate inside an interactive control so only the card surface
+  // itself opens the account.
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button, a, input, select, textarea')) {
+    return;
+  }
   onaccountclick?.(account);
 }
 
@@ -37,7 +46,7 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    handleAccountClick(account);
+    onaccountclick?.(account);
   }
 }
 </script>
@@ -59,7 +68,7 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
             <div
               role="button"
               tabindex="0"
-              onclick={() => handleAccountClick(account)}
+              onclick={(event) => handleAccountClick(event, account)}
               onkeydown={(event) => handleAccountKeydown(event, account)}
             >
               <AccountCard {account} {onsync} {onremove} />

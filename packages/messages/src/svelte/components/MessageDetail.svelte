@@ -69,15 +69,16 @@ const _slackMeta = $derived.by(() => {
   return message.meta || {};
 });
 
-const _sanitizedHtml = $derived.by(() => {
-  if (!message.htmlBody) return '';
-  return message.htmlBody
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '')
-    .replace(/javascript\s*:/gi, 'blocked:')
-    .replace(/<link[^>]*>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '');
+// Body is always rendered as untrusted plain text — we never inject provider
+// HTML via {@html}. A regex "sanitizer" is bypassable (e.g. an unclosed
+// <script> survives), so when the caller opts into the HTML body we down-render
+// it to text by stripping tags. Real rich-HTML rendering, if ever needed, must
+// go through a vetted sanitizer or a sandboxed iframe (out of scope here).
+const _displayBody = $derived.by(() => {
+  if (showHtml && message.htmlBody) {
+    return message.htmlBody.replace(/<[^>]*>/g, '');
+  }
+  return message.body;
 });
 </script>
 
@@ -144,11 +145,7 @@ const _sanitizedHtml = $derived.by(() => {
     {/if}
 
     <div class="body">
-      {#if showHtml && message.htmlBody}
-        {@html _sanitizedHtml}
-      {:else}
-        <pre class="body-text">{message.body}</pre>
-      {/if}
+      <pre class="body-text">{_displayBody}</pre>
     </div>
 
     {#if attachments.length > 0}

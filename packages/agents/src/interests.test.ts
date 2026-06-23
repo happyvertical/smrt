@@ -511,6 +511,116 @@ describe('Agent Interests', () => {
       expect(results[0].data.id).toBe(meeting2.id);
     });
 
+    // Regression for deep-review #1397 minor-security finding (T2): the raw
+    // custom-query path interpolated `ORDER BY ${sorts.join(', ')}` without
+    // validation. A malicious sort field must be rejected with the same
+    // allowlist collection.list() uses (`^[a-zA-Z0-9_]+$` + ASC/DESC).
+    //
+    // interesting() catches a per-type query error and logs+continues (returns
+    // no rows for that type), so the validation throw surfaces as: zero results
+    // (no data leaked / no raw SQL executed) plus a logged validation error.
+    it('should reject an injected ORDER BY field in the custom query path', async () => {
+      const testPrefix = uniqueName('order-by-injection');
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        priority: 5,
+      });
+      await meeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('order-by-injection-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              query: () => [`title LIKE ?`, [`${testPrefix}%`]],
+              sort: 'priority; DROP TABLE meetings; --',
+            },
+          },
+        },
+      });
+      await agent.initialize();
+      const logger = (agent as unknown as { logger: { warn: () => void } })
+        .logger;
+      const warnSpy = vi.spyOn(logger, 'warn');
+
+      // Injection blocked: no rows returned (raw SQL never ran).
+      const results = await agent.interesting();
+      expect(results).toEqual([]);
+
+      // ...and the cause was the ORDER BY field validation, surfaced as a
+      // logged "Failed to query Meeting for interests" with an Error payload.
+      const errored = warnSpy.mock.calls.some((call) => {
+        const payload = call[1] as { error?: unknown } | undefined;
+        return (
+          /Failed to query Meeting/.test(String(call[0])) &&
+          payload?.error instanceof Error &&
+          /Invalid field name for ordering/.test(payload.error.message)
+        );
+      });
+      expect(errored).toBe(true);
+      warnSpy.mockRestore();
+    });
+
+    it('should reject an invalid ORDER BY direction in the custom query path', async () => {
+      const testPrefix = uniqueName('order-by-direction');
+      const meeting = await meetingCollection.create({
+        title: `${testPrefix}-meeting`,
+        priority: 5,
+      });
+      await meeting.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('order-by-direction-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              query: () => [`title LIKE ?`, [`${testPrefix}%`]],
+              sort: 'priority SIDEWAYS',
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      // Invalid direction blocked: no rows returned.
+      const results = await agent.interesting();
+      expect(results).toEqual([]);
+    });
+
+    it('should still honor a valid ORDER BY in the custom query path', async () => {
+      const testPrefix = uniqueName('order-by-valid');
+      const low = await meetingCollection.create({
+        title: `${testPrefix}-low`,
+        priority: 1,
+      });
+      await low.save();
+      const high = await meetingCollection.create({
+        title: `${testPrefix}-high`,
+        priority: 9,
+      });
+      await high.save();
+
+      const agent = new TestInterestAgent({
+        name: uniqueName('order-by-valid-agent'),
+        db: sharedDb,
+        interests: {
+          objects: {
+            Meeting: {
+              query: () => [`title LIKE ?`, [`${testPrefix}%`]],
+              sort: 'priority DESC',
+            },
+          },
+        },
+      });
+      await agent.initialize();
+
+      const results = await agent.interesting();
+      const ordered = results.map((r) => (r.data as { id?: string }).id);
+      expect(ordered).toEqual([high.id, low.id]);
+    });
+
     it('should support custom query with NOT EXISTS pattern', async () => {
       const testPrefix = uniqueName('not-exists');
 

@@ -1069,10 +1069,32 @@ export abstract class Agent extends SmrtObject {
       // Build full SQL query
       let sql = `SELECT * FROM ${collection.tableName} WHERE ${whereClause}`;
 
-      // Add ORDER BY if specified
+      // Add ORDER BY if specified.
+      // The sort fields are interpolated directly into the SQL string, so
+      // validate each field name and direction against the same allowlist
+      // collection.list() uses, to prevent SQL injection if filter.sort ever
+      // derives from untrusted input.
       if (filter.sort) {
         const sorts = Array.isArray(filter.sort) ? filter.sort : [filter.sort];
-        sql += ` ORDER BY ${sorts.join(', ')}`;
+        const orderBy = sorts
+          .map((item) => {
+            const [field, direction = 'ASC'] = item.trim().split(/\s+/);
+            if (!/^[a-zA-Z0-9_]+$/.test(field)) {
+              throw new Error(`Invalid field name for ordering: ${field}`);
+            }
+            const normalizedDirection = direction.toUpperCase();
+            if (
+              normalizedDirection !== 'ASC' &&
+              normalizedDirection !== 'DESC'
+            ) {
+              throw new Error(
+                `Invalid sort direction: ${direction}. Must be ASC or DESC.`,
+              );
+            }
+            return `${field} ${normalizedDirection}`;
+          })
+          .join(', ');
+        sql += ` ORDER BY ${orderBy}`;
       }
 
       // Add LIMIT if specified

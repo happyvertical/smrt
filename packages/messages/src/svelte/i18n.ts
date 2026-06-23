@@ -47,6 +47,7 @@ export const M = defineMessages({
   'messages.email_account_manager.imap_host_title': 'IMAP: {host}:{port}',
   'messages.email_account_manager.test_connection': 'Test connection',
   'messages.email_account_manager.remove': 'Remove',
+  'messages.email_account_manager.dismiss_error': 'Dismiss error',
 
   // EmailFilterManager
   'messages.email_filter_manager.whitelist_description':
@@ -58,6 +59,7 @@ export const M = defineMessages({
   'messages.email_filter_manager.no_whitelist_entries':
     'No whitelist entries yet.',
   'messages.email_filter_manager.whitelist_remove': 'Remove',
+  'messages.email_filter_manager.dismiss_error': 'Dismiss error',
   'messages.email_filter_manager.blacklist_description':
     'Blacklisted senders are automatically blocked or archived.',
   'messages.email_filter_manager.add_blacklist_entry': 'Add Blacklist Entry',

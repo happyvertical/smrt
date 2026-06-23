@@ -1141,36 +1141,6 @@
           "isStatic": false,
           "isPublic": true
         },
-        "recordSuccess": {
-          "name": "recordSuccess",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recordFailure": {
-          "name": "recordFailure",
-          "async": true,
-          "parameters": [
-            {
-              "name": "error",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isDue": {
-          "name": "isDue",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
         "calculateNextRun": {
           "name": "calculateNextRun",
           "async": false,
@@ -1442,20 +1412,6 @@
           "isStatic": false,
           "isPublic": true
         },
-        "listDue": {
-          "name": "listDue",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<AgentSchedule[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
         "listByAgentType": {
           "name": "listByAgentType",
           "async": true,
@@ -1472,14 +1428,6 @@
             }
           ],
           "returnType": "Promise<AgentSchedule[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "stats": {
-          "name": "stats",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<object>",
           "isStatic": false,
           "isPublic": true
         }

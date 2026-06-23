@@ -39,9 +39,13 @@ import { ThumbnailGenerator } from './thumbnail-generator';
 describe('ThumbnailGenerator', () => {
   beforeEach(() => {
     imageSaveMock.mockResolvedValue(undefined);
-    imageCreateMock.mockResolvedValue({
-      id: 'image-1',
-      save: imageSaveMock,
+    // Real `SmrtCollection.create()` persists the row itself (calls save), so
+    // the generator no longer issues a redundant `image.save()` (#1387). Model
+    // that here: `create` invokes the save mock and returns the saved record.
+    imageCreateMock.mockImplementation(async () => {
+      const image = { id: 'image-1', save: imageSaveMock };
+      await image.save();
+      return image;
     });
     imageCollectionCreateMock.mockResolvedValue({
       create: imageCreateMock,
@@ -182,6 +186,7 @@ describe('ThumbnailGenerator', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
+        ok: true,
         arrayBuffer: async () => Buffer.from('url-buffer'),
       }),
     );

@@ -224,7 +224,7 @@ export class Email extends Message {
    */
   override createReply(options?: { replyAll?: boolean }): Email {
     const reply = new Email({
-      ...this.options,
+      ...this.draftOptions(),
       id: undefined,
       accountId: this.accountId,
       threadId: this.threadId || this.id || undefined,
@@ -287,7 +287,7 @@ export class Email extends Message {
     const forwardBody = this.buildForwardBody();
 
     const forward = new Email({
-      ...this.options,
+      ...this.draftOptions(),
       id: undefined,
       accountId: this.accountId,
       threadId: '',

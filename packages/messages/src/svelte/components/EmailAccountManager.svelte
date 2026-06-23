@@ -34,6 +34,7 @@ let editingId = $state<string | null>(null);
 let saving = $state(false);
 let testingId = $state<string | null>(null);
 let testResult = $state<{ success: boolean; error?: string } | null>(null);
+let actionError = $state<string | null>(null);
 
 // Form state
 let maName = $state('');
@@ -65,6 +66,7 @@ function resetForm() {
   editingId = null;
   showForm = false;
   testResult = null;
+  actionError = null;
 }
 
 function startEdit(acct: EmailAccountData) {
@@ -80,16 +82,21 @@ function startEdit(acct: EmailAccountData) {
   maSmtpPort = acct.smtpPort ?? 465;
   maSmtpSecurity = acct.smtpSecurity ?? 'ssl';
   maUsername = acct.username ?? '';
-  maPassword = acct.password ?? '';
+  // Never echo the stored secret into the DOM. Leave the password blank on edit
+  // ('(unchanged)' placeholder); save() only writes a new password when one is
+  // typed (see the `!editingId || maPassword` guard).
+  maPassword = '';
   editingId = acct.id;
   showForm = true;
   testResult = null;
+  actionError = null;
 }
 
 async function save() {
   if (!maName.trim() || !maEmail.trim() || !onsave) return;
   try {
     saving = true;
+    actionError = null;
     const data: Partial<EmailAccountData> = {
       name: maName.trim(),
       email: maEmail.trim(),
@@ -109,6 +116,7 @@ async function save() {
     await onsave(data, editingId ?? undefined);
     resetForm();
   } catch (e) {
+    actionError = e instanceof Error ? e.message : String(e);
   } finally {
     saving = false;
   }
@@ -117,9 +125,12 @@ async function save() {
 async function remove(acct: EmailAccountData) {
   if (isReadonly || !ondelete) return;
   try {
+    actionError = null;
     await ondelete(acct);
     if (editingId === acct.id) resetForm();
-  } catch (e) {}
+  } catch (e) {
+    actionError = e instanceof Error ? e.message : String(e);
+  }
 }
 
 async function testConnection(acct: EmailAccountData) {
@@ -255,6 +266,18 @@ function getProviderLabel(type: string): string {
           {saving ? 'Saving...' : editingId ? 'Update' : 'Add Account'}
         </button>
       </div>
+    </div>
+  {/if}
+
+  {#if actionError}
+    <div class="test-result failure" role="alert" aria-live="assertive">
+      {actionError}
+      <button
+        type="button"
+        class="dismiss-btn"
+        aria-label={t(M['messages.email_account_manager.dismiss_error'])}
+        onclick={() => actionError = null}
+      >&times;</button>
     </div>
   {/if}
 

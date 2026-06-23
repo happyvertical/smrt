@@ -1,4 +1,5 @@
 <script lang="ts">
+import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { ContentVersionData } from '../../mock-smrt-client';
 import { createClient } from '../../mock-smrt-client';
@@ -119,12 +120,27 @@ async function createSnapshot() {
   }
 }
 
+let pendingRestoreVersion = $state<number | null>(null);
+
+function requestRestoreVersion(versionNumber: number) {
+  if (!savedContentId) return;
+  pendingRestoreVersion = versionNumber;
+}
+
+function cancelRestoreVersion() {
+  pendingRestoreVersion = null;
+}
+
+function confirmRestoreVersion() {
+  const versionNumber = pendingRestoreVersion;
+  pendingRestoreVersion = null;
+  if (versionNumber !== null) {
+    void restoreVersion(versionNumber);
+  }
+}
+
 async function restoreVersion(versionNumber: number) {
   if (!savedContentId) return;
-
-  if (!confirm(`Restore content version ${versionNumber}?`)) {
-    return;
-  }
 
   const contentIdToRestore = savedContentId;
   busy = true;
@@ -160,11 +176,11 @@ async function restoreVersion(versionNumber: number) {
   </div>
 
   {#if error}
-    <p class="tool-error">{error}</p>
+    <p class="tool-error" role="alert" aria-live="assertive">{error}</p>
   {/if}
 
   {#if notice}
-    <p class="tool-notice">{notice}</p>
+    <p class="tool-notice" role="status" aria-live="polite">{notice}</p>
   {/if}
 
   {#if !savedContentId}
@@ -191,7 +207,7 @@ async function restoreVersion(versionNumber: number) {
               disabled={busy || version.version === null || version.version === undefined}
               onclick={() => {
                 if (version.version !== null && version.version !== undefined) {
-                  void restoreVersion(version.version);
+                  requestRestoreVersion(version.version);
                 }
               }}
             >
@@ -203,6 +219,18 @@ async function restoreVersion(versionNumber: number) {
     </div>
   {/if}
 </div>
+
+<ConfirmDialog
+  open={pendingRestoreVersion !== null}
+  title={t(M['content.versions_tool.restore_confirm_title'])}
+  message={t(M['content.versions_tool.restore_confirm_message'], {
+    version: pendingRestoreVersion ?? '',
+  })}
+  confirmLabel={t(M['content.versions_tool.restore_confirm_action'])}
+  cancelLabel={t(M['content.versions_tool.restore_confirm_cancel'])}
+  onconfirm={confirmRestoreVersion}
+  oncancel={cancelRestoreVersion}
+/>
 
 <style>
   .governance-tool,

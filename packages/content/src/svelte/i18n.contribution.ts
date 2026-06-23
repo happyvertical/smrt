@@ -79,6 +79,10 @@ export const M = defineMessages({
   'content.content_list.view_published_article': 'View published article',
   'content.content_list.edit': 'Edit',
   'content.content_list.delete': 'Delete',
+  'content.content_list.delete_confirm_title': 'Delete content?',
+  'content.content_list.delete_confirm_message':
+    'Are you sure you want to delete "{title}"? This cannot be undone.',
+  'content.content_list.cancel': 'Cancel',
   'content.content_list.source_material': 'Source material',
   'content.content_list.view_article': 'View article',
   'content.content_list.view_article_button': 'View Article',

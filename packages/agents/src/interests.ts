@@ -291,16 +291,28 @@ export interface AgentWithInterestsOptions {
 }
 
 /**
- * Merge global and object-specific filters using AND logic (object spread)
+ * Merge global and object-specific filters via object spread.
+ *
+ * Non-colliding keys from both filters are combined (effectively AND-ing them
+ * in the resulting query). On a key collision the object-specific value
+ * **replaces** the global one — `{ ...global, ...object }` — so a per-object
+ * filter overrides the global filter for that key. A global safety filter is
+ * therefore NOT preserved when an object filter sets the same key; choose
+ * distinct keys (or different operators) if both must apply.
  *
  * @param globalFilter - Global filter applied to all types
- * @param objectFilter - Object-specific filter
+ * @param objectFilter - Object-specific filter (wins on key collision)
  * @returns Merged filter object
  *
  * @example
  * ```typescript
+ * // Distinct keys are combined:
  * mergeFilters({ status: 'active' }, { 'created_at >': date })
  * // Returns: { status: 'active', 'created_at >': date }
+ *
+ * // Colliding key: the object value replaces the global one:
+ * mergeFilters({ status: 'active' }, { status: 'archived' })
+ * // Returns: { status: 'archived' }
  * ```
  */
 export function mergeFilters(

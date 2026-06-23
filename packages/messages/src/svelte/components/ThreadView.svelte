@@ -46,7 +46,14 @@ $effect(() => {
   collapsed = new Set(initialCollapsed);
 });
 
-function handleMessageClick(message: MessageData) {
+function handleMessageClick(event: MouseEvent, message: MessageData) {
+  // MessageDetail renders its own Reply/Forward/Delete buttons inside this
+  // role="button" wrapper. Ignore clicks that originate inside an interactive
+  // control so only the message surface itself fires onmessageclick.
+  const target = event.target as HTMLElement | null;
+  if (target?.closest('button, a, input, select, textarea')) {
+    return;
+  }
   onmessageclick?.(message);
 }
 
@@ -57,7 +64,7 @@ function handleMessageKeydown(event: KeyboardEvent, message: MessageData) {
 
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    handleMessageClick(message);
+    onmessageclick?.(message);
   }
 }
 
@@ -128,7 +135,7 @@ const _sortedMessages = $derived(
             <div
               role="button"
               tabindex="0"
-              onclick={() => handleMessageClick(message)}
+              onclick={(event) => handleMessageClick(event, message)}
               onkeydown={(event) => handleMessageKeydown(event, message)}
             >
               <MessageDetail

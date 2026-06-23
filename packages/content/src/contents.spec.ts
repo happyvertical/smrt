@@ -634,7 +634,9 @@ it('should pin and update the cited version on a content reference', async () =>
     status: 'draft',
   });
 
-  await target.createVersion({ summary: 'v1' });
+  // Drift compares against the latest PUBLICATION version (pins are taken
+  // against publications), so these snapshots must be publication-kind (#1387 #4).
+  await target.createVersion({ kind: 'publication', summary: 'v1' });
 
   await source.addReference(target, { targetVersion: 1 });
 
@@ -650,7 +652,7 @@ it('should pin and update the cited version on a content reference', async () =>
   // Target gets a new version — citation still pinned to v1.
   target.body = 'Target v2';
   await target.save();
-  await target.createVersion({ summary: 'v2' });
+  await target.createVersion({ kind: 'publication', summary: 'v2' });
 
   const driftAfterUpdate = await source.getReferenceDrift();
   expect(driftAfterUpdate[0]).toMatchObject({
@@ -693,7 +695,9 @@ it('should leave unpinned references untracked but reportable', async () => {
     status: 'draft',
   });
 
-  await target.createVersion({ summary: 'v1' });
+  // Publication-kind so the unpinned reference still reports the target's
+  // latest publication version as `currentVersion` (#1387 #4).
+  await target.createVersion({ kind: 'publication', summary: 'v1' });
   await source.addReference(target);
 
   const drift = await source.getReferenceDrift();
@@ -701,6 +705,62 @@ it('should leave unpinned references untracked but reportable', async () => {
   expect(drift[0]).toMatchObject({
     targetId: target.id,
     citedVersion: null,
+    currentVersion: 1,
+    isDrifted: false,
+  });
+});
+
+it('restoring an unpinned snapshot over a currently-pinned edge clears the pin (drift resets)', async () => {
+  // Round-2 [P2 data-integrity], PR #1592: `content.save()` during restore
+  // only reconciles the reference target-id SET; it leaves the pin of an edge
+  // that already exists untouched. So restoring a snapshot whose edge is
+  // UNPINNED (`targetVersion: null`) over a live edge that is currently PINNED
+  // must explicitly re-apply the null pin to CLEAR it — otherwise the stale
+  // live pin survives and drift never resets. The restore now reapplies EVERY
+  // snapshot edge (null pins included), not just the non-null ones.
+  const dbUrl = getTestDbUrl('reference-restore-clears-pin');
+  const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+  const contents = await Contents.create({ db });
+  await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_ASSIGNMENTS_SCHEMA });
+
+  const source = await contents.create({
+    name: 'restore-pin-source',
+    title: 'Restore pin source',
+    body: 'Source body',
+    status: 'draft',
+  });
+  const target = await contents.create({
+    name: 'restore-pin-target',
+    title: 'Restore pin target',
+    body: 'Target v1',
+    status: 'draft',
+  });
+  await target.createVersion({ kind: 'publication', summary: 'v1' });
+
+  // 1) Reference the target UNPINNED, then snapshot the source at v1. The
+  //    snapshot edge therefore carries `targetVersion: null`.
+  await source.addReference(target);
+  await source.createVersion({ kind: 'manual', summary: 'unpinned-snapshot' });
+
+  // 2) Now PIN the live edge to v1 (e.g. the editor later pinned the citation).
+  await source.addReference(target, { targetVersion: 1 });
+  const driftBeforeRestore = await source.getReferenceDrift();
+  expect(driftBeforeRestore[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: 1,
+  });
+
+  // 3) Restore the v1 snapshot (which was unpinned). The pin must be cleared.
+  await source.restoreFromVersion(1);
+
+  const driftAfterRestore = await source.getReferenceDrift();
+  expect(driftAfterRestore).toHaveLength(1);
+  expect(driftAfterRestore[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: null, // pin cleared by the restore (was 1 before the fix)
     currentVersion: 1,
     isDrifted: false,
   });

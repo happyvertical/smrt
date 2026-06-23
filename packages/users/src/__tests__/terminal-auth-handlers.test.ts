@@ -111,6 +111,55 @@ describe('terminal-auth SvelteKit handlers', () => {
     expect(body.error).toMatch(/deviceCode/u);
   });
 
+  it('credential-bearing start/token responses are marked no-store', async () => {
+    const users = await UserCollection.create({ db: options.db });
+    const user = await users.create({ email: 'nostore@example.com' });
+    await user.save();
+
+    const start = createTerminalAuthStartHandler(options);
+    const token = createTerminalAuthTokenHandler(options);
+
+    // The start response carries the device/user codes.
+    const startResponse = await start(
+      makeEvent({ url: 'https://example.com/api/cli/auth/start' }),
+    );
+    expect(startResponse.headers.get('cache-control')).toBe(
+      'private, no-store',
+    );
+    const startBody = (await startResponse.json()) as {
+      userCode: string;
+      deviceCode: string;
+    };
+
+    const page = mountTerminalLoginPage({
+      ...options,
+      resolveUser: (event) =>
+        event.locals.user as { id: string; email: string },
+      resolveTenantId: (event) => event.locals.tenantId as string,
+    });
+    await page.approve(
+      makeEvent({
+        body: new URLSearchParams({ userCode: startBody.userCode }),
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        locals: {
+          user: { id: user.id!, email: user.email },
+          tenantId: 'tenant-1',
+        },
+      }),
+    );
+
+    // The token response carries the bearer session token.
+    const tokenResponse = await token(
+      makeEvent({
+        body: { deviceCode: startBody.deviceCode },
+        url: 'https://example.com/api/cli/auth/token',
+      }),
+    );
+    expect(tokenResponse.headers.get('cache-control')).toBe(
+      'private, no-store',
+    );
+  });
+
   it('approve → token → loadBearerSession round-trip wires up via cached service', async () => {
     const users = await UserCollection.create({ db: options.db });
     const user = await users.create({ email: 'cli@example.com' });

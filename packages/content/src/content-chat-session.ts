@@ -157,7 +157,14 @@ function displayValue(value: unknown, fallback = '(empty)'): string {
 }
 
 function delimitPromptValue(name: string, value: string): string {
-  return `<<<${CONTENT_PROMPT_DELIMITER} name=${name}>>>\n${value.replace(/<<<(?:END_)?SMRT_[^>]*>>>/g, '')}\n<<<END_${CONTENT_PROMPT_DELIMITER}>>>`;
+  // Strip any forged SMRT_ delimiter markers from the user value so it can't
+  // close the wrapper early or open a fake field. The previous `[^>]*` stopped
+  // at the first `>` (so `<<<SMRT_X>injected>>>` slipped through) and was
+  // case-sensitive (so `<<<smrt_...>>>` slipped through). `[\s\S]*?` is
+  // non-greedy and `>`-tolerant, and the `i` flag closes the case bypass
+  // (#1387 minor).
+  const sanitizedValue = value.replace(/<<<\s*(?:END_)?SMRT_[\s\S]*?>>>/gi, '');
+  return `<<<${CONTENT_PROMPT_DELIMITER} name=${name}>>>\n${sanitizedValue}\n<<<END_${CONTENT_PROMPT_DELIMITER}>>>`;
 }
 
 export function buildContentEditorInteractionVariables(

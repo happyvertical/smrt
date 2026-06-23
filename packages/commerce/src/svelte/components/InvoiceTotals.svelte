@@ -12,15 +12,15 @@ const { t } = useI18n();
 
 /** Props for InvoiceTotals component */
 export interface Props {
-  /** Subtotal in cents */
+  /** Subtotal in decimal dollars */
   subtotal: number;
   /** Tax rate as percentage (e.g., 5 for 5%) */
   taxRate?: number;
-  /** Tax amount in cents (calculated from rate if not provided) */
+  /** Tax amount in decimal dollars (calculated from rate if not provided) */
   taxAmount?: number;
-  /** Total in cents */
+  /** Total in decimal dollars */
   total: number;
-  /** Amount already paid in cents */
+  /** Amount already paid in decimal dollars */
   amountPaid?: number;
   /** Currency code */
   currency?: 'CAD' | 'USD';
@@ -47,21 +47,22 @@ const {
   size = 'md',
 }: Props = $props();
 
-// Calculate tax if not provided
-const calculatedTax = $derived(
-  taxAmount ?? Math.round(subtotal * (taxRate / 100)),
-);
+// Calculate tax if not provided. `taxRate` is a percentage (e.g. 5 for 5%), so
+// the `/ 100` converts percent → fraction — it is NOT a cents conversion. The
+// result is decimal dollars and must not be rounded to whole units.
+const calculatedTax = $derived(taxAmount ?? subtotal * (taxRate / 100));
 
 // Calculate balance due
 const balanceDue = $derived(total - amountPaid);
 
-// Format cents to dollars
-function formatMoney(cents: number): string {
+// Format decimal-dollar amounts. The commerce models store DECIMAL dollars
+// (AGENTS.md "Currency in decimal fields"), not integer cents.
+function formatMoney(amount: number): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
-  }).format(cents / 100);
+  }).format(amount);
 }
 </script>
 
