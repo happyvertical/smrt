@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Invoice } from '../models/Invoice.js';
 import { InvoiceStatus } from '../types/index.js';
 
@@ -291,24 +292,28 @@ export class InvoiceCollection extends SmrtCollection<Invoice> {
   }
 
   /**
-   * Find all global invoices (not associated with any tenant)
+   * Find all global invoices (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global invoices
    */
   async findGlobal(): Promise<Invoice[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Invoice>(this);
   }
 
   /**
-   * Find invoices for a tenant including global invoices
+   * Find invoices for a tenant including global invoices.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID
    * @returns Array of tenant-specific and global invoices
    */
   async findWithGlobals(tenantId: string): Promise<Invoice[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Invoice>(this, tenantId, 'Invoice.findWithGlobals');
   }
 }

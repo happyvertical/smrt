@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Vendor } from '../models/Vendor.js';
 import { VendorStatus } from '../types/index.js';
 
@@ -94,24 +95,28 @@ export class VendorCollection extends SmrtCollection<Vendor> {
   }
 
   /**
-   * Find all global vendors (not associated with any tenant)
+   * Find all global vendors (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global vendors
    */
   async findGlobal(): Promise<Vendor[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Vendor>(this);
   }
 
   /**
-   * Find vendors for a tenant including global vendors
+   * Find vendors for a tenant including global vendors.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID
    * @returns Array of tenant-specific and global vendors
    */
   async findWithGlobals(tenantId: string): Promise<Vendor[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Vendor>(this, tenantId, 'Vendor.findWithGlobals');
   }
 }

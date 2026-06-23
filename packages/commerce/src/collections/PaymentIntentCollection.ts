@@ -11,6 +11,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { PaymentIntent } from '../models/PaymentIntent.js';
 import { PaymentIntentStatus, type PaymentOption } from '../types/index.js';
 
@@ -151,14 +152,28 @@ export class PaymentIntentCollection extends SmrtCollection<PaymentIntent> {
     return this.list({ where: { tenantId } });
   }
 
+  /**
+   * Find all global payment intents (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
+   */
   async findGlobal(): Promise<PaymentIntent[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<PaymentIntent>(this);
   }
 
+  /**
+   * Find payment intents for a tenant including global intents.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
+   */
   async findWithGlobals(tenantId: string): Promise<PaymentIntent[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<PaymentIntent>(
+      this,
+      tenantId,
+      'PaymentIntent.findWithGlobals',
     );
   }
 }
