@@ -87,13 +87,13 @@ const _icon = $derived.by(() => {
   }
 
   .avatar--slack {
-    background: #e8def8;
-    color: #4a1175;
+    background: var(--smrt-color-tertiary-container, #e8def8);
+    color: var(--smrt-color-on-tertiary-container, #4a1175);
   }
 
   .avatar--twitter {
-    background: #d3e8fd;
-    color: #0c4a6e;
+    background: var(--smrt-color-secondary-container, #d3e8fd);
+    color: var(--smrt-color-on-secondary-container, #0c4a6e);
   }
 
   .icon {

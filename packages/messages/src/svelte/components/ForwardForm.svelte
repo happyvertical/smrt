@@ -20,6 +20,7 @@ export interface Props {
   let to: RecipientEntry[] = $state([]);
   let body = $state('');
   let isSending = $state(false);
+  let sendError = $state<string | null>(null);
 
   const forwardedBlock = $derived.by(() => {
     const dateStr = originalMessage.date
@@ -41,10 +42,19 @@ export interface Props {
     ].join('\n');
   });
 
-  function handleSend() {
+  async function handleSend() {
     if (isSending || to.length === 0) return;
     isSending = true;
-    onsend?.(to, body);
+    sendError = null;
+    try {
+      // onsend may be sync or async; awaiting handles both so the button never
+      // latches in the "Sending…" state on failure.
+      await onsend?.(to, body);
+    } catch (e) {
+      sendError = e instanceof Error ? e.message : String(e);
+    } finally {
+      isSending = false;
+    }
   }
 </script>
 
@@ -67,6 +77,12 @@ export interface Props {
   <div class="forwarded-original">
     <pre class="forwarded-text">{forwardedBlock}</pre>
   </div>
+
+  {#if sendError}
+    <div class="send-error" role="alert" aria-live="assertive">
+      {sendError}
+    </div>
+  {/if}
 
   <div class="actions">
     <button
@@ -131,6 +147,14 @@ export interface Props {
     color: var(--smrt-color-on-surface-variant, #49454f);
     white-space: pre-wrap;
     font-family: var(--smrt-font-family, system-ui);
+  }
+
+  .send-error {
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-sm, 8px);
+    background: var(--smrt-color-error-container, #ffdad6);
+    color: var(--smrt-color-on-error-container, #410002);
+    font-size: var(--smrt-typography-body-small-size, 12px);
   }
 
   .actions {

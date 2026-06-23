@@ -290,4 +290,99 @@ describe('Message.send orchestration', () => {
     expect(msg.retryCount).toBe(1);
     expect(msg.sendStatus).toBe('sent');
   });
+
+  it('does not re-send a message that is already sent (entry guard)', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+
+    sendMock.mockResolvedValueOnce({
+      success: true,
+      messageId: 'slack-1',
+      providerResponse: { ok: true },
+      timestamp: new Date(),
+    });
+
+    const msg = new SlackMessage({
+      body: 'hi',
+      channelId: 'C1',
+      accountId: account.id!,
+      db,
+    });
+    await msg.initialize();
+    await msg.save();
+
+    const first = await msg.send();
+    expect(first.success).toBe(true);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    // A second send on the already-'sent' instance must be rejected without
+    // touching the provider.
+    const second = await msg.send();
+    expect(second.success).toBe(false);
+    expect(second.error).toContain('already');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('concurrent send() on two instances of the same row delivers exactly once', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+
+    // The provider send blocks until released, so both senders are in flight
+    // simultaneously — only the one that won the compare-and-set claim should
+    // reach the provider.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    sendMock.mockImplementation(async () => {
+      await gate;
+      return {
+        success: true,
+        messageId: 'slack-1',
+        providerResponse: { ok: true },
+        timestamp: new Date(),
+      };
+    });
+
+    const seed = new SlackMessage({
+      body: 'hi',
+      channelId: 'C1',
+      accountId: account.id!,
+      db,
+    });
+    await seed.initialize();
+    await seed.save();
+
+    // Two independently hydrated instances pointing at the same row.
+    const messages = await (MessageCollection as any).create({ db });
+    const a = await messages.get({ id: seed.id });
+    const b = await messages.get({ id: seed.id });
+
+    const pending = Promise.all([a.send(), b.send()]);
+    release();
+    const [ra, rb] = await pending;
+
+    const successes = [ra, rb].filter((r) => r.success);
+    expect(successes).toHaveLength(1);
+    // Exactly one delivery reached the provider.
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    // The losing sender was told the message was already in flight.
+    const loser = ra.success ? rb : ra;
+    expect(loser.error).toContain('already');
+  });
 });

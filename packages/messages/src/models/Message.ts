@@ -215,6 +215,16 @@ export class Message extends SmrtObject {
    * Send this message via its account's sender
    */
   async send(options?: SendMessageOptions): Promise<MessageSendResult> {
+    // Entry guard: a message that is already in flight or delivered must not be
+    // sent again. Catches same-instance double-clicks before any work happens.
+    if (this.sendStatus === 'sending' || this.sendStatus === 'sent') {
+      return {
+        success: false,
+        error: `Cannot send: message is already '${this.sendStatus}'`,
+        sentAt: new Date(),
+      };
+    }
+
     // Resolve account
     const account = await this.getAccount();
     if (!account) {
@@ -233,10 +243,33 @@ export class Message extends SmrtObject {
     // Get sender from account
     const sender = await (account as any).createSender();
 
-    // Update status to sending
-    this.sendStatus = 'sending';
-    this.updatedAt = new Date();
-    await this.save();
+    // Claim the send. For a persisted row, do a compare-and-set so only one
+    // concurrent sender wins: flip send_status to 'sending' atomically, gated on
+    // the status we observed. If no row matched, another sender already claimed
+    // it — abort without delivering (prevents duplicate sends). For an unsaved
+    // draft there is no row yet, so the in-memory transition + save() (INSERT)
+    // serves as the claim.
+    const claimFromStatus = this.sendStatus;
+    if (this.isPersisted && this.id) {
+      const claim = await this.db.update(
+        this.tableName,
+        { id: this.id, send_status: claimFromStatus },
+        { send_status: 'sending', updated_at: new Date() },
+      );
+      if (!claim || claim.affected < 1) {
+        return {
+          success: false,
+          error: 'Cannot send: message is already being sent',
+          sentAt: new Date(),
+        };
+      }
+      this.sendStatus = 'sending';
+      this.updatedAt = new Date();
+    } else {
+      this.sendStatus = 'sending';
+      this.updatedAt = new Date();
+      await this.save();
+    }
 
     try {
       const result = await sender.send(this, options);
@@ -297,11 +330,29 @@ export class Message extends SmrtObject {
   }
 
   /**
+   * Options for a derived draft (reply/forward) built from this message. Carries
+   * the DB connection + tenant context from `this.options`, but strips this
+   * message's own identity fields. When this message was hydrated from the DB,
+   * `this.options` holds the row's `id`/`slug`/`context`/`_skipLoad`; spreading
+   * those into a new draft would make `draft.save()` upsert onto the natural-key
+   * conflict columns (`slug`/`context`/`_meta_type`) and overwrite the ORIGINAL
+   * message instead of inserting a new row. See EmailAccount.childOptions().
+   */
+  protected draftOptions(): Record<string, unknown> {
+    const rest = { ...(this.options as Record<string, unknown>) };
+    delete rest.id;
+    delete rest.slug;
+    delete rest.context;
+    delete rest._skipLoad;
+    return rest;
+  }
+
+  /**
    * Create a reply to this message (returns unsaved draft)
    */
   createReply(_options?: { replyAll?: boolean }): Message {
     const reply = new (this.constructor as typeof Message)({
-      ...this.options,
+      ...this.draftOptions(),
       id: undefined,
       accountId: this.accountId,
       threadId: this.threadId || this.id || '',
@@ -330,7 +381,7 @@ export class Message extends SmrtObject {
    */
   createForward(): Message {
     const forward = new (this.constructor as typeof Message)({
-      ...this.options,
+      ...this.draftOptions(),
       id: undefined,
       accountId: this.accountId,
       threadId: '',

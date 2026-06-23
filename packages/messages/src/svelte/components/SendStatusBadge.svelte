@@ -17,7 +17,7 @@ export interface Props {
       case 'sending':
         return { label: 'Sending', color: 'var(--smrt-color-primary, #6750a4)', icon: '↑' };
       case 'sent':
-        return { label: 'Sent', color: 'var(--smrt-color-primary, #006d3b)', icon: '✓' };
+        return { label: 'Sent', color: 'var(--smrt-color-success, #006d3b)', icon: '✓' };
       case 'failed':
         return { label: 'Failed', color: 'var(--smrt-color-error, #ba1a1a)', icon: '✕' };
       case 'scheduled':

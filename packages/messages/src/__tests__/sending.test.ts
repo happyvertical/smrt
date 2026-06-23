@@ -2,7 +2,11 @@
  * Tests for message sending lifecycle, status transitions, reply/forward
  */
 
-import { describe, expect, it } from 'vitest';
+import { getTestDatabase } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { EmailCollection } from '../collections/EmailCollection';
+import { MessageCollection } from '../collections/MessageCollection';
 import { Account } from '../models/Account';
 import { Email } from '../models/Email';
 import { Message } from '../models/Message';
@@ -258,5 +262,126 @@ describe('Account.createSender', () => {
   it('throws not implemented for base Account', async () => {
     const account = new Account({ name: 'Test' });
     await expect(account.createSender()).rejects.toThrow('not implemented');
+  });
+});
+
+// ============================================================================
+// Reply/forward persistence — must not overwrite the original (regression)
+//
+// When the original is hydrated from the DB, `this.options` carries the row's
+// id/slug/context/_skipLoad. A raw `{ ...this.options }` spread made the draft
+// inherit the original's natural-key conflict columns (slug/context/_meta_type),
+// so `reply.save()` upserted onto — and overwrote — the original row.
+// ============================================================================
+
+describe('reply/forward persistence (does not overwrite original)', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  it('saving a reply inserts a NEW row and leaves the original intact', async () => {
+    const original = new Message({
+      subject: 'Hello',
+      body: 'Original body',
+      fromAddress: 'alice@example.com',
+      fromName: 'Alice',
+      date: new Date('2025-01-15T10:00:00Z'),
+      db,
+    });
+    await original.initialize();
+    await original.save();
+    const originalId = original.id;
+
+    // Hydrate through the collection so `options` carries slug/context/_skipLoad,
+    // reproducing the real reply-from-inbox flow.
+    const messages = await (MessageCollection as any).create({ db });
+    const hydrated = await messages.get({ id: originalId });
+    expect(hydrated).toBeTruthy();
+
+    const reply = hydrated.createReply();
+    await reply.initialize();
+    await reply.save();
+
+    // The reply is a distinct row.
+    expect(reply.id).not.toBe(originalId);
+
+    // The original row still exists and is unchanged.
+    const reloaded = await messages.get({ id: originalId });
+    expect(reloaded).toBeTruthy();
+    expect(reloaded.subject).toBe('Hello');
+    expect(reloaded.body).toBe('Original body');
+
+    // Both rows are present.
+    const all = await messages.list({});
+    expect(all.length).toBe(2);
+  });
+
+  it('saving a forward inserts a NEW row and leaves the original intact', async () => {
+    const original = new Message({
+      subject: 'Quarterly report',
+      body: 'See attached',
+      fromAddress: 'alice@example.com',
+      fromName: 'Alice',
+      db,
+    });
+    await original.initialize();
+    await original.save();
+    const originalId = original.id;
+
+    const messages = await (MessageCollection as any).create({ db });
+    const hydrated = await messages.get({ id: originalId });
+    const forward = hydrated.createForward();
+    await forward.initialize();
+    await forward.save();
+
+    expect(forward.id).not.toBe(originalId);
+
+    const reloaded = await messages.get({ id: originalId });
+    expect(reloaded).toBeTruthy();
+    expect(reloaded.subject).toBe('Quarterly report');
+
+    const all = await messages.list({});
+    expect(all.length).toBe(2);
+  });
+
+  it('saving an Email reply inserts a NEW row and leaves the original intact', async () => {
+    const original = new Email({
+      subject: 'Project kickoff',
+      textBody: 'Original email body',
+      fromAddress: 'alice@example.com',
+      fromName: 'Alice',
+      messageId: '<abc@example.com>',
+      date: new Date('2025-02-01T09:00:00Z'),
+      db,
+    });
+    await original.initialize();
+    await original.save();
+    const originalId = original.id;
+
+    const emails = await (EmailCollection as any).create({ db });
+    const hydrated = await emails.get({ id: originalId });
+    expect(hydrated).toBeInstanceOf(Email);
+
+    const reply = hydrated.createReply();
+    await reply.initialize();
+    await reply.save();
+
+    expect(reply.id).not.toBe(originalId);
+
+    const reloaded = await emails.get({ id: originalId });
+    expect(reloaded).toBeTruthy();
+    expect(reloaded.subject).toBe('Project kickoff');
+    expect(reloaded.textBody).toBe('Original email body');
+
+    const all = await emails.list({});
+    expect(all.length).toBe(2);
   });
 });
