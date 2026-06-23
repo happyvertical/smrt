@@ -11,7 +11,7 @@
   "scripts": {
     "format": "turbo format",
     "format-check": "turbo format-check",
-    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || echo 'Skipping lefthook install (not in git repository)'",
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install --force || echo 'Skipping lefthook install (not in a git repository)'",
     "test": "turbo test",
     "test:watch": "turbo test:watch",
     "test:coverage": "npx vitest run --coverage",
