@@ -35,7 +35,15 @@ export function priorityToNumber(priority: Priority): number {
  * Parse delay string to milliseconds
  */
 export function parseDelay(delay: string | number): number {
-  if (typeof delay === 'number') return delay;
+  if (typeof delay === 'number') {
+    // Guard against NaN/Infinity: a non-finite delay flows into
+    // `new Date(Date.now() + delay)`, persisting an `Invalid Date` `runAt`
+    // that the claim query can never match (S3 in the #1401 review).
+    if (!Number.isFinite(delay)) {
+      throw new Error(`Invalid delay value: ${delay}`);
+    }
+    return delay;
+  }
 
   const match = delay.match(/^(\d+)(ms|s|m|h|d)?$/);
   if (!match) {

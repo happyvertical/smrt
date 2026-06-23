@@ -87,6 +87,7 @@ export {
 // Task runner
 export {
   createTaskRunner,
+  JobTimeoutError,
   TaskRunner,
   type TaskRunnerConfig,
   type TaskRunnerEvents,

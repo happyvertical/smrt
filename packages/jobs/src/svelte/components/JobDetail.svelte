@@ -200,7 +200,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
     margin: 0 0 var(--spacing-sm, 0.5rem) 0;
     font-size: var(--smrt-typography-title-small-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--color-text-secondary, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     text-transform: uppercase;
     letter-spacing: var(--smrt-typography-title-small-tracking, 0.05em);
   }
@@ -210,7 +210,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
   }
 
   .job-detail__section--error h3 {
-    color: var(--color-error, #dc2626);
+    color: var(--smrt-color-error, #dc2626);
   }
 
   .job-detail__list {
