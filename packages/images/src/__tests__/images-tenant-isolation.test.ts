@@ -182,4 +182,63 @@ describe('ImageCollection tenant isolation (#1407)', () => {
     ]);
     expect(result.every((i) => i instanceof Image)).toBe(true);
   });
+
+  it('findGlobal() returns only global images under an active tenant context (no throw)', async () => {
+    await seed();
+    // Add a global (tenant-less) image and a global non-Image asset via system
+    // context so no tenant id is auto-populated.
+    const { withSystemContext } = await import('@happyvertical/smrt-tenancy');
+    await withSystemContext(async () => {
+      await (
+        await images.create({ name: 'global.jpg', width: 800, height: 600 })
+      ).save();
+      await (
+        await assets.create({
+          name: 'global-doc.pdf',
+          mimeType: 'application/pdf',
+        })
+      ).save();
+    });
+
+    // Regression: re-declaring `@TenantScoped` made `list({ where: { tenantId:
+    // null } })` throw a TenantIsolationError under any active context (the
+    // interceptor treats an explicit null tenant filter as a violation). Under
+    // tenant-1, findGlobal must still return the tenant-less image — never a
+    // tenant-scoped image and never the non-Image PDF.
+    const result = await withTenant({ tenantId: 'tenant-1' }, () =>
+      images.findGlobal(),
+    );
+    expect(result.map((i) => i.name)).toEqual(['global.jpg']);
+    expect(result.every((i) => i instanceof Image)).toBe(true);
+  });
+
+  it('findWithGlobals() fails closed when asked for a tenant other than the active context (#1400)', async () => {
+    await seed();
+    // The raw bypass disables the interceptor's isolation guard, so the method
+    // replicates it: under tenant-1, a caller must not be able to read
+    // tenant-2's images by passing tenant-2's id (e.g. from untrusted params).
+    await expect(
+      withTenant({ tenantId: 'tenant-1' }, () =>
+        images.findWithGlobals('tenant-2'),
+      ),
+    ).rejects.toThrow(/isolation/i);
+  });
+
+  it('findWithGlobals() still serves an arbitrary tenant under system context (admin path)', async () => {
+    await seed();
+    // No enforced tenant (system context) preserves the deliberate cross-tenant
+    // capability: an admin path can fetch any tenant's images plus globals.
+    const { withSystemContext } = await import('@happyvertical/smrt-tenancy');
+    const result = await withSystemContext(() =>
+      images.findWithGlobals('tenant-2'),
+    );
+    // tenant-2's four images (no globals seeded in this case); only Images.
+    expect(result.map((i) => i.name).sort()).toEqual([
+      't2-4k.jpg',
+      't2-land.jpg',
+      't2-port.jpg',
+      't2-square.jpg',
+    ]);
+    expect(result.every((i) => i instanceof Image)).toBe(true);
+  });
 });
