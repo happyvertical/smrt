@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Asset } from './asset';
 
 export class AssetCollection extends SmrtCollection<Asset> {
@@ -25,25 +26,29 @@ export class AssetCollection extends SmrtCollection<Asset> {
   }
 
   /**
-   * Find all global assets (assets without a tenant)
+   * Find all global assets (assets without a tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global assets
    */
   async findGlobal(): Promise<Asset[]> {
-    return (await this.list({ where: { tenantId: null } })) as Asset[];
+    return queryGlobal<Asset>(this);
   }
 
   /**
-   * Find assets belonging to a tenant plus all global assets
+   * Find assets belonging to a tenant plus all global assets.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - The tenant ID to include
    * @returns Array of tenant-specific and global assets
    */
   async findWithGlobals(tenantId: string): Promise<Asset[]> {
-    return (await this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    )) as Asset[];
+    return queryWithGlobals<Asset>(this, tenantId, 'Asset.findWithGlobals');
   }
 
   /**
