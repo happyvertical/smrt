@@ -54,6 +54,12 @@ const {
   class: className = '',
   onclick,
   children,
+  // Anchor-mode attributes pulled out of `rest` so they are only ever applied
+  // in link mode below — in button mode they are dropped, matching the doc and
+  // avoiding invalid `<button target=...>` HTML (PR #1608 review).
+  target,
+  rel,
+  download,
   ...rest
 }: Props = $props();
 
@@ -95,6 +101,9 @@ const linkProps = $derived(() => {
 {#if isLink}
   <a
     href={isDisabled ? undefined : href}
+    {target}
+    {rel}
+    {download}
     class="button {variant} {size} {className}"
     class:disabled={isDisabled}
     class:full-width={fullWidth}

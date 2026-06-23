@@ -109,6 +109,22 @@ describe('Button', () => {
     expect(link).toHaveAttribute('rel', 'noreferrer');
   });
 
+  it('drops anchor-only attrs in button mode (no invalid <button target>) (#1608)', () => {
+    // In button mode the anchor-only props must NOT reach the <button> — they
+    // are pulled out of `rest` so the runtime matches the "ignored in button
+    // mode" doc and never emits invalid HTML.
+    render(Button, {
+      props: {
+        children: textSnippet('Save'),
+        target: '_blank',
+        rel: 'noreferrer',
+      },
+    });
+    const button = screen.getByRole('button', { name: 'Save' });
+    expect(button).not.toHaveAttribute('target');
+    expect(button).not.toHaveAttribute('rel');
+  });
+
   it('is not navigable when disabled in link mode', async () => {
     const { container } = render(Button, {
       props: { children: textSnippet('Home'), href: '/home', disabled: true },
