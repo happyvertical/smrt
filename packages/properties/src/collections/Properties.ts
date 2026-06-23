@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Property } from '../models/Property';
 import type { PropertyStatus } from '../types';
 
@@ -140,24 +141,32 @@ export class PropertyCollection extends SmrtCollection<Property> {
   }
 
   /**
-   * Find global properties (no tenant association)
+   * Find all global properties (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global properties
    */
   async findGlobal(): Promise<Property[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Property>(this);
   }
 
   /**
-   * Find properties for a tenant including global properties
+   * Find properties for a tenant plus all global properties.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of tenant-specific and global properties
    */
   async findWithGlobals(tenantId: string): Promise<Property[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<Property>(
+      this,
+      tenantId,
+      'Property.findWithGlobals',
     );
   }
 }
