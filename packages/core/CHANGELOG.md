@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.32.1
+
+### Patch Changes
+
+- ### Features
+
+  - add raw-primitive ratchet + formalize the smrt-ui/smrt-svelte split
+
+  ### Bug Fixes
+
+  - correct ratchet help text + skip generated dirs (Copilot review)
+  - @happyvertical/smrt-config@0.32.1
+  - @happyvertical/smrt-types@0.32.1
+  - @happyvertical/smrt-scanner@0.32.1
+
 ## 1.0.0
 
 ### Minor Changes
