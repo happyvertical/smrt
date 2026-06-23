@@ -20,12 +20,13 @@ export const sharedDependencies: Record<string, SharedDependency> = {
     eager: true,
   },
 
-  // SMRT framework
-  '@smrt/core': {
-    singleton: true,
-    requiredVersion: 'workspace:*',
-    eager: true,
-  },
+  // NOTE: do not add SMRT framework packages here as federation `shared`
+  // entries unless this remote actually imports them as a bare specifier.
+  // A previous `@smrt/core` entry (with a `workspace:*` requiredVersion)
+  // broke the federation build: @originjs/vite-plugin-federation treats every
+  // shared key as an entry module to resolve, and `@smrt/core` is not a real
+  // importable package (the framework package is `@happyvertical/smrt-core`,
+  // and nothing in the federated surface imports it).
 
   // Common utilities (add as needed)
   // 'lodash': {

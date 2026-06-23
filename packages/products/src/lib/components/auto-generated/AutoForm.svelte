@@ -7,6 +7,7 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 import type { ProductData } from '../../types';
+import FieldRenderer from './FieldRenderer.svelte';
 
 const { t } = useI18n();
 
@@ -79,7 +80,7 @@ $effect(() => {
   formData = { ...data };
 });
 
-function _updateField(fieldName: string, value: any) {
+function updateField(fieldName: string, value: any) {
   formData[fieldName as keyof ProductData] = value;
 
   // Trigger change callback
@@ -88,7 +89,7 @@ function _updateField(fieldName: string, value: any) {
   }
 }
 
-function _handleSubmit(event: Event) {
+function handleSubmit(event: Event) {
   event.preventDefault();
   if (onSubmit && !readonly) {
     onSubmit({ ...formData });
@@ -149,7 +150,7 @@ function _getFieldType(
     max-width: 600px;
     margin: 0 auto;
     padding: 1.5rem;
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     border-radius: var(--smrt-radius-md, 8px);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
   }
@@ -191,7 +192,7 @@ function _getFieldType(
     color: var(--smrt-color-on-primary, white);
     border: none;
     padding: 0.75rem 1.5rem;
-    border-radius: 0.375rem;
+    border-radius: var(--smrt-radius-sm, 0.375rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background-color 0.2s;
@@ -206,7 +207,7 @@ function _getFieldType(
     color: var(--smrt-color-on-surface, #374151);
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     padding: 0.75rem 1.5rem;
-    border-radius: 0.375rem;
+    border-radius: var(--smrt-radius-sm, 0.375rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background-color 0.2s;
@@ -220,7 +221,7 @@ function _getFieldType(
     margin-top: 2rem;
     padding: 1rem;
     background: var(--smrt-color-surface-container-low, #f9fafb);
-    border-radius: 0.375rem;
+    border-radius: var(--smrt-radius-sm, 0.375rem);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
   }
 

@@ -75,24 +75,4 @@ export class Category extends SmrtObject {
     this.productCount = options.productCount || 0;
     this.active = options.active !== undefined ? options.active : true;
   }
-
-  async getProducts() {
-    // Returns products in this category - implementation auto-generated
-    return [];
-  }
-
-  async getSubcategories() {
-    // Returns child categories - implementation auto-generated
-    return [];
-  }
-
-  async updateProductCount(): Promise<void> {
-    // Updates the cached product count
-    // Implementation will be auto-generated to count related products
-  }
-
-  static async getRootCategories(): Promise<Category[]> {
-    // Returns top-level categories (parentId is null/empty)
-    return [];
-  }
 }

@@ -1,6 +1,8 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import ProductCatalog from '../../lib/features/ProductCatalog.svelte';
 import { M } from '../../lib/i18n.js';
+import AppLayout from '../layouts/AppLayout.svelte';
 
 const { t } = useI18n();
 </script>
@@ -90,7 +92,7 @@ const { t } = useI18n();
   }
   
   .info-card {
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     padding: 1.5rem;
     border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);

@@ -60,7 +60,7 @@ const { product, onEdit, onDelete }: Props = $props();
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
-    background: white;
+    background: var(--smrt-color-surface, #fff);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
     transition: box-shadow 0.2s;
   }

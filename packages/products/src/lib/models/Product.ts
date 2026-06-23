@@ -215,14 +215,4 @@ export class Product extends SmrtObject {
       relationship ? { relationship } : {},
     );
   }
-
-  static async searchByText(_query: string): Promise<Product[]> {
-    // Search implementation will be auto-generated
-    return [];
-  }
-
-  static async findByManufacturer(_manufacturer: string): Promise<Product[]> {
-    // Manufacturer search will be auto-generated
-    return [];
-  }
 }
