@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Issue } from '../models/Issue';
 import type { Repository } from '../models/Repository';
 import type { SearchFilters } from '../types';
@@ -234,24 +235,28 @@ export class IssueCollection extends SmrtCollection<Issue> {
   }
 
   /**
-   * Find global issues (no tenant)
+   * Find all global issues (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global issues
    */
   async findGlobal(): Promise<Issue[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Issue>(this);
   }
 
   /**
-   * Find issues for a tenant including global issues
+   * Find issues for a tenant plus all global issues.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of tenant and global issues
    */
   async findWithGlobals(tenantId: string): Promise<Issue[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Issue>(this, tenantId, 'Issue.findWithGlobals');
   }
 }
