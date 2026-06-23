@@ -15,7 +15,7 @@
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ProfileCollection,
   ProfileRelationship,
@@ -97,6 +97,8 @@ describe('Profile.addRelationship / getRelationships / getRelatedProfiles', () =
 
   it('fires a registered reciprocal handler for reciprocal types', async () => {
     const { relTypes, relationships, alice, bob } = await setup(dbUrl);
+    // Unique slug so this registration stays isolated in the process-global
+    // handler registry (issue #543) without a private-registry cleanup.
     const slug = `recip-${randomUUID().slice(0, 8)}`;
 
     let handlerArgs: any[] | null = null;
@@ -122,8 +124,6 @@ describe('Profile.addRelationship / getRelationships / getRelatedProfiles', () =
     expect(await relationships.getFromProfile(alice.id as string)).toHaveLength(
       1,
     );
-
-    (globalThis as any).__smrtProfileRelationshipHandlers?.delete(slug);
   });
 
   it('creates both edges via the bundled reciprocal handler without recursing forever', async () => {
@@ -356,14 +356,13 @@ describe('ProfileRelationshipTermCollection', () => {
 
 describe('ProfileRelationshipType statics and collection', () => {
   let dbUrl: string;
+  // The reciprocal-handler registry is a process-global singleton (issue #543)
+  // with no public unregister hook; a unique slug keeps this registration
+  // isolated without reaching into the private registry to clean up.
   const customSlug = `custom-${randomUUID().slice(0, 8)}`;
 
   beforeEach(() => {
     dbUrl = getTestDbUrl('relationship-types');
-  });
-
-  afterEach(() => {
-    (globalThis as any).__smrtProfileRelationshipHandlers?.delete(customSlug);
   });
 
   it('ships default reciprocal handlers and supports custom registration', () => {

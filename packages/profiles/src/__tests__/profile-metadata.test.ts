@@ -9,7 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ProfileCollection,
   ProfileMetadataCollection,
@@ -106,18 +106,22 @@ describe('ProfileMetafield.validateValue', () => {
   });
 
   describe('custom validators', () => {
-    afterEach(() => {
-      // Clean up the global registry between tests.
-      (globalThis as any).__smrtProfileMetafieldValidators?.delete('isEven');
-    });
-
+    // The validator registry is a process-global singleton (issue #543) with no
+    // public unregister hook, so each test registers under a unique name to stay
+    // isolated rather than reaching into the private registry to clean up.
     it('runs a registered custom validator', async () => {
-      ProfileMetafield.registerValidator('isEven', (v: any) => v % 2 === 0);
-      expect(ProfileMetafield.getValidator('isEven')).toBeTypeOf('function');
+      const validatorName = `isEven-${randomUUID().slice(0, 8)}`;
+      ProfileMetafield.registerValidator(
+        validatorName,
+        (v: any) => v % 2 === 0,
+      );
+      expect(ProfileMetafield.getValidator(validatorName)).toBeTypeOf(
+        'function',
+      );
 
       const field = new ProfileMetafield({
         name: 'EvenNumber',
-        validation: { custom: 'isEven', message: 'must be even' },
+        validation: { custom: validatorName, message: 'must be even' },
       });
 
       expect(await field.validateValue(4)).toBe(true);
@@ -127,11 +131,9 @@ describe('ProfileMetafield.validateValue', () => {
     it('throws when the custom validator is not registered', async () => {
       const field = new ProfileMetafield({
         name: 'Mystery',
-        validation: { custom: 'doesNotExist' },
+        validation: { custom: `unregistered-${randomUUID().slice(0, 8)}` },
       });
-      await expect(field.validateValue('x')).rejects.toThrow(
-        /not registered/,
-      );
+      await expect(field.validateValue('x')).rejects.toThrow(/not registered/);
     });
   });
 });
