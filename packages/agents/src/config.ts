@@ -14,7 +14,12 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  queryGlobal,
+  queryWithGlobals,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import { getAgentTypeName } from './identity.js';
 
 /**
@@ -219,22 +224,32 @@ export class AgentConfigCollection extends SmrtCollection<AgentConfig> {
   }
 
   /**
-   * Find all global configs (not associated with any tenant)
+   * Find all global configs (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
+   *
    * @returns Array of global AgentConfig objects
    */
   async findGlobal(): Promise<AgentConfig[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<AgentConfig>(this);
   }
 
   /**
-   * Find configs for a tenant including global configs
+   * Find configs for a tenant including global configs.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
+   *
    * @param tenantId - Tenant ID to include
    * @returns Array of AgentConfig objects for the tenant and global configs
    */
   async findWithGlobals(tenantId: string): Promise<AgentConfig[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<AgentConfig>(
+      this,
+      tenantId,
+      'AgentConfig.findWithGlobals',
     );
   }
 }

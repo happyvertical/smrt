@@ -4,7 +4,12 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  queryGlobal,
+  queryWithGlobals,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import {
   getAgentClassName,
   getAgentTypeAliases,
@@ -232,22 +237,32 @@ export class AgentScheduleCollection extends SmrtCollection<AgentSchedule> {
   }
 
   /**
-   * Find all global schedules (not associated with any tenant)
+   * Find all global schedules (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
+   *
    * @returns Array of global AgentSchedule objects
    */
   async findGlobal(): Promise<AgentSchedule[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<AgentSchedule>(this);
   }
 
   /**
-   * Find schedules for a tenant including global schedules
+   * Find schedules for a tenant including global schedules.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
+   *
    * @param tenantId - Tenant ID to include
    * @returns Array of AgentSchedule objects for the tenant and global schedules
    */
   async findWithGlobals(tenantId: string): Promise<AgentSchedule[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<AgentSchedule>(
+      this,
+      tenantId,
+      'AgentSchedule.findWithGlobals',
     );
   }
 
