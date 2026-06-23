@@ -73,6 +73,9 @@ function readStrictPackages() {
   } catch {
     return strict;
   }
+  // Sort so the derived set's iteration order (and thus the printed strict-list)
+  // is deterministic — `readdirSync` order is not guaranteed across OS/filesystems.
+  entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     let pkgJson;
