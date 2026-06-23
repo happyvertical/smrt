@@ -400,10 +400,15 @@ jobs:
           # uploads — it does not re-resolve the SDK deps — so npmjs is safe here.
           for rc in .npmrc "${HOME}/.npmrc"; do
             if [ -f "$rc" ]; then
-              sed -i '/^@happyvertical:registry=/d' "$rc"
+              # `-i.bak` + rm is the portable in-place form (GNU and BSD sed);
+              # editing in place avoids any redirect-clobber of the auth lines.
+              sed -i.bak '/^@happyvertical:registry=/d' "$rc"
+              rm -f "$rc.bak"
             fi
+            # Re-point in BOTH files so the npmjs mapping wins regardless of
+            # which .npmrc pnpm consults first.
+            printf '%s\n' "@happyvertical:registry=https://registry.npmjs.org" >> "$rc"
           done
-          echo "@happyvertical:registry=https://registry.npmjs.org" >> .npmrc
           echo "✓ Re-pointed @happyvertical scope to npmjs.org for publish"
 
           pnpm run changeset:publish
