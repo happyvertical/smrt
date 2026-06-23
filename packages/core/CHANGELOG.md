@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.34.3
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: derive raw-primitive strict set from per-package flag (#1589) (#1609) (scripts)
+  - @happyvertical/smrt-config@0.34.3
+  - @happyvertical/smrt-types@0.34.3
+  - @happyvertical/smrt-scanner@0.34.3
+
 ## 0.34.2
 
 ### Patch Changes
