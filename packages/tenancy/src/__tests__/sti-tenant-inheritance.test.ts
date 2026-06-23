@@ -88,6 +88,7 @@ describe('STI tenant-scope inheritance (#1596)', () => {
   afterEach(() => {
     unregisterTenantScopedClass('Sti1596Base');
     unregisterTenantScopedClass('Sti1596ChildOwn');
+    unregisterTenantScopedClass('Payout1598');
   });
 
   it('recognizes the directly-decorated base (sanity)', () => {
@@ -124,13 +125,35 @@ describe('STI tenant-scope inheritance (#1596)', () => {
     expect(getTenantScopedConfig('CompletelyUnknown1596')).toBeUndefined();
   });
 
-  it('keeps the inherited config independent from the base entry (no aliasing)', () => {
-    // Inherited lookups must not return a reference that, if mutated by a
-    // caller, corrupts the base registration. Both resolve to 'optional'.
-    const base = getTenantScopedConfig('Sti1596Base');
+  it('returns a copy so a caller mutation cannot corrupt the stored registration (#1598 review)', () => {
+    // The base and every inheriting descendant share one backing config object.
+    // Lookups must hand out copies — mutating a returned config must not leak
+    // back into the base (direct) or any child (inherited) lookup.
     const child = getTenantScopedConfig('Sti1596Child');
-    expect(base?.mode).toBe('optional');
     expect(child?.mode).toBe('optional');
+    (child as { mode: string }).mode = 'required'; // simulate an accidental mutation
+
+    expect(getTenantScopedConfig('Sti1596Base')?.mode).toBe('optional');
+    expect(getTenantScopedConfig('Sti1596Child')?.mode).toBe('optional');
+
+    const base = getTenantScopedConfig('Sti1596Base');
+    (base as { mode: string }).mode = 'required';
+    expect(getTenantScopedConfig('Sti1596Base')?.mode).toBe('optional');
+  });
+
+  it('does NOT strip a qualified lookup to a same-simple-name class in another package (#1598 review, codex P2)', () => {
+    // Simulate `@TenantScoped` on one package's `Payout1598` (registered by
+    // simple name, as the decorator does). A *direct* qualified lookup for a
+    // DIFFERENT package's same-named class must NOT cross-match the simple key.
+    registerTenantScopedClass('Payout1598', { mode: 'optional' });
+
+    expect(isTenantScopedClass('Payout1598')).toBe(true); // exact simple match is fine
+    expect(
+      isTenantScopedClass('@happyvertical/smrt-affiliates:Payout1598'),
+    ).toBe(false);
+    expect(
+      getTenantScopedConfig('@happyvertical/smrt-affiliates:Payout1598'),
+    ).toBeUndefined();
   });
 });
 

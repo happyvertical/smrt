@@ -122,10 +122,10 @@ export function unregisterTenantScopedClass(className: string): void {
  *
  * `@TenantScoped` registers classes by their simple name (`target.name`), but
  * `ObjectRegistry.getInheritanceChain()` emits **qualified** names where a
- * class has package context. When walking the chain (see
- * `getInheritedTenantScopedConfig`) we therefore probe the local registry with
- * both the qualified entry and its simple suffix so qualified ancestors resolve
- * against the simple-name keys used by `@TenantScoped`.
+ * class has package context. The simple-name bridge this enables is confined to
+ * the inheritance walk (`getInheritedTenantScopedConfig`) — never the direct
+ * lookup — so a *direct* qualified lookup can't strip the namespace and
+ * cross-match a same-simple-name class in another package.
  */
 function toSimpleClassName(className: string): string {
   const idx = className.lastIndexOf(':');
@@ -133,29 +133,42 @@ function toSimpleClassName(className: string): string {
 }
 
 /**
- * Resolve a class's OWN tenancy configuration — no STI inheritance.
+ * Return a shallow copy of a config so callers can never mutate the stored
+ * registration. The same backing object is shared by the base and every
+ * inheriting descendant, so handing out the reference would let an accidental
+ * caller mutation silently corrupt the base (and all children). (#1598 review)
+ */
+function cloneConfig(config: TenantScopedConfig): TenantScopedConfig {
+  return { ...config };
+}
+
+/**
+ * Resolve a class's OWN tenancy configuration — no STI inheritance, EXACT name
+ * match only.
  *
  * Checks the two registration mechanisms in order, with the local registry
  * taking precedence:
  * 1. The local registry populated by `@TenantScoped()` (keyed by simple name).
  * 2. The core `ObjectRegistry` populated by `@smrt({ tenantScoped: true })`.
  *
- * Both the given name and its simple form are probed against the local registry
- * so a qualified inheritance-chain entry still matches the simple-name keys the
- * decorator writes. Core-registry config is normalised into `TenantScopedConfig`.
+ * Lookups are by exact name only — no simple-name fallback — so a qualified
+ * lookup (e.g. `@happyvertical/smrt-affiliates:Payout`, explicitly not scoped)
+ * can never strip its namespace and match a same-simple-name scoped class in
+ * another package (e.g. `@happyvertical/smrt-commerce:Payout`). The
+ * namespace-stripping bridge lives only in the inheritance walk. (#1598 review)
  */
 function getDirectTenantScopedConfig(
   className: string,
 ): TenantScopedConfig | undefined {
   // 1. Local registry (explicit @TenantScoped decorator).
-  const localConfig =
-    tenantScopedClasses.get(className) ??
-    tenantScopedClasses.get(toSimpleClassName(className));
+  const localConfig = tenantScopedClasses.get(className);
   if (localConfig) {
-    return localConfig;
+    return cloneConfig(localConfig);
   }
 
   // 2. Core registry (@smrt({ tenantScoped: true }) pattern - Issue #688).
+  // findClass() resolves qualified names package-safely, so this branch is
+  // already disambiguated.
   const coreConfig = ObjectRegistry.getTenantScopedConfig(className);
   if (coreConfig) {
     // Convert core config to TenantScopedConfig format
@@ -206,9 +219,31 @@ function getInheritedTenantScopedConfig(
   // chain[length - 1] is the class itself (already covered by the direct
   // lookup); walk its ancestors from nearest to root.
   for (let i = chain.length - 2; i >= 0; i--) {
-    const ancestorConfig = getDirectTenantScopedConfig(chain[i]);
-    if (ancestorConfig) {
-      return ancestorConfig;
+    const ancestor = chain[i];
+
+    // Exact, package-safe match first — covers `@smrt({ tenantScoped })` bases
+    // (resolved through the core registry by qualified name) and any class
+    // whose @TenantScoped key matches the chain entry verbatim.
+    const direct = getDirectTenantScopedConfig(ancestor);
+    if (direct) {
+      return direct;
+    }
+
+    // @TenantScoped registers by SIMPLE name (`target.name`), but the chain
+    // emits QUALIFIED names. Bridge to the simple-keyed local registry here —
+    // scoped to the inheritance walk only, so a direct qualified lookup never
+    // strips the namespace (see getDirectTenantScopedConfig). The chain entry
+    // is a verified ancestor of `className`, so matching its simple name is the
+    // intended hop. (Residual: the @TenantScoped registry is simple-keyed, so
+    // two DISTINCT same-simple-name classes that are BOTH @TenantScoped across
+    // packages could cross-match here — a pre-existing decorator-keying limit,
+    // not the direct-lookup hazard fixed above.)
+    const simple = toSimpleClassName(ancestor);
+    if (simple !== ancestor) {
+      const bySimple = tenantScopedClasses.get(simple);
+      if (bySimple) {
+        return cloneConfig(bySimple);
+      }
     }
   }
   return undefined;
