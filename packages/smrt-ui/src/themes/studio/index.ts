@@ -276,7 +276,7 @@ const typography: TypographyScale = {
 };
 
 /**
- * Studio elevation - Minimal, subtle shadows
+ * Studio elevation (light) - Minimal, subtle shadows
  * Flat design philosophy with only slight depth indication
  */
 const elevation: ElevationScale = {
@@ -289,6 +289,24 @@ const elevation: ElevationScale = {
 };
 
 /**
+ * Studio elevation (dark) - Tuned for a near-black surface.
+ *
+ * The flat light shadows (tinted with the light surface color, very low alpha)
+ * read as invisible on a dark surface, so dark mode uses a white inset hairline
+ * at level 1 and deeper black shadows above it. Defining this here — rather than
+ * only in the static `styles/studio.css` — keeps the JS ThemeProvider output and
+ * the static dark CSS in lockstep (#1586).
+ */
+const darkElevation: ElevationScale = {
+  0: 'none',
+  1: 'inset 0 0 0 1px rgba(255, 255, 255, 0.08)',
+  2: '0 1px 2px 0 rgba(0, 0, 0, 0.2), 0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+  3: '0 2px 4px 0 rgba(0, 0, 0, 0.2), 0 1px 2px 0 rgba(0, 0, 0, 0.1)',
+  4: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 2px 4px 0 rgba(0, 0, 0, 0.1)',
+  5: '0 8px 16px 0 rgba(0, 0, 0, 0.25), 0 4px 8px 0 rgba(0, 0, 0, 0.1)',
+};
+
+/**
  * Studio theme definition
  */
 export const studioTheme: Theme = {
@@ -298,6 +316,7 @@ export const studioTheme: Theme = {
   dark: darkColors,
   typography,
   elevation,
+  darkElevation,
   spacing: spacingScale,
   borderRadius: borderRadiusScale,
   duration: durationScale,

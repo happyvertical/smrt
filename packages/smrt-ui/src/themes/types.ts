@@ -228,8 +228,15 @@ export interface Theme {
   dark: ColorPalette;
   /** Typography scale */
   typography: TypographyScale;
-  /** Elevation shadows */
+  /** Elevation shadows (used for both schemes unless `darkElevation` is set) */
   elevation: ElevationScale;
+  /**
+   * Optional dark-scheme elevation overrides. When present, the CSS generator
+   * emits these for the dark scheme instead of `elevation`. Lets a preset tune
+   * shadows for a dark surface (e.g. studio's punchier dark shadows) so the JS
+   * generator and the static dark CSS can't diverge (#1586).
+   */
+  darkElevation?: ElevationScale;
   /** Spacing scale */
   spacing: SpacingScale;
   /** Border radius scale */

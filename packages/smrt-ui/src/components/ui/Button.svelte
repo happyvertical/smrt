@@ -139,8 +139,14 @@ const linkProps = $derived(() => {
     color: var(--smrt-color-on-primary);
   }
 
+  /* M3 hover state layer: 8% of the on-color blended over the base, so the
+     button visibly darkens on hover instead of repeating its base color. */
   .primary:hover:not(:disabled):not(.disabled) {
-    background: var(--smrt-color-primary);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-on-primary) 8%,
+      var(--smrt-color-primary)
+    );
   }
 
   .secondary {
@@ -168,7 +174,11 @@ const linkProps = $derived(() => {
   }
 
   .danger:hover:not(:disabled):not(.disabled) {
-    background: var(--smrt-color-error);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-on-error) 8%,
+      var(--smrt-color-error)
+    );
   }
 
   /* Full width */

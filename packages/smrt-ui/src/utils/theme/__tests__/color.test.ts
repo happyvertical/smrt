@@ -16,6 +16,25 @@ describe('Theme Color Utilities', () => {
     expect(hexToRgb('#FF5733')).toEqual({ r: 255, g: 87, b: 51 });
   });
 
+  it('expands 3-digit shorthand hex (#abc -> #aabbcc) (#1586)', () => {
+    // Regression: shorthand hex used to NaN-poison the b channel (only the first
+    // 2 chars were read), corrupting any palette generated from a 3-digit seed.
+    expect(hexToRgb('#abc')).toEqual({ r: 170, g: 187, b: 204 });
+    expect(hexToRgb('#000')).toEqual({ r: 0, g: 0, b: 0 });
+    expect(hexToRgb('#fff')).toEqual({ r: 255, g: 255, b: 255 });
+  });
+
+  it('parses functional rgb()/rgba() notation (#1586)', () => {
+    expect(hexToRgb('rgb(0, 122, 255)')).toEqual({ r: 0, g: 122, b: 255 });
+    expect(hexToRgb('rgb(0 122 255)')).toEqual({ r: 0, g: 122, b: 255 });
+    expect(hexToRgb('rgba(0, 122, 255, 0.5)')).toEqual({
+      r: 0,
+      g: 122,
+      b: 255,
+    });
+    expect(hexToRgb('rgb(100%, 0%, 50%)')).toEqual({ r: 255, g: 0, b: 128 });
+  });
+
   it('should convert rgb to hex correctly', () => {
     expect(rgbToHex(0, 0, 0)).toBe('#000000');
     expect(rgbToHex(255, 255, 255)).toBe('#ffffff');
