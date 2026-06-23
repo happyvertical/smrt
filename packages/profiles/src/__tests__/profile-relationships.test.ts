@@ -5,11 +5,11 @@
  *
  * Real file-backed SQLite, no DB mocking.
  *
- * Note: Profile.addRelationship fires a registered reciprocal handler whenever
- * the type is reciprocal, *unconditionally*. The bundled default handlers
- * (friend/spouse/…) call back into addRelationship and would recurse, so these
- * tests drive reciprocal behaviour with purpose-built non-recursive handlers
- * and never invoke addRelationship with a default reciprocal slug.
+ * Note: Profile.addRelationship fires a registered reciprocal handler only when
+ * it creates a new edge (the `!exists` guard). That guard terminates the mutual
+ * recursion the bundled friend/spouse/… handlers would otherwise cause. Both
+ * the custom-handler and the bundled 'friend' default-handler paths are
+ * exercised below.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -101,9 +101,12 @@ describe('Profile.addRelationship / getRelationships / getRelatedProfiles', () =
 
     let handlerArgs: any[] | null = null;
     // Non-recursive handler so we don't trigger the addRelationship recursion.
-    ProfileRelationshipType.registerReciprocalHandler(slug, async (from, to) => {
-      handlerArgs = [from.id, to.id];
-    });
+    ProfileRelationshipType.registerReciprocalHandler(
+      slug,
+      async (from, to) => {
+        handlerArgs = [from.id, to.id];
+      },
+    );
 
     const recipType = await relTypes.create({
       slug,
@@ -122,6 +125,34 @@ describe('Profile.addRelationship / getRelationships / getRelatedProfiles', () =
 
     (globalThis as any).__smrtProfileRelationshipHandlers?.delete(slug);
   });
+
+  it('creates both edges via the bundled reciprocal handler without recursing forever', async () => {
+    const { relTypes, relationships, alice, bob } = await setup(dbUrl);
+    // Name 'Friend' → slug 'friend', which matches a bundled default handler
+    // that creates the inverse edge. Before the `!exists` guard this recursed
+    // infinitely; the explicit timeout fails fast if that regresses.
+    const friend = await relTypes.create({ name: 'Friend', reciprocal: true });
+    await friend.save();
+
+    await alice.addRelationship(bob, 'friend');
+
+    // Both directed edges exist (the handler created the inverse).
+    expect(await relationships.getFromProfile(alice.id as string)).toHaveLength(
+      1,
+    );
+    expect(await relationships.getFromProfile(bob.id as string)).toHaveLength(
+      1,
+    );
+    expect(await relationships.getForProfile(alice.id as string)).toHaveLength(
+      2,
+    );
+
+    // Re-invoking is idempotent: no duplicate edges, still terminates.
+    await alice.addRelationship(bob, 'friend');
+    expect(await relationships.getForProfile(alice.id as string)).toHaveLength(
+      2,
+    );
+  }, 15_000);
 
   it('reads relationships by direction and filters by type slug', async () => {
     const { relTypes, alice, bob, charlie } = await setup(dbUrl);
@@ -423,14 +454,25 @@ describe('ProfileRelationshipCollection', () => {
 
     // Type-filtered queries.
     expect(
-      await relationships.getFromProfile(alice.id as string, mentor.id as string),
+      await relationships.getFromProfile(
+        alice.id as string,
+        mentor.id as string,
+      ),
     ).toHaveLength(1);
 
     expect(
-      await relationships.exists(alice.id as string, bob.id as string, mentor.id as string),
+      await relationships.exists(
+        alice.id as string,
+        bob.id as string,
+        mentor.id as string,
+      ),
     ).toBe(true);
     expect(
-      await relationships.exists(bob.id as string, alice.id as string, mentor.id as string),
+      await relationships.exists(
+        bob.id as string,
+        alice.id as string,
+        mentor.id as string,
+      ),
     ).toBe(false);
   });
 });
