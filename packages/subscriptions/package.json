@@ -3,6 +3,7 @@
   "version": "0.34.2",
   "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
   "type": "module",
+  "smrtRawPrimitives": "strict",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

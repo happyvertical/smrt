@@ -2,6 +2,7 @@
   "name": "@happyvertical/smrt-social",
   "version": "0.34.2",
   "type": "module",
+  "smrtRawPrimitives": "strict",
   "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
   "author": "HappyVertical",
   "license": "MIT",
