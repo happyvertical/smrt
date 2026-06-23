@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Account } from '../models/Account';
 import type { AccountTree, AccountTreeNode, AccountType } from '../types';
 
@@ -212,24 +213,28 @@ export class AccountCollection extends SmrtCollection<Account> {
   }
 
   /**
-   * Find all global accounts (no tenant association)
+   * Find all global accounts (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global accounts
    */
   async findGlobal(): Promise<Account[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Account>(this);
   }
 
   /**
-   * Find accounts for a tenant plus all global accounts
+   * Find accounts for a tenant plus all global accounts.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID
    * @returns Array of tenant's accounts and global accounts
    */
   async findWithGlobals(tenantId: string): Promise<Account[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Account>(this, tenantId, 'Account.findWithGlobals');
   }
 }

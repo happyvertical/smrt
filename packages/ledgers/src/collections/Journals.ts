@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Journal } from '../models/Journal';
 import {
   BALANCE_EPSILON,
@@ -220,24 +221,27 @@ export class JournalCollection extends SmrtCollection<Journal> {
   }
 
   /**
-   * Find all global journals (no tenant association)
+   * Find all global journals (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context. (#1600)
    *
    * @returns Array of global journals
    */
   async findGlobal(): Promise<Journal[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Journal>(this);
   }
 
   /**
-   * Find journals for a tenant plus all global journals
+   * Find journals for a tenant plus all global journals.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID
    * @returns Array of tenant's journals and global journals
    */
   async findWithGlobals(tenantId: string): Promise<Journal[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Journal>(this, tenantId, 'Journal.findWithGlobals');
   }
 }
