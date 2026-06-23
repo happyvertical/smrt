@@ -519,6 +519,99 @@ describe.skipIf(skipTests)(
         expect(stats.todayPageviews).toBe(0);
         expect(stats.trend).toBe('flat');
       });
+
+      it('should bucket an event near local midnight using the property time zone', async () => {
+        const propertyId = 'prop-tz';
+        // now = 2024-06-15T12:00:00Z = 2024-06-15 05:00 PDT (UTC-7).
+        const now = new Date('2024-06-15T12:00:00Z');
+        // 2024-06-15T06:30:00Z = 2024-06-14 23:30 PDT -> "yesterday" in LA, but
+        // "today" under naive UTC bucketing (it is >= 2024-06-15T00:00:00Z).
+        const nearMidnight = new Date('2024-06-15T06:30:00Z');
+
+        await (
+          await collection.create({
+            propertyId,
+            eventName: 'page_view',
+            clientId: 'client-a',
+            eventTimestamp: nearMidnight,
+          })
+        ).save();
+
+        // Default (UTC) bucketing puts it in today.
+        const utcStats = await collection.getPropertyStatsWithTrend(
+          propertyId,
+          now,
+        );
+        expect(utcStats.todayPageviews).toBe(1);
+        expect(utcStats.yesterdayPageviews).toBe(0);
+
+        // Los Angeles bucketing correctly puts it in yesterday.
+        const laStats = await collection.getPropertyStatsWithTrend(
+          propertyId,
+          now,
+          'America/Los_Angeles',
+        );
+        expect(laStats.todayPageviews).toBe(0);
+        expect(laStats.yesterdayPageviews).toBe(1);
+      });
+
+      it('should keep yesterday correct across a spring-forward DST boundary', async () => {
+        const propertyId = 'prop-dst';
+        // 2024-03-10 02:00 -> 03:00 in America/Los_Angeles (Mar 10 has 23h).
+        // now = 2024-03-11T09:00:00Z = 2024-03-11 02:00 PDT.
+        const now = new Date('2024-03-11T09:00:00Z');
+        // 2024-03-10 12:00 PST = 2024-03-10T20:00:00Z -> belongs to "yesterday".
+        const yesterdayLocalNoon = new Date('2024-03-10T20:00:00Z');
+
+        await (
+          await collection.create({
+            propertyId,
+            eventName: 'page_view',
+            clientId: 'client-a',
+            eventTimestamp: yesterdayLocalNoon,
+          })
+        ).save();
+
+        const stats = await collection.getPropertyStatsWithTrend(
+          propertyId,
+          now,
+          'America/Los_Angeles',
+        );
+
+        // A naive `todayStart - 24h` would skip Mar 10 entirely (landing in
+        // Mar 9), dropping this event from the window. Civil-date arithmetic
+        // keeps it in yesterday.
+        expect(stats.todayPageviews).toBe(0);
+        expect(stats.yesterdayPageviews).toBe(1);
+      });
+
+      it('should classify growth from a zero baseline as up with a null percent', async () => {
+        const propertyId = 'prop-zero-baseline';
+        const now = new Date('2024-06-15T12:00:00Z');
+        const todayTs = new Date('2024-06-15T06:00:00Z');
+
+        // Pageviews today, none yesterday.
+        for (const clientId of ['client-a', 'client-b']) {
+          await (
+            await collection.create({
+              propertyId,
+              eventName: 'page_view',
+              clientId,
+              eventTimestamp: todayTs,
+            })
+          ).save();
+        }
+
+        const stats = await collection.getPropertyStatsWithTrend(
+          propertyId,
+          now,
+        );
+
+        expect(stats.todayPageviews).toBe(2);
+        expect(stats.yesterdayPageviews).toBe(0);
+        expect(stats.trend).toBe('up');
+        expect(stats.trendPercent).toBeNull();
+      });
     });
 
     describe('getBatchPropertyStats', () => {

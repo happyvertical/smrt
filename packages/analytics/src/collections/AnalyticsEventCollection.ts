@@ -14,6 +14,150 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
   static readonly _itemClass = AnalyticsEvent;
 
   /**
+   * Offset of `timeZone` at `instant`, in milliseconds (wall-clock minus UTC).
+   *
+   * Reads the zone's wall-clock Y/M/D h:m:s for `instant` via
+   * `Intl.DateTimeFormat` parts and subtracts the real UTC instant. Positive
+   * east of UTC, negative west (e.g. `America/Los_Angeles` returns roughly
+   * `-7h`/`-8h` depending on DST).
+   *
+   * @throws RangeError if `timeZone` is not a valid IANA identifier.
+   */
+  private zoneOffsetMs(instant: Date, timeZone: string): number {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(instant);
+    const lookup = (type: Intl.DateTimeFormatPartTypes): number =>
+      Number.parseInt(parts.find((p) => p.type === type)?.value ?? '0', 10);
+    let hour = lookup('hour');
+    // Intl can emit hour "24" for midnight under hour12:false; normalize to 0.
+    if (hour === 24) hour = 0;
+    const asUtc = Date.UTC(
+      lookup('year'),
+      lookup('month') - 1,
+      lookup('day'),
+      hour,
+      lookup('minute'),
+      lookup('second'),
+    );
+    return asUtc - instant.getTime();
+  }
+
+  /**
+   * Resolve the UTC instant marking the start of the calendar day (00:00) that
+   * `instant` falls on **within the given IANA time zone**.
+   *
+   * Day-over-day buckets ("today vs yesterday") must respect the property's
+   * configured `timeZone` (defaults to `America/Los_Angeles`), otherwise a
+   * pageview at 11:30pm local time — already the next UTC day — is bucketed
+   * into the wrong day. We read the wall-clock civil date for the zone, then
+   * map that date's local midnight back to a UTC instant, correcting for the
+   * zone offset (and re-correcting once across a DST boundary).
+   *
+   * Invalid/unknown zone identifiers fall back to UTC day boundaries (matching
+   * the previous behaviour) rather than throwing.
+   *
+   * @param instant - Reference instant.
+   * @param timeZone - IANA time zone (e.g. `America/Los_Angeles`).
+   * @returns UTC `Date` for local midnight of the day `instant` is in.
+   */
+  protected startOfDayInZone(instant: Date, timeZone: string): Date {
+    let civil: { year: number; month: number; day: number };
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).formatToParts(instant);
+      const lookup = (type: Intl.DateTimeFormatPartTypes): number =>
+        Number.parseInt(parts.find((p) => p.type === type)?.value ?? '0', 10);
+      civil = {
+        year: lookup('year'),
+        month: lookup('month'),
+        day: lookup('day'),
+      };
+    } catch {
+      // Unknown/invalid time zone -> UTC day boundary.
+      return new Date(
+        Date.UTC(
+          instant.getUTCFullYear(),
+          instant.getUTCMonth(),
+          instant.getUTCDate(),
+        ),
+      );
+    }
+
+    // Local midnight of `civil`, as a UTC instant: treat civil-midnight as if
+    // UTC, then subtract the zone offset at that guess. Re-derive the offset at
+    // the corrected instant and re-correct once if it changed (DST edge).
+    const guess = Date.UTC(civil.year, civil.month - 1, civil.day);
+    const offset = this.zoneOffsetMs(new Date(guess), timeZone);
+    let utc = guess - offset;
+    const offset2 = this.zoneOffsetMs(new Date(utc), timeZone);
+    if (offset2 !== offset) utc = guess - offset2;
+    return new Date(utc);
+  }
+
+  /**
+   * Resolve the UTC instant for the start of the day *before* `todayStart`'s
+   * local day, in `timeZone`.
+   *
+   * Steps back 12h from local midnight (landing safely inside the previous
+   * civil day regardless of DST — a naive `- 24h` skips a day across
+   * spring-forward), then re-resolves start-of-day.
+   *
+   * @param todayStart - Local-midnight UTC instant from {@link startOfDayInZone}.
+   * @param timeZone - IANA time zone.
+   * @returns UTC `Date` for local midnight of the prior calendar day.
+   */
+  protected startOfYesterdayInZone(todayStart: Date, timeZone: string): Date {
+    return this.startOfDayInZone(
+      new Date(todayStart.getTime() - 12 * 3_600_000),
+      timeZone,
+    );
+  }
+
+  /**
+   * Classify a day-over-day change into a trend direction + percent.
+   *
+   * - `yesterday > 0`: percent = rounded delta; >5% up, <-5% down, else flat.
+   * - `yesterday === 0 && today > 0`: a brand-new surge from a zero baseline —
+   *   classified `up` with a `null` percent (no finite percentage exists), so
+   *   the UI renders "new" rather than a misleading flat 0%.
+   * - `yesterday === 0 && today === 0`: flat, 0%.
+   *
+   * @param today - Today's count.
+   * @param yesterday - Yesterday's count.
+   * @returns Trend direction and percent (null when growing from zero).
+   */
+  protected classifyTrend(
+    today: number,
+    yesterday: number,
+  ): { trend: 'up' | 'down' | 'flat'; trendPercent: number | null } {
+    if (yesterday > 0) {
+      const change = ((today - yesterday) / yesterday) * 100;
+      const trendPercent = Math.round(change);
+      let trend: 'up' | 'down' | 'flat' = 'flat';
+      if (change > 5) trend = 'up';
+      else if (change < -5) trend = 'down';
+      return { trend, trendPercent };
+    }
+    if (today > 0) {
+      // Growth from a zero baseline: a real surge, no finite percentage.
+      return { trend: 'up', trendPercent: null };
+    }
+    return { trend: 'flat', trendPercent: 0 };
+  }
+
+  /**
    * Find events by property
    *
    * @param propertyId - Parent property ID
@@ -234,25 +378,27 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
    *
    * Compares today's pageview count against yesterday's to produce a
    * trend direction and percentage change. A threshold of 5% is used
-   * to classify 'up' vs 'down' vs 'flat'.
+   * to classify 'up' vs 'down' vs 'flat'; growth from a zero baseline is
+   * classified `up` with a `null` percent (see {@link classifyTrend}).
+   *
+   * Day boundaries are computed in `timeZone` (an IANA identifier such as the
+   * property's `AnalyticsProperty.timeZone`, which defaults to
+   * `America/Los_Angeles`) so an event near local midnight buckets into the
+   * correct calendar day. Defaults to `'UTC'` when omitted.
    *
    * @param propertyId - Property ID
    * @param now - Optional current date (for testing)
+   * @param timeZone - IANA time zone for day boundaries (default `'UTC'`)
    * @returns Stats with trend
    */
   async getPropertyStatsWithTrend(
     propertyId: string,
     now?: Date,
+    timeZone: string = 'UTC',
   ): Promise<PropertyStatsWithTrend> {
     const currentTime = now || new Date();
-    const todayStart = new Date(
-      Date.UTC(
-        currentTime.getUTCFullYear(),
-        currentTime.getUTCMonth(),
-        currentTime.getUTCDate(),
-      ),
-    );
-    const yesterdayStart = new Date(todayStart.getTime() - 86_400_000);
+    const todayStart = this.startOfDayInZone(currentTime, timeZone);
+    const yesterdayStart = this.startOfYesterdayInZone(todayStart, timeZone);
 
     // Single query for both days to avoid concurrent DuckDB prepared statements
     const allPageviewEvents = await this.list({
@@ -280,17 +426,10 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
     const todayPageviews = todayPageviewEvents.length;
     const yesterdayPageviews = yesterdayPageviewEvents.length;
 
-    // Calculate trend
-    let trend: 'up' | 'down' | 'flat' = 'flat';
-    let trendPercent = 0;
-
-    if (yesterdayPageviews > 0) {
-      const change =
-        ((todayPageviews - yesterdayPageviews) / yesterdayPageviews) * 100;
-      trendPercent = Math.round(change);
-      if (change > 5) trend = 'up';
-      else if (change < -5) trend = 'down';
-    }
+    const { trend, trendPercent } = this.classifyTrend(
+      todayPageviews,
+      yesterdayPageviews,
+    );
 
     return {
       todayPageviews,
@@ -305,26 +444,27 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
   /**
    * Get day-over-day stats for multiple properties in batch.
    *
+   * Day boundaries are computed in `timeZone` (default `'UTC'`); see
+   * {@link getPropertyStatsWithTrend}. A single zone applies to the whole
+   * batch, so callers mixing properties with different `timeZone` values
+   * should batch per zone (or fall back to per-property calls).
+   *
    * @param propertyIds - Array of property IDs
    * @param now - Optional current date (for testing)
+   * @param timeZone - IANA time zone for day boundaries (default `'UTC'`)
    * @returns Map of propertyId to stats
    */
   async getBatchPropertyStats(
     propertyIds: string[],
     now?: Date,
+    timeZone: string = 'UTC',
   ): Promise<Map<string, PropertyStatsWithTrend>> {
     const results = new Map<string, PropertyStatsWithTrend>();
 
     // Fetch all date-ranged events once to avoid N+1 queries
     const currentTime = now || new Date();
-    const todayStart = new Date(
-      Date.UTC(
-        currentTime.getUTCFullYear(),
-        currentTime.getUTCMonth(),
-        currentTime.getUTCDate(),
-      ),
-    );
-    const yesterdayStart = new Date(todayStart.getTime() - 86_400_000);
+    const todayStart = this.startOfDayInZone(currentTime, timeZone);
+    const yesterdayStart = this.startOfYesterdayInZone(todayStart, timeZone);
 
     // Single query for both days to avoid concurrent DuckDB prepared statements
     const allEvents = await this.list({
@@ -358,16 +498,10 @@ export class AnalyticsEventCollection extends SmrtCollection<AnalyticsEvent> {
       const todayPageviews = todayPageviewEvents.length;
       const yesterdayPageviews = yesterdayPageviewEvents.length;
 
-      let trend: 'up' | 'down' | 'flat' = 'flat';
-      let trendPercent = 0;
-
-      if (yesterdayPageviews > 0) {
-        const change =
-          ((todayPageviews - yesterdayPageviews) / yesterdayPageviews) * 100;
-        trendPercent = Math.round(change);
-        if (change > 5) trend = 'up';
-        else if (change < -5) trend = 'down';
-      }
+      const { trend, trendPercent } = this.classifyTrend(
+        todayPageviews,
+        yesterdayPageviews,
+      );
 
       results.set(propertyId, {
         todayPageviews,
