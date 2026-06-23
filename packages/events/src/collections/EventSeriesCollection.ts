@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { EventSeries } from '../models/EventSeries';
 import type { EventSeriesSearchFilters } from '../types';
 
@@ -126,24 +127,32 @@ export class EventSeriesCollection extends SmrtCollection<EventSeries> {
   }
 
   /**
-   * Find all global event series (no tenant association)
+   * Find all global event series (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of EventSeries instances with no tenant
    */
   async findGlobal(): Promise<EventSeries[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<EventSeries>(this);
   }
 
   /**
-   * Find event series for a tenant including global series
+   * Find event series for a tenant including global series.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of EventSeries instances for the tenant and global series
    */
   async findWithGlobals(tenantId: string): Promise<EventSeries[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<EventSeries>(
+      this,
+      tenantId,
+      'EventSeries.findWithGlobals',
     );
   }
 }

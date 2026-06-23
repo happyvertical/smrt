@@ -11,6 +11,7 @@ import {
   removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Event } from '../models/Event';
 import type { EventSearchFilters, EventStatus } from '../types';
 
@@ -243,24 +244,28 @@ export class EventCollection extends SmrtCollection<Event> {
   }
 
   /**
-   * Find all global events (no tenant association)
+   * Find all global events (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of Event instances with no tenant
    */
   async findGlobal(): Promise<Event[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Event>(this);
   }
 
   /**
-   * Find events for a tenant including global events
+   * Find events for a tenant including global events.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of Event instances for the tenant and global events
    */
   async findWithGlobals(tenantId: string): Promise<Event[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Event>(this, tenantId, 'Event.findWithGlobals');
   }
 }

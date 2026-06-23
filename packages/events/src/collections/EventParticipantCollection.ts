@@ -7,6 +7,7 @@
  */
 
 import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { EventParticipant } from '../models/EventParticipant';
 import type { ParticipantSearchFilters } from '../types';
 
@@ -139,14 +140,28 @@ export class EventParticipantCollection extends SmrtJunction<EventParticipant> {
     return this.list({ where: { tenantId } });
   }
 
+  /**
+   * Find all global participants (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
+   */
   async findGlobal(): Promise<EventParticipant[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<EventParticipant>(this);
   }
 
+  /**
+   * Find participants for a tenant plus all global participants.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
+   */
   async findWithGlobals(tenantId: string): Promise<EventParticipant[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<EventParticipant>(
+      this,
+      tenantId,
+      'EventParticipant.findWithGlobals',
     );
   }
 }
