@@ -56,6 +56,11 @@ let canvasElement: HTMLCanvasElement | undefined = $state();
 let stream: MediaStream | null = $state(null);
 let cameraError: string | null = $state(null);
 let isCameraActive = $state(false);
+// Set once the component tears down. `getUserMedia()` may still be resolving
+// (permission prompt) after unmount; this lets startCamera() detect that and
+// stop the just-granted tracks instead of leaking the camera (light stays on).
+// Not reactive — it only gates an async cleanup decision.
+let isDestroyed = false;
 
 // External state
 let externalUrl = $state('');
@@ -114,13 +119,28 @@ async function startCamera() {
   cameraError = null;
   isCameraActive = false;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const acquired = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment' },
       audio: false,
     });
+
+    // The permission prompt may have resolved after the user switched tabs or
+    // the component unmounted. If the camera is no longer the intended target,
+    // immediately stop the just-granted tracks so the camera light turns off,
+    // and don't attach the (now orphaned) stream.
+    if (isDestroyed || activeTab !== 'camera') {
+      for (const track of acquired.getTracks()) {
+        track.stop();
+      }
+      return;
+    }
+
+    stream = acquired;
     if (videoElement) {
       videoElement.srcObject = stream;
-      videoElement.play();
+      // play() can reject if autoplay is blocked; swallow it so it doesn't
+      // surface as an unhandled rejection (the user can still capture frames).
+      videoElement.play().catch(() => {});
       isCameraActive = true;
     }
   } catch (err: any) {
@@ -247,6 +267,7 @@ async function handleGenerateVariation() {
 }
 
 onDestroy(() => {
+  isDestroyed = true;
   stopCamera();
 });
 </script>
