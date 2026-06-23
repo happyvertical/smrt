@@ -131,7 +131,6 @@ const editorSections = navTreeFromManifest(manifest, {
 | Import Path | Contents |
 |-------------|----------|
 | `@happyvertical/smrt-svelte` | Provider, DataTable, permission utilities, hooks, state, components |
-| `@happyvertical/smrt-svelte/admin` | Agent admin panel components |
 | `@happyvertical/smrt-svelte/calendar` | Calendar and DayView |
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, etc.) |
 | `@happyvertical/smrt-svelte/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
@@ -161,9 +160,9 @@ const editorSections = navTreeFromManifest(manifest, {
 
 **Permissions**: `PermissionCheck`, `RoleBadge`, `RoleSelector`
 
-**Admin**: `AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell`
-
 **Other**: `Calendar`, `DayView`, `MembershipCard`, `MembershipList`, `ModulePanel`
+
+> The agent-admin shells (`AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell`) moved to `@happyvertical/smrt-agents/svelte` (#1589).
 
 **Browser AI**: `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput`
 
@@ -182,4 +181,4 @@ const editorSections = navTreeFromManifest(manifest, {
 ## Dependencies
 
 - `@happyvertical/smrt-types` -- shared type definitions
-- Peer: `svelte` >=5.18.2, `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users` (all optional)
+- Peer: `svelte` >=5.18.2, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users` (all optional)

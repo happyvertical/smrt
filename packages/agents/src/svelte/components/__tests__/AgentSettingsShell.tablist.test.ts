@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Regression: the agent switcher is a proper ARIA tablist (C8).
  *

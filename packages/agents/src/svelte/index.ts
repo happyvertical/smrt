@@ -1,8 +1,11 @@
 /**
  * Agents Module Svelte Components
  *
- * Optional Svelte UI components for agent schedule management.
- * Auto-registers components with ModuleUIRegistry on import.
+ * Optional Svelte UI components for agent schedule management and the
+ * agent-admin shells (AgentAdminPanel / AgentAdminTabs / AgentSettingsShell)
+ * that render UI-slot config panels against the agent UI registry.
+ * Schedule components auto-register with ModuleUIRegistry on import; the admin
+ * shells are imported directly (not module-registry discoverable).
  *
  * @packageDocumentation
  */
@@ -12,29 +15,49 @@ import type { ComponentProps } from 'svelte';
 import { AGENTS_MODULE_META } from '../ui.js';
 
 // Import components
+import AgentAdminPanel from './components/AgentAdminPanel.svelte';
+import AgentAdminTabs from './components/AgentAdminTabs.svelte';
 import AgentDashboard from './components/AgentDashboard.svelte';
 import AgentRunHistory from './components/AgentRunHistory.svelte';
 import AgentScheduleForm from './components/AgentScheduleForm.svelte';
 import AgentScheduleList from './components/AgentScheduleList.svelte';
+import AgentSettingsShell from './components/AgentSettingsShell.svelte';
 import ScheduleStatusBadge from './components/ScheduleStatusBadge.svelte';
 
 // Export components
 export {
+  AgentAdminPanel,
+  AgentAdminTabs,
   AgentDashboard,
   AgentRunHistory,
   AgentScheduleForm,
   AgentScheduleList,
+  AgentSettingsShell,
   ScheduleStatusBadge,
 };
 
 // Export component prop types
+export type AgentAdminPanelProps = ComponentProps<typeof AgentAdminPanel>;
+export type AgentAdminTabsProps = ComponentProps<typeof AgentAdminTabs>;
 export type AgentDashboardProps = ComponentProps<typeof AgentDashboard>;
 export type AgentRunHistoryProps = ComponentProps<typeof AgentRunHistory>;
 export type AgentScheduleFormProps = ComponentProps<typeof AgentScheduleForm>;
 export type AgentScheduleListProps = ComponentProps<typeof AgentScheduleList>;
+export type AgentSettingsShellProps = ComponentProps<typeof AgentSettingsShell>;
 export type ScheduleStatusBadgeProps = ComponentProps<
   typeof ScheduleStatusBadge
 >;
+
+// Registry types the admin shells type against — re-exported for parity with
+// the former `@happyvertical/smrt-svelte/admin` barrel (these live in
+// smrt-agents/ui). Also available side-effect-free from
+// `@happyvertical/smrt-agents/svelte/admin`.
+export type {
+  AdminPanelBaseProps,
+  AgentUIComponentRegistry,
+  AgentUISlot,
+  AgentUISlots,
+} from '../ui.js';
 
 // Export types and utilities
 export type {

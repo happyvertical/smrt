@@ -1,11 +1,11 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type {
   AdminPanelBaseProps,
   AgentUIComponentRegistry,
   AgentUISlot,
-} from '@happyvertical/smrt-agents/ui';
-import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { M } from '../../i18n/strings.workspace.js';
+} from '../../ui.js';
+import { M } from '../i18n.js';
 
 const { t } = useI18n();
 

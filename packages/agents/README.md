@@ -136,4 +136,5 @@ which work is an intentional intervention.
 - `@happyvertical/ai` -- AI client (SDK)
 - `@happyvertical/files` -- Filesystem utilities (SDK)
 - `@happyvertical/utils` -- Shared utilities (SDK)
-- Peer (optional): `@happyvertical/smrt-svelte`, `svelte`
+- `@happyvertical/smrt-ui` -- UI runtime (i18n client, primitives, module registry) for the optional `./svelte` components, including the agent-admin shells (`AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell`) that moved here from smrt-svelte in #1589
+- Peer (optional): `svelte`
