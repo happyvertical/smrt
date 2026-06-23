@@ -114,6 +114,23 @@ function projectClient(over: Record<string, any> = {}): any {
   };
 }
 
+/**
+ * Persist a Repository so an Issue/PullRequest can resolve a client through the
+ * PUBLIC path (`getClient()` → `getRepository()` → the loaded repo's
+ * `getClient()` → mocked SDK factory) — never by reaching into `_client`.
+ * Uses TOKEN_KEY, which beforeEach populates in the environment.
+ */
+async function seedRepo(database: DatabaseInterface): Promise<Repository> {
+  const repos = await RepositoryCollection.create({ db: database });
+  const repo = await repos.create({
+    owner: 'acme',
+    name: 'widgets',
+    tokenConfigKey: TOKEN_KEY,
+  });
+  await repo.save();
+  return repo;
+}
+
 describe('smrt-projects models', () => {
   let db: DatabaseInterface;
   const savedEnv: Record<string, string | undefined> = {};
@@ -184,11 +201,12 @@ describe('smrt-projects models', () => {
       });
       await repo.save();
       const fake = repoClient();
-      (repo as any)._client = fake;
+      vi.mocked(getRepository).mockResolvedValue(fake);
 
-      // Recently synced + no force → throttled (no client call).
+      // Recently synced + no force → throttled (getClient/SDK never reached).
       repo.lastSyncedAt = new Date();
       await repo.sync();
+      expect(getRepository).not.toHaveBeenCalled();
       expect(fake.getRepository).not.toHaveBeenCalled();
 
       // Forced → fields updated from remote.
@@ -217,9 +235,13 @@ describe('smrt-projects models', () => {
       // initialize() the new model's DB connection is unset and save() throws
       // "Database accessed before initialization". See Repository.createIssue.
       const repos = await RepositoryCollection.create({ db });
-      const repo = await repos.create({ owner: 'acme', name: 'widgets' });
+      const repo = await repos.create({
+        owner: 'acme',
+        name: 'widgets',
+        tokenConfigKey: TOKEN_KEY,
+      });
       await repo.save();
-      (repo as any)._client = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(repoClient());
 
       const issue = await repo.createIssue({ title: 'New' } as any);
       expect(issue).toBeInstanceOf(Issue);
@@ -243,14 +265,20 @@ describe('smrt-projects models', () => {
 
     it('getIssues()/getPullRequests() delegate discovery to the provider client', async () => {
       const repos = await RepositoryCollection.create({ db });
-      const repo = await repos.create({ owner: 'acme', name: 'widgets' });
-      await repo.save();
-      (repo as any)._client = repoClient({
-        searchIssues: vi.fn(async (q: string) =>
-          q === 'is:pr' ? [{ number: 5 }] : [sdkIssue({ number: 3 })],
-        ),
-        getPullRequest: vi.fn(async () => sdkPr({ number: 5 })),
+      const repo = await repos.create({
+        owner: 'acme',
+        name: 'widgets',
+        tokenConfigKey: TOKEN_KEY,
       });
+      await repo.save();
+      vi.mocked(getRepository).mockResolvedValue(
+        repoClient({
+          searchIssues: vi.fn(async (q: string) =>
+            q === 'is:pr' ? [{ number: 5 }] : [sdkIssue({ number: 3 })],
+          ),
+          getPullRequest: vi.fn(async () => sdkPr({ number: 5 })),
+        }),
+      );
 
       const issues = await repo.getIssues({ state: 'open' });
       expect(issues.map((i) => i.number)).toEqual([3]);
@@ -276,9 +304,17 @@ describe('smrt-projects models', () => {
 
   describe('Issue', () => {
     it('getUrl() reflects the cached repository and clearCache() resets it', async () => {
-      const issue = new Issue({ db, number: 42, repositoryId: 'r' });
+      const repo = await seedRepo(db);
+      vi.mocked(getRepository).mockResolvedValue(repoClient());
+      const issues = await IssueCollection.create({ db });
+      const issue = await issues.create({
+        repositoryId: repo.id as string,
+        number: 42,
+      });
+      // No repository cached yet → empty URL.
       expect(issue.getUrl()).toBe('');
-      (issue as any)._repository = { owner: 'acme', name: 'widgets' };
+      // Populate the cache through the public loader, then the URL resolves.
+      await issue.getRepository();
       expect(issue.getUrl()).toBe('https://github.com/acme/widgets/issues/42');
       issue.clearCache();
       expect(issue.getUrl()).toBe('');
@@ -320,15 +356,16 @@ describe('smrt-projects models', () => {
     });
 
     it('sync() throttles a recent sync and otherwise refreshes from the client', async () => {
+      const repo = await seedRepo(db);
+      const fake = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(fake);
       const issues = await IssueCollection.create({ db });
       const issue = await issues.create({
-        repositoryId: 'r',
+        repositoryId: repo.id as string,
         number: 1,
         title: 'old',
       });
       await issue.save();
-      const fake = repoClient();
-      (issue as any)._client = fake;
 
       issue.lastSyncedAt = new Date();
       await issue.sync();
@@ -340,16 +377,17 @@ describe('smrt-projects models', () => {
     });
 
     it('close()/addLabels()/removeLabel()/assign() update local state via the client', async () => {
+      const repo = await seedRepo(db);
+      const fake = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(fake);
       const issues = await IssueCollection.create({ db });
       const issue = await issues.create({
-        repositoryId: 'r',
+        repositoryId: repo.id as string,
         number: 1,
         labels: ['keep'],
         assignees: [],
       });
       await issue.save();
-      const fake = repoClient();
-      (issue as any)._client = fake;
 
       await issue.close();
       expect(issue.state).toBe('closed');
@@ -383,15 +421,16 @@ describe('smrt-projects models', () => {
     });
 
     it('rollback() guards on missing original body / no synthesis, then restores', async () => {
+      const repo = await seedRepo(db);
+      const fake = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(fake);
       const issues = await IssueCollection.create({ db });
       const issue = await issues.create({
-        repositoryId: 'r',
+        repositoryId: repo.id as string,
         number: 1,
         body: 'current',
       });
       await issue.save();
-      const fake = repoClient();
-      (issue as any)._client = fake;
 
       expect(await issue.rollback()).toEqual({
         success: false,
@@ -434,46 +473,54 @@ describe('smrt-projects models', () => {
       expect(size(400, 400)).toBe('xl');
     });
 
-    it('getUrl() points at the pull-request path when a repo is cached', () => {
-      const pr = new PullRequest({ number: 9 });
+    it('getUrl() points at the pull-request path when a repo is cached', async () => {
+      const repo = await seedRepo(db);
+      vi.mocked(getRepository).mockResolvedValue(repoClient());
+      const prs = await PullRequestCollection.create({ db });
+      const pr = await prs.create({
+        repositoryId: repo.id as string,
+        number: 9,
+      });
       expect(pr.getUrl()).toBe('');
-      (pr as any)._repository = { owner: 'acme', name: 'widgets' };
+      await pr.getRepository();
       expect(pr.getUrl()).toBe('https://github.com/acme/widgets/pull/9');
     });
 
     it('merge() enforces its preconditions then merges through the client', async () => {
+      const repo = await seedRepo(db);
+      const fake = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(fake);
       const prs = await PullRequestCollection.create({ db });
+      const rid = repo.id as string;
 
       const already = await prs.create({
-        repositoryId: 'r',
+        repositoryId: rid,
         number: 1,
         merged: true,
       });
       await expect(already.merge()).rejects.toThrow(/already merged/i);
 
       const draft = await prs.create({
-        repositoryId: 'r',
+        repositoryId: rid,
         number: 2,
         draft: true,
       });
       await expect(draft.merge()).rejects.toThrow(/draft/i);
 
       const conflicted = await prs.create({
-        repositoryId: 'r',
+        repositoryId: rid,
         number: 3,
         mergeable: false,
       });
       await expect(conflicted.merge()).rejects.toThrow(/not mergeable/i);
 
       const ok = await prs.create({
-        repositoryId: 'r',
+        repositoryId: rid,
         number: 4,
         mergeable: true,
         draft: false,
       });
       await ok.save();
-      const fake = repoClient();
-      (ok as any)._client = fake;
       await ok.merge('squash');
       expect(fake.mergePullRequest).toHaveBeenCalledWith(4, 'squash');
       expect(ok.merged).toBe(true);
@@ -481,23 +528,25 @@ describe('smrt-projects models', () => {
     });
 
     it('markReady()/convertToDraft() toggle draft state via the client', async () => {
+      const repo = await seedRepo(db);
+      const fake = repoClient();
+      vi.mocked(getRepository).mockResolvedValue(fake);
       const prs = await PullRequestCollection.create({ db });
+      const rid = repo.id as string;
 
       const notDraft = await prs.create({
-        repositoryId: 'r',
+        repositoryId: rid,
         number: 1,
         draft: false,
       });
       await expect(notDraft.markReady()).rejects.toThrow(/not a draft/i);
 
       const draft = await prs.create({
-        repositoryId: 'r',
+        repositoryId: rid,
         number: 2,
         draft: true,
       });
       await draft.save();
-      const fake = repoClient();
-      (draft as any)._client = fake;
       await draft.markReady();
       expect(draft.draft).toBe(false);
       expect(fake.markPRReady).toHaveBeenCalledWith(2);
@@ -507,7 +556,7 @@ describe('smrt-projects models', () => {
       expect(fake.convertPRToDraft).toHaveBeenCalledWith(2);
 
       const alreadyDraft = await prs.create({
-        repositoryId: 'r',
+        repositoryId: rid,
         number: 3,
         draft: true,
       });
@@ -517,17 +566,20 @@ describe('smrt-projects models', () => {
     });
 
     it('requestReviewers() and findLinkedIssue() use the client', async () => {
-      const prs = await PullRequestCollection.create({ db });
-      const issues = await IssueCollection.create({ db });
-      await (
-        await issues.create({ repositoryId: 'r', number: 100, title: 'linked' })
-      ).save();
-
-      const pr = await prs.create({ repositoryId: 'r', number: 1 });
+      const repo = await seedRepo(db);
+      const rid = repo.id as string;
       const fake = repoClient({
         findIssueForPR: vi.fn(async () => ({ number: 100 })),
       });
-      (pr as any)._client = fake;
+      vi.mocked(getRepository).mockResolvedValue(fake);
+
+      const prs = await PullRequestCollection.create({ db });
+      const issues = await IssueCollection.create({ db });
+      await (
+        await issues.create({ repositoryId: rid, number: 100, title: 'linked' })
+      ).save();
+
+      const pr = await prs.create({ repositoryId: rid, number: 1 });
 
       await pr.requestReviewers(['alice']);
       expect(fake.requestReview).toHaveBeenCalledWith(1, ['alice']);
@@ -535,10 +587,12 @@ describe('smrt-projects models', () => {
       const linked = await pr.findLinkedIssue();
       expect(linked?.title).toBe('linked');
 
-      // Null when the client reports no linked issue.
-      (pr as any)._client = repoClient({
-        findIssueForPR: vi.fn(async () => null),
-      });
+      // Null when the client reports no linked issue. Bust the cached client via
+      // the public clearCache() so the re-mocked factory takes effect.
+      pr.clearCache();
+      vi.mocked(getRepository).mockResolvedValue(
+        repoClient({ findIssueForPR: vi.fn(async () => null) }),
+      );
       expect(await pr.findLinkedIssue()).toBeNull();
     });
 
@@ -587,19 +641,20 @@ describe('smrt-projects models', () => {
     });
 
     it('sync() throttles, then refreshes PR-specific fields when forced', async () => {
-      const prs = await PullRequestCollection.create({ db });
-      const pr = await prs.create({
-        repositoryId: 'r',
-        number: 1,
-        headRef: 'old',
-      });
-      await pr.save();
+      const repo = await seedRepo(db);
       const fake = repoClient({
         getPullRequest: vi.fn(async () =>
           sdkPr({ number: 1, headRef: 'new-head' }),
         ),
       });
-      (pr as any)._client = fake;
+      vi.mocked(getRepository).mockResolvedValue(fake);
+      const prs = await PullRequestCollection.create({ db });
+      const pr = await prs.create({
+        repositoryId: repo.id as string,
+        number: 1,
+        headRef: 'old',
+      });
+      await pr.save();
 
       pr.lastSyncedAt = new Date();
       await pr.sync();
@@ -638,13 +693,18 @@ describe('smrt-projects models', () => {
 
     it('sync() throttles a recent sync and refreshes when forced', async () => {
       const projects = await ProjectCollection.create({ db });
-      const project = await projects.create({ projectId: 'p1', title: 'old' });
+      const project = await projects.create({
+        projectId: 'p1',
+        title: 'old',
+        tokenConfigKey: TOKEN_KEY,
+      });
       await project.save();
       const fake = projectClient();
-      (project as any)._client = fake;
+      vi.mocked(getProject).mockResolvedValue(fake);
 
       project.lastSyncedAt = new Date();
       await project.sync();
+      expect(getProject).not.toHaveBeenCalled();
       expect(fake.getProject).not.toHaveBeenCalled();
 
       await project.sync({ force: true });
@@ -654,13 +714,16 @@ describe('smrt-projects models', () => {
 
     it('item operations delegate to the client', async () => {
       const projects = await ProjectCollection.create({ db });
-      const project = await projects.create({ projectId: 'p1' });
+      const project = await projects.create({
+        projectId: 'p1',
+        tokenConfigKey: TOKEN_KEY,
+      });
       const fake = projectClient({
         listItems: vi.fn(async () => [
           { id: 'i1', status: 'Todo', type: 'Issue', contentId: 'node-x' },
         ]),
       });
-      (project as any)._client = fake;
+      vi.mocked(getProject).mockResolvedValue(fake);
 
       await expect(project.addItem({ nodeId: '' } as any)).rejects.toThrow(
         /nodeId/i,
@@ -690,20 +753,26 @@ describe('smrt-projects models', () => {
     it('getStatuses()/getFields() prefer cached values and fall back to the client', async () => {
       const projects = await ProjectCollection.create({ db });
 
+      vi.mocked(getProject).mockResolvedValue(projectClient());
+
       const cached = await projects.create({
         projectId: 'p1',
+        tokenConfigKey: TOKEN_KEY,
         statuses: [{ name: 'Cached' }] as any,
         fields: [{ id: 'cf', name: 'Cached' }] as any,
       });
-      (cached as any)._client = projectClient();
+      // Cached values short-circuit before any client/SDK call.
       expect((await cached.getStatuses()).map((s) => s.name)).toEqual([
         'Cached',
       ]);
       expect((await cached.getFields()).map((f) => f.id)).toEqual(['cf']);
+      expect(getProject).not.toHaveBeenCalled();
 
-      const empty = await projects.create({ projectId: 'p2' });
+      const empty = await projects.create({
+        projectId: 'p2',
+        tokenConfigKey: TOKEN_KEY,
+      });
       await empty.save();
-      (empty as any)._client = projectClient();
       expect((await empty.getStatuses()).map((s) => s.name)).toEqual(['Todo']);
       expect((await empty.getFields()).map((f) => f.id)).toEqual(['f1']);
     });
@@ -713,15 +782,18 @@ describe('smrt-projects models', () => {
       const project = await projects.create({
         projectId: 'p1',
         title: 'Board',
+        tokenConfigKey: TOKEN_KEY,
       });
-      (project as any)._client = projectClient({
-        listItems: vi.fn(async () => [
-          { id: 'a', status: 'Todo' },
-          { id: 'b', status: 'Todo' },
-          { id: 'c', status: 'Done' },
-        ]),
-        listStatuses: vi.fn(async () => [{ name: 'Todo' }, { name: 'Done' }]),
-      });
+      vi.mocked(getProject).mockResolvedValue(
+        projectClient({
+          listItems: vi.fn(async () => [
+            { id: 'a', status: 'Todo' },
+            { id: 'b', status: 'Todo' },
+            { id: 'c', status: 'Done' },
+          ]),
+          listStatuses: vi.fn(async () => [{ name: 'Todo' }, { name: 'Done' }]),
+        }),
+      );
       const doSpy = vi.spyOn(project, 'do').mockResolvedValue('Healthy board.');
 
       expect(await project.analyzeHealth()).toBe('Healthy board.');

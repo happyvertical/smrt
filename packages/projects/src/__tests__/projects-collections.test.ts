@@ -7,14 +7,16 @@
  * `discover()` sync path, and the `batchSync` / `syncAll` fan-out loops.
  *
  * Real in-memory SQLite, no DB mocking, per `.claude/rules/testing.md`. The only
- * mocked surface is the provider SDK client (`IRepository` / `IProject`), which
- * stands in for the external GitHub/GitLab API calls — injected via the model's
- * cached `_client` so `getClient()` never reaches the network. Methods that
+ * mocked surface is the external provider SDK factory (`@happyvertical/repos`):
+ * `getRepository()` resolves to a fake client, so the model's PUBLIC
+ * `getClient()` / token-resolution path runs without reaching the network — we
+ * never reach into the private `_client` cache (AGENTS.md: no private reach-ins).
+ * Cache busting between discoveries uses the public `clearClient()`. Methods that
  * delegate to a freshly-loaded model's client (e.g. `batchSync`, `getStatistics`)
- * are covered by spying that model's prototype, since the loaded instances have
- * no injected client.
+ * are covered by spying that model's prototype.
  */
 
+import { getRepository } from '@happyvertical/repos';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +28,8 @@ import { Issue } from '../models/Issue';
 import { Project } from '../models/Project';
 import { PullRequest } from '../models/PullRequest';
 import { Repository } from '../models/Repository';
+
+vi.mock('@happyvertical/repos', () => ({ getRepository: vi.fn() }));
 
 /** A remote issue/PR record shaped like the provider SDK returns. */
 function remoteIssue(over: Record<string, any> = {}): any {
@@ -67,13 +71,21 @@ function fakeRepoClient(over: Record<string, any> = {}): any {
 
 describe('smrt-projects collections', () => {
   let db: DatabaseInterface;
+  let savedToken: string | undefined;
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    // Repositories default to tokenConfigKey 'GITHUB_TOKEN'; provide a dummy so
+    // getClient()'s token resolution succeeds and calls the mocked SDK factory.
+    savedToken = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = 'test-token';
+    vi.mocked(getRepository).mockReset();
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    if (savedToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = savedToken;
     if (db && typeof db.close === 'function') {
       await db.close();
     }
@@ -84,26 +96,32 @@ describe('smrt-projects collections', () => {
       const repos = await RepositoryCollection.create({ db });
       const repo = await repos.create({ owner: 'acme', name: 'widgets' });
       await repo.save();
-      (repo as any)._client = fakeRepoClient({
-        searchIssues: vi.fn(async () => [
-          remoteIssue({ number: 1, title: 'First', id: 'n1' }),
-        ]),
-      });
+      vi.mocked(getRepository).mockResolvedValue(
+        fakeRepoClient({
+          searchIssues: vi.fn(async () => [
+            remoteIssue({ number: 1, title: 'First', id: 'n1' }),
+          ]),
+        }),
+      );
 
       const issues = await IssueCollection.create({ db });
 
-      // First discovery creates the issue.
+      // First discovery creates the issue (getClient() resolves the mocked SDK).
       const created = await issues.discover({ repository: repo });
       expect(created).toHaveLength(1);
       expect(created[0].title).toBe('First');
       expect(created[0].id).toBeTruthy();
 
-      // Second discovery with changed remote data updates the same row.
-      (repo as any)._client = fakeRepoClient({
-        searchIssues: vi.fn(async () => [
-          remoteIssue({ number: 1, title: 'First (edited)', id: 'n1b' }),
-        ]),
-      });
+      // Second discovery with changed remote data updates the same row. Drop the
+      // cached client via the public clearClient() so the new mock takes effect.
+      repo.clearClient();
+      vi.mocked(getRepository).mockResolvedValue(
+        fakeRepoClient({
+          searchIssues: vi.fn(async () => [
+            remoteIssue({ number: 1, title: 'First (edited)', id: 'n1b' }),
+          ]),
+        }),
+      );
       const updated = await issues.discover({ repository: repo });
       expect(updated).toHaveLength(1);
       expect(updated[0].id).toBe(created[0].id);
@@ -278,13 +296,15 @@ describe('smrt-projects collections', () => {
       const repo = await repos.create({ owner: 'acme', name: 'widgets' });
       await repo.save();
 
-      (repo as any)._client = fakeRepoClient({
-        searchIssues: vi.fn(async () => [{ number: 1 }, { number: 2 }]),
-        getPullRequest: vi.fn(async (n: number) => {
-          if (n === 2) throw new Error('rate limited');
-          return remotePr({ number: 1, title: 'PR one', id: 'pr1' });
+      vi.mocked(getRepository).mockResolvedValue(
+        fakeRepoClient({
+          searchIssues: vi.fn(async () => [{ number: 1 }, { number: 2 }]),
+          getPullRequest: vi.fn(async (n: number) => {
+            if (n === 2) throw new Error('rate limited');
+            return remotePr({ number: 1, title: 'PR one', id: 'pr1' });
+          }),
         }),
-      });
+      );
 
       const prs = await PullRequestCollection.create({ db });
       const discovered = await prs.discover({ repository: repo });
@@ -292,18 +312,22 @@ describe('smrt-projects collections', () => {
       expect(discovered.map((p) => p.number)).toEqual([1]);
       expect(discovered[0].headRef).toBe('feature');
 
-      // Re-discover #1 with updated data → updates in place.
-      (repo as any)._client = fakeRepoClient({
-        searchIssues: vi.fn(async () => [{ number: 1 }]),
-        getPullRequest: vi.fn(async () =>
-          remotePr({
-            number: 1,
-            title: 'PR one (edited)',
-            id: 'pr1b',
-            draft: true,
-          }),
-        ),
-      });
+      // Re-discover #1 with updated data → updates in place. Bust the cached
+      // client via the public clearClient() so the new mock takes effect.
+      repo.clearClient();
+      vi.mocked(getRepository).mockResolvedValue(
+        fakeRepoClient({
+          searchIssues: vi.fn(async () => [{ number: 1 }]),
+          getPullRequest: vi.fn(async () =>
+            remotePr({
+              number: 1,
+              title: 'PR one (edited)',
+              id: 'pr1b',
+              draft: true,
+            }),
+          ),
+        }),
+      );
       const updated = await prs.discover({ repository: repo });
       expect(updated[0].title).toBe('PR one (edited)');
       expect(updated[0].draft).toBe(true);
