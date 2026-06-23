@@ -383,6 +383,69 @@ describe('chat security (S5 #1392)', () => {
       });
       expect(agentMsg.role).toBe('assistant');
     });
+
+    // T2 #1391: the whitelist gate previously only fired for `tool_call`
+    // messageType, the `tool` role, or a truthy toolCallData. A `tool_result`
+    // emitted with the default `assistant` kind and no toolCallData slipped
+    // through, rendering a "tool result" bubble for a never-whitelisted tool.
+    // The gate now also covers the `tool_result` messageType.
+    it('rejects a tool_result for a non-whitelisted tool even with the default kind and no toolCallData', async () => {
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'profile-1',
+        allowedTools: ['search'],
+      });
+
+      await expect(
+        sendAgentReply(chat, {
+          tenantId: 'tenant-1',
+          agentSessionId: session.id as string,
+          content: 'pretend tool output',
+          // kind omitted => defaults to 'assistant' (role 'assistant')
+          messageType: 'tool_result',
+          // toolCallData omitted => null; the OLD gate skipped entirely here
+        }),
+      ).rejects.toThrow(/missing a tool name|not allowed/i);
+    });
+
+    it('rejects a tool_result naming a tool that is NOT on the whitelist', async () => {
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'profile-1',
+        allowedTools: ['search'],
+      });
+
+      await expect(
+        sendAgentReply(chat, {
+          tenantId: 'tenant-1',
+          agentSessionId: session.id as string,
+          content: 'shell output',
+          messageType: 'tool_result',
+          toolCallData: { name: 'exec_shell', result: 'rooted' },
+        }),
+      ).rejects.toThrow(/not allowed/i);
+    });
+
+    it('allows a tool_result for a whitelisted tool', async () => {
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'profile-1',
+        allowedTools: ['search'],
+      });
+
+      const msg = await sendAgentReply(chat, {
+        tenantId: 'tenant-1',
+        agentSessionId: session.id as string,
+        content: 'search results',
+        messageType: 'tool_result',
+        toolCallData: { name: 'search', result: ['a', 'b'] },
+      });
+      expect(msg.id).toBeDefined();
+      expect(msg.messageType).toBe('tool_result');
+    });
   });
 
   describe('caller cannot post as the agent through any public method', () => {

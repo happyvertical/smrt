@@ -20,12 +20,20 @@ export interface Props {
   currentProfileId: string;
   /** Callback when a room is selected */
   onselectroom: (roomId: string) => void;
+  /** Callback to open the create-room affordance in the room list */
+  oncreateroom?: () => void;
   /** Main content slot */
   children: Snippet;
 }
 
-let { rooms, currentRoomId, currentProfileId, onselectroom, children }: Props =
-  $props();
+let {
+  rooms,
+  currentRoomId,
+  currentProfileId,
+  onselectroom,
+  oncreateroom,
+  children,
+}: Props = $props();
 
 let sidebarWidth = $state(260);
 let isResizing = $state(false);
@@ -60,6 +68,7 @@ function handlePointerUp() {
       {rooms}
       {currentRoomId}
       {onselectroom}
+      {oncreateroom}
     />
   </aside>
 

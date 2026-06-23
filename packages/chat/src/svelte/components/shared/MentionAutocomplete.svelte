@@ -19,9 +19,11 @@ export interface Props {
   onselect: (id: string) => void;
   /** Whether the popup is visible */
   isVisible: boolean;
+  /** Dismiss the popup (e.g. Escape pressed) without selecting */
+  oncancel?: () => void;
 }
 
-const { query, suggestions, onselect, isVisible }: Props = $props();
+const { query, suggestions, onselect, isVisible, oncancel }: Props = $props();
 
 let activeIndex = $state(0);
 
@@ -50,6 +52,8 @@ function handleKeydown(event: KeyboardEvent) {
       onselect(suggestions[activeIndex].id);
       break;
     case 'Escape':
+      event.preventDefault();
+      oncancel?.();
       break;
   }
 }

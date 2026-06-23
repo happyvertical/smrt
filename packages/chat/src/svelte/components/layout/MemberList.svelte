@@ -32,12 +32,14 @@ const offlineMembers = $derived(
 
 function getStatusColor(status: string): string {
   switch (status) {
+    // "online" reconciled to the success token (was --smrt-color-tertiary)
+    // so it matches UserPresence and stays semantically green (T2 #1391).
     case 'online':
-      return 'var(--smrt-color-tertiary, #006c4f)';
+      return 'var(--smrt-color-success, #1e8e3e)';
     case 'away':
-      return 'var(--smrt-color-warning, #f0a000)';
+      return 'var(--smrt-color-warning, #f9ab00)';
     case 'dnd':
-      return 'var(--smrt-color-error, #ba1a1a)';
+      return 'var(--smrt-color-error, #b3261e)';
     default:
       return 'var(--smrt-color-outline, #74777f)';
   }

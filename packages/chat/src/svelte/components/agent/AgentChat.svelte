@@ -539,4 +539,10 @@ $effect(() => {
     0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
     30% { transform: translateY(-4px); opacity: 1; }
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .thinking-dots span {
+      animation: none;
+    }
+  }
 </style>
