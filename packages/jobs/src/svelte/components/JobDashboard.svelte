@@ -4,7 +4,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { Card } from '@happyvertical/smrt-ui/ui';
+import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import JobList from './JobList.svelte';
 import JobStatsSummary from './JobStats.svelte';
@@ -63,7 +63,7 @@ let {
           <div class="panel-header">
             <h2>{t(M['jobs.job_dashboard.recent_jobs'])}</h2>
             {#if onViewAll}
-              <button class="view-all-btn" onclick={onViewAll}>{t(M['jobs.job_dashboard.view_all'])}</button>
+              <Button variant="ghost" size="sm" onclick={onViewAll}>{t(M['jobs.job_dashboard.view_all'])}</Button>
             {/if}
           </div>
         {/snippet}
@@ -89,9 +89,9 @@ let {
             <div class="panel-header panel-header--error">
               <h2>{t(M['jobs.job_dashboard.failed_jobs'])}</h2>
               {#if onViewFailed}
-                <button class="view-all-btn" onclick={onViewFailed}
-                  >{t(M['jobs.job_dashboard.view_all_count'], { count: stats.failed })}</button
-                >
+                <Button variant="ghost" size="sm" onclick={onViewFailed}>
+                  {t(M['jobs.job_dashboard.view_all_count'], { count: stats.failed })}
+                </Button>
               {/if}
             </div>
           {/snippet}
@@ -166,21 +166,6 @@ let {
     color: var(--smrt-color-error, #ba1a1a);
   }
 
-  .view-all-btn {
-    padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-sm, 0.5rem);
-    border: none;
-    background: none;
-    color: var(--smrt-color-primary, #005ac1);
-    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .view-all-btn:hover {
-    background: var(--smrt-color-primary-container, #d6e3ff);
-  }
-
   .empty-message {
     padding: var(--smrt-spacing-md, 1rem);
     text-align: center;
@@ -191,9 +176,4 @@ let {
     color: var(--smrt-color-tertiary, #006c4f);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .view-all-btn {
-      transition: none;
-    }
-  }
 </style>
