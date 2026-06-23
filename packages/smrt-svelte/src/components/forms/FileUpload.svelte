@@ -204,7 +204,9 @@ function formatFileSize(bytes: number): string {
   </div>
 
   {#if error}
-    <p class="file-upload__error">{error}</p>
+    <!-- Live region so async validation/reject errors are announced (C7),
+         matching the Form/TextInput announcing pattern. -->
+    <p class="file-upload__error" role="alert" aria-live="assertive">{error}</p>
   {/if}
 
   {#if files.length > 0}

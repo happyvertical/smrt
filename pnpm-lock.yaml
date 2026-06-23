@@ -1905,6 +1905,9 @@ importers:
 
   packages/smrt-svelte:
     dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.74.7
+        version: 0.74.7(@sentry/node@10.51.0)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents

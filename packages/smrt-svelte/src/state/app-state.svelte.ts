@@ -50,6 +50,34 @@ import {
 } from './warm-clients.js';
 
 /**
+ * Module-scope record of the single active listener teardown for each warm
+ * adapter. Warm adapters live in the module-level cache and survive Provider
+ * remounts, so their event-listener `Set`s would otherwise accumulate one
+ * closure set per manager that ever subscribed (R1 leak). Keying the teardown
+ * by **adapter identity at module scope** (not a per-manager `WeakSet`)
+ * guarantees at most one live subscription per shared adapter: before a new
+ * manager subscribes, the previous owner's listeners are removed.
+ */
+const sttAdapterTeardowns = new WeakMap<STTAdapter, () => void>();
+const ttsAdapterTeardowns = new WeakMap<TTSAdapter, () => void>();
+
+/**
+ * Structural equality for two AI configs (R3). Used to no-op `setAIConfig` when
+ * an inline `ai={{…}}` literal re-renders with the same effective settings but a
+ * new object identity. A shallow JSON compare is sufficient: AIConfig is a flat
+ * tree of plain primitives/objects with no functions or class instances.
+ */
+function configsEqual(a: AIConfig, b: AIConfig): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    // Non-serializable (shouldn't happen for AIConfig) — treat as different.
+    return false;
+  }
+}
+
+/**
  * Reactive app state manager for Svelte 5
  */
 export class SmrtAppStateManager {
@@ -63,15 +91,25 @@ export class SmrtAppStateManager {
   private _aiConfig: AIConfig | null = null;
   private _preloadScheduled = false;
   private _idleCallbackId: number | null = null;
+  // Guards a single executePreload() pass from running concurrently. The
+  // Provider's `ai` $effect can re-fire setAIConfig on every parent render
+  // (inline `ai={{…}}` literal => new identity), and an `idle`/`eager` strategy
+  // would otherwise launch overlapping preloads that interleave aiLoading
+  // writes and double-download models (R3).
+  private _preloadInFlight = false;
 
   // Socket management
   private _socket: WebSocket | null = null;
   private _socketConfig: SocketConfig | null = null;
   private _reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Track adapters we've already subscribed to (prevents duplicate listeners)
-  private _subscribedSTTAdapters = new WeakSet<STTAdapter>();
-  private _subscribedTTSAdapters = new WeakSet<TTSAdapter>();
+  // Adapters this manager currently owns a subscription on, mapped to the
+  // teardown that removes its listeners. Used both for dedup (skip re-subscribe
+  // when this manager already owns the adapter) and to unsubscribe on dispose()
+  // so a destroyed Provider stops pinning its `_state` proxy via the adapter's
+  // module-surviving listener `Set`s (R1).
+  private _sttSubscriptions = new Map<STTAdapter, () => void>();
+  private _ttsSubscriptions = new Map<TTSAdapter, () => void>();
 
   constructor(options: CreateAppStateOptions = {}) {
     this.options = options;
@@ -157,9 +195,23 @@ export class SmrtAppStateManager {
   // === AI Preloading Methods ===
 
   /**
-   * Set or update AI configuration
+   * Set or update AI configuration.
+   *
+   * No-ops when the incoming config is deep-equal to the current one. The
+   * Provider's `ai` $effect depends on the prop's identity, and the documented
+   * usage passes an inline `ai={{…}}` object literal — a fresh identity on every
+   * parent render. Without this guard each render would cancel the idle
+   * callback, reset `_preloadScheduled`, and re-schedule (and, for `eager`,
+   * re-launch a full preload), thrashing the scheduler and double-downloading
+   * models (R3).
    */
   setAIConfig(config: AIConfig): void {
+    if (this._aiConfig && configsEqual(this._aiConfig, config)) {
+      // Same effective config (different object identity) — nothing to do.
+      this._aiConfig = config;
+      return;
+    }
+
     this._aiConfig = config;
 
     // Cancel any pending preload scheduling so we can re-schedule with new config
@@ -225,9 +277,28 @@ export class SmrtAppStateManager {
   }
 
   /**
-   * Execute the preloading of configured adapters
+   * Execute the preloading of configured adapters.
+   *
+   * Re-entrancy guarded: an `idle`/`eager` strategy can be re-scheduled while a
+   * pass is still awaiting model downloads. Without the guard the overlapping
+   * passes interleave their aiLoading writes and double-download models (R3).
    */
   private async executePreload(): Promise<void> {
+    if (!this._aiConfig) return;
+    if (this._preloadInFlight) return;
+    this._preloadInFlight = true;
+    try {
+      await this.runPreload();
+    } finally {
+      this._preloadInFlight = false;
+    }
+  }
+
+  /**
+   * The actual preload pass. Always invoked behind the `_preloadInFlight` guard
+   * in {@link executePreload}.
+   */
+  private async runPreload(): Promise<void> {
     if (!this._aiConfig) return;
 
     const adaptersToLoad: string[] = [];
@@ -247,7 +318,10 @@ export class SmrtAppStateManager {
     }
 
     if (adaptersToLoad.length === 0) {
-      this.updateLoadingState({ phase: 'idle' });
+      // Reset loaded/failed too (R7) — the main path clears them via the
+      // 'checking' update below, so the early-return must not leave stale
+      // entries from a prior pass behind.
+      this.updateLoadingState({ phase: 'idle', loaded: [], failed: [] });
       return;
     }
 
@@ -612,43 +686,63 @@ export class SmrtAppStateManager {
   }
 
   /**
-   * Subscribe to STT adapter events
-   * Only subscribes once per adapter instance to prevent duplicate listeners
+   * Subscribe to STT adapter events.
+   *
+   * Captures every unsubscribe handle the adapter returns and stores a single
+   * teardown both per-manager (called on dispose()) and at module scope keyed
+   * by adapter identity. Because warm adapters are shared singletons, any
+   * previous owner's listeners are torn down first — guaranteeing exactly one
+   * live listener set per adapter, with the latest manager owning it (R1).
    */
   private subscribeToSTTEvents(adapter: STTAdapter): void {
-    // Prevent duplicate subscriptions
-    if (this._subscribedSTTAdapters.has(adapter)) {
+    // Dedup: this manager already owns the adapter's subscription.
+    if (this._sttSubscriptions.has(adapter)) {
       return;
     }
-    this._subscribedSTTAdapters.add(adapter);
 
-    adapter.onResult((result) => {
-      if (result.isFinal) {
-        // Accumulate final results (for continuous mode where multiple phrases are spoken)
-        const existing = this._state.ai.stt.lastResult;
-        if (existing) {
-          this._state.ai.stt.lastResult = `${existing} ${result.text}`;
+    // Evict any prior owner (e.g. a destroyed Provider that failed to dispose)
+    // so the adapter never fires more than one manager's listeners.
+    sttAdapterTeardowns.get(adapter)?.();
+
+    const unsubs: Array<() => void> = [
+      adapter.onResult((result) => {
+        if (result.isFinal) {
+          // Accumulate final results (continuous mode emits multiple phrases)
+          const existing = this._state.ai.stt.lastResult;
+          if (existing) {
+            this._state.ai.stt.lastResult = `${existing} ${result.text}`;
+          } else {
+            this._state.ai.stt.lastResult = result.text;
+          }
+          this._state.ai.stt.interimResult = '';
         } else {
-          this._state.ai.stt.lastResult = result.text;
+          // Interim result - update live
+          this._state.ai.stt.interimResult = result.text;
         }
-        this._state.ai.stt.interimResult = '';
-      } else {
-        // Interim result - update live
-        this._state.ai.stt.interimResult = result.text;
+      }),
+      adapter.onStart(() => {
+        this._state.ai.stt.isListening = true;
+      }),
+      adapter.onEnd(() => {
+        this._state.ai.stt.isListening = false;
+      }),
+      adapter.onError((error) => {
+        this._state.ai.stt.error = error;
+      }),
+    ];
+
+    const teardown = () => {
+      for (const unsub of unsubs) {
+        unsub();
       }
-    });
+      this._sttSubscriptions.delete(adapter);
+      if (sttAdapterTeardowns.get(adapter) === teardown) {
+        sttAdapterTeardowns.delete(adapter);
+      }
+    };
 
-    adapter.onStart(() => {
-      this._state.ai.stt.isListening = true;
-    });
-
-    adapter.onEnd(() => {
-      this._state.ai.stt.isListening = false;
-    });
-
-    adapter.onError((error) => {
-      this._state.ai.stt.error = error;
-    });
+    this._sttSubscriptions.set(adapter, teardown);
+    sttAdapterTeardowns.set(adapter, teardown);
   }
 
   /**
@@ -735,30 +829,48 @@ export class SmrtAppStateManager {
   }
 
   /**
-   * Subscribe to TTS adapter events
-   * Only subscribes once per adapter instance to prevent duplicate listeners
+   * Subscribe to TTS adapter events.
+   *
+   * Mirrors {@link subscribeToSTTEvents}: captures unsubscribe handles, dedups
+   * per-manager, and evicts any prior owner so a shared warm adapter never
+   * pins more than one manager's `_state` proxy (R1).
    */
   private subscribeToTTSEvents(adapter: TTSAdapter): void {
-    // Prevent duplicate subscriptions
-    if (this._subscribedTTSAdapters.has(adapter)) {
+    // Dedup: this manager already owns the adapter's subscription.
+    if (this._ttsSubscriptions.has(adapter)) {
       return;
     }
-    this._subscribedTTSAdapters.add(adapter);
 
-    adapter.onStart(() => {
-      this._state.ai.tts.isSpeaking = true;
-      this._state.ai.tts.isPaused = false;
-    });
+    // Evict any prior owner so the adapter fires only this manager's listeners.
+    ttsAdapterTeardowns.get(adapter)?.();
 
-    adapter.onEnd(() => {
-      this._state.ai.tts.isSpeaking = false;
-      this._state.ai.tts.isPaused = false;
-    });
+    const unsubs: Array<() => void> = [
+      adapter.onStart(() => {
+        this._state.ai.tts.isSpeaking = true;
+        this._state.ai.tts.isPaused = false;
+      }),
+      adapter.onEnd(() => {
+        this._state.ai.tts.isSpeaking = false;
+        this._state.ai.tts.isPaused = false;
+      }),
+      adapter.onError((error) => {
+        this._state.ai.tts.error = error;
+        this._state.ai.tts.isSpeaking = false;
+      }),
+    ];
 
-    adapter.onError((error) => {
-      this._state.ai.tts.error = error;
-      this._state.ai.tts.isSpeaking = false;
-    });
+    const teardown = () => {
+      for (const unsub of unsubs) {
+        unsub();
+      }
+      this._ttsSubscriptions.delete(adapter);
+      if (ttsAdapterTeardowns.get(adapter) === teardown) {
+        ttsAdapterTeardowns.delete(adapter);
+      }
+    };
+
+    this._ttsSubscriptions.set(adapter, teardown);
+    ttsAdapterTeardowns.set(adapter, teardown);
   }
 
   /**
@@ -906,13 +1018,44 @@ export class SmrtAppStateManager {
    * Unload LLM model to free memory
    */
   async unloadLLM(): Promise<void> {
-    await this._state.ai.llm.adapter?.unloadModel();
+    const adapter = this._state.ai.llm.adapter;
+    await adapter?.unloadModel();
+
+    // Downgrade (or remove) the warm-cache entry for the unloaded model so a
+    // later initializeLLM() re-runs ensureInitialized() — re-downloading and
+    // reporting progress — instead of cache-hitting a `'ready'` entry whose
+    // model is now gone (R2). `unloadModel()` keeps the adapter instance
+    // reusable, so downgrade to `'uninitialized'` rather than dispose it.
+    if (adapter) {
+      updateLLMCacheState(adapter.type, adapter.currentModel ?? undefined, {
+        initState: 'uninitialized',
+        downloadProgress: null,
+        error: null,
+      });
+    }
+
     this._state.ai.llm.adapter = null;
     this._state.ai.llm.initState = 'uninitialized';
     this._state.ai.llm.currentModel = null;
   }
 
   // === Cleanup ===
+
+  /**
+   * Unsubscribe every adapter-event listener this manager owns (R1). Called on
+   * dispose() so a destroyed Provider stops being pinned by the shared warm
+   * adapters' module-surviving listener `Set`s.
+   */
+  private unsubscribeAllAdapterEvents(): void {
+    for (const teardown of [...this._sttSubscriptions.values()]) {
+      teardown();
+    }
+    for (const teardown of [...this._ttsSubscriptions.values()]) {
+      teardown();
+    }
+    this._sttSubscriptions.clear();
+    this._ttsSubscriptions.clear();
+  }
 
   /**
    * Dispose of all resources
@@ -927,13 +1070,43 @@ export class SmrtAppStateManager {
       this._idleCallbackId = null;
     }
 
+    // Stop any in-flight preload so it can't write to a torn-down state (R3).
+    this._preloadInFlight = false;
+
     // Disconnect socket
     this.disconnectSocket();
 
-    // Dispose AI adapters (but don't clear the cache - they survive navigation)
-    await this._state.ai.stt.adapter?.dispose();
-    await this._state.ai.tts.adapter?.dispose();
-    await this._state.ai.llm.adapter?.dispose();
+    // Remove this manager's adapter-event listeners (R1).
+    this.unsubscribeAllAdapterEvents();
+
+    // Adapter lifecycle is owned by the warm cache (it survives navigation by
+    // design). For adapters this manager holds that the cache no longer tracks
+    // — e.g. an instance orphaned by a mid-session type switch — dispose them
+    // directly so they don't leak. Adapters still backed by a warm-cache entry
+    // are left intact and genuinely `'ready'`; previously they were disposed
+    // here yet left cached as `'ready'`, so the next init cache-hit restored a
+    // dead engine with no download progress (R2). Full teardown remains
+    // available via `clearAllCaches()`.
+    //
+    // NOTE: state adapters are `$state` proxies, so identity (`!==`) comparison
+    // against the raw cached instance is unreliable (Svelte proxy-equality
+    // gotcha). Gate on whether the cache *has* a live entry for the adapter's
+    // type/model instead of comparing instances.
+    const sttAdapter = this._state.ai.stt.adapter;
+    if (sttAdapter && !getCachedSTT(sttAdapter.type as STTType)) {
+      await sttAdapter.dispose?.();
+    }
+    const ttsAdapter = this._state.ai.tts.adapter;
+    if (ttsAdapter && !getCachedTTS(ttsAdapter.type as TTSType)) {
+      await ttsAdapter.dispose?.();
+    }
+    const llmAdapter = this._state.ai.llm.adapter;
+    if (
+      llmAdapter &&
+      !getCachedLLM(llmAdapter.type, llmAdapter.currentModel ?? undefined)
+    ) {
+      await llmAdapter.dispose?.();
+    }
 
     this._state = createInitialState();
   }

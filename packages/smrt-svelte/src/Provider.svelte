@@ -188,9 +188,13 @@ $effect(() => {
   }
 });
 
-// Cleanup on destroy
+// Cleanup on destroy. Dispose the whole manager (not just the socket) so it
+// unsubscribes its listeners from the module-surviving warm AI adapters; left
+// attached, each destroyed Provider would keep pinning its `_state` proxy via
+// those adapters' listener `Set`s and leak one set per navigation (R1). The
+// warm cache itself survives — dispose() leaves cached adapters intact.
 onDestroy(() => {
-  appState.disconnectSocket();
+  appState.dispose();
 });
 </script>
 
