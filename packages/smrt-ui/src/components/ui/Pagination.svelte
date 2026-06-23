@@ -136,7 +136,9 @@ const isLastPage = $derived(currentPage === totalPages);
     {/if}
 
     <ul class="page-numbers">
-      {#each pageNumbers as page}
+      <!-- Key by index: getPageNumbers can emit two 'ellipsis' sentinels, whose
+           value-identity would collide under a value-based key (#1586). -->
+      {#each pageNumbers as page, i (i)}
         {#if page === 'ellipsis'}
           <li class="page-numbers__item">
             <span class="ellipsis" aria-hidden="true">&hellip;</span>

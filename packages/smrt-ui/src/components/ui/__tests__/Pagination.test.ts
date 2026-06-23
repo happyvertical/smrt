@@ -97,6 +97,22 @@ describe('Pagination', () => {
     expect(page2).toHaveAttribute('href', '/articles/page/2');
   });
 
+  it('renders both ellipses on a deep middle page without key collision (#1586)', async () => {
+    // currentPage in the middle of many pages emits two 'ellipsis' sentinels.
+    // Keying the {#each} by value would collide; keying by index keeps both.
+    const onPageChange = vi.fn();
+    const { container, rerender } = render(Pagination, {
+      props: { currentPage: 10, totalPages: 20, onPageChange },
+    });
+    expect(container.querySelectorAll('.ellipsis')).toHaveLength(2);
+
+    // Re-render to an adjacent deep page: still two ellipses, still one current.
+    await rerender({ currentPage: 11, totalPages: 20, onPageChange });
+    expect(container.querySelectorAll('.ellipsis')).toHaveLength(2);
+    expect(container.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(screen.getByText('11')).toHaveAttribute('aria-current', 'page');
+  });
+
   it('is axe-clean in callback mode on a middle page', async () => {
     const { container } = render(Pagination, {
       props: { currentPage: 3, totalPages: 10, onPageChange: vi.fn() },
