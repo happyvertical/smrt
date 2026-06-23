@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.34.2
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: adopt Button primitive, flip social/subscriptions strict (#1589) (#1608) (social)
+  - @happyvertical/smrt-config@0.34.2
+  - @happyvertical/smrt-types@0.34.2
+  - @happyvertical/smrt-scanner@0.34.2
+
 ## 0.34.1
 
 ### Patch Changes
