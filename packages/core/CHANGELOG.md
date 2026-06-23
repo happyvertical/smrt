@@ -1,5 +1,32 @@
 # @happyvertical/smrt-core
 
+## 0.31.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - route error-banner dismiss aria-label through i18n catalog (messages)
+  - add type=button + aria-label to error-banner dismiss buttons (messages)
+  - drop removed schedule methods from committed manifest (agents)
+  - reapply every snapshot edge on restore so unpinned snapshots clear live pins (content)
+  - skip allocation cap for total=0 invoice; clarify Fulfillment/Invoice JSDoc (commerce)
+  - load FulfillmentLineItem's ContractLineItem tenant-scoped + same-contract guard (commerce)
+  - cast activeElement for indexOf to fix svelte-check type error (users)
+  - converge publication snapshot fingerprint + restore pins + drift kind, a11y (#1387) (content)
+  - error states + a11y (aria-live/reduced-motion) + AssetManager callbacks (assets)
+  - remediate a11y, status-enum, group-join, and credential-cache findings (#1399) (users)
+  - correct cron DOM/DOW OR semantics and harden interests remediation (#1397) (agents)
+  - stop reply/forward overwriting original; close MessageDetail XSS (messages)
+  - epsilon-safe invoice payment status, fulfillment guards, cents-vs-dollars UI (commerce)
+
+  ### Other Changes
+
+  - test: lock cron DOM/DOW OR semantics in ScheduleRunner parser (#1397) (jobs)
+  - @happyvertical/smrt-config@0.31.1
+  - @happyvertical/smrt-types@0.31.1
+  - @happyvertical/smrt-scanner@0.31.1
+
 ## 1.0.0
 
 ### Minor Changes
