@@ -7,6 +7,7 @@
 import type { Tenant } from '@happyvertical/smrt-types';
 import { Icon, ripple } from '@happyvertical/smrt-ui';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 
 export interface Props {
@@ -107,26 +108,24 @@ function getColor(name: string): string {
   {#if actions && (onedit || ondelete)}
     <div class="actions">
       {#if onedit}
-        <button 
-          type="button" 
-          class="action-btn" 
+        <Button
+          variant="ghost"
+          class="action-btn"
           onclick={(event: MouseEvent) => { event.stopPropagation(); onedit?.(); }}
-          use:ripple
           aria-label={t(M['tenancy.tenant_card.edit'])}
         >
           <Icon name="menu" size={18} />
-        </button>
+        </Button>
       {/if}
       {#if ondelete}
-        <button 
-          type="button" 
-          class="action-btn danger" 
+        <Button
+          variant="ghost"
+          class="action-btn action-btn--danger"
           onclick={(event: MouseEvent) => { event.stopPropagation(); ondelete?.(); }}
-          use:ripple
           aria-label={t(M['tenancy.tenant_card.delete'])}
         >
           <Icon name="close" size={18} />
-        </button>
+        </Button>
       {/if}
     </div>
   {/if}
@@ -246,27 +245,26 @@ function getColor(name: string): string {
     flex-shrink: 0;
   }
 
-  .action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /*
+   * The action buttons now render through smrt-ui's <Button variant="ghost">.
+   * Svelte scopes `.action-btn` to this component, but the <button> is emitted
+   * inside the Button child, so a plain `.action-btn {}` rule would not match —
+   * `.actions :global(.action-btn)` keeps the scope anchor on `.actions` (a real
+   * element here) and pierces into the child (issue #1589). These override only
+   * sizing/shape/color (higher specificity than Button's base rules); ghost owns
+   * the transparent background + hover layer. The delete button's modifier class
+   * is `action-btn--danger`, NOT `danger`, so it never collides with Button's own
+   * `.danger` variant class (which would otherwise apply the red-filled variant).
+   */
+  .actions :global(.action-btn) {
     width: 32px;
     height: 32px;
-    background: transparent;
-    border: none;
+    padding: 0;
     border-radius: var(--smrt-radius-full, 9999px);
-    cursor: pointer;
     color: var(--smrt-color-on-surface-variant);
-    position: relative;
-    overflow: hidden;
   }
 
-  .action-btn:hover {
-    background-color: var(--smrt-color-surface-container-highest);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .action-btn.danger:hover {
+  .actions :global(.action-btn--danger):hover {
     color: var(--smrt-color-error);
   }
 </style>
