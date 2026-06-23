@@ -18,14 +18,30 @@ Multi-tenant user management with RBAC, hierarchical tenants, session handling, 
 | MembershipOverride | Per-user permission grant/deny. **DENY always wins.** |
 | TenantPermissionOverride | Tenant-level cascade overrides. Effect: INHERIT/GRANT/DENY. |
 
-## Permission Resolution — 4-Level Cascade
+## Permission Resolution — Precedence (broad → specific, most-specific wins)
 
-PermissionResolver evaluates in order (each level can add/remove permissions):
+`PermissionResolver.resolvePermissions` builds the effective set in this order;
+each later layer overrides earlier ones:
 
-1. **Tenant hierarchy** — walk ancestors, apply TenantPermissionOverride at each level
-2. **Membership role** — base permissions from user's role in tenant
-3. **Group roles** — permissions from all groups user belongs to **in that tenant**
-4. **Membership overrides** — final GRANT/DENY per-user (DENY takes absolute precedence)
+1. **Tenant-inherited** — walk ancestors, apply each `TenantPermissionOverride`
+   down the cascade (GRANT adds, DENY removes within the hierarchy)
+2. **Membership role** — base permissions from the user's role in the tenant
+3. **Group roles** — permissions from all groups the user belongs to **in that tenant**
+4. **Tenant-level DENY** *(removes; overrides role/group grants, tenant-wide)* — a
+   `TenantPermissionOverride` with effect `DENY` is a HARD, tenant-wide block: it
+   subtracts the DENY'd slug even if a role or group granted it (steps 2–3). It
+   sits just **above** the per-user membership overrides and **below** role/group.
+5. **Membership GRANT override** *(re-adds; most specific)* — a per-user GRANT can
+   re-add a slug a tenant DENY'd in step 4, because it is more specific.
+6. **Membership DENY override** *(absolute; always wins)* — a per-user DENY removes
+   the slug last and is never overridden.
+
+So a permission a role grants but the tenant DENYs is **removed**, unless that
+exact user also has a membership-GRANT override for it. A membership-DENY always
+wins. Tenant-DENY of an inherited/cascade grant still blocks it (unchanged).
+The hard block reflects the tenant cascade's **net** resolution, not an
+unconditional union of every DENY in the chain — so a more-specific tenant GRANT
+(e.g. a child sub-tenant re-granting a permission its parent DENYs) still wins.
 
 **Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
 
@@ -64,13 +80,22 @@ await switchSessionTenant(event, tenantId, { db });
   structural regression test (`security-audit-1400.test.ts`) enumerates the
   registry to assert no authority model exposes a mutating op. (`cli` stays
   enabled — local-operator surface, outside the network/agent threat model.)
-- **`switchTenant` is fail-closed.** `SessionService.switchTenant` /
-  `switchSessionTenant` verify the session's user has an ACTIVE membership in the
-  target tenant before writing `session.tenantId` (the tenant-isolation key for
-  every `@TenantScoped` query). A non-member switch returns `false` without
-  mutating the session; `null` clears the context and is always allowed. The
-  low-level `SessionCollection.setSessionTenant` is the UNGUARDED primitive —
-  never call it with an untrusted tenant id.
+- **`switchTenant` is fail-closed AND rotates the session id.**
+  `SessionService.switchTenant` / `switchSessionTenant` verify the session's user
+  has an ACTIVE membership in the target tenant before any write (the tenant id
+  is the isolation key for every `@TenantScoped` query). A non-member/unknown-
+  session switch returns `{ switched: false, sessionId: null, ... }` and mutates
+  nothing. On a successful switch into a NON-null tenant the session id is
+  ROTATED: a fresh `Session` (new secure id, fresh TTL, same user, new tenant,
+  device context carried over) is minted and the old session is REVOKED — so a
+  captured pre-switch id immediately stops validating, shrinking the blast radius
+  of a leaked id across a tenant boundary. `switchTenant` returns a
+  `SwitchTenantResult` (`{ switched, sessionId, session, rotated }`); callers MUST
+  persist the returned `sessionId`. `switchSessionTenant` does this for you by
+  re-setting the session cookie (preserving httpOnly/secure/sameSite) to the new
+  id. A `null` clear stays in place (no rotation, no cookie change). The
+  low-level `SessionCollection.setSessionTenant` is the UNGUARDED primitive (used
+  for the null-clear path) — never call it with an untrusted tenant id.
 - **OIDC `email_verified` is enforced.** `UserCollection.getOrCreateFromOidc`
   refuses to provision a user when the IdP explicitly returns
   `email_verified: false` (opt out with `{ allowUnverifiedEmail: true }`). An

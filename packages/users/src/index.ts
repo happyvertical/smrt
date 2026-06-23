@@ -166,6 +166,7 @@ export {
   type SessionPermissionRuntimeOptions,
   SessionService,
   type SessionServiceOptions,
+  type SwitchTenantResult,
   syncPermissionCatalog,
   type TenantPermissionInheritanceResult,
   TenantService,

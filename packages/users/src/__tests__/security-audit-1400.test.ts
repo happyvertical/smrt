@@ -184,23 +184,31 @@ describe('switchTenant membership verification (#1400)', () => {
     return { user, home, foreign, sessionId };
   }
 
-  it('switches into a tenant the user is an active member of', async () => {
+  it('switches into a tenant the user is an active member of (rotating the id)', async () => {
     const { home, sessionId } = await seed(MembershipStatus.ACTIVE);
 
-    const switched = await sessionService.switchTenant(sessionId, home.id!);
+    const result = await sessionService.switchTenant(sessionId, home.id!);
 
-    expect(switched).toBe(true);
-    const session = await sessions.findValidSession(sessionId);
+    expect(result.switched).toBe(true);
+    // #1354 follow-up: a successful non-null switch rotates the session id and
+    // revokes the old one.
+    expect(result.rotated).toBe(true);
+    expect(result.sessionId).not.toBe(sessionId);
+    expect(await sessions.findValidSession(sessionId)).toBeNull();
+
+    const session = await sessions.findValidSession(result.sessionId!);
     expect(session?.tenantId).toBe(home.id);
   });
 
   it('refuses to switch into a tenant the user is not a member of', async () => {
     const { foreign, sessionId } = await seed(MembershipStatus.ACTIVE);
 
-    const switched = await sessionService.switchTenant(sessionId, foreign.id!);
+    const result = await sessionService.switchTenant(sessionId, foreign.id!);
 
-    expect(switched).toBe(false);
-    // The session must NOT be tainted with the foreign tenant id.
+    expect(result.switched).toBe(false);
+    expect(result.rotated).toBe(false);
+    // The original session must NOT be tainted (or rotated) — it still exists
+    // with a null tenant id.
     const session = await sessions.findValidSession(sessionId);
     expect(session?.tenantId).toBeNull();
   });
@@ -208,29 +216,35 @@ describe('switchTenant membership verification (#1400)', () => {
   it('refuses to switch when the membership is not active', async () => {
     const { home, sessionId } = await seed(MembershipStatus.INACTIVE);
 
-    const switched = await sessionService.switchTenant(sessionId, home.id!);
+    const result = await sessionService.switchTenant(sessionId, home.id!);
 
-    expect(switched).toBe(false);
+    expect(result.switched).toBe(false);
+    expect(result.rotated).toBe(false);
     const session = await sessions.findValidSession(sessionId);
     expect(session?.tenantId).toBeNull();
   });
 
-  it('always allows clearing the tenant context (null)', async () => {
+  it('always allows clearing the tenant context (null) without rotating', async () => {
     const { home, sessionId } = await seed(MembershipStatus.ACTIVE);
-    expect(await sessionService.switchTenant(sessionId, home.id!)).toBe(true);
+    // Switch in (rotates), then clear on the new id.
+    const switchedIn = await sessionService.switchTenant(sessionId, home.id!);
+    expect(switchedIn.switched).toBe(true);
+    const activeId = switchedIn.sessionId!;
 
-    const cleared = await sessionService.switchTenant(sessionId, null);
+    const cleared = await sessionService.switchTenant(activeId, null);
 
-    expect(cleared).toBe(true);
-    const session = await sessions.findValidSession(sessionId);
+    expect(cleared.switched).toBe(true);
+    expect(cleared.rotated).toBe(false);
+    expect(cleared.sessionId).toBe(activeId);
+    const session = await sessions.findValidSession(activeId);
     expect(session?.tenantId).toBeNull();
   });
 
-  it('returns false for an unknown session', async () => {
+  it('fail-closes for an unknown session', async () => {
     const { home } = await seed(MembershipStatus.ACTIVE);
-    expect(await sessionService.switchTenant('not-a-session', home.id!)).toBe(
-      false,
-    );
+    const result = await sessionService.switchTenant('not-a-session', home.id!);
+    expect(result.switched).toBe(false);
+    expect(result.sessionId).toBeNull();
   });
 });
 

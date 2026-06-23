@@ -50,6 +50,17 @@ export interface TenantPermissionInheritanceResult {
   contributingTenantIds: string[];
   /** Whether inheritance was active (at least one tenant in chain had inheritPermissions: true) */
   inheritanceActive: boolean;
+  /**
+   * Permission slugs explicitly DENY'd by a `TenantPermissionOverride` anywhere
+   * in the tenant hierarchy. These are a HARD, tenant-wide block:
+   * `resolvePermissions` subtracts them AFTER role + group grants are applied,
+   * so a tenant-DENY overrides a permission a role/group otherwise grants. A
+   * more-specific membership-override GRANT can still re-add a slug listed here;
+   * a membership-override DENY stays absolute. (This set is independent of the
+   * net `permissions` above, which only reflects DENY's effect on the inherited
+   * cascade.)
+   */
+  deniedPermissions: Set<string>;
 }
 
 /**
@@ -169,6 +180,7 @@ export class PermissionResolver {
       permissions: new Set<string>(),
       contributingTenantIds: [],
       inheritanceActive: false,
+      deniedPermissions: new Set<string>(),
     };
 
     const tenant = await this.tenantCollection.get({ id: tenantId });
@@ -188,11 +200,19 @@ export class PermissionResolver {
         chainTenantIds,
       );
 
-    // Build a set of permission IDs for batch lookup
+    // Build a set of permission IDs for batch lookup. Also track every
+    // tenant-level DENY id across the chain: tenant-DENY is a hard, tenant-wide
+    // block that `resolvePermissions` subtracts from role/group grants too, so
+    // it must be reported independently of the net inherited `permissions` set
+    // (which only reflects DENY's effect on the cascade, not on roles).
     const allPermissionIds = new Set<string>();
+    const deniedPermissionIds = new Set<string>();
     for (const overrides of allOverridesMap.values()) {
       for (const id of overrides.grantedPermissionIds) allPermissionIds.add(id);
-      for (const id of overrides.deniedPermissionIds) allPermissionIds.add(id);
+      for (const id of overrides.deniedPermissionIds) {
+        allPermissionIds.add(id);
+        deniedPermissionIds.add(id);
+      }
     }
 
     // Process each tenant in the chain
@@ -268,6 +288,21 @@ export class PermissionResolver {
           result.permissions.add(perm.slug);
         }
       }
+
+      // Record the slugs DENY'd at any tenant level so callers can enforce the
+      // hard tenant-wide block over role/group grants — but NET against the
+      // cascade's own resolution: a slug a more-specific tenant GRANT re-added
+      // (so it survives in the net-granted `inheritedPermissions`) must NOT be
+      // in the hard-block set, because the cascade already decided GRANT
+      // (most-specific wins). Without this guard a parent-DENY + child-GRANT
+      // slug would wrongly override the child GRANT and any role/group grant.
+      for (const permId of deniedPermissionIds) {
+        if (inheritedPermissions.has(permId)) continue;
+        const perm = permissionsMap.get(permId);
+        if (perm?.slug) {
+          result.deniedPermissions.add(perm.slug);
+        }
+      }
     }
 
     return result;
@@ -314,13 +349,23 @@ export class PermissionResolver {
   }
 
   /**
-   * Resolve all effective permissions for a user in a tenant
+   * Resolve all effective permissions for a user in a tenant.
+   *
+   * Precedence (broad -> specific, most-specific wins):
+   *   tenant-inherited (cascade)
+   *     -> role
+   *     -> group roles
+   *     -> tenant-DENY      (removes; overrides role/group grants, tenant-wide)
+   *     -> membership GRANT (re-adds; most specific, can win over a tenant-DENY)
+   *     -> membership DENY  (absolute; always wins)
    *
    * Algorithm:
    * 1. Get membership and collect all permission IDs from all sources
    * 2. Batch fetch all permissions in a single query
-   * 3. Apply permissions from role, groups, and overrides
-   * 4. DENY overrides take precedence over GRANT
+   * 3. Apply permissions from role, then groups
+   * 4. Subtract tenant-level DENY'd slugs (hard tenant-wide block)
+   * 5. Apply membership GRANT overrides (can re-add a tenant-DENY'd slug)
+   * 6. Subtract membership DENY overrides (absolute precedence)
    */
   async resolvePermissions(
     userId: string,
@@ -447,7 +492,17 @@ export class PermissionResolver {
       }
     }
 
-    // 6. Apply granted overrides
+    // 6. Subtract tenant-level DENY'd slugs. A tenant-DENY is a HARD,
+    // tenant-wide block that overrides role and group grants too — sitting just
+    // above the most-specific membership overrides in precedence. It runs
+    // BEFORE the membership GRANT pass so a more-specific membership GRANT (step
+    // 7) can deliberately re-add a slug a tenant DENYs.
+    for (const slug of tenantPermissions.deniedPermissions) {
+      result.permissions.delete(slug);
+    }
+
+    // 7. Apply granted membership overrides (most specific GRANT; can re-add a
+    // tenant-DENY'd slug).
     for (const permId of grantedPermissionIds) {
       const slug = permissionIdToSlug.get(permId);
       if (slug) {
@@ -455,8 +510,8 @@ export class PermissionResolver {
       }
     }
 
-    // 7. Remove denied overrides (DENY takes precedence over tenant, role,
-    // group, and granted membership permissions)
+    // 8. Remove denied membership overrides (DENY takes absolute precedence over
+    // tenant, role, group, and granted membership permissions).
     for (const permId of deniedPermissionIds) {
       const slug = permissionIdToSlug.get(permId);
       if (slug) {
