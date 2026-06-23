@@ -384,15 +384,28 @@ describe('Contents collection helpers', () => {
     await contents.findGlobal();
     await contents.findWithGlobals('tenant-1');
 
+    // findByTenant still uses the auto-filtered list() path.
+    expect(listSpy).toHaveBeenCalledTimes(1);
     expect(listSpy).toHaveBeenNthCalledWith(1, {
       where: { tenantId: 'tenant-1' },
     });
-    expect(listSpy).toHaveBeenNthCalledWith(2, {
-      where: { tenantId: null },
-    });
-    expect(querySpy).toHaveBeenCalledWith(
+    // findGlobal / findWithGlobals now route through the shared
+    // @happyvertical/smrt-tenancy raw helpers (#1600): they call query() with
+    // the tenant predicate and { allowRawOnTenantScoped: true } instead of an
+    // explicit `tenant_id IS NULL` list() filter (which the interceptor would
+    // reject under an active tenant context). Content is an STI base, so no
+    // `_meta_type` scope is added.
+    expect(querySpy).toHaveBeenNthCalledWith(
+      1,
+      'SELECT * FROM contents WHERE tenant_id IS NULL',
+      [],
+      { allowRawOnTenantScoped: true },
+    );
+    expect(querySpy).toHaveBeenNthCalledWith(
+      2,
       'SELECT * FROM contents WHERE tenant_id = ? OR tenant_id IS NULL',
       ['tenant-1'],
+      { allowRawOnTenantScoped: true },
     );
   });
 });
