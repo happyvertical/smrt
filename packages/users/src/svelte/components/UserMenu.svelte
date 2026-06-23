@@ -88,7 +88,10 @@ function close(refocusTrigger = true) {
 /** Roving-focus navigation inside the open menu. */
 function handleMenuKeydown(event: KeyboardEvent) {
   const items = itemEls.filter((el): el is HTMLAnchorElement => el != null);
-  const current = items.indexOf(document.activeElement);
+  // `document.activeElement` is `Element | null`; the cast satisfies indexOf's
+  // arg type (reference comparison is null-safe — a null active element yields
+  // -1). Kept as indexOf (not findIndex) so the biome formatter can't rewrite it.
+  const current = items.indexOf(document.activeElement as HTMLAnchorElement);
 
   switch (event.key) {
     case 'ArrowDown':
