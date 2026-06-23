@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.33.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - prevent caller props from overriding disabled link semantics (smrt-ui)
+  - make disabled link-mode Button non-navigable (smrt-ui)
+  - @happyvertical/smrt-config@0.33.1
+  - @happyvertical/smrt-types@0.33.1
+  - @happyvertical/smrt-scanner@0.33.1
+
 ## 1.0.0
 
 ### Minor Changes
