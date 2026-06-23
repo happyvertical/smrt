@@ -14,8 +14,10 @@ import { getTheme } from '../registry';
 
 // Raw CSS text of the static studio preset, used to prove the static-CSS
 // delivery path and the JS generator emit identical elevation values (#1586).
-// Resolved from the package root (the test runner's cwd) to avoid `import.meta`
-// URL-scheme differences between the vite and node loaders.
+// Resolved from process.cwd() (NOT import.meta.url): the smrt-vitest plugin runs
+// each package's suite with cwd === the package root, so this is stable here,
+// whereas `new URL('…', import.meta.url)` fails to resolve under the vite-node
+// loader this suite runs in.
 const studioCss = readFileSync(
   join(process.cwd(), 'src/themes/styles/studio.css'),
   'utf8',
