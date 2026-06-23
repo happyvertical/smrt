@@ -70,6 +70,11 @@ export interface UseTTSReturn {
 export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
   const app = getAppStateContext();
 
+  // The TTS manager is a Provider-level singleton shared by every useTTS()
+  // consumer. Track whether *this* hook started the current speech so
+  // unmounting one component doesn't cut off another's playback (R4).
+  let startedByThisHook = false;
+
   // Auto-initialize if requested
   if (options.autoInit) {
     app.initializeTTS().catch(() => {
@@ -78,13 +83,20 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
   }
 
   const speak = async (text: string, ttsOptions?: TTSOptions) => {
-    await app.speak(text, {
-      ...options.defaultOptions,
-      ...ttsOptions,
-    });
+    startedByThisHook = true;
+    try {
+      await app.speak(text, {
+        ...options.defaultOptions,
+        ...ttsOptions,
+      });
+    } finally {
+      // Speech has finished (or errored) — this hook no longer owns playback.
+      startedByThisHook = false;
+    }
   };
 
   const stop = () => {
+    startedByThisHook = false;
     app.stopSpeaking();
   };
 
@@ -104,11 +116,13 @@ export function useTTS(options: UseTTSOptions = {}): UseTTSReturn {
     return app.getTTSVoices();
   };
 
-  // Cleanup on destroy
+  // Cleanup on destroy: only stop the shared singleton if this hook owns the
+  // in-progress speech (R4) — never cut off speech another hook started.
   onDestroy(() => {
-    if (app.state.ai.tts.isSpeaking) {
+    if (startedByThisHook && app.state.ai.tts.isSpeaking) {
       app.stopSpeaking();
     }
+    startedByThisHook = false;
   });
 
   return {

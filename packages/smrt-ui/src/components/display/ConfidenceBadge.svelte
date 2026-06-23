@@ -40,26 +40,30 @@ const level = $derived.by(() => {
   return 'low';
 });
 
-// Color scheme based on level - uses CSS variables with fallbacks
+// Color scheme based on level, referencing the canonical `--smrt-color-*`
+// tokens directly. Literal hex fallbacks are intentionally omitted: smrt-ui owns
+// the theme system so the tokens are always defined, and the old hardcoded
+// fallbacks were the wrong colors (e.g. high → green #dcfce7, real material
+// primary-container light is the blue #d3e3fd) — see #1586.
 const colors = $derived.by(() => {
   switch (level) {
     case 'high':
       return {
-        bg: 'var(--smrt-color-primary-container, #dcfce7)',
-        text: 'var(--smrt-color-on-primary-container, #166534)',
-        bar: 'var(--smrt-color-primary, #22c55e)',
+        bg: 'var(--smrt-color-primary-container)',
+        text: 'var(--smrt-color-on-primary-container)',
+        bar: 'var(--smrt-color-primary)',
       };
     case 'medium':
       return {
-        bg: 'var(--smrt-color-secondary-container, #fef3c7)',
-        text: 'var(--smrt-color-on-secondary-container, #92400e)',
-        bar: 'var(--smrt-color-secondary, #f59e0b)',
+        bg: 'var(--smrt-color-secondary-container)',
+        text: 'var(--smrt-color-on-secondary-container)',
+        bar: 'var(--smrt-color-secondary)',
       };
     case 'low':
       return {
-        bg: 'var(--smrt-color-error-container, #fee2e2)',
-        text: 'var(--smrt-color-on-error-container, #dc2626)',
-        bar: 'var(--smrt-color-error, #ef4444)',
+        bg: 'var(--smrt-color-error-container)',
+        text: 'var(--smrt-color-on-error-container)',
+        bar: 'var(--smrt-color-error)',
       };
   }
 });

@@ -85,6 +85,14 @@ describe('FormMicButton', () => {
     expect(toggleListening).toHaveBeenCalledTimes(1);
   });
 
+  it('toggles listening when activated with Space (CS2)', async () => {
+    render(FormMicButton);
+    const button = screen.getByRole('button', { name: 'Click to speak' });
+    button.focus();
+    await userEvent.keyboard(' ');
+    expect(toggleListening).toHaveBeenCalledTimes(1);
+  });
+
   it('relabels to "Stop listening" once the form is listening', async () => {
     formState = { isFormListening: true, isExtracting: false };
     render(FormMicButton);

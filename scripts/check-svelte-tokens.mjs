@@ -14,11 +14,12 @@
  * in domain packages (e.g. `--smrt-elevation-level1`, `--smrt-typography-body`,
  * `--smrt-primary`). It now scans every `packages/<pkg>/src`.
  *
- * Emitted tokens are collected from every runtime delivery path:
- *   - static preset CSS: packages/smrt-svelte/src/themes/styles/*.css
- *   - JS theme generator: packages/smrt-svelte/src/themes/css-generator.ts
+ * Emitted tokens are collected from every runtime delivery path (the theme
+ * system lives in the smrt-ui leaf since #1582 Phase 2):
+ *   - static preset CSS: packages/smrt-ui/src/themes/styles/*.css
+ *   - JS theme generator: packages/smrt-ui/src/themes/css-generator.ts
  *     (resolved structurally against the theme token scales)
- *   - simple ThemeProvider tokens: packages/smrt-svelte/src/theme/tokens.ts
+ *   - simple ThemeProvider tokens: packages/smrt-ui/src/theme/tokens.ts
  *   - tokens any package defines inline in component CSS (e.g. --smrt-ws-*,
  *     --smrt-role-color) — a legit component-scoped pattern, not a dangling ref
  *
@@ -370,7 +371,7 @@ if (staticMissingByPreset.length > 0) {
   console.error(
     '\nStatic preset CSS should expose the same token names as the JS preset\n' +
       'generator for that preset. Add missing definitions to\n' +
-      'packages/smrt-svelte/src/themes/styles/*.css.',
+      'packages/smrt-ui/src/themes/styles/*.css.',
   );
 }
 

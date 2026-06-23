@@ -29,6 +29,24 @@ Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), 
 7. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure
 8. Events: `job:started`, `job:completed`, `job:failed`, `job:retrying`, `runner:started/stopped`
 
+A rejection from `processJob` can never escape the poll loop: the caller attaches `.catch(e => emit('runner:error', e))` and the error path (`handleJobError`) is itself try/caught, so a failure-path write that rejects is surfaced as a `runner:error` event instead of crashing the worker with an unhandled rejection.
+
+## Timeouts & at-least-once
+
+**Execution is at-least-once, never exactly-once. Make job handlers idempotent.**
+
+A job `timeout` only races the handler's promise — JavaScript cannot preempt an already-running function. When a handler exceeds its timeout:
+
+- The job is **failed terminally and NOT auto-retried** (a timed-out handler is still running; re-queueing it would let a second worker run a concurrent duplicate). This narrows, but does not eliminate, the overlap window — the orphaned handler keeps running until it returns on its own.
+- The orphaned handler's eventual terminal write is dropped by the ownership guard (`WHERE worker_id=? AND status='running'`), so it cannot resurrect the failed row — but any **side effects** it performs (external API calls, writes to other tables) still happen.
+- Key any non-idempotent work by `context.job.jobId` or a caller-supplied idempotency key.
+
+`timeoutBehavior` (persisted + shown in the UI) is now honored:
+
+- **`'fail'`** (default): on timeout the job fails (and, per above, is not retried).
+- **`'warn'`**: the handler is **not** raced against the timeout — it runs to completion, and at the deadline the runner logs a warning and emits a `timeout-warning` job event. A slow-but-successful handler still completes successfully.
+- **`'kill'`**: treated identically to `'fail'`. In-process JavaScript has no thread interruption, so a true "kill" of a running handler is impossible without worker isolation; this value is honest that it only fails the job row, it does not stop the handler. Prefer `'fail'` unless you specifically want the label.
+
 ## Worker liveness & recovery (#1474)
 
 Recovery keys on **worker-process liveness**, never per-job heartbeat freshness (a CPU-bound synchronous handler used to starve the heartbeat and false-recover its own running jobs).
@@ -43,7 +61,11 @@ Recovery keys on **worker-process liveness**, never per-job heartbeat freshness 
 
 Polls `_smrt_agent_schedules` every 60s for due entries. Creates SmrtJob with `queue='agents'`, `priority=75`. Wires to TaskRunner events for completion/failure tracking. Slot reconciliation keys on worker liveness (it has no in-process active-job set, so the lease/live-set is its whole mechanism).
 
-Custom cron parser: 5-field (minute hour dom month dow). `*`, ranges, lists, steps supported. **Not timezone-aware** (UTC).
+The job is enqueued **before** `next_run` is advanced and `running_count` is incremented: a transient enqueue failure (tenant-cap hit, DB blip) therefore leaves `next_run` and `status='active'` untouched so the same due slot is retried on the next poll, rather than losing the slot and disabling the schedule.
+
+`next_run` is always recomputed from *now*, never from the previous `next_run` — this is **fire-once-forward**: runs that came due while the runner was down are not caught up, only the next future occurrence fires. There is no missed-run backfill.
+
+Custom cron parser: 5-field (minute hour dom month dow). `*`, ranges, lists, steps supported. **Not timezone-aware**: cron fields are matched against the **server's local time** (the parser uses `getHours`/`getDate`/`getDay`/… local accessors), so `0 0 * * *` fires at local midnight on the host, not at 00:00 UTC. Deploy runners in a known timezone (e.g. `TZ=UTC`) for UTC semantics. A per-schedule timezone option is a possible future enhancement.
 
 ## JobBuilder — Fluent API
 
@@ -62,7 +84,8 @@ Mixin that adds `bg()` and `background()` to any SmrtObject. Uses WeakMap for co
 
 ## Gotchas
 
-- **Cron not timezone-aware**: all times treated as UTC
+- **Cron not timezone-aware**: cron fields match the server's **local** time, not UTC (set `TZ` for UTC); no missed-run catch-up (fire-once-forward)
+- **At-least-once execution**: a timeout cannot preempt a running handler; timed-out jobs fail without retry but the handler keeps running — make handlers idempotent (see "Timeouts & at-least-once")
 - **No dead letter queue**: failed jobs stay in DB with `status='failed'` — manual intervention
 - **Result storage**: `resultPointer` is just a string — app must implement result backend
 - **Lazy builder**: `background()` returns builder — nothing happens until `enqueue()`

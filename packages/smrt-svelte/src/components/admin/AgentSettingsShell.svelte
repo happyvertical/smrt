@@ -49,7 +49,11 @@ const {
   dbConfigs = {},
 }: Props = $props();
 
+// Stable per-instance id base so multiple shells don't collide on tab/panel ids.
+const idBase = $props.id();
+
 let activeAgentId = $state<string | null>(null);
+let tablistEl: HTMLElement | null = $state(null);
 
 // Initialize to first agent
 $effect(() => {
@@ -64,6 +68,50 @@ function handleAgentClick(agentId: string) {
   activeAgentId = agentId;
 }
 
+/**
+ * Roving-tabindex keyboard navigation for the agent switcher (C8). The list is
+ * a vertical tablist, so Up/Down move between agents (plus Home/End); mirrors
+ * the horizontal pattern in AgentAdminTabs.
+ */
+function handleAgentKeydown(event: KeyboardEvent, currentAgentId: string) {
+  const currentIndex = agents.findIndex((a) => a.id === currentAgentId);
+  if (currentIndex === -1) return;
+
+  let nextIndex: number | null = null;
+  switch (event.key) {
+    case 'ArrowDown':
+    case 'ArrowRight':
+      event.preventDefault();
+      nextIndex = (currentIndex + 1) % agents.length;
+      break;
+    case 'ArrowUp':
+    case 'ArrowLeft':
+      event.preventDefault();
+      nextIndex = (currentIndex - 1 + agents.length) % agents.length;
+      break;
+    case 'Home':
+      event.preventDefault();
+      nextIndex = 0;
+      break;
+    case 'End':
+      event.preventDefault();
+      nextIndex = agents.length - 1;
+      break;
+  }
+
+  if (nextIndex !== null && nextIndex !== currentIndex) {
+    const nextAgentId = agents[nextIndex].id;
+    activeAgentId = nextAgentId;
+    // Focus the newly-selected tab after the DOM updates.
+    requestAnimationFrame(() => {
+      const tabButton = tablistEl?.querySelector(
+        `[data-agent-id="${CSS.escape(nextAgentId)}"]`,
+      ) as HTMLElement | null;
+      tabButton?.focus();
+    });
+  }
+}
+
 async function handleSave(slotId: string, config: unknown) {
   if (activeAgentId && onSave) {
     await onSave(activeAgentId, slotId, config);
@@ -74,13 +122,26 @@ async function handleSave(slotId: string, config: unknown) {
 <div class="agent-settings-shell" class:single-agent={agents.length === 1}>
 	{#if agents.length > 1}
 		<aside class="agents-sidebar">
-			<h3 class="sidebar-title">Agents</h3>
-			<nav class="agents-list">
+			<h3 class="sidebar-title" id="{idBase}-agents-title">Agents</h3>
+			<div
+				class="agents-list"
+				role="tablist"
+				aria-orientation="vertical"
+				aria-labelledby="{idBase}-agents-title"
+				bind:this={tablistEl}
+			>
 				{#each agents as agent}
 					<button
 						class="agent-button"
 						class:active={activeAgentId === agent.id}
+						role="tab"
+						aria-selected={activeAgentId === agent.id}
+						aria-controls="{idBase}-panel"
+						id="{idBase}-tab-{agent.id}"
+						data-agent-id={agent.id}
+						tabindex={activeAgentId === agent.id ? 0 : -1}
 						onclick={() => handleAgentClick(agent.id)}
+						onkeydown={(e) => handleAgentKeydown(e, agent.id)}
 					>
 						<span class="agent-class">{agent.agentClass}</span>
 						{#if agent.name}
@@ -88,11 +149,18 @@ async function handleSave(slotId: string, config: unknown) {
 						{/if}
 					</button>
 				{/each}
-			</nav>
+			</div>
 		</aside>
 	{/if}
 
-	<main class="agent-content">
+	<main
+		class="agent-content"
+		id="{idBase}-panel"
+		role={agents.length > 1 ? 'tabpanel' : undefined}
+		aria-labelledby={agents.length > 1 && activeAgentId
+			? `${idBase}-tab-${activeAgentId}`
+			: undefined}
+	>
 		{#if activeAgent}
 			<header class="agent-header">
 				<h2 class="agent-title">{activeAgent.agentClass}</h2>

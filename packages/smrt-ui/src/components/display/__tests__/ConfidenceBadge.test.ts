@@ -92,6 +92,20 @@ describe('ConfidenceBadge', () => {
     );
   });
 
+  it('emits bare design tokens with no literal hex fallback', () => {
+    // Regression for #1586: the old `var(--token, #hex)` fallbacks were the
+    // wrong colors (high → green #dcfce7 vs real material light blue #d3e3fd).
+    const { container } = render(ConfidenceBadge, {
+      props: { confidence: 90 },
+    });
+    const badge = container.querySelector('.confidence-badge') as HTMLElement;
+    for (const prop of ['--badge-bg', '--badge-text', '--bar-color']) {
+      const value = badge.style.getPropertyValue(prop);
+      expect(value).toMatch(/^var\(--smrt-color-[a-z-]+\)$/);
+      expect(value).not.toContain('#');
+    }
+  });
+
   it('appends a custom class alongside the base class', () => {
     const { container } = render(ConfidenceBadge, {
       props: { confidence: 50, class: 'my-badge' },

@@ -9,11 +9,11 @@
  * A consumer's load function calls `buildI18nSnapshot` for the request locale
  * and passes the result to `<Provider i18n={snapshot}>`.
  *
- * Requires `@happyvertical/smrt-languages` to be installed. It is an *optional*
- * peer of smrt-svelte by design — the client i18n layer (`/i18n`) is
- * languages-free, so apps that never use this server bridge are not forced to
- * pull the languages server dependency tree (smrt-core/sql/ai/jobs). Importing
- * this subpath without languages installed is a clear module-not-found error.
+ * `@happyvertical/smrt-languages` is a hard `dependency` of smrt-svelte (see
+ * `package.json`), so it is always installed. The client i18n layer (`/i18n`)
+ * stays languages-free regardless: it never imports the languages root, so the
+ * server tree (smrt-core/sql/ai/jobs) is tree-shaken out of the browser bundle
+ * — only this Node-only `/i18n/server` subpath pulls it in.
  */
 import {
   defineLanguageString,

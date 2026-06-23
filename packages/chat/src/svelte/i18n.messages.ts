@@ -44,6 +44,7 @@ export const M = defineMessages({
   'chat.message_item.reply': 'Reply',
   'chat.message_item.edit': 'Edit',
   'chat.message_item.delete': 'Delete',
+  'chat.message_item.more_actions': 'Message actions',
 
   // MessageList
   'chat.message_list.messages_label': 'Messages',

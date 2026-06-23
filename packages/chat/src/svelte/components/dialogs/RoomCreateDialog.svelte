@@ -1,8 +1,13 @@
 <script lang="ts">
 /**
  * RoomCreateDialog - Modal dialog for creating a new chat room
- * Provides name, type selector, and description fields
+ * Provides name, type selector, and description fields.
+ *
+ * Built on the shared smrt-ui `Modal` (T2 #1391) so it inherits a focus trap,
+ * Escape handling, scrim, and focus-restore-to-trigger on close — the
+ * hand-rolled backdrop it replaced had none of those.
  */
+import { Modal } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 
@@ -74,27 +79,8 @@ function resetForm() {
   description = '';
 }
 
-function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    handleClose();
-  }
-}
-
-$effect(() => {
-  if (!isOpen || typeof window === 'undefined') {
-    return;
-  }
-
-  const onWindowKeydown = (event: KeyboardEvent) => {
-    handleKeydown(event);
-  };
-
-  window.addEventListener('keydown', onWindowKeydown);
-  return () => {
-    window.removeEventListener('keydown', onWindowKeydown);
-  };
-});
-
+// Modal traps focus and moves it to the dialog itself; nudge initial focus to
+// the name field once the dialog is open and the input is mounted.
 $effect(() => {
   if (isOpen && nameInput) {
     nameInput.focus();
@@ -102,146 +88,110 @@ $effect(() => {
 });
 </script>
 
-{#if isOpen}
-  <div class="dialog-backdrop">
+<Modal
+  open={isOpen}
+  onClose={handleClose}
+  title={t(M['chat.room_create_dialog.title'])}
+  size="md"
+  ariaLabel={t(M['chat.room_create_dialog.title'])}
+>
+  <form
+    class="dialog__form"
+    onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}
+  >
+    <div class="field">
+      <label class="field__label" for="room-name">
+        {t(M['chat.room_create_dialog.room_name'])} <span class="field__required" aria-label={t(M['chat.room_create_dialog.required'])}>*</span>
+      </label>
+      <input
+        bind:this={nameInput}
+        bind:value={name}
+        id="room-name"
+        type="text"
+        class="field__input"
+        placeholder={t(M['chat.room_create_dialog.name_placeholder'])}
+        maxlength="100"
+        autocomplete="off"
+      />
+    </div>
+
+    <fieldset class="field">
+      <legend class="field__label">{t(M['chat.room_create_dialog.room_type'])}</legend>
+      <div class="type-options">
+        {#each roomTypes as option (option.value)}
+          <label
+            class="type-option"
+            class:type-option--selected={roomType === option.value}
+          >
+            <input
+              type="radio"
+              name="roomType"
+              value={option.value}
+              bind:group={roomType}
+              class="type-option__radio"
+            />
+            <span class="type-option__content">
+              <span class="type-option__label">{option.label}</span>
+              <span class="type-option__description">{option.description}</span>
+            </span>
+          </label>
+        {/each}
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label class="field__label" for="room-description">Description</label>
+      <textarea
+        bind:value={description}
+        id="room-description"
+        class="field__textarea"
+        placeholder={t(M['chat.room_create_dialog.description_placeholder'])}
+        rows="3"
+        maxlength="500"
+      ></textarea>
+      <span class="field__hint">{description.length}/500</span>
+    </div>
+
+    <!-- Hidden submit keeps Enter-to-submit working inside the Modal body. -->
+    <button type="submit" class="visually-hidden" tabindex="-1" disabled={!canCreate} aria-hidden="true"></button>
+  </form>
+
+  {#snippet footer()}
     <button
       type="button"
-      class="dialog-backdrop__dismiss"
-      tabindex="-1"
-      aria-label={t(M['chat.room_create_dialog.close'])}
+      class="btn btn--secondary"
       onclick={handleClose}
-    ></button>
-    <div
-      class="dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="create-room-title"
-      tabindex="-1"
     >
-      <h2 id="create-room-title" class="dialog__title">{t(M['chat.room_create_dialog.title'])}</h2>
-
-      <form
-        class="dialog__form"
-        onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}
-      >
-        <div class="field">
-          <label class="field__label" for="room-name">
-            {t(M['chat.room_create_dialog.room_name'])} <span class="field__required" aria-label={t(M['chat.room_create_dialog.required'])}>*</span>
-          </label>
-          <input
-            bind:this={nameInput}
-            bind:value={name}
-            id="room-name"
-            type="text"
-            class="field__input"
-            placeholder={t(M['chat.room_create_dialog.name_placeholder'])}
-            maxlength="100"
-            autocomplete="off"
-          />
-        </div>
-
-        <fieldset class="field">
-          <legend class="field__label">{t(M['chat.room_create_dialog.room_type'])}</legend>
-          <div class="type-options">
-            {#each roomTypes as option (option.value)}
-              <label
-                class="type-option"
-                class:type-option--selected={roomType === option.value}
-              >
-                <input
-                  type="radio"
-                  name="roomType"
-                  value={option.value}
-                  bind:group={roomType}
-                  class="type-option__radio"
-                />
-                <span class="type-option__content">
-                  <span class="type-option__label">{option.label}</span>
-                  <span class="type-option__description">{option.description}</span>
-                </span>
-              </label>
-            {/each}
-          </div>
-        </fieldset>
-
-        <div class="field">
-          <label class="field__label" for="room-description">Description</label>
-          <textarea
-            bind:value={description}
-            id="room-description"
-            class="field__textarea"
-            placeholder={t(M['chat.room_create_dialog.description_placeholder'])}
-            rows="3"
-            maxlength="500"
-          ></textarea>
-          <span class="field__hint">{description.length}/500</span>
-        </div>
-
-        <div class="dialog__actions">
-          <button
-            type="button"
-            class="btn btn--secondary"
-            onclick={handleClose}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            class="btn btn--primary"
-            disabled={!canCreate}
-          >
-            {t(M['chat.room_create_dialog.create_room'])}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-{/if}
+      Cancel
+    </button>
+    <button
+      type="button"
+      class="btn btn--primary"
+      disabled={!canCreate}
+      onclick={handleSubmit}
+    >
+      {t(M['chat.room_create_dialog.create_room'])}
+    </button>
+  {/snippet}
+</Modal>
 
 <style>
-  .dialog-backdrop {
-    position: fixed;
-    inset: 0;
-    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.32));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1rem;
-    z-index: var(--smrt-z-index-dialog, 1300);
-    position: relative;
-  }
-
-  .dialog-backdrop__dismiss {
-    position: absolute;
-    inset: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-  }
-
-  .dialog {
-    background: var(--smrt-color-surface, #fefbff);
-    border-radius: var(--smrt-radius-extra-large, 28px);
-    box-shadow: var(--smrt-elevation-3, 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3));
-    width: 100%;
-    max-width: 32rem;
-    padding: 1.5rem;
-    max-height: calc(100vh - 2rem);
-    overflow-y: auto;
-    position: relative;
-    z-index: 1;
-  }
-
-  .dialog__title {
-    margin: 0 0 1.25rem;
-    font: var(--smrt-typography-headline-small-font, 400 1.5rem / 2rem sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-  }
-
   .dialog__form {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .field {
@@ -259,7 +209,7 @@ $effect(() => {
   }
 
   .field__required {
-    color: var(--smrt-color-error, #ba1a1a);
+    color: var(--smrt-color-error, #b3261e);
   }
 
   .field__input {
@@ -349,13 +299,6 @@ $effect(() => {
   .type-option__description {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
-  }
-
-  .dialog__actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 0.25rem;
   }
 
   .btn {

@@ -198,7 +198,10 @@ await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has n
 ## Dependencies
 
 - `@happyvertical/smrt-types` (shared types) — includes the identity data contracts (`User`, `Role`, `Membership`, `Tenant`) the role/membership components type against, so no dependency on `smrt-users` / `smrt-profiles` is needed
-- Peer: `svelte` >=5.18.2, `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs` (all optional)
+- `@happyvertical/smrt-ui` (UI runtime: primitives, theme system, i18n client, module registry) and `@happyvertical/smrt-agents` (admin shells type against its `/ui` contracts) are hard `dependencies`.
+- `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.
+- `@happyvertical/logger` (SDK) is a `dependency` — the browser-safe console logger used for voice/AI error reporting in the form components.
+- Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`, `@xenova/transformers`) and `chrono-node`.
 
 ## Workspace shell primitives
 

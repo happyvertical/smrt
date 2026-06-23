@@ -45,6 +45,18 @@ describe('JobBuilder utilities', () => {
       expect(parseDelay(5000)).toBe(5000);
     });
 
+    it('throws on a non-finite numeric delay', () => {
+      // A non-finite delay flows into `new Date(Date.now() + delay)`, persisting
+      // an `Invalid Date` runAt that the claim query can never match (S3 #1401).
+      expect(() => parseDelay(Number.NaN)).toThrow('Invalid delay value');
+      expect(() => parseDelay(Number.POSITIVE_INFINITY)).toThrow(
+        'Invalid delay value',
+      );
+      expect(() => parseDelay(Number.NEGATIVE_INFINITY)).toThrow(
+        'Invalid delay value',
+      );
+    });
+
     it('throws error for invalid format', () => {
       expect(() => parseDelay('invalid')).toThrow('Invalid delay format');
       expect(() => parseDelay('abc123')).toThrow('Invalid delay format');

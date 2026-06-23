@@ -79,8 +79,30 @@ describe('StatusBadge', () => {
       props: { status: 'totally-unknown', type: 'invoice' },
     });
     const span = container.querySelector('span') as HTMLElement;
-    expect(span.style.getPropertyValue('--badge-bg')).toContain('#e5e7eb');
-    expect(span.style.getPropertyValue('--badge-text')).toContain('#374151');
+    // The neutral fallback resolves to canonical surface tokens, not a literal
+    // hex. smrt-ui owns the theme system, so the tokens are always defined; a
+    // hardcoded fallback would freeze the wrong color across presets (#1586).
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+      'var(--smrt-color-surface-container-highest)',
+    );
+    expect(span.style.getPropertyValue('--badge-text')).toBe(
+      'var(--smrt-color-on-surface-variant)',
+    );
+  });
+
+  it('uses bare design tokens with no literal hex fallback in scheme colors', () => {
+    // Regression for #1586: the `var(--token, #hex)` fallbacks were the wrong
+    // colors (e.g. primary-container → green #dcfce7 vs real material light blue
+    // #d3e3fd). Every emitted custom property must be a bare token reference.
+    const { container } = render(StatusBadge, {
+      props: { status: 'paid', type: 'invoice' },
+    });
+    const span = container.querySelector('span') as HTMLElement;
+    expect(span.style.getPropertyValue('--badge-bg')).toBe(
+      'var(--smrt-color-primary-container)',
+    );
+    expect(span.style.getPropertyValue('--badge-bg')).not.toContain('#');
+    expect(span.style.getPropertyValue('--badge-text')).not.toContain('#');
   });
 
   it('normalizes spaces and hyphens when matching a scheme key', () => {

@@ -56,6 +56,16 @@ const formattedTime = $derived.by(() => {
   });
 });
 
+const hasActions = $derived(
+  Boolean(onreact || onreply || (isOwn && (onedit || ondelete))),
+);
+
+// Stable id linking the disclosure trigger (aria-controls) to the revealed
+// action group. The actions are a labelled group of independently
+// keyboard-operable buttons, not an ARIA menu, so the trigger is a plain
+// disclosure toggle (aria-expanded) rather than aria-haspopup="menu".
+const actionsId = $derived(`message-actions-${message.id}`);
+
 function handleReact(emoji: string) {
   onreact?.(message.id, emoji);
   showReactionPicker = false;
@@ -64,7 +74,39 @@ function handleReact(emoji: string) {
 function toggleReactionPicker() {
   showReactionPicker = !showReactionPicker;
 }
+
+// The "more actions" button is the keyboard/touch-reachable entry point that
+// opens the action bar (a11y blocker, T2 #1391). It opens rather than toggles
+// so it stays robust against the focus-then-click ordering a tap/keyboard
+// activation produces; the bar is dismissed by Escape, blur, or mouse-leave.
+function openActions() {
+  showActions = true;
+}
+
+// Collapse the action bar (and any open picker) once focus leaves the row — the
+// keyboard/touch counterpart to onmouseleave so the actions are not hover-only.
+function handleFocusOut(event: FocusEvent) {
+  const next = event.relatedTarget as Node | null;
+  const row = event.currentTarget as HTMLElement;
+  if (next && row.contains(next)) return;
+  showActions = false;
+  showReactionPicker = false;
+}
+
+// Escape closes the action bar / picker when open. Bound on the window (gated
+// on open state) rather than the noninteractive row element so Svelte's
+// a11y_no_noninteractive_element_interactions rule stays satisfied.
+function handleEscape(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    showReactionPicker = false;
+    showActions = false;
+  }
+}
 </script>
+
+<svelte:window
+  onkeydown={showActions || showReactionPicker ? handleEscape : undefined}
+/>
 
 {#if message.messageType === 'system' || message.messageType === 'action'}
   <div class="message-item message-item--system">
@@ -78,6 +120,7 @@ function toggleReactionPicker() {
     aria-label={t(M['chat.message_item.message_from'], { name: message.senderName })}
     onmouseenter={() => showActions = true}
     onmouseleave={() => { showActions = false; showReactionPicker = false; }}
+    onfocusout={handleFocusOut}
   >
     {#if !isOwn}
       <div class="message-item__avatar">
@@ -151,8 +194,27 @@ function toggleReactionPicker() {
       </div>
     </div>
 
+    {#if hasActions}
+      <button
+        class="message-item__more-btn"
+        type="button"
+        onclick={openActions}
+        onfocus={openActions}
+        aria-label={t(M['chat.message_item.more_actions'])}
+        aria-expanded={showActions}
+        aria-controls={actionsId}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3" cy="8" r="1.3" fill="currentColor" /><circle cx="8" cy="8" r="1.3" fill="currentColor" /><circle cx="13" cy="8" r="1.3" fill="currentColor" /></svg>
+      </button>
+    {/if}
+
     {#if showActions}
-      <div class="message-item__actions">
+      <div
+        class="message-item__actions"
+        role="group"
+        id={actionsId}
+        aria-label={t(M['chat.message_item.more_actions'])}
+      >
         {#if onreact}
           <button
             class="message-item__action-btn"
@@ -379,6 +441,49 @@ function toggleReactionPicker() {
     font-style: italic;
   }
 
+  .message-item__more-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    position: absolute;
+    top: 0;
+    right: var(--smrt-spacing-4, 1rem);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: var(--smrt-color-surface, #ffffff);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+  }
+
+  .message-item--own .message-item__more-btn {
+    right: auto;
+    left: var(--smrt-spacing-4, 1rem);
+  }
+
+  /* Reveal the keyboard/touch affordance on hover OR when focus is inside the
+     row, so it is never strictly hover-only (a11y blocker, T2 #1391). Always
+     visible to coarse pointers (touch) which cannot hover. */
+  .message-item:hover .message-item__more-btn,
+  .message-item:focus-within .message-item__more-btn {
+    opacity: 1;
+  }
+
+  .message-item__more-btn:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline-offset: 1px;
+  }
+
+  @media (hover: none) {
+    .message-item__more-btn {
+      opacity: 1;
+    }
+  }
+
   .message-item__actions {
     display: flex;
     align-items: center;
@@ -391,6 +496,7 @@ function toggleReactionPicker() {
     border-radius: var(--smrt-radius-small, 0.25rem);
     padding: var(--smrt-spacing-1, 4px);
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
+    z-index: 1;
   }
 
   .message-item--own .message-item__actions {
@@ -427,5 +533,13 @@ function toggleReactionPicker() {
   .message-item--own .message-item__picker-popover {
     right: auto;
     left: var(--smrt-spacing-4, 1rem);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .message-item__more-btn,
+    .message-item__action-btn,
+    .message-item__reaction {
+      transition: none;
+    }
   }
 </style>

@@ -50,11 +50,50 @@ export interface Theme {
   surfaceContainerHighest: string;
 }
 
+/**
+ * Parse a CSS color string into an {@link Rgb}.
+ *
+ * Accepts 6-digit hex (`#rrggbb`), 3-digit shorthand hex (`#rgb`, expanded by
+ * doubling each nibble), and functional `rgb()` / `rgba()` notation (commas or
+ * spaces, integer or percentage channels). Named colors and other formats are
+ * not supported and yield `{ r: NaN, g: NaN, b: NaN }`; callers that accept
+ * arbitrary input should validate before relying on the result.
+ *
+ * The leading `#` is optional for hex input.
+ */
 export function hexToRgb(hex: string): Rgb {
-  const cleanHex = hex.replace('#', '');
-  const r = parseInt(cleanHex.substring(0, 2), 16);
-  const g = parseInt(cleanHex.substring(2, 4), 16);
-  const b = parseInt(cleanHex.substring(4, 6), 16);
+  const input = hex.trim();
+
+  // Functional rgb()/rgba() notation, e.g. rgb(0, 122, 255) or rgb(0 122 255 / .5).
+  const rgbMatch = input.match(/^rgba?\(([^)]+)\)$/i);
+  if (rgbMatch) {
+    const channels = rgbMatch[1]
+      .split(/[\s,/]+/)
+      .filter(Boolean)
+      .slice(0, 3);
+    const toChannel = (part: string): number => {
+      if (part.endsWith('%')) {
+        return Math.round((Number.parseFloat(part) / 100) * 255);
+      }
+      return Number.parseInt(part, 10);
+    };
+    const [r, g, b] = channels.map(toChannel);
+    return { r, g, b };
+  }
+
+  const cleanHex = input.replace('#', '');
+
+  // 3-digit shorthand hex: #abc -> #aabbcc.
+  if (cleanHex.length === 3) {
+    const r = Number.parseInt(cleanHex[0] + cleanHex[0], 16);
+    const g = Number.parseInt(cleanHex[1] + cleanHex[1], 16);
+    const b = Number.parseInt(cleanHex[2] + cleanHex[2], 16);
+    return { r, g, b };
+  }
+
+  const r = Number.parseInt(cleanHex.substring(0, 2), 16);
+  const g = Number.parseInt(cleanHex.substring(2, 4), 16);
+  const b = Number.parseInt(cleanHex.substring(4, 6), 16);
   return { r, g, b };
 }
 

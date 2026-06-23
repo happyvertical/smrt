@@ -9,6 +9,7 @@ import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
+import { logger } from '../../internal/logger.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
@@ -115,19 +116,31 @@ onDestroy(() => {
 async function startHoldRecording() {
   if (!isSmrt || disabled || isProcessing) return;
 
-  // Initialize STT with Whisper v2 for speed + accuracy
-  if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
-    await stt.initialize({ type: 'whisper-wasm' });
-  }
-
   // Store current value for append mode
   valueBeforeRecording = value;
   processError = null;
   recordingStartTime = Date.now();
   isHolding = true;
 
-  // Use continuous mode to capture all speech while holding
-  await stt.start({ continuous: true, interimResults: false });
+  // STT init / mic acquisition can reject (model fetch failure, mic-permission
+  // denial). Without this guard `isHolding` would stay true and no error would
+  // surface, wedging the field in a permanent "Recording..." state (C2).
+  try {
+    // Initialize STT with Whisper v2 for speed + accuracy
+    if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
+      await stt.initialize({ type: 'whisper-wasm' });
+    }
+    // Use continuous mode to capture all speech while holding
+    await stt.start({ continuous: true, interimResults: false });
+  } catch (err) {
+    isHolding = false;
+    processError =
+      err instanceof Error ? err.message : 'Could not start voice input';
+    logger.error('TextInput: failed to start voice recording', {
+      field: name,
+      error: err,
+    });
+  }
 }
 
 async function stopHoldRecording() {
@@ -202,6 +215,20 @@ function handleMicClick(e: MouseEvent) {
   e.stopPropagation();
 }
 
+// Keyboard activation for the mic (WCAG 2.1.1). The pointer flow is
+// hold-to-record; keyboard maps to a toggle — Enter/Space starts recording,
+// pressing again stops. preventDefault stops Space from also firing the
+// button's synthetic click and from scrolling the page.
+function handleMicKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  if (isHolding) {
+    stopHoldRecording();
+  } else {
+    startHoldRecording();
+  }
+}
+
 function handleInput(e: Event) {
   const target = e.target as HTMLInputElement;
   updateValue(target.value);
@@ -253,6 +280,7 @@ function handleInput(e: Event) {
         {disabled}
         use:ripple
         onclick={handleMicClick}
+        onkeydown={handleMicKeydown}
         onmousedown={(e) => { e.stopPropagation(); if (e.button === 0) startHoldRecording(); }}
         onmouseup={handleMouseUp}
         onmouseleave={handleMouseLeave}

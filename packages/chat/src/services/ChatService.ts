@@ -861,11 +861,16 @@ export class ChatService {
 
     const role: ChatMessageRole = params.kind === 'tool' ? 'tool' : 'assistant';
 
-    // Enforce the per-session tool allow-list, fail-closed (S5 #1392). A tool
-    // call carries its tool name in toolCallData.name (or .tool); any call to a
-    // tool not on the session's whitelist is rejected.
+    // Enforce the per-session tool allow-list, fail-closed (S5 #1392, broadened
+    // T2 #1391). A tool message carries its tool name in toolCallData.name (or
+    // .tool); any call to a tool not on the session's whitelist is rejected.
+    // The gate covers every tool-shaped message — `tool_call` AND `tool_result`
+    // message types, the `tool` role, and any payload that carries toolCallData
+    // — so a `tool_result` emitted with the default `assistant` kind and no
+    // toolCallData can never render a tool bubble for a non-whitelisted tool.
     if (
       params.messageType === 'tool_call' ||
+      params.messageType === 'tool_result' ||
       role === 'tool' ||
       params.toolCallData
     ) {

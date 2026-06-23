@@ -90,6 +90,7 @@
     "access": "public"
   },
   "dependencies": {
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-languages": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",

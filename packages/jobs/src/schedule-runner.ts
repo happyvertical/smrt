@@ -495,18 +495,6 @@ export class ScheduleRunner extends EventEmitter {
       // Compute next run time from cron before creating the job
       const nextRun = getNextCronDate(schedule.cron as string);
 
-      // Increment running count and advance next_run in one update
-      await this.db.query(
-        `UPDATE _smrt_agent_schedules
-         SET agent_type = ?,
-             running_count = running_count + 1,
-             next_run = ?
-         WHERE id = ?`,
-        canonicalAgentType,
-        nextRun.toISOString(),
-        schedule.id,
-      );
-
       // Create a job for this schedule
       // Nest agent_config under _agentConfig so TaskRunner can pass it
       // to the agent constructor separately from method args
@@ -518,11 +506,20 @@ export class ScheduleRunner extends EventEmitter {
         args._agentConfig = agentConfig;
       }
 
+      // Enqueue the job BEFORE advancing next_run / incrementing running_count.
+      // Previously next_run was advanced and running_count incremented first; if
+      // enqueueJob then threw (a transient tenant-cap hit or DB blip), the catch
+      // disabled the schedule but never rolled next_run back, permanently losing
+      // that run slot AND taking the schedule out of the poll until manual
+      // re-activation (#4 in the #1401 review). By enqueuing first, a transient
+      // failure leaves next_run untouched, so the same due slot is retried on
+      // the next poll and the schedule stays active.
+      //
       // Route scheduled jobs through the same centralized creation path as the
       // fluent builder so the per-tenant in-flight cap and retry ceiling apply
-      // here too — previously this direct create() bypassed both (S5 audit
-      // #1402). The schedule's own tenant is passed explicitly so the cap is
-      // enforced for the owning tenant even with no ambient context.
+      // here too — previously a direct create() bypassed both (S5 audit #1402).
+      // The schedule's own tenant is passed explicitly so the cap is enforced
+      // for the owning tenant even with no ambient context.
       const job = await this.jobCollection.enqueueJob({
         tenantId:
           typeof schedule.tenant_id === 'string' &&
@@ -539,6 +536,19 @@ export class ScheduleRunner extends EventEmitter {
         timeout: (schedule.timeout as number) || 3600000,
       });
 
+      // Only now that the job is durably enqueued do we consume the slot:
+      // increment running_count and advance next_run in one update.
+      await this.db.query(
+        `UPDATE _smrt_agent_schedules
+         SET agent_type = ?,
+             running_count = running_count + 1,
+             next_run = ?
+         WHERE id = ?`,
+        canonicalAgentType,
+        nextRun.toISOString(),
+        schedule.id,
+      );
+
       this.emit('schedule:triggered', scheduleInfo);
       this.logger.info('Schedule triggered', {
         scheduleId: schedule.id,
@@ -547,12 +557,14 @@ export class ScheduleRunner extends EventEmitter {
         nextRun: nextRun.toISOString(),
       });
     } catch (error) {
-      // Decrement running count on failure
+      // The slot was NOT consumed (enqueue runs before the next_run/
+      // running_count advance), so there is nothing to roll back: leave
+      // next_run and status='active' untouched so the next poll retries the
+      // same due slot rather than skipping it or disabling the schedule on a
+      // transient failure (#4). Record last_error for operator visibility only.
       await this.db.query(
         `UPDATE _smrt_agent_schedules
-         SET running_count = running_count - 1,
-             status = 'error',
-             last_error = ?
+         SET last_error = ?
          WHERE id = ?`,
         // Tolerate non-Error throwables: a thrown string/object has no
         // `.message`, which would otherwise persist an empty `last_error`.

@@ -53,6 +53,16 @@ function handleRowClick(job: JobData) {
   onJobClick?.(job);
 }
 
+// Keyboard activation for the row when it acts as a button (role="button").
+// Without this, keyboard users can focus the row (tabindex=0) but cannot
+// activate it — Enter/Space were dead. Space is prevented to stop page scroll.
+function handleRowKeydown(job: JobData, event: KeyboardEvent) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    handleRowClick(job);
+  }
+}
+
 // Handle row selection
 function handleRowSelect(jobId: string, event: Event) {
   event.stopPropagation();
@@ -153,6 +163,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             class="job-list__row"
             class:job-list__row--selected={isSelected}
             onclick={() => handleRowClick(job)}
+            onkeydown={onJobClick
+              ? (e) => handleRowKeydown(job, e)
+              : undefined}
             role={onJobClick ? 'button' : undefined}
             tabindex={onJobClick ? 0 : undefined}
           >

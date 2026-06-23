@@ -19,21 +19,6 @@ const { t } = useI18n();
 
 let isExpanded = $state(false);
 
-const statusIcon = $derived.by(() => {
-  switch (toolCall.status) {
-    case 'pending':
-      return '...';
-    case 'running':
-      return '...';
-    case 'success':
-      return '...';
-    case 'error':
-      return '...';
-    default:
-      return '';
-  }
-});
-
 const statusLabel = $derived.by(() => {
   switch (toolCall.status) {
     case 'pending':
@@ -145,11 +130,11 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call--success {
-    border-left: 3px solid var(--smrt-color-success, #4caf50);
+    border-left: 3px solid var(--smrt-color-success, #1e8e3e);
   }
 
   .tool-call--error {
-    border-left: 3px solid var(--smrt-color-error, #ba1a1a);
+    border-left: 3px solid var(--smrt-color-error, #b3261e);
   }
 
   .tool-call__header {
@@ -193,11 +178,11 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call--success .tool-call__status-dot {
-    background: var(--smrt-color-success, #4caf50);
+    background: var(--smrt-color-success, #1e8e3e);
   }
 
   .tool-call--error .tool-call__status-dot {
-    background: var(--smrt-color-error, #ba1a1a);
+    background: var(--smrt-color-error, #b3261e);
   }
 
   .tool-call__name {

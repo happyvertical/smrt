@@ -42,15 +42,15 @@ const labelText: Record<string, string> = {
   }
 
   .presence__dot.online {
-    background: var(--smrt-color-success, #4caf50);
+    background: var(--smrt-color-success, #1e8e3e);
   }
 
   .presence__dot.away {
-    background: var(--smrt-color-warning, #ff9800);
+    background: var(--smrt-color-warning, #f9ab00);
   }
 
   .presence__dot.dnd {
-    background: var(--smrt-color-error, #f44336);
+    background: var(--smrt-color-error, #b3261e);
   }
 
   .presence__dot.offline {

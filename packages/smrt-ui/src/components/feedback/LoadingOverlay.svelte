@@ -114,7 +114,12 @@ function handleKeydown(e: KeyboardEvent) {
 			{/if}
 
 			{#if error}
-				<p class="error-message">{error.message}</p>
+				<!-- role="alert" (assertive live region) so the failure is announced
+				     to screen readers when it appears (#1586). aria-busy flips to
+				     false on error, so without this the overlay changed visually only. -->
+				<p class="error-message" role="alert" aria-live="assertive">
+					{error.message}
+				</p>
 			{/if}
 
 			{#if dismissible}

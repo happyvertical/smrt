@@ -4,6 +4,7 @@ import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
+import { logger } from '../../internal/logger.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
@@ -162,15 +163,26 @@ onDestroy(() => {
 async function startHoldRecording() {
   if (!isSmrt || disabled || isProcessing) return;
 
-  if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
-    await stt.initialize({ type: 'whisper-wasm' });
-  }
-
   processError = null;
   recordingStartTime = Date.now();
   isHolding = true;
 
-  await stt.start({ continuous: true, interimResults: false });
+  // Guard STT init / mic acquisition so a rejection can't leave the field
+  // wedged in a permanent "Recording..." state with no visible error (C2).
+  try {
+    if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
+      await stt.initialize({ type: 'whisper-wasm' });
+    }
+    await stt.start({ continuous: true, interimResults: false });
+  } catch (err) {
+    isHolding = false;
+    processError =
+      err instanceof Error ? err.message : 'Could not start voice input';
+    logger.error('PhoneInput: failed to start voice recording', {
+      field: name,
+      error: err,
+    });
+  }
 }
 
 async function stopHoldRecording() {
@@ -232,6 +244,17 @@ function handleTouchEnd() {
   stopHoldRecording();
 }
 
+// Keyboard activation for the mic (WCAG 2.1.1): Enter/Space toggles recording.
+function handleMicKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  if (isHolding) {
+    stopHoldRecording();
+  } else {
+    startHoldRecording();
+  }
+}
+
 function handleInput(e: Event) {
   const target = e.target as HTMLInputElement;
   const formatted = formatPhoneNumber(target.value);
@@ -281,6 +304,7 @@ function handleInput(e: Event) {
         class="mic-btn"
         class:active={isHolding}
         {disabled}
+        onkeydown={handleMicKeydown}
         onmousedown={handleMouseDown}
         onmouseup={handleMouseUp}
         onmouseleave={handleMouseLeave}

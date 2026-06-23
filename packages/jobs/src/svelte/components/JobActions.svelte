@@ -40,9 +40,7 @@ const canRetry = $derived(
   job.status === 'failed' || job.status === 'cancelled',
 );
 const canCancel = $derived(
-  job.status === 'pending' ||
-    job.status === 'ready' ||
-    job.status === 'running',
+  job.status === 'pending' || job.status === 'running',
 );
 
 function handleRetry() {

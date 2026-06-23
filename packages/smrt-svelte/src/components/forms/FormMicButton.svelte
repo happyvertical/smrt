@@ -29,13 +29,8 @@ let isExtracting = $state(false);
 $effect(() => {
   const checkState = () => {
     if (formContext) {
-      const newListening = formContext.isFormListening;
-      const newExtracting = formContext.isExtracting;
-      // Only log on change to reduce noise
-      if (newListening !== isListening || newExtracting !== isExtracting) {
-      }
-      isListening = newListening;
-      isExtracting = newExtracting;
+      isListening = formContext.isFormListening;
+      isExtracting = formContext.isExtracting;
     }
   };
 
@@ -51,6 +46,14 @@ $effect(() => {
 function handleClick() {
   formContext?.toggleListening();
 }
+
+// Keyboard activation for the role="button" span. A native <button> activates
+// on both Enter and Space; this custom control must replicate both (CS2).
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  handleClick();
+}
 </script>
 
 {#if isSmrt && formContext}
@@ -59,7 +62,7 @@ function handleClick() {
     class:listening={isListening}
     class:extracting={isExtracting}
     onclick={handleClick}
-    onkeydown={(e) => e.key === 'Enter' && handleClick()}
+    onkeydown={handleKeydown}
     role="button"
     tabindex="0"
     aria-label={isListening ? 'Stop listening' : 'Click to speak'}
@@ -131,8 +134,8 @@ function handleClick() {
     transform: translateX(-50%);
     margin-top: 0.5rem;
     padding: 0.5rem 0.75rem;
-    background: var(--smrt-color-on-surface, #1f2937);
-    color: white;
+    background: var(--smrt-color-inverse-surface, var(--smrt-color-on-surface, #1f2937));
+    color: var(--smrt-color-inverse-on-surface, #fff);
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     font-weight: var(--smrt-typography-weight-normal, 400);
     border-radius: 0.375rem;
@@ -148,7 +151,7 @@ function handleClick() {
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-bottom-color: var(--smrt-color-on-surface);
+    border-bottom-color: var(--smrt-color-inverse-surface, var(--smrt-color-on-surface));
   }
 
   @keyframes pulse {

@@ -73,6 +73,11 @@ export interface UseSTTReturn {
 export function useSTT(options: UseSTTOptions = {}): UseSTTReturn {
   const app = getAppStateContext();
 
+  // The STT manager is a Provider-level singleton shared by every useSTT()
+  // consumer. Track whether *this* hook started the current listening session
+  // so unmounting one <VoiceInput> doesn't abort another's recording (R4).
+  let startedByThisHook = false;
+
   // Auto-initialize if requested
   if (options.autoInit) {
     app.initializeSTT().catch(() => {
@@ -81,13 +86,20 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTReturn {
   }
 
   const start = async (sttOptions?: STTOptions) => {
-    await app.startListening({
-      ...options.defaultOptions,
-      ...sttOptions,
-    });
+    startedByThisHook = true;
+    try {
+      await app.startListening({
+        ...options.defaultOptions,
+        ...sttOptions,
+      });
+    } catch (err) {
+      startedByThisHook = false;
+      throw err;
+    }
   };
 
   const stop = async () => {
+    startedByThisHook = false;
     await app.stopListening();
   };
 
@@ -95,11 +107,13 @@ export function useSTT(options: UseSTTOptions = {}): UseSTTReturn {
     await app.initializeSTT(initOptions);
   };
 
-  // Cleanup on destroy
+  // Cleanup on destroy: only stop the shared singleton if this hook owns the
+  // in-progress session (R4) — never stop a recording another hook started.
   onDestroy(() => {
-    if (app.state.ai.stt.isListening) {
+    if (startedByThisHook && app.state.ai.stt.isListening) {
       app.stopListening().catch(() => {});
     }
+    startedByThisHook = false;
   });
 
   return {

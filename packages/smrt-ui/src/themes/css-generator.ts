@@ -239,6 +239,10 @@ export function generateThemeVariables(
 ): Record<string, string> {
   const { prefix = '--smrt' } = options;
   const colors = isDark ? theme.dark : theme.light;
+  // Per-scheme elevation: dark uses `darkElevation` when the preset defines it,
+  // so the JS generator and the static dark CSS stay in lockstep (#1586).
+  const elevation =
+    isDark && theme.darkElevation ? theme.darkElevation : theme.elevation;
 
   return {
     // Theme identification
@@ -260,7 +264,7 @@ export function generateThemeVariables(
     ...generateBorderRadiusVariables(theme.borderRadius, prefix),
 
     // Elevation
-    ...generateElevationVariables(theme.elevation, prefix),
+    ...generateElevationVariables(elevation, prefix),
 
     // Duration
     ...generateDurationVariables(theme.duration, prefix),

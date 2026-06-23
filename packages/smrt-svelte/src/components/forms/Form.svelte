@@ -5,6 +5,7 @@ import { onDestroy } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
+import { logger } from '../../internal/logger.js';
 import {
   type FieldDefinition,
   type SMRTFormContext,
@@ -253,7 +254,6 @@ async function startAudioLevelMonitoring(stream: MediaStream) {
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     const SPEECH_THRESHOLD = 20; // Lowered from 30 for better sensitivity
-    let checksWithSpeech = 0;
 
     audioLevelInterval = setInterval(() => {
       if (!analyser || !isFormListening) return;
@@ -261,17 +261,22 @@ async function startAudioLevelMonitoring(stream: MediaStream) {
       analyser.getByteFrequencyData(dataArray);
       const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
 
-      // Log periodically to debug
-      checksWithSpeech++;
-      if (checksWithSpeech % 10 === 0) {
-      }
-
       if (average > SPEECH_THRESHOLD) {
         // Speech detected - reset silence timer
         resetSilenceTimer();
       }
     }, 200); // Check every 200ms
-  } catch (err) {}
+  } catch (err) {
+    // Audio-level monitoring is a silence-detection enhancement, not the
+    // recording path itself — surface the failure but don't abort listening.
+    // A getUserMedia/AudioContext denial here usually means mic-permission
+    // issues the user needs to see (C3).
+    extractError =
+      err instanceof Error
+        ? `Microphone monitoring unavailable: ${err.message}`
+        : 'Microphone monitoring unavailable';
+    logger.warn('Form: audio-level monitoring failed to start', { error: err });
+  }
 }
 
 // Stop audio level monitoring
@@ -369,37 +374,68 @@ async function startFormListening() {
   // Set starting flag to prevent premature stop detection
   isStarting = true;
 
-  // Initialize STT with selected adapter
-  if (!stt.isReady || stt.adapterType !== sttAdapter) {
-    await stt.initialize({ type: sttAdapter });
+  // STT init / start can reject (model fetch failure, mic-permission denial).
+  // Without this guard `isStarting`/`isFormListening` would stay set, the
+  // auto-stop $effect (gated on `!isStarting`) would stay suppressed, and the
+  // form would wedge in a permanent "listening" state with no surfaced error
+  // (C2). On failure: tear down, reset flags, and show the error.
+  try {
+    // Initialize STT with selected adapter
+    if (!stt.isReady || stt.adapterType !== sttAdapter) {
+      await stt.initialize({ type: sttAdapter });
+    }
+
+    extractError = null;
+    spokenText = '';
+    // Set to current stale result so the effect skips it, but new results will be processed
+    lastProcessedResult = stt.lastResult || '';
+    isFormListening = true;
+    isStopping = false;
+    lastSpeechTime = Date.now();
+
+    // Start silence timer
+    resetSilenceTimer();
+
+    // Start audio level monitoring for Whisper (no interim results)
+    // Browser STT has interim results so doesn't need this
+    if (sttAdapter === 'whisper-wasm') {
+      try {
+        const levelStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        startAudioLevelMonitoring(levelStream);
+      } catch (err) {
+        // Mic-permission denial / no device — surface it; the user must see
+        // why dictation isn't working (C3).
+        extractError =
+          err instanceof Error
+            ? `Microphone access failed: ${err.message}`
+            : 'Microphone access failed';
+        logger.warn('Form: getUserMedia failed for audio-level monitoring', {
+          error: err,
+        });
+      }
+    }
+
+    await stt.start({ continuous: true, interimResults: true });
+  } catch (err) {
+    // Reset listening state so the form isn't wedged, and stop any monitoring
+    // that may have started before the failure.
+    isFormListening = false;
+    stopAudioLevelMonitoring();
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      silenceTimer = null;
+    }
+    extractError =
+      err instanceof Error
+        ? err.message
+        : 'Could not start voice input. Check microphone permissions.';
+    logger.error('Form: failed to start form listening', { error: err });
+  } finally {
+    // Clear starting flag now that STT is actually listening (or has failed).
+    isStarting = false;
   }
-
-  extractError = null;
-  spokenText = '';
-  // Set to current stale result so the effect skips it, but new results will be processed
-  lastProcessedResult = stt.lastResult || '';
-  isFormListening = true;
-  isStopping = false;
-  lastSpeechTime = Date.now();
-
-  // Start silence timer
-  resetSilenceTimer();
-
-  // Start audio level monitoring for Whisper (no interim results)
-  // Browser STT has interim results so doesn't need this
-  if (sttAdapter === 'whisper-wasm') {
-    try {
-      const levelStream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
-      startAudioLevelMonitoring(levelStream);
-    } catch (err) {}
-  }
-
-  await stt.start({ continuous: true, interimResults: true });
-
-  // Clear starting flag now that STT is actually listening
-  isStarting = false;
 }
 
 async function stopFormListening() {
@@ -730,7 +766,7 @@ function getFormData(): Record<string, unknown> {
        was never emitted (issue #1431); color-mix derives the alpha from the
        emitted `--smrt-color-primary` token instead. */
     background: color-mix(in srgb, var(--smrt-color-primary, #166534) 90%, transparent);
-    color: white;
+    color: var(--smrt-color-on-primary, #fff);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     box-shadow: 0 -2px 12px color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
     z-index: var(--smrt-z-index-toast, 1500);

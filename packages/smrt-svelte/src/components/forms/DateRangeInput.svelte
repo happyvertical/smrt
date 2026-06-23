@@ -4,6 +4,7 @@ import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
+import { logger } from '../../internal/logger.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
@@ -219,15 +220,26 @@ onDestroy(() => {
 async function startRecording() {
   if (!isSmrt || disabled || isParsing) return;
 
-  if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
-    await stt.initialize({ type: 'whisper-wasm' });
-  }
-
   parseError = null;
   recordingStartTime = Date.now();
   isRecording = true;
 
-  await stt.start({ continuous: true, interimResults: false });
+  // Guard STT init / mic acquisition so a rejection can't leave the field
+  // wedged in a permanent "Recording..." state with no visible error (C2).
+  try {
+    if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
+      await stt.initialize({ type: 'whisper-wasm' });
+    }
+    await stt.start({ continuous: true, interimResults: false });
+  } catch (err) {
+    isRecording = false;
+    parseError =
+      err instanceof Error ? err.message : 'Could not start voice input';
+    logger.error('DateRangeInput: failed to start voice recording', {
+      field: name,
+      error: err,
+    });
+  }
 }
 
 async function stopRecording() {
@@ -307,6 +319,17 @@ function handleTouchEnd() {
   stopRecording();
 }
 
+// Keyboard activation for the mic (WCAG 2.1.1): Enter/Space toggles recording.
+function handleMicKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
 const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 </script>
 
@@ -342,6 +365,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
           class="mic-btn"
           class:active={isRecording}
           disabled={disabled || isParsing}
+          onkeydown={handleMicKeydown}
           onmousedown={handleMouseDown}
           onmouseup={handleMouseUp}
           onmouseleave={handleMouseLeave}

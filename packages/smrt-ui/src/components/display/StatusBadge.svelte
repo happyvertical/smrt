@@ -30,167 +30,173 @@ const {
   label,
 }: Props = $props();
 
-// Color mappings for different status domains - uses CSS variables with fallbacks
+// Color mappings for different status domains, referencing the canonical
+// `--smrt-color-*` tokens directly. smrt-ui owns the theme system, so every
+// preset (material/glass/studio) always defines these tokens. Literal hex
+// fallbacks are intentionally omitted: a fallback only belongs here if it equals
+// the token's real light value, and the previous hardcoded greens/blues did not
+// (e.g. primary-container fell back to green #dcfce7, real material light is the
+// blue #d3e3fd) — see #1586.
 const colorSchemes: Record<
   StatusType,
   Record<string, { bg: string; text: string; border?: string }>
 > = {
   default: {
     active: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     inactive: {
-      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest)',
+      text: 'var(--smrt-color-on-surface-variant)',
     },
     pending: {
-      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
-      text: 'var(--smrt-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container)',
+      text: 'var(--smrt-color-on-secondary-container)',
     },
     error: {
-      bg: 'var(--smrt-color-error-container, #fee2e2)',
-      text: 'var(--smrt-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
     success: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     warning: {
-      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
-      text: 'var(--smrt-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container)',
+      text: 'var(--smrt-color-on-secondary-container)',
     },
   },
   invoice: {
     draft: {
-      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest)',
+      text: 'var(--smrt-color-on-surface-variant)',
     },
     sent: {
-      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
-      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container)',
+      text: 'var(--smrt-color-on-tertiary-container)',
     },
     viewed: {
-      bg: 'var(--smrt-color-primary-container, #e0e7ff)',
-      text: 'var(--smrt-color-on-primary-container, #4338ca)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     paid: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     overdue: {
-      bg: 'var(--smrt-color-error-container, #fee2e2)',
-      text: 'var(--smrt-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
     cancelled: {
-      bg: 'var(--smrt-color-error-container, #fecaca)',
-      text: 'var(--smrt-color-on-error-container, #991b1b)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
   },
   project: {
     lead: {
-      bg: 'var(--smrt-color-primary-container, #e0e7ff)',
-      text: 'var(--smrt-color-on-primary-container, #4338ca)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     quoted: {
-      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
-      text: 'var(--smrt-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container)',
+      text: 'var(--smrt-color-on-secondary-container)',
     },
     active: {
-      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
-      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container)',
+      text: 'var(--smrt-color-on-tertiary-container)',
     },
     on_hold: {
-      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
-      text: 'var(--smrt-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container)',
+      text: 'var(--smrt-color-on-secondary-container)',
     },
     completed: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     archived: {
-      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest)',
+      text: 'var(--smrt-color-on-surface-variant)',
     },
   },
   expense: {
     unbilled: {
-      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
-      text: 'var(--smrt-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container)',
+      text: 'var(--smrt-color-on-secondary-container)',
     },
     billed: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     reimbursed: {
-      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
-      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container)',
+      text: 'var(--smrt-color-on-tertiary-container)',
     },
     rejected: {
-      bg: 'var(--smrt-color-error-container, #fee2e2)',
-      text: 'var(--smrt-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
   },
   time: {
     draft: {
-      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest)',
+      text: 'var(--smrt-color-on-surface-variant)',
     },
     submitted: {
-      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
-      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container)',
+      text: 'var(--smrt-color-on-tertiary-container)',
     },
     approved: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     rejected: {
-      bg: 'var(--smrt-color-error-container, #fee2e2)',
-      text: 'var(--smrt-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
     billed: {
-      bg: 'var(--smrt-color-primary-container, #e0e7ff)',
-      text: 'var(--smrt-color-on-primary-container, #4338ca)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
   },
   compliance: {
     valid: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     expiring: {
-      bg: 'var(--smrt-color-secondary-container, #fef3c7)',
-      text: 'var(--smrt-color-on-secondary-container, #92400e)',
+      bg: 'var(--smrt-color-secondary-container)',
+      text: 'var(--smrt-color-on-secondary-container)',
     },
     expired: {
-      bg: 'var(--smrt-color-error-container, #fee2e2)',
-      text: 'var(--smrt-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
     pending: {
-      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
-      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container)',
+      text: 'var(--smrt-color-on-tertiary-container)',
     },
   },
   estimate: {
     draft: {
-      bg: 'var(--smrt-color-surface-container-highest, #f3f4f6)',
-      text: 'var(--smrt-color-on-surface-variant, #6b7280)',
+      bg: 'var(--smrt-color-surface-container-highest)',
+      text: 'var(--smrt-color-on-surface-variant)',
     },
     presented: {
-      bg: 'var(--smrt-color-tertiary-container, #dbeafe)',
-      text: 'var(--smrt-color-on-tertiary-container, #1e40af)',
+      bg: 'var(--smrt-color-tertiary-container)',
+      text: 'var(--smrt-color-on-tertiary-container)',
     },
     accepted: {
-      bg: 'var(--smrt-color-primary-container, #dcfce7)',
-      text: 'var(--smrt-color-on-primary-container, #166534)',
+      bg: 'var(--smrt-color-primary-container)',
+      text: 'var(--smrt-color-on-primary-container)',
     },
     declined: {
-      bg: 'var(--smrt-color-error-container, #fee2e2)',
-      text: 'var(--smrt-color-on-error-container, #dc2626)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
     expired: {
-      bg: 'var(--smrt-color-error-container, #fecaca)',
-      text: 'var(--smrt-color-on-error-container, #991b1b)',
+      bg: 'var(--smrt-color-error-container)',
+      text: 'var(--smrt-color-on-error-container)',
     },
   },
 };
@@ -203,8 +209,8 @@ const colors = $derived.by(() => {
   const scheme = colorSchemes[type] ?? colorSchemes.default;
   return (
     scheme[normalizedStatus] ?? {
-      bg: 'var(--smrt-color-surface-container-highest, #e5e7eb)',
-      text: 'var(--smrt-color-on-surface-variant, #374151)',
+      bg: 'var(--smrt-color-surface-container-highest)',
+      text: 'var(--smrt-color-on-surface-variant)',
     }
   );
 });

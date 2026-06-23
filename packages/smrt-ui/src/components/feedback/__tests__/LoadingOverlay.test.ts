@@ -64,6 +64,22 @@ describe('LoadingOverlay', () => {
     expect(screen.getByText('Import failed')).toBeInTheDocument();
   });
 
+  it('announces the error via an assertive alert region (#1586)', () => {
+    // aria-busy flips to false on error, so without a live region the failure
+    // would change visually only and never reach a screen reader.
+    render(LoadingOverlay, {
+      props: { show: true, error: { message: 'Import failed' } },
+    });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Import failed');
+    expect(alert).toHaveAttribute('aria-live', 'assertive');
+  });
+
+  it('exposes no alert region while loading without an error (#1586)', () => {
+    render(LoadingOverlay, { props: { show: true, message: 'Working' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('omits the dismiss button unless dismissible', () => {
     render(LoadingOverlay, { props: { show: true } });
     expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();

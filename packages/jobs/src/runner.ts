@@ -92,6 +92,24 @@ export interface TaskRunnerEvents {
 const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
 
 /**
+ * Raised when a job exceeds its timeout under `timeoutBehavior` `'fail'`/`'kill'`.
+ *
+ * Distinguished from an ordinary handler error so the failure path can choose
+ * NOT to auto-retry: the original handler keeps running after a timeout (JS
+ * can't preempt it), so re-queueing the row as `pending` while the original
+ * still executes guarantees concurrent duplicate execution (see #2 in the
+ * #1401 review). A timed-out job is therefore failed terminally rather than
+ * retried, shrinking — though, given the at-least-once contract, not fully
+ * eliminating — the overlap window.
+ */
+export class JobTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'JobTimeoutError';
+  }
+}
+
+/**
  * Default configuration
  */
 const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
@@ -337,13 +355,34 @@ export class TaskRunner extends EventEmitter {
       const jobId = job.id;
       if (!jobId) continue;
 
-      // Process asynchronously
-      this.processJob(job);
+      // Process asynchronously. We deliberately do NOT await — concurrency is
+      // bounded by `activeJobs` above, not by serializing here. But a bare
+      // fire-and-forget call means any unexpected rejection (e.g. the failure-
+      // path write in handleJobError rejecting, a failure mode correlated with
+      // whatever is already failing the job) escapes as an unhandled promise
+      // rejection and crashes the worker under Node's default
+      // `--unhandled-rejections=throw`. handleJobError is itself wrapped in
+      // try/catch, but guard the caller too as defense in depth so no rejection
+      // can ever escape the poll loop.
+      this.processJob(job).catch((error) => {
+        this.emit('runner:error', error as Error);
+      });
     }
   }
 
   /**
-   * Process a single job
+   * Process a single job.
+   *
+   * AT-LEAST-ONCE EXECUTION CONTRACT: a `timeout` only races the handler's
+   * promise — JavaScript cannot preempt an already-running handler, so on a
+   * `'fail'` (or `'kill'`) timeout the original handler keeps executing in the
+   * background while the job row is failed. Timeouts are NOT auto-retried (see
+   * handleJobError) precisely so a still-running handler is not duplicated by a
+   * retry; but the orphaned handler's own side effects still happen, and an
+   * ordinary (non-timeout) failure IS retried and re-claimable by any worker.
+   * Handlers invoked from a job MUST be idempotent (e.g. keyed by
+   * `context.job.jobId` or a caller-supplied idempotency key); do not rely on a
+   * job body running exactly once. See AGENTS.md "Timeouts & at-least-once".
    */
   private async processJob(job: SmrtJob): Promise<void> {
     const jobId = job.id;
@@ -362,16 +401,16 @@ export class TaskRunner extends EventEmitter {
       message: `Started job: ${job.getDescription()}`,
     });
 
-    try {
-      // Set up timeout
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`Job timeout after ${job.timeout}ms`));
-        }, job.timeout);
-      });
+    // Capture the timeout handle so it is always cleared in `finally`. Without
+    // this, every fast job left a ~5-min (default) armed timer on the heap
+    // until it fired and was swallowed by the settled race — timer-heap
+    // pressure plus a delayed clean process exit.
+    let timeoutHandle: NodeJS.Timeout | null = null;
 
-      // Execute the job with timeout
-      const result = await Promise.race([this.executeJob(job), timeoutPromise]);
+    try {
+      const result = await this.runWithTimeout(job, (handle) => {
+        timeoutHandle = handle;
+      });
 
       // Job completed successfully. Write the terminal state conditionally so a
       // recovered/reclaimed row (worker died, recovery ran, the work finished
@@ -398,10 +437,68 @@ export class TaskRunner extends EventEmitter {
         this.emit('job:completed', job, result);
       }
     } catch (error) {
-      await this.handleJobError(job, error as Error);
+      // handleJobError is wrapped so its own failure-path write (a `db.query`
+      // that may reject for the same reason the job is failing) cannot turn
+      // into an unhandled rejection / unbounded crash. A failure to persist the
+      // failure is surfaced as a runner error, not a thrown rejection.
+      try {
+        await this.handleJobError(job, error as Error);
+      } catch (handlerError) {
+        this.emit('runner:error', handlerError as Error);
+      }
     } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       this.activeJobs.delete(jobId);
     }
+  }
+
+  /**
+   * Execute a job honoring its {@link SmrtJob.timeoutBehavior}.
+   *
+   * - `'fail'` (default) and `'kill'`: race the handler against a timeout. On
+   *   timeout the race rejects and the caller fails/retries the job.
+   *   `'kill'` cannot actually preempt the handler in-process (JavaScript has
+   *   no thread interruption), so it is treated identically to `'fail'` — the
+   *   handler keeps running in the background; only the job row is failed. This
+   *   is documented in AGENTS.md so `'kill'` is honest about what it does
+   *   rather than silently behaving like a no-op.
+   * - `'warn'`: do NOT fail on timeout. Arm a one-shot warning (logged + emitted
+   *   as a job event) at the deadline, but await the handler to completion so a
+   *   slow-but-successful handler still completes. This makes `'warn'` honest:
+   *   previously every timeout was treated as `'fail'` regardless of the
+   *   persisted/UI-shown behavior.
+   */
+  private async runWithTimeout(
+    job: SmrtJob,
+    captureHandle: (handle: NodeJS.Timeout) => void,
+  ): Promise<{ result?: unknown; resultPointer?: string }> {
+    if (job.timeoutBehavior === 'warn') {
+      const handle = setTimeout(() => {
+        this.logger.warn(
+          `Job exceeded timeout (${job.timeout}ms) but timeoutBehavior='warn'; letting it finish: ${job.getDescription()}`,
+        );
+        // Best-effort telemetry; must not change the job outcome.
+        void this.appendJobEvent(job, {
+          type: 'status',
+          level: 'warn',
+          stage: 'timeout-warning',
+          message: `Job exceeded timeout of ${job.timeout}ms (timeoutBehavior='warn')`,
+          data: { timeout: job.timeout },
+        });
+      }, job.timeout);
+      captureHandle(handle);
+      return this.executeJob(job);
+    }
+
+    // 'fail' (default) and 'kill' (treated as 'fail'; see doc comment).
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const handle = setTimeout(() => {
+        reject(new JobTimeoutError(`Job timeout after ${job.timeout}ms`));
+      }, job.timeout);
+      captureHandle(handle);
+    });
+
+    return Promise.race([this.executeJob(job), timeoutPromise]);
   }
 
   /**
@@ -568,6 +665,15 @@ export class TaskRunner extends EventEmitter {
     const jobId = job.id;
     if (!jobId) return;
 
+    // A timed-out handler keeps running in the background (JS can't preempt it).
+    // Re-queueing the row as `pending` while the original still executes would
+    // make the next worker run a *second* concurrent copy. So do not auto-retry
+    // a timeout — fail it terminally. This narrows the duplicate-execution
+    // window from the at-least-once contract (#2 in the #1401 review); it does
+    // not remove it (the orphaned handler can still finish and write a terminal
+    // state, which writeOwnedJob's ownership guard then drops).
+    const isTimeout = error instanceof JobTimeoutError;
+
     // `last_error` is persisted to the durable `_smrt_jobs` row and is readable
     // through generated (tenant-scoped) list/get routes. Strip secret-shaped
     // substrings before persistence so a failing job that echoes a credential
@@ -577,7 +683,7 @@ export class TaskRunner extends EventEmitter {
     // (no `.message`) would otherwise persist an empty `last_error`.
     const safeMessage = redactErrorForPersistence(error);
 
-    if (decision.shouldRetry && job.attempts < job.maxAttempts) {
+    if (!isTimeout && decision.shouldRetry && job.attempts < job.maxAttempts) {
       // Schedule retry
       const nextRunAt = new Date(Date.now() + decision.delay);
 

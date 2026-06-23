@@ -4,6 +4,7 @@
  * Helper functions for creating custom themes that match the SMRT theme system.
  */
 
+import { hexToRgb, rgbToHex } from '../utils/theme/color.js';
 import {
   hasCustomTheme,
   registerCustomTheme,
@@ -104,18 +105,22 @@ const defaultColorStructure: Omit<
 };
 
 /**
- * Helper function to clamp a value between min and max
+ * Normalize any supported CSS color string to a canonical 6-digit hex.
+ *
+ * Accepts 6-digit hex, 3-digit shorthand hex, and `rgb()`/`rgba()` (via the
+ * shared `hexToRgb`). Throws on input that can't be parsed (e.g. a named color
+ * like `tomato`) so an unsupported value fails loudly instead of silently
+ * producing invalid CSS like `#NaNNaNNaN` or `rgb(...)20` (#1586).
  */
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-/**
- * Helper function to convert RGB component to 2-digit hex
- */
-function toHexComponent(value: number): string {
-  const clamped = Math.round(clamp(value, 0, 255));
-  return clamped.toString(16).padStart(2, '0');
+function normalizeHex(color: string): string {
+  const { r, g, b } = hexToRgb(color);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+    throw new Error(
+      `createTheme: unsupported color "${color}". Use 6-digit hex (#rrggbb), ` +
+        '3-digit hex (#rgb), or rgb()/rgba() notation.',
+    );
+  }
+  return rgbToHex(r, g, b);
 }
 
 /**
@@ -123,19 +128,18 @@ function toHexComponent(value: number): string {
  * Uses simple inversion logic - for production use, manually define dark colors
  */
 function generateDarkColors(light: ColorPalette): ColorPalette {
-  // Helper to adjust color brightness with proper rounding and hex conversion
-  const adjustBrightness = (hex: string, factor: number): string => {
-    // Handle 3-character hex codes
-    let fullHex = hex;
-    if (hex.length === 4 && hex[0] === '#') {
-      fullHex = `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+  // Adjust color brightness by a multiplicative factor. Normalizes the input to
+  // RGB first (via the shared parser), so 3-digit hex and rgb()/rgba() inputs no
+  // longer NaN-poison the output into `#NaNNaNNaN` (#1586).
+  const adjustBrightness = (color: string, factor: number): string => {
+    const { r, g, b } = hexToRgb(color);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
+      throw new Error(
+        `createTheme: unsupported color "${color}". Use 6-digit hex (#rrggbb), ` +
+          '3-digit hex (#rgb), or rgb()/rgba() notation.',
+      );
     }
-
-    const r = parseInt(fullHex.slice(1, 3), 16) * factor;
-    const g = parseInt(fullHex.slice(3, 5), 16) * factor;
-    const b = parseInt(fullHex.slice(5, 7), 16) * factor;
-
-    return `#${toHexComponent(r)}${toHexComponent(g)}${toHexComponent(b)}`;
+    return rgbToHex(r * factor, g * factor, b * factor);
   };
 
   return {
@@ -338,9 +342,13 @@ export function createTheme(options: CreateThemeOptions): Theme {
     ...defaultColorStructure,
     ...baseTheme?.light,
     ...lightPartial,
-    // Generate derived colors
+    // Generate derived colors. The container is the primary at ~12.5% alpha,
+    // expressed as 8-digit hex. Normalize the primary to canonical 6-hex first
+    // so a 3-digit hex or rgb()/rgba() primary can't yield invalid CSS like
+    // `rgb(0,122,255)20` or `#f6320` (#1586).
     primaryContainer:
-      lightPartial.primaryContainer || `${lightPartial.primary}20`,
+      lightPartial.primaryContainer ||
+      `${normalizeHex(lightPartial.primary)}20`,
     onPrimaryContainer: lightPartial.onPrimaryContainer || lightPartial.primary,
     inversePrimary: lightPartial.inversePrimary || lightPartial.primary,
   } as ColorPalette;

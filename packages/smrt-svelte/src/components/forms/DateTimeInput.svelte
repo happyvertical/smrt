@@ -5,6 +5,7 @@ import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
+import { logger } from '../../internal/logger.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
@@ -177,17 +178,28 @@ async function parseNaturalLanguage(text: string): Promise<string> {
 async function startHoldRecording() {
   if (!isSmrt || disabled || isParsing) return;
 
-  // Initialize STT with Whisper v2 for speed + accuracy
-  if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
-    await stt.initialize({ type: 'whisper-wasm' });
-  }
-
   parseError = null;
   recordingStartTime = Date.now();
   isHolding = true;
 
-  // Use continuous mode to capture all speech while holding
-  await stt.start({ continuous: true, interimResults: false });
+  // Guard STT init / mic acquisition so a rejection can't leave the field
+  // wedged in a permanent "Recording..." state with no visible error (C2).
+  try {
+    // Initialize STT with Whisper v2 for speed + accuracy
+    if (!stt.isReady || stt.adapterType !== 'whisper-wasm') {
+      await stt.initialize({ type: 'whisper-wasm' });
+    }
+    // Use continuous mode to capture all speech while holding
+    await stt.start({ continuous: true, interimResults: false });
+  } catch (err) {
+    isHolding = false;
+    parseError =
+      err instanceof Error ? err.message : 'Could not start voice input';
+    logger.error('DateTimeInput: failed to start voice recording', {
+      field: name,
+      error: err,
+    });
+  }
 }
 
 async function stopHoldRecording() {
@@ -276,6 +288,20 @@ function handleMicTouchStart(e: TouchEvent) {
   startHoldRecording();
 }
 
+// Keyboard activation for the mic (WCAG 2.1.1): Enter/Space toggles recording.
+// In SMRT mode the text field is read-only, so this is the only keyboard path
+// to enter a value — it must not be removed.
+function handleMicKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (isHolding) {
+    stopHoldRecording();
+  } else {
+    startHoldRecording();
+  }
+}
+
 function handleNativeChange(e: Event) {
   const target = e.target as HTMLInputElement;
   updateValue(target.value);
@@ -319,6 +345,7 @@ function handleNativeChange(e: Event) {
         class:active={isHolding}
         disabled={disabled || isParsing}
         onclick={handleMicClick}
+        onkeydown={handleMicKeydown}
         onmousedown={handleMicMouseDown}
         onmouseup={handleMouseUp}
         onmouseleave={handleMouseLeave}
