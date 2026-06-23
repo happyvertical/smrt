@@ -152,9 +152,7 @@ describe('AuditLogCollection', () => {
     });
 
     expect(await logs.findByProfile(actor.id as string)).toHaveLength(3);
-    expect(
-      await logs.findByResource('Issue', 'issue-1'),
-    ).toHaveLength(2);
+    expect(await logs.findByResource('Issue', 'issue-1')).toHaveLength(2);
     expect(await logs.findByAction('issue.update')).toHaveLength(1);
     expect(await logs.findBySource('ci')).toHaveLength(1);
     expect(await logs.findOnBehalfOf(principal.id as string)).toHaveLength(1);

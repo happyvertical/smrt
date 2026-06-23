@@ -214,18 +214,12 @@ describe('NostrIdentityCollection helpers', () => {
 
     // Unlink removes the identity.
     expect(
-      await identities.unlinkFromProfile(
-        profile.id as string,
-        identity.pubkey,
-      ),
+      await identities.unlinkFromProfile(profile.id as string, identity.pubkey),
     ).toBe(true);
     expect(await identities.findByProfile(profile.id as string)).toEqual([]);
     // Unlinking again is a no-op.
     expect(
-      await identities.unlinkFromProfile(
-        profile.id as string,
-        identity.pubkey,
-      ),
+      await identities.unlinkFromProfile(profile.id as string, identity.pubkey),
     ).toBe(false);
   });
 
@@ -248,8 +242,8 @@ describe('NostrIdentityCollection helpers', () => {
       'ben',
     );
 
-    await expect(
-      identities.updateNip05Username(a, 'ben'),
-    ).rejects.toThrow(/already taken/);
+    await expect(identities.updateNip05Username(a, 'ben')).rejects.toThrow(
+      /already taken/,
+    );
   });
 });

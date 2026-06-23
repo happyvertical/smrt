@@ -38,7 +38,11 @@ async function createProfile(dbUrl: string, email: string) {
   await type.save();
 
   const profiles = await ProfileCollection.create({ db });
-  const profile = await profiles.create({ typeId: type.id, name: 'User', email });
+  const profile = await profiles.create({
+    typeId: type.id,
+    name: 'User',
+    email,
+  });
   await profile.save();
   return { db, profile };
 }
@@ -242,13 +246,17 @@ describe('OidcIdentity model and collection', () => {
     expect(relinked.id).toBe(identity.id);
     expect(relinked.email).toBe('updated@example.com');
 
-    expect(
-      await identities.findByProfile(profile.id as string),
-    ).toHaveLength(1);
+    expect(await identities.findByProfile(profile.id as string)).toHaveLength(
+      1,
+    );
     expect(await identities.findByProvider('google')).toHaveLength(1);
     expect(
-      (await identities.findBySubject('https://accounts.google.com', 'google-1'))
-        ?.id,
+      (
+        await identities.findBySubject(
+          'https://accounts.google.com',
+          'google-1',
+        )
+      )?.id,
     ).toBe(identity.id);
 
     // recordUsage bumps lastUsedAt.
