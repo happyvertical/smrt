@@ -179,7 +179,12 @@ function getPatternPlaceholder(type: string): string {
   {#if filterError}
     <div class="filter-error" role="alert" aria-live="assertive">
       {filterError}
-      <button class="dismiss-btn" onclick={() => filterError = null}>&times;</button>
+      <button
+        type="button"
+        class="dismiss-btn"
+        aria-label="Dismiss error"
+        onclick={() => filterError = null}
+      >&times;</button>
     </div>
   {/if}
 

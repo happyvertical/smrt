@@ -272,7 +272,12 @@ function getProviderLabel(type: string): string {
   {#if actionError}
     <div class="test-result failure" role="alert" aria-live="assertive">
       {actionError}
-      <button class="dismiss-btn" onclick={() => actionError = null}>&times;</button>
+      <button
+        type="button"
+        class="dismiss-btn"
+        aria-label="Dismiss error"
+        onclick={() => actionError = null}
+      >&times;</button>
     </div>
   {/if}
 
