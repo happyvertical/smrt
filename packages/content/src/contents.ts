@@ -7,6 +7,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { htmlToMarkdown, resolveBodyFormat } from './body-format';
@@ -642,7 +643,11 @@ export class Contents extends SmrtCollection<Content> {
   }
 
   /**
-   * Find all global content (not associated with any tenant)
+   * Find all global content (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Promise resolving to array of global Content objects
    *
@@ -652,14 +657,17 @@ export class Contents extends SmrtCollection<Content> {
    * ```
    */
   async findGlobal(): Promise<Content[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Content>(this);
   }
 
   /**
-   * Find content for a tenant including global content
+   * Find content for a tenant including global content.
    *
    * This returns both tenant-specific content and global content (tenantId is null),
    * useful for showing a tenant their content plus any shared/global resources.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - The tenant ID to include
    * @returns Promise resolving to array of Content objects (tenant + global)
@@ -670,9 +678,6 @@ export class Contents extends SmrtCollection<Content> {
    * ```
    */
   async findWithGlobals(tenantId: string): Promise<Content[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Content>(this, tenantId, 'Content.findWithGlobals');
   }
 }

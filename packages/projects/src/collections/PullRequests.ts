@@ -6,6 +6,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { PullRequest } from '../models/PullRequest';
 import type { Repository } from '../models/Repository';
 import type { SDKPullRequest, SearchFilters } from '../types';
@@ -262,24 +263,32 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
   }
 
   /**
-   * Find global pull requests (no tenant)
+   * Find all global pull requests (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global pull requests
    */
   async findGlobal(): Promise<PullRequest[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<PullRequest>(this);
   }
 
   /**
-   * Find pull requests for a tenant including global pull requests
+   * Find pull requests for a tenant plus all global pull requests.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of tenant and global pull requests
    */
   async findWithGlobals(tenantId: string): Promise<PullRequest[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<PullRequest>(
+      this,
+      tenantId,
+      'PullRequest.findWithGlobals',
     );
   }
 }

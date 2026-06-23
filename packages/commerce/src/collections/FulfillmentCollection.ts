@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Fulfillment } from '../models/Fulfillment.js';
 import { FulfillmentStatus, type FulfillmentType } from '../types/index.js';
 
@@ -116,24 +117,32 @@ export class FulfillmentCollection extends SmrtCollection<Fulfillment> {
   }
 
   /**
-   * Find all global fulfillments (not associated with any tenant)
+   * Find all global fulfillments (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global fulfillments
    */
   async findGlobal(): Promise<Fulfillment[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Fulfillment>(this);
   }
 
   /**
-   * Find fulfillments for a tenant including global fulfillments
+   * Find fulfillments for a tenant including global fulfillments.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID
    * @returns Array of tenant-specific and global fulfillments
    */
   async findWithGlobals(tenantId: string): Promise<Fulfillment[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<Fulfillment>(
+      this,
+      tenantId,
+      'Fulfillment.findWithGlobals',
     );
   }
 }

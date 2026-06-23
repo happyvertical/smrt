@@ -3,8 +3,8 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Attachment } from '../models/Attachment';
-import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class AttachmentCollection extends SmrtCollection<Attachment> {
   static readonly _itemClass = Attachment;

@@ -133,6 +133,14 @@ export {
   type TenantScopedConfig,
   unregisterTenantScopedClass,
 } from './registry.js';
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenant-scoped "global" / "tenant + globals" raw-query helpers (#1600)
+// ─────────────────────────────────────────────────────────────────────────────
+export {
+  assertTenantReadAllowed,
+  queryGlobal,
+  queryWithGlobals,
+} from './tenant-global-queries.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Testing Utilities

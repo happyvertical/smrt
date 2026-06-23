@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Zone } from '../models/Zone';
 import type { ZoneTree, ZoneTreeNode } from '../types';
 
@@ -334,24 +335,28 @@ export class ZoneCollection extends SmrtCollection<Zone> {
   }
 
   /**
-   * Find global zones (no tenant association)
+   * Find all global zones (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global zones
    */
   async findGlobal(): Promise<Zone[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Zone>(this);
   }
 
   /**
-   * Find zones for a tenant including global zones
+   * Find zones for a tenant plus all global zones.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of tenant-specific and global zones
    */
   async findWithGlobals(tenantId: string): Promise<Zone[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Zone>(this, tenantId, 'Zone.findWithGlobals');
   }
 }

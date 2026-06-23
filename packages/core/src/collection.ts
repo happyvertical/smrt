@@ -2170,6 +2170,33 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Resolve this collection's STI child discriminator — the qualified item
+   * class name to use as a `_meta_type` scope — when the collection's item is
+   * an STI **child** (shares a table with sibling subtypes), or `null` for STI
+   * bases, CTI, and non-STI item classes.
+   *
+   * Mirrors the automatic `_meta_type` scoping that `list()` / `get()` apply
+   * for STI child collections (#386), using the same `ObjectRegistry` source of
+   * truth (`getTableStrategy` + `getSTIBase`). Raw-SQL helpers that bypass
+   * `list()` — e.g. the tenant global / with-globals lookups in
+   * `@happyvertical/smrt-tenancy` (#1600) — call this to scope a shared STI
+   * table to the collection's own subtype, so they never surface sibling rows.
+   * Deriving the scope here keeps every consumer consistent with `list()`
+   * without each one hand-classifying its collection's table strategy.
+   *
+   * @returns The qualified `_meta_type` for an STI child collection, or `null`
+   *   when no `_meta_type` scoping applies (STI base / CTI / non-STI).
+   */
+  public getStiChildMetaType(): string | null {
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    if (ObjectRegistry.getTableStrategy(itemQualifiedName) !== 'sti') {
+      return null;
+    }
+    const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+    return stiBase && stiBase !== itemQualifiedName ? itemQualifiedName : null;
+  }
+
+  /**
    * Execute a raw SQL query and hydrate results as collection item instances
    *
    * Provides full SQL power for complex queries (JOINs, CTEs, NOT EXISTS, etc.)

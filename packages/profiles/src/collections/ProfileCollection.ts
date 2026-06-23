@@ -11,6 +11,7 @@ import {
   removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Profile } from '../models/Profile';
 
 export class ProfileCollection extends SmrtCollection<Profile> {
@@ -200,24 +201,28 @@ export class ProfileCollection extends SmrtCollection<Profile> {
   }
 
   /**
-   * Find all global profiles (without a tenant)
+   * Find all global profiles (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of profiles with null tenantId
    */
   async findGlobal(): Promise<Profile[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Profile>(this);
   }
 
   /**
-   * Find profiles belonging to a tenant plus all global profiles
+   * Find profiles belonging to a tenant plus all global profiles.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - The tenant UUID to include
    * @returns Array of tenant-specific and global profiles
    */
   async findWithGlobals(tenantId: string): Promise<Profile[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Profile>(this, tenantId, 'Profile.findWithGlobals');
   }
 }

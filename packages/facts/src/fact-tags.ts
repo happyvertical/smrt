@@ -6,6 +6,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { FactTag } from './fact-tag';
 
 export class FactTagCollection extends SmrtCollection<FactTag> {
@@ -67,19 +68,23 @@ export class FactTagCollection extends SmrtCollection<FactTag> {
   }
 
   /**
-   * Find all global (tenant-less) fact-tag links
+   * Find all global (tenant-less) fact-tag links.
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    */
   async findGlobal(): Promise<FactTag[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<FactTag>(this);
   }
 
   /**
-   * Find fact-tag links for a tenant including global links
+   * Find fact-tag links for a tenant including global links.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    */
   async findWithGlobals(tenantId: string): Promise<FactTag[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<FactTag>(this, tenantId, 'FactTag.findWithGlobals');
   }
 }

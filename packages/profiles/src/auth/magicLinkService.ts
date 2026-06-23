@@ -156,10 +156,32 @@ export function createMagicLinkService(
       if (!nostrIdentity) {
         // Create new identity and profile
         const { Person } = await import('../models/ProfileTypes');
+        const { ProfileTypeCollection } = await import(
+          '../collections/ProfileTypeCollection'
+        );
+
+        // Profile.typeId is a required FK, so resolve (or seed) the canonical
+        // 'person' type before creating the profile — otherwise `.save()`
+        // fails required-field validation. Mirrors createProfileFromNostr /
+        // createProfileFromOidc in resolveIdentity.ts.
+        const typeCollection = await ProfileTypeCollection.create({ db });
+        let personType = await typeCollection.getBySlug('person');
+        if (!personType) {
+          const { ProfileType } = await import('../models/ProfileType');
+          personType = new ProfileType({
+            db,
+            slug: 'person',
+            name: 'Person',
+            description: 'Individual person profile',
+          });
+          await personType.initialize();
+          await personType.save();
+        }
 
         // Create a new profile for this user (Person is an STI subclass of Profile)
         profile = new Person({
           db,
+          typeId: personType.id as string,
           email: normalizedEmail,
           name: normalizedEmail.split('@')[0], // Default name from email
         });

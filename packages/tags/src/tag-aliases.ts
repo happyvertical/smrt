@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import type { Tag } from './tag';
 import { TagAlias } from './tag-alias';
 
@@ -191,24 +192,32 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
   }
 
   /**
-   * Find all global (tenant-less) tag aliases
+   * Find all global (tenant-less) tag aliases.
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global tag aliases with null tenantId
    */
   async findGlobal(): Promise<TagAlias[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<TagAlias>(this);
   }
 
   /**
-   * Find tag aliases for a tenant including global aliases
+   * Find tag aliases for a tenant including global aliases.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - The tenant ID to filter by
    * @returns Array of tag aliases for the tenant plus all global aliases
    */
   async findWithGlobals(tenantId: string): Promise<TagAlias[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<TagAlias>(
+      this,
+      tenantId,
+      'TagAlias.findWithGlobals',
     );
   }
 }

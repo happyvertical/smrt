@@ -268,6 +268,9 @@ export class Repository extends SmrtObject {
       lastSyncedAt: new Date(),
     });
 
+    // Directly-constructed models must be initialized before save() can access
+    // the database connection (SmrtCollection.create() does this internally).
+    await issue.initialize();
     await issue.save();
     return issue;
   }
@@ -308,6 +311,9 @@ export class Repository extends SmrtObject {
       lastSyncedAt: new Date(),
     });
 
+    // Directly-constructed models must be initialized before save() can access
+    // the database connection (SmrtCollection.create() does this internally).
+    await pr.initialize();
     await pr.save();
     return pr;
   }

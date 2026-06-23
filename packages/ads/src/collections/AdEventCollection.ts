@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { AdEvent } from '../models/AdEvent.js';
 import { AdEventType } from '../types/index.js';
 
@@ -179,24 +180,28 @@ export class AdEventCollection extends SmrtCollection<AdEvent> {
   }
 
   /**
-   * Find global ad events (no tenant association)
+   * Find global ad events (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global ad events
    */
   async findGlobal(): Promise<AdEvent[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<AdEvent>(this);
   }
 
   /**
-   * Find ad events for a tenant including global (shared) events
+   * Find ad events for a tenant including global (shared) events.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to include
    * @returns Array of tenant-specific and global ad events
    */
   async findWithGlobals(tenantId: string): Promise<AdEvent[]> {
-    return this.query(
-      `SELECT * FROM ad_events WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<AdEvent>(this, tenantId, 'AdEvent.findWithGlobals');
   }
 }

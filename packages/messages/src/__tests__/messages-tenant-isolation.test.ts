@@ -30,8 +30,8 @@
  * alias, which has no `@smrt()` decorator and so is not registered by the vitest
  * manifest loader (it IS registered when consuming the built package, where the
  * leak is real). Its `findGlobal` / `findWithGlobals` are thin wrappers over the
- * exact same `tenant-global-queries` helper as the CTI `AttachmentCollection`
- * (covered below), so the underlying code path is verified.
+ * exact same shared `@happyvertical/smrt-tenancy` query helpers as the CTI
+ * `AttachmentCollection` (covered below), so the underlying code path is verified.
  */
 
 import { getTestDatabase } from '@happyvertical/smrt-core';

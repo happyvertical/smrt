@@ -5,18 +5,10 @@
  * STI framework auto-filters to Email instances.
  */
 
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Email } from '../models/Email';
 import type { EmailSearchFilters } from '../types';
 import { MessageCollection } from './MessageCollection';
-import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
-
-/**
- * Qualified STI discriminator for Email rows in the shared `messages` table.
- * Raw SQL on this tenant-scoped child collection must scope by `_meta_type` so
- * it never returns sibling Message subtypes (base Message, Tweet, SlackMessage).
- * See `findGlobal` / `findWithGlobals`. (#1596)
- */
-const EMAIL_META_TYPE = '@happyvertical/smrt-messages:Email';
 
 export class EmailCollection extends MessageCollection {
   static override readonly _itemClass = Email;
@@ -278,17 +270,14 @@ export class EmailCollection extends MessageCollection {
   // Now that Email inherits Message's @TenantScoped recognition (#1596), an
   // explicit `tenant_id IS NULL` filter via list() throws and unflagged raw SQL
   // is blocked under an active tenant context — so route global / cross-global
-  // lookups through the shared raw helpers, scoped to the Email `_meta_type`.
+  // lookups through the shared raw helpers. They auto-scope to the Email
+  // `_meta_type` (via getStiChildMetaType) so the shared `messages` table never
+  // returns sibling Message subtypes. (#1600)
   override async findGlobal(): Promise<Email[]> {
-    return queryGlobal<Email>(this, EMAIL_META_TYPE);
+    return queryGlobal<Email>(this);
   }
 
   override async findWithGlobals(tenantId: string): Promise<Email[]> {
-    return queryWithGlobals<Email>(
-      this,
-      tenantId,
-      'Email.findWithGlobals',
-      EMAIL_META_TYPE,
-    );
+    return queryWithGlobals<Email>(this, tenantId, 'Email.findWithGlobals');
   }
 }

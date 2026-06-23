@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { PaymentAllocation } from '../models/PaymentAllocation.js';
 
 export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocation> {
@@ -148,24 +149,32 @@ export class PaymentAllocationCollection extends SmrtCollection<PaymentAllocatio
   }
 
   /**
-   * Find all global payment allocations (not associated with any tenant)
+   * Find all global payment allocations (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global payment allocations
    */
   async findGlobal(): Promise<PaymentAllocation[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<PaymentAllocation>(this);
   }
 
   /**
-   * Find payment allocations for a tenant including global allocations
+   * Find payment allocations for a tenant including global allocations.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID
    * @returns Array of tenant-specific and global payment allocations
    */
   async findWithGlobals(tenantId: string): Promise<PaymentAllocation[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<PaymentAllocation>(
+      this,
+      tenantId,
+      'PaymentAllocation.findWithGlobals',
     );
   }
 }

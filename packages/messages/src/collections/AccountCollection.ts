@@ -3,9 +3,9 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Account } from '../models/Account';
 import type { AccountSearchFilters } from '../types';
-import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class AccountCollection extends SmrtCollection<Account> {
   static readonly _itemClass = Account;

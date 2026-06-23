@@ -6,6 +6,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Repository } from '../models/Repository';
 import type { RepositoryProviderType } from '../types';
 
@@ -148,24 +149,32 @@ export class RepositoryCollection extends SmrtCollection<Repository> {
   }
 
   /**
-   * Find global repositories (no tenant)
+   * Find all global repositories (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global repositories
    */
   async findGlobal(): Promise<Repository[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Repository>(this);
   }
 
   /**
-   * Find repositories for a tenant including global repositories
+   * Find repositories for a tenant plus all global repositories.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of tenant and global repositories
    */
   async findWithGlobals(tenantId: string): Promise<Repository[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<Repository>(
+      this,
+      tenantId,
+      'Repository.findWithGlobals',
     );
   }
 }

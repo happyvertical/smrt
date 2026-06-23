@@ -5,9 +5,9 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Message } from '../models/Message';
 import type { MessageSearchFilters } from '../types';
-import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 export class MessageCollection extends SmrtCollection<Message> {
   static readonly _itemClass = Message;

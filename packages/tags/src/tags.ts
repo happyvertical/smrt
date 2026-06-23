@@ -13,6 +13,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Tag } from './tag';
 import type { TagHierarchy } from './types';
 
@@ -434,24 +435,28 @@ export class TagCollection extends SmrtCollection<Tag> {
   }
 
   /**
-   * Find all global (tenant-less) tags
+   * Find all global (tenant-less) tags.
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global tags with null tenantId
    */
   async findGlobal(): Promise<Tag[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Tag>(this);
   }
 
   /**
-   * Find tags for a tenant including global tags
+   * Find tags for a tenant including global tags.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - The tenant ID to filter by
    * @returns Array of tags for the tenant plus all global tags
    */
   async findWithGlobals(tenantId: string): Promise<Tag[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Tag>(this, tenantId, 'Tag.findWithGlobals');
   }
 }

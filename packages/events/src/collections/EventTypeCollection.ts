@@ -5,6 +5,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { EventType } from '../models/EventType';
 
 export class EventTypeCollection extends SmrtCollection<EventType> {
@@ -125,24 +126,32 @@ export class EventTypeCollection extends SmrtCollection<EventType> {
   }
 
   /**
-   * Find all global event types (no tenant association)
+   * Find all global event types (no tenant association).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of EventType instances with no tenant
    */
   async findGlobal(): Promise<EventType[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<EventType>(this);
   }
 
   /**
-   * Find event types for a tenant including global types
+   * Find event types for a tenant including global types.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID to filter by
    * @returns Array of EventType instances for the tenant and global types
    */
   async findWithGlobals(tenantId: string): Promise<EventType[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<EventType>(
+      this,
+      tenantId,
+      'EventType.findWithGlobals',
     );
   }
 }

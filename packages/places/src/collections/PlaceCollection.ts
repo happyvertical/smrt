@@ -14,6 +14,7 @@ import {
   removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Place } from '../models/Place';
 import type {
   DiscoverNearbyOptions,
@@ -694,24 +695,28 @@ export class PlaceCollection extends SmrtCollection<Place> {
   }
 
   /**
-   * Find all global places (not associated with any tenant)
+   * Find all global places (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global places
    */
   async findGlobal(): Promise<Place[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Place>(this);
   }
 
   /**
-   * Find places for a tenant including global places
+   * Find places for a tenant including global places.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - The tenant ID to include
    * @returns Array of tenant-specific and global places
    */
   async findWithGlobals(tenantId: string): Promise<Place[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
-    );
+    return queryWithGlobals<Place>(this, tenantId, 'Place.findWithGlobals');
   }
 }

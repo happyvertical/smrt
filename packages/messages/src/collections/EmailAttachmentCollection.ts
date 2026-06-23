@@ -4,9 +4,9 @@
  * @deprecated Use AttachmentCollection instead
  */
 
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { EmailAttachment } from '../models/EmailAttachment';
 import { AttachmentCollection } from './AttachmentCollection';
-import { queryGlobal, queryWithGlobals } from './tenant-global-queries';
 
 /**
  * @deprecated Use AttachmentCollection instead

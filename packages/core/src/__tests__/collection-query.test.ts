@@ -67,6 +67,12 @@ class QueryTestEventCollection extends SmrtCollection<QueryTestEvent> {
   static readonly _itemClass = QueryTestEvent;
 }
 
+// STI *child* collection (item class is the child subtype). Used to verify
+// getStiChildMetaType() resolves the child's qualified _meta_type.
+class QueryTestMeetingCollection extends SmrtCollection<QueryTestMeeting> {
+  static readonly _itemClass = QueryTestMeeting;
+}
+
 // Related table for NOT EXISTS tests
 @smrt()
 class QueryTestRecap extends SmrtObject {
@@ -555,5 +561,40 @@ describe('collection.query()', () => {
       runSTIQueryTests(() => ({ events }));
       runComplexQueryTests(() => ({ events, recaps }));
     });
+  });
+});
+
+// ============================================================================
+// getStiChildMetaType() — STI scope derivation for raw-SQL helpers (#1600)
+// ============================================================================
+
+describe('SmrtCollection.getStiChildMetaType()', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  it('returns the qualified _meta_type for an STI child collection', async () => {
+    const meetings = await QueryTestMeetingCollection.create({ db });
+    expect(meetings.getStiChildMetaType()).toBe(
+      '@happyvertical/smrt-core:QueryTestMeeting',
+    );
+  });
+
+  it('returns null for an STI base collection (spans all subtypes)', async () => {
+    const events = await QueryTestEventCollection.create({ db });
+    expect(events.getStiChildMetaType()).toBeNull();
+  });
+
+  it('returns null for a non-STI (CTI/own-table) collection', async () => {
+    const products = await QueryTestProductCollection.create({ db });
+    expect(products.getStiChildMetaType()).toBeNull();
   });
 });

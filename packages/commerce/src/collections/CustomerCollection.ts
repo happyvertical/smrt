@@ -4,6 +4,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { Customer } from '../models/Customer.js';
 import { CustomerStatus } from '../types/index.js';
 
@@ -92,24 +93,32 @@ export class CustomerCollection extends SmrtCollection<Customer> {
   }
 
   /**
-   * Find all global customers (not associated with any tenant)
+   * Find all global customers (not associated with any tenant).
+   *
+   * Routes through the shared tenant-global helper so it does not throw under
+   * an active tenant context (an explicit `tenant_id IS NULL` filter would be
+   * flagged as an isolation violation). (#1600)
    *
    * @returns Array of global customers
    */
   async findGlobal(): Promise<Customer[]> {
-    return this.list({ where: { tenantId: null } });
+    return queryGlobal<Customer>(this);
   }
 
   /**
-   * Find customers for a tenant including global customers
+   * Find customers for a tenant including global customers.
+   *
+   * Fails closed if an active tenant context requests a different tenant's
+   * rows; the admin/system path keeps the cross-tenant capability. (#1600)
    *
    * @param tenantId - Tenant ID
    * @returns Array of tenant-specific and global customers
    */
   async findWithGlobals(tenantId: string): Promise<Customer[]> {
-    return this.query(
-      `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,
-      [tenantId],
+    return queryWithGlobals<Customer>(
+      this,
+      tenantId,
+      'Customer.findWithGlobals',
     );
   }
 }
