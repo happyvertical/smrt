@@ -53,7 +53,7 @@ const PACKAGES = join(ROOT, 'packages');
  * Packages held to ERROR. Everything else is report-only for now (#1589 Wave 0
  * establishes the baseline; later waves flip packages strict as they migrate).
  */
-const STRICT_PACKAGES = new Set([]);
+const STRICT_PACKAGES = new Set(['subscriptions', 'social']);
 
 /**
  * Packages skipped entirely — dev/playground hosts, not shippable product

@@ -93,6 +93,22 @@ describe('Button', () => {
     expect(link).toHaveClass('button');
   });
 
+  it('passes target/rel through to the anchor in link mode (#1589)', () => {
+    // External links migrated from `<a target="_blank" rel="...">` to Button
+    // must keep their new-tab + opener-isolation semantics on the rendered <a>.
+    render(Button, {
+      props: {
+        children: textSnippet('Open'),
+        href: 'https://example.com',
+        target: '_blank',
+        rel: 'noreferrer',
+      },
+    });
+    const link = screen.getByRole('link', { name: 'Open' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+
   it('is not navigable when disabled in link mode', async () => {
     const { container } = render(Button, {
       props: { children: textSnippet('Home'), href: '/home', disabled: true },

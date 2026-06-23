@@ -32,6 +32,15 @@ export interface Props extends Omit<HTMLButtonAttributes, 'class' | 'href'> {
    * own CSS (issue #1589) — the base button styling still applies.
    */
   class?: string;
+  /**
+   * Anchor-mode attributes (link mode only, i.e. when `href` is set). The
+   * component already spreads these onto the rendered `<a>`; they are declared
+   * here so callers migrating an external `<a target="_blank" rel="...">` to
+   * Button (issue #1589) keep them type-checked. Ignored in button mode.
+   */
+  target?: HTMLAnchorAttributes['target'];
+  rel?: HTMLAnchorAttributes['rel'];
+  download?: HTMLAnchorAttributes['download'];
 }
 
 const {
