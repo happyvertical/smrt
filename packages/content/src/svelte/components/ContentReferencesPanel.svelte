@@ -223,4 +223,12 @@ function removeReference(id: string) {
   .content-references-panel :global(.reference-button:hover) {
     background: var(--smrt-color-surface-container-high);
   }
+
+  /* Match the Input primitive's height/radius to the sibling reference-button so
+     the two grid columns of .reference-input-row align (the primitive's base
+     .input has no min-height). */
+  .content-references-panel :global(.input) {
+    min-height: 2.5rem;
+    border-radius: 0.5rem;
+  }
 </style>

@@ -113,7 +113,6 @@ $effect(() => {
         bind:value={name}
         id="room-name"
         type="text"
-        class="field__input"
         placeholder={t(M['chat.room_create_dialog.name_placeholder'])}
         maxlength={100}
         autocomplete="off"
@@ -150,7 +149,6 @@ $effect(() => {
       <Textarea
         bind:value={description}
         id="room-description"
-        class="field__textarea"
         placeholder={t(M['chat.room_create_dialog.description_placeholder'])}
         rows={3}
         maxlength={500}

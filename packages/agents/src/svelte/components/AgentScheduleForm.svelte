@@ -102,8 +102,8 @@ const timezones = [
 // Validation
 const isValid = $derived(agentType.trim() !== '' && cron.trim() !== '');
 
-function handleSubmit(event: Event) {
-  event.preventDefault();
+function handleSubmit() {
+  // The Form primitive calls event.preventDefault() before invoking onsubmit.
   if (!isValid || loading) return;
 
   const data: ScheduleFormData = {

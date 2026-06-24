@@ -171,7 +171,8 @@ function handleSubmit(event: SubmitEvent) {
     {#if activeType?.allowFiles !== false}
       <label>
         {t(M['content.contribution_form.attach_files'])}
-        <Input
+        <!-- raw-primitive-allow: native file input — the Input primitive binds value, which is invalid for type=file (throws InvalidStateError on the bind write-back) and renders a visible control; a file picker stays native -->
+        <input
           name="files"
           type="file"
           multiple

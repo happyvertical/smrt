@@ -44,8 +44,10 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
 	{@render children()}
 </form>
 
-<style>
-	.form {
-		display: block;
-	}
-</style>
+<!--
+  No base styles: a <form> is `display: block` by default, so an explicit
+  `.form { display: block }` rule would only add a specificity floor that ties
+  with a consumer's single-class layout override (e.g. `:global(.x){display:flex}`)
+  and can win by stylesheet order. The `form` class stays as a stable hook.
+-->
+

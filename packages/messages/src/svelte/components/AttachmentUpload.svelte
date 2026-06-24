@@ -11,7 +11,6 @@ export interface Props {
 
 <script lang="ts">
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
-  import { Input } from '@happyvertical/smrt-ui/forms';
   import { Button } from '@happyvertical/smrt-ui/ui';
   import { M } from '../i18n.js';
 
@@ -81,7 +80,8 @@ export interface Props {
     ondragleave={handleDragLeave}
   >
     <label class="upload-label">
-      <Input
+      <!-- raw-primitive-allow: native file input — the Input primitive binds value, which is invalid for type=file (throws InvalidStateError on the bind write-back) and renders a visible control; this hidden picker behind the drop zone stays native -->
+      <input
         type="file"
         multiple
         class="file-input"
@@ -157,12 +157,10 @@ export interface Props {
   }
 
   /*
-   * The file picker now renders through smrt-ui's <Input type="file">. It stays
-   * visually hidden — the visible affordance is the `.upload-text` label inside
-   * the styled drop-zone — so `.upload-label :global(.file-input)` pierces the
-   * Input child scope to keep `display: none` (issue #1589).
+   * The native file input stays visually hidden — the visible affordance is the
+   * `.upload-text` label inside the styled drop-zone (issue #1589).
    */
-  .upload-label :global(.file-input) {
+  .upload-label .file-input {
     display: none;
   }
 
