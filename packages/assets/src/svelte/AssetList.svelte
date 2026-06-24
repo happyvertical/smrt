@@ -7,6 +7,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from './i18n.js';
 import type {
   AssetListProps,
@@ -120,15 +121,15 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
         </th>
         <th class="col-thumb">Preview</th>
         <th class="col-name">
-          <button type="button" class="sort-btn" onclick={() => handleSort('name')}>
+          <Button variant="ghost" size="sm" class="sort-btn" onclick={() => handleSort('name')}>
             Name <span class="sort-indicator">{getSortIndicator('name')}</span>
-          </button>
+          </Button>
         </th>
         <th class="col-type">Type</th>
         <th class="col-date">
-          <button type="button" class="sort-btn" onclick={() => handleSort('createdAt')}>
+          <Button variant="ghost" size="sm" class="sort-btn" onclick={() => handleSort('createdAt')}>
             Created <span class="sort-indicator">{getSortIndicator('createdAt')}</span>
-          </button>
+          </Button>
         </th>
         <th class="col-status">Status</th>
       </tr>
@@ -187,15 +188,15 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             </td>
             <td class="col-name">
               <!-- The name is the row's open action (a button, not a
-                   role="button" on the <tr> nesting the checkbox → avoids axe
+                   role="button" on the row nesting the checkbox, which avoids axe
                    nested-interactive). -->
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 class="row-name"
                 onclick={() => onAssetClick(asset)}
               >
                 {asset.name || 'Untitled'}
-              </button>
+              </Button>
               {#if asset.description}
                 <span class="row-desc">{asset.description}</span>
               {/if}
@@ -308,7 +309,10 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     min-width: 150px;
   }
 
-  .row-name {
+  /* The row name renders via <Button class="row-name"> (issue #1589). The
+     overrides reset it to inline name text and must reach the child-rendered
+     <button> through :global() scoping. */
+  .col-name :global(.row-name) {
     display: block;
     font-weight: var(--smrt-typography-weight-medium, 500);
     white-space: nowrap;
@@ -327,14 +331,8 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     cursor: pointer;
   }
 
-  .row-name:hover {
+  .col-name :global(.row-name:hover) {
     text-decoration: underline;
-  }
-
-  .row-name:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: 2px;
-    border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
   .row-desc {
@@ -383,10 +381,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     background: var(--smrt-color-success, #22c55e);
   }
 
-  /* Sort */
-  .sort-btn {
-    display: inline-flex;
-    align-items: center;
+  /* Sort — renders via <Button class="sort-btn"> (issue #1589). Overrides reset
+     it to an inline header-text button and reach the child <button> via :global(). */
+  .list-table__head :global(.sort-btn) {
     gap: var(--smrt-spacing-1, 4px);
     padding: 0;
     border: none;
@@ -394,10 +391,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     font: inherit;
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: inherit;
-    cursor: pointer;
   }
 
-  .sort-btn:hover {
+  .list-table__head :global(.sort-btn:hover) {
     color: var(--smrt-color-primary, #005ac1);
   }
 

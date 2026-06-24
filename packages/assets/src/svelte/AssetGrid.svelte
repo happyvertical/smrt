@@ -107,6 +107,7 @@ function getAltText(asset: PersistedAsset): string {
                inside an interactive control (axe nested-interactive). It sits
                above the non-interactive content but below the checkbox (z-index),
                and is keyboard-activatable natively (Enter/Space). -->
+          <!-- raw-primitive-allow: stretched transparent click-catching card overlay positioned absolute inset 0, layered under the checkbox by z-index; not a styled action button -->
           <button
             type="button"
             class="asset-card__open"

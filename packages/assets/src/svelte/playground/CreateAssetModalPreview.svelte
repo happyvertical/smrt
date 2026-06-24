@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import CreateAssetModal from '../CreateAssetModal.svelte';
 import { M } from '../i18n.js';
 
@@ -47,7 +48,7 @@ function handleCreate(data: {
     <p class="eyebrow">{t(M['assets.create_asset_modal_preview.modal_preview'])}</p>
     <h4>{t(M['assets.create_asset_modal_preview.title'])}</h4>
     <p>{t(M['assets.create_asset_modal_preview.description'])}</p>
-    <button type="button" onclick={openPreview}>{t(M['assets.create_asset_modal_preview.open_upload_modal'])}</button>
+    <Button variant="primary" class="preview-open" onclick={openPreview}>{t(M['assets.create_asset_modal_preview.open_upload_modal'])}</Button>
 
     {#if statusMessage}
       <p class="status">{statusMessage}</p>
@@ -110,16 +111,15 @@ function handleCreate(data: {
     color: var(--smrt-color-primary, #0f766e);
   }
 
-  button {
+  /* The open-modal button renders via <Button variant="primary"> (issue #1589).
+     The primary variant owns the fill/color; this override keeps the pill shape
+     and grid placement, reaching the child <button> via :global(). */
+  .preview-card :global(.preview-open) {
     justify-self: start;
     border: 0;
     border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.75rem 1rem;
-    font: inherit;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-primary, #0f766e);
-    color: var(--smrt-color-on-primary, white);
-    cursor: pointer;
   }
 
   .status {
