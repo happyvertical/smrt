@@ -85,6 +85,15 @@ export async function queryGlobal<T, M extends SmrtObject = SmrtObject>(
     ? 'WHERE _meta_type = ? AND tenant_id IS NULL'
     : 'WHERE tenant_id IS NULL';
   const params = metaType ? [metaType] : [];
+  // Two decoupled type params by design (STI). `M` is inferred from the
+  // collection's declared item type — the STI *base* (e.g. `Email`) — and keeps
+  // the parameter assignable despite `SmrtCollection`'s contravariant
+  // `ModelType` positions. `T` is the caller-declared *row* type: an STI child
+  // collection (e.g. `EmailAccountCollection`, statically `SmrtCollection<Email>`)
+  // filters by `_meta_type` and hydrates child rows (`EmailAccount`) that differ
+  // from `M`. `query()` is statically `M[]` but yields those child instances at
+  // runtime, so the bridge cast is required — returning `M[]` would break every
+  // STI-child caller.
   return (await collection.query(
     `SELECT * FROM ${collection.tableName} ${where}`,
     params,
@@ -114,6 +123,9 @@ export async function queryWithGlobals<T, M extends SmrtObject = SmrtObject>(
     ? 'WHERE _meta_type = ? AND (tenant_id = ? OR tenant_id IS NULL)'
     : 'WHERE tenant_id = ? OR tenant_id IS NULL';
   const params = metaType ? [metaType, tenantId] : [tenantId];
+  // See `queryGlobal` above: `T` (caller's STI child row type) is intentionally
+  // decoupled from `M` (the collection's inferred base type), so the cast
+  // bridges `query()`'s static `M[]` to the hydrated child rows.
   return (await collection.query(
     `SELECT * FROM ${collection.tableName} ${where}`,
     params,
