@@ -25,10 +25,11 @@ export interface Props {
   /**
    * Optional custom icon content, rendered as a Svelte snippet. Use this
    * escape hatch for bespoke icon markup. It replaces the former raw-SVG
-   * **string** support, which was removed in #1591 because rendering a
-   * consumer-supplied string via `{@html}` is an XSS sink. Snippets render
-   * through Svelte's normal (escaped) path, so no `{@html}` is involved.
-   * When both `iconContent` and `icon` are provided, `iconContent` wins.
+   * **string** support, removed in #1591: SummaryCard no longer renders any
+   * consumer-supplied value via `{@html}` (an XSS sink). `iconContent` is
+   * rendered as a snippet, so the trust boundary moves to the consumer — the
+   * snippet's contents are whatever the consumer authors. When both
+   * `iconContent` and `icon` are provided, `iconContent` wins.
    */
   iconContent?: Snippet;
   /** Value color variant */

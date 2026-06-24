@@ -44,12 +44,15 @@ describe('SummaryCard', () => {
     expect(container.querySelector('.card-count')).toBeNull();
   });
 
-  it('renders an icon via the Icon component when icon is a name', () => {
+  it('renders an icon via the Icon component when icon is a known name', () => {
     const { container } = render(SummaryCard, {
-      props: { label: 'Visitors', value: 99, icon: 'star' },
+      // `search` is a real Icon preset, so the rendered <path> must carry a
+      // non-empty `d` — proving the icon-name path actually resolved (an
+      // unknown name would still render an <svg> but with an empty path).
+      props: { label: 'Visitors', value: 99, icon: 'search' },
     });
-    // The Icon primitive renders an <svg> inside the icon slot.
-    expect(container.querySelector('.card-icon svg')).not.toBeNull();
+    const iconPath = container.querySelector('.card-icon svg path');
+    expect(iconPath?.getAttribute('d')).toBeTruthy();
   });
 
   it('does NOT inject a raw SVG string as markup (no {@html} sink) — #1591', () => {
