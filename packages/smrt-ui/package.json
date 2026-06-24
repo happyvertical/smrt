@@ -43,6 +43,12 @@
       "import": "./dist/components/chat/index.js",
       "default": "./dist/components/chat/index.js"
     },
+    "./forms": {
+      "types": "./dist/components/forms/index.d.ts",
+      "svelte": "./dist/components/forms/index.js",
+      "import": "./dist/components/forms/index.js",
+      "default": "./dist/components/forms/index.js"
+    },
     "./i18n": {
       "types": "./dist/i18n/index.d.ts",
       "svelte": "./dist/i18n/index.js",

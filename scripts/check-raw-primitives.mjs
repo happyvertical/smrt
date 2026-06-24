@@ -6,12 +6,17 @@
  * interactive HTML. Per the formalized split (issue #1589, parent epic #1354):
  *
  *   - `@happyvertical/smrt-ui` owns domain-agnostic VISUAL primitives — Button,
- *     Card, Modal, Badge, Avatar, Chip, Dropdown, Tooltip, etc.
- *   - `@happyvertical/smrt-svelte` owns the FORM primitives — Input, Textarea,
- *     Select, Checkbox/Toggle, Form, and the specialized date/measurement/
- *     address/file inputs (they carry i18n + spoken-input logic).
- *   - Domain packages import visual primitives from smrt-ui and form primitives
- *     from smrt-svelte. They should NOT hand-roll raw `<button>` / `<input>` /
+ *     Card, Modal, Badge, Avatar, Chip, Dropdown, Tooltip, etc. — PLUS the
+ *     Provider-free base FORM primitives (Form, Input, Select, Textarea, Toggle,
+ *     FormGroup) under `./forms`, relocated to the leaf in #1589's deferred-forms
+ *     phase.
+ *   - `@happyvertical/smrt-svelte` owns the Provider-REQUIRED form primitives —
+ *     CheckboxInput, the rich Form, TextInput, MoneyInput, and the specialized
+ *     date/measurement/address/file inputs (they carry i18n + spoken-input
+ *     logic). It re-exports the base primitives from smrt-ui.
+ *   - Domain packages import visual + base form primitives from smrt-ui and the
+ *     Provider-required form primitives from smrt-svelte. They should NOT
+ *     hand-roll raw `<button>` / `<input>` /
  *     `<select>` / `<textarea>` / `<form>` markup — that re-introduces the
  *     inconsistent a11y / focus / disabled-state behavior the primitives fix.
  *
@@ -360,9 +365,9 @@ for (const { file, hits } of strictViolations.sort((a, b) =>
 console.error(
   '\nReplace raw interactive elements with the shared primitives so components\n' +
     'get consistent a11y / focus / disabled-state behavior (#1589):\n' +
-    '  <button>  → Button         (@happyvertical/smrt-ui; pass `class` for custom styling)\n' +
+    '  <button>  → Button         (@happyvertical/smrt-ui/ui; pass `class` for custom styling)\n' +
     '  <input>/<textarea>/<select>/<form> → Input/Textarea/Select/Form\n' +
-    '                              (@happyvertical/smrt-svelte)\n' +
+    '                              (@happyvertical/smrt-ui/forms — Provider-free base primitives)\n' +
     'For a genuinely-structural control no primitive should own (backdrop, custom\n' +
     'toggle), annotate it: <!-- raw-primitive-allow: <reason> --> on the line above.\n' +
     'Primitive-source files (smrt-ui/src, smrt-svelte/src/components/forms) are\n' +

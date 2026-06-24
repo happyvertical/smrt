@@ -6,19 +6,30 @@ Top-of-stack Svelte 5 integration layer for SMRT: the app `Provider`, auth / AI 
 
 SMRT's shared UI primitives are split by concern: **`smrt-ui` owns the
 domain-agnostic VISUAL primitives** (`Button`, `Card`, `Modal`, `Badge`,
-`Avatar`, `Chip`, `Dropdown`, …) and **`smrt-svelte` (here) owns the FORM
-primitives** (`Input`, `Textarea`, `Select`, `Checkbox`/`Toggle`, `Form`, and the
-specialized date/measurement/address/file inputs — they carry i18n + spoken-input
-logic that keeps them above the leaf).
+`Avatar`, `Chip`, `Dropdown`, …) **plus the Provider-free base FORM primitives**
+(`Form`, `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` under
+`@happyvertical/smrt-ui/forms` — relocated there in #1589's deferred-forms phase
+so domain packages can adopt them without the Provider or a build-graph cycle),
+and **`smrt-svelte` (here) owns the Provider-REQUIRED form primitives**
+(`CheckboxInput`, the rich `Form`, `TextInput`, `MoneyInput`, and the specialized
+date/measurement/address/file inputs — they call `useAppState` / the AI hooks and
+carry i18n + spoken-input logic that keeps them above the leaf). This package
+re-exports the base **input** primitives (`Input`, `Select`, `Textarea`,
+`Toggle`, `FormGroup`) from smrt-ui so `@happyvertical/smrt-svelte/forms` stays
+the full barrel — but **not** `Form`: this barrel's `Form` is the rich
+Provider-backed one, so import the Provider-free `Form` from
+`@happyvertical/smrt-ui/forms` directly.
 
 Two consequences:
 
 - **This package is the canonical consumer.** smrt-svelte's own composites and
   workspace shell must adopt smrt-ui visual primitives — use `Button`, not a raw
-  `<button>`. Only `src/components/forms/` (the form primitives themselves)
-  legitimately holds raw `<input>`/`<select>`/`<textarea>`.
-- **Domain packages import visual primitives from `smrt-ui` and form primitives
-  from `smrt-svelte`**, and must not hand-roll raw interactive markup.
+  `<button>`. Only `src/components/forms/` (the Provider-required form primitives
+  themselves) legitimately holds raw `<input>`/`<select>`/`<textarea>`; the base
+  primitives now define those raw elements in `smrt-ui/src/components/forms/`.
+- **Domain packages import visual + base form primitives from `smrt-ui` and the
+  Provider-required form primitives from `smrt-svelte`**, and must not hand-roll
+  raw interactive markup.
 
 Enforced by `scripts/check-raw-primitives.mjs` (report-only during the #1589
 migration; flips strict per package as it adopts the primitives).
@@ -102,7 +113,9 @@ library. Which barrel for what:
 | Need | Import from |
 |------|-------------|
 | Buttons, cards, badges, avatars, chips, skeletons, tooltips, dropdowns, trees, pagination | `@happyvertical/smrt-svelte/ui` (or the package root) |
-| Text/select/number/date/money/address inputs, toggles, file upload, `Form`, `FormGroup` | `@happyvertical/smrt-svelte/forms` |
+| Provider-free base inputs — `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` | `@happyvertical/smrt-ui/forms` (also re-exported from `@happyvertical/smrt-svelte/forms`) |
+| Provider-free `Form` (plain `<form>` wrapper) | `@happyvertical/smrt-ui/forms` **only** — `@happyvertical/smrt-svelte/forms` exports the *rich* Provider-backed `Form` under that name, so import the plain one straight from smrt-ui |
+| Provider-backed inputs — `TextInput`, `NumberInput`, `MoneyInput`, date/measurement/address inputs, `CheckboxInput`, file upload, the rich `Form` | `@happyvertical/smrt-svelte/forms` |
 | `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` | `@happyvertical/smrt-svelte/feedback` |
 | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-svelte/layout` |
 | Chat message bubble, reaction picker, typing indicator | `@happyvertical/smrt-svelte/chat` |

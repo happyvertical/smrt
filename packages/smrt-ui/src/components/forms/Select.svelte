@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import type { HTMLSelectAttributes } from 'svelte/elements';
-import { tryGetFormGroupContext } from '../../state/form-group-context.js';
+import { tryGetFormGroupContext } from './form-group-context.js';
 
 export interface Props extends Omit<HTMLSelectAttributes, 'class' | 'value'> {
   value?: string;

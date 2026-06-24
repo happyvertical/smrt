@@ -5,7 +5,7 @@
  * and inherits id / describedby / invalid from a wrapping FormGroup via context.
  */
 
-import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
+import { expectNoA11yViolations } from '../../../test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it } from 'vitest';

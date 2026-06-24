@@ -6,7 +6,7 @@
  * Toggle renders native checkbox semantics, so it surfaces as a `checkbox` role.
  */
 
-import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
+import { expectNoA11yViolations } from '../../../test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
