@@ -80,4 +80,10 @@ const resolvedInvalid = $derived(
 	.input::placeholder {
 		color: var(--smrt-color-on-surface-variant, #9ca3af);
 	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.input {
+			transition: none;
+		}
+	}
 </style>
