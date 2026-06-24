@@ -72,7 +72,7 @@ export class Place extends SmrtHierarchical {
     super(options);
 
     // Tenancy field
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
 
     // Core fields
     if (options.typeId) this.typeId = options.typeId;
@@ -148,7 +148,7 @@ export class Place extends SmrtHierarchical {
    *
    * @returns Parsed metadata object or empty object if no metadata
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -162,7 +162,7 @@ export class Place extends SmrtHierarchical {
    *
    * @param data - Metadata object to store
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
@@ -171,7 +171,7 @@ export class Place extends SmrtHierarchical {
    *
    * @param updates - Partial metadata to merge
    */
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.setMetadata({ ...current, ...updates });
   }
@@ -187,7 +187,7 @@ export class Place extends SmrtHierarchical {
     const { PlaceTypeCollection } = await import(
       '../collections/PlaceTypeCollection'
     );
-    const collection = await (PlaceTypeCollection as any).create(this.options);
+    const collection = await PlaceTypeCollection.create(this.options);
 
     return await collection.get({ id: this.typeId });
   }

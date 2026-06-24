@@ -175,6 +175,13 @@ export function normalizeAddressComponents(
   components: Partial<GeoData>,
 ): Partial<GeoData> {
   const normalized: Partial<GeoData> = {};
+  // Each GeoData key has a distinct value type, so writing a single `value`
+  // through a `keyof GeoData` index requires the broad value union. Capture it
+  // once here instead of casting at each assignment.
+  const writable = normalized as Record<
+    keyof GeoData,
+    GeoData[keyof GeoData]
+  >;
 
   for (const [key, value] of Object.entries(components)) {
     if (value === null || value === undefined) continue;
@@ -182,10 +189,10 @@ export function normalizeAddressComponents(
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (trimmed) {
-        normalized[key as keyof GeoData] = trimmed as any;
+        writable[key as keyof GeoData] = trimmed;
       }
     } else {
-      normalized[key as keyof GeoData] = value as any;
+      writable[key as keyof GeoData] = value;
     }
   }
 

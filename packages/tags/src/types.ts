@@ -14,7 +14,7 @@ export interface TagOptions extends SmrtObjectOptions {
   parentId?: string | null;
   level?: number;
   description?: string;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
 }
 
@@ -57,7 +57,7 @@ export interface TagMetadata {
   reviewStatus?: string;
 
   // Allow any other properties
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

@@ -90,7 +90,7 @@ export class TagCollection extends SmrtCollection<Tag> {
     context: string,
     parentSlug?: string | null,
   ): Promise<Tag[]> {
-    const where: any = { context };
+    const where: Record<string, unknown> = { context };
     if (parentSlug === '' || parentSlug === null) {
       where.parentId = null;
     } else if (parentSlug !== undefined) {
@@ -317,9 +317,7 @@ export class TagCollection extends SmrtCollection<Tag> {
     // addAlias/Tag default-mismatch would orphan rows. For any
     // other context, the strict equality from round-7 is correct.
     const { TagAliasCollection } = await import('./tag-aliases');
-    const aliasCollection = await (TagAliasCollection as any).create(
-      this.options,
-    );
+    const aliasCollection = await TagAliasCollection.create(this.options);
 
     const aliasContexts: string[] = [fromTag.context];
     if (fromTag.context === 'global') {
@@ -346,14 +344,12 @@ export class TagCollection extends SmrtCollection<Tag> {
    * @param context - Optional context to filter cleanup
    */
   async cleanupUnused(context?: string): Promise<number> {
-    const where: any = {};
+    const where: Record<string, unknown> = {};
     if (context) where.context = context;
 
     const tags = await this.list({ where });
     const { TagAliasCollection } = await import('./tag-aliases');
-    const aliasCollection = await (TagAliasCollection as any).create(
-      this.options,
-    );
+    const aliasCollection = await TagAliasCollection.create(this.options);
 
     let deletedCount = 0;
 

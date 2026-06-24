@@ -3,6 +3,7 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type { Place } from './models/Place';
 
 /**
  * Geographic data structure
@@ -47,7 +48,7 @@ export interface PlaceOptions extends SmrtObjectOptions {
   // Metadata
   externalId?: string;
   source?: string;
-  metadata?: Record<string, any> | string;
+  metadata?: Record<string, unknown> | string;
 
   // Timestamps
   createdAt?: Date;
@@ -103,9 +104,9 @@ export interface LookupOrCreateOptions {
  * Place hierarchy structure
  */
 export interface PlaceHierarchy {
-  ancestors: any[]; // Place[] - avoiding circular ref
-  current: any; // Place
-  descendants: any[]; // Place[]
+  ancestors: Place[];
+  current: Place;
+  descendants: Place[];
 }
 
 /**
@@ -174,7 +175,7 @@ export interface ResolveTrackPlacesOptions extends DiscoverNearbyOptions {
  */
 export interface TrackPlacesResult {
   /** De-duplicated Place rows touched during resolution. */
-  places: any[]; // Place[] - avoiding circular ref
+  places: Place[];
   /** Number of provider requests issued. */
   requestCount: number;
   /** Number of bucketed points that reused existing Place rows. */
