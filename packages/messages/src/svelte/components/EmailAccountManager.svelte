@@ -5,6 +5,7 @@
  * Reusable component for adding, editing, testing, and removing
  * email accounts. Works with any backend via callback props.
  */
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
@@ -188,20 +189,20 @@ function getProviderLabel(type: string): string {
       <div class="form-row">
         <div class="form-field" style="flex: 1;">
           <label class="form-label" for="ea-name">{t(M['messages.email_account_manager.account_name'])}</label>
-          <input id="ea-name" class="form-input" type="text" bind:value={maName} placeholder={t(M['messages.email_account_manager.account_name_placeholder'])} />
+          <Input id="ea-name" class="form-input" type="text" bind:value={maName} placeholder={t(M['messages.email_account_manager.account_name_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 1;">
           <label class="form-label" for="ea-email">{t(M['messages.email_account_manager.email_address'])}</label>
-          <input id="ea-email" class="form-input" type="email" bind:value={maEmail} placeholder={t(M['messages.email_account_manager.email_placeholder'])} />
+          <Input id="ea-email" class="form-input" type="email" bind:value={maEmail} placeholder={t(M['messages.email_account_manager.email_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 0 0 130px;">
           <label class="form-label" for="ea-provider">Provider</label>
-          <select id="ea-provider" class="form-select" bind:value={maProviderType}>
+          <Select id="ea-provider" class="form-select" bind:value={maProviderType}>
             <option value="imap">IMAP</option>
             <option value="gmail">Gmail</option>
             <option value="outlook">Outlook</option>
             <option value="exchange">Exchange</option>
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -209,19 +210,19 @@ function getProviderLabel(type: string): string {
       <div class="form-row">
         <div class="form-field" style="flex: 2;">
           <label class="form-label" for="ea-imap-host">Host</label>
-          <input id="ea-imap-host" class="form-input" type="text" bind:value={maImapHost} placeholder={t(M['messages.email_account_manager.imap_host_placeholder'])} />
+          <Input id="ea-imap-host" class="form-input" type="text" bind:value={maImapHost} placeholder={t(M['messages.email_account_manager.imap_host_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 0 0 90px;">
           <label class="form-label" for="ea-imap-port">Port</label>
-          <input id="ea-imap-port" class="form-input" type="number" bind:value={maImapPort} />
+          <Input id="ea-imap-port" class="form-input" type="number" bind:value={maImapPort} />
         </div>
         <div class="form-field" style="flex: 0 0 120px;">
           <label class="form-label" for="ea-imap-sec">Security</label>
-          <select id="ea-imap-sec" class="form-select" bind:value={maImapSecurity}>
+          <Select id="ea-imap-sec" class="form-select" bind:value={maImapSecurity}>
             <option value="ssl">SSL/TLS</option>
             <option value="starttls">STARTTLS</option>
             <option value="none">None</option>
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -229,19 +230,19 @@ function getProviderLabel(type: string): string {
       <div class="form-row">
         <div class="form-field" style="flex: 2;">
           <label class="form-label" for="ea-smtp-host">Host</label>
-          <input id="ea-smtp-host" class="form-input" type="text" bind:value={maSmtpHost} placeholder={t(M['messages.email_account_manager.smtp_host_placeholder'])} />
+          <Input id="ea-smtp-host" class="form-input" type="text" bind:value={maSmtpHost} placeholder={t(M['messages.email_account_manager.smtp_host_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 0 0 90px;">
           <label class="form-label" for="ea-smtp-port">Port</label>
-          <input id="ea-smtp-port" class="form-input" type="number" bind:value={maSmtpPort} />
+          <Input id="ea-smtp-port" class="form-input" type="number" bind:value={maSmtpPort} />
         </div>
         <div class="form-field" style="flex: 0 0 120px;">
           <label class="form-label" for="ea-smtp-sec">Security</label>
-          <select id="ea-smtp-sec" class="form-select" bind:value={maSmtpSecurity}>
+          <Select id="ea-smtp-sec" class="form-select" bind:value={maSmtpSecurity}>
             <option value="ssl">SSL/TLS</option>
             <option value="starttls">STARTTLS</option>
             <option value="none">None</option>
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -249,14 +250,15 @@ function getProviderLabel(type: string): string {
       <div class="form-row">
         <div class="form-field" style="flex: 1;">
           <label class="form-label" for="ea-username">Username</label>
-          <input id="ea-username" class="form-input" type="text" bind:value={maUsername} placeholder={t(M['messages.email_account_manager.username_placeholder'])} />
+          <Input id="ea-username" class="form-input" type="text" bind:value={maUsername} placeholder={t(M['messages.email_account_manager.username_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 1;">
           <label class="form-label" for="ea-password">Password</label>
-          <input id="ea-password" class="form-input" type="password" bind:value={maPassword} placeholder={editingId ? '(unchanged)' : ''} />
+          <Input id="ea-password" class="form-input" type="password" bind:value={maPassword} placeholder={editingId ? '(unchanged)' : ''} />
         </div>
         <div class="form-field checkbox-field">
           <label class="form-label checkbox-label">
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input type="checkbox" bind:checked={maIsActive} />
             Active
           </label>
@@ -432,29 +434,14 @@ function getProviderLabel(type: string): string {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .form-input,
-  .form-select {
-    padding: 0.5rem 0.625rem;
-    border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    font-family: inherit;
-    transition: border-color 150ms ease;
-  }
-
-  .form-input:focus,
-  .form-select:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .form-input::placeholder {
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    opacity: 0.5;
-  }
-
+  /*
+   * The account-form fields now render through smrt-ui's <Input> / <Select>,
+   * which bring their own tokenised border / background / focus / placeholder
+   * styling and honor prefers-reduced-motion themselves. The old `.form-input` /
+   * `.form-select` rules (and their :focus / ::placeholder overrides) are dropped
+   * as dead — they targeted the raw elements that now live inside the primitive
+   * child scopes (issue #1589).
+   */
   .checkbox-field {
     justify-content: flex-end;
     padding-bottom: 0.5rem;

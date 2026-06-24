@@ -10,6 +10,7 @@ export interface Props {
 
 <script lang="ts">
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
+  import { Textarea } from '@happyvertical/smrt-ui/forms';
   import { Button } from '@happyvertical/smrt-ui/ui';
   import { M } from '../i18n.js';
   import RecipientInput from './RecipientInput.svelte';
@@ -68,12 +69,11 @@ export interface Props {
     onchange={(r) => { to = r; }}
   />
 
-  <textarea
-    class="forward-body"
+  <Textarea
     bind:value={body}
     placeholder={t(M['messages.forward_form.note_placeholder'])}
     rows={3}
-  ></textarea>
+  />
 
   <div class="forwarded-original">
     <pre class="forwarded-text">{forwardedBlock}</pre>
@@ -115,22 +115,6 @@ export interface Props {
     font-size: var(--smrt-typography-title-small-size, 13px);
     color: var(--smrt-color-on-surface-variant, #49454f);
     font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-
-  .forward-body {
-    width: 100%;
-    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
-    border-radius: var(--smrt-radius-sm, 8px);
-    padding: var(--smrt-spacing-2, 8px);
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-body-medium-size, 14px);
-    resize: vertical;
-    box-sizing: border-box;
-  }
-
-  .forward-body:focus {
-    outline: 2px solid var(--smrt-color-primary, #6750a4);
-    outline-offset: -1px;
   }
 
   .forwarded-original {

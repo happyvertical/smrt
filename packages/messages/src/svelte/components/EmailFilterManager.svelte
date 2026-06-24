@@ -5,6 +5,7 @@
  * Reusable component for managing email allow/block lists.
  * Works with any backend via callback props.
  */
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
@@ -215,15 +216,15 @@ function getPatternPlaceholder(type: string): string {
           <div class="form-row">
             <div class="form-field" style="flex: 0 0 120px;">
               <label class="form-label" for="wl-type">Type</label>
-              <select id="wl-type" class="form-select" bind:value={wlType}>
+              <Select id="wl-type" class="form-select" bind:value={wlType}>
                 <option value="email">Email</option>
                 <option value="domain">Domain</option>
                 <option value="regex">Regex</option>
-              </select>
+              </Select>
             </div>
             <div class="form-field" style="flex: 1;">
               <label class="form-label" for="wl-pattern">Pattern</label>
-              <input
+              <Input
                 id="wl-pattern"
                 class="form-input"
                 type="text"
@@ -235,7 +236,7 @@ function getPatternPlaceholder(type: string): string {
           <div class="form-row">
             <div class="form-field" style="flex: 1;">
               <label class="form-label" for="wl-category">Category <span class="optional">(optional)</span></label>
-              <input
+              <Input
                 id="wl-category"
                 class="form-input"
                 type="text"
@@ -245,7 +246,7 @@ function getPatternPlaceholder(type: string): string {
             </div>
             <div class="form-field" style="flex: 2;">
               <label class="form-label" for="wl-desc">Description</label>
-              <input
+              <Input
                 id="wl-desc"
                 class="form-input"
                 type="text"
@@ -319,15 +320,15 @@ function getPatternPlaceholder(type: string): string {
           <div class="form-row">
             <div class="form-field" style="flex: 0 0 120px;">
               <label class="form-label" for="bl-type">Type</label>
-              <select id="bl-type" class="form-select" bind:value={blType}>
+              <Select id="bl-type" class="form-select" bind:value={blType}>
                 <option value="email">Email</option>
                 <option value="domain">Domain</option>
                 <option value="regex">Regex</option>
-              </select>
+              </Select>
             </div>
             <div class="form-field" style="flex: 1;">
               <label class="form-label" for="bl-pattern">Pattern</label>
-              <input
+              <Input
                 id="bl-pattern"
                 class="form-input"
                 type="text"
@@ -339,7 +340,7 @@ function getPatternPlaceholder(type: string): string {
           <div class="form-row">
             <div class="form-field" style="flex: 1;">
               <label class="form-label" for="bl-reason">Reason</label>
-              <input
+              <Input
                 id="bl-reason"
                 class="form-input"
                 type="text"
@@ -349,6 +350,7 @@ function getPatternPlaceholder(type: string): string {
             </div>
             <div class="form-field checkbox-field">
               <label class="form-label checkbox-label">
+                <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
                 <input type="checkbox" bind:checked={blAutoArchive} />
                 Auto-archive
               </label>
@@ -502,29 +504,14 @@ function getPatternPlaceholder(type: string): string {
     opacity: 0.7;
   }
 
-  .form-input,
-  .form-select {
-    padding: 0.5rem 0.625rem;
-    border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    font-family: inherit;
-    transition: border-color 150ms ease;
-  }
-
-  .form-input:focus,
-  .form-select:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .form-input::placeholder {
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    opacity: 0.5;
-  }
-
+  /*
+   * The form fields now render through smrt-ui's <Input> / <Select>, which bring
+   * their own tokenised border / background / focus / placeholder styling and
+   * honor prefers-reduced-motion themselves. The old `.form-input` / `.form-select`
+   * rules (and their :focus / ::placeholder overrides) are dropped as dead — they
+   * targeted the raw elements that now live inside the primitive child scopes
+   * (issue #1589).
+   */
   .checkbox-field {
     justify-content: flex-end;
     padding-bottom: 0.5rem;

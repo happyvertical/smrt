@@ -10,6 +10,7 @@ export interface Props {
 </script>
 
 <script lang="ts">
+  import { Input } from '@happyvertical/smrt-ui/forms';
   import { Button } from '@happyvertical/smrt-ui/ui';
 
   let {
@@ -71,10 +72,10 @@ export interface Props {
         >×</Button>
       </span>
     {/each}
-    <input
+    <Input
       id={inputId}
       type="text"
-      class="input"
+      class="recipient-field"
       bind:value={inputValue}
       {placeholder}
       onkeydown={handleKeydown}
@@ -145,15 +146,28 @@ export interface Props {
     opacity: 1;
   }
 
-  .input {
+  /*
+   * The chip-bar field now renders through smrt-ui's <Input>. This is a naked,
+   * borderless inline field that sits among the recipient chips, so
+   * `.chips-container :global(.recipient-field)` pierces the Input child scope to
+   * strip the primitive's border / background / block padding / focus box-shadow
+   * and restore the flush inline look (issue #1589).
+   */
+  .chips-container :global(.recipient-field) {
     flex: 1;
     min-width: 120px;
     border: none;
     outline: none;
+    box-shadow: none;
     font-family: var(--smrt-font-family, system-ui);
     font-size: var(--smrt-typography-body-medium-size, 14px);
     padding: var(--smrt-spacing-1, 4px) 0;
     background: transparent;
     color: var(--smrt-color-on-surface, #1c1b1f);
+  }
+
+  .chips-container :global(.recipient-field):focus {
+    border: none;
+    box-shadow: none;
   }
 </style>

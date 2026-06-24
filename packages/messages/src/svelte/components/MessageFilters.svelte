@@ -2,6 +2,7 @@
 /**
  * MessageFilters - Filter/sort controls bar
  */
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.messages.js';
@@ -78,7 +79,7 @@ const _hasActiveFilters = $derived(
 
 <div class="message-filters" role="search" aria-label={t(M['messages.message_filters.filters_label'])}>
   <div class="search-row">
-    <input
+    <Input
       type="search"
       class="search-input"
       placeholder={t(M['messages.message_filters.search_placeholder'])}
@@ -90,37 +91,37 @@ const _hasActiveFilters = $derived(
   </div>
 
   <div class="filter-row">
-    <select
+    <Select
       class="filter-select"
       value={filters.type || ''}
-      onchange={(e) => updateFilter('type', (e.target as HTMLSelectElement).value)}
+      onchange={(e) => updateFilter('type', (e.currentTarget as HTMLSelectElement).value)}
       aria-label={t(M['messages.message_filters.filter_by_type'])}
     >
       <option value="">{t(M['messages.message_filters.all_types'])}</option>
       {#each availableTypes as type}
         <option value={type}>{type === 'email' ? 'Email' : type === 'tweet' ? 'Tweet' : type === 'slack' ? 'Slack' : type}</option>
       {/each}
-    </select>
+    </Select>
 
     {#if accounts.length > 0}
-      <select
+      <Select
         class="filter-select"
         value={filters.accountId || ''}
-        onchange={(e) => updateFilter('accountId', (e.target as HTMLSelectElement).value)}
+        onchange={(e) => updateFilter('accountId', (e.currentTarget as HTMLSelectElement).value)}
         aria-label={t(M['messages.message_filters.filter_by_account'])}
       >
         <option value="">{t(M['messages.message_filters.all_accounts'])}</option>
         {#each accounts as account}
           <option value={account.id}>{account.name}</option>
         {/each}
-      </select>
+      </Select>
     {/if}
 
-    <select
+    <Select
       class="filter-select"
       value={filters.isRead === undefined ? '' : filters.isRead ? 'read' : 'unread'}
       onchange={(e) => {
-        const val = (e.target as HTMLSelectElement).value;
+        const val = (e.currentTarget as HTMLSelectElement).value;
         updateFilter('isRead', val === '' ? undefined : val === 'read');
       }}
       aria-label={t(M['messages.message_filters.filter_by_read_status'])}
@@ -128,13 +129,14 @@ const _hasActiveFilters = $derived(
       <option value="">Read & unread</option>
       <option value="unread">{t(M['messages.message_filters.unread_only'])}</option>
       <option value="read">{t(M['messages.message_filters.read_only'])}</option>
-    </select>
+    </Select>
 
     <label class="filter-checkbox">
+      <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input
         type="checkbox"
         checked={filters.isFlagged === true}
-        onchange={(e) => updateFilter('isFlagged', (e.target as HTMLInputElement).checked ? true : undefined)}
+        onchange={(e) => updateFilter('isFlagged', (e.currentTarget as HTMLInputElement).checked ? true : undefined)}
       />
       Flagged
     </label>
@@ -163,19 +165,14 @@ const _hasActiveFilters = $derived(
     gap: 0.5rem;
   }
 
-  .search-input {
+  /*
+   * The search field now renders through smrt-ui's <Input>. The primitive owns
+   * border / background / focus; `.search-row :global(.search-input)` only
+   * re-asserts `flex: 1` so it shares the row with the Search button, piercing
+   * the Input child scope (issue #1589).
+   */
+  .search-row :global(.search-input) {
     flex: 1;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline, #72787e);
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-  }
-
-  .search-input:focus {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -1px;
   }
 
   /*
@@ -197,13 +194,16 @@ const _hasActiveFilters = $derived(
     gap: 0.5rem;
   }
 
-  .filter-select {
-    padding: 0.375rem 0.5rem;
-    border: 1px solid var(--smrt-color-outline, #72787e);
-    border-radius: var(--smrt-radius-small, 0.25rem);
+  /*
+   * The filter dropdowns now render through smrt-ui's <Select>. The primitive
+   * owns border / background / focus / chevron; `.filter-row :global(.filter-select)`
+   * re-asserts the compact filter-bar sizing (auto width, tighter padding, small
+   * font) by piercing the Select child scope (issue #1589).
+   */
+  .filter-row :global(.filter-select) {
+    width: auto;
+    padding: 0.375rem 2rem 0.375rem 0.5rem;
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.33 sans-serif);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
   .filter-checkbox {
