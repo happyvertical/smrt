@@ -4,12 +4,12 @@
  * Displays avatar, message bubble, reactions, reply preview, and tool call data.
  */
 
+import { MessageBubble } from '@happyvertical/smrt-ui/chat';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
-import MessageBubble from '../shared/MessageBubble.svelte';
 import ReactionPicker from '../shared/ReactionPicker.svelte';
 
 const { t } = useI18n();
@@ -111,7 +111,7 @@ function handleEscape(event: KeyboardEvent) {
 
 {#if message.messageType === 'system' || message.messageType === 'action'}
   <div class="message-item message-item--system">
-    <MessageBubble content={message.content} isOwn={false} variant="system" />
+    <MessageBubble content={message.content} own={false} variant="system" />
   </div>
 {:else}
   <div
@@ -147,7 +147,7 @@ function handleEscape(event: KeyboardEvent) {
 
       <MessageBubble
         content={message.content}
-        {isOwn}
+        own={isOwn}
         variant={bubbleVariant}
       />
 
@@ -533,6 +533,10 @@ function handleEscape(event: KeyboardEvent) {
     right: var(--smrt-spacing-4, 1rem);
     z-index: 10;
     transform: translateY(-100%);
+    /* The picker primitive supplies its own surface + radius; the popover
+       wrapper lifts it off the conversation with matching elevation. */
+    border-radius: var(--smrt-radius-large, 0.75rem);
+    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
   }
 
   .message-item--own .message-item__picker-popover {

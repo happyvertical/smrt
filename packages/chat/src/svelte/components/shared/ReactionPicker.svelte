@@ -1,10 +1,15 @@
 <script lang="ts">
 /**
- * ReactionPicker - Emoji reaction selector
- * Compact popup grid of common emojis.
+ * ReactionPicker — chat's emoji reaction selector.
+ *
+ * A thin adapter over the canonical `@happyvertical/smrt-ui/chat`
+ * `ReactionPicker` (no duplicated markup/styles): it supplies chat's emoji
+ * palette and routes the group + per-emoji labels through chat's i18n catalog,
+ * and preserves the package's `onreact` / `isOpen` vocabulary + the
+ * `ModuleUIRegistry` registration.
  */
+import { ReactionPicker as UIReactionPicker } from '@happyvertical/smrt-ui/chat';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 
 const { t } = useI18n();
@@ -36,55 +41,12 @@ const emojis = [
   '\u{274C}',
   '\u{1F4AF}',
 ];
-
-function handleSelect(emoji: string) {
-  onreact(emoji);
-}
 </script>
 
-{#if isOpen}
-  <div class="reaction-picker" role="group" aria-label={t(M['chat.reaction_picker.reactions'])}>
-    {#each emojis as emoji}
-      <Button
-        variant="ghost"
-        size="sm"
-        class="reaction-picker__item"
-        type="button"
-        onclick={() => handleSelect(emoji)}
-        aria-label={t(M['chat.reaction_picker.react_with'], { emoji })}
-      >
-        {emoji}
-      </Button>
-    {/each}
-  </div>
-{/if}
-
-<style>
-  .reaction-picker {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: var(--smrt-spacing-1, 0.25rem);
-    padding: var(--smrt-spacing-2, 0.375rem);
-    background: var(--smrt-color-surface, #ffffff);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
-    width: max-content;
-  }
-
-  /* :global() pierces into each Button's rendered <button> (see #1589). */
-  .reaction-picker :global(.reaction-picker__item) {
-    width: 32px;
-    height: 32px;
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    background: transparent;
-    font-size: var(--smrt-typography-body-large-size, 1.125rem);
-    line-height: 1;
-    padding: 0;
-    transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .reaction-picker :global(.reaction-picker__item:hover) {
-    background: var(--smrt-color-surface-container-high, #e1e3e8);
-  }
-</style>
+<UIReactionPicker
+  {emojis}
+  {isOpen}
+  label={t(M['chat.reaction_picker.reactions'])}
+  emojiLabel={(emoji) => t(M['chat.reaction_picker.react_with'], { emoji })}
+  onpick={onreact}
+/>
