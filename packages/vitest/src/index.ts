@@ -416,6 +416,13 @@ export function getWorkspaceViteAliases(
         '@happyvertical/smrt-ui/feedback',
         join(packageRoot, 'src/components/feedback/index.ts'),
       );
+      // Provider-free base form primitives relocated here from smrt-svelte for
+      // the #1589 deferred-forms phase. Domain packages adopt them from source.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/forms',
+        join(packageRoot, 'src/components/forms/index.ts'),
+      );
       addAliasIfPresent(
         aliases,
         '@happyvertical/smrt-ui/layout',
