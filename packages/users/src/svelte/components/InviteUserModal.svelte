@@ -1,6 +1,7 @@
 <script lang="ts">
 import { RoleSelector } from '@happyvertical/smrt-ui';
 import { Modal } from '@happyvertical/smrt-ui/feedback';
+import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Role, Tenant } from '@happyvertical/smrt-users';
@@ -45,8 +46,7 @@ $effect(() => {
   }
 });
 
-function handleSubmit(e: Event) {
-  e.preventDefault();
+function handleSubmit() {
   error = '';
 
   if (!email) {
@@ -85,45 +85,48 @@ function handleClose() {
   closeOnBackdrop={!loading}
   closeOnEscape={!loading}
 >
-  <form id={formId} onsubmit={handleSubmit}>
-    {#if error}
-      <div class="error">{error}</div>
-    {/if}
+  <div class="invite-form-shell">
+    <Form id={formId} class="invite-form" onsubmit={handleSubmit}>
+      {#if error}
+        <div class="error">{error}</div>
+      {/if}
 
-    <div class="field">
-      <label for="invite-email">{t(M['users.invite_user_modal.email_address'])}</label>
-      <input
-        id="invite-email"
-        type="email"
-        bind:value={email}
-        placeholder={t(M['users.invite_user_modal.email_placeholder'])}
-        disabled={loading}
-        required
-      />
-    </div>
-
-    <div class="field">
-      <label for="invite-role">Role</label>
-      <RoleSelector
-        {roles}
-        value={roleId}
-        onchange={(id: string) => (roleId = id)}
-        disabled={loading}
-        showDescription
-      />
-    </div>
-
-    <div class="checkbox-field">
-      <input id="send-email" type="checkbox" bind:checked={sendEmail} disabled={loading} />
-      <label for="send-email">{t(M['users.invite_user_modal.send_invitation_email'])}</label>
-    </div>
-
-    {#if !sendEmail}
-      <div class="hint">
-        {t(M['users.invite_user_modal.pending_hint'])}
+      <div class="field">
+        <label for="invite-email">{t(M['users.invite_user_modal.email_address'])}</label>
+        <Input
+          id="invite-email"
+          type="email"
+          bind:value={email}
+          placeholder={t(M['users.invite_user_modal.email_placeholder'])}
+          disabled={loading}
+          required
+        />
       </div>
-    {/if}
-  </form>
+
+      <div class="field">
+        <label for="invite-role">Role</label>
+        <RoleSelector
+          {roles}
+          value={roleId}
+          onchange={(id: string) => (roleId = id)}
+          disabled={loading}
+          showDescription
+        />
+      </div>
+
+      <div class="checkbox-field">
+        <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+        <input id="send-email" type="checkbox" bind:checked={sendEmail} disabled={loading} />
+        <label for="send-email">{t(M['users.invite_user_modal.send_invitation_email'])}</label>
+      </div>
+
+      {#if !sendEmail}
+        <div class="hint">
+          {t(M['users.invite_user_modal.pending_hint'])}
+        </div>
+      {/if}
+    </Form>
+  </div>
 
   {#snippet footer()}
     <Button variant="secondary" type="button" onclick={handleClose} disabled={loading}>
@@ -143,7 +146,7 @@ function handleClose() {
   /* The dialog chrome (backdrop, surface, header, footer bar, close button) is
      supplied by the smrt-ui Modal. Only the form-content + footer-button styles
      live here. */
-  form {
+  .invite-form-shell :global(.invite-form) {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-md, 1rem);
@@ -169,25 +172,6 @@ function handleClose() {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  input[type='email'] {
-    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 0.75rem);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    transition: border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  input[type='email']:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
-  }
-
-  input[type='email']:disabled {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    cursor: not-allowed;
-  }
-
   .checkbox-field {
     display: flex;
     align-items: center;
@@ -210,11 +194,5 @@ function handleClose() {
     padding: var(--smrt-spacing-sm, 0.5rem);
     background: var(--smrt-color-surface-container-low, #f9fafb);
     border-radius: var(--smrt-radius-small, 0.25rem);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    input[type='email'] {
-      transition: none;
-    }
   }
 </style>
