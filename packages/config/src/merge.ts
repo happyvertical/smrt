@@ -21,7 +21,7 @@ globalThis.__smrtRuntimeConfig ??= {};
  * @param source - Override object (higher priority).
  * @returns A new merged object.
  */
-function deepMerge<T extends Record<string, any>>(
+function deepMerge<T extends Record<string, unknown>>(
   target: T,
   source: Partial<T>,
 ): T {
@@ -48,8 +48,8 @@ function deepMerge<T extends Record<string, any>>(
       !Array.isArray(targetValue)
     ) {
       result[key] = deepMerge(
-        targetValue as Record<string, any>,
-        sourceValue as Record<string, any>,
+        targetValue as Record<string, unknown>,
+        sourceValue as Record<string, unknown>,
       );
     } else if (sourceValue !== undefined && sourceValue !== null) {
       result[key] = sourceValue;
