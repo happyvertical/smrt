@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentContributionTypeData } from '../../mock-smrt-client';
@@ -138,103 +139,128 @@ function handleSubmit() {
       {/each}
     </div>
 
-    <form
-      class="editor"
-      onsubmit={(event) => {
-        event.preventDefault();
-        handleSubmit();
-      }}
-    >
-      <label>
-        Key
-        <input type="text" bind:value={draft.key} required />
-      </label>
-      <label>
-        Label
-        <input type="text" bind:value={draft.label} required />
-      </label>
-
-      <div class="checkbox-grid">
-        <label><input type="checkbox" bind:checked={draft.enabled} /> Enabled</label>
-        <label><input type="checkbox" bind:checked={draft.allowText} /> {t(M['content.contribution_type_manager.allow_text'])}</label>
-        <label><input type="checkbox" bind:checked={draft.allowFiles} /> {t(M['content.contribution_type_manager.allow_files'])}</label>
-        <label><input type="checkbox" bind:checked={draft.allowEmptyText} /> {t(M['content.contribution_type_manager.allow_empty_text'])}</label>
-      </div>
-
-      <div class="checkbox-grid">
+    <div class="editor-shell">
+      <Form
+        class="editor"
+        onsubmit={(event) => {
+          event.preventDefault();
+          handleSubmit();
+        }}
+      >
         <label>
-          <input
-            type="checkbox"
-            checked={draft.allowedChannels.includes('web')}
-            onchange={() => toggleChannel('web')}
-          />
-          Web
+          Key
+          <Input type="text" bind:value={draft.key} required />
         </label>
         <label>
-          <input
-            type="checkbox"
-            checked={draft.allowedChannels.includes('email')}
-            onchange={() => toggleChannel('email')}
-          />
-          Email
+          Label
+          <Input type="text" bind:value={draft.label} required />
         </label>
-      </div>
 
-      <label>
-        {t(M['content.contribution_type_manager.promotion_content_type'])}
-        <input type="text" bind:value={draft.promotion.targetContentType} required />
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.promotion_variant'])}
-        <input type="text" bind:value={draft.promotion.targetContentVariant} />
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.promotion_status'])}
-        <select bind:value={draft.promotion.targetContentStatus}>
-          <option value="draft">draft</option>
-          <option value="review">review</option>
-        </select>
-      </label>
+        <div class="checkbox-grid">
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={draft.enabled} /> Enabled
+          </label>
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={draft.allowText} /> {t(M['content.contribution_type_manager.allow_text'])}
+          </label>
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={draft.allowFiles} /> {t(M['content.contribution_type_manager.allow_files'])}
+          </label>
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={draft.allowEmptyText} /> {t(M['content.contribution_type_manager.allow_empty_text'])}
+          </label>
+        </div>
 
-      <div class="checkbox-grid">
-        <label><input type="checkbox" bind:checked={draft.promotion.autoPromoteTrusted} /> {t(M['content.contribution_type_manager.auto_promote_trusted'])}</label>
-        <label><input type="checkbox" bind:checked={draft.promotion.createAssets} /> {t(M['content.contribution_type_manager.create_assets_on_promotion'])}</label>
-        <label><input type="checkbox" bind:checked={draft.intakeRules.trustedOnly} /> {t(M['content.contribution_type_manager.trusted_contributors_only'])}</label>
-      </div>
+        <div class="checkbox-grid">
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input
+              type="checkbox"
+              checked={draft.allowedChannels.includes('web')}
+              onchange={() => toggleChannel('web')}
+            />
+            Web
+          </label>
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input
+              type="checkbox"
+              checked={draft.allowedChannels.includes('email')}
+              onchange={() => toggleChannel('email')}
+            />
+            Email
+          </label>
+        </div>
 
-      <label>
-        {t(M['content.contribution_type_manager.max_files'])}
-        <input type="number" min="0" bind:value={draft.intakeRules.maxFiles} />
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.max_total_bytes'])}
-        <input type="number" min="0" bind:value={draft.intakeRules.maxTotalBytes} />
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.allowed_mime_patterns'])}
-        <input type="text" bind:value={draft.intakeRules.allowedMimePatterns} placeholder={t(M['content.contribution_type_manager.allowed_mime_patterns_placeholder'])} />
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.blocked_mime_patterns'])}
-        <input type="text" bind:value={draft.intakeRules.blockedMimePatterns} />
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.quarantine_mime_patterns'])}
-        <input type="text" bind:value={draft.intakeRules.quarantineMimePatterns} />
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.blocked_text_patterns'])}
-        <textarea bind:value={draft.intakeRules.blockedTextPatterns} rows="2"></textarea>
-      </label>
-      <label>
-        {t(M['content.contribution_type_manager.quarantine_text_patterns'])}
-        <textarea bind:value={draft.intakeRules.quarantineTextPatterns} rows="2"></textarea>
-      </label>
+        <label>
+          {t(M['content.contribution_type_manager.promotion_content_type'])}
+          <Input type="text" bind:value={draft.promotion.targetContentType} required />
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.promotion_variant'])}
+          <Input type="text" bind:value={draft.promotion.targetContentVariant} />
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.promotion_status'])}
+          <Select bind:value={draft.promotion.targetContentStatus}>
+            <option value="draft">draft</option>
+            <option value="review">review</option>
+          </Select>
+        </label>
 
-      <div class="actions">
-        <Button variant="primary" type="submit">{t(M['content.contribution_type_manager.save_type'])}</Button>
-      </div>
-    </form>
+        <div class="checkbox-grid">
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={draft.promotion.autoPromoteTrusted} /> {t(M['content.contribution_type_manager.auto_promote_trusted'])}
+          </label>
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={draft.promotion.createAssets} /> {t(M['content.contribution_type_manager.create_assets_on_promotion'])}
+          </label>
+          <label>
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={draft.intakeRules.trustedOnly} /> {t(M['content.contribution_type_manager.trusted_contributors_only'])}
+          </label>
+        </div>
+
+        <label>
+          {t(M['content.contribution_type_manager.max_files'])}
+          <Input type="number" min="0" bind:value={draft.intakeRules.maxFiles} />
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.max_total_bytes'])}
+          <Input type="number" min="0" bind:value={draft.intakeRules.maxTotalBytes} />
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.allowed_mime_patterns'])}
+          <Input type="text" bind:value={draft.intakeRules.allowedMimePatterns} placeholder={t(M['content.contribution_type_manager.allowed_mime_patterns_placeholder'])} />
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.blocked_mime_patterns'])}
+          <Input type="text" bind:value={draft.intakeRules.blockedMimePatterns} />
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.quarantine_mime_patterns'])}
+          <Input type="text" bind:value={draft.intakeRules.quarantineMimePatterns} />
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.blocked_text_patterns'])}
+          <Textarea bind:value={draft.intakeRules.blockedTextPatterns} rows={2}></Textarea>
+        </label>
+        <label>
+          {t(M['content.contribution_type_manager.quarantine_text_patterns'])}
+          <Textarea bind:value={draft.intakeRules.quarantineTextPatterns} rows={2}></Textarea>
+        </label>
+
+        <div class="actions">
+          <Button variant="primary" type="submit">{t(M['content.contribution_type_manager.save_type'])}</Button>
+        </div>
+      </Form>
+    </div>
   </div>
 </section>
 
@@ -242,7 +268,7 @@ function handleSubmit() {
   .manager,
   .layout,
   .list,
-  .editor {
+  .editor-shell :global(.editor) {
     display: grid;
     gap: 1rem;
   }
@@ -252,7 +278,7 @@ function handleSubmit() {
   }
 
   .card,
-  .editor {
+  .editor-shell :global(.editor) {
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.75rem;
     padding: 0.9rem;
@@ -269,7 +295,7 @@ function handleSubmit() {
     flex-wrap: wrap;
   }
 
-  .editor label {
+  .editor-shell label {
     display: grid;
     gap: 0.35rem;
   }

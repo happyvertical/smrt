@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
@@ -82,72 +83,76 @@ function handleSubmit() {
 }
 </script>
 
-<form class="governance-editor" onsubmit={(event) => {
-  event.preventDefault();
-  handleSubmit();
-}}>
-  <label>
-    Key
-    <input type="text" bind:value={draft.key} required />
-  </label>
-  <label>
-    Label
-    <input type="text" bind:value={draft.label} />
-  </label>
-  <label>
-    Description
-    <textarea rows="2" bind:value={draft.description}></textarea>
-  </label>
-  <label class="checkbox">
-    <input type="checkbox" bind:checked={draft.enabled} />
-    Enabled
-  </label>
+<div class="governance-editor-shell">
+  <Form class="governance-editor" onsubmit={(event) => {
+    event.preventDefault();
+    handleSubmit();
+  }}>
+    <label>
+      Key
+      <Input type="text" bind:value={draft.key} required />
+    </label>
+    <label>
+      Label
+      <Input type="text" bind:value={draft.label} />
+    </label>
+    <label>
+      Description
+      <Textarea rows={2} bind:value={draft.description}></Textarea>
+    </label>
+    <label class="checkbox">
+      <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+      <input type="checkbox" bind:checked={draft.enabled} />
+      Enabled
+    </label>
 
-  <div class="requirements">
-    <div class="requirements__header">
-      <strong>Requirements</strong>
-      <Button variant="secondary" type="button" onclick={addRequirement}>
-        {t(M['content.governance_profile_editor.add_requirement'])}
-      </Button>
-    </div>
-
-    {#each draft.requirements as requirement, index (`${requirement.policyKey}-${index}`)}
-      <div class="requirement-row">
-        <label>
-          Policy
-          <select bind:value={requirement.policyKey}>
-            {#each policies as policy (policy.key)}
-              <option value={policy.key}>{policy.label}</option>
-            {/each}
-          </select>
-        </label>
-        <label>
-          Label
-          <input type="text" bind:value={requirement.label} />
-        </label>
-        <label class="checkbox">
-          <input type="checkbox" bind:checked={requirement.blocking} />
-          Blocking
-        </label>
-        <Button variant="danger" type="button" onclick={() => removeRequirement(index)}>
-          Remove
+    <div class="requirements">
+      <div class="requirements__header">
+        <strong>Requirements</strong>
+        <Button variant="secondary" type="button" onclick={addRequirement}>
+          {t(M['content.governance_profile_editor.add_requirement'])}
         </Button>
       </div>
-    {/each}
-  </div>
 
-  <div class="actions">
-    <Button variant="primary" type="submit">{t(M['content.governance_profile_editor.save_profile'])}</Button>
-    {#if onCancel}
-      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
-        Cancel
-      </Button>
-    {/if}
-  </div>
-</form>
+      {#each draft.requirements as requirement, index (`${requirement.policyKey}-${index}`)}
+        <div class="requirement-row">
+          <label>
+            Policy
+            <Select bind:value={requirement.policyKey}>
+              {#each policies as policy (policy.key)}
+                <option value={policy.key}>{policy.label}</option>
+              {/each}
+            </Select>
+          </label>
+          <label>
+            Label
+            <Input type="text" bind:value={requirement.label} />
+          </label>
+          <label class="checkbox">
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+            <input type="checkbox" bind:checked={requirement.blocking} />
+            Blocking
+          </label>
+          <Button variant="danger" type="button" onclick={() => removeRequirement(index)}>
+            Remove
+          </Button>
+        </div>
+      {/each}
+    </div>
+
+    <div class="actions">
+      <Button variant="primary" type="submit">{t(M['content.governance_profile_editor.save_profile'])}</Button>
+      {#if onCancel}
+        <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
+          Cancel
+        </Button>
+      {/if}
+    </div>
+  </Form>
+</div>
 
 <style>
-  .governance-editor {
+  .governance-editor-shell :global(.governance-editor) {
     display: grid;
     gap: 0.75rem;
   }
@@ -156,12 +161,6 @@ function handleSubmit() {
     display: grid;
     gap: 0.35rem;
     font-size: var(--smrt-typography-label-large-size, 0.9rem);
-  }
-
-  input,
-  select,
-  textarea {
-    width: 100%;
   }
 
   .checkbox {

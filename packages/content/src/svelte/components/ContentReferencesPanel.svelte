@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
@@ -114,7 +115,7 @@ function removeReference(id: string) {
   {/if}
 
   <div class="reference-input-row">
-    <input
+    <Input
       type="text"
       aria-label={t(M['content.content_references_panel.add_reference_by_id_or_url'])}
       placeholder={t(M['content.content_references_panel.reference_id_or_url_placeholder'])}
@@ -207,7 +208,6 @@ function removeReference(id: string) {
     gap: 0.65rem;
   }
 
-  input,
   .content-references-panel :global(.reference-button) {
     min-height: 2.5rem;
     border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);

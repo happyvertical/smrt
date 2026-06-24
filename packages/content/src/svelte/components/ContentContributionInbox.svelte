@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentContributionData } from '../../mock-smrt-client';
@@ -183,28 +184,29 @@ $effect(() => {
             {/if}
           </dl>
 
-          <form
+          <Form
             method="post"
             action={workflowFormAction}
+            preventDefault={false}
             onsubmit={handleWorkflowSubmit}
           >
             {#if selectedContribution.id}
-              <input type="hidden" name="contributionId" value={selectedContribution.id} />
+              <Input type="hidden" name="contributionId" value={selectedContribution.id} />
             {/if}
 
             <label>
               {t(M['content.contribution_inbox.editorial_note'])}
-              <textarea name="editorNote" bind:value={note} rows="4"></textarea>
+              <Textarea name="editorNote" bind:value={note} rows={4}></Textarea>
             </label>
 
             <div class="actions">
               {#if onApprove || workflowFormAction}
                 <label class="inline">
                   {t(M['content.contribution_inbox.promote_to'])}
-                  <select name="targetStatus" bind:value={targetStatus}>
+                  <Select name="targetStatus" bind:value={targetStatus}>
                     <option value="draft">draft</option>
                     <option value="review">review</option>
-                  </select>
+                  </Select>
                 </label>
                 <Button
                   variant="primary"
@@ -241,7 +243,7 @@ $effect(() => {
                 </Button>
               {/if}
             </div>
-          </form>
+          </Form>
         </article>
       {/if}
     </div>
@@ -253,7 +255,7 @@ $effect(() => {
   .inbox__header,
   .inbox__layout,
   .inbox__detail,
-  .inbox__detail form {
+  .inbox__detail :global(.form) {
     display: grid;
     gap: 1rem;
   }

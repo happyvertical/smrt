@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
+import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
@@ -75,10 +76,12 @@ let {
   onCancel,
 }: Props = $props();
 
-let editForm = $state<HTMLFormElement | null>(null);
-
 export function triggerSave() {
   if (saveDisabled) return;
+  const editForm =
+    typeof document !== 'undefined'
+      ? (document.getElementById('content-edit-form') as HTMLFormElement | null)
+      : null;
   if (editForm?.requestSubmit) {
     editForm.requestSubmit();
     return;
@@ -921,8 +924,7 @@ function removeAsset(id: string) {
 <div class="form-container">
   <div class="editor-grid" class:editor-grid--with-sidebar={showChatSidebar}>
     <!-- LEFT COLUMN (Document Canvas) -->
-    <form
-      bind:this={editForm}
+    <Form
       id="content-edit-form"
       class="editor-main-col"
       onsubmit={handleSubmit}
@@ -947,31 +949,31 @@ function removeAsset(id: string) {
       <div class="editor-toolbar">
         <div class="editor-toolbar-left">
           <div class="mui-field">
-            <select id="type-select" bind:value={formData.type} class="mui-input">
+            <Select id="type-select" bind:value={formData.type} class="mui-input">
               <option value="article">Article</option>
               <option value="document">Document</option>
               <option value="mirror">Mirror</option>
-            </select>
+            </Select>
             <label for="type-select">Type</label>
           </div>
           <div class="mui-field">
-            <select id="state-select" bind:value={formData.state} class="mui-input">
+            <Select id="state-select" bind:value={formData.state} class="mui-input">
               <option value="active">Active</option>
               <option value="highlighted">Highlighted</option>
               <option value="deprecated">Deprecated</option>
-            </select>
+            </Select>
             <label for="state-select">State</label>
           </div>
           <div class="mui-field">
-            <select id="status-select" bind:value={formData.status} class="mui-input">
+            <Select id="status-select" bind:value={formData.status} class="mui-input">
               <option value="draft">Draft</option>
               <option value="published">Published</option>
               <option value="archived">Archived</option>
-            </select>
+            </Select>
             <label for="status-select">Status</label>
           </div>
           <div class="mui-field">
-            <input id="publish-date-input" type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
+            <Input id="publish-date-input" type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
             <label for="publish-date-input">{t(M['content.content_editor.publish_date'])}</label>
           </div>
         </div>
@@ -989,12 +991,12 @@ function removeAsset(id: string) {
         <p class="save-notice">{saveNotice}</p>
       {/if}
 
-      <input 
-         type="text" 
-         class="document-title-input" 
+      <Input
+         type="text"
+         class="document-title-input"
          bind:value={formData.title}
          placeholder={t(M['content.content_editor.document_title_placeholder'])}
-         required 
+         required
       />
 
       {#if showUndoBanner}
@@ -1139,15 +1141,15 @@ function removeAsset(id: string) {
         <div class="editor-drawer-content">
           <label>
             Author:
-            <input type="text" bind:value={formData.author} placeholder={t(M['content.content_editor.author_name_placeholder'])} />
+            <Input type="text" bind:value={formData.author} placeholder={t(M['content.content_editor.author_name_placeholder'])} />
           </label>
           <label>
             Description:
-            <textarea bind:value={formData.description} rows="2" placeholder={t(M['content.content_editor.brief_summary_placeholder'])}></textarea>
+            <Textarea bind:value={formData.description} rows={2} placeholder={t(M['content.content_editor.brief_summary_placeholder'])}></Textarea>
           </label>
           <label>
             {t(M['content.content_editor.tags_comma_separated'])}
-            <input
+            <Input
               type="text"
               value={(formData.tags || []).join(', ')}
               placeholder={t(M['content.content_editor.tags_placeholder'])}
@@ -1205,11 +1207,11 @@ function removeAsset(id: string) {
                            : M['content.content_editor.evidence_item_plural'],
                        ),
                      })}</span>
-                     <select bind:value={bulkEvidenceStatus} disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}>
+                     <Select bind:value={bulkEvidenceStatus} disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}>
                        {#each evidenceStatuses as status}
                          <option value={status}>{status}</option>
                        {/each}
-                     </select>
+                     </Select>
                      <Button
                        variant="ghost"
                        size="sm"
@@ -1273,6 +1275,7 @@ function removeAsset(id: string) {
                              <details class="resource-claim">
                                <summary>
                                  <label class="evidence-select">
+                                   <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
                                    <input
                                      type="checkbox"
                                      checked={isResourceClaimSelected(claim)}
@@ -1356,22 +1359,22 @@ function removeAsset(id: string) {
                  </div>
                {/if}
                <div class="add-reference-row">
-                  <input type="text" bind:value={newReferenceId} placeholder={t(M['content.content_editor.reference_id_or_url_placeholder'])} />
+                  <Input type="text" bind:value={newReferenceId} placeholder={t(M['content.content_editor.reference_id_or_url_placeholder'])} />
                   <Button variant="ghost" type="button" class="add-reference-button" onclick={addReference}>Add</Button>
                </div>
             </div>
 
             <label>
               URL:
-              <input type="url" bind:value={formData.url} />
+              <Input type="url" bind:value={formData.url} />
             </label>
             <label>
               {t(M['content.content_editor.file_key'])}
-              <input type="text" bind:value={formData.fileKey} />
+              <Input type="text" bind:value={formData.fileKey} />
             </label>
           </div>
       </details>
-    </form>
+    </Form>
 
     {#if showChatSidebar}
       <aside class="editor-sidebar-col">
@@ -1430,7 +1433,7 @@ function removeAsset(id: string) {
     }
   }
 
-  .document-title-input {
+  .form-container :global(.document-title-input) {
     width: 100%;
     font-size: var(--smrt-typography-display-medium-size, 2.5rem);
     font-weight: var(--smrt-typography-weight-bold, 800);
@@ -1445,7 +1448,7 @@ function removeAsset(id: string) {
     font-family: inherit;
   }
 
-  .document-title-input::placeholder {
+  .form-container :global(.document-title-input)::placeholder {
     color: var(--smrt-color-outline-variant);
   }
 
@@ -1504,7 +1507,7 @@ function removeAsset(id: string) {
     z-index: 1;
   }
 
-  .mui-input {
+  .mui-field :global(.mui-input) {
     padding: 0.5rem 0.75rem;
     border-radius: 0.375rem;
     border: 1px solid var(--smrt-color-outline-variant);
@@ -1518,13 +1521,12 @@ function removeAsset(id: string) {
     transition: border-color 0.2s;
   }
 
-  .mui-input:focus {
+  .mui-field :global(.mui-input:focus) {
     outline: none;
     border-color: var(--smrt-color-primary);
   }
 
-  .editor-main-col {
-    display: flex;
+  .form-container :global(.editor-main-col) {
     flex-direction: column;
     background: transparent;
   }
@@ -1612,7 +1614,7 @@ function removeAsset(id: string) {
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
   }
 
-  .form-container form {
+  .form-container :global(.editor-main-col) {
     display: block;
     width: 100%;
   }
@@ -1626,34 +1628,6 @@ function removeAsset(id: string) {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
-  .form-container input,
-  .form-container select,
-  .form-container textarea {
-    padding: 0.75rem;
-    border: 1px solid var(--smrt-color-outline);
-    border-radius: 0.5rem;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    transition: border-color 0.2s, box-shadow 0.2s;
-    font-family: inherit;
-    box-sizing: border-box;
-    width: 100%;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .form-container input:focus,
-  .form-container select:focus,
-  .form-container textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
-  }
-
-  .form-container textarea {
-    resize: vertical;
-    min-height: 120px;
-  }
-  
   .references-section {
     display: flex;
     flex-direction: column;
@@ -1775,7 +1749,7 @@ function removeAsset(id: string) {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
-  .evidence-bulk-toolbar select {
+  .evidence-bulk-toolbar :global(.select) {
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.375rem;
     padding: 0.25rem 0.5rem;
@@ -1953,7 +1927,7 @@ function removeAsset(id: string) {
     gap: 0.5rem;
   }
   
-  .add-reference-row input {
+  .add-reference-row :global(.input) {
     flex: 1;
   }
 

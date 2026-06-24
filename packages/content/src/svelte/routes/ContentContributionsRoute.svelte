@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
@@ -402,27 +403,29 @@ async function handleDeleteContributor(data: Record<string, any>) {
                 {t(M['content.contributions.portal_body'])}
               </p>
             </div>
-            <form
-              class="inline-form"
-              onsubmit={(event) => {
-                event.preventDefault();
-                void refreshPortalOnly();
-              }}
-            >
-              <input
-                type="email"
-                bind:value={portalEmail}
-                placeholder={t(M['content.contributions.portal_email_placeholder'])}
-              />
-              <Button
-                variant="ghost"
-                type="submit"
-                class="load-button"
-                disabled={refreshingPortal}
+            <div class="inline-form-shell">
+              <Form
+                class="inline-form"
+                onsubmit={(event) => {
+                  event.preventDefault();
+                  void refreshPortalOnly();
+                }}
               >
-                {refreshingPortal ? 'Loading...' : 'Load'}
-              </Button>
-            </form>
+                <Input
+                  type="email"
+                  bind:value={portalEmail}
+                  placeholder={t(M['content.contributions.portal_email_placeholder'])}
+                />
+                <Button
+                  variant="ghost"
+                  type="submit"
+                  class="load-button"
+                  disabled={refreshingPortal}
+                >
+                  {refreshingPortal ? 'Loading...' : 'Load'}
+                </Button>
+              </Form>
+            </div>
           </div>
 
           <ContentContributionPortal
@@ -707,14 +710,14 @@ async function handleDeleteContributor(data: Record<string, any>) {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .inline-form {
+  .inline-form-shell :global(.inline-form) {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
     align-items: center;
   }
 
-  .inline-form input {
+  .inline-form-shell :global(.input) {
     min-width: min(22rem, 100%);
     padding: 0.7rem 0.85rem;
     border-radius: 0.75rem;
@@ -723,7 +726,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     color: var(--smrt-color-on-surface);
   }
 
-  .inline-form :global(.load-button) {
+  .inline-form-shell :global(.load-button) {
     border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid color-mix(
       in srgb,

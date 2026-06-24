@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.editor.js';
 
@@ -19,33 +20,33 @@ function updateField(key: string, value: unknown) {
 <div class="content-status-fields">
   <label>
     <span>Type</span>
-    <select value={data.type || 'article'} onchange={(event) => updateField('type', event.currentTarget.value)}>
+    <Select value={data.type || 'article'} onchange={(event) => updateField('type', event.currentTarget.value)}>
       <option value="article">Article</option>
       <option value="document">Document</option>
       <option value="mirror">Mirror</option>
       <option value="video-segment">{t(M['content.content_status_fields.video_segment'])}</option>
-    </select>
+    </Select>
   </label>
   <label>
     <span>State</span>
-    <select value={data.state || 'active'} onchange={(event) => updateField('state', event.currentTarget.value)}>
+    <Select value={data.state || 'active'} onchange={(event) => updateField('state', event.currentTarget.value)}>
       <option value="active">Active</option>
       <option value="highlighted">Highlighted</option>
       <option value="deprecated">Deprecated</option>
-    </select>
+    </Select>
   </label>
   <label>
     <span>Status</span>
-    <select value={data.status || 'draft'} onchange={(event) => updateField('status', event.currentTarget.value)}>
+    <Select value={data.status || 'draft'} onchange={(event) => updateField('status', event.currentTarget.value)}>
       <option value="draft">Draft</option>
       <option value="review">Review</option>
       <option value="published">Published</option>
       <option value="archived">Archived</option>
-    </select>
+    </Select>
   </label>
   <label>
     <span>Published</span>
-    <input
+    <Input
       type="datetime-local"
       value={data.publish_date || ''}
       onchange={(event) => updateField('publish_date', event.currentTarget.value)}
@@ -70,16 +71,4 @@ function updateField(key: string, value: unknown) {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
-  select,
-  input {
-    min-height: 2.5rem;
-    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);
-    border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
-    font: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    padding: 0.55rem 0.75rem;
-  }
 </style>

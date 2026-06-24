@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
+import { Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import {
@@ -1026,13 +1027,13 @@ function handleEditorDragEnd() {
 
     <label class="format-select">
       <span>{t(M['content.content_body_editor.save_as'])}</span>
-      <select
+      <Select
         value={currentFormat}
         onchange={(event) => setBodyFormat((event.currentTarget as HTMLSelectElement).value as ContentBodyFormat)}
       >
         <option value="html">HTML</option>
         <option value="markdown">Markdown</option>
-      </select>
+      </Select>
     </label>
   </div>
 
@@ -1247,7 +1248,7 @@ function handleEditorDragEnd() {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .format-select select {
+  .format-select :global(.select) {
     min-height: 2rem;
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.45rem;

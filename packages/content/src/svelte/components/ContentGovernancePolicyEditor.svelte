@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentReviewPolicyData } from '../../mock-smrt-client';
@@ -42,46 +43,49 @@ function handleSubmit() {
 }
 </script>
 
-<form class="governance-editor" onsubmit={(event) => {
-  event.preventDefault();
-  handleSubmit();
-}}>
-  <label>
-    Key
-    <input type="text" bind:value={draft.key} required />
-  </label>
-  <label>
-    Label
-    <input type="text" bind:value={draft.label} />
-  </label>
-  <label>
-    Kind
-    <select bind:value={draft.kind}>
-      <option value="facts">Facts</option>
-      <option value="safety">Safety</option>
-      <option value="custom">Custom</option>
-    </select>
-  </label>
-  <label>
-    Instructions
-    <textarea rows="4" bind:value={draft.instructions}></textarea>
-  </label>
-  <label class="checkbox">
-    <input type="checkbox" bind:checked={draft.enabled} />
-    Enabled
-  </label>
-  <div class="actions">
-    <Button variant="primary" type="submit">{t(M['content.governance_policy_editor.save_policy'])}</Button>
-    {#if onCancel}
-      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
-        Cancel
-      </Button>
-    {/if}
-  </div>
-</form>
+<div class="governance-editor-shell">
+  <Form class="governance-editor" onsubmit={(event) => {
+    event.preventDefault();
+    handleSubmit();
+  }}>
+    <label>
+      Key
+      <Input type="text" bind:value={draft.key} required />
+    </label>
+    <label>
+      Label
+      <Input type="text" bind:value={draft.label} />
+    </label>
+    <label>
+      Kind
+      <Select bind:value={draft.kind}>
+        <option value="facts">Facts</option>
+        <option value="safety">Safety</option>
+        <option value="custom">Custom</option>
+      </Select>
+    </label>
+    <label>
+      Instructions
+      <Textarea rows={4} bind:value={draft.instructions}></Textarea>
+    </label>
+    <label class="checkbox">
+      <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+      <input type="checkbox" bind:checked={draft.enabled} />
+      Enabled
+    </label>
+    <div class="actions">
+      <Button variant="primary" type="submit">{t(M['content.governance_policy_editor.save_policy'])}</Button>
+      {#if onCancel}
+        <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
+          Cancel
+        </Button>
+      {/if}
+    </div>
+  </Form>
+</div>
 
 <style>
-  .governance-editor {
+  .governance-editor-shell :global(.governance-editor) {
     display: grid;
     gap: 0.75rem;
   }
@@ -90,12 +94,6 @@ function handleSubmit() {
     display: grid;
     gap: 0.35rem;
     font-size: var(--smrt-typography-label-large-size, 0.9rem);
-  }
-
-  input,
-  select,
-  textarea {
-    width: 100%;
   }
 
   .checkbox {

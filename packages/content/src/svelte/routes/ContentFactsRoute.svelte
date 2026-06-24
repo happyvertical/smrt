@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
@@ -118,10 +119,10 @@ onMount(() => {
 
   <main class="container page-main">
     <section class="filters-panel">
-      <form class="filters" onsubmit={handleSubmit}>
+      <Form class="filters" onsubmit={handleSubmit}>
         <label class="search-field">
           <span>Search</span>
-          <input
+          <Input
             type="search"
             bind:value={query}
             placeholder={t(M['content.facts.search_placeholder'])}
@@ -129,6 +130,7 @@ onMount(() => {
         </label>
 
         <label class="toggle">
+          <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input
             type="checkbox"
             bind:checked={latestOnly}
@@ -138,6 +140,7 @@ onMount(() => {
         </label>
 
         <label class="toggle">
+          <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input
             type="checkbox"
             bind:checked={includeSuperseded}
@@ -149,7 +152,7 @@ onMount(() => {
         <Button variant="primary" class="refresh-button" type="submit" disabled={refreshing}>
           {refreshing ? 'Refreshing…' : 'Refresh'}
         </Button>
-      </form>
+      </Form>
     </section>
 
     {#if error}
@@ -379,7 +382,7 @@ onMount(() => {
     border-color: color-mix(in srgb, var(--smrt-color-error) 30%, transparent);
   }
 
-  .filters {
+  .filters-panel :global(.filters) {
     display: grid;
     grid-template-columns: minmax(0, 1.8fr) repeat(2, auto) auto;
     gap: 0.75rem;
@@ -397,7 +400,7 @@ onMount(() => {
     color: var(--smrt-color-on-surface-variant);
   }
 
-  .search-field input {
+  .search-field :global(.input) {
     min-height: 2.85rem;
     border-radius: 0.85rem;
     border: 1px solid var(--smrt-color-outline-variant);
@@ -417,7 +420,7 @@ onMount(() => {
     color: var(--smrt-color-on-surface);
   }
 
-  .filters :global(.refresh-button) {
+  .filters-panel :global(.refresh-button) {
     min-height: 2.85rem;
     border-radius: 0.85rem;
     border: none;
@@ -606,7 +609,7 @@ onMount(() => {
       justify-content: flex-start;
     }
 
-    .filters {
+    .filters-panel :global(.filters) {
       grid-template-columns: 1fr;
     }
   }

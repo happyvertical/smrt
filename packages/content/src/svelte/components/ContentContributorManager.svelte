@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentContributorData } from '../../mock-smrt-client';
@@ -67,34 +68,36 @@ function handleSubmit() {
       {/each}
     </div>
 
-    <form
-      class="editor"
-      onsubmit={(event) => {
-        event.preventDefault();
-        handleSubmit();
-      }}
-    >
-      <label>
-        Email
-        <input type="email" bind:value={draft.email} required />
-      </label>
-      <label>
-        Name
-        <input type="text" bind:value={draft.name} />
-      </label>
-      <label>
-        {t(M['content.contributor_manager.trust_level'])}
-        <select bind:value={draft.trustLevel}>
-          <option value="standard">standard</option>
-          <option value="trusted">trusted</option>
-          <option value="blocked">blocked</option>
-        </select>
-      </label>
+    <div class="editor-shell">
+      <Form
+        class="editor"
+        onsubmit={(event) => {
+          event.preventDefault();
+          handleSubmit();
+        }}
+      >
+        <label>
+          Email
+          <Input type="email" bind:value={draft.email} required />
+        </label>
+        <label>
+          Name
+          <Input type="text" bind:value={draft.name} />
+        </label>
+        <label>
+          {t(M['content.contributor_manager.trust_level'])}
+          <Select bind:value={draft.trustLevel}>
+            <option value="standard">standard</option>
+            <option value="trusted">trusted</option>
+            <option value="blocked">blocked</option>
+          </Select>
+        </label>
 
-      <div class="actions">
-        <Button variant="primary" type="submit">{t(M['content.contributor_manager.save_contributor'])}</Button>
-      </div>
-    </form>
+        <div class="actions">
+          <Button variant="primary" type="submit">{t(M['content.contributor_manager.save_contributor'])}</Button>
+        </div>
+      </Form>
+    </div>
   </div>
 </section>
 
@@ -102,7 +105,7 @@ function handleSubmit() {
   .manager,
   .layout,
   .list,
-  .editor {
+  .editor-shell :global(.editor) {
     display: grid;
     gap: 1rem;
   }
@@ -112,7 +115,7 @@ function handleSubmit() {
   }
 
   .card,
-  .editor {
+  .editor-shell :global(.editor) {
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.75rem;
     padding: 0.9rem;
@@ -128,7 +131,7 @@ function handleSubmit() {
     flex-wrap: wrap;
   }
 
-  .editor label {
+  .editor-shell label {
     display: grid;
     gap: 0.35rem;
   }

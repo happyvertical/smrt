@@ -1,5 +1,6 @@
 <script lang="ts">
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
@@ -152,23 +153,23 @@ function cancelDelete() {
   
   <div class="content-controls">
     <div class="search-filters">
-      <input type="text" placeholder={t(M['content.content_list.search_placeholder'])} bind:value={searchTerm} />
-      
+      <Input type="text" placeholder={t(M['content.content_list.search_placeholder'])} bind:value={searchTerm} />
+
       {#if !type}
-        <select bind:value={selectedType}>
+        <Select bind:value={selectedType}>
           <option value="All Types">{t(M['content.content_list.all_types'])}</option>
           <option value="Articles">Articles</option>
           <option value="Documents">Documents</option>
           <option value="Mirrors">Mirrors</option>
-        </select>
+        </Select>
       {/if}
-      
-      <select bind:value={selectedStatus}>
+
+      <Select bind:value={selectedStatus}>
         <option value="All Statuses">{t(M['content.content_list.all_statuses'])}</option>
         <option value="Published">Published</option>
         <option value="Draft">Draft</option>
         <option value="Archived">Archived</option>
-      </select>
+      </Select>
       
       {#if controls}
         {@render controls()}
@@ -439,8 +440,8 @@ function cancelDelete() {
     align-items: center;
   }
 
-  .search-filters input,
-  .search-filters select {
+  .search-filters :global(.input),
+  .search-filters :global(.select) {
     padding: 0.5rem 0.9rem;
     border: 1px solid var(--smrt-color-outline);
     border-radius: 0.5rem;
@@ -448,13 +449,6 @@ function cancelDelete() {
     height: 38px;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
-  }
-
-  .search-filters input:focus,
-  .search-filters select:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 20%, transparent);
   }
 
   .actions-group {
@@ -926,8 +920,8 @@ function cancelDelete() {
       width: 100%;
     }
 
-    .search-filters input,
-    .search-filters select,
+    .search-filters :global(.input),
+    .search-filters :global(.select),
     .add-button {
       width: 100%;
     }
