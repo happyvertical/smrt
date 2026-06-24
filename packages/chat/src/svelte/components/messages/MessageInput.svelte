@@ -3,6 +3,7 @@
  * MessageInput - Chat message input bar
  * Text area with send button. Shows reply preview when replying.
  */
+import { Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
@@ -31,7 +32,9 @@ const {
 }: Props = $props();
 
 let content = $state('');
-let textareaEl: HTMLTextAreaElement | undefined = $state();
+// Captured from the textarea's input event so auto-resize works without binding
+// to the Textarea primitive's inner DOM node (the primitive doesn't expose it).
+let textareaEl: HTMLTextAreaElement | undefined;
 
 function handleSend() {
   const trimmed = content.trim();
@@ -50,10 +53,11 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-function handleInput() {
-  if (!textareaEl) return;
-  textareaEl.style.height = 'auto';
-  textareaEl.style.height = `${Math.min(textareaEl.scrollHeight, 120)}px`;
+function handleInput(event: Event) {
+  const el = event.currentTarget as HTMLTextAreaElement;
+  textareaEl = el;
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
 }
 </script>
 
@@ -80,17 +84,16 @@ function handleInput() {
   {/if}
 
   <div class="message-input__bar">
-    <textarea
-      bind:this={textareaEl}
+    <Textarea
       bind:value={content}
       class="message-input__textarea"
       {placeholder}
       {disabled}
-      rows="1"
+      rows={1}
       onkeydown={handleKeydown}
       oninput={handleInput}
       aria-label={t(M['chat.message_input.input_label'])}
-    ></textarea>
+    />
     <Button
       variant="ghost"
       class="message-input__send"
@@ -181,29 +184,15 @@ function handleInput() {
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
   }
 
-  .message-input__textarea {
+  /* Layout/sizing for the Textarea primitive's rendered <textarea>; tokenised
+     border/focus/placeholder styling comes from the primitive. The height is
+     JS-driven (auto-resize), so resize is disabled and capped at max-height. */
+  :global(.message-input__textarea) {
     flex: 1;
     resize: none;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    padding: var(--smrt-spacing-2, 0.375rem) var(--smrt-spacing-3, 0.75rem);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-family: inherit;
-    line-height: 1.4;
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    color: var(--smrt-color-on-surface, #1b1b1f);
+    min-height: auto;
     max-height: 120px;
     overflow-y: auto;
-  }
-
-  .message-input__textarea:focus {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -1px;
-    border-color: transparent;
-  }
-
-  .message-input__textarea::placeholder {
-    color: var(--smrt-color-outline, #74777f);
   }
 
   /* :global() pierces into the Button child's rendered <button> (see #1589). */

@@ -4,6 +4,7 @@
  * Simplified message list + input in minimal space.
  * No thread panel, no reactions. Just messages and a send box.
  */
+import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
@@ -86,8 +87,8 @@ $effect(() => {
     {/if}
   </div>
 
-  <form class="mini-chat__input-bar" onsubmit={handleSubmit}>
-    <input
+  <Form class="mini-chat__input-bar" onsubmit={handleSubmit}>
+    <Input
       class="mini-chat__input"
       type="text"
       placeholder={t(M['chat.mini_chat.placeholder'])}
@@ -106,7 +107,7 @@ $effect(() => {
         <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
       </svg>
     </Button>
-  </form>
+  </Form>
 </div>
 
 <style>
@@ -185,7 +186,8 @@ $effect(() => {
     color: var(--smrt-color-outline, #74777f);
   }
 
-  .mini-chat__input-bar {
+  /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
+  :global(.mini-chat__input-bar) {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 4px);
@@ -194,28 +196,16 @@ $effect(() => {
     background: var(--smrt-color-surface, #fefbff);
   }
 
-  .mini-chat__input {
+  /* Layout for the Input primitive's rendered <input> (tokenised styling comes
+     from the primitive; this only sizes/shapes it within the input bar). */
+  :global(.mini-chat__input) {
     flex: 1;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-full, 9999px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
-    outline: none;
   }
 
-  .mini-chat__input:focus {
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 1px var(--smrt-color-primary, #005ac1);
-  }
-
-  .mini-chat__input::placeholder {
-    color: var(--smrt-color-outline, #74777f);
-  }
-
-  /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .mini-chat__input-bar :global(.mini-chat__send-btn) {
+  /* :global() pierces into the Button child's rendered <button> (see #1589).
+     The ancestor is the Form primitive's <form>, also global. */
+  :global(.mini-chat__input-bar .mini-chat__send-btn) {
     width: 32px;
     height: 32px;
     padding: 0;
@@ -226,11 +216,11 @@ $effect(() => {
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
 
-  .mini-chat__input-bar :global(.mini-chat__send-btn:disabled) {
+  :global(.mini-chat__input-bar .mini-chat__send-btn:disabled) {
     opacity: 0.4;
   }
 
-  .mini-chat__input-bar :global(.mini-chat__send-btn:not(:disabled):hover) {
+  :global(.mini-chat__input-bar .mini-chat__send-btn:not(:disabled):hover) {
     background: var(--smrt-color-primary, #005ac1);
     opacity: 0.85;
   }
@@ -240,7 +230,7 @@ $effect(() => {
       scroll-behavior: auto;
     }
 
-    .mini-chat__input-bar :global(.mini-chat__send-btn) {
+    :global(.mini-chat__input-bar .mini-chat__send-btn) {
       transition: none;
     }
   }

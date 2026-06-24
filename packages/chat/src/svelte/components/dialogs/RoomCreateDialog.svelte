@@ -8,6 +8,7 @@
  * hand-rolled backdrop it replaced had none of those.
  */
 import { Modal } from '@happyvertical/smrt-ui/feedback';
+import { Form, Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
@@ -32,7 +33,6 @@ let { isOpen, onclose, oncreate }: Props = $props();
 let name = $state('');
 let roomType = $state('public');
 let description = $state('');
-let nameInput = $state<HTMLInputElement | null>(null);
 
 const canCreate = $derived(name.trim().length > 0);
 
@@ -81,10 +81,15 @@ function resetForm() {
 }
 
 // Modal traps focus and moves it to the dialog itself; nudge initial focus to
-// the name field once the dialog is open and the input is mounted.
+// the name field once the dialog is open and the input is mounted. The Input
+// primitive doesn't expose its inner element, so resolve it by id.
 $effect(() => {
-  if (isOpen && nameInput) {
-    nameInput.focus();
+  if (isOpen && typeof document !== 'undefined') {
+    // Defer a frame so the Modal body (and the name input) is mounted first.
+    const raf = requestAnimationFrame(() => {
+      document.getElementById('room-name')?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
   }
 });
 </script>
@@ -96,7 +101,7 @@ $effect(() => {
   size="md"
   ariaLabel={t(M['chat.room_create_dialog.title'])}
 >
-  <form
+  <Form
     class="dialog__form"
     onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}
   >
@@ -104,14 +109,13 @@ $effect(() => {
       <label class="field__label" for="room-name">
         {t(M['chat.room_create_dialog.room_name'])} <span class="field__required" aria-label={t(M['chat.room_create_dialog.required'])}>*</span>
       </label>
-      <input
-        bind:this={nameInput}
+      <Input
         bind:value={name}
         id="room-name"
         type="text"
         class="field__input"
         placeholder={t(M['chat.room_create_dialog.name_placeholder'])}
-        maxlength="100"
+        maxlength={100}
         autocomplete="off"
       />
     </div>
@@ -124,6 +128,7 @@ $effect(() => {
             class="type-option"
             class:type-option--selected={roomType === option.value}
           >
+            <!-- raw-primitive-allow: native radio for single-choice room-type selection; no Provider-free radio primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input
               type="radio"
               name="roomType"
@@ -142,21 +147,21 @@ $effect(() => {
 
     <div class="field">
       <label class="field__label" for="room-description">Description</label>
-      <textarea
+      <Textarea
         bind:value={description}
         id="room-description"
         class="field__textarea"
         placeholder={t(M['chat.room_create_dialog.description_placeholder'])}
-        rows="3"
-        maxlength="500"
-      ></textarea>
+        rows={3}
+        maxlength={500}
+      />
       <span class="field__hint">{description.length}/500</span>
     </div>
 
     <!-- Hidden submit keeps Enter-to-submit working inside the Modal body. -->
     <!-- raw-primitive-allow: off-screen aria-hidden type=submit element with tabindex=-1 used only to enable native Enter-to-submit inside the Modal body; intentionally non-interactive and not a visible action button -->
     <button type="submit" class="visually-hidden" tabindex="-1" disabled={!canCreate} aria-hidden="true"></button>
-  </form>
+  </Form>
 
   {#snippet footer()}
     <Button
@@ -178,7 +183,8 @@ $effect(() => {
 </Modal>
 
 <style>
-  .dialog__form {
+  /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
+  :global(.dialog__form) {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
@@ -212,40 +218,6 @@ $effect(() => {
 
   .field__required {
     color: var(--smrt-color-error, #b3261e);
-  }
-
-  .field__input {
-    padding: 0.75rem;
-    font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
-    font-family: inherit;
-    border: 1px solid var(--smrt-color-outline, #74777f);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-  }
-
-  .field__input:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 1px var(--smrt-color-primary, #005ac1);
-  }
-
-  .field__textarea {
-    padding: 0.75rem;
-    font: var(--smrt-typography-body-large-font, 1rem / 1.5 sans-serif);
-    font-family: inherit;
-    border: 1px solid var(--smrt-color-outline, #74777f);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    background: var(--smrt-color-surface, #fefbff);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-    resize: vertical;
-    min-height: 80px;
-  }
-
-  .field__textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 1px var(--smrt-color-primary, #005ac1);
   }
 
   .field__hint {
