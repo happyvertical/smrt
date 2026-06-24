@@ -4,6 +4,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.messages.js';
 import type { AccountData, MessageData } from '../types.js';
@@ -106,6 +107,7 @@ const _slackMeta = $derived.by(() => {
     </div>
   {/if}
 
+  <!-- raw-primitive-allow: large pressable message row wrapping rich header/subject/preview content (a structural selection surface with descendant compact-mode layout rules), not a standard action button -->
   <button
     class="message-content"
     type="button"
@@ -162,15 +164,15 @@ const _slackMeta = $derived.by(() => {
   </button>
 
   {#if onflag}
-    <button
+    <Button
+      variant="ghost"
       class="flag-btn"
-      type="button"
       onclick={() => onflag?.(message)}
       title={message.isFlagged ? 'Unflag' : 'Flag'}
       aria-label={message.isFlagged ? 'Unflag' : 'Flag'}
     >
       {message.isFlagged ? '⚑' : '⚐'}
-    </button>
+    </Button>
   {/if}
 </div>
 
@@ -308,21 +310,26 @@ const _slackMeta = $derived.by(() => {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .flag-btn {
+  /*
+   * The flag toggle now renders through smrt-ui's <Button variant="ghost">.
+   * `.message-card :global(.flag-btn)` anchors on the real `.message-card`
+   * element and pierces the Button child scope to keep the dimmed icon-toggle
+   * styling (issue #1589).
+   */
+  .message-card :global(.flag-btn) {
     display: flex;
     align-items: center;
     justify-content: center;
     width: 2rem;
     border: none;
     background: none;
-    cursor: pointer;
     font-size: var(--smrt-typography-body-large-size, 1rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
     opacity: 0.5;
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
 
-  .flag-btn:hover {
+  .message-card :global(.flag-btn):hover {
     opacity: 1;
   }
 

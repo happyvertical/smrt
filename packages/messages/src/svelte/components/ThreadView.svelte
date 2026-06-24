@@ -3,6 +3,7 @@
  * ThreadView - Conversation thread with collapsible messages
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.messages.js';
 import type { MessageData } from '../types.js';
 import MessageDetail from './MessageDetail.svelte';
@@ -101,9 +102,10 @@ const _sortedMessages = $derived(
       role="listitem"
     >
       {#if collapsed.has(message.id)}
-        <button
+        <Button
+          variant="ghost"
+          fullWidth
           class="collapsed-header"
-          type="button"
           onclick={() => toggleCollapse(message.id)}
         >
           <span class="collapsed-sender">
@@ -117,19 +119,19 @@ const _sortedMessages = $derived(
               ? new Date(message.date).toLocaleDateString()
               : message.date?.toLocaleDateString() || ''}
           </span>
-        </button>
+        </Button>
       {:else}
         <div class="message-wrapper">
           {#if messages.length > 1}
-            <button
+            <Button
+              variant="ghost"
               class="collapse-btn"
-              type="button"
               onclick={() => toggleCollapse(message.id)}
               title={t(M['messages.thread_view.collapse'])}
               aria-label={t(M['messages.thread_view.collapse_message'])}
             >
               ▼
-            </button>
+            </Button>
           {/if}
           {#if onmessageclick}
             <div
@@ -187,13 +189,19 @@ const _sortedMessages = $derived(
     position: relative;
   }
 
-  .collapse-btn {
+  /*
+   * The collapse toggle and collapsed header now render through smrt-ui's
+   * <Button variant="ghost">. The <button> is emitted inside the Button child,
+   * so anchoring on the real `.message-wrapper` / `.thread-message` elements and
+   * piercing with `:global(...)` keeps the original positioning and styling
+   * (issue #1589).
+   */
+  .message-wrapper :global(.collapse-btn) {
     position: absolute;
     top: 0.75rem;
     right: 0.75rem;
     border: none;
     background: none;
-    cursor: pointer;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
     z-index: 1;
@@ -201,11 +209,11 @@ const _sortedMessages = $derived(
     border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
-  .collapse-btn:hover {
+  .message-wrapper :global(.collapse-btn):hover {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
-  .collapsed-header {
+  .thread-message :global(.collapsed-header) {
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -214,13 +222,12 @@ const _sortedMessages = $derived(
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: var(--smrt-color-surface-variant, #e1e2ec);
-    cursor: pointer;
     text-align: left;
     color: inherit;
     font: inherit;
   }
 
-  .collapsed-header:hover {
+  .thread-message :global(.collapsed-header):hover {
     background: color-mix(in srgb, var(--smrt-color-surface-variant, #e1e2ec) 92%, var(--smrt-color-shadow, #000));
   }
 

@@ -3,6 +3,7 @@
  * MessageFilters - Filter/sort controls bar
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.messages.js';
 import type {
   AccountData,
@@ -85,7 +86,7 @@ const _hasActiveFilters = $derived(
       onkeydown={(e) => { if (e.key === 'Enter') handleSearch(); }}
       aria-label={t(M['messages.message_filters.search_label'])}
     />
-    <button class="search-btn" type="button" onclick={handleSearch}>Search</button>
+    <Button variant="primary" class="search-btn" onclick={handleSearch}>Search</Button>
   </div>
 
   <div class="filter-row">
@@ -139,9 +140,9 @@ const _hasActiveFilters = $derived(
     </label>
 
     {#if _hasActiveFilters}
-      <button class="clear-btn" type="button" onclick={clearFilters}>
+      <Button variant="ghost" size="sm" class="clear-btn" onclick={clearFilters}>
         {t(M['messages.message_filters.clear_filters'])}
-      </button>
+      </Button>
     {/if}
   </div>
 </div>
@@ -177,18 +178,16 @@ const _hasActiveFilters = $derived(
     outline-offset: -1px;
   }
 
-  .search-btn {
+  /*
+   * Search now renders through smrt-ui's <Button variant="primary">. The variant
+   * owns the filled-primary background + hover; `.search-row :global(.search-btn)`
+   * only re-asserts the original small radius and label font/padding by piercing
+   * the Button child scope (issue #1589).
+   */
+  .search-row :global(.search-btn) {
     padding: 0.5rem 1rem;
-    border: none;
     border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
-  }
-
-  .search-btn:hover {
-    opacity: 0.9;
   }
 
   .filter-row {
@@ -216,13 +215,18 @@ const _hasActiveFilters = $derived(
     cursor: pointer;
   }
 
-  .clear-btn {
+  /*
+   * Clear filters now renders through smrt-ui's <Button variant="ghost">.
+   * `.filter-row :global(.clear-btn)` anchors on the real `.filter-row` element
+   * and pierces the Button child scope to keep the underlined text-link look
+   * (issue #1589).
+   */
+  .filter-row :global(.clear-btn) {
     padding: 0.25rem 0.5rem;
     border: none;
     background: none;
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
     color: var(--smrt-color-primary, #005ac1);
-    cursor: pointer;
     text-decoration: underline;
   }
 </style>

@@ -11,6 +11,7 @@ export interface Props {
 
 <script lang="ts">
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
+  import { Button } from '@happyvertical/smrt-ui/ui';
   import { M } from '../i18n.js';
 
   const { t } = useI18n();
@@ -59,11 +60,12 @@ export interface Props {
         <div class="attachment-item">
           <span class="filename">{attachment.filename}</span>
           <span class="size">{formatSize(attachment.size)}</span>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             class="remove"
             onclick={() => onremove?.(i)}
-            type="button"
-          >×</button>
+          >×</Button>
         </div>
       {/each}
     </div>
@@ -122,10 +124,15 @@ export interface Props {
     font-size: var(--smrt-typography-label-small-size, 11px);
   }
 
-  .remove {
+  /*
+   * The remove button now renders through smrt-ui's <Button variant="ghost">.
+   * The <button> lives inside the Button child, so `.attachment-item :global(.remove)`
+   * anchors on the real `.attachment-item` element and pierces the child scope to
+   * keep the compact error-colored icon styling (issue #1589).
+   */
+  .attachment-item :global(.remove) {
     background: none;
     border: none;
-    cursor: pointer;
     padding: 0 var(--smrt-spacing-1, 4px);
     color: var(--smrt-color-error, #ba1a1a);
     font-size: var(--smrt-typography-label-large-size, 14px);

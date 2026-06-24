@@ -18,6 +18,7 @@ export interface Props {
 
 <script lang="ts">
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
+  import { Button } from '@happyvertical/smrt-ui/ui';
   import { M } from '../i18n.js';
   import RecipientInput from './RecipientInput.svelte';
   import AttachmentUpload from './AttachmentUpload.svelte';
@@ -182,10 +183,10 @@ export interface Props {
     {#if !showCc || !showBcc}
       <div class="cc-toggles">
         {#if !showCc}
-          <button type="button" class="link-btn" onclick={() => showCc = true}>Cc</button>
+          <Button variant="ghost" size="sm" class="link-btn" onclick={() => showCc = true}>Cc</Button>
         {/if}
         {#if !showBcc}
-          <button type="button" class="link-btn" onclick={() => showBcc = true}>Bcc</button>
+          <Button variant="ghost" size="sm" class="link-btn" onclick={() => showBcc = true}>Bcc</Button>
         {/if}
       </div>
     {/if}
@@ -259,19 +260,19 @@ export interface Props {
   {/if}
 
   <div class="actions">
-    <button
+    <Button
       type="submit"
-      class="btn-primary"
+      variant="primary"
       disabled={isSending || isOverLimit}
     >
       {isSending ? 'Sending...' : 'Send'}
-    </button>
-    <button type="button" class="btn-secondary" onclick={handleSaveDraft}>
+    </Button>
+    <Button variant="secondary" onclick={handleSaveDraft}>
       {t(M['messages.compose_form.save_draft'])}
-    </button>
-    <button type="button" class="btn-text" onclick={() => ondiscard?.()}>
+    </Button>
+    <Button variant="ghost" class="btn-text" onclick={() => ondiscard?.()}>
       Discard
-    </button>
+    </Button>
   </div>
 </form>
 
@@ -316,10 +317,15 @@ export interface Props {
     justify-content: flex-end;
   }
 
-  .link-btn {
+  /*
+   * The Cc/Bcc toggles now render through smrt-ui's <Button variant="ghost">.
+   * `.cc-toggles :global(.link-btn)` anchors on the real `.cc-toggles` element
+   * and pierces the Button child scope to keep the underlined text-link look
+   * (issue #1589).
+   */
+  .cc-toggles :global(.link-btn) {
     background: none;
     border: none;
-    cursor: pointer;
     color: var(--smrt-color-primary, #6750a4);
     font-size: var(--smrt-typography-label-large-size, 13px);
     text-decoration: underline;
@@ -373,40 +379,13 @@ export interface Props {
     padding-top: var(--smrt-spacing-2, 8px);
   }
 
-  .btn-primary {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-6, 24px);
-    border-radius: var(--smrt-radius-full, 20px);
-    border: none;
-    background: var(--smrt-color-primary, #6750a4);
-    color: var(--smrt-color-on-primary, #fff);
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-label-large-size, 14px);
-    cursor: pointer;
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
-    border-radius: var(--smrt-radius-full, 20px);
-    border: 1px solid var(--smrt-color-outline, #79747e);
-    background: transparent;
-    color: var(--smrt-color-primary, #6750a4);
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-label-large-size, 14px);
-    cursor: pointer;
-  }
-
-  .btn-text {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
-    border: none;
-    background: transparent;
+  /*
+   * Send/Save-draft now use Button's primary/secondary variants directly (dead
+   * .btn-primary/.btn-secondary CSS removed). The Discard button keeps its
+   * neutral on-surface-variant text via `.actions :global(.btn-text)` (Button's
+   * ghost uses the primary color) — issue #1589.
+   */
+  .actions :global(.btn-text) {
     color: var(--smrt-color-on-surface-variant, #49454f);
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-label-large-size, 14px);
-    cursor: pointer;
   }
 </style>

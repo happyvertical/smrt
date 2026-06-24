@@ -11,6 +11,7 @@ export interface Props {
 
 <script lang="ts">
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
+  import { Button } from '@happyvertical/smrt-ui/ui';
   import { M } from '../i18n.js';
 
   const { t } = useI18n();
@@ -77,17 +78,16 @@ export interface Props {
   {/if}
 
   <div class="actions">
-    <button
-      type="button"
-      class="btn-primary"
+    <Button
+      variant="primary"
       disabled={isSending || !body.trim()}
       onclick={handleSend}
     >
       {isSending ? 'Sending...' : 'Send Reply'}
-    </button>
-    <button type="button" class="btn-text" onclick={() => oncancel?.()}>
+    </Button>
+    <Button variant="ghost" class="btn-text" onclick={() => oncancel?.()}>
       Cancel
-    </button>
+    </Button>
   </div>
 </div>
 
@@ -155,29 +155,13 @@ export interface Props {
     gap: var(--smrt-spacing-2, 8px);
   }
 
-  .btn-primary {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-6, 24px);
-    border-radius: var(--smrt-radius-full, 20px);
-    border: none;
-    background: var(--smrt-color-primary, #6750a4);
-    color: var(--smrt-color-on-primary, #fff);
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-label-large-size, 14px);
-    cursor: pointer;
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-text {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
-    border: none;
-    background: transparent;
+  /*
+   * Send Reply now uses Button's primary variant directly (dead .btn-primary CSS
+   * removed). The Cancel button keeps its neutral on-surface-variant text via
+   * `.actions :global(.btn-text)` (Button's ghost uses the primary color) —
+   * issue #1589.
+   */
+  .actions :global(.btn-text) {
     color: var(--smrt-color-on-surface-variant, #49454f);
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-label-large-size, 14px);
-    cursor: pointer;
   }
 </style>

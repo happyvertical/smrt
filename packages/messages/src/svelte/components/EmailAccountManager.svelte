@@ -6,6 +6,7 @@
  * email accounts. Works with any backend via callback props.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type { EmailAccountData } from '../types.js';
 
@@ -171,10 +172,12 @@ function getProviderLabel(type: string): string {
       {t(M['messages.email_account_manager.section_description'])}
     </div>
     {#if !isReadonly && onsave}
-      <button
+      <Button
+        variant="secondary"
+        size="sm"
         class="add-btn"
         onclick={() => { resetForm(); showForm = true; }}
-      >{t(M['messages.email_account_manager.add_account'])}</button>
+      >{t(M['messages.email_account_manager.add_account'])}</Button>
     {/if}
   </div>
 
@@ -261,10 +264,10 @@ function getProviderLabel(type: string): string {
       </div>
 
       <div class="form-actions">
-        <button class="cancel-btn" onclick={resetForm} disabled={saving}>Cancel</button>
-        <button class="save-btn" onclick={save} disabled={saving || !maName.trim() || !maEmail.trim()}>
+        <Button variant="secondary" size="sm" class="cancel-btn" onclick={resetForm} disabled={saving}>Cancel</Button>
+        <Button variant="primary" size="sm" class="save-btn" onclick={save} disabled={saving || !maName.trim() || !maEmail.trim()}>
           {saving ? 'Saving...' : editingId ? 'Update' : 'Add Account'}
-        </button>
+        </Button>
       </div>
     </div>
   {/if}
@@ -272,12 +275,13 @@ function getProviderLabel(type: string): string {
   {#if actionError}
     <div class="test-result failure" role="alert" aria-live="assertive">
       {actionError}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         class="dismiss-btn"
         aria-label={t(M['messages.email_account_manager.dismiss_error'])}
         onclick={() => actionError = null}
-      >&times;</button>
+      >&times;</Button>
     </div>
   {/if}
 
@@ -288,7 +292,7 @@ function getProviderLabel(type: string): string {
       {:else}
         {t(M['messages.email_account_manager.connection_failed'])} {testResult.error ?? 'Unknown error'}
       {/if}
-      <button class="dismiss-btn" onclick={() => testResult = null}>&times;</button>
+      <Button variant="ghost" size="sm" class="dismiss-btn" onclick={() => testResult = null}>&times;</Button>
     </div>
   {/if}
 
@@ -327,21 +331,25 @@ function getProviderLabel(type: string): string {
           {#if !isReadonly}
             <div class="entry-actions">
               {#if ontest}
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   class="test-btn"
                   onclick={(e) => { e.stopPropagation(); testConnection(acct); }}
                   disabled={testingId === acct.id}
                   title={t(M['messages.email_account_manager.test_connection'])}
                 >
                   {testingId === acct.id ? '...' : 'Test'}
-                </button>
+                </Button>
               {/if}
               {#if ondelete}
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   class="delete-btn"
                   onclick={(e) => { e.stopPropagation(); remove(acct); }}
                   title={t(M['messages.email_account_manager.remove'])}
-                >&times;</button>
+                >&times;</Button>
               {/if}
             </div>
           {/if}
@@ -370,23 +378,15 @@ function getProviderLabel(type: string): string {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .add-btn {
-    padding: 0.375rem 0.75rem;
+  /*
+   * The add button now renders through smrt-ui's <Button variant="secondary">.
+   * The variant owns the outlined-primary look + hover; `.section-header-row
+   * :global(.add-btn)` only re-asserts radius and the flex-shrink so the button
+   * keeps its place in the header row (issue #1589).
+   */
+  .section-header-row :global(.add-btn) {
     border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-primary, #005ac1);
-    background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
-    cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    font-family: inherit;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    transition: all 150ms ease;
     flex-shrink: 0;
-  }
-
-  .add-btn:hover {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
   }
 
   .entry-form {
@@ -481,42 +481,20 @@ function getProviderLabel(type: string): string {
     padding-top: 0.25rem;
   }
 
-  .cancel-btn {
-    padding: 0.375rem 0.75rem;
+  /*
+   * Cancel/Save now use Button's secondary/primary variants (dead bespoke CSS
+   * removed). `.form-actions :global(...)` only re-asserts the rounded radius so
+   * they match the form's other controls (issue #1589). Cancel's neutral outline
+   * color override keeps it from picking up secondary's primary border color.
+   */
+  .form-actions :global(.cancel-btn),
+  .form-actions :global(.save-btn) {
     border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    background: transparent;
+  }
+
+  .form-actions :global(.cancel-btn) {
+    border-color: var(--smrt-color-outline-variant, #c2c7cf);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    font-family: inherit;
-    transition: all 150ms ease;
-  }
-
-  .cancel-btn:hover {
-    background: var(--smrt-color-surface-container-high, #e6e7ef);
-  }
-
-  .save-btn {
-    padding: 0.375rem 0.75rem;
-    border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-primary, #005ac1);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
-    cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    font-family: inherit;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    transition: all 150ms ease;
-  }
-
-  .save-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .save-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .test-result {
@@ -538,11 +516,16 @@ function getProviderLabel(type: string): string {
     color: var(--smrt-color-error, #ba1a1a);
   }
 
-  .dismiss-btn {
+  /*
+   * The dismiss button now renders through smrt-ui's <Button variant="ghost">.
+   * `.test-result :global(.dismiss-btn)` anchors on the real `.test-result`
+   * element and pierces the Button child scope. `color: inherit` keeps the icon
+   * matching the success/failure banner color (issue #1589).
+   */
+  .test-result :global(.dismiss-btn) {
     background: transparent;
     border: none;
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    cursor: pointer;
     color: inherit;
     padding: 0 0.25rem;
   }
@@ -661,29 +644,28 @@ function getProviderLabel(type: string): string {
     flex-shrink: 0;
   }
 
-  .test-btn {
+  /*
+   * The test and delete buttons now render through smrt-ui's <Button
+   * variant="ghost">. The <button> is emitted inside the Button child, so
+   * `.entry-actions :global(...)` anchors on the real `.entry-actions` element
+   * and pierces the child scope to keep the original outlined-pill styling and
+   * the delete button's red-on-hover affordance (issue #1589).
+   */
+  .entry-actions :global(.test-btn) {
     padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-sm, 4px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     font-size: var(--smrt-typography-label-small-size, 0.6875rem);
-    font-family: inherit;
-    transition: all 150ms ease;
   }
 
-  .test-btn:hover:not(:disabled) {
+  .entry-actions :global(.test-btn):hover:not(:disabled) {
     border-color: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-primary, #005ac1);
   }
 
-  .test-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .delete-btn {
+  .entry-actions :global(.delete-btn) {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
     padding: 0.125rem 0.5rem;
@@ -691,13 +673,10 @@ function getProviderLabel(type: string): string {
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 150ms ease;
     flex-shrink: 0;
   }
 
-  .delete-btn:hover {
+  .entry-actions :global(.delete-btn):hover {
     background: var(--smrt-color-error-container, #fce4ec);
     color: var(--smrt-color-error, #ba1a1a);
     border-color: var(--smrt-color-error, #ba1a1a);

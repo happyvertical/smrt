@@ -2,6 +2,7 @@
 /**
  * AttachmentChip - File chip with icon, name, and size
  */
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { AttachmentData } from '../types.js';
 
 export interface Props {
@@ -33,16 +34,16 @@ const _formattedSize = $derived.by(() => {
 </script>
 
 {#if onclick}
-  <button
-    class="chip"
-    type="button"
+  <Button
+    variant="ghost"
+    class="chip chip--button"
     onclick={() => onclick?.(attachment)}
     title={`${attachment.filename} (${_formattedSize})`}
   >
     <span class="icon">{_icon}</span>
     <span class="name">{attachment.filename}</span>
     <span class="size">{_formattedSize}</span>
-  </button>
+  </Button>
 {:else}
   <span class="chip" title={`${attachment.filename} (${_formattedSize})`}>
     <span class="icon">{_icon}</span>
@@ -66,16 +67,34 @@ const _formattedSize = $derived.by(() => {
     max-width: 200px;
   }
 
-  button.chip {
+  /*
+   * The interactive chip now renders through smrt-ui's <Button variant="ghost">.
+   * The <button> is emitted inside the Button child carrying Button's scope hash,
+   * so the local `.chip` rule above no longer reaches it. `:global(.chip--button)`
+   * pierces that scope to give the button the same chip styling plus the
+   * pressable affordances; `chip--button` is a non-colliding modifier (issue
+   * #1589). The non-interactive `<span class="chip">` branch still uses the
+   * scoped `.chip` rule above.
+   */
+  :global(.chip.chip--button) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: var(--smrt-color-surface-variant, #e1e2ec);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
     cursor: pointer;
+    max-width: 200px;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  button.chip:hover {
+  :global(.chip.chip--button):hover {
     background: color-mix(in srgb, var(--smrt-color-surface-variant, #e1e2ec) 92%, var(--smrt-color-shadow, #000));
   }
 
-  button.chip:focus-visible {
+  :global(.chip.chip--button):focus-visible {
     outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 1px;
   }
