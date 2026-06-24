@@ -45,7 +45,7 @@ async function resolveBaseForLocale(
 
   let collection: LanguageOverrideCollection | null = null;
   if (options.db) {
-    collection = await (LanguageOverrideCollection as any).create({
+    collection = await LanguageOverrideCollection.create({
       db: options.db,
     });
   }

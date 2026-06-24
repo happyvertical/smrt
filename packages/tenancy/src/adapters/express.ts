@@ -30,6 +30,16 @@ interface ExpressRequest {
 }
 
 /**
+ * Request object after the tenancy middleware has attached the resolved tenant
+ * context. The middleware sets these properties so downstream route handlers can
+ * read the tenant directly off the request.
+ */
+interface TenantAwareExpressRequest extends ExpressRequest {
+  tenantContext?: TenantContextData;
+  tenantId?: string;
+}
+
+/**
  * Express Response interface
  */
 interface ExpressResponse {
@@ -198,8 +208,8 @@ export function createExpressMiddleware(options: ExpressMiddlewareOptions) {
       };
 
       // Attach to request for access in route handlers
-      (req as any).tenantContext = context;
-      (req as any).tenantId = tenantId;
+      (req as TenantAwareExpressRequest).tenantContext = context;
+      (req as TenantAwareExpressRequest).tenantId = tenantId;
 
       // Use enterWith() to establish context that persists for the entire
       // request lifecycle. This ensures route handlers have access to

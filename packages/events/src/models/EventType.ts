@@ -63,7 +63,7 @@ export class EventType extends SmrtObject {
    *
    * @returns Parsed schema object or empty object if no schema
    */
-  getSchema(): Record<string, any> {
+  getSchema(): Record<string, unknown> {
     if (!this.schema) return {};
     try {
       return JSON.parse(this.schema);
@@ -77,7 +77,7 @@ export class EventType extends SmrtObject {
    *
    * @param data - Schema object to store
    */
-  setSchema(data: Record<string, any>): void {
+  setSchema(data: Record<string, unknown>): void {
     this.schema = JSON.stringify(data);
   }
 
@@ -86,7 +86,7 @@ export class EventType extends SmrtObject {
    *
    * @returns Parsed participant schema object or empty object
    */
-  getParticipantSchema(): Record<string, any> {
+  getParticipantSchema(): Record<string, unknown> {
     if (!this.participantSchema) return {};
     try {
       return JSON.parse(this.participantSchema);
@@ -100,7 +100,7 @@ export class EventType extends SmrtObject {
    *
    * @param data - Participant schema object to store
    */
-  setParticipantSchema(data: Record<string, any>): void {
+  setParticipantSchema(data: Record<string, unknown>): void {
     this.participantSchema = JSON.stringify(data);
   }
 

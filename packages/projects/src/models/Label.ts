@@ -149,7 +149,7 @@ export class Label extends SmrtObject {
     const { RepositoryCollection } = await import(
       '../collections/Repositories'
     );
-    const collection = await (RepositoryCollection as any).create(this.options);
+    const collection = await RepositoryCollection.create(this.options);
     const repo = await collection.get({ id: this.repositoryId });
 
     if (!repo) {
@@ -177,7 +177,7 @@ export class Label extends SmrtObject {
     const { RepositoryCollection } = await import(
       '../collections/Repositories'
     );
-    const collection = await (RepositoryCollection as any).create(this.options);
+    const collection = await RepositoryCollection.create(this.options);
     const repo = await collection.get({ id: this.repositoryId });
 
     if (!repo) {

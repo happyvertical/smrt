@@ -5,7 +5,7 @@
  * Implements reconcile(), branch(), evolution tree, and confidence methods.
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { SmrtCollection, type SmrtCreateInput } from '@happyvertical/smrt-core';
 import {
   type PromptConfigOverrideInput,
   type ResolvedPromptAI,
@@ -94,34 +94,43 @@ function normalizeConfidence(value: unknown): number | undefined {
   return Math.max(0, Math.min(1, value));
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+  );
+}
+
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
 function parseFactExtractionResponse(raw: string): FactExtractionCandidate[] {
-  const parsed = JSON.parse(extractJSONPayload(raw));
-  const entries = Array.isArray(parsed)
+  const parsed: unknown = JSON.parse(extractJSONPayload(raw));
+  const entries: unknown[] = Array.isArray(parsed)
     ? parsed
-    : Array.isArray(parsed?.facts)
+    : isPlainRecord(parsed) && Array.isArray(parsed.facts)
       ? parsed.facts
-      : parsed?.statement
+      : isPlainRecord(parsed) && parsed.statement
         ? [parsed]
         : [];
 
   return entries
-    .map((entry: any): FactExtractionCandidate | null => {
-      const statement = normalizeWhitespace(entry?.statement);
+    .map((entry: unknown): FactExtractionCandidate | null => {
+      const record = isPlainRecord(entry) ? entry : {};
+      const statement = normalizeWhitespace(asOptionalString(record.statement));
       if (!statement) {
         return null;
       }
 
+      const metadata = record.metadata;
       return {
         statement,
-        type: normalizeFactType(entry?.type),
-        sourceExcerpt: normalizeWhitespace(entry?.sourceExcerpt) || undefined,
-        confidence: normalizeConfidence(entry?.confidence),
-        metadata:
-          entry?.metadata &&
-          typeof entry.metadata === 'object' &&
-          !Array.isArray(entry.metadata)
-            ? entry.metadata
-            : undefined,
+        type: normalizeFactType(record.type),
+        sourceExcerpt:
+          normalizeWhitespace(asOptionalString(record.sourceExcerpt)) ||
+          undefined,
+        confidence: normalizeConfidence(record.confidence),
+        metadata: isPlainRecord(metadata) ? metadata : undefined,
       };
     })
     .filter(
@@ -174,6 +183,27 @@ function promptMessageOptions(ai: ResolvedPromptAI) {
       : {}),
     ...(typeof ai.maxTokens === 'number' ? { maxTokens: ai.maxTokens } : {}),
   };
+}
+
+/**
+ * Minimal structural shape of an AI client that can answer text prompts.
+ */
+interface MessageCapableAi {
+  message: (
+    prompt: string,
+    options?: Record<string, unknown>,
+  ) => Promise<string>;
+}
+
+/**
+ * Narrow an opaque options-supplied AI client to one exposing `message()`.
+ * Returns null when the client does not provide a callable `message`.
+ */
+function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
+  return ai &&
+    typeof (ai as Partial<MessageCapableAi>).message === 'function'
+    ? (ai as MessageCapableAi)
+    : null;
 }
 
 export class FactCollection extends SmrtCollection<Fact> {
@@ -611,12 +641,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       },
     );
 
-    const directAi =
-      this.options.ai && typeof (this.options.ai as any).message === 'function'
-        ? (this.options.ai as {
-            message: (prompt: string, options?: any) => Promise<string>;
-          })
-        : null;
+    const directAi = asMessageCapableAi(this.options.ai);
     const ai = directAi || (await this.getAiClient());
     if (typeof ai.message !== 'function') {
       throw new Error(
@@ -671,12 +696,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       },
     );
 
-    const directAi =
-      this.options.ai && typeof (this.options.ai as any).message === 'function'
-        ? (this.options.ai as {
-            message: (prompt: string, options?: any) => Promise<string>;
-          })
-        : null;
+    const directAi = asMessageCapableAi(this.options.ai);
     const ai = directAi || (await this.getAiClient());
     if (typeof ai.message !== 'function') {
       throw new Error(
@@ -732,12 +752,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       },
     );
 
-    const directAi =
-      this.options.ai && typeof (this.options.ai as any).message === 'function'
-        ? (this.options.ai as {
-            message: (prompt: string, options?: any) => Promise<string>;
-          })
-        : null;
+    const directAi = asMessageCapableAi(this.options.ai);
     const ai = directAi || (await this.getAiClient());
     if (typeof ai.message !== 'function') {
       throw new Error(
@@ -808,13 +823,13 @@ export class FactCollection extends SmrtCollection<Fact> {
       throw new Error(`Predecessor fact not found: ${previousFactId}`);
     }
 
-    // Pre-process metadata if it's an object
-    const createData: Record<string, any> = { ...data };
-    if (
-      createData.metadata !== undefined &&
-      typeof createData.metadata !== 'string'
-    ) {
-      createData.metadata = JSON.stringify(createData.metadata);
+    // Pre-process metadata if it's an object: the persisted column is a
+    // serialized string, so normalize object metadata before create.
+    const { metadata, ...rest } = data;
+    const createData: SmrtCreateInput<Fact> = { ...rest };
+    if (metadata !== undefined) {
+      createData.metadata =
+        typeof metadata === 'string' ? metadata : JSON.stringify(metadata);
     }
 
     // Create successor fact with previousFactId and evolutionType
@@ -824,7 +839,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       evolutionType,
       status: data.status || 'active',
       _skipAutoEmbeddings: true,
-    } as any);
+    });
 
     // Generate embeddings for the successor fact
     try {

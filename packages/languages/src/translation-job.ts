@@ -1,7 +1,11 @@
-import { getAI } from '@happyvertical/ai';
+import { type GetAIOptions, getAI } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import { getPackageConfig } from '@happyvertical/smrt-config';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  type SmrtClassOptions,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { FeatureResolver } from '@happyvertical/smrt-features';
 import { SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import { definePrompt, resolvePrompt } from '@happyvertical/smrt-prompts';
@@ -97,9 +101,7 @@ export class LanguageTranslationTask extends SmrtObject {
       return { skipped: 'feature_disabled' };
     }
 
-    const overrides = await (LanguageOverrideCollection as any).create(
-      this.options,
-    );
+    const overrides = await LanguageOverrideCollection.create(this.options);
 
     // Source-hash gate: if a translation already exists with the same source,
     // do nothing. Only re-translate when the source changed.
@@ -166,7 +168,7 @@ export class LanguageTranslationTask extends SmrtObject {
     const promptAi = (prompt.ai ?? {}) as Record<string, unknown>;
     const mergedAiConfig: Record<string, unknown> = { ...promptAi };
     if (args.model) mergedAiConfig.model = args.model;
-    const ai = await getAI(mergedAiConfig as any);
+    const ai = await getAI(mergedAiConfig as GetAIOptions);
 
     const message = await ai.message(prompt.text, {
       ...mergedAiConfig,
@@ -231,7 +233,7 @@ interface EnqueueTranslationOptions {
   targetLocale: string;
   sourceLocale?: string;
   tenantId?: string | null;
-  db: unknown;
+  db: SmrtClassOptions['db'];
   /** When true, skip the dedup check and force a fresh job. */
   force?: boolean;
 }
@@ -262,7 +264,7 @@ export async function enqueueTranslationJob(
     return { id: dedupId, status: 'skipped' };
   }
 
-  const jobs = await (SmrtJobCollection as any).create({ db: options.db });
+  const jobs = await SmrtJobCollection.create({ db: options.db });
 
   if (!options.force) {
     const existing = await findPendingTranslationJob(
@@ -363,7 +365,7 @@ async function findPendingTranslationJob(
 }
 
 async function countTodayTenantTranslations(
-  options: { db?: unknown },
+  options: SmrtClassOptions,
   tenantId: string,
 ): Promise<number> {
   // SmrtCollection.list() encodes operators into the where-clause key (e.g.
@@ -371,7 +373,7 @@ async function countTodayTenantTranslations(
   // either throws or matches nothing, and a swallowed failure here silently
   // disables the budget. Let the call propagate so configuration mistakes
   // surface immediately rather than as a missed throttle in production.
-  const jobs = await (SmrtJobCollection as any).create({ db: options.db });
+  const jobs = await SmrtJobCollection.create({ db: options.db });
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
   const rows = await jobs.list({
@@ -394,10 +396,10 @@ function getLanguagesConfig(): LanguagesPackageConfig {
 
 async function isAutoTranslateDisabled(
   tenantId: string | null,
-  options: { db?: unknown },
+  options: SmrtClassOptions,
 ): Promise<boolean> {
   try {
-    const resolver = new FeatureResolver(options as any);
+    const resolver = new FeatureResolver(options);
     const enabled = await resolver.isEnabled(AUTO_TRANSLATE_FEATURE_KEY, {
       tenantId: tenantId ?? undefined,
     });

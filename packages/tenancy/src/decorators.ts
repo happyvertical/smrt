@@ -203,7 +203,7 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
 
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
     registerCompatibleFieldDecorator(
       targetOrValue,

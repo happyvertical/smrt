@@ -87,7 +87,7 @@ export class Event extends SmrtHierarchical {
    *
    * @returns Parsed metadata object or empty object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -101,7 +101,7 @@ export class Event extends SmrtHierarchical {
    *
    * @param data - Metadata object to store
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
@@ -110,7 +110,7 @@ export class Event extends SmrtHierarchical {
    *
    * @param updates - Partial metadata to merge
    */
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.setMetadata({ ...current, ...updates });
   }
@@ -137,9 +137,7 @@ export class Event extends SmrtHierarchical {
     const { EventSeriesCollection } = await import(
       '../collections/EventSeriesCollection'
     );
-    const collection = await (EventSeriesCollection as any).create(
-      this.options,
-    );
+    const collection = await EventSeriesCollection.create(this.options);
 
     return await collection.get({ id: this.seriesId });
   }
@@ -155,7 +153,7 @@ export class Event extends SmrtHierarchical {
     const { EventTypeCollection } = await import(
       '../collections/EventTypeCollection'
     );
-    const collection = await (EventTypeCollection as any).create(this.options);
+    const collection = await EventTypeCollection.create(this.options);
 
     return await collection.get({ id: this.typeId });
   }
@@ -170,7 +168,7 @@ export class Event extends SmrtHierarchical {
 
     try {
       const { PlaceCollection } = await import('@happyvertical/smrt-places');
-      const collection = await (PlaceCollection as any).create(this.options);
+      const collection = await PlaceCollection.create(this.options);
 
       return await collection.get({ id: this.placeId });
     } catch {
@@ -201,9 +199,7 @@ export class Event extends SmrtHierarchical {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = await (EventParticipantCollection as any).create(
-      this.options,
-    );
+    const collection = await EventParticipantCollection.create(this.options);
 
     return await collection.list({ where: { eventId: this.id } });
   }

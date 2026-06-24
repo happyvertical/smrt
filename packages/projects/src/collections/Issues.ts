@@ -105,7 +105,7 @@ export class IssueCollection extends SmrtCollection<Issue> {
    * @returns Array of open issues
    */
   async findOpen(repositoryId?: string): Promise<Issue[]> {
-    const where: Record<string, any> = { state: 'open' };
+    const where: Record<string, unknown> = { state: 'open' };
     if (repositoryId) {
       where.repositoryId = repositoryId;
     }

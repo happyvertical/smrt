@@ -51,10 +51,10 @@ export class FactTag extends SmrtObject {
   /**
    * Get metadata as parsed object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     const raw = this.metadata;
     if (!raw) return {};
-    if (typeof raw === 'object') return raw as unknown as Record<string, any>;
+    if (typeof raw === 'object') return raw as unknown as Record<string, unknown>;
     try {
       return JSON.parse(String(raw));
     } catch {
@@ -65,14 +65,14 @@ export class FactTag extends SmrtObject {
   /**
    * Set metadata from object
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
   /**
    * Update metadata by merging with existing values
    */
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.metadata = JSON.stringify({ ...current, ...updates });
   }
@@ -84,7 +84,7 @@ export class FactTag extends SmrtObject {
     if (!this.factId) return null;
 
     const { FactCollection } = await import('./facts');
-    const collection = await (FactCollection as any).create(this.options);
+    const collection = await FactCollection.create(this.options);
     return await collection.get({ id: this.factId });
   }
 }

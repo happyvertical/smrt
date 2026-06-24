@@ -106,10 +106,10 @@ export class FactEvidence extends SmrtObject {
     }
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     const raw = this.metadata;
     if (!raw) return {};
-    if (typeof raw === 'object') return raw as unknown as Record<string, any>;
+    if (typeof raw === 'object') return raw as unknown as Record<string, unknown>;
     try {
       return JSON.parse(String(raw));
     } catch {
@@ -117,11 +117,11 @@ export class FactEvidence extends SmrtObject {
     }
   }
 
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.metadata = JSON.stringify({ ...current, ...updates });
   }

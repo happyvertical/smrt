@@ -72,7 +72,7 @@ export class EventParticipant extends SmrtObject {
    *
    * @returns Parsed metadata object or empty object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -86,7 +86,7 @@ export class EventParticipant extends SmrtObject {
    *
    * @param data - Metadata object to store
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
@@ -95,7 +95,7 @@ export class EventParticipant extends SmrtObject {
    *
    * @param updates - Partial metadata to merge
    */
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.setMetadata({ ...current, ...updates });
   }
@@ -109,7 +109,7 @@ export class EventParticipant extends SmrtObject {
     if (!this.eventId) return null;
 
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await (EventCollection as any).create(this.options);
+    const collection = await EventCollection.create(this.options);
 
     return await collection.get({ id: this.eventId });
   }
@@ -126,7 +126,7 @@ export class EventParticipant extends SmrtObject {
       const { ProfileCollection } = await import(
         '@happyvertical/smrt-profiles'
       );
-      const collection = await (ProfileCollection as any).create(this.options);
+      const collection = await ProfileCollection.create(this.options);
 
       return await collection.get({ id: this.profileId });
     } catch {
@@ -146,9 +146,7 @@ export class EventParticipant extends SmrtObject {
     const { EventParticipantCollection } = await import(
       '../collections/EventParticipantCollection'
     );
-    const collection = await (EventParticipantCollection as any).create(
-      this.options,
-    );
+    const collection = await EventParticipantCollection.create(this.options);
 
     const participants = await collection.list({
       where: { eventId: this.eventId, groupId: this.groupId },

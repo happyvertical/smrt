@@ -131,7 +131,7 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
    * @returns Array of open PRs
    */
   async findOpen(repositoryId?: string): Promise<PullRequest[]> {
-    const where: Record<string, any> = { state: 'open' };
+    const where: Record<string, unknown> = { state: 'open' };
     if (repositoryId) {
       where.repositoryId = repositoryId;
     }

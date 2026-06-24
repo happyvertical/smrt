@@ -64,8 +64,8 @@ export interface EventTypeOptions extends SmrtObjectOptions {
   slug?: string;
   name?: string;
   description?: string;
-  schema?: Record<string, any> | string; // JSON schema or JSON string
-  participantSchema?: Record<string, any> | string;
+  schema?: Record<string, unknown> | string; // JSON schema or JSON string
+  participantSchema?: Record<string, unknown> | string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -83,7 +83,7 @@ export interface EventSeriesOptions extends SmrtObjectOptions {
   startDate?: Date | null;
   endDate?: Date | null;
   recurrence?: RecurrencePattern | string; // Pattern or JSON string
-  metadata?: Record<string, any> | string;
+  metadata?: Record<string, unknown> | string;
   externalId?: string;
   source?: string;
   createdAt?: Date;
@@ -106,7 +106,7 @@ export interface EventOptions extends SmrtObjectOptions {
   endDate?: Date | null;
   status?: EventStatus;
   round?: number | null; // Sequence/round number in series
-  metadata?: Record<string, any> | string;
+  metadata?: Record<string, unknown> | string;
   externalId?: string;
   source?: string;
   createdAt?: Date;
@@ -123,7 +123,7 @@ export interface EventParticipantOptions extends SmrtObjectOptions {
   role?: ParticipantRole | string; // Allow custom roles
   placement?: number | null; // Numeric position/placement
   groupId?: string; // Optional grouping (e.g., team ID for individual players)
-  metadata?: Record<string, any> | string;
+  metadata?: Record<string, unknown> | string;
   externalId?: string;
   source?: string;
   createdAt?: Date;

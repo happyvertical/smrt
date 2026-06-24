@@ -296,13 +296,13 @@ export class PromptOverride extends SmrtObject {
     const { PromptOverrideCollection } = await import(
       '../collections/PromptOverrideCollection.js'
     );
-    const collection = await (PromptOverrideCollection as any).create({
+    const collection = await PromptOverrideCollection.create({
       db: this.options.db ?? this.options.persistence,
     });
 
     if (this.tenantId) {
       const appOverride = await collection.getAppOverride(this.key, {
-        excludeId: this.id,
+        excludeId: this.id ?? undefined,
       });
       if (appOverride) {
         layers.push(appOverride.toPromptLayer());

@@ -95,7 +95,7 @@ export interface FactOptions extends SmrtObjectOptions {
   evolutionType?: EvolutionType;
   sourceCount?: number;
   confidence?: number;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
 }
 
@@ -110,7 +110,7 @@ export interface FactSourceOptions extends SmrtObjectOptions {
   sourceTitle?: string;
   credibility?: number;
   extractedAt?: Date;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
 }
 
@@ -130,7 +130,7 @@ export interface FactEvidenceOptions extends SmrtObjectOptions {
   locator?: string;
   extractionMethod?: string;
   confidence?: number;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -145,7 +145,7 @@ export interface FactSubjectOptions extends SmrtObjectOptions {
   entityType?: string;
   entityId?: string;
   role?: SubjectRole;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
 }
 
@@ -157,7 +157,7 @@ export interface FactContentOptions extends SmrtObjectOptions {
   factId?: string;
   contentId?: string;
   relationship?: FactContentRelationship;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
 }
 
@@ -168,7 +168,7 @@ export interface FactTagOptions extends SmrtObjectOptions {
   id?: string;
   factId?: string;
   tagSlug?: string;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
 }
 
@@ -192,7 +192,7 @@ export interface ReconcileOptions {
     sourceUrl?: string;
     sourceTitle?: string;
     credibility?: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
   tenantId?: string | null;
   /** Runtime prompt override for AI-assisted ambiguous reconciliation */
@@ -212,7 +212,7 @@ export interface FactExtractionCandidate {
   /** Optional extraction confidence from 0 to 1 */
   confidence?: number;
   /** Optional extraction metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -310,5 +310,5 @@ export interface FactMetadata {
   /** Corroboration score from cross-referencing */
   corroborationScore?: number;
   /** Allow any other properties */
-  [key: string]: any;
+  [key: string]: unknown;
 }

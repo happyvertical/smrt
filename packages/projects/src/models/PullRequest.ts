@@ -245,7 +245,7 @@ export class PullRequest extends Issue {
 
     // Return as SMRT Issue
     const { IssueCollection } = await import('../collections/Issues');
-    const collection = await (IssueCollection as any).create(this.options);
+    const collection = await IssueCollection.create(this.options);
     return await collection.findOne({
       where: { repositoryId: this.repositoryId, number: issue.number },
     });

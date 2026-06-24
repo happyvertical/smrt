@@ -28,7 +28,7 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
     context?: string,
   ): Promise<TagAlias> {
     // Check if alias already exists
-    const where: any = { tagSlug, alias };
+    const where: Record<string, unknown> = { tagSlug, alias };
     if (language) where.language = language;
     if (context) where.context = context;
 
@@ -54,14 +54,14 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
    * @returns Array of matching tags
    */
   async searchByAlias(alias: string, language?: string): Promise<Tag[]> {
-    const where: any = { alias };
+    const where: Record<string, unknown> = { alias };
     if (language) where.language = language;
 
     const aliases = await this.list({ where });
     const tagSlugs = [...new Set(aliases.map((a) => a.tagSlug))];
 
     const { TagCollection } = await import('./tags');
-    const tagCollection = await (TagCollection as any).create(this.options);
+    const tagCollection = await TagCollection.create(this.options);
 
     const tags: Tag[] = [];
     for (const slug of tagSlugs) {
@@ -83,7 +83,7 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
     tagSlug: string,
     language?: string,
   ): Promise<TagAlias[]> {
-    const where: any = { tagSlug };
+    const where: Record<string, unknown> = { tagSlug };
     if (language) where.language = language;
 
     return await this.list({ where });
@@ -166,7 +166,7 @@ export class TagAliasCollection extends SmrtCollection<TagAlias> {
     query: string,
     language?: string,
   ): Promise<TagAlias[]> {
-    const where: any = {};
+    const where: Record<string, unknown> = {};
     if (language) where.language = language;
 
     const all = await this.list({ where });

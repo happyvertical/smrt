@@ -140,15 +140,20 @@ function serializeInstance(
   // therefore have no `transformJSON()` hook. Using `toJSON()` here is a
   // duck-typed fallback — when present, it strips framework-internal handles
   // for us; when absent, we fall through to manual key iteration below.
-  if (typeof (instance as any).toJSON === 'function') {
-    return { className, ...(instance as any).toJSON() };
+  const maybeToJSON = (instance as { toJSON?: unknown }).toJSON;
+  if (typeof maybeToJSON === 'function') {
+    return {
+      className,
+      ...(maybeToJSON.call(instance) as Record<string, unknown>),
+    };
   }
 
   // Fallback for plain-object stubs (e.g. in unit tests):
   // skip functions and framework-internal properties
   const result: Record<string, unknown> = { className };
+  const record = instance as unknown as Record<string, unknown>;
   for (const key of Object.keys(instance)) {
-    const value = (instance as any)[key];
+    const value = record[key];
     if (typeof value !== 'function') {
       result[key] = value;
     }
@@ -437,7 +442,7 @@ export function createTenantInterceptor(
 
       // Stash isNew flag for afterSave dispatch detection
       if (opts.directoryClasses?.includes(className)) {
-        const id = (instance as any).id;
+        const id = (instance as unknown as Record<string, unknown>).id;
         context.metadata = {
           ...context.metadata,
           _directoryIsNew: id === undefined || id === null,
@@ -459,7 +464,8 @@ export function createTenantInterceptor(
 
       const config = getTenantScopedConfig(className);
       const tenantField = config?.field || 'tenantId';
-      const instanceTenantId = (instance as any)[tenantField];
+      const instanceRecord = instance as unknown as Record<string, unknown>;
+      const instanceTenantId = instanceRecord[tenantField];
 
       const tenantContext = getCurrentTenant();
 
@@ -477,24 +483,25 @@ export function createTenantInterceptor(
 
       // Auto-populate tenant ID if not set
       if (!instanceTenantId && config?.autoPopulate !== false) {
-        (instance as any)[tenantField] = tenantContext.tenantId;
+        instanceRecord[tenantField] = tenantContext.tenantId;
         return;
       }
 
       // Validate tenant ID matches context
       if (instanceTenantId && instanceTenantId !== tenantContext.tenantId) {
+        const attemptedTenantId = String(instanceTenantId);
         opts.onIsolationViolation?.(
           className,
           tenantContext.tenantId,
-          instanceTenantId,
+          attemptedTenantId,
           context,
         );
         throw new TenantIsolationError(
           `Tenant isolation violation: cannot save ${className} with ` +
-            `tenantId '${instanceTenantId}' in context of tenant '${tenantContext.tenantId}'`,
+            `tenantId '${attemptedTenantId}' in context of tenant '${tenantContext.tenantId}'`,
           {
             tenantId: tenantContext.tenantId,
-            attemptedTenantId: instanceTenantId,
+            attemptedTenantId,
           },
         );
       }
@@ -522,7 +529,9 @@ export function createTenantInterceptor(
 
       const config = getTenantScopedConfig(className);
       const tenantField = config?.field || 'tenantId';
-      const instanceTenantId = (instance as any)[tenantField];
+      const instanceTenantId = (instance as unknown as Record<string, unknown>)[
+        tenantField
+      ];
 
       const tenantContext = getCurrentTenant();
 
@@ -539,18 +548,19 @@ export function createTenantInterceptor(
 
       // Validate tenant ID matches
       if (instanceTenantId && instanceTenantId !== tenantContext.tenantId) {
+        const attemptedTenantId = String(instanceTenantId);
         opts.onIsolationViolation?.(
           className,
           tenantContext.tenantId,
-          instanceTenantId,
+          attemptedTenantId,
           context,
         );
         throw new TenantIsolationError(
           `Tenant isolation violation: cannot delete ${className} with ` +
-            `tenantId '${instanceTenantId}' in context of tenant '${tenantContext.tenantId}'`,
+            `tenantId '${attemptedTenantId}' in context of tenant '${tenantContext.tenantId}'`,
           {
             tenantId: tenantContext.tenantId,
-            attemptedTenantId: instanceTenantId,
+            attemptedTenantId,
           },
         );
       }
@@ -569,9 +579,11 @@ export function createTenantInterceptor(
       )
         return;
 
+      const instanceId = (instance as unknown as Record<string, unknown>).id;
+      const sourceId = typeof instanceId === 'string' ? instanceId : undefined;
       const rawIsNew = context.metadata?._directoryIsNew;
       const isNew =
-        typeof rawIsNew === 'boolean' ? rawIsNew : (instance as any).id == null;
+        typeof rawIsNew === 'boolean' ? rawIsNew : instanceId == null;
       const event = isNew
         ? `directory.${context.className.toLowerCase()}.created`
         : `directory.${context.className.toLowerCase()}.updated`;
@@ -581,7 +593,7 @@ export function createTenantInterceptor(
         serializeInstance(instance, context.className),
         {
           source: 'smrt-tenancy',
-          sourceId: (instance as any).id,
+          sourceId,
         },
       );
     },
@@ -599,12 +611,13 @@ export function createTenantInterceptor(
       )
         return;
 
+      const instanceId = (instance as unknown as Record<string, unknown>).id;
       await opts.dispatchBus.emit(
         `directory.${context.className.toLowerCase()}.deleted`,
         serializeInstance(instance, context.className),
         {
           source: 'smrt-tenancy',
-          sourceId: (instance as any).id,
+          sourceId: typeof instanceId === 'string' ? instanceId : undefined,
         },
       );
     },

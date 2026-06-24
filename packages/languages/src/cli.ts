@@ -23,7 +23,7 @@ export async function translateMissing(options: {
 }> {
   const sourceLocale = normalizeLocale(options.sourceLocale ?? 'en');
   const targets = options.locales.map(normalizeLocale).filter(Boolean);
-  const overrides = await (LanguageOverrideCollection as any).create({
+  const overrides = await LanguageOverrideCollection.create({
     db: options.db,
   });
 
@@ -75,7 +75,7 @@ export async function listUnreviewedAutoTranslations(options: {
   locale?: string;
   limit?: number;
 }) {
-  const overrides = await (LanguageOverrideCollection as any).create({
+  const overrides = await LanguageOverrideCollection.create({
     db: options.db,
   });
   return overrides.listUnreviewedAutoTranslations({
@@ -90,7 +90,7 @@ export async function approveAutoTranslation(options: {
   id: string;
   reviewer: string;
 }) {
-  const overrides = await (LanguageOverrideCollection as any).create({
+  const overrides = await LanguageOverrideCollection.create({
     db: options.db,
   });
   const row = await overrides.get({ id: options.id });
@@ -107,7 +107,7 @@ export async function editLanguageOverride(options: {
   template: string;
   reviewer?: string;
 }) {
-  const overrides = await (LanguageOverrideCollection as any).create({
+  const overrides = await LanguageOverrideCollection.create({
     db: options.db,
   });
   const row = await overrides.get({ id: options.id });
