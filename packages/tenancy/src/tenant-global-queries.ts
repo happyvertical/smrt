@@ -38,7 +38,7 @@
  * implementation.
  */
 
-import type { SmrtCollection } from '@happyvertical/smrt-core';
+import type { SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
   isSuperAdminBypass,
@@ -77,8 +77,8 @@ export function assertTenantReadAllowed(tenantId: string, label: string): void {
  *
  * @param collection - The tenant-scoped collection to query.
  */
-export async function queryGlobal<T>(
-  collection: SmrtCollection<any>,
+export async function queryGlobal<T, M extends SmrtObject = SmrtObject>(
+  collection: SmrtCollection<M>,
 ): Promise<T[]> {
   const metaType = collection.getStiChildMetaType();
   const where = metaType
@@ -89,7 +89,7 @@ export async function queryGlobal<T>(
     `SELECT * FROM ${collection.tableName} ${where}`,
     params,
     { allowRawOnTenantScoped: true },
-  )) as T[];
+  )) as unknown as T[];
 }
 
 /**
@@ -103,8 +103,8 @@ export async function queryGlobal<T>(
  * @param tenantId - The tenant id to include alongside globals.
  * @param label - `Class.method` identifier for the isolation error message.
  */
-export async function queryWithGlobals<T>(
-  collection: SmrtCollection<any>,
+export async function queryWithGlobals<T, M extends SmrtObject = SmrtObject>(
+  collection: SmrtCollection<M>,
   tenantId: string,
   label: string,
 ): Promise<T[]> {
@@ -118,5 +118,5 @@ export async function queryWithGlobals<T>(
     `SELECT * FROM ${collection.tableName} ${where}`,
     params,
     { allowRawOnTenantScoped: true },
-  )) as T[];
+  )) as unknown as T[];
 }
