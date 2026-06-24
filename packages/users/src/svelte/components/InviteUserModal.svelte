@@ -2,6 +2,7 @@
 import { RoleSelector } from '@happyvertical/smrt-ui';
 import { Modal } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Role, Tenant } from '@happyvertical/smrt-users';
 import { M } from '../i18n.js';
 
@@ -125,16 +126,16 @@ function handleClose() {
   </form>
 
   {#snippet footer()}
-    <button type="button" class="btn-secondary" onclick={handleClose} disabled={loading}>
+    <Button variant="secondary" type="button" onclick={handleClose} disabled={loading}>
       Cancel
-    </button>
-    <button type="submit" form={formId} class="btn-primary" disabled={loading}>
+    </Button>
+    <Button variant="primary" type="submit" form={formId} disabled={loading}>
       {#if loading}
         {t(M['users.invite_user_modal.sending'])}
       {:else}
         {t(M['users.invite_user_modal.send_invite'])}
       {/if}
-    </button>
+    </Button>
   {/snippet}
 </Modal>
 
@@ -211,42 +212,7 @@ function handleClose() {
     border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
-  button {
-    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
-    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    border: none;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: var(--smrt-color-primary-container, #005ac1);
-    opacity: 0.9;
-  }
-
-  .btn-secondary {
-    background: var(--smrt-color-surface, white);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    button,
     input[type='email'] {
       transition: none;
     }

@@ -43,6 +43,7 @@ const statusClass = $derived.by(() => {
 });
 </script>
 
+<!-- raw-primitive-allow: large pressable selection card wrapping rich content (avatar, name, email, role/status) with selected state and ripple; no Button primitive owns this structural pattern -->
 <button
   type="button"
   class="user-card"

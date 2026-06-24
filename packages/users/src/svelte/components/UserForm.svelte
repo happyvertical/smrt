@@ -2,6 +2,7 @@
 import type { Profile } from '@happyvertical/smrt-profiles';
 import { UserStatus } from '@happyvertical/smrt-types';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { User } from '@happyvertical/smrt-users';
 import { M } from '../i18n.js';
 
@@ -91,17 +92,17 @@ function handleSubmit(e: Event) {
 
   <div class="actions">
     {#if oncancel}
-      <button type="button" class="btn-secondary" onclick={oncancel} disabled={loading}>
+      <Button variant="secondary" type="button" onclick={oncancel} disabled={loading}>
         Cancel
-      </button>
+      </Button>
     {/if}
-    <button type="submit" class="btn-primary" disabled={loading}>
+    <Button variant="primary" type="submit" disabled={loading}>
       {#if loading}
         Saving...
       {:else}
         {user ? 'Update User' : 'Create User'}
       {/if}
-    </button>
+    </Button>
   </div>
 </form>
 
@@ -157,44 +158,9 @@ function handleSubmit(e: Event) {
     margin-top: var(--smrt-spacing-sm, 0.5rem);
   }
 
-  button {
-    padding: var(--smrt-spacing-sm, 0.5rem) var(--smrt-spacing-md, 1rem);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
-    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    border: none;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: var(--smrt-color-primary-container, #005ac1);
-    opacity: 0.9;
-  }
-
-  .btn-secondary {
-    background: var(--smrt-color-surface, white);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-  }
-
   @media (prefers-reduced-motion: reduce) {
     input,
-    select,
-    button {
+    select {
       transition: none;
     }
   }
