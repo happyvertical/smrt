@@ -56,7 +56,7 @@ export class Message extends SmrtObject {
   constructor(options: MessageOptions = {}) {
     super(options);
 
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.accountId !== undefined) this.accountId = options.accountId;
     if (options.threadId !== undefined) this.threadId = options.threadId;
     if (options.subject !== undefined) this.subject = options.subject;
@@ -108,7 +108,7 @@ export class Message extends SmrtObject {
   /**
    * Get metadata as parsed object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -120,7 +120,7 @@ export class Message extends SmrtObject {
   /**
    * Set metadata from object
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
@@ -176,7 +176,7 @@ export class Message extends SmrtObject {
     const { AccountCollection } = await import(
       '../collections/AccountCollection'
     );
-    const collection = await (AccountCollection as any).create(this.options);
+    const collection = await AccountCollection.create(this.options);
 
     return await collection.get({ id: this.accountId });
   }
@@ -190,7 +190,7 @@ export class Message extends SmrtObject {
     const { MessageCollection } = await import(
       '../collections/MessageCollection'
     );
-    const collection = await (MessageCollection as any).create(this.options);
+    const collection = await MessageCollection.create(this.options);
 
     return await collection.list({ where: { threadId: this.threadId } });
   }
@@ -202,7 +202,7 @@ export class Message extends SmrtObject {
     const { AttachmentCollection } = await import(
       '../collections/AttachmentCollection'
     );
-    const collection = await (AttachmentCollection as any).create(this.options);
+    const collection = await AttachmentCollection.create(this.options);
 
     return await collection.list({ where: { messageId: this.id } });
   }
@@ -241,7 +241,7 @@ export class Message extends SmrtObject {
     }
 
     // Get sender from account
-    const sender = await (account as any).createSender();
+    const sender = await account.createSender();
 
     // Claim the send. For a persisted row, do a compare-and-set so only one
     // concurrent sender wins: flip send_status to 'sending' atomically, gated on

@@ -176,7 +176,7 @@ export class ApiKey extends SmrtObject {
     const { ApiKeyCollection } = await import(
       '../collections/ApiKeyCollection'
     );
-    const collection = await (ApiKeyCollection as any).create(options);
+    const collection = await ApiKeyCollection.create(options);
 
     const apiKey = await collection.findOne({
       where: { keyHash },

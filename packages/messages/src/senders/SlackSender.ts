@@ -39,7 +39,7 @@ export class SlackSender implements MessageSenderInterface {
 
     const client = await getMessageClient({
       type: 'slack',
-      botToken: credentials.botToken,
+      botToken: credentials.botToken as string,
     });
 
     try {

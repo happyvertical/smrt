@@ -49,13 +49,9 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
   async getAccountBalance(accountId: string, asOfDate?: Date): Promise<number> {
     // Get entries for this account from posted journals only
     const { JournalCollection } = await import('./Journals');
-    const journalCollection = await (JournalCollection as any).create(
-      this.options,
-    );
+    const journalCollection = await JournalCollection.create(this.options);
     const { AccountCollection } = await import('./Accounts');
-    const accountCollection = await (AccountCollection as any).create(
-      this.options,
-    );
+    const accountCollection = await AccountCollection.create(this.options);
 
     // Get the account to determine if it's debit or credit normal
     const account = await accountCollection.get({ id: accountId });
@@ -102,9 +98,7 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
    */
   async getTrialBalance(asOfDate?: Date): Promise<TrialBalanceRow[]> {
     const { AccountCollection } = await import('./Accounts');
-    const accountCollection = await (AccountCollection as any).create(
-      this.options,
-    );
+    const accountCollection = await AccountCollection.create(this.options);
 
     const accounts = await accountCollection.findActive();
     const rows: TrialBalanceRow[] = [];
@@ -145,9 +139,7 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
     end: Date,
   ): Promise<{ totalDebits: number; totalCredits: number }> {
     const { JournalCollection } = await import('./Journals');
-    const journalCollection = await (JournalCollection as any).create(
-      this.options,
-    );
+    const journalCollection = await JournalCollection.create(this.options);
 
     const journals = await journalCollection.findByDateRange(start, end);
 
@@ -195,12 +187,8 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
   ): Promise<Array<{ entry: JournalEntry; runningBalance: number }>> {
     const { JournalCollection } = await import('./Journals');
     const { AccountCollection } = await import('./Accounts');
-    const journalCollection = await (JournalCollection as any).create(
-      this.options,
-    );
-    const accountCollection = await (AccountCollection as any).create(
-      this.options,
-    );
+    const journalCollection = await JournalCollection.create(this.options);
+    const accountCollection = await AccountCollection.create(this.options);
 
     const account = await accountCollection.get({ id: accountId });
     if (!account) {

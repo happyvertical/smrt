@@ -10,7 +10,12 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { ContractStatus, ContractType } from '../types/index.js';
+import {
+  type ContractOptions,
+  ContractStatus,
+  ContractType,
+  type LicenseSaleOptions,
+} from '../types/index.js';
 import { Customer } from './Customer.js';
 import { Vendor } from './Vendor.js';
 
@@ -183,7 +188,7 @@ export class Contract extends SmrtObject {
    */
   static readonly _stiField = 'contractType';
 
-  constructor(options: any = {}) {
+  constructor(options: ContractOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractType !== undefined)
@@ -612,7 +617,7 @@ export class LicenseSale extends Contract {
    */
   onChainHashRegistryRef: Meta<string> = '';
 
-  constructor(options: any = {}) {
+  constructor(options: LicenseSaleOptions = {}) {
     super(options);
     if (options.skuId !== undefined) this.skuId = options.skuId;
     if (options.paymentId !== undefined) this.paymentId = options.paymentId;

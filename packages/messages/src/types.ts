@@ -23,7 +23,10 @@ export type SendStatus =
  * Interface for channel-specific message senders
  */
 export interface MessageSenderInterface {
-  send(message: any, options?: SendMessageOptions): Promise<MessageSendResult>;
+  send(
+    message: unknown,
+    options?: SendMessageOptions,
+  ): Promise<MessageSendResult>;
   isReady(): boolean;
   readonly providerType: string;
 }
@@ -69,7 +72,7 @@ export interface MessageSendResult {
   accepted?: string[];
   rejected?: string[];
   error?: string;
-  providerResponse?: Record<string, any>;
+  providerResponse?: Record<string, unknown>;
   sentAt: Date;
 }
 
@@ -270,6 +273,30 @@ export interface SlackAccountOptions extends AccountOptions {
 export interface TwitterAccountOptions extends AccountOptions {
   handle?: string;
   twitterUserId?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Filter List Options
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Options for creating Blacklist
+ */
+export interface BlacklistOptions extends SmrtObjectOptions {
+  pattern?: string;
+  type?: 'email' | 'domain' | 'regex';
+  reason?: string;
+  autoArchive?: boolean;
+}
+
+/**
+ * Options for creating Whitelist
+ */
+export interface WhitelistOptions extends SmrtObjectOptions {
+  pattern?: string;
+  type?: 'email' | 'domain' | 'regex';
+  category?: string | null;
+  description?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

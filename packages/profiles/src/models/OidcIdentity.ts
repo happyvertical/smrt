@@ -94,7 +94,7 @@ export class OidcIdentity extends SmrtObject {
     const { OidcIdentityCollection } = await import(
       '../collections/OidcIdentityCollection'
     );
-    const collection = await (OidcIdentityCollection as any).create(options);
+    const collection = await OidcIdentityCollection.create(options);
     return await collection.findOne({
       where: { issuer, subject },
     });

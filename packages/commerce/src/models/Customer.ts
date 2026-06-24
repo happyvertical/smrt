@@ -10,7 +10,12 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { type Address, CustomerStatus, CustomerType } from '../types/index.js';
+import {
+  type Address,
+  type CustomerOptions,
+  CustomerStatus,
+  CustomerType,
+} from '../types/index.js';
 
 /**
  * Customer represents the customer role for a Profile.
@@ -100,7 +105,7 @@ export class Customer extends SmrtObject {
    */
   notes: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: CustomerOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.profileId !== undefined) this.profileId = options.profileId;

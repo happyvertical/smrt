@@ -21,7 +21,7 @@ export class ProfileRelationshipCollection extends SmrtCollection<ProfileRelatio
     fromProfileId: string,
     typeId?: string,
   ): Promise<ProfileRelationship[]> {
-    const where: any = { fromProfileId };
+    const where: Record<string, unknown> = { fromProfileId };
     if (typeId) where.typeId = typeId;
 
     return await this.list({ where });
@@ -38,7 +38,7 @@ export class ProfileRelationshipCollection extends SmrtCollection<ProfileRelatio
     toProfileId: string,
     typeId?: string,
   ): Promise<ProfileRelationship[]> {
-    const where: any = { toProfileId };
+    const where: Record<string, unknown> = { toProfileId };
     if (typeId) where.typeId = typeId;
 
     return await this.list({ where });

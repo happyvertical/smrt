@@ -88,7 +88,7 @@ export class EmailFolderCollection extends SmrtCollection<EmailFolder> {
    * Get subscribed folders
    */
   async getSubscribed(accountId?: string): Promise<EmailFolder[]> {
-    const where: Record<string, any> = { subscribed: true };
+    const where: Record<string, unknown> = { subscribed: true };
     if (accountId) {
       where.accountId = accountId;
     }

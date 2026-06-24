@@ -3,6 +3,8 @@
  * @packageDocumentation
  */
 
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+
 // ============================================================================
 // Customer/Vendor Types
 // ============================================================================
@@ -278,4 +280,322 @@ export interface RecognizeRevenueOptions {
   revenueAccountId: string;
   /** Account ID for tax payable (credit side, optional) */
   taxAccountId?: string;
+}
+
+// ============================================================================
+// Accounting-provider sync shapes
+// ============================================================================
+
+/**
+ * A single line item in the format expected by `@happyvertical/accounting`
+ * providers (QBO, Stripe, …). Mirrors the object built by
+ * {@link InvoiceLineItem.toAccountingLineItem}. The SDK isn't a dependency of
+ * this package, so the shape is declared locally rather than imported.
+ */
+export interface AccountingLineItemInput {
+  description: string;
+  sku?: string;
+  quantity: number;
+  unitPrice: number;
+  discount?: number;
+  taxRate?: number;
+  amount: number;
+  periodStart?: Date;
+  periodEnd?: Date;
+}
+
+/**
+ * An invoice in the format expected by `@happyvertical/accounting` providers.
+ * Mirrors the object built by {@link Invoice.toAccountingInput}.
+ */
+export interface AccountingInvoiceInput {
+  id: string;
+  externalId?: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerExternalId?: string;
+  issueDate: Date;
+  dueDate: Date;
+  lineItems: AccountingLineItemInput[];
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+  currency: string;
+  reference?: string;
+  memo?: string;
+}
+
+// ============================================================================
+// Model constructor option interfaces
+//
+// Each model's `constructor(options)` accepts a partial bag of its own fields.
+// Declaring a dedicated `XxxOptions extends SmrtObjectOptions` interface keeps
+// the constructors strongly typed (no `any`) while still allowing the
+// framework's base options (db, ai, fs, _className, …) through.
+// ============================================================================
+
+/**
+ * Constructor options for {@link Customer}.
+ */
+export interface CustomerOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  profileId?: string;
+  creditLimit?: number;
+  paymentTerms?: string;
+  taxExempt?: boolean;
+  taxId?: string;
+  defaultShippingAddress?: Address;
+  defaultBillingAddress?: Address;
+  status?: CustomerStatus;
+  customerType?: CustomerType | null;
+  notes?: string;
+}
+
+/**
+ * Constructor options for {@link Vendor}.
+ */
+export interface VendorOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  profileId?: string;
+  leadTimeDays?: number;
+  minimumOrderAmount?: number;
+  paymentTerms?: string;
+  currency?: string;
+  defaultContactEmail?: string;
+  defaultContactPhone?: string;
+  status?: VendorStatus;
+  notes?: string;
+  payoutAddresses?: Record<string, string> | string | null;
+}
+
+/**
+ * Constructor options for {@link Contract} and its STI subtypes.
+ */
+export interface ContractOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  contractType?: ContractType;
+  status?: ContractStatus;
+  customerId?: string;
+  vendorId?: string;
+  subtotal?: number;
+  taxAmount?: number;
+  totalAmount?: number;
+  currency?: string;
+  issueDate?: Date;
+  dueDate?: Date | null;
+  expiryDate?: Date | null;
+  reference?: string;
+  notes?: string;
+  terms?: string;
+  channelId?: string;
+}
+
+/**
+ * Constructor options for {@link LicenseSale} (Contract STI subtype). Extends
+ * {@link ContractOptions} with the licensing-specific meta fields.
+ */
+export interface LicenseSaleOptions extends ContractOptions {
+  skuId?: string;
+  paymentId?: string;
+  licenseeEmail?: string;
+  licenseeLegalEntity?: string;
+  licenseeJurisdiction?: string;
+  rightsMedium?: string;
+  rightsDistributionScope?: string;
+  rightsExclusivity?: string;
+  rightsDuration?: string;
+  rightsTerritory?: string;
+  rightsSublicensing?: boolean;
+  rightsDerivatives?: boolean;
+  pdfUrl?: string;
+  pdfHash?: string;
+  onChainHashRegistryRef?: string;
+}
+
+/**
+ * Constructor options for {@link ContractLineItem}.
+ */
+export interface ContractLineItemOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  contractId?: string;
+  description?: string;
+  quantity?: number;
+  unitPrice?: number;
+  discount?: number;
+  taxRate?: number;
+  amount?: number;
+  productId?: string;
+  sku?: string;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  billingPeriod?: string;
+  sortOrder?: number;
+}
+
+/**
+ * Constructor options for {@link Invoice}.
+ */
+export interface InvoiceOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  customerId?: string;
+  contractId?: string;
+  invoiceNumber?: string;
+  reference?: string;
+  issueDate?: Date;
+  dueDate?: Date;
+  paidDate?: Date | null;
+  subtotal?: number;
+  taxAmount?: number;
+  totalAmount?: number;
+  amountPaid?: number;
+  currency?: string;
+  status?: InvoiceStatus;
+  arJournalId?: string;
+  revenueJournalId?: string;
+  externalId?: string;
+  customerExternalId?: string;
+  externalProvider?: string;
+  syncedAt?: Date | null;
+  sentAt?: Date | null;
+  viewedAt?: Date | null;
+  remindersSent?: number;
+  lastReminderAt?: Date | null;
+  notes?: string;
+  customerNotes?: string;
+  terms?: string;
+}
+
+/**
+ * Constructor options for {@link InvoiceLineItem}.
+ */
+export interface InvoiceLineItemOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  invoiceId?: string;
+  description?: string;
+  sku?: string;
+  quantity?: number;
+  unitPrice?: number;
+  discount?: number;
+  taxRate?: number;
+  amount?: number;
+  sourceType?: string;
+  sourceId?: string;
+  periodStart?: Date | null;
+  periodEnd?: Date | null;
+  revenueAccountId?: string;
+  sortOrder?: number;
+}
+
+/**
+ * Constructor options for {@link Fulfillment}.
+ */
+export interface FulfillmentOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  contractId?: string;
+  fulfillmentType?: FulfillmentType;
+  status?: FulfillmentStatus;
+  trackingNumber?: string;
+  carrier?: string;
+  shippingAddress?: Address;
+  shippedAt?: Date | null;
+  deliveredAt?: Date | null;
+  estimatedDelivery?: Date | null;
+  notes?: string;
+}
+
+/**
+ * Constructor options for {@link FulfillmentLineItem}.
+ */
+export interface FulfillmentLineItemOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  fulfillmentId?: string;
+  contractLineItemId?: string;
+  quantityFulfilled?: number;
+  notes?: string;
+}
+
+/**
+ * Constructor options for {@link Payment}.
+ */
+export interface PaymentOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  contractId?: string;
+  customerId?: string;
+  amount?: number;
+  currency?: string;
+  method?: PaymentMethod;
+  status?: PaymentStatus;
+  transactionId?: string;
+  reference?: string;
+  journalId?: string;
+  paidAt?: Date | null;
+  notes?: string;
+  externalId?: string;
+  externalProvider?: string;
+  syncedAt?: Date | null;
+  backendId?: string;
+  backendTxRef?: string;
+  nativeAmount?: number;
+  nativeCurrency?: string;
+  usdAtQuote?: number;
+  usdAtConfirmation?: number;
+}
+
+/**
+ * Constructor options for {@link PaymentAllocation}.
+ */
+export interface PaymentAllocationOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  paymentId?: string;
+  invoiceId?: string;
+  amount?: number;
+  allocatedAt?: Date;
+  allocatedBy?: string;
+  notes?: string;
+}
+
+/**
+ * Constructor options for {@link PaymentIntent}.
+ */
+export interface PaymentIntentOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  skuId?: string;
+  offeringRef?: string;
+  licenseeEmail?: string;
+  customerId?: string;
+  paymentOptions?: PaymentOption[] | string;
+  usdPriceLocked?: number;
+  priceLockWindowMs?: number;
+  priceLockExpiresAt?: Date | number | string | null;
+  status?: PaymentIntentStatus;
+  idempotencyKey?: string;
+  paidOptionBackendId?: string;
+  paymentId?: string;
+  paidAt?: Date | number | string | null;
+  issuedAt?: Date | number | string | null;
+  expiredAt?: Date | number | string | null;
+  cancelledAt?: Date | number | string | null;
+  retiredAt?: Date | number | string | null;
+  notes?: string;
+}
+
+/**
+ * Constructor options for {@link Payout}.
+ */
+export interface PayoutOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  paymentId?: string;
+  vendorId?: string;
+  grossAmount?: number;
+  operatorFee?: number;
+  supplierNet?: number;
+  currency?: string;
+  backendId?: string;
+  backendTxRef?: string;
+  status?: PayoutStatus;
+  sentAt?: Date | number | string | null;
+  confirmedAt?: Date | number | string | null;
+  failedAt?: Date | number | string | null;
+  failureReason?: string;
+  notes?: string;
 }

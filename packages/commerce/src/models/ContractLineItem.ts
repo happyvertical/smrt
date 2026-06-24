@@ -10,6 +10,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type { ContractLineItemOptions } from '../types/index.js';
 
 /**
  * ContractLineItem represents a single line item on a contract.
@@ -110,7 +111,7 @@ export class ContractLineItem extends SmrtObject {
    */
   sortOrder: number = 0;
 
-  constructor(options: any = {}) {
+  constructor(options: ContractLineItemOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;

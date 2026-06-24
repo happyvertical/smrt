@@ -34,7 +34,7 @@ export class Attachment extends SmrtObject {
   constructor(options: AttachmentOptions = {}) {
     super(options);
 
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.messageId !== undefined) this.messageId = options.messageId;
     if (options.filename !== undefined) this.filename = options.filename;
     if (options.contentType !== undefined)
@@ -57,7 +57,7 @@ export class Attachment extends SmrtObject {
     const { MessageCollection } = await import(
       '../collections/MessageCollection'
     );
-    const collection = await (MessageCollection as any).create(this.options);
+    const collection = await MessageCollection.create(this.options);
 
     return await collection.get({ id: this.messageId });
   }

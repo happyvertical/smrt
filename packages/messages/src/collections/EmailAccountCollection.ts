@@ -6,7 +6,11 @@
 
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { EmailAccount } from '../models/EmailAccount';
-import type { EmailAccountSearchFilters, ProviderType } from '../types';
+import type {
+  EmailAccountSearchFilters,
+  ProviderType,
+  SyncOptions,
+} from '../types';
 import { AccountCollection } from './AccountCollection';
 
 export class EmailAccountCollection extends AccountCollection {
@@ -139,7 +143,7 @@ export class EmailAccountCollection extends AccountCollection {
    * Sync all active email accounts
    */
   async syncAll(
-    options?: Record<string, any>,
+    options?: SyncOptions,
   ): Promise<Map<string, { success: boolean; error?: Error }>> {
     const results = new Map<string, { success: boolean; error?: Error }>();
     const accounts = await this.getActive();

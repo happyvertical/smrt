@@ -6,6 +6,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import { InvoiceLineItem } from '../models/InvoiceLineItem.js';
+import type { AccountingLineItemInput } from '../types/index.js';
 
 export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
   static readonly _itemClass = InvoiceLineItem;
@@ -124,7 +125,9 @@ export class InvoiceLineItemCollection extends SmrtCollection<InvoiceLineItem> {
    * @param invoiceId - Invoice ID
    * @returns Array of line items in accounting format
    */
-  async toAccountingLineItems(invoiceId: string): Promise<any[]> {
+  async toAccountingLineItems(
+    invoiceId: string,
+  ): Promise<AccountingLineItemInput[]> {
     const lineItems = await this.findByInvoice(invoiceId);
     return lineItems.map((item) => item.toAccountingLineItem());
   }

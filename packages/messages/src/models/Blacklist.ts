@@ -1,4 +1,5 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { BlacklistOptions } from '../types';
 
 /**
  * Blacklist - Block entries for email filtering
@@ -19,7 +20,7 @@ export class Blacklist extends SmrtObject {
   reason: string = '';
   autoArchive: boolean = true;
 
-  constructor(options: any = {}) {
+  constructor(options: BlacklistOptions = {}) {
     super(options);
 
     if (options.pattern !== undefined) {

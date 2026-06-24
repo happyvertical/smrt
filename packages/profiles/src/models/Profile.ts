@@ -26,6 +26,11 @@ import {
   promptMessageOptions,
   smrtProfilesGenerateBioPrompt,
 } from '../prompts';
+import type { ApiKey, GenerateKeyResult } from './ApiKey';
+import type { AuditLog } from './AuditLog';
+import type { NostrIdentity } from './NostrIdentity';
+import type { OidcIdentity } from './OidcIdentity';
+import type { ProfileMetadata } from './ProfileMetadata';
 import type { ProfileRelationship } from './ProfileRelationship';
 import { ProfileType } from './ProfileType';
 
@@ -62,7 +67,7 @@ export class Profile extends SmrtObject {
 
   // Relationships (not stored as columns)
   @oneToMany('ProfileMetadata')
-  metadata: any[] = [];
+  metadata: ProfileMetadata[] = [];
 
   // ProfileRelationship declares multiple foreign keys back to Profile
   // (fromProfileId / toProfileId / contextProfileId), so each oneToMany names
@@ -70,10 +75,10 @@ export class Profile extends SmrtObject {
   // and gives the R10-generated `getRelationshipsFrom()` / `getRelationshipsTo()`
   // accessors the correct inverse foreign key.
   @oneToMany('ProfileRelationship', { foreignKey: 'fromProfileId' })
-  relationshipsFrom: any[] = [];
+  relationshipsFrom: ProfileRelationship[] = [];
 
   @oneToMany('ProfileRelationship', { foreignKey: 'toProfileId' })
-  relationshipsTo: any[] = [];
+  relationshipsTo: ProfileRelationship[] = [];
 
   constructor(options: ProfileOptions = {}) {
     super(options);
@@ -112,7 +117,7 @@ export class Profile extends SmrtObject {
    * @param metafieldSlug - The slug of the metafield
    * @param value - The value to set
    */
-  async addMetadata(metafieldSlug: string, value: any): Promise<void> {
+  async addMetadata(metafieldSlug: string, value: unknown): Promise<void> {
     const { ProfileMetafieldCollection } = await import(
       '../collections/ProfileMetafieldCollection'
     );
@@ -121,9 +126,9 @@ export class Profile extends SmrtObject {
     );
 
     // Get or create metafield collection
-    const metafieldCollection = await (
-      ProfileMetafieldCollection as any
-    ).create(this.options);
+    const metafieldCollection = await ProfileMetafieldCollection.create(
+      this.options,
+    );
 
     // Find the metafield by slug
     const metafield = await metafieldCollection.getBySlug(metafieldSlug);
@@ -135,7 +140,7 @@ export class Profile extends SmrtObject {
     await metafield.validateValue(value);
 
     // Get or create metadata collection
-    const metadataCollection = await (ProfileMetadataCollection as any).create(
+    const metadataCollection = await ProfileMetadataCollection.create(
       this.options,
     );
 
@@ -152,6 +157,11 @@ export class Profile extends SmrtObject {
       await metadata.save();
     } else {
       // Create new
+      if (!this.id || !metafield.id) {
+        throw new Error(
+          'Profile.addMetadata requires a persisted profile and metafield (missing id)',
+        );
+      }
       const metadata = await metadataCollection.create({
         profileId: this.id,
         metafieldId: metafield.id,
@@ -166,16 +176,16 @@ export class Profile extends SmrtObject {
    *
    * @returns Object with metafield slugs as keys
    */
-  async getMetadata(): Promise<Record<string, any>> {
+  async getMetadata(): Promise<Record<string, string>> {
     const { ProfileMetadataCollection } = await import(
       '../collections/ProfileMetadataCollection'
     );
 
-    const metadataCollection = await (ProfileMetadataCollection as any).create(
+    const metadataCollection = await ProfileMetadataCollection.create(
       this.options,
     );
 
-    return await metadataCollection.getMetadataObject(this.id);
+    return await metadataCollection.getMetadataObject(this.id as string);
   }
 
   /**
@@ -183,7 +193,7 @@ export class Profile extends SmrtObject {
    *
    * @param metadata - Object with metafield slugs as keys and values
    */
-  async updateMetadata(metadata: Record<string, any>): Promise<void> {
+  async updateMetadata(metadata: Record<string, unknown>): Promise<void> {
     for (const [metafieldSlug, value] of Object.entries(metadata)) {
       await this.addMetadata(metafieldSlug, value);
     }
@@ -202,16 +212,16 @@ export class Profile extends SmrtObject {
       '../collections/ProfileMetadataCollection'
     );
 
-    const metafieldCollection = await (
-      ProfileMetafieldCollection as any
-    ).create(this.options);
+    const metafieldCollection = await ProfileMetafieldCollection.create(
+      this.options,
+    );
 
     const metafield = await metafieldCollection.getBySlug(metafieldSlug);
     if (!metafield) {
       throw new Error(`Metafield '${metafieldSlug}' not found`);
     }
 
-    const metadataCollection = await (ProfileMetadataCollection as any).create(
+    const metadataCollection = await ProfileMetadataCollection.create(
       this.options,
     );
 
@@ -305,9 +315,8 @@ export class Profile extends SmrtObject {
     );
 
     // Get relationship type
-    const relationshipTypeCollection = await (
-      ProfileRelationshipTypeCollection as any
-    ).create(this.options);
+    const relationshipTypeCollection =
+      await ProfileRelationshipTypeCollection.create(this.options);
 
     const relationshipType =
       await relationshipTypeCollection.getBySlug(relationshipSlug);
@@ -316,23 +325,23 @@ export class Profile extends SmrtObject {
     }
 
     // Check if relationship already exists
-    const relationshipCollection = await (
-      ProfileRelationshipCollection as any
-    ).create(this.options);
+    const relationshipCollection = await ProfileRelationshipCollection.create(
+      this.options,
+    );
 
     const exists = await relationshipCollection.exists(
-      this.id,
-      toProfile.id,
-      relationshipType.id,
+      this.id as string,
+      toProfile.id as string,
+      relationshipType.id as string,
     );
 
     if (!exists) {
       // Create the relationship
       const relationship = await relationshipCollection.create({
-        fromProfileId: this.id,
-        toProfileId: toProfile.id,
-        typeId: relationshipType.id,
-        contextProfileId: contextProfile?.id,
+        fromProfileId: this.id ?? undefined,
+        toProfileId: toProfile.id ?? undefined,
+        typeId: relationshipType.id ?? undefined,
+        contextProfileId: contextProfile?.id ?? undefined,
       });
       await relationship.save();
 
@@ -370,32 +379,40 @@ export class Profile extends SmrtObject {
       '../collections/ProfileRelationshipTypeCollection'
     );
 
-    const relationshipCollection = await (
-      ProfileRelationshipCollection as any
-    ).create(this.options);
+    const relationshipCollection = await ProfileRelationshipCollection.create(
+      this.options,
+    );
 
     const direction = options?.direction || 'all';
 
     // Get type ID if typeSlug is provided
     let typeId: string | undefined;
     if (options?.typeSlug) {
-      const relationshipTypeCollection = await (
-        ProfileRelationshipTypeCollection as any
-      ).create(this.options);
+      const relationshipTypeCollection =
+        await ProfileRelationshipTypeCollection.create(this.options);
 
       const relationshipType = await relationshipTypeCollection.getBySlug(
         options.typeSlug,
       );
-      typeId = relationshipType?.id;
+      typeId = relationshipType?.id ?? undefined;
     }
 
     // Fetch relationships based on direction
     if (direction === 'from') {
-      return await relationshipCollection.getFromProfile(this.id, typeId);
+      return await relationshipCollection.getFromProfile(
+        this.id as string,
+        typeId,
+      );
     } else if (direction === 'to') {
-      return await relationshipCollection.getToProfile(this.id, typeId);
+      return await relationshipCollection.getToProfile(
+        this.id as string,
+        typeId,
+      );
     } else {
-      return await relationshipCollection.getForProfile(this.id, typeId);
+      return await relationshipCollection.getForProfile(
+        this.id as string,
+        typeId,
+      );
     }
   }
 
@@ -415,9 +432,7 @@ export class Profile extends SmrtObject {
       direction: 'all',
     });
 
-    const profileCollection = await (ProfileCollection as any).create(
-      this.options,
-    );
+    const profileCollection = await ProfileCollection.create(this.options);
 
     const relatedProfiles: Profile[] = [];
     const seenIds = new Set<string>();
@@ -460,9 +475,8 @@ export class Profile extends SmrtObject {
     );
 
     // Get relationship type
-    const relationshipTypeCollection = await (
-      ProfileRelationshipTypeCollection as any
-    ).create(this.options);
+    const relationshipTypeCollection =
+      await ProfileRelationshipTypeCollection.create(this.options);
 
     const relationshipType =
       await relationshipTypeCollection.getBySlug(relationshipSlug);
@@ -471,9 +485,9 @@ export class Profile extends SmrtObject {
     }
 
     // Find and delete the relationship
-    const relationshipCollection = await (
-      ProfileRelationshipCollection as any
-    ).create(this.options);
+    const relationshipCollection = await ProfileRelationshipCollection.create(
+      this.options,
+    );
 
     const relationships = await relationshipCollection.list({
       where: {
@@ -562,7 +576,7 @@ export class Profile extends SmrtObject {
    */
   static async findByMetadata(
     _metafieldSlug: string,
-    _value: any,
+    _value: unknown,
   ): Promise<Profile[]> {
     // Will be auto-implemented by SMRT
     return [];
@@ -614,11 +628,11 @@ export class Profile extends SmrtObject {
    *
    * @returns Array of API keys
    */
-  async getApiKeys(): Promise<any[]> {
+  async getApiKeys(): Promise<ApiKey[]> {
     const { ApiKeyCollection } = await import(
       '../collections/ApiKeyCollection'
     );
-    const collection = await (ApiKeyCollection as any).create(this.options);
+    const collection = await ApiKeyCollection.create(this.options);
     return await collection.findByProfile(this.id as string);
   }
 
@@ -627,11 +641,11 @@ export class Profile extends SmrtObject {
    *
    * @returns Array of active API keys
    */
-  async getActiveApiKeys(): Promise<any[]> {
+  async getActiveApiKeys(): Promise<ApiKey[]> {
     const { ApiKeyCollection } = await import(
       '../collections/ApiKeyCollection'
     );
-    const collection = await (ApiKeyCollection as any).create(this.options);
+    const collection = await ApiKeyCollection.create(this.options);
     return await collection.findActiveByProfile(this.id as string);
   }
 
@@ -645,7 +659,7 @@ export class Profile extends SmrtObject {
     name: string;
     scopes?: string[];
     expiresAt?: Date | null;
-  }): Promise<{ key: string; apiKey: any }> {
+  }): Promise<GenerateKeyResult> {
     const { ApiKey } = await import('./ApiKey');
     return await ApiKey.generate(this, {
       ...options,
@@ -658,13 +672,11 @@ export class Profile extends SmrtObject {
    *
    * @returns Array of OIDC identity records
    */
-  async getOidcIdentities(): Promise<any[]> {
+  async getOidcIdentities(): Promise<OidcIdentity[]> {
     const { OidcIdentityCollection } = await import(
       '../collections/OidcIdentityCollection'
     );
-    const collection = await (OidcIdentityCollection as any).create(
-      this.options,
-    );
+    const collection = await OidcIdentityCollection.create(this.options);
     return await collection.findByProfile(this.id as string);
   }
 
@@ -679,13 +691,11 @@ export class Profile extends SmrtObject {
     issuer: string;
     subject: string;
     email?: string;
-  }): Promise<any> {
+  }): Promise<OidcIdentity> {
     const { OidcIdentityCollection } = await import(
       '../collections/OidcIdentityCollection'
     );
-    const collection = await (OidcIdentityCollection as any).create(
-      this.options,
-    );
+    const collection = await OidcIdentityCollection.create(this.options);
     return await collection.linkToProfile(this, oidcData);
   }
 
@@ -694,13 +704,11 @@ export class Profile extends SmrtObject {
    *
    * @returns Array of Nostr identity records
    */
-  async getNostrIdentities(): Promise<any[]> {
+  async getNostrIdentities(): Promise<NostrIdentity[]> {
     const { NostrIdentityCollection } = await import(
       '../collections/NostrIdentityCollection'
     );
-    const collection = await (NostrIdentityCollection as any).create(
-      this.options,
-    );
+    const collection = await NostrIdentityCollection.create(this.options);
     return await collection.findByProfile(this.id as string);
   }
 
@@ -717,13 +725,11 @@ export class Profile extends SmrtObject {
     encryptionTag: string;
     email: string;
     nip05Username?: string;
-  }): Promise<any> {
+  }): Promise<NostrIdentity> {
     const { NostrIdentityCollection } = await import(
       '../collections/NostrIdentityCollection'
     );
-    const collection = await (NostrIdentityCollection as any).create(
-      this.options,
-    );
+    const collection = await NostrIdentityCollection.create(this.options);
     return await collection.linkToProfile(this, nostrData);
   }
 
@@ -733,11 +739,11 @@ export class Profile extends SmrtObject {
    * @param limit - Maximum number of logs to return
    * @returns Array of audit log entries
    */
-  async getAuditLogs(limit: number = 50): Promise<any[]> {
+  async getAuditLogs(limit: number = 50): Promise<AuditLog[]> {
     const { AuditLogCollection } = await import(
       '../collections/AuditLogCollection'
     );
-    const collection = await (AuditLogCollection as any).create(this.options);
+    const collection = await AuditLogCollection.create(this.options);
     return await collection.getRecentActivity(this.id as string, limit);
   }
 
@@ -752,13 +758,13 @@ export class Profile extends SmrtObject {
     resourceType: string;
     resourceId: string;
     source?: 'web' | 'cli' | 'ci' | 'webhook' | 'mcp';
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     onBehalfOf?: Profile | null;
-  }): Promise<any> {
+  }): Promise<AuditLog> {
     const { AuditLogCollection } = await import(
       '../collections/AuditLogCollection'
     );
-    const collection = await (AuditLogCollection as any).create(this.options);
+    const collection = await AuditLogCollection.create(this.options);
     return await collection.record({
       profile: this,
       ...options,

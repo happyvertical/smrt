@@ -43,7 +43,7 @@ export class AccountCollection extends SmrtCollection<Account> {
     }
     const allAccounts = await this.list({});
     return allAccounts.filter((a) => {
-      const metaType = (a as any)._meta_type || '';
+      const metaType = (a as { _meta_type?: string })._meta_type || '';
       return metaType.endsWith(`:${accountType}`);
     });
   }
@@ -75,7 +75,7 @@ export class AccountCollection extends SmrtCollection<Account> {
       }
       if (filters.accountType) {
         accounts = accounts.filter((a) => {
-          const metaType = (a as any)._meta_type || '';
+          const metaType = (a as { _meta_type?: string })._meta_type || '';
           return metaType.includes(filters.accountType as string);
         });
       }
@@ -97,7 +97,8 @@ export class AccountCollection extends SmrtCollection<Account> {
     const byType: Record<string, number> = {};
 
     for (const account of accounts) {
-      const metaType = (account as any)._meta_type || 'Unknown';
+      const metaType =
+        (account as { _meta_type?: string })._meta_type || 'Unknown';
       const shortType = metaType.split(':').pop() || metaType;
       byType[shortType] = (byType[shortType] || 0) + 1;
     }

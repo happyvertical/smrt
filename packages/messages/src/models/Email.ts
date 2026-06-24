@@ -164,9 +164,7 @@ export class Email extends Message {
     const { EmailAccountCollection } = await import(
       '../collections/EmailAccountCollection'
     );
-    const collection = await (EmailAccountCollection as any).create(
-      this.options,
-    );
+    const collection = await EmailAccountCollection.create(this.options);
 
     return await collection.get({ id: this.accountId });
   }
@@ -180,9 +178,7 @@ export class Email extends Message {
     const { EmailFolderCollection } = await import(
       '../collections/EmailFolderCollection'
     );
-    const collection = await (EmailFolderCollection as any).create(
-      this.options,
-    );
+    const collection = await EmailFolderCollection.create(this.options);
 
     return await collection.get({ id: this.folderId });
   }
@@ -194,9 +190,9 @@ export class Email extends Message {
     if (!this.threadId) return [this];
 
     const { EmailCollection } = await import('../collections/EmailCollection');
-    const collection = await (EmailCollection as any).create(this.options);
+    const collection = await EmailCollection.create(this.options);
 
-    return await collection.list({ where: { threadId: this.threadId } });
+    return await collection.getByThread(this.threadId);
   }
 
   /**

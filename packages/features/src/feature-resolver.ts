@@ -6,6 +6,7 @@ import {
   FeatureOverrideEffect,
   type FeatureResolutionContext,
   type FeatureResolverOptions,
+  type FeatureTargetConstructor,
   type FeatureTenantHierarchyProvider,
   type FeatureTenantNode,
   type FeatureUsersModule,
@@ -89,7 +90,7 @@ export class FeatureResolver {
   }
 
   async isEnabledFor(
-    classOrInstance: object | (new (...args: any[]) => any),
+    classOrInstance: object | FeatureTargetConstructor,
     localId: string,
     context: FeatureResolutionContext = {},
   ): Promise<boolean> {
@@ -100,12 +101,10 @@ export class FeatureResolver {
   private async ensureInitialized(): Promise<void> {
     if (!this.initializationPromise) {
       this.initializationPromise = (async () => {
-        this.featureDefinitions = await (
-          FeatureDefinitionCollection as any
-        ).create(this.options);
-        this.featureOverrides = await (FeatureOverrideCollection as any).create(
-          this.options,
-        );
+        this.featureDefinitions =
+          await FeatureDefinitionCollection.create(this.options);
+        this.featureOverrides =
+          await FeatureOverrideCollection.create(this.options);
       })();
     }
 
@@ -174,7 +173,7 @@ async function defaultTenantHierarchyLoader(
         }
 
         const ancestors = await tenantCollection.getAncestorsFromRoot(tenantId);
-        return [...ancestors, tenant].map((node: any) => ({
+        return [...ancestors, tenant].map((node) => ({
           id: String(node.id),
           inheritPermissions: Boolean(node.inheritPermissions),
           cascadePermissions: Boolean(node.cascadePermissions),

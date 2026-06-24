@@ -33,7 +33,7 @@ export class EmailFolder extends SmrtObject {
   constructor(options: EmailFolderOptions = {}) {
     super(options);
 
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.accountId !== undefined) this.accountId = options.accountId;
     if (options.name !== undefined) this.name = options.name;
     if (options.path !== undefined) this.path = options.path;
@@ -57,9 +57,7 @@ export class EmailFolder extends SmrtObject {
     const { EmailAccountCollection } = await import(
       '../collections/EmailAccountCollection'
     );
-    const collection = await (EmailAccountCollection as any).create(
-      this.options,
-    );
+    const collection = await EmailAccountCollection.create(this.options);
 
     return await collection.get({ id: this.accountId });
   }
@@ -69,9 +67,11 @@ export class EmailFolder extends SmrtObject {
    */
   async getEmails(limit?: number) {
     const { EmailCollection } = await import('../collections/EmailCollection');
-    const collection = await (EmailCollection as any).create(this.options);
+    const collection = await EmailCollection.create(this.options);
 
-    const options: Record<string, any> = { where: { folderId: this.id } };
+    const options: { where: Record<string, unknown>; limit?: number } = {
+      where: { folderId: this.id },
+    };
     if (limit) {
       options.limit = limit;
     }
@@ -84,9 +84,9 @@ export class EmailFolder extends SmrtObject {
    */
   async getUnreadEmails(limit?: number) {
     const { EmailCollection } = await import('../collections/EmailCollection');
-    const collection = await (EmailCollection as any).create(this.options);
+    const collection = await EmailCollection.create(this.options);
 
-    const options: Record<string, any> = {
+    const options: { where: Record<string, unknown>; limit?: number } = {
       where: { folderId: this.id, isRead: false },
     };
     if (limit) {
@@ -100,11 +100,17 @@ export class EmailFolder extends SmrtObject {
    * Update message counts from database
    */
   async refreshCounts(): Promise<void> {
+    if (!this.id) {
+      throw new Error(
+        'EmailFolder.refreshCounts requires a persisted folder (missing id)',
+      );
+    }
+    const folderId = this.id;
     const { EmailCollection } = await import('../collections/EmailCollection');
-    const collection = await (EmailCollection as any).create(this.options);
+    const collection = await EmailCollection.create(this.options);
 
-    this.messageCount = await collection.countByFolder(this.id);
-    this.unreadCount = await collection.countUnreadByFolder(this.id);
+    this.messageCount = await collection.countByFolder(folderId);
+    this.unreadCount = await collection.countUnreadByFolder(folderId);
     this.updatedAt = new Date();
     await this.save();
   }

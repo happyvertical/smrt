@@ -39,7 +39,7 @@ export class EmailAttachment extends Attachment {
     if (!this.messageId) return null;
 
     const { EmailCollection } = await import('../collections/EmailCollection');
-    const collection = await (EmailCollection as any).create(this.options);
+    const collection = await EmailCollection.create(this.options);
 
     return await collection.get({ id: this.messageId });
   }

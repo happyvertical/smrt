@@ -26,9 +26,9 @@ export class ProfileMetadataCollection extends SmrtCollection<ProfileMetadata> {
    * @param profileId - The profile UUID
    * @returns Object with metafield slugs as keys
    */
-  async getMetadataObject(profileId: string): Promise<Record<string, any>> {
+  async getMetadataObject(profileId: string): Promise<Record<string, string>> {
     const metadata = await this.getByProfile(profileId);
-    const result: Record<string, any> = {};
+    const result: Record<string, string> = {};
 
     for (const item of metadata) {
       const slug = await item.getMetafieldSlug();
@@ -49,7 +49,7 @@ export class ProfileMetadataCollection extends SmrtCollection<ProfileMetadata> {
    */
   async findProfilesByMetadata(
     metafieldId: string,
-    value: any,
+    value: unknown,
   ): Promise<string[]> {
     const matches = await this.list({
       where: { metafieldId, value: String(value) },

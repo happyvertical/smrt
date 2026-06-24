@@ -71,7 +71,7 @@ export class AuditLogCollection extends SmrtCollection<AuditLog> {
     resourceType: string;
     resourceId: string;
     source?: AuditSource;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     onBehalfOf?: Profile | null;
   }): Promise<AuditLog> {
     const log = new AuditLog({

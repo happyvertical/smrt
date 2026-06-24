@@ -10,6 +10,10 @@
 // Utility functions will be implemented as part of Phase 2
 // This file serves as a placeholder for the API structure
 
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type { Profile } from './models/Profile';
+import type { ProfileMetafield } from './models/ProfileMetafield';
+
 /**
  * Retrieve all metadata for a profile as a key-value object
  *
@@ -19,15 +23,13 @@
  */
 export async function getProfileMetadata(
   profileId: string,
-  options: any = {},
-): Promise<Record<string, any>> {
+  options: SmrtObjectOptions = {},
+): Promise<Record<string, string>> {
   const { ProfileMetadataCollection } = await import(
     './collections/ProfileMetadataCollection'
   );
 
-  const metadataCollection = await (ProfileMetadataCollection as any).create(
-    options,
-  );
+  const metadataCollection = await ProfileMetadataCollection.create(options);
 
   return await metadataCollection.getMetadataObject(profileId);
 }
@@ -43,12 +45,12 @@ export async function getProfileMetadata(
 export async function setProfileMetadata(
   profileId: string,
   metafieldSlug: string,
-  value: any,
-  options: any = {},
+  value: unknown,
+  options: SmrtObjectOptions = {},
 ): Promise<void> {
   const { ProfileCollection } = await import('./collections/ProfileCollection');
 
-  const profileCollection = await (ProfileCollection as any).create(options);
+  const profileCollection = await ProfileCollection.create(options);
 
   const profile = await profileCollection.get({ id: profileId });
   if (!profile) {
@@ -68,8 +70,8 @@ export async function setProfileMetadata(
  */
 export async function findProfilesByMeta(
   metafieldSlug: string,
-  value: any,
-  options: any = {},
+  value: unknown,
+  options: SmrtObjectOptions = {},
 ): Promise<string[]> {
   const { ProfileMetafieldCollection } = await import(
     './collections/ProfileMetafieldCollection'
@@ -79,9 +81,7 @@ export async function findProfilesByMeta(
   );
 
   // Get metafield by slug
-  const metafieldCollection = await (ProfileMetafieldCollection as any).create(
-    options,
-  );
+  const metafieldCollection = await ProfileMetafieldCollection.create(options);
 
   const metafield = await metafieldCollection.getBySlug(metafieldSlug);
   if (!metafield) {
@@ -89,11 +89,12 @@ export async function findProfilesByMeta(
   }
 
   // Find all metadata with this metafield and value
-  const metadataCollection = await (ProfileMetadataCollection as any).create(
-    options,
-  );
+  const metadataCollection = await ProfileMetadataCollection.create(options);
 
-  return await metadataCollection.findProfilesByMetadata(metafield.id, value);
+  return await metadataCollection.findProfilesByMetadata(
+    metafield.id as string,
+    value,
+  );
 }
 
 /**
@@ -108,10 +109,10 @@ export async function findProfilesByMeta(
  * @param contextProfile - Optional context profile for tertiary relationships
  */
 export async function createReciprocalRelationship(
-  fromProfile: any,
-  toProfile: any,
+  fromProfile: Profile,
+  toProfile: Profile,
   relationshipSlug: string,
-  contextProfile?: any,
+  contextProfile?: Profile,
 ): Promise<void> {
   // The Profile.addRelationship method already handles reciprocal relationships
   await fromProfile.addRelationship(
@@ -129,8 +130,8 @@ export async function createReciprocalRelationship(
  * @returns True if valid, throws error if invalid
  */
 export async function validateMetadataValue(
-  metafield: any,
-  value: any,
+  metafield: ProfileMetafield,
+  value: unknown,
 ): Promise<boolean> {
   // The ProfileMetafield.validateValue method already implements validation
   return await metafield.validateValue(value);

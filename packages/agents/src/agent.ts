@@ -347,7 +347,7 @@ export abstract class Agent extends SmrtObject {
    * const sources = configs.get('sources');
    * ```
    */
-  async loadConfigs(): Promise<Map<string, any>> {
+  async loadConfigs(): Promise<Map<string, Record<string, unknown>>> {
     if (!this.id) {
       throw new Error('Agent must be saved before loading configs');
     }
@@ -373,7 +373,7 @@ export abstract class Agent extends SmrtObject {
    */
   async saveSlotConfig(
     slotId: string,
-    data: Record<string, any>,
+    data: Record<string, unknown>,
   ): Promise<void> {
     if (!this.id) {
       throw new Error('Agent must be saved before saving slot config');
@@ -406,9 +406,12 @@ export abstract class Agent extends SmrtObject {
    * // Returns file config merged with any db overrides
    * ```
    */
-  async getMergedConfig(slotId: string): Promise<any> {
+  async getMergedConfig(slotId: string): Promise<Record<string, unknown>> {
     // Get file-based config from module config
-    const fileConfig = (this.config as Record<string, any>)?.[slotId] ?? {};
+    const fileConfig =
+      ((this.config as Record<string, unknown>)?.[slotId] as
+        | Record<string, unknown>
+        | undefined) ?? {};
 
     if (!this.id) {
       return fileConfig;
@@ -440,19 +443,24 @@ export abstract class Agent extends SmrtObject {
    * const fullConfig = await agent.exportConfig({ includeSecrets: true });
    * ```
    */
-  async exportConfig(options?: { includeSecrets?: boolean }): Promise<any> {
+  async exportConfig(options?: {
+    includeSecrets?: boolean;
+  }): Promise<Record<string, unknown>> {
     const dbConfigs = await this.loadConfigs();
-    const fileConfig = (this.config as Record<string, any>) ?? {};
+    const fileConfig = (this.config as Record<string, unknown>) ?? {};
 
     // Merge all configs
-    const merged = { ...fileConfig };
+    const merged: Record<string, unknown> = { ...fileConfig };
     for (const [slotId, data] of dbConfigs) {
-      merged[slotId] = { ...merged[slotId], ...data };
+      merged[slotId] = {
+        ...(merged[slotId] as Record<string, unknown> | undefined),
+        ...data,
+      };
     }
 
     // Sanitize if secrets not included (uses centralized sanitizeConfig from smrt-config)
     if (!options?.includeSecrets) {
-      return sanitizeConfig(merged);
+      return sanitizeConfig(merged) as Record<string, unknown>;
     }
 
     return merged;
@@ -1118,7 +1126,7 @@ export abstract class Agent extends SmrtObject {
     const mergedFilter = mergeFilters(this.interests?.filter, filter.filter);
 
     const queryOptions: {
-      where?: Record<string, any>;
+      where?: Record<string, unknown>;
       orderBy?: string | string[];
       limit?: number;
     } = {};
@@ -1157,8 +1165,12 @@ export abstract class Agent extends SmrtObject {
     return [...results].sort((a, b) => {
       for (const sortField of sortFields) {
         const [field, direction = 'ASC'] = sortField.trim().split(/\s+/);
-        const aValue = (a.data as Record<string, any>)[field];
-        const bValue = (b.data as Record<string, any>)[field];
+        const aValue = (a.data as unknown as Record<string, string | number>)[
+          field
+        ];
+        const bValue = (b.data as unknown as Record<string, string | number>)[
+          field
+        ];
 
         let comparison = 0;
         if (aValue < bValue) comparison = -1;

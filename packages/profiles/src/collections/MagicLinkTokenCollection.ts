@@ -53,7 +53,7 @@ export class MagicLinkTokenCollection extends SmrtCollection<MagicLinkToken> {
     // Filter tokens created after cutoff
     // Note: We use createdAt from SmrtObject base
     return tokens.filter((token) => {
-      const createdAt = (token as any).createdAt;
+      const createdAt = token.createdAt;
       return createdAt && new Date(createdAt) > cutoff;
     }).length;
   }
@@ -71,7 +71,7 @@ export class MagicLinkTokenCollection extends SmrtCollection<MagicLinkToken> {
 
     // Filter tokens created after cutoff
     return tokens.filter((token) => {
-      const createdAt = (token as any).createdAt;
+      const createdAt = token.createdAt;
       return createdAt && new Date(createdAt) > cutoff;
     }).length;
   }

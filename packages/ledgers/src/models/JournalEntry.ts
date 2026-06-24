@@ -140,7 +140,7 @@ export class JournalEntry extends SmrtObject {
   async getJournal(): Promise<import('./Journal').Journal | null> {
     if (!this.journalId) return null;
     const { JournalCollection } = await import('../collections/Journals');
-    const collection = await (JournalCollection as any).create(this.options);
+    const collection = await JournalCollection.create(this.options);
     return await collection.get({ id: this.journalId });
   }
 
@@ -150,7 +150,7 @@ export class JournalEntry extends SmrtObject {
   async getAccount(): Promise<import('./Account').Account | null> {
     if (!this.accountId) return null;
     const { AccountCollection } = await import('../collections/Accounts');
-    const collection = await (AccountCollection as any).create(this.options);
+    const collection = await AccountCollection.create(this.options);
     return await collection.get({ id: this.accountId });
   }
 

@@ -26,6 +26,19 @@ import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
  *
  * In practice, the actual Svelte component will be passed and used
  * with `<svelte:component this={Component} />` in SvelteKit apps.
+ *
+ * The `any`s here are irreducible (#1579, S4): this placeholder must be
+ * simultaneously assignable FROM arbitrary concrete Svelte components (the
+ * `register()`/`registerByKey()` storage side) and assignable TO Svelte's
+ * `ConstructorOfATypedSvelteComponent | Component<any, any, any>` render union
+ * (the `<Component this={...} />` site in AgentAdminPanel.svelte). Under
+ * `strictFunctionTypes` no single non-`any` function type satisfies both
+ * directions, and aliasing to svelte's `Component<Props>` additionally trips
+ * the `Props extends Record<string, any>` constraint against the registry's
+ * `register<TProps extends AdminPanelBaseProps>` generic (an interface with no
+ * index signature). This mirrors the unresolved `ModuleComponentType` in
+ * `@happyvertical/smrt-types` and `createModuleUIRegistry` in
+ * `@happyvertical/smrt-ui`.
  */
 export type ComponentType<Props = any> = (...args: any[]) => any;
 
@@ -110,7 +123,7 @@ export interface AgentAdminRoute {
  */
 export interface AgentRouteLoadContext {
   params: Record<string, string>;
-  parent: () => Promise<any>;
+  parent: () => Promise<Record<string, unknown>>;
   fetch: typeof fetch;
   url: URL;
 }
@@ -248,7 +261,7 @@ export interface AgentUIComponentRegistry {
  * ```
  */
 export function createUIRegistry(): AgentUIComponentRegistry {
-  const components = new Map<string, ComponentType<any>>();
+  const components = new Map<string, ComponentType>();
   const manifests = new Map<string, AgentManifestInfo>();
   const routeComponents = new Map<string, ComponentType>();
   const routeLoads = new Map<string, AgentRouteLoadFn>();

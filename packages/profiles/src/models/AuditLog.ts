@@ -22,7 +22,7 @@ export interface AuditLogOptions extends SmrtObjectOptions {
   resourceType?: string;
   resourceId?: string;
   source?: AuditSource;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   onBehalfOfId?: string | null;
   tenantId?: string | null;
 }
@@ -67,7 +67,7 @@ export class AuditLog extends SmrtObject {
   /**
    * Additional context (CI run ID, request ID, etc.)
    */
-  metadata: Record<string, any> = {};
+  metadata: Record<string, unknown> = {};
 
   /**
    * For pass-through identity in CI - the actual person who triggered

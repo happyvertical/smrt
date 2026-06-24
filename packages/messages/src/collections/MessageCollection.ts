@@ -42,7 +42,7 @@ export class MessageCollection extends SmrtCollection<Message> {
       }
       if (filters.messageType) {
         messages = messages.filter((m) => {
-          const metaType = (m as any)._meta_type || '';
+          const metaType = (m as { _meta_type?: string })._meta_type || '';
           return metaType.includes(filters.messageType as string);
         });
       }
@@ -109,7 +109,7 @@ export class MessageCollection extends SmrtCollection<Message> {
     }
     const allMessages = await this.list({});
     return allMessages.filter((m) => {
-      const metaType = (m as any)._meta_type || '';
+      const metaType = (m as { _meta_type?: string })._meta_type || '';
       return metaType.endsWith(`:${messageType}`);
     });
   }
@@ -118,7 +118,7 @@ export class MessageCollection extends SmrtCollection<Message> {
    * Get unread messages
    */
   async getUnread(accountId?: string): Promise<Message[]> {
-    const where: Record<string, any> = { isRead: false };
+    const where: Record<string, unknown> = { isRead: false };
     if (accountId) {
       where.accountId = accountId;
     }
@@ -129,7 +129,7 @@ export class MessageCollection extends SmrtCollection<Message> {
    * Get flagged messages
    */
   async getFlagged(accountId?: string): Promise<Message[]> {
-    const where: Record<string, any> = { isFlagged: true };
+    const where: Record<string, unknown> = { isFlagged: true };
     if (accountId) {
       where.accountId = accountId;
     }
@@ -185,7 +185,7 @@ export class MessageCollection extends SmrtCollection<Message> {
     const byType: Record<string, number> = {};
 
     for (const msg of messages) {
-      const metaType = (msg as any)._meta_type || 'Unknown';
+      const metaType = (msg as { _meta_type?: string })._meta_type || 'Unknown';
       const shortType = metaType.split(':').pop() || metaType;
       byType[shortType] = (byType[shortType] || 0) + 1;
     }
@@ -206,7 +206,7 @@ export class MessageCollection extends SmrtCollection<Message> {
    * Get draft messages
    */
   async getDrafts(accountId?: string): Promise<Message[]> {
-    const where: Record<string, any> = { sendStatus: 'draft' };
+    const where: Record<string, unknown> = { sendStatus: 'draft' };
     if (accountId) where.accountId = accountId;
     return await this.list({ where });
   }
@@ -215,7 +215,7 @@ export class MessageCollection extends SmrtCollection<Message> {
    * Get sent messages
    */
   async getSent(accountId?: string): Promise<Message[]> {
-    const where: Record<string, any> = { sendStatus: 'sent' };
+    const where: Record<string, unknown> = { sendStatus: 'sent' };
     if (accountId) where.accountId = accountId;
     return await this.list({ where });
   }
@@ -224,7 +224,7 @@ export class MessageCollection extends SmrtCollection<Message> {
    * Get scheduled messages
    */
   async getScheduled(accountId?: string): Promise<Message[]> {
-    const where: Record<string, any> = { sendStatus: 'scheduled' };
+    const where: Record<string, unknown> = { sendStatus: 'scheduled' };
     if (accountId) where.accountId = accountId;
     return await this.list({ where });
   }
@@ -233,7 +233,7 @@ export class MessageCollection extends SmrtCollection<Message> {
    * Get messages that failed to send
    */
   async getFailedSends(accountId?: string): Promise<Message[]> {
-    const where: Record<string, any> = { sendStatus: 'failed' };
+    const where: Record<string, unknown> = { sendStatus: 'failed' };
     if (accountId) where.accountId = accountId;
     return await this.list({ where });
   }

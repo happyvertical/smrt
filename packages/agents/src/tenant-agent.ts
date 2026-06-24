@@ -56,7 +56,7 @@ export interface ResolvedAgentAvailability {
   /** Agent manifest from the build (if available) */
   manifest?: AgentManifestInfo;
   /** Tenant-level config overrides */
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 }
 
 /**
@@ -106,7 +106,7 @@ export class TenantAgent extends SmrtObject {
    * property directly, so the admin dashboard flow is unaffected.
    */
   @field({ type: 'json', nullable: true, sensitive: true })
-  config: Record<string, any> | null = null;
+  config: Record<string, unknown> | null = null;
 }
 
 /**

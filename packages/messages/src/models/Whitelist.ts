@@ -1,4 +1,5 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { WhitelistOptions } from '../types';
 
 /**
  * Whitelist - Allow-only entries for email filtering
@@ -19,7 +20,7 @@ export class Whitelist extends SmrtObject {
   category: string | null = null;
   description: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: WhitelistOptions = {}) {
     super(options);
 
     if (options.pattern !== undefined) {

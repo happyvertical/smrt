@@ -127,9 +127,7 @@ export class Account extends SmrtHierarchical {
     const { JournalEntryCollection } = await import(
       '../collections/JournalEntries'
     );
-    const collection = await (JournalEntryCollection as any).create(
-      this.options,
-    );
+    const collection = await JournalEntryCollection.create(this.options);
     return await collection.getAccountBalance(this.id, asOfDate);
   }
 
@@ -143,7 +141,7 @@ export class Account extends SmrtHierarchical {
       throw new Error('Account must be saved before creating children');
     }
     const { AccountCollection } = await import('../collections/Accounts');
-    const collection = await (AccountCollection as any).create(this.options);
+    const collection = await AccountCollection.create(this.options);
     const account = await collection.create({
       ...options,
       parentId: this.id,

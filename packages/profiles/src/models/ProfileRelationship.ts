@@ -49,7 +49,7 @@ export class ProfileRelationship extends SmrtObject {
 
   // Relationships
   @oneToMany('ProfileRelationshipTerm')
-  terms: any[] = [];
+  terms: ProfileRelationshipTerm[] = [];
 
   constructor(options: ProfileRelationshipOptions = {}) {
     super(options);
@@ -79,16 +79,23 @@ export class ProfileRelationship extends SmrtObject {
    * @param endedAt - Optional end date of the term
    */
   async addTerm(startedAt: Date, endedAt?: Date): Promise<void> {
+    if (!this.id) {
+      throw new Error(
+        'ProfileRelationship.addTerm requires a persisted relationship (missing id)',
+      );
+    }
+    const relationshipId = this.id;
+
     const { ProfileRelationshipTermCollection } = await import(
       '../collections/ProfileRelationshipTermCollection'
     );
 
-    const termCollection = await (
-      ProfileRelationshipTermCollection as any
-    ).create(this.options);
+    const termCollection = await ProfileRelationshipTermCollection.create(
+      this.options,
+    );
 
     const term = await termCollection.create({
-      relationshipId: this.id,
+      relationshipId,
       startedAt,
       endedAt,
     });
@@ -118,11 +125,11 @@ export class ProfileRelationship extends SmrtObject {
       '../collections/ProfileRelationshipTermCollection'
     );
 
-    const termCollection = await (
-      ProfileRelationshipTermCollection as any
-    ).create(this.options);
+    const termCollection = await ProfileRelationshipTermCollection.create(
+      this.options,
+    );
 
-    return await termCollection.getByRelationship(this.id);
+    return await termCollection.getByRelationship(this.id as string);
   }
 
   /**
@@ -135,10 +142,10 @@ export class ProfileRelationship extends SmrtObject {
       '../collections/ProfileRelationshipTermCollection'
     );
 
-    const termCollection = await (
-      ProfileRelationshipTermCollection as any
-    ).create(this.options);
+    const termCollection = await ProfileRelationshipTermCollection.create(
+      this.options,
+    );
 
-    return await termCollection.getActiveTerm(this.id);
+    return await termCollection.getActiveTerm(this.id as string);
   }
 }

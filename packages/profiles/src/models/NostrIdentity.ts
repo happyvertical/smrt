@@ -116,7 +116,7 @@ export class NostrIdentity extends SmrtObject {
     const { NostrIdentityCollection } = await import(
       '../collections/NostrIdentityCollection'
     );
-    const collection = await (NostrIdentityCollection as any).create(options);
+    const collection = await NostrIdentityCollection.create(options);
     return await collection.findOne({
       where: { pubkey },
     });
@@ -132,7 +132,7 @@ export class NostrIdentity extends SmrtObject {
     const { NostrIdentityCollection } = await import(
       '../collections/NostrIdentityCollection'
     );
-    const collection = await (NostrIdentityCollection as any).create(options);
+    const collection = await NostrIdentityCollection.create(options);
     return await collection.findOne({
       where: { email: email.toLowerCase() },
     });
@@ -148,7 +148,7 @@ export class NostrIdentity extends SmrtObject {
     const { NostrIdentityCollection } = await import(
       '../collections/NostrIdentityCollection'
     );
-    const collection = await (NostrIdentityCollection as any).create(options);
+    const collection = await NostrIdentityCollection.create(options);
     return await collection.findOne({
       where: { nip05Username: username.toLowerCase() },
     });
