@@ -22,6 +22,7 @@ function handleChange(event: Event) {
   {#if memberships.length <= 1}
     <span class="tenant-name">{currentTenant?.name ?? 'Unknown'}</span>
   {:else}
+    <!-- raw-primitive-allow: the Select form primitive lives in @happyvertical/smrt-svelte, which transitively depends on smrt-tenancy (smrt-svelte to smrt-languages to smrt-tenancy), so importing it would create a DAG cycle (#1582); the native select element retains full keyboard/AT a11y -->
     <select value={currentTenantId} onchange={handleChange} class="tenant-select">
       {#each memberships as membership}
         {#if membership.tenantId}
