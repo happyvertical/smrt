@@ -212,14 +212,10 @@ function removeReference(id: string) {
     min-height: 2.5rem;
     border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);
     border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
+    background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     font: inherit;
     padding: 0.55rem 0.875rem;
-  }
-
-  .content-references-panel :global(.reference-button) {
-    background: var(--smrt-color-surface-container);
     cursor: pointer;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }

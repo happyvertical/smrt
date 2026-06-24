@@ -76,11 +76,16 @@ let {
   onCancel,
 }: Props = $props();
 
+// Unique per-instance form id so triggerSave() targets THIS editor's form even
+// when multiple ContentEditor / GovernedContentEditor instances are mounted
+// (a hardcoded id + getElementById would resolve to the first match in the DOM).
+const formId = $props.id();
+
 export function triggerSave() {
   if (saveDisabled) return;
   const editForm =
     typeof document !== 'undefined'
-      ? (document.getElementById('content-edit-form') as HTMLFormElement | null)
+      ? (document.getElementById(formId) as HTMLFormElement | null)
       : null;
   if (editForm?.requestSubmit) {
     editForm.requestSubmit();
@@ -925,7 +930,7 @@ function removeAsset(id: string) {
   <div class="editor-grid" class:editor-grid--with-sidebar={showChatSidebar}>
     <!-- LEFT COLUMN (Document Canvas) -->
     <Form
-      id="content-edit-form"
+      id={formId}
       class="editor-main-col"
       onsubmit={handleSubmit}
     >
@@ -1527,8 +1532,10 @@ function removeAsset(id: string) {
   }
 
   .form-container :global(.editor-main-col) {
+    display: flex;
     flex-direction: column;
     background: transparent;
+    width: 100%;
   }
 
   .editor-sidebar-col {
@@ -1612,11 +1619,6 @@ function removeAsset(id: string) {
     margin: 0;
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-  }
-
-  .form-container :global(.editor-main-col) {
-    display: block;
-    width: 100%;
   }
 
   .form-container label {
