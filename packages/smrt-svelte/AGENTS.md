@@ -14,8 +14,11 @@ and **`smrt-svelte` (here) owns the Provider-REQUIRED form primitives**
 (`CheckboxInput`, the rich `Form`, `TextInput`, `MoneyInput`, and the specialized
 date/measurement/address/file inputs — they call `useAppState` / the AI hooks and
 carry i18n + spoken-input logic that keeps them above the leaf). This package
-re-exports the base primitives from smrt-ui so `@happyvertical/smrt-svelte/forms`
-stays the full barrel.
+re-exports the base **input** primitives (`Input`, `Select`, `Textarea`,
+`Toggle`, `FormGroup`) from smrt-ui so `@happyvertical/smrt-svelte/forms` stays
+the full barrel — but **not** `Form`: this barrel's `Form` is the rich
+Provider-backed one, so import the Provider-free `Form` from
+`@happyvertical/smrt-ui/forms` directly.
 
 Two consequences:
 
@@ -110,7 +113,8 @@ library. Which barrel for what:
 | Need | Import from |
 |------|-------------|
 | Buttons, cards, badges, avatars, chips, skeletons, tooltips, dropdowns, trees, pagination | `@happyvertical/smrt-svelte/ui` (or the package root) |
-| Base form primitives — `Form`, `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` (Provider-free) | `@happyvertical/smrt-ui/forms` (also re-exported from `@happyvertical/smrt-svelte/forms`) |
+| Provider-free base inputs — `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` | `@happyvertical/smrt-ui/forms` (also re-exported from `@happyvertical/smrt-svelte/forms`) |
+| Provider-free `Form` (plain `<form>` wrapper) | `@happyvertical/smrt-ui/forms` **only** — `@happyvertical/smrt-svelte/forms` exports the *rich* Provider-backed `Form` under that name, so import the plain one straight from smrt-ui |
 | Provider-backed inputs — `TextInput`, `NumberInput`, `MoneyInput`, date/measurement/address inputs, `CheckboxInput`, file upload, the rich `Form` | `@happyvertical/smrt-svelte/forms` |
 | `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` | `@happyvertical/smrt-svelte/feedback` |
 | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-svelte/layout` |

@@ -24,8 +24,10 @@ SMRT has one shared set of UI primitives, split across two packages by concern:
   the rich `Form` (field registration + voice), `TextInput`, `MoneyInput`, and
   the specialized date/measurement/address/file inputs (they call `useAppState`
   / the AI hooks and carry i18n + spoken-input logic). It re-exports the base
-  primitives from here so `@happyvertical/smrt-svelte/forms` stays the full
-  barrel.
+  **input** primitives (`Input`, `Select`, `Textarea`, `Toggle`, `FormGroup`)
+  from here so `@happyvertical/smrt-svelte/forms` stays the full barrel — but
+  **not** `Form`: that barrel's `Form` is the rich Provider-backed one, so the
+  Provider-free `Form` is only importable from `@happyvertical/smrt-ui/forms`.
 
 **Domain packages import visual primitives from `smrt-ui` and form primitives
 from `smrt-svelte`, and must not hand-roll raw `<button>` / `<input>` /
