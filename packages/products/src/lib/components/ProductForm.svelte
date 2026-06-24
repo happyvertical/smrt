@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
@@ -66,128 +67,126 @@ function handleSubmit(event: Event) {
 }
 </script>
 
-<form onsubmit={handleSubmit} class="product-form">
-  <div class="form-group">
-    <label for="name">{t(M['products.product_form.name_label'])}</label>
-    <input
-      id="name"
-      type="text"
-      bind:value={formData.name}
-      disabled={loading}
-      class="form-input"
-      class:error={errors.name}
-      placeholder={t(M['products.product_form.name_placeholder'])}
-    />
-    {#if errors.name}
-      <span class="error-message">{errors.name}</span>
-    {/if}
-  </div>
-
-  <div class="form-group">
-    <label for="description">Description</label>
-    <textarea
-      id="description"
-      bind:value={formData.description}
-      disabled={loading}
-      class="form-textarea"
-      placeholder={t(M['products.product_form.description_placeholder'])}
-      rows="3"
-    ></textarea>
-  </div>
-
-  <div class="form-row">
+<div class="product-form-shell">
+  <Form onsubmit={handleSubmit} class="product-form">
     <div class="form-group">
-      <label for="price">Price *</label>
-      <input
-        id="price"
-        type="number"
-        step="0.01"
-        min="0"
-        bind:value={formData.price}
-        disabled={loading}
-        class="form-input"
-        class:error={errors.price}
-        placeholder="0.00"
-      />
-      {#if errors.price}
-        <span class="error-message">{errors.price}</span>
-      {/if}
-    </div>
-
-    <div class="form-group">
-      <label for="category">Category</label>
-      <input
-        id="category"
+      <label for="name">{t(M['products.product_form.name_label'])}</label>
+      <Input
+        id="name"
         type="text"
-        bind:value={formData.category}
+        bind:value={formData.name}
         disabled={loading}
-        class="form-input"
-        placeholder={t(M['products.product_form.category_placeholder'])}
+        class={errors.name ? 'error' : ''}
+        placeholder={t(M['products.product_form.name_placeholder'])}
       />
-    </div>
-  </div>
-
-  <div class="form-group">
-    <label for="tags">Tags</label>
-    <input
-      id="tags"
-      type="text"
-      bind:value={formData.tags}
-      disabled={loading}
-      class="form-input"
-      placeholder={t(M['products.product_form.tags_placeholder'])}
-    />
-    <small class="form-hint">{t(M['products.product_form.tags_hint'])}</small>
-  </div>
-
-  <div class="form-group">
-    <label class="checkbox-label">
-      <input
-        type="checkbox"
-        bind:checked={formData.inStock}
-        disabled={loading}
-        class="form-checkbox"
-      />
-      {t(M['products.product_form.in_stock_label'])}
-    </label>
-  </div>
-
-  <div class="form-actions">
-    {#if onCancel}
-      <Button type="button" variant="secondary" onclick={onCancel} disabled={loading}>
-        Cancel
-      </Button>
-    {/if}
-
-    <Button type="submit" variant="primary" disabled={loading}>
-      {#if loading}
-        Saving...
-      {:else}
-        {product.id ? 'Update Product' : 'Create Product'}
+      {#if errors.name}
+        <span class="error-message">{errors.name}</span>
       {/if}
-    </Button>
-  </div>
-</form>
+    </div>
+
+    <div class="form-group">
+      <label for="description">Description</label>
+      <Textarea
+        id="description"
+        bind:value={formData.description}
+        disabled={loading}
+        placeholder={t(M['products.product_form.description_placeholder'])}
+        rows={3}
+      ></Textarea>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="price">Price *</label>
+        <Input
+          id="price"
+          type="number"
+          step="0.01"
+          min="0"
+          bind:value={formData.price}
+          disabled={loading}
+          class={errors.price ? 'error' : ''}
+          placeholder="0.00"
+        />
+        {#if errors.price}
+          <span class="error-message">{errors.price}</span>
+        {/if}
+      </div>
+
+      <div class="form-group">
+        <label for="category">Category</label>
+        <Input
+          id="category"
+          type="text"
+          bind:value={formData.category}
+          disabled={loading}
+          placeholder={t(M['products.product_form.category_placeholder'])}
+        />
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="tags">Tags</label>
+      <Input
+        id="tags"
+        type="text"
+        bind:value={formData.tags}
+        disabled={loading}
+        placeholder={t(M['products.product_form.tags_placeholder'])}
+      />
+      <small class="form-hint">{t(M['products.product_form.tags_hint'])}</small>
+    </div>
+
+    <div class="form-group">
+      <label class="checkbox-label">
+        <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+        <input
+          type="checkbox"
+          bind:checked={formData.inStock}
+          disabled={loading}
+          class="form-checkbox"
+        />
+        {t(M['products.product_form.in_stock_label'])}
+      </label>
+    </div>
+
+    <div class="form-actions">
+      {#if onCancel}
+        <Button type="button" variant="secondary" onclick={onCancel} disabled={loading}>
+          Cancel
+        </Button>
+      {/if}
+
+      <Button type="submit" variant="primary" disabled={loading}>
+        {#if loading}
+          Saving...
+        {:else}
+          {product.id ? 'Update Product' : 'Create Product'}
+        {/if}
+      </Button>
+    </div>
+  </Form>
+</div>
 
 <style>
-  .product-form {
+  .product-form-shell :global(.product-form) {
     max-width: 500px;
     padding: 1.5rem;
     background: var(--smrt-color-surface, #fff);
     border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
   }
-  
+
   .form-group {
     margin-bottom: 1rem;
   }
-  
+
   .form-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
   }
-  
+
   label {
     display: block;
     margin-bottom: 0.25rem;
@@ -196,30 +195,13 @@ function handleSubmit(event: Event) {
     font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
-  .form-input, .form-textarea {
-    width: 100%;
-    padding: 0.5rem;
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-sm, 4px);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    transition: border-color 0.2s;
-  }
-
-  .form-input:focus, .form-textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 10%, transparent);
-  }
-
-  .form-input.error {
+  /* Error border on the migrated <Input>. The primitive renders the inner
+     <input class="input error"> inside its own component, so the scoped class
+     can't reach it without :global (#1589). */
+  .product-form-shell :global(.input.error) {
     border-color: var(--smrt-color-error, #dc2626);
   }
-  
-  .form-textarea {
-    resize: vertical;
-    min-height: 80px;
-  }
-  
+
   .checkbox-label {
     display: flex;
     align-items: center;

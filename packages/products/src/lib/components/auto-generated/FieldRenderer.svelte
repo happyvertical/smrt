@@ -4,6 +4,7 @@
  * This demonstrates the "Define Once, Consume Everywhere" vision
  */
 
+import { Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 
@@ -92,10 +93,9 @@ function handleObjectInput(event: Event) {
   </label>
 
   {#if fieldType === 'string'}
-    <input
+    <Input
       id={fieldId}
       type="text"
-      class="field-input"
       {value}
       {placeholder}
       {readonly}
@@ -103,10 +103,9 @@ function handleObjectInput(event: Event) {
       oninput={handleStringInput}
     />
   {:else if fieldType === 'number'}
-    <input
+    <Input
       id={fieldId}
       type="number"
-      class="field-input"
       value={value || 0}
       {placeholder}
       {readonly}
@@ -114,6 +113,7 @@ function handleObjectInput(event: Event) {
       oninput={handleNumberInput}
     />
   {:else if fieldType === 'boolean'}
+    <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
     <input
       id={fieldId}
       type="checkbox"
@@ -123,26 +123,24 @@ function handleObjectInput(event: Event) {
       onchange={handleBooleanInput}
     />
   {:else if fieldType === 'array'}
-    <textarea
+    <Textarea
       id={fieldId}
-      class="field-textarea"
       value={Array.isArray(value) ? value.join(', ') : ''}
       placeholder={placeholder || 'Enter comma-separated values'}
       {readonly}
       {required}
       oninput={handleArrayInput}
-    />
+    ></Textarea>
     <div class="field-hint">{t(M['products.field_renderer.array_hint'])}</div>
   {:else if fieldType === 'object'}
-    <textarea
+    <Textarea
       id={fieldId}
-      class="field-textarea"
       value={typeof value === 'object' ? JSON.stringify(value, null, 2) : '{}'}
       placeholder={placeholder || 'Enter JSON object'}
       {readonly}
       {required}
       oninput={handleObjectInput}
-    />
+    ></Textarea>
     <div class="field-hint">{t(M['products.field_renderer.object_hint'])}</div>
   {/if}
 </div>
@@ -165,27 +163,6 @@ function handleObjectInput(event: Event) {
     color: var(--smrt-color-error, #dc2626);
   }
 
-  .field-input,
-  .field-textarea {
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-sm, 0.375rem);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .field-input:focus,
-  .field-textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 10%, transparent);
-  }
-
-  .field-textarea {
-    min-height: 4rem;
-    resize: vertical;
-  }
-
   .field-checkbox {
     width: 1rem;
     height: 1rem;
@@ -195,11 +172,5 @@ function handleObjectInput(event: Event) {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     font-style: italic;
-  }
-
-  .field-input:read-only,
-  .field-textarea:read-only {
-    background-color: var(--smrt-color-surface-container-low, #f9fafb);
-    cursor: not-allowed;
   }
 </style>
