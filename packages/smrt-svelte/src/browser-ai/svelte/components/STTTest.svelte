@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { useAppState } from '../../../hooks/useAppState.svelte.js';
 import { M } from '../../../i18n/strings.workspace.js';
 import type { GetSTTOptions } from '../../index.js';
@@ -117,13 +118,13 @@ function clearLogs() {
       </select>
     </div>
 
-    <button
-      type="button"
+    <Button
+      variant="primary"
       onclick={initializeAdapter}
       disabled={isRecording || isInitializing}
     >
       Initialize
-    </button>
+    </Button>
   </div>
 
   <div class="status">
@@ -153,6 +154,7 @@ function clearLogs() {
   {/if}
 
   <div class="record-controls">
+    <!-- raw-primitive-allow: press-and-hold record control driven by mousedown/up/leave + touchstart/end (push-to-talk), not a click action; Button has no press-and-hold model so this stays a native button -->
     <button
       type="button"
       class="record-btn"
@@ -180,7 +182,7 @@ function clearLogs() {
   <div class="logs">
     <div class="logs-header">
       <strong>Logs:</strong>
-      <button type="button" onclick={clearLogs}>Clear</button>
+      <Button variant="ghost" size="sm" onclick={clearLogs}>Clear</Button>
     </div>
     <div class="log-list">
       {#each logs as logEntry}
@@ -227,27 +229,6 @@ function clearLogs() {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-small, 6px);
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-  }
-
-  .controls button {
-    padding: var(--smrt-spacing-sm, 8px) var(--smrt-spacing-md, 16px);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    border: none;
-    border-radius: var(--smrt-radius-small, 6px);
-    cursor: pointer;
-    font: var(--smrt-typography-label-large-font, 0.875rem / 1.25 sans-serif);
-    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .controls button:hover:not(:disabled) {
-    background: var(--smrt-color-primary-container, #005ac1);
-    opacity: 0.9;
-  }
-
-  .controls button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .status {
@@ -337,20 +318,6 @@ function clearLogs() {
     margin-bottom: var(--smrt-spacing-sm, 8px);
   }
 
-  .logs-header button {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-sm, 8px);
-    font: var(--smrt-typography-label-small-font, 0.75rem / 1 sans-serif);
-    background: var(--smrt-color-surface-container, #e5e7eb);
-    border: none;
-    border-radius: var(--smrt-radius-small, 4px);
-    cursor: pointer;
-    transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .logs-header button:hover {
-    background: var(--smrt-color-surface-container-high, #d1d5db);
-  }
-
   .log-list {
     background: var(--smrt-color-inverse-surface, #1f2937);
     color: var(--smrt-color-inverse-on-surface, #d1d5db);
@@ -366,9 +333,7 @@ function clearLogs() {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .controls button,
-    .record-btn,
-    .logs-header button {
+    .record-btn {
       transition: none;
     }
     

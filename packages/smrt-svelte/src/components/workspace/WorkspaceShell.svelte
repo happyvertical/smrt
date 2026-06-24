@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from '../../i18n/strings.workspace.js';
 
@@ -261,6 +262,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   class:has-inspector-rail={hasInspectorRail}
 >
   <!-- Mobile sidebar backdrop -->
+  <!-- raw-primitive-allow: full-bleed click-catching navigation backdrop/scrim; a structural overlay surface, not a styled action button -->
   <button
     class="mobile-backdrop"
     type="button"
@@ -277,6 +279,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   -->
   {#if hasInspector}
     {#if onCloseInspector}
+      <!-- raw-primitive-allow: full-bleed click-catching inspector backdrop/scrim; a structural overlay surface, not a styled action button -->
       <button
         class="inspector-backdrop"
         type="button"
@@ -311,9 +314,10 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       </div>
 
       {#if collapsible && onToggleCollapsed}
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           class="shell-toggle"
-          type="button"
           onclick={handleCollapseToggle}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
@@ -321,7 +325,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
           <span class="shell-toggle-glyph" aria-hidden="true">
             {collapsed ? '›' : '‹'}
           </span>
-        </button>
+        </Button>
       {/if}
     </div>
 
@@ -341,15 +345,16 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   <div class="smrt-workspace-main">
     <header class="smrt-workspace-topbar">
       <div class="topbar-left">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           class="mobile-menu"
-          type="button"
           onclick={toggleMobileNav}
           aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
           aria-expanded={mobileNavOpen}
         >
           <span aria-hidden="true">≡</span>
-        </button>
+        </Button>
         <div class="topbar-brand">
           {#if eyebrow}
             <div class="eyebrow topbar-eyebrow">{eyebrow}</div>
@@ -396,14 +401,15 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
           <div class="inspector-header">
             <span class="inspector-title">{inspectorTitle}</span>
             {#if onCloseInspector}
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 class="inspector-close"
-                type="button"
                 onclick={handleInspectorClose}
                 aria-label={t(M['ui.workspace_shell.close_inspector'])}
               >
                 <span aria-hidden="true">×</span>
-              </button>
+              </Button>
             {/if}
           </div>
           <div class="inspector-body">
@@ -518,8 +524,11 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
-  .shell-toggle {
-    appearance: none;
+  /* These shell-chrome controls now render through smrt-ui <Button>; pierce
+     Svelte scoping into the child <button> with `.smrt-workspace-shell
+     :global(.class)` (#1589). Button owns focus-visible, so those rules are
+     dropped. The responsive `display` toggles below are preserved. */
+  .smrt-workspace-shell :global(.shell-toggle) {
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-on-surface, #111827);
@@ -529,20 +538,14 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
     flex-shrink: 0;
     transition:
       background-color 150ms ease,
       color 150ms ease;
   }
 
-  .shell-toggle:hover {
+  .smrt-workspace-shell :global(.shell-toggle):hover {
     background: var(--smrt-color-surface-container-high, #e5e7eb);
-  }
-
-  .shell-toggle:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #2563eb);
-    outline-offset: 2px;
   }
 
   .shell-toggle-glyph {
@@ -680,9 +683,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     background: var(--smrt-color-warning, #f59e0b);
   }
 
-  .mobile-menu {
+  .smrt-workspace-shell :global(.mobile-menu) {
     display: none;
-    appearance: none;
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #111827);
@@ -691,15 +693,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     height: 2.35rem;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
     line-height: 1;
-  }
-
-  .mobile-menu:focus-visible,
-  .inspector-close:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #2563eb);
-    outline-offset: 2px;
   }
 
   /* ─── Stage / content / inspector ─────────────────────── */
@@ -743,8 +738,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     font-size: var(--smrt-typography-title-medium-size, 0.95rem);
   }
 
-  .inspector-close {
-    appearance: none;
+  .smrt-workspace-shell :global(.inspector-close) {
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
@@ -756,13 +750,12 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     justify-content: center;
     font-size: var(--smrt-typography-title-large-size, 1.25rem);
     line-height: 1;
-    cursor: pointer;
     transition:
       background-color 150ms ease,
       color 150ms ease;
   }
 
-  .inspector-close:hover {
+  .smrt-workspace-shell :global(.inspector-close):hover {
     background: var(--smrt-color-surface-container-high, #e5e7eb);
     color: var(--smrt-color-on-surface, #111827);
   }
@@ -851,7 +844,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       justify-content: center;
     }
 
-    .smrt-workspace-shell .shell-toggle {
+    .smrt-workspace-shell :global(.shell-toggle) {
       display: none;
     }
 
@@ -869,11 +862,11 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       grid-template-columns: 1fr;
     }
 
-    .mobile-menu {
+    .smrt-workspace-shell :global(.mobile-menu) {
       display: inline-flex;
     }
 
-    .shell-toggle {
+    .smrt-workspace-shell :global(.shell-toggle) {
       display: none;
     }
 
