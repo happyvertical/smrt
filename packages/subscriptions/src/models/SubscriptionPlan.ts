@@ -5,6 +5,7 @@ import type {
   JsonObject,
   PlanFeatureGrant,
   PlanThreshold,
+  SubscriptionPlanOptions,
   SubscriptionPlanStatus,
 } from '../types.js';
 import {
@@ -41,7 +42,7 @@ export class SubscriptionPlan extends SmrtObject {
   thresholds: string = '[]';
   metadata: string = '{}';
 
-  constructor(options: any = {}) {
+  constructor(options: SubscriptionPlanOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.planKey !== undefined) this.planKey = options.planKey;

@@ -3,7 +3,10 @@
  * @packageDocumentation
  */
 
-import type { SmrtCreateInput } from '@happyvertical/smrt-core';
+import type {
+  SmrtCreateInput,
+  SmrtObjectOptions,
+} from '@happyvertical/smrt-core';
 import {
   crossPackageRef,
   foreignKey,
@@ -28,6 +31,22 @@ export type SecretAuditAction =
  * Audit result types
  */
 export type SecretAuditResult = 'success' | 'failure' | 'denied';
+
+/**
+ * Constructor options for {@link SecretAuditLog}. Each field is optional and
+ * mirrors a persisted column.
+ */
+export interface SecretAuditLogOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  secretId?: string | null;
+  secretName?: string;
+  userId?: string;
+  action?: SecretAuditAction;
+  result?: SecretAuditResult;
+  ipAddress?: string;
+  userAgent?: string;
+  details?: Record<string, unknown>;
+}
 
 /**
  * SecretAuditLog records all operations on secrets for compliance
@@ -130,7 +149,7 @@ export class SecretAuditLog extends SmrtObject {
    */
   details: Record<string, unknown> = {};
 
-  constructor(options: any = {}) {
+  constructor(options: SecretAuditLogOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) {
       this.tenantId = options.tenantId;

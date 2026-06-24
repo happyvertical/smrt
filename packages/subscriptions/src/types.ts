@@ -1,4 +1,7 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type {
+  SmrtClassOptions,
+  SmrtObjectOptions,
+} from '@happyvertical/smrt-core';
 import type { SubscriptionPlan } from './models/SubscriptionPlan.js';
 import type { TenantSubscription } from './models/TenantSubscription.js';
 
@@ -194,5 +197,70 @@ export interface SummarizeAiUsageOptions {
 }
 
 export type JsonObject = Record<string, unknown>;
+
+/**
+ * Constructor options for {@link SubscriptionPlan}. Each field mirrors a
+ * persisted column and is optional; unspecified values fall back to the class
+ * initializers.
+ */
+export interface SubscriptionPlanOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  planKey?: string;
+  name?: string;
+  description?: string;
+  status?: SubscriptionPlanStatus;
+  sortOrder?: number;
+  priceAmount?: number;
+  currency?: string;
+  billingInterval?: BillingInterval;
+  externalProvider?: string;
+  stripeProductId?: string;
+  stripePriceId?: string;
+  features?: string;
+  thresholds?: string;
+  metadata?: string;
+}
+
+/**
+ * Constructor options for {@link TenantSubscription}. Each field mirrors a
+ * persisted column and is optional; unspecified values fall back to the class
+ * initializers.
+ */
+export interface TenantSubscriptionOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  subscriberKind?: SubscriberKind;
+  subscriberExternalId?: string;
+  planId?: string;
+  status?: SubscriptionStatus;
+  startedAt?: Date;
+  currentPeriodStart?: Date | null;
+  currentPeriodEnd?: Date | null;
+  trialEndsAt?: Date | null;
+  cancelAtPeriodEnd?: boolean;
+  canceledAt?: Date | null;
+  externalProvider?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripeCheckoutSessionId?: string;
+  metadata?: string;
+}
+
+/**
+ * Constructor options for {@link TenantUsageMetric}. Each field mirrors a
+ * persisted column and is optional; unspecified values fall back to the class
+ * initializers.
+ */
+export interface TenantUsageMetricOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  subscriberKind?: SubscriberKind;
+  subscriberExternalId?: string;
+  metricKey?: string;
+  quantity?: number;
+  windowStart?: Date;
+  windowEnd?: Date;
+  source?: string;
+  sourceId?: string;
+  dimensions?: string;
+}
 
 export type { SmrtClassOptions };

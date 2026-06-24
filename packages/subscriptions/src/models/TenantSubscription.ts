@@ -5,6 +5,7 @@ import type {
   Subscriber,
   SubscriberKind,
   SubscriptionStatus,
+  TenantSubscriptionOptions,
 } from '../types.js';
 import {
   assertSubscriberInvariant,
@@ -77,7 +78,7 @@ export class TenantSubscription extends SmrtObject {
   stripeCheckoutSessionId: string = '';
   metadata: string = '{}';
 
-  constructor(options: any = {}) {
+  constructor(options: TenantSubscriptionOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.subscriberKind !== undefined)

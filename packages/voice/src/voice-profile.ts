@@ -61,7 +61,7 @@ export interface VoiceProfileOptions extends SmrtObjectOptions {
    * Provider-specific voice data (ID, embedding, etc.)
    * Stored after voice creation/cloning
    */
-  voiceData?: Record<string, any> | null;
+  voiceData?: Record<string, unknown> | null;
 
   /**
    * Default speech speed multiplier
@@ -187,7 +187,7 @@ export class VoiceProfile extends SmrtObject {
    * Provider-specific voice data (ID, embedding, etc.)
    * Stored after voice creation/cloning is complete
    */
-  voiceData: Record<string, any> | null = null;
+  voiceData: Record<string, unknown> | null = null;
 
   /**
    * Default speech speed multiplier (0.5 - 2.0)

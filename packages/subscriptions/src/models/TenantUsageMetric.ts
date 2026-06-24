@@ -1,6 +1,11 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { JsonObject, Subscriber, SubscriberKind } from '../types.js';
+import type {
+  JsonObject,
+  Subscriber,
+  SubscriberKind,
+  TenantUsageMetricOptions,
+} from '../types.js';
 import {
   assertSubscriberInvariant,
   parseJsonObject,
@@ -39,7 +44,7 @@ export class TenantUsageMetric extends SmrtObject {
   sourceId: string = '';
   dimensions: string = '{}';
 
-  constructor(options: any = {}) {
+  constructor(options: TenantUsageMetricOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.subscriberKind !== undefined)

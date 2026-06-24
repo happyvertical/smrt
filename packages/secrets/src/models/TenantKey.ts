@@ -3,12 +3,28 @@
  * @packageDocumentation
  */
 
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
  * Key status values
  */
 export type TenantKeyStatus = 'active' | 'rotating' | 'retired' | 'compromised';
+
+/**
+ * Constructor options for {@link TenantKey}. Each field is optional and mirrors
+ * a persisted column; date fields also accept the serialized forms accepted by
+ * `new Date()` so hydrated rows coerce cleanly.
+ */
+export interface TenantKeyOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  wrappedKey?: string;
+  amkKeyId?: string;
+  status?: TenantKeyStatus;
+  version?: number;
+  rotateAfter?: Date | string | number | null;
+  retiredAt?: Date | string | number | null;
+}
 
 /**
  * TenantKey tracks the per-tenant Data Encryption Keys (TDEKs).
@@ -92,7 +108,7 @@ export class TenantKey extends SmrtObject {
    */
   retiredAt: Date | null = null;
 
-  constructor(options: any = {}) {
+  constructor(options: TenantKeyOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.wrappedKey !== undefined) this.wrappedKey = options.wrappedKey;
