@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
 import { M } from '../i18n.js';
 import type {
@@ -195,6 +196,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   <div class="gallery-grid">
     {#each images as image (image.id)}
       {#if onSelect}
+        <!-- raw-primitive-allow: large draggable selection card wrapping rich image content, not a standard action button -->
         <button
           type="button"
           class="gallery-item"
@@ -233,13 +235,14 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   
   {#if hasMore}
     <div class="load-more">
-      <button 
-        onclick={() => loadImages(false)} 
+      <Button
+        variant="ghost"
+        class="load-more-btn--pill"
+        onclick={() => loadImages(false)}
         disabled={isLoading}
-        class="load-more-btn"
       >
         {isLoading ? 'Loading...' : 'Load More'}
-      </button>
+      </Button>
     </div>
   {/if}
 </div>
@@ -421,23 +424,20 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     padding: 1rem 0;
   }
 
-  .load-more-btn {
+  /* Bespoke pill look for the migrated Load More Button. :global() pierces into
+     the Button child's rendered <button>, which carries its own scope hash
+     (see #1589 scoping rule). */
+  .load-more :global(.load-more-btn--pill) {
     padding: 0.75rem 2rem;
     background: var(--smrt-color-surface-container-high, #242424);
     color: var(--smrt-color-primary, #3b82f6);
     border: 1px solid var(--smrt-color-outline-variant, #444);
     border-radius: var(--smrt-radius-full, 9999px);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     transition: background 0.2s;
   }
 
-  .load-more-btn:hover:not(:disabled) {
+  .load-more :global(.load-more-btn--pill:hover:not(:disabled)) {
     background: var(--smrt-color-surface-container-highest, #333);
-  }
-
-  .load-more-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 </style>
