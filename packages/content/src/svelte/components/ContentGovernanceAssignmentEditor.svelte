@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
   ContentGovernanceAssignmentData,
   ContentGovernanceProfileData,
@@ -158,11 +159,11 @@ function handleSubmit() {
   </div>
 
   <div class="actions">
-    <button type="submit">{t(M['content.governance_assignment_editor.save_assignment'])}</button>
+    <Button variant="primary" type="submit">{t(M['content.governance_assignment_editor.save_assignment'])}</Button>
     {#if onCancel}
-      <button type="button" class="secondary" onclick={() => onCancel?.()}>
+      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
         Cancel
-      </button>
+      </Button>
     {/if}
   </div>
 </form>

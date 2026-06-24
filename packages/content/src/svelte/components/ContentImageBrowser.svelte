@@ -4,6 +4,7 @@ import {
   ImageUploader,
 } from '@happyvertical/smrt-images/svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentEditorAsset } from '../content-editor-form';
 import { M } from '../i18n.editor.js';
 
@@ -87,13 +88,13 @@ function handleSelect(selected: ImageLike | File | string) {
           </div>
           <div class="asset-actions">
             {#if onUseAsset}
-              <button type="button" onclick={() => onUseAsset?.(asset)}>{selectActionLabel}</button>
+              <Button variant="ghost" type="button" class="asset-action-btn" onclick={() => onUseAsset?.(asset)}>{selectActionLabel}</Button>
             {/if}
             {#if onUseAsThumbnail && assetId && thumbnailAssetId !== assetId}
-              <button type="button" onclick={() => onUseAsThumbnail?.(assetId)}>Thumbnail</button>
+              <Button variant="ghost" type="button" class="asset-action-btn" onclick={() => onUseAsThumbnail?.(assetId)}>Thumbnail</Button>
             {/if}
             {#if onRemoveAsset && assetId}
-              <button type="button" class="danger" onclick={() => onRemoveAsset?.(assetId)}>Remove</button>
+              <Button variant="ghost" type="button" class="asset-action-btn asset-action-btn--danger" onclick={() => onRemoveAsset?.(assetId)}>Remove</Button>
             {/if}
           </div>
         </article>
@@ -108,14 +109,14 @@ function handleSelect(selected: ImageLike | File | string) {
       <ImageUploader {apiBaseUrl} onSelect={handleSelect} onCancel={() => showUploader = false} />
     </div>
   {:else if onSelectImage}
-    <button type="button" class="add-image-button" onclick={() => showUploader = true}>
+    <Button variant="ghost" type="button" class="asset-action-btn add-image-button" onclick={() => showUploader = true}>
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="3" y="3" width="18" height="18" rx="2"></rect>
         <circle cx="8.5" cy="8.5" r="1.5"></circle>
         <path d="m21 15-5-5L5 21"></path>
       </svg>
       {addButtonLabel}
-    </button>
+    </Button>
   {/if}
 </div>
 
@@ -197,7 +198,7 @@ function handleSelect(selected: ImageLike | File | string) {
     gap: 0.5rem;
   }
 
-  button {
+  .content-image-browser :global(.asset-action-btn) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -214,19 +215,19 @@ function handleSelect(selected: ImageLike | File | string) {
     padding: 0.5rem 0.875rem;
   }
 
-  button:hover {
+  .content-image-browser :global(.asset-action-btn:hover) {
     background: var(--smrt-color-surface-container-high);
   }
 
-  button.danger {
+  .content-image-browser :global(.asset-action-btn--danger) {
     color: var(--smrt-color-error);
   }
 
-  .add-image-button {
+  .content-image-browser :global(.add-image-button) {
     justify-self: start;
   }
 
-  .add-image-button svg {
+  .content-image-browser :global(.add-image-button svg) {
     width: 1rem;
     height: 1rem;
     fill: none;

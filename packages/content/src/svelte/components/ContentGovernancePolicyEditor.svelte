@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentReviewPolicyData } from '../../mock-smrt-client';
 import { M } from '../i18n.tools.js';
 
@@ -70,11 +71,11 @@ function handleSubmit() {
     Enabled
   </label>
   <div class="actions">
-    <button type="submit">{t(M['content.governance_policy_editor.save_policy'])}</button>
+    <Button variant="primary" type="submit">{t(M['content.governance_policy_editor.save_policy'])}</Button>
     {#if onCancel}
-      <button type="button" class="secondary" onclick={() => onCancel?.()}>
+      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
         Cancel
-      </button>
+      </Button>
     {/if}
   </div>
 </form>

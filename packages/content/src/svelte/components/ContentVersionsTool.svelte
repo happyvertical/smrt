@@ -1,6 +1,7 @@
 <script lang="ts">
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentVersionData } from '../../mock-smrt-client';
 import { createClient } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
@@ -165,14 +166,14 @@ async function restoreVersion(versionNumber: number) {
 
 <div class="governance-tool">
   <div class="tool-toolbar">
-    <button
+    <Button
+      variant="secondary"
       type="button"
-      class="secondary-button"
       disabled={busy || !savedContentId}
       onclick={() => void createSnapshot()}
     >
       {busy ? 'Working...' : 'Create snapshot'}
-    </button>
+    </Button>
   </div>
 
   {#if error}
@@ -201,9 +202,9 @@ async function restoreVersion(versionNumber: number) {
           {/if}
           <div class="tool-card-footer">
             <span>{formatTimestamp(version.createdAt)}</span>
-            <button
+            <Button
+              variant="secondary"
               type="button"
-              class="secondary-button"
               disabled={busy || version.version === null || version.version === undefined}
               onclick={() => {
                 if (version.version !== null && version.version !== undefined) {
@@ -212,7 +213,7 @@ async function restoreVersion(versionNumber: number) {
               }}
             >
               Restore
-            </button>
+            </Button>
           </div>
         </div>
       {/each}
@@ -269,21 +270,6 @@ async function restoreVersion(versionNumber: number) {
   .empty-copy {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-  }
-
-  .secondary-button {
-    border-radius: 0.5rem;
-    padding: 0.65rem 0.85rem;
-    border: 1px solid var(--smrt-color-outline-variant);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    cursor: pointer;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .secondary-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
   }
 
   .pill {

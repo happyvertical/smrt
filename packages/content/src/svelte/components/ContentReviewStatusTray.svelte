@@ -1,4 +1,6 @@
 <script lang="ts">
+import { Button } from '@happyvertical/smrt-ui/ui';
+
 export type ContentReviewStatusTone =
   | 'neutral'
   | 'danger'
@@ -64,18 +66,20 @@ let {
 {#if items.length > 0}
   <div class="content-review-status-tray" role="group" aria-label={label}>
     {#each items as item (item.id)}
-      <button
+      <Button
+        variant="ghost"
         type="button"
         aria-pressed={activeId === item.id && open}
-        class={`tray-button tray-button--${item.tone}`}
-        class:active={activeId === item.id && open}
+        class={`tray-button tray-button--${item.tone}${
+          activeId === item.id && open ? ' tray-button--active' : ''
+        }`}
         title={`${item.label}: ${item.status}`}
         onclick={() => onSelect?.(item)}
       >
         {@render trayIcon(item.icon)}
         <span class="tray-button__indicator" aria-hidden="true"></span>
         <span class="sr-only">{item.label}: {item.status}</span>
-      </button>
+      </Button>
     {/each}
   </div>
 {/if}
@@ -88,7 +92,7 @@ let {
     min-height: 2.5rem;
   }
 
-  .tray-button {
+  .content-review-status-tray :global(.tray-button) {
     position: relative;
     display: inline-grid;
     place-items: center;
@@ -102,13 +106,13 @@ let {
     padding: 0;
   }
 
-  .tray-button:hover,
-  .tray-button.active {
+  .content-review-status-tray :global(.tray-button:hover),
+  .content-review-status-tray :global(.tray-button.tray-button--active) {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
   }
 
-  .tray-button svg {
+  .content-review-status-tray :global(.tray-button svg) {
     width: 1.15rem;
     height: 1.15rem;
     fill: none;
@@ -118,7 +122,7 @@ let {
     stroke-linejoin: round;
   }
 
-  .tray-button__indicator {
+  .content-review-status-tray :global(.tray-button__indicator) {
     position: absolute;
     right: 0.35rem;
     bottom: 0.35rem;
@@ -128,19 +132,19 @@ let {
     background: var(--smrt-color-outline);
   }
 
-  .tray-button--danger .tray-button__indicator {
+  .content-review-status-tray :global(.tray-button--danger .tray-button__indicator) {
     background: var(--smrt-color-error);
   }
 
-  .tray-button--warning .tray-button__indicator {
+  .content-review-status-tray :global(.tray-button--warning .tray-button__indicator) {
     background: var(--smrt-color-tertiary, #d97706);
   }
 
-  .tray-button--success .tray-button__indicator {
+  .content-review-status-tray :global(.tray-button--success .tray-button__indicator) {
     background: var(--smrt-color-primary);
   }
 
-  .sr-only {
+  .content-review-status-tray :global(.sr-only) {
     position: absolute;
     width: 1px;
     height: 1px;

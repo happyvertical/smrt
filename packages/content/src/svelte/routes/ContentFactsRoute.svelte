@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
 import { createClient, type FactData } from '../../mock-smrt-client.js';
 import { M } from '../i18n.routes.js';
@@ -145,9 +146,9 @@ onMount(() => {
           <span>{t(M['content.facts.include_superseded'])}</span>
         </label>
 
-        <button class="refresh-button" type="submit" disabled={refreshing}>
+        <Button variant="primary" class="refresh-button" type="submit" disabled={refreshing}>
           {refreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
+        </Button>
       </form>
     </section>
 
@@ -416,7 +417,7 @@ onMount(() => {
     color: var(--smrt-color-on-surface);
   }
 
-  .refresh-button {
+  .filters :global(.refresh-button) {
     min-height: 2.85rem;
     border-radius: 0.85rem;
     border: none;

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
 import {
   type ContentGovernanceAssignmentData,
@@ -141,9 +142,9 @@ function cancelEditing() {
       <h3>{t(M['content.governance_manager.content_governance'])}</h3>
       <p>{t(M['content.governance_manager.manage_governed_content'])}</p>
     </div>
-    <button type="button" class="secondary" onclick={() => void loadDefinitions()}>
+    <Button variant="secondary" type="button" onclick={() => void loadDefinitions()}>
       Refresh
-    </button>
+    </Button>
   </div>
 
   {#if loading}
@@ -155,12 +156,12 @@ function cancelEditing() {
       <section>
         <div class="section-header">
           <h4>Policies</h4>
-          <button type="button" onclick={() => {
+          <Button variant="primary" type="button" onclick={() => {
             editMode = 'policy';
             editingPolicy = null;
           }}>
             {t(M['content.governance_manager.add_policy'])}
-          </button>
+          </Button>
         </div>
         {#if editMode === 'policy'}
           {#key editingPolicy?.id ?? editingPolicy?.key ?? 'new-policy'}
@@ -179,16 +180,16 @@ function cancelEditing() {
                 <span>{policy.key} · {policy.kind}</span>
               </div>
               <div class="actions">
-                <button type="button" class="secondary" onclick={() => {
+                <Button variant="secondary" type="button" onclick={() => {
                   editMode = 'policy';
                   editingPolicy = policy;
                 }}>
                   Edit
-                </button>
+                </Button>
                 {#if definitions.persisted.policies.some((item) => item.key === policy.key)}
-                  <button type="button" class="secondary" onclick={() => void deletePolicy(policy.id)}>
+                  <Button variant="danger" type="button" onclick={() => void deletePolicy(policy.id)}>
                     {t(M['content.governance_manager.delete_override'])}
-                  </button>
+                  </Button>
                 {/if}
               </div>
             </article>
@@ -199,12 +200,12 @@ function cancelEditing() {
       <section>
         <div class="section-header">
           <h4>Profiles</h4>
-          <button type="button" onclick={() => {
+          <Button variant="primary" type="button" onclick={() => {
             editMode = 'profile';
             editingProfile = null;
           }}>
             {t(M['content.governance_manager.add_profile'])}
-          </button>
+          </Button>
         </div>
         {#if editMode === 'profile'}
           {#key editingProfile?.id ?? editingProfile?.key ?? 'new-profile'}
@@ -224,16 +225,16 @@ function cancelEditing() {
                 <span>{profile.key} · {profile.requirements.length} requirement(s)</span>
               </div>
               <div class="actions">
-                <button type="button" class="secondary" onclick={() => {
+                <Button variant="secondary" type="button" onclick={() => {
                   editMode = 'profile';
                   editingProfile = profile;
                 }}>
                   Edit
-                </button>
+                </Button>
                 {#if definitions.persisted.profiles.some((item) => item.key === profile.key)}
-                  <button type="button" class="secondary" onclick={() => void deleteProfile(profile.id)}>
+                  <Button variant="danger" type="button" onclick={() => void deleteProfile(profile.id)}>
                     {t(M['content.governance_manager.delete_override'])}
-                  </button>
+                  </Button>
                 {/if}
               </div>
             </article>
@@ -244,12 +245,12 @@ function cancelEditing() {
       <section>
         <div class="section-header">
           <h4>Assignments</h4>
-          <button type="button" onclick={() => {
+          <Button variant="primary" type="button" onclick={() => {
             editMode = 'assignment';
             editingAssignment = null;
           }}>
             {t(M['content.governance_manager.add_assignment'])}
-          </button>
+          </Button>
         </div>
         {#if editMode === 'assignment'}
           {#key editingAssignment?.id ?? editingAssignment?.key ?? 'new-assignment'}
@@ -272,16 +273,16 @@ function cancelEditing() {
                 </span>
               </div>
               <div class="actions">
-                <button type="button" class="secondary" onclick={() => {
+                <Button variant="secondary" type="button" onclick={() => {
                   editMode = 'assignment';
                   editingAssignment = assignment;
                 }}>
                   Edit
-                </button>
+                </Button>
                 {#if assignment.id}
-                  <button type="button" class="secondary" onclick={() => void deleteAssignment(assignment.id)}>
+                  <Button variant="danger" type="button" onclick={() => void deleteAssignment(assignment.id)}>
                     Delete
-                  </button>
+                  </Button>
                 {/if}
               </div>
             </article>

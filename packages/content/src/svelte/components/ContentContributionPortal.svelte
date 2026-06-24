@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentContributionData } from '../../mock-smrt-client';
 import { M } from '../i18n.contribution.js';
 
@@ -49,6 +50,7 @@ function canWithdraw(contribution: ContentContributionData) {
     <div class="portal__layout">
       <div class="portal__list">
         {#each contributions as contribution (contribution.id)}
+          <!-- raw-primitive-allow: large pressable selection card wrapping rich content (title, status) with selected state; no Button primitive owns this list-row selection pattern -->
           <button
             type="button"
             class:selected={selectedContribution?.id === contribution.id}
@@ -91,9 +93,9 @@ function canWithdraw(contribution: ContentContributionData) {
           </dl>
 
           {#if onWithdraw && canWithdraw(selectedContribution)}
-            <button type="button" class="secondary" onclick={() => onWithdraw?.(selectedContribution)}>
+            <Button variant="secondary" type="button" onclick={() => onWithdraw?.(selectedContribution)}>
               {t(M['content.contribution_portal.withdraw_submission'])}
-            </button>
+            </Button>
           {/if}
         </article>
       {/if}

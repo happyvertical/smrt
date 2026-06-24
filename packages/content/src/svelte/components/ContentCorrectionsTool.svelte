@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentCorrectionData, FactData } from '../../mock-smrt-client';
 import { createClient } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
@@ -212,13 +213,14 @@ async function issueCorrection() {
       {t(M['content.corrections_tool.publish_immediately'])}
     </label>
 
-    <button
+    <Button
+      variant="primary"
       type="button"
       disabled={busy || correctionSummary.trim().length === 0}
       onclick={() => void issueCorrection()}
     >
       {busy ? 'Issuing correction...' : 'Issue correction'}
-    </button>
+    </Button>
 
     <div class="tool-list">
       <div class="section-caption">{t(M['content.corrections_tool.published_history'])}</div>
@@ -269,21 +271,6 @@ async function issueCorrection() {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     font-family: inherit;
-  }
-
-  button {
-    border: none;
-    border-radius: 0.5rem;
-    padding: 0.7rem 0.95rem;
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary, white);
-    cursor: pointer;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  button:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
   }
 
   .tool-card {

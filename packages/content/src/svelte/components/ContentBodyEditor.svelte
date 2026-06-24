@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import {
   bodyToEditorHtml,
   type ContentBodyFormat,
@@ -996,16 +997,16 @@ function handleEditorDragEnd() {
 
 <div bind:this={rootElement} class="content-body-editor">
   <div class="body-editor-toolbar" aria-label={t(M['content.content_body_editor.toolbar'])}>
-    <button type="button" title={t(M['content.content_body_editor.bold'])} aria-label={t(M['content.content_body_editor.bold'])} onclick={() => runCommand('bold')}>
+    <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bold'])} aria-label={t(M['content.content_body_editor.bold'])} onclick={() => runCommand('bold')}>
       <strong>B</strong>
-    </button>
-    <button type="button" title={t(M['content.content_body_editor.italic'])} aria-label={t(M['content.content_body_editor.italic'])} onclick={() => runCommand('italic')}>
+    </Button>
+    <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.italic'])} aria-label={t(M['content.content_body_editor.italic'])} onclick={() => runCommand('italic')}>
       <em>I</em>
-    </button>
-    <button type="button" title={t(M['content.content_body_editor.heading'])} aria-label={t(M['content.content_body_editor.heading'])} onclick={() => runCommand('formatBlock', 'h2')}>
+    </Button>
+    <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.heading'])} aria-label={t(M['content.content_body_editor.heading'])} onclick={() => runCommand('formatBlock', 'h2')}>
       H2
-    </button>
-    <button type="button" title={t(M['content.content_body_editor.bulleted_list'])} aria-label={t(M['content.content_body_editor.bulleted_list'])} onclick={() => runCommand('insertUnorderedList')}>
+    </Button>
+    <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.bulleted_list'])} aria-label={t(M['content.content_body_editor.bulleted_list'])} onclick={() => runCommand('insertUnorderedList')}>
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <line x1="9" y1="6" x2="21" y2="6"></line>
         <line x1="9" y1="12" x2="21" y2="12"></line>
@@ -1014,14 +1015,14 @@ function handleEditorDragEnd() {
         <circle cx="4" cy="12" r="1"></circle>
         <circle cx="4" cy="18" r="1"></circle>
       </svg>
-    </button>
-    <button type="button" title={t(M['content.content_body_editor.insert_image'])} aria-label={t(M['content.content_body_editor.insert_image'])} onclick={() => onOpenImageChooser?.()}>
+    </Button>
+    <Button variant="ghost" size="sm" class="editor-toolbar-button" type="button" title={t(M['content.content_body_editor.insert_image'])} aria-label={t(M['content.content_body_editor.insert_image'])} onclick={() => onOpenImageChooser?.()}>
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"></rect>
         <circle cx="8.5" cy="8.5" r="1.5"></circle>
         <polyline points="21 15 16 10 5 21"></polyline>
       </svg>
-    </button>
+    </Button>
 
     <label class="format-select">
       <span>{t(M['content.content_body_editor.save_as'])}</span>
@@ -1041,7 +1042,7 @@ function handleEditorDragEnd() {
       style={`top: ${Math.max(44, selectedImageBox.top + 8)}px; left: ${selectedImageBox.left + selectedImageBox.width / 2}px;`}
       aria-label={t(M['content.content_body_editor.selected_image_controls'])}
     >
-      <button type="button" title={t(M['content.content_body_editor.move_image'])} aria-label={t(M['content.content_body_editor.move_image'])} onpointerdown={startImageMove}>
+      <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.move_image'])} aria-label={t(M['content.content_body_editor.move_image'])} onpointerdown={startImageMove}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2v20"></path>
           <path d="M2 12h20"></path>
@@ -1050,13 +1051,16 @@ function handleEditorDragEnd() {
           <path d="m9 5 3-3 3 3"></path>
           <path d="m9 19 3 3 3-3"></path>
         </svg>
-      </button>
+      </Button>
       <span class="image-control-divider"></span>
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
+        class={`editor-popover-button${selectedImagePlacement === 'left' ? ' editor-popover-button--active' : ''}`}
         type="button"
         title={t(M['content.content_body_editor.wrap_text_on_right'])}
         aria-label={t(M['content.content_body_editor.wrap_text_on_right'])}
-        class:active={selectedImagePlacement === 'left'}
+        aria-pressed={selectedImagePlacement === 'left'}
         onclick={() => applyImagePlacement('left')}
       >
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -1066,12 +1070,15 @@ function handleEditorDragEnd() {
           <path d="M3 17h18"></path>
           <path d="M3 21h14"></path>
         </svg>
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        class={`editor-popover-button${selectedImagePlacement === 'center' || selectedImagePlacement === 'block' ? ' editor-popover-button--active' : ''}`}
         type="button"
         title={t(M['content.content_body_editor.center_image'])}
         aria-label={t(M['content.content_body_editor.center_image'])}
-        class:active={selectedImagePlacement === 'center' || selectedImagePlacement === 'block'}
+        aria-pressed={selectedImagePlacement === 'center' || selectedImagePlacement === 'block'}
         onclick={() => applyImagePlacement('center')}
       >
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -1079,12 +1086,15 @@ function handleEditorDragEnd() {
           <rect x="7" y="9" width="10" height="6" rx="1"></rect>
           <path d="M4 18h16"></path>
         </svg>
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        class={`editor-popover-button${selectedImagePlacement === 'right' ? ' editor-popover-button--active' : ''}`}
         type="button"
         title={t(M['content.content_body_editor.wrap_text_on_left'])}
         aria-label={t(M['content.content_body_editor.wrap_text_on_left'])}
-        class:active={selectedImagePlacement === 'right'}
+        aria-pressed={selectedImagePlacement === 'right'}
         onclick={() => applyImagePlacement('right')}
       >
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -1094,12 +1104,15 @@ function handleEditorDragEnd() {
           <path d="M3 17h18"></path>
           <path d="M7 21h14"></path>
         </svg>
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        class={`editor-popover-button${selectedImagePlacement === 'full' ? ' editor-popover-button--active' : ''}`}
         type="button"
         title={t(M['content.content_body_editor.full_width'])}
         aria-label={t(M['content.content_body_editor.full_width'])}
-        class:active={selectedImagePlacement === 'full'}
+        aria-pressed={selectedImagePlacement === 'full'}
         onclick={() => applyImagePlacement('full')}
       >
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1107,38 +1120,39 @@ function handleEditorDragEnd() {
           <rect x="4" y="8" width="16" height="8" rx="1"></rect>
           <path d="M3 19h18"></path>
         </svg>
-      </button>
+      </Button>
       <span class="image-control-divider"></span>
-      <button type="button" title={t(M['content.content_body_editor.make_smaller'])} aria-label={t(M['content.content_body_editor.make_image_smaller'])} onclick={() => resizeSelectedImage(-IMAGE_WIDTH_STEP)}>
+      <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.make_smaller'])} aria-label={t(M['content.content_body_editor.make_image_smaller'])} onclick={() => resizeSelectedImage(-IMAGE_WIDTH_STEP)}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M5 12h14"></path>
           <path d="M9 8 5 12l4 4"></path>
           <path d="m15 8 4 4-4 4"></path>
         </svg>
-      </button>
-      <button type="button" title={t(M['content.content_body_editor.make_larger'])} aria-label={t(M['content.content_body_editor.make_image_larger'])} onclick={() => resizeSelectedImage(IMAGE_WIDTH_STEP)}>
+      </Button>
+      <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.make_larger'])} aria-label={t(M['content.content_body_editor.make_image_larger'])} onclick={() => resizeSelectedImage(IMAGE_WIDTH_STEP)}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M3 12h18"></path>
           <path d="m7 8-4 4 4 4"></path>
           <path d="m17 8 4 4-4 4"></path>
         </svg>
-      </button>
+      </Button>
       {#if selectedImageAssetId && onUseImageAsThumbnail}
-        <button type="button" title={t(M['content.content_body_editor.use_as_primary_image'])} aria-label={t(M['content.content_body_editor.use_as_primary_image'])} onclick={useSelectedImageAsThumbnail}>
+        <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.use_as_primary_image'])} aria-label={t(M['content.content_body_editor.use_as_primary_image'])} onclick={useSelectedImageAsThumbnail}>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
             <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2 7.5 14 3 9.6l6.2-.9L12 3Z"></path>
           </svg>
-        </button>
+        </Button>
       {/if}
-      <button type="button" title={t(M['content.content_body_editor.remove_image'])} aria-label={t(M['content.content_body_editor.remove_image'])} onclick={removeSelectedImage}>
+      <Button variant="ghost" size="sm" class="editor-popover-button" type="button" title={t(M['content.content_body_editor.remove_image'])} aria-label={t(M['content.content_body_editor.remove_image'])} onclick={removeSelectedImage}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18"></path>
           <path d="M8 6V4h8v2"></path>
           <path d="M19 6l-1 14H6L5 6"></path>
         </svg>
-      </button>
+      </Button>
     </div>
 
+    <!-- raw-primitive-allow: custom press-and-drag image resize handle driven by onpointerdown pointer-capture gesture and absolute positioning; no Button primitive owns this draggable resize grabber -->
     <button
       type="button"
       class="image-resize-handle"
@@ -1207,7 +1221,7 @@ function handleEditorDragEnd() {
     background: var(--smrt-color-surface-container-low, var(--smrt-color-surface-container));
   }
 
-  .body-editor-toolbar button {
+  .body-editor-toolbar :global(.editor-toolbar-button) {
     width: 2rem;
     height: 2rem;
     display: inline-grid;
@@ -1219,7 +1233,7 @@ function handleEditorDragEnd() {
     cursor: pointer;
   }
 
-  .body-editor-toolbar button:hover {
+  .body-editor-toolbar :global(.editor-toolbar-button:hover) {
     border-color: var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container);
   }
@@ -1399,7 +1413,7 @@ function handleEditorDragEnd() {
     backdrop-filter: blur(10px);
   }
 
-  .image-control-popover button,
+  .image-control-popover :global(.editor-popover-button),
   .image-resize-handle {
     display: inline-grid;
     place-items: center;
@@ -1409,14 +1423,14 @@ function handleEditorDragEnd() {
     cursor: pointer;
   }
 
-  .image-control-popover button {
+  .image-control-popover :global(.editor-popover-button) {
     width: 1.85rem;
     height: 1.85rem;
     border-radius: var(--smrt-radius-full, 9999px);
   }
 
-  .image-control-popover button:hover,
-  .image-control-popover button.active {
+  .image-control-popover :global(.editor-popover-button:hover),
+  .image-control-popover :global(.editor-popover-button.editor-popover-button--active) {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-primary);
   }

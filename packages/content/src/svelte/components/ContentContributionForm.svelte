@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
   ContentContributionData,
   ContentContributionTypeData,
@@ -184,11 +185,11 @@ function handleSubmit(event: SubmitEvent) {
   {/if}
 
   <div class="actions">
-    <button type="submit">{submitLabel}</button>
+    <Button variant="primary" type="submit">{submitLabel}</Button>
     {#if onCancel}
-      <button type="button" class="secondary" onclick={() => onCancel?.()}>
+      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
         Cancel
-      </button>
+      </Button>
     {/if}
   </div>
 </form>

@@ -3,6 +3,7 @@
   "version": "0.34.4",
   "description": "Content processing module for SMRT framework - handles documents, web content, and media",
   "type": "module",
+  "smrtRawPrimitives": "strict-buttons",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

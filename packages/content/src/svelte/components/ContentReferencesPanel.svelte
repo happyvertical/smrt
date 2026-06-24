@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import type { ContentEditorReference } from '../content-editor-form';
 import { M } from '../i18n.editor.js';
@@ -99,7 +100,11 @@ function removeReference(id: string) {
             {/if}
           </div>
           {#if referenceId}
-            <button type="button" onclick={() => removeReference(referenceId)}>Remove</button>
+            <Button
+              variant="ghost"
+              type="button"
+              class="reference-button"
+              onclick={() => removeReference(referenceId)}>Remove</Button>
           {/if}
         </div>
       {/each}
@@ -121,7 +126,11 @@ function removeReference(id: string) {
         }
       }}
     />
-    <button type="button" onclick={addReference}>Add</button>
+    <Button
+      variant="ghost"
+      type="button"
+      class="reference-button"
+      onclick={addReference}>Add</Button>
   </div>
 
   {#if children}
@@ -199,7 +208,7 @@ function removeReference(id: string) {
   }
 
   input,
-  button {
+  .content-references-panel :global(.reference-button) {
     min-height: 2.5rem;
     border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);
     border-radius: 0.5rem;
@@ -209,13 +218,13 @@ function removeReference(id: string) {
     padding: 0.55rem 0.875rem;
   }
 
-  button {
+  .content-references-panel :global(.reference-button) {
     background: var(--smrt-color-surface-container);
     cursor: pointer;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
-  button:hover {
+  .content-references-panel :global(.reference-button:hover) {
     background: var(--smrt-color-surface-container-high);
   }
 </style>

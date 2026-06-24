@@ -1,4 +1,6 @@
 <script lang="ts">
+import { Button } from '@happyvertical/smrt-ui/ui';
+
 let activeGroup = $state<string>('contents');
 let tryEndpoint = $state<{ method: string; path: string } | null>(null);
 let tryResult = $state<string | null>(null);
@@ -468,15 +470,16 @@ function closeTry() {
   <div class="explorer-layout">
     <aside class="group-nav">
       {#each groups as group}
-        <button
-          class="group-btn"
-          class:active={activeGroup === group.key}
+        <Button
+          variant="ghost"
+          class={`group-btn${activeGroup === group.key ? ' group-btn--active' : ''}`}
+          aria-pressed={activeGroup === group.key}
           onclick={() => { activeGroup = group.key; closeTry(); }}
         >
           <span class="group-icon">{group.icon}</span>
           <span class="group-label">{group.label}</span>
           <span class="group-count">{group.endpoints.length}</span>
-        </button>
+        </Button>
       {/each}
     </aside>
 
@@ -490,7 +493,7 @@ function closeTry() {
             <code class="endpoint-path">{endpoint.path}</code>
             <span class="endpoint-desc">{endpoint.description}</span>
             {#if canTry(endpoint)}
-              <button class="try-btn" onclick={() => void handleTry(endpoint)}>Try</button>
+              <Button variant="ghost" size="sm" class="try-btn" onclick={() => void handleTry(endpoint)}>Try</Button>
             {/if}
           </div>
         {/each}
@@ -501,7 +504,7 @@ function closeTry() {
           <div class="try-header">
             <span class="method-badge" style="background: {methodColor(tryEndpoint.method)}">{tryEndpoint.method}</span>
             <code>{tryEndpoint.path}</code>
-            <button class="close-btn" onclick={closeTry}>✕</button>
+            <Button variant="ghost" size="sm" class="close-btn" onclick={closeTry}>✕</Button>
           </div>
           {#if tryLoading}
             <p class="try-loading">Fetching...</p>
@@ -556,7 +559,7 @@ function closeTry() {
     top: 70px;
   }
 
-  .group-btn {
+  .group-nav :global(.group-btn) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -571,11 +574,11 @@ function closeTry() {
     transition: background 0.15s;
   }
 
-  .group-btn:hover {
+  .group-nav :global(.group-btn:hover) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
-  .group-btn.active {
+  .group-nav :global(.group-btn.group-btn--active) {
     background: var(--smrt-color-primary-container, #d8e2ff);
     color: var(--smrt-color-on-primary-container, #001a41);
     font-weight: var(--smrt-typography-weight-semibold, 600);
@@ -593,7 +596,7 @@ function closeTry() {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
-  .group-btn.active .group-count {
+  .group-nav :global(.group-btn.group-btn--active .group-count) {
     background: color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent);
   }
 
@@ -653,7 +656,7 @@ function closeTry() {
     text-align: right;
   }
 
-  .try-btn {
+  .endpoint-row :global(.try-btn) {
     padding: 0.2rem 0.6rem;
     border: 1px solid var(--smrt-color-primary, #005ac1);
     border-radius: 0.25rem;
@@ -665,7 +668,7 @@ function closeTry() {
     transition: all 0.15s;
   }
 
-  .try-btn:hover {
+  .endpoint-row :global(.try-btn:hover) {
     background: var(--smrt-color-primary, #005ac1);
     color: white;
   }
@@ -691,7 +694,7 @@ function closeTry() {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
-  .close-btn {
+  .try-header :global(.close-btn) {
     border: none;
     background: none;
     cursor: pointer;
@@ -701,7 +704,7 @@ function closeTry() {
     border-radius: 0.25rem;
   }
 
-  .close-btn:hover {
+  .try-header :global(.close-btn:hover) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
@@ -744,7 +747,7 @@ function closeTry() {
       position: static;
     }
 
-    .group-btn {
+    .group-nav :global(.group-btn) {
       white-space: nowrap;
     }
   }

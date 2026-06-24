@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
   ContentGovernanceProfileData,
   ContentReviewPolicyData,
@@ -105,9 +106,9 @@ function handleSubmit() {
   <div class="requirements">
     <div class="requirements__header">
       <strong>Requirements</strong>
-      <button type="button" class="secondary" onclick={addRequirement}>
+      <Button variant="secondary" type="button" onclick={addRequirement}>
         {t(M['content.governance_profile_editor.add_requirement'])}
-      </button>
+      </Button>
     </div>
 
     {#each draft.requirements as requirement, index (`${requirement.policyKey}-${index}`)}
@@ -128,19 +129,19 @@ function handleSubmit() {
           <input type="checkbox" bind:checked={requirement.blocking} />
           Blocking
         </label>
-        <button type="button" class="secondary" onclick={() => removeRequirement(index)}>
+        <Button variant="danger" type="button" onclick={() => removeRequirement(index)}>
           Remove
-        </button>
+        </Button>
       </div>
     {/each}
   </div>
 
   <div class="actions">
-    <button type="submit">{t(M['content.governance_profile_editor.save_profile'])}</button>
+    <Button variant="primary" type="submit">{t(M['content.governance_profile_editor.save_profile'])}</Button>
     {#if onCancel}
-      <button type="button" class="secondary" onclick={() => onCancel?.()}>
+      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
         Cancel
-      </button>
+      </Button>
     {/if}
   </div>
 </form>

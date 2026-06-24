@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import {
   type ContentBodyFormat,
   extractBodyImages,
@@ -48,7 +49,9 @@ function cycle(delta: number) {
 {#if activeImage}
   <div class="content-image-chooser" aria-label={t(M['content.content_image_chooser.body_images'])}>
     {#if hasMultiple}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
         class="chooser-arrow"
         aria-label={t(M['content.content_image_chooser.previous_body_image'])}
@@ -57,10 +60,12 @@ function cycle(delta: number) {
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"></polyline>
         </svg>
-      </button>
+      </Button>
     {/if}
 
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       type="button"
       class="chooser-preview"
       aria-label={t(M['content.content_image_chooser.focus_selected_body_image'])}
@@ -68,10 +73,12 @@ function cycle(delta: number) {
     >
       <img src={activeImage.src} alt={activeImage.alt || 'Body image'} />
       <span>{normalizedIndex + 1} / {images.length}</span>
-    </button>
+    </Button>
 
     {#if hasMultiple}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
         class="chooser-arrow"
         aria-label={t(M['content.content_image_chooser.next_body_image'])}
@@ -80,7 +87,7 @@ function cycle(delta: number) {
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
-      </button>
+      </Button>
     {/if}
   </div>
 {/if}
@@ -93,8 +100,8 @@ function cycle(delta: number) {
     min-height: 2.75rem;
   }
 
-  .chooser-arrow,
-  .chooser-preview {
+  .content-image-chooser :global(.chooser-arrow),
+  .content-image-chooser :global(.chooser-preview) {
     border: 1px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
@@ -102,7 +109,7 @@ function cycle(delta: number) {
     cursor: pointer;
   }
 
-  .chooser-arrow {
+  .content-image-chooser :global(.chooser-arrow) {
     width: 2.25rem;
     height: 2.25rem;
     display: grid;
@@ -110,12 +117,12 @@ function cycle(delta: number) {
     padding: 0;
   }
 
-  .chooser-arrow:disabled {
+  .content-image-chooser :global(.chooser-arrow:disabled) {
     cursor: not-allowed;
     opacity: 0.38;
   }
 
-  .chooser-preview {
+  .content-image-chooser :global(.chooser-preview) {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
@@ -124,7 +131,7 @@ function cycle(delta: number) {
     font-weight: var(--smrt-typography-weight-bold, 650);
   }
 
-  .chooser-preview img {
+  .content-image-chooser :global(.chooser-preview img) {
     width: 2rem;
     height: 2rem;
     border-radius: var(--smrt-radius-full, 9999px);

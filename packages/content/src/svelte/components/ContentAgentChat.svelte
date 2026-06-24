@@ -7,6 +7,7 @@
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
   ContentEditorAssistantContext,
   ContentEditorAssistantFieldUpdateAllowList,
@@ -426,7 +427,7 @@ async function handleSendMessage(content: string) {
     <div class="error-state">
       <p>{error}</p>
       {#if canRetrySessionLoad}
-        <button onclick={loadSession}>Retry</button>
+        <Button variant="primary" type="button" onclick={loadSession}>Retry</Button>
       {/if}
     </div>
   {:else if session}
@@ -471,10 +472,10 @@ async function handleSendMessage(content: string) {
             bind:value={newTopicTitle}
             onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') { createNewTopic(); showNewTopicInput = false; } }}
           />
-          <button class="topic-action-btn" onclick={() => { createNewTopic(); showNewTopicInput = false; }} disabled={isCreatingTopic}>
+          <Button variant="ghost" size="sm" type="button" class="topic-action-btn" onclick={() => { createNewTopic(); showNewTopicInput = false; }} disabled={isCreatingTopic}>
             {isCreatingTopic ? '...' : 'Create'}
-          </button>
-          <button class="topic-action-btn topic-cancel-btn" onclick={() => { showNewTopicInput = false; }}>✕</button>
+          </Button>
+          <Button variant="ghost" size="sm" type="button" class="topic-action-btn topic-cancel-btn" onclick={() => { showNewTopicInput = false; }}>✕</Button>
         </div>
       {:else}
         <select 
@@ -490,10 +491,10 @@ async function handleSendMessage(content: string) {
             <option value={thread.id}>{thread.title || t(M['content.content_agent_chat.untitled_topic'])}</option>
           {/each}
         </select>
-        <button class="topic-action-btn" onclick={() => { showNewTopicInput = true; newTopicTitle = ''; }} title={t(M['content.content_agent_chat.new_topic'])}>
+        <Button variant="ghost" size="sm" type="button" class="topic-action-btn" onclick={() => { showNewTopicInput = true; newTopicTitle = ''; }} title={t(M['content.content_agent_chat.new_topic'])}>
           <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           {t(M['content.content_agent_chat.new'])}
-        </button>
+        </Button>
       {/if}
     </div>
   {/if}
@@ -533,16 +534,6 @@ async function handleSendMessage(content: string) {
   
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  .error-state button {
-    margin-top: 1rem;
-    padding: 0.5rem 1rem;
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    border: none;
-    border-radius: var(--smrt-radius-sm, 4px);
-    cursor: pointer;
   }
 
   .model-bar {
@@ -602,7 +593,7 @@ async function handleSendMessage(content: string) {
     flex: 1;
   }
 
-  .topic-action-btn {
+  .topic-footer :global(.topic-action-btn) {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 4px);
@@ -617,12 +608,12 @@ async function handleSendMessage(content: string) {
     transition: background 0.15s;
   }
 
-  .topic-action-btn:hover:not(:disabled) {
+  .topic-footer :global(.topic-action-btn:hover:not(:disabled)) {
     background: var(--smrt-color-surface-variant, #e1e2e8);
     color: var(--smrt-color-primary, #005ac1);
   }
 
-  .topic-cancel-btn {
+  .topic-footer :global(.topic-cancel-btn) {
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: none;
     color: var(--smrt-color-outline, #74777f);

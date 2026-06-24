@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentContributionData } from '../../mock-smrt-client';
 import { M } from '../i18n.contribution.js';
 
@@ -132,6 +133,7 @@ $effect(() => {
     <div class="inbox__layout">
       <div class="inbox__list">
         {#each contributions as contribution (contribution.id)}
+          <!-- raw-primitive-allow: large pressable selection card wrapping a title and metadata with a selected state -->
           <button
             type="button"
             class:selected={selectedContribution?.id === contribution.id}
@@ -204,38 +206,39 @@ $effect(() => {
                     <option value="review">review</option>
                   </select>
                 </label>
-                <button
+                <Button
+                  variant="primary"
                   type="submit"
                   name="intent"
                   value="approve"
                   disabled={!canSubmitWorkflow}
                 >
                   {approveActionLabel(selectedContribution)}
-                </button>
+                </Button>
               {/if}
 
               {#if onRequestChanges || workflowFormAction}
-                <button
+                <Button
+                  variant="secondary"
                   type="submit"
                   name="intent"
                   value="request-changes"
-                  class="secondary"
                   disabled={!canSubmitWorkflow}
                 >
                   {t(M['content.contribution_inbox.request_changes'])}
-                </button>
+                </Button>
               {/if}
 
               {#if onReject || workflowFormAction}
-                <button
+                <Button
+                  variant="danger"
                   type="submit"
                   name="intent"
                   value="reject"
-                  class="danger"
                   disabled={!canSubmitWorkflow}
                 >
                   Reject
-                </button>
+                </Button>
               {/if}
             </div>
           </form>
