@@ -58,7 +58,9 @@
                 "selector": {
                   "kind": "interface"
                 },
-                "formats": ["PascalCase"]
+                "formats": [
+                  "PascalCase"
+                ]
               }
             ]
           }
@@ -120,7 +122,10 @@
       }
     },
     {
-      "includes": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
+      "includes": [
+        "packages/*/src/**/*.ts",
+        "packages/*/src/**/*.tsx"
+      ],
       "linter": {
         "rules": {
           "suspicious": {
@@ -241,6 +246,38 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/chat/src/**/*.ts",
+        "packages/chat/src/**/*.tsx",
+        "packages/social/src/**/*.ts",
+        "packages/social/src/**/*.tsx",
+        "packages/smrt-app-mcp/src/**/*.ts",
+        "packages/smrt-app-mcp/src/**/*.tsx",
+        "packages/gnode/src/**/*.ts",
+        "packages/gnode/src/**/*.tsx",
+        "packages/assets-local/src/**/*.ts",
+        "packages/assets-local/src/**/*.tsx",
+        "packages/config/src/**/*.ts",
+        "packages/config/src/**/*.tsx",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!**/*.spec.ts",
+        "!**/*.spec.tsx",
+        "!**/__tests__/**",
+        "!**/test/**",
+        "!**/tests/**",
+        "!**/mock-*.ts",
+        "!**/test-*.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noExplicitAny": "error"
           }
         }
       }
