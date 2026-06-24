@@ -4,6 +4,7 @@
  * Provides a search input and displays matching messages
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 import type { ChatMessageData } from '../../types.js';
 
@@ -108,7 +109,9 @@ $effect(() => {
   >
     <div class="search-panel__header">
       <h2 class="search-panel__title">{t(M['chat.search_messages.title'])}</h2>
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         class="close-btn"
         type="button"
         onclick={handleClose}
@@ -118,7 +121,7 @@ $effect(() => {
           <path d="M18 6 6 18" />
           <path d="m6 6 12 12" />
         </svg>
-      </button>
+      </Button>
     </div>
 
     <form
@@ -140,7 +143,9 @@ $effect(() => {
           aria-label={t(M['chat.search_messages.query'])}
         />
         {#if hasQuery}
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             class="clear-btn"
             type="button"
             onclick={() => { query = ''; searchInput?.focus(); }}
@@ -150,7 +155,7 @@ $effect(() => {
               <path d="M18 6 6 18" />
               <path d="m6 6 12 12" />
             </svg>
-          </button>
+          </Button>
         {/if}
       </div>
     </form>
@@ -163,6 +168,7 @@ $effect(() => {
         <ul class="results-list" aria-label={t(M['chat.search_messages.results'])}>
           {#each results as message (message.id)}
             <li class="results-list__item">
+              <!-- raw-primitive-allow: large pressable search-result card wrapping rich content (avatar, sender, date, multi-line highlighted message excerpt); no Button primitive owns this structural selection-card pattern -->
               <button
                 class="result-item"
                 type="button"
@@ -231,27 +237,19 @@ $effect(() => {
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
-  .close-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .search-panel__header :global(.close-btn) {
     width: 1.75rem;
     height: 1.75rem;
-    border: none;
+    padding: 0;
     background: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
-  .close-btn:hover {
+  .search-panel__header :global(.close-btn:hover) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
-  }
-
-  .close-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -2px;
   }
 
   .close-btn__icon {
@@ -300,21 +298,19 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .clear-btn {
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .search-input-wrap :global(.clear-btn) {
     flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 1.25rem;
     height: 1.25rem;
-    border: none;
+    padding: 0;
     background: none;
     border-radius: var(--smrt-radius-full, 9999px);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
   }
 
-  .clear-btn:hover {
+  .search-input-wrap :global(.clear-btn:hover) {
+    background: none;
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
@@ -448,9 +444,12 @@ $effect(() => {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .close-btn,
     .result-item,
     .search-input-wrap {
+      transition: none;
+    }
+
+    .search-panel__header :global(.close-btn) {
       transition: none;
     }
   }

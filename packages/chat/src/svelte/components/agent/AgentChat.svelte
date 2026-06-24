@@ -6,6 +6,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 import type {
   AgentSessionData,
@@ -106,7 +107,8 @@ $effect(() => {
         disabled={!isActive}
         aria-label={t(M['chat.agent_chat.message_input'])}
       ></textarea>
-      <button
+      <Button
+        variant="ghost"
         class="agent-chat__send-btn"
         type="submit"
         disabled={!inputValue.trim() || !isActive}
@@ -115,7 +117,7 @@ $effect(() => {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
         </svg>
-      </button>
+      </Button>
     {/if}
   </form>
 
@@ -151,19 +153,21 @@ $effect(() => {
                   {:else if block.type === 'fields'}
                     <div class="field-update-block">
                       <span class="applied-badge">{t(M['chat.agent_chat.updated_fields'], { count: Object.keys(block.fields).length, plural: Object.keys(block.fields).length !== 1 ? 's' : '' })}</span>
-                      <button class="diff-btn" type="button" onclick={() => showDiff(block.fields)}>Diff</button>
+                      <Button variant="ghost" size="sm" class="diff-btn" type="button" onclick={() => showDiff(block.fields)}>Diff</Button>
                     </div>
                   {:else if block.type === 'markdown'}
                     <div class="markdown-block">
                       <pre class="markdown-block__content"><code>{block.content}</code></pre>
                       {#if onapplychange}
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           class="diff-btn"
                           type="button"
                           onclick={() => onapplychange(block.content)}
                         >
                           Apply
-                        </button>
+                        </Button>
                       {/if}
                     </div>
                   {/if}
@@ -198,7 +202,7 @@ $effect(() => {
 <dialog bind:this={diffDialog} class="diff-dialog">
   <div class="diff-dialog__header">
     <h4>{t(M['chat.agent_chat.field_changes'])}</h4>
-    <button class="diff-dialog__close" type="button" onclick={closeDiff}>✕</button>
+    <Button variant="ghost" size="sm" class="diff-dialog__close" type="button" onclick={closeDiff}>✕</Button>
   </div>
   {#if diffDialogFields}
     <div class="diff-dialog__body">
@@ -349,27 +353,20 @@ $effect(() => {
     color: var(--smrt-color-outline, #74777f);
   }
 
-  .agent-chat__send-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .agent-chat__input-bar :global(.agent-chat__send-btn) {
     width: 34px;
     height: 34px;
-    border: none;
+    padding: 0;
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
     border-radius: var(--smrt-radius-full, 9999px);
-    cursor: pointer;
     flex-shrink: 0;
     transition: opacity 150ms;
   }
 
-  .agent-chat__send-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .agent-chat__send-btn:not(:disabled):hover {
+  .agent-chat__input-bar :global(.agent-chat__send-btn:not(:disabled):hover) {
+    background: var(--smrt-color-primary, #005ac1);
     opacity: 0.85;
   }
 
@@ -411,7 +408,9 @@ $effect(() => {
     line-height: var(--smrt-typography-body-medium-line-height, 1.45);
   }
 
-  .diff-btn {
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .field-update-block :global(.diff-btn),
+  .markdown-block :global(.diff-btn) {
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-label-small-size, 0.625rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
@@ -419,11 +418,10 @@ $effect(() => {
     border-radius: var(--smrt-radius-full, 9999px);
     background: none;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
-    transition: background 0.15s;
   }
 
-  .diff-btn:hover {
+  .field-update-block :global(.diff-btn:hover),
+  .markdown-block :global(.diff-btn:hover) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
     color: var(--smrt-color-primary, #005ac1);
   }
@@ -457,17 +455,16 @@ $effect(() => {
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
-  .diff-dialog__close {
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .diff-dialog__header :global(.diff-dialog__close) {
     background: none;
-    border: none;
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    cursor: pointer;
     color: var(--smrt-color-outline, #74777f);
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-sm, 4px);
   }
 
-  .diff-dialog__close:hover {
+  .diff-dialog__header :global(.diff-dialog__close:hover) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 

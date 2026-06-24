@@ -26,6 +26,7 @@ const { t } = useI18n();
 
   <div class="agent-selector__grid" role="listbox" aria-label={t(M['chat.agent_selector.available_agents'])}>
     {#each agents as agent (agent.id)}
+      <!-- raw-primitive-allow: large pressable selection card with role=option wrapping rich content (avatar, name, description, unavailable badge) inside a role=listbox; no Button primitive owns this structural listbox-option pattern -->
       <button
         class="agent-selector__card"
         class:agent-selector__card--unavailable={!agent.isAvailable}

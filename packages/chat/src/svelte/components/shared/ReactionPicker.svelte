@@ -4,6 +4,7 @@
  * Compact popup grid of common emojis.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 
 const { t } = useI18n();
@@ -39,26 +40,21 @@ const emojis = [
 function handleSelect(emoji: string) {
   onreact(emoji);
 }
-
-function handleKeydown(event: KeyboardEvent, emoji: string) {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    handleSelect(emoji);
-  }
-}
 </script>
 
 {#if isOpen}
   <div class="reaction-picker" role="group" aria-label={t(M['chat.reaction_picker.reactions'])}>
     {#each emojis as emoji}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         class="reaction-picker__item"
         type="button"
         onclick={() => handleSelect(emoji)}
         aria-label={t(M['chat.reaction_picker.react_with'], { emoji })}
       >
         {emoji}
-      </button>
+      </Button>
     {/each}
   </div>
 {/if}
@@ -76,28 +72,19 @@ function handleKeydown(event: KeyboardEvent, emoji: string) {
     width: max-content;
   }
 
-  .reaction-picker__item {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .reaction-picker :global(.reaction-picker__item) {
     width: 32px;
     height: 32px;
-    border: none;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
-    cursor: pointer;
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
     line-height: 1;
     padding: 0;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  .reaction-picker__item:hover {
+  .reaction-picker :global(.reaction-picker__item:hover) {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
-  }
-
-  .reaction-picker__item:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -2px;
   }
 </style>

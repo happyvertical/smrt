@@ -84,6 +84,7 @@ function highlightMatch(
   >
     {#each suggestions as suggestion, i (suggestion.id)}
       {@const parts = highlightMatch(suggestion.name, query)}
+      <!-- raw-primitive-allow: role=option in a hand-rolled autocomplete listbox with roving active-index keyboard navigation (ArrowUp/Down/Enter/Tab) and onpointerenter active sync, wrapping rich content (avatar, highlighted name); no Button primitive owns this structural listbox-option pattern -->
       <button
         class="mention-autocomplete__item"
         class:mention-autocomplete__item--active={i === activeIndex}

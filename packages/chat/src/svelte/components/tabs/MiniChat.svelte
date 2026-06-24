@@ -5,6 +5,7 @@
  * No thread panel, no reactions. Just messages and a send box.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
@@ -94,7 +95,8 @@ $effect(() => {
       onkeydown={handleKeydown}
       aria-label={t(M['chat.mini_chat.input_label'])}
     />
-    <button
+    <Button
+      variant="ghost"
       class="mini-chat__send-btn"
       type="submit"
       disabled={!inputValue.trim()}
@@ -103,7 +105,7 @@ $effect(() => {
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
       </svg>
-    </button>
+    </Button>
   </form>
 </div>
 
@@ -212,33 +214,25 @@ $effect(() => {
     color: var(--smrt-color-outline, #74777f);
   }
 
-  .mini-chat__send-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .mini-chat__input-bar :global(.mini-chat__send-btn) {
     width: 32px;
     height: 32px;
-    border: none;
+    padding: 0;
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
     border-radius: var(--smrt-radius-full, 9999px);
-    cursor: pointer;
     flex-shrink: 0;
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
 
-  .mini-chat__send-btn:disabled {
+  .mini-chat__input-bar :global(.mini-chat__send-btn:disabled) {
     opacity: 0.4;
-    cursor: not-allowed;
   }
 
-  .mini-chat__send-btn:not(:disabled):hover {
+  .mini-chat__input-bar :global(.mini-chat__send-btn:not(:disabled):hover) {
+    background: var(--smrt-color-primary, #005ac1);
     opacity: 0.85;
-  }
-
-  .mini-chat__send-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -246,7 +240,7 @@ $effect(() => {
       scroll-behavior: auto;
     }
 
-    .mini-chat__send-btn {
+    .mini-chat__input-bar :global(.mini-chat__send-btn) {
       transition: none;
     }
   }

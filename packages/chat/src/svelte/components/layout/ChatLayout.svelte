@@ -72,6 +72,7 @@ function handlePointerUp() {
     />
   </aside>
 
+  <!-- raw-primitive-allow: custom drag-to-resize splitter with pointer capture (pointerdown/move/up) and ArrowLeft/ArrowRight keyboard resizing; a press-and-drag control no Button primitive owns -->
   <button
     type="button"
     class="chat-layout__resize-handle"

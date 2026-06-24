@@ -4,6 +4,7 @@
  * Displays room info and provides access to members and search
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatRoomData } from '../../types.js';
 
@@ -78,7 +79,9 @@ const roomTypeLabel = $derived.by(() => {
 
   <div class="room-header__actions">
     {#if onshowmembers}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         class="header-btn"
         type="button"
         onclick={onshowmembers}
@@ -92,11 +95,13 @@ const roomTypeLabel = $derived.by(() => {
           <path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
         <span class="header-btn__count">{participantCount}</span>
-      </button>
+      </Button>
     {/if}
 
     {#if onshowsearch}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         class="header-btn"
         type="button"
         onclick={onshowsearch}
@@ -107,7 +112,7 @@ const roomTypeLabel = $derived.by(() => {
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
         </svg>
-      </button>
+      </Button>
     {/if}
   </div>
 </header>
@@ -201,26 +206,18 @@ const roomTypeLabel = $derived.by(() => {
     gap: 0.25rem;
   }
 
-  .header-btn {
-    display: inline-flex;
-    align-items: center;
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .room-header__actions :global(.header-btn) {
     gap: 0.25rem;
     padding: 0.375rem 0.5rem;
-    border: none;
     background: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
-  .header-btn:hover {
+  .room-header__actions :global(.header-btn:hover) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
-  }
-
-  .header-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -2px;
   }
 
   .header-btn__icon {
@@ -234,7 +231,7 @@ const roomTypeLabel = $derived.by(() => {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .header-btn {
+    .room-header__actions :global(.header-btn) {
       transition: none;
     }
   }
