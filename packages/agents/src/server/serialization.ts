@@ -57,7 +57,7 @@ export interface SerializedAgent {
    * reference secrets by id via `@happyvertical/smrt-secrets` so only an opaque
    * handle is ever stored in tenant config.
    */
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 }
 
 /**

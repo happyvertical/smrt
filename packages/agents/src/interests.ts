@@ -1,10 +1,13 @@
-import type { SmrtObject } from '@happyvertical/smrt-core';
+import type { SmrtClassOptions, SmrtObject } from '@happyvertical/smrt-core';
 
-// Forward reference for Agent type (avoids circular dependency)
-// The actual Agent class is in agent.ts which imports from this file
+// Forward reference for Agent type (avoids circular dependency).
+// The actual Agent class is in agent.ts which imports from this file. We model
+// only the structural surface a handler relies on (the agent's `options`); a
+// concrete class instance is not assignable to a type with a string index
+// signature, so handlers needing richer access should specialize the `A`
+// type parameter with their concrete agent type.
 type AgentLike = {
-  options: Record<string, any>;
-  [key: string]: any;
+  options: SmrtClassOptions;
 };
 
 /**
@@ -36,7 +39,7 @@ type AgentLike = {
 export type InterestHandlerFn<
   T extends SmrtObject = SmrtObject,
   A extends AgentLike = AgentLike,
-  R = any,
+  R = unknown,
 > = (item: T, agent: A) => Promise<R> | R;
 
 /**
@@ -49,7 +52,7 @@ export type InterestHandlerFn<
  *
  * Supported operators: =, >, <, >=, <=, !=, in, like
  */
-export type ObjectFilter = Record<string, any>;
+export type ObjectFilter = Record<string, unknown>;
 
 /**
  * Async qualifier function for post-filter processing
@@ -94,7 +97,7 @@ export type AsyncQualifierFn<T extends SmrtObject = SmrtObject> = (
  * ];
  * ```
  */
-export type QueryFn = (tableName: string) => [sql: string, params: any[]];
+export type QueryFn = (tableName: string) => [sql: string, params: unknown[]];
 
 /**
  * Single interest filter configuration
@@ -256,7 +259,10 @@ export interface InterestOptions {
  * }
  * ```
  */
-export interface InterestResult<T extends SmrtObject = SmrtObject, R = any> {
+export interface InterestResult<
+  T extends SmrtObject = SmrtObject,
+  R = unknown,
+> {
   /**
    * Object class name from ObjectRegistry
    */

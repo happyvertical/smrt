@@ -134,9 +134,7 @@ export class Journal extends SmrtObject {
     const { JournalEntryCollection } = await import(
       '../collections/JournalEntries'
     );
-    const collection = await (JournalEntryCollection as any).create(
-      this.options,
-    );
+    const collection = await JournalEntryCollection.create(this.options);
     return await collection.findByJournal(this.id);
   }
 
@@ -179,9 +177,7 @@ export class Journal extends SmrtObject {
     const { JournalEntryCollection } = await import(
       '../collections/JournalEntries'
     );
-    const collection = await (JournalEntryCollection as any).create(
-      this.options,
-    );
+    const collection = await JournalEntryCollection.create(this.options);
     const entry = await collection.create({
       journalId: this.id,
       accountId: data.accountId,

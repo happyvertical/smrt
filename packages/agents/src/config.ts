@@ -86,7 +86,7 @@ export class AgentConfig extends SmrtObject {
    * `where` filter key.
    */
   @field({ type: 'json', sensitive: true })
-  configData: Record<string, any> = {};
+  configData: Record<string, unknown> = {};
 
   /**
    * Schema version for future migrations
@@ -104,7 +104,7 @@ export class AgentConfig extends SmrtObject {
   static async forAgent(
     agentId: string,
     options: SmrtClassOptions,
-  ): Promise<Map<string, any>> {
+  ): Promise<Map<string, Record<string, unknown>>> {
     const configsByAgent = await AgentConfig.forAgents([agentId], options);
     return configsByAgent.get(agentId) ?? new Map();
   }
@@ -119,8 +119,11 @@ export class AgentConfig extends SmrtObject {
   static async forAgents(
     agentIds: string[],
     options: SmrtClassOptions,
-  ): Promise<Map<string, Map<string, any>>> {
-    const configsByAgent = new Map<string, Map<string, any>>();
+  ): Promise<Map<string, Map<string, Record<string, unknown>>>> {
+    const configsByAgent = new Map<
+      string,
+      Map<string, Record<string, unknown>>
+    >();
     if (agentIds.length === 0) {
       return configsByAgent;
     }
@@ -152,7 +155,7 @@ export class AgentConfig extends SmrtObject {
     agentId: string,
     slotId: string,
     options: SmrtClassOptions,
-  ): Promise<any | undefined> {
+  ): Promise<Record<string, unknown> | undefined> {
     const collection = await AgentConfigCollection.create(options);
     const configs = await collection.list({
       where: { agentId, slotId },
@@ -173,7 +176,7 @@ export class AgentConfig extends SmrtObject {
       agentId: string;
       agentClass: string;
       slotId: string;
-      configData: Record<string, any>;
+      configData: Record<string, unknown>;
     },
     options: SmrtClassOptions,
   ): Promise<AgentConfig> {
