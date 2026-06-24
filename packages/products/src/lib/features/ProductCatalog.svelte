@@ -253,6 +253,14 @@ function handleCancelForm() {
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
+  /* Restore the retry button's spacing from the error message. The old
+     `.error-state button` rule can't reach the <button> rendered inside the
+     smrt-ui <Button>, so pierce into it with `:global` (#1589); the danger
+     variant already supplies the background/color the old rule set. */
+  .error-state :global(.button) {
+    margin-top: 0.5rem;
+  }
+
   .form-overlay {
     position: fixed;
     top: 0;
