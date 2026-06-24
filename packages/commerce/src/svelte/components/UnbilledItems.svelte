@@ -6,6 +6,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type { UnbilledItem } from '../types.js';
 
@@ -105,6 +106,7 @@ const someSelected = $derived(
   {:else}
     <div class="items-header">
       <label class="select-all">
+        <!-- raw-primitive-allow: tri-state select-all checkbox needs the indeterminate flag for the some-but-not-all state; neither CheckboxInput nor Toggle exposes indeterminate, and a use action cannot be applied to a component -->
         <input
           type="checkbox"
           checked={allSelected}
@@ -121,6 +123,7 @@ const someSelected = $derived(
     <div class="items-list">
       {#each items as item (item.id)}
         <label class="item-row" class:selected={selectedIds.has(item.id)}>
+          <!-- raw-primitive-allow: native checkbox kept for visual + behavioral consistency with the indeterminate select-all checkbox above (which must stay native); the only checkbox primitive, CheckboxInput, also requires a smrt-svelte Provider in context, which this standalone presentational component does not assume -->
           <input
             type="checkbox"
             checked={selectedIds.has(item.id)}
@@ -150,13 +153,12 @@ const someSelected = $derived(
           <span class="summary-value">{formatMoney(selectedTotal)}</span>
         </div>
         {#if oncreate}
-          <button
-            type="button"
-            class="create-btn"
+          <Button
+            variant="primary"
             onclick={() => oncreate?.([...selectedIds])}
           >
             {t(M['commerce.unbilled_items.create_invoice'])}
-          </button>
+          </Button>
         {/if}
       </div>
     {/if}
@@ -328,29 +330,5 @@ const someSelected = $derived(
     font: var(--smrt-typography-title-large-font);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1c1b1f);
-  }
-
-  .create-btn {
-    display: inline-flex;
-    align-items: center;
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
-    font: var(--smrt-typography-label-large-font);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-primary, #ffffff);
-    background: var(--smrt-color-primary, #005ac1);
-    border: none;
-    border-radius: var(--smrt-radius-small, 0.375rem);
-    cursor: pointer;
-    transition: background var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .create-btn {
-      transition: none;
-    }
-  }
-
-  .create-btn:hover {
-    background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
   }
 </style>

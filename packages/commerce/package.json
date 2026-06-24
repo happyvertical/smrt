@@ -3,6 +3,7 @@
   "version": "0.34.4",
   "description": "Commerce models for the SMRT framework - contracts, fulfillments, payments",
   "type": "module",
+  "smrtRawPrimitives": "strict",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

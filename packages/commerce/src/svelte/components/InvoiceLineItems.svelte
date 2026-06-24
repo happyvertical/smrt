@@ -7,6 +7,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import type { LineItem } from '../types.js';
@@ -70,9 +71,9 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     <div class="empty-state">
       <p>{emptyMessage}</p>
       {#if editable && onadd}
-        <button type="button" class="add-btn" onclick={onadd}>
+        <Button variant="ghost" class="add-btn" onclick={onadd}>
           {t(M['commerce.invoice_line_items.add_item'])}
-        </button>
+        </Button>
       {/if}
     </div>
   {:else}
@@ -112,8 +113,8 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
             <td class="col-amount">{formatMoney(item.amount)}</td>
             {#if editable}
               <td class="col-actions">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   class="action-btn delete"
                   title={t(M['commerce.invoice_line_items.remove_item'])}
                   onclick={() => ondelete?.(item.id)}
@@ -121,7 +122,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M4 4l8 8M4 12l8-8" />
                   </svg>
-                </button>
+                </Button>
               </td>
             {/if}
           </tr>
@@ -139,12 +140,12 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     </table>
 
     {#if editable && onadd}
-      <button type="button" class="add-btn add-btn-below" onclick={onadd}>
+      <Button variant="ghost" class="add-btn add-btn-below" onclick={onadd}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M8 3v10M3 8h10" />
         </svg>
         {t(M['commerce.invoice_line_items.add_item'])}
-      </button>
+      </Button>
     {/if}
   {/if}
 </div>
@@ -262,7 +263,15 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
-  .action-btn {
+  /*
+   * These rules style the <button> rendered *inside* the smrt-ui <Button>
+   * child component (issue #1589). A plain scoped `.action-btn {}` rule would
+   * not reach it (no parent scope hash), so each is written as
+   * `.line-items-container :global(.class)` — Svelte compiles the ancestor to
+   * `.line-items-container.svelte-HASH .class`, which pierces into the child.
+   * Overrides cover sizing/shape/color; the ghost variant owns the base.
+   */
+  .line-items-container :global(.action-btn) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -271,28 +280,27 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     background: transparent;
     border: none;
     border-radius: var(--smrt-radius-extra-small, 0.25rem);
-    cursor: pointer;
     color: var(--smrt-color-on-surface-variant, #49454f);
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .action-btn {
+    .line-items-container :global(.action-btn) {
       transition: none;
     }
   }
 
-  .action-btn:hover {
+  .line-items-container :global(.action-btn:hover) {
     background: var(--smrt-color-surface-variant, #e7e0ec);
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
-  .action-btn.delete:hover {
+  .line-items-container :global(.action-btn.delete:hover) {
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-error, #ba1a1a);
   }
 
-  .add-btn {
+  .line-items-container :global(.add-btn) {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
@@ -303,21 +311,20 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     background: transparent;
     border: 1px dashed var(--smrt-color-primary, #005ac1);
     border-radius: var(--smrt-radius-small, 0.375rem);
-    cursor: pointer;
     transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .add-btn {
+    .line-items-container :global(.add-btn) {
       transition: none;
     }
   }
 
-  .add-btn:hover {
+  .line-items-container :global(.add-btn:hover) {
     background: var(--smrt-color-primary-container, #d3e3fd);
   }
 
-  .add-btn-below {
+  .line-items-container :global(.add-btn-below) {
     margin-top: var(--smrt-spacing-3, 0.75rem);
   }
 </style>

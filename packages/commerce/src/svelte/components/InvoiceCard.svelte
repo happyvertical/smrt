@@ -99,6 +99,7 @@ const isOverdue = $derived.by(() => {
     </div>
   </a>
 {:else}
+  <!-- raw-primitive-allow: large pressable invoice card wrapping rich header/body/footer content with use:ripple, a structural selection control no Button primitive should own (mirrors the href anchor branch) -->
   <button type="button" class="invoice-card" onclick={onclick} use:ripple>
     <div class="card-header">
       <span class="invoice-number">{invoice.invoiceNumber}</span>
