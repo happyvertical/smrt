@@ -57,7 +57,10 @@ function updateFilter(
   key: keyof MessageFilterState,
   value: MessageFilterState[keyof MessageFilterState],
 ) {
-  const updated = { ...filters, [key]: value || undefined };
+  // Normalize only the empty-string `<select>` "all" option to undefined
+  // (clears the filter). `value || undefined` would wrongly drop a boolean
+  // `false` filter (e.g. isRead=false) too.
+  const updated = { ...filters, [key]: value === '' ? undefined : value };
   onfilterchange?.(updated);
 }
 

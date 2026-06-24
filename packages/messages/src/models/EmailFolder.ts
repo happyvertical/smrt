@@ -100,10 +100,15 @@ export class EmailFolder extends SmrtObject {
    * Update message counts from database
    */
   async refreshCounts(): Promise<void> {
+    if (!this.id) {
+      throw new Error(
+        'EmailFolder.refreshCounts requires a persisted folder (missing id)',
+      );
+    }
+    const folderId = this.id;
     const { EmailCollection } = await import('../collections/EmailCollection');
     const collection = await EmailCollection.create(this.options);
 
-    const folderId = this.id ?? '';
     this.messageCount = await collection.countByFolder(folderId);
     this.unreadCount = await collection.countUnreadByFolder(folderId);
     this.updatedAt = new Date();

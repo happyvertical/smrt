@@ -610,8 +610,13 @@ export class Payment extends SmrtObject {
     // Update payment record. Announce the verified settlement to the save-time
     // guard so the COMPLETED transition is accepted (the guard rejects any
     // other route into COMPLETED). A posted journal always carries an id;
-    // coalesce to satisfy the non-nullable column type.
-    this.journalId = journal.id ?? '';
+    // fail fast rather than persist an empty-string FK if that invariant breaks.
+    if (!journal.id) {
+      throw new Error(
+        'Payment.recordPayment: journal was posted but has no id',
+      );
+    }
+    this.journalId = journal.id;
     this.status = PaymentStatus.COMPLETED;
     this.paidAt = new Date();
     settlementInProgress.add(this);

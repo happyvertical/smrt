@@ -79,6 +79,13 @@ export class ProfileRelationship extends SmrtObject {
    * @param endedAt - Optional end date of the term
    */
   async addTerm(startedAt: Date, endedAt?: Date): Promise<void> {
+    if (!this.id) {
+      throw new Error(
+        'ProfileRelationship.addTerm requires a persisted relationship (missing id)',
+      );
+    }
+    const relationshipId = this.id;
+
     const { ProfileRelationshipTermCollection } = await import(
       '../collections/ProfileRelationshipTermCollection'
     );
@@ -88,7 +95,7 @@ export class ProfileRelationship extends SmrtObject {
     );
 
     const term = await termCollection.create({
-      relationshipId: this.id ?? undefined,
+      relationshipId,
       startedAt,
       endedAt,
     });

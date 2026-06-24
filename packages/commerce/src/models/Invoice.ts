@@ -942,9 +942,14 @@ export class Invoice extends SmrtObject {
     // smrt-ledgers has no cross-row transaction primitive, and a posted journal
     // is immutable except via void()).
     await journal.post();
-    // A posted journal always carries an id; coalesce to satisfy the
-    // non-nullable column type without changing runtime behaviour.
-    this.arJournalId = journal.id ?? '';
+    // A posted journal always carries an id; fail fast rather than persist an
+    // empty-string FK if that invariant breaks.
+    if (!journal.id) {
+      throw new Error(
+        'Invoice.recognizeRevenue: journal was posted but has no id',
+      );
+    }
+    this.arJournalId = journal.id;
     try {
       await this.save();
     } catch (err) {
@@ -1009,9 +1014,14 @@ export class Invoice extends SmrtObject {
     const lineItemCollection = await InvoiceLineItemCollection.create(
       this.options,
     );
-    // A synced invoice is always persisted; coalesce the optional id to a
-    // string to satisfy the accounting-input shape without changing behaviour.
-    const invoiceId = this.id ?? '';
+    // A synced invoice is always persisted; fail fast rather than query line
+    // items under an empty id or push an invalid invoice to the provider.
+    if (!this.id) {
+      throw new Error(
+        'Invoice.toAccountingInput requires a persisted invoice (missing id)',
+      );
+    }
+    const invoiceId = this.id;
     const lineItems = await lineItemCollection.findByInvoice(invoiceId);
 
     return {

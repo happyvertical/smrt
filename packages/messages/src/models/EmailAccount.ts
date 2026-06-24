@@ -121,10 +121,15 @@ export class EmailAccount extends Account {
       const emailCollection = await EmailCollection.create(this.options);
       const folderCollection = await EmailFolderCollection.create(this.options);
 
+      if (!this.id) {
+        throw new Error(
+          'EmailAccount.syncFrom requires a persisted account (missing id)',
+        );
+      }
+      const accountId = this.id;
       for (const folderName of foldersToSync) {
         try {
           // Ensure folder exists in database
-          const accountId = this.id ?? '';
           let folder = await folderCollection.getByPath(accountId, folderName);
 
           if (!folder) {

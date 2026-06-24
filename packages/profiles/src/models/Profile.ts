@@ -157,9 +157,14 @@ export class Profile extends SmrtObject {
       await metadata.save();
     } else {
       // Create new
+      if (!this.id || !metafield.id) {
+        throw new Error(
+          'Profile.addMetadata requires a persisted profile and metafield (missing id)',
+        );
+      }
       const metadata = await metadataCollection.create({
-        profileId: this.id ?? undefined,
-        metafieldId: metafield.id ?? undefined,
+        profileId: this.id,
+        metafieldId: metafield.id,
         value: String(value),
       });
       await metadata.save();
