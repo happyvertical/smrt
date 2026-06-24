@@ -58,9 +58,7 @@
                 "selector": {
                   "kind": "interface"
                 },
-                "formats": [
-                  "PascalCase"
-                ]
+                "formats": ["PascalCase"]
               }
             ]
           }
@@ -122,10 +120,7 @@
       }
     },
     {
-      "includes": [
-        "packages/*/src/**/*.ts",
-        "packages/*/src/**/*.tsx"
-      ],
+      "includes": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
       "linter": {
         "rules": {
           "suspicious": {
@@ -254,16 +249,22 @@
       "includes": [
         "packages/chat/src/**/*.ts",
         "packages/chat/src/**/*.tsx",
+        "packages/chat/src/**/*.svelte",
         "packages/social/src/**/*.ts",
         "packages/social/src/**/*.tsx",
+        "packages/social/src/**/*.svelte",
         "packages/smrt-app-mcp/src/**/*.ts",
         "packages/smrt-app-mcp/src/**/*.tsx",
+        "packages/smrt-app-mcp/src/**/*.svelte",
         "packages/gnode/src/**/*.ts",
         "packages/gnode/src/**/*.tsx",
+        "packages/gnode/src/**/*.svelte",
         "packages/assets-local/src/**/*.ts",
         "packages/assets-local/src/**/*.tsx",
+        "packages/assets-local/src/**/*.svelte",
         "packages/config/src/**/*.ts",
         "packages/config/src/**/*.tsx",
+        "packages/config/src/**/*.svelte",
         "!**/*.test.ts",
         "!**/*.test.tsx",
         "!**/*.spec.ts",
