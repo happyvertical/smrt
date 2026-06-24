@@ -4,7 +4,7 @@ import {
   type FormGroupContextValue,
   nextFieldId,
   setFormGroupContext,
-} from '../../state/form-group-context.js';
+} from './form-group-context.js';
 
 export interface Props {
   label: string;

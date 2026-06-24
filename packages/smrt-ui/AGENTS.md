@@ -14,11 +14,18 @@ SMRT has one shared set of UI primitives, split across two packages by concern:
 
 - **`smrt-ui` (here) owns the domain-agnostic VISUAL primitives** — `Button`,
   `Card`, `Modal`/`ConfirmDialog`, `Badge`, `Avatar`, `Chip`, `Dropdown`,
-  `Tooltip`, `Skeleton`, `Tree`, `Pagination`, `DataTable`, … (it has **no**
-  form-input components — those carry i18n/voice logic and belong above the leaf).
-- **`smrt-svelte` owns the FORM primitives** — `Input`, `Textarea`, `Select`,
-  `Checkbox`/`Toggle`, `Form`, and the specialized date/measurement/address/file
-  inputs.
+  `Tooltip`, `Skeleton`, `Tree`, `Pagination`, `DataTable`, … — **plus the
+  Provider-free base FORM primitives** under `./forms` (`Form`, `Input`,
+  `Select`, `Textarea`, `Toggle`, `FormGroup`), relocated here in #1589's
+  deferred-forms phase so domain packages can adopt them without pulling in the
+  smrt-svelte Provider or closing a build-graph cycle. These are dependency-free:
+  no Provider, no i18n, no spoken-input logic.
+- **`smrt-svelte` owns the Provider-REQUIRED form primitives** — `CheckboxInput`,
+  the rich `Form` (field registration + voice), `TextInput`, `MoneyInput`, and
+  the specialized date/measurement/address/file inputs (they call `useAppState`
+  / the AI hooks and carry i18n + spoken-input logic). It re-exports the base
+  primitives from here so `@happyvertical/smrt-svelte/forms` stays the full
+  barrel.
 
 **Domain packages import visual primitives from `smrt-ui` and form primitives
 from `smrt-svelte`, and must not hand-roll raw `<button>` / `<input>` /
@@ -38,6 +45,7 @@ components are exempt — they *are* the primitives.
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
 | `./calendar` | `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
+| `./forms` | Provider-free base form primitives: `Form`, `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` (+ the FormGroup a11y context helpers) |
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
 | `./theme` | simple `ThemeProvider` + context (`useTheme` consumes this from `smrt-svelte`) |
