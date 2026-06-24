@@ -5,6 +5,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
@@ -172,16 +173,17 @@ function handleEscape(event: KeyboardEvent) {
       {#if message.reactions.length > 0}
         <div class="message-item__reactions">
           {#each message.reactions as reaction}
-            <button
-              class="message-item__reaction"
-              class:message-item__reaction--active={reaction.reacted}
+            <Button
+              variant="ghost"
+              size="sm"
+              class="message-item__reaction{reaction.reacted ? ' message-item__reaction--active' : ''}"
               type="button"
               onclick={() => onreact?.(message.id, reaction.emoji)}
               aria-label="{reaction.emoji} {reaction.count}"
             >
               <span class="message-item__reaction-emoji">{reaction.emoji}</span>
               <span class="message-item__reaction-count">{reaction.count}</span>
-            </button>
+            </Button>
           {/each}
         </div>
       {/if}
@@ -195,7 +197,9 @@ function handleEscape(event: KeyboardEvent) {
     </div>
 
     {#if hasActions}
-      <button
+      <Button
+        variant="ghost"
+        size="sm"
         class="message-item__more-btn"
         type="button"
         onclick={openActions}
@@ -205,7 +209,7 @@ function handleEscape(event: KeyboardEvent) {
         aria-controls={actionsId}
       >
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3" cy="8" r="1.3" fill="currentColor" /><circle cx="8" cy="8" r="1.3" fill="currentColor" /><circle cx="13" cy="8" r="1.3" fill="currentColor" /></svg>
-      </button>
+      </Button>
     {/if}
 
     {#if showActions}
@@ -216,44 +220,52 @@ function handleEscape(event: KeyboardEvent) {
         aria-label={t(M['chat.message_item.more_actions'])}
       >
         {#if onreact}
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             class="message-item__action-btn"
             type="button"
             onclick={toggleReactionPicker}
             aria-label={t(M['chat.message_item.add_reaction'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="5.5" cy="6.5" r="0.8" fill="currentColor" /><circle cx="10.5" cy="6.5" r="0.8" fill="currentColor" /><path d="M5.5 9.5c.5 1.2 1.5 1.8 2.5 1.8s2-.6 2.5-1.8" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" /></svg>
-          </button>
+          </Button>
         {/if}
         {#if onreply}
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             class="message-item__action-btn"
             type="button"
             onclick={() => onreply?.(message.id)}
             aria-label={t(M['chat.message_item.reply'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><path d="M6 3L2 7l4 4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /><path d="M2 7h8c2.2 0 4 1.8 4 4v1" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
+          </Button>
         {/if}
         {#if isOwn && onedit}
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             class="message-item__action-btn"
             type="button"
             onclick={() => onedit?.(message.id)}
             aria-label={t(M['chat.message_item.edit'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><path d="M11.5 1.5l3 3L5 14H2v-3z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
+          </Button>
         {/if}
         {#if isOwn && ondelete}
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             class="message-item__action-btn"
             type="button"
             onclick={() => ondelete?.(message.id)}
             aria-label={t(M['chat.message_item.delete'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><path d="M2 4h12M5.3 4V2.7A.7.7 0 016 2h4a.7.7 0 01.7.7V4m1.6 0v9.3a1.4 1.4 0 01-1.4 1.4H5.1a1.4 1.4 0 01-1.4-1.4V4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-          </button>
+          </Button>
         {/if}
       </div>
 
@@ -391,24 +403,22 @@ function handleEscape(event: KeyboardEvent) {
     gap: var(--smrt-spacing-1, 0.25rem);
   }
 
-  .message-item__reaction {
-    display: inline-flex;
-    align-items: center;
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .message-item__reactions :global(.message-item__reaction) {
     gap: var(--smrt-spacing-1, 4px);
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface, #ffffff);
-    cursor: pointer;
     font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  .message-item__reaction:hover {
+  .message-item__reactions :global(.message-item__reaction:hover) {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
   }
 
-  .message-item__reaction--active {
+  .message-item__reactions :global(.message-item__reaction--active) {
     border-color: var(--smrt-color-primary, #005ac1);
     background: var(--smrt-color-primary-container, #d6e3ff);
   }
@@ -441,12 +451,11 @@ function handleEscape(event: KeyboardEvent) {
     font-style: italic;
   }
 
-  .message-item__more-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .message-item :global(.message-item__more-btn) {
     width: 26px;
     height: 26px;
+    padding: 0;
     position: absolute;
     top: 0;
     right: var(--smrt-spacing-4, 1rem);
@@ -454,12 +463,11 @@ function handleEscape(event: KeyboardEvent) {
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     opacity: 0;
     transition: opacity var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  .message-item--own .message-item__more-btn {
+  .message-item--own :global(.message-item__more-btn) {
     right: auto;
     left: var(--smrt-spacing-4, 1rem);
   }
@@ -467,19 +475,19 @@ function handleEscape(event: KeyboardEvent) {
   /* Reveal the keyboard/touch affordance on hover OR when focus is inside the
      row, so it is never strictly hover-only (a11y blocker, T2 #1391). Always
      visible to coarse pointers (touch) which cannot hover. */
-  .message-item:hover .message-item__more-btn,
-  .message-item:focus-within .message-item__more-btn {
+  .message-item:hover :global(.message-item__more-btn),
+  .message-item:focus-within :global(.message-item__more-btn) {
     opacity: 1;
   }
 
-  .message-item__more-btn:focus-visible {
+  .message-item :global(.message-item__more-btn:focus-visible) {
     opacity: 1;
     outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 1px;
   }
 
   @media (hover: none) {
-    .message-item__more-btn {
+    .message-item :global(.message-item__more-btn) {
       opacity: 1;
     }
   }
@@ -504,21 +512,18 @@ function handleEscape(event: KeyboardEvent) {
     left: var(--smrt-spacing-4, 1rem);
   }
 
-  .message-item__action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .message-item__actions :global(.message-item__action-btn) {
     width: 26px;
     height: 26px;
-    border: none;
+    padding: 0;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  .message-item__action-btn:hover {
+  .message-item__actions :global(.message-item__action-btn:hover) {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
   }
 
@@ -536,9 +541,9 @@ function handleEscape(event: KeyboardEvent) {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .message-item__more-btn,
-    .message-item__action-btn,
-    .message-item__reaction {
+    .message-item :global(.message-item__more-btn),
+    .message-item__actions :global(.message-item__action-btn),
+    .message-item__reactions :global(.message-item__reaction) {
       transition: none;
     }
   }

@@ -4,6 +4,7 @@
  * Horizontal bar of small avatars/names at bottom. Shows unread badges.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatTabState } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
@@ -26,6 +27,7 @@ const { tabs, onselect, onclose }: Props = $props();
   <nav class="tab-list" aria-label={t(M['chat.chat_tab_list.minimized_chats'])}>
     {#each tabs as tab (tab.roomId)}
       <div class="tab-list__item">
+        <!-- raw-primitive-allow: pressable circular avatar tab wrapping rich content (room avatar component and overlaid unread badge) that opens the chat on click; no Button primitive owns this structural avatar-tab pattern -->
         <button
           class="tab-list__btn"
           type="button"
@@ -44,7 +46,9 @@ const { tabs, onselect, onclose }: Props = $props();
             </span>
           {/if}
         </button>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           class="tab-list__close"
           type="button"
           onclick={(e) => { e.stopPropagation(); onclose(tab.roomId); }}
@@ -54,7 +58,7 @@ const { tabs, onselect, onclose }: Props = $props();
           <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
             <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
           </svg>
-        </button>
+        </Button>
       </div>
     {/each}
   </nav>
@@ -119,25 +123,22 @@ const { tabs, onselect, onclose }: Props = $props();
     border: 2px solid var(--smrt-color-surface, #fefbff);
   }
 
-  .tab-list__close {
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .tab-list__item :global(.tab-list__close) {
     display: none;
     position: absolute;
     top: -4px;
     right: -4px;
     width: 18px;
     height: 18px;
-    align-items: center;
-    justify-content: center;
-    border: none;
     background: var(--smrt-color-surface-variant, #e1e2ec);
     color: var(--smrt-color-on-surface-variant, #43474e);
     border-radius: var(--smrt-radius-full, 9999px);
-    cursor: pointer;
     padding: 0;
     font-size: 0;
   }
 
-  .tab-list__item:hover .tab-list__close {
+  .tab-list__item:hover :global(.tab-list__close) {
     display: inline-flex;
   }
 
@@ -145,7 +146,7 @@ const { tabs, onselect, onclose }: Props = $props();
     display: none;
   }
 
-  .tab-list__close:hover {
+  .tab-list__item :global(.tab-list__close:hover) {
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-on-error-container, #410002);
   }

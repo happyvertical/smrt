@@ -5,6 +5,7 @@
  * Supports file type filtering and max size constraints.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 
 const { t } = useI18n();
@@ -116,7 +117,9 @@ function getFileIcon(type: string): string {
             <span class="file-upload__file-name">{file.name}</span>
             <span class="file-upload__file-size">{formatSize(file.size)}</span>
           </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             class="file-upload__file-remove"
             type="button"
             onclick={() => removePending(i)}
@@ -125,25 +128,27 @@ function getFileIcon(type: string): string {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
             </svg>
-          </button>
+          </Button>
         </div>
       {/each}
 
       <div class="file-upload__preview-actions">
-        <button
-          class="file-upload__confirm-btn"
+        <Button
+          variant="primary"
+          size="sm"
           type="button"
           onclick={confirmUpload}
         >
           {t(M['chat.file_upload.upload_files'], { count: pendingFiles.length, plural: pendingFiles.length !== 1 ? 's' : '' })}
-        </button>
-        <button
-          class="file-upload__clear-btn"
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
           type="button"
           onclick={() => { pendingFiles = []; sizeError = ''; }}
         >
           Clear
-        </button>
+        </Button>
       </div>
     </div>
   {/if}
@@ -302,22 +307,19 @@ function getFileIcon(type: string): string {
     color: var(--smrt-color-outline, #74777f);
   }
 
-  .file-upload__file-remove {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .file-upload__file :global(.file-upload__file-remove) {
     width: 24px;
     height: 24px;
-    border: none;
+    padding: 0;
     background: none;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
-  .file-upload__file-remove:hover {
+  .file-upload__file :global(.file-upload__file-remove:hover) {
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-error, #ba1a1a);
   }
@@ -326,41 +328,6 @@ function getFileIcon(type: string): string {
     display: flex;
     gap: var(--smrt-spacing-2, 8px);
     padding-top: var(--smrt-spacing-1, 4px);
-  }
-
-  .file-upload__confirm-btn {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
-    border: none;
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
-    cursor: pointer;
-    transition: opacity var(--smrt-duration-short2, 150ms);
-  }
-
-  .file-upload__confirm-btn:hover {
-    opacity: 0.85;
-  }
-
-  .file-upload__confirm-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: 2px;
-  }
-
-  .file-upload__clear-btn {
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
-    border: 1px solid var(--smrt-color-outline, #74777f);
-    border-radius: var(--smrt-radius-full, 9999px);
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
-    cursor: pointer;
-    transition: background var(--smrt-duration-short2, 150ms);
-  }
-
-  .file-upload__clear-btn:hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
   .file-upload__error {
@@ -372,10 +339,11 @@ function getFileIcon(type: string): string {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .file-upload__drop-zone,
-    .file-upload__file-remove,
-    .file-upload__confirm-btn,
-    .file-upload__clear-btn {
+    .file-upload__drop-zone {
+      transition: none;
+    }
+
+    .file-upload__file :global(.file-upload__file-remove) {
       transition: none;
     }
   }

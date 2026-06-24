@@ -4,6 +4,7 @@
  * Groups rooms by type: channels, DMs, and agent conversations
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatRoomData } from '../../types.js';
 
@@ -71,19 +72,22 @@ function formatTimestamp(date?: string | Date | null): string {
 <nav class="room-list" aria-label={t(M['chat.room_list.rooms_label'])}>
   {#if oncreateroom}
     <div class="room-list__header">
-      <button
+      <Button
+        variant="ghost"
+        fullWidth
         class="create-room-btn"
         type="button"
         onclick={oncreateroom}
         aria-label={t(M['chat.room_list.create_new_room'])}
       >
         {t(M['chat.room_list.new_room'])}
-      </button>
+      </Button>
     </div>
   {/if}
 
   {#if channels.length > 0}
     <section class="room-group">
+      <!-- raw-primitive-allow: section disclosure trigger with aria-expanded toggling a collapsible room list, wrapping rich content (rotating chevron, group label, room count); structural accordion header no Button primitive owns -->
       <button
         class="room-group__header"
         type="button"
@@ -101,6 +105,7 @@ function formatTimestamp(date?: string | Date | null): string {
         <ul class="room-group__list" role="list">
           {#each channels as room (room.id)}
             <li>
+              <!-- raw-primitive-allow: pressable room-selection row with active and aria-current state, wrapping rich content (type icon, name, unread badge); no Button primitive owns this structural nav-selection pattern -->
               <button
                 class="room-item"
                 class:room-item--active={room.id === currentRoomId}
@@ -126,6 +131,7 @@ function formatTimestamp(date?: string | Date | null): string {
 
   {#if directMessages.length > 0}
     <section class="room-group">
+      <!-- raw-primitive-allow: section disclosure trigger with aria-expanded toggling a collapsible room list, wrapping rich content (rotating chevron, group label, room count); structural accordion header no Button primitive owns -->
       <button
         class="room-group__header"
         type="button"
@@ -143,6 +149,7 @@ function formatTimestamp(date?: string | Date | null): string {
         <ul class="room-group__list" role="list">
           {#each directMessages as room (room.id)}
             <li>
+              <!-- raw-primitive-allow: pressable room-selection row with active and aria-current state, wrapping rich content (avatar, name, last-message preview, timestamp, unread badge); no Button primitive owns this structural nav-selection pattern -->
               <button
                 class="room-item"
                 class:room-item--active={room.id === currentRoomId}
@@ -184,6 +191,7 @@ function formatTimestamp(date?: string | Date | null): string {
 
   {#if agentRooms.length > 0}
     <section class="room-group">
+      <!-- raw-primitive-allow: section disclosure trigger with aria-expanded toggling a collapsible room list, wrapping rich content (rotating chevron, group label, room count); structural accordion header no Button primitive owns -->
       <button
         class="room-group__header"
         type="button"
@@ -201,6 +209,7 @@ function formatTimestamp(date?: string | Date | null): string {
         <ul class="room-group__list" role="list">
           {#each agentRooms as room (room.id)}
             <li>
+              <!-- raw-primitive-allow: pressable room-selection row with active and aria-current state, wrapping rich content (agent icon, name, unread badge); no Button primitive owns this structural nav-selection pattern -->
               <button
                 class="room-item"
                 class:room-item--active={room.id === currentRoomId}
@@ -227,9 +236,9 @@ function formatTimestamp(date?: string | Date | null): string {
     <div class="room-list__empty">
       <p>{t(M['chat.room_list.no_rooms'])}</p>
       {#if oncreateroom}
-        <button class="create-link" type="button" onclick={oncreateroom}>
+        <Button variant="ghost" size="sm" class="create-link" type="button" onclick={oncreateroom}>
           {t(M['chat.room_list.create_first_room'])}
-        </button>
+        </Button>
       {/if}
     </div>
   {/if}
@@ -247,25 +256,19 @@ function formatTimestamp(date?: string | Date | null): string {
     padding: 0.5rem 0.75rem;
   }
 
-  .create-room-btn {
-    width: 100%;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .room-list__header :global(.create-room-btn) {
     padding: 0.5rem 0.75rem;
     border: 1px dashed var(--smrt-color-outline, #74777f);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
-  .create-room-btn:hover {
+  .room-list__header :global(.create-room-btn:hover) {
     background: var(--smrt-color-primary-container, #d6e3ff);
-  }
-
-  .create-room-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -2px;
   }
 
   .room-group {
@@ -452,19 +455,25 @@ function formatTimestamp(date?: string | Date | null): string {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
-  .create-link {
-    border: none;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .room-list__empty :global(.create-link) {
     background: none;
     color: var(--smrt-color-primary, #005ac1);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
     text-decoration: underline;
+  }
+
+  .room-list__empty :global(.create-link:hover) {
+    background: none;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .room-item,
-    .create-room-btn,
     .room-group__chevron {
+      transition: none;
+    }
+
+    .room-list__header :global(.create-room-btn) {
       transition: none;
     }
   }

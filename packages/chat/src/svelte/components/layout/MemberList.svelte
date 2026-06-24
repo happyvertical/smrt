@@ -4,6 +4,7 @@
  * Lists participants grouped by online status with role badges
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatParticipantData } from '../../types.js';
 
@@ -74,7 +75,9 @@ function getRoleBadgeLabel(role: string): string {
   <div class="member-list__header">
     <h2 class="member-list__title">Members</h2>
     <span class="member-list__count">{participants.length}</span>
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       class="close-btn"
       type="button"
       onclick={onclose}
@@ -84,7 +87,7 @@ function getRoleBadgeLabel(role: string): string {
         <path d="M18 6 6 18" />
         <path d="m6 6 12 12" />
       </svg>
-    </button>
+    </Button>
   </div>
 
   <div class="member-list__content">
@@ -235,28 +238,20 @@ function getRoleBadgeLabel(role: string): string {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .close-btn {
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .member-list__header :global(.close-btn) {
     margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     width: 1.75rem;
     height: 1.75rem;
-    border: none;
+    padding: 0;
     background: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
-  .close-btn:hover {
+  .member-list__header :global(.close-btn:hover) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
-  }
-
-  .close-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: -2px;
   }
 
   .close-btn__icon {
@@ -384,7 +379,7 @@ function getRoleBadgeLabel(role: string): string {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .close-btn {
+    .member-list__header :global(.close-btn) {
       transition: none;
     }
   }

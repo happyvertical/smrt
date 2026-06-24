@@ -9,6 +9,7 @@
  */
 import { Modal } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 
 const { t } = useI18n();
@@ -153,25 +154,26 @@ $effect(() => {
     </div>
 
     <!-- Hidden submit keeps Enter-to-submit working inside the Modal body. -->
+    <!-- raw-primitive-allow: off-screen aria-hidden type=submit element with tabindex=-1 used only to enable native Enter-to-submit inside the Modal body; intentionally non-interactive and not a visible action button -->
     <button type="submit" class="visually-hidden" tabindex="-1" disabled={!canCreate} aria-hidden="true"></button>
   </form>
 
   {#snippet footer()}
-    <button
+    <Button
+      variant="secondary"
       type="button"
-      class="btn btn--secondary"
       onclick={handleClose}
     >
       Cancel
-    </button>
-    <button
+    </Button>
+    <Button
+      variant="primary"
       type="button"
-      class="btn btn--primary"
       disabled={!canCreate}
       onclick={handleSubmit}
     >
       {t(M['chat.room_create_dialog.create_room'])}
-    </button>
+    </Button>
   {/snippet}
 </Modal>
 
@@ -301,45 +303,8 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.625rem 1.5rem;
-    font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    letter-spacing: 0.1px;
-    border-radius: var(--smrt-radius-full, 9999px);
-    border: none;
-    cursor: pointer;
-    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .btn:disabled {
-    opacity: 0.38;
-    cursor: not-allowed;
-  }
-
-  .btn--primary {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
-  }
-
-  .btn--primary:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15));
-  }
-
-  .btn--secondary {
-    background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .btn--secondary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 8%, transparent);
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .type-option,
-    .btn {
+    .type-option {
       transition: none;
     }
   }

@@ -5,6 +5,7 @@
  * Expands upward from the bottom tab bar.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatTabState } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
@@ -43,6 +44,7 @@ const {
 {#if tab.isExpanded}
   <div class="chat-tab chat-tab--expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })}>
     <div class="chat-tab__header">
+      <!-- raw-primitive-allow: pressable header title wrapping rich content (room avatar component and name) that collapses the chat window on click; no Button primitive owns this structural avatar-header pattern -->
       <button
         class="chat-tab__header-btn"
         type="button"
@@ -58,7 +60,9 @@ const {
       </button>
 
       <div class="chat-tab__actions">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           class="chat-tab__icon-btn"
           type="button"
           onclick={oncollapse}
@@ -68,8 +72,10 @@ const {
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
             <rect x="3" y="12" width="10" height="2" rx="1" />
           </svg>
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           class="chat-tab__icon-btn"
           type="button"
           onclick={onclose}
@@ -79,7 +85,7 @@ const {
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
             <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
           </svg>
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -93,6 +99,7 @@ const {
     </div>
   </div>
 {:else}
+  <!-- raw-primitive-allow: large pressable collapsed-tab card wrapping rich content (room avatar component, name, unread badge) that expands the chat window on click; no Button primitive owns this structural selection-card pattern -->
   <button
     class="chat-tab chat-tab--collapsed"
     type="button"
@@ -164,27 +171,19 @@ const {
     flex-shrink: 0;
   }
 
-  .chat-tab__icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into each Button's rendered <button> (see #1589). */
+  .chat-tab__actions :global(.chat-tab__icon-btn) {
     width: 28px;
     height: 28px;
-    border: none;
+    padding: 0;
     background: none;
     color: inherit;
-    cursor: pointer;
     border-radius: var(--smrt-radius-full, 9999px);
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
-  .chat-tab__icon-btn:hover {
+  .chat-tab__actions :global(.chat-tab__icon-btn:hover) {
     background: color-mix(in srgb, var(--smrt-color-on-primary) 15%, transparent);
-  }
-
-  .chat-tab__icon-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-on-primary, #ffffff);
-    outline-offset: -2px;
   }
 
   .chat-tab__body {
@@ -232,8 +231,11 @@ const {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .chat-tab--collapsed,
-    .chat-tab__icon-btn {
+    .chat-tab--collapsed {
+      transition: none;
+    }
+
+    .chat-tab__actions :global(.chat-tab__icon-btn) {
       transition: none;
     }
   }

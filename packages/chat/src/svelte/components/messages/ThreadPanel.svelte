@@ -5,6 +5,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatThreadData } from '../../types.js';
 import MessageInput from './MessageInput.svelte';
@@ -47,7 +48,9 @@ const replyCount = $derived(
     {#if thread.isResolved}
       <span class="thread-panel__resolved">Resolved</span>
     {/if}
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       class="thread-panel__close"
       type="button"
       onclick={onclose}
@@ -56,7 +59,7 @@ const replyCount = $derived(
       <svg viewBox="0 0 16 16" width="16" height="16">
         <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
       </svg>
-    </button>
+    </Button>
   </header>
 
   <div class="thread-panel__messages">
@@ -124,22 +127,19 @@ const replyCount = $derived(
     flex-shrink: 0;
   }
 
-  .thread-panel__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .thread-panel__header :global(.thread-panel__close) {
     width: 32px;
     height: 32px;
-    border: none;
+    padding: 0;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     flex-shrink: 0;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  .thread-panel__close:hover {
+  .thread-panel__header :global(.thread-panel__close:hover) {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
   }
 

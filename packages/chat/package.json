@@ -3,6 +3,7 @@
   "version": "0.34.4",
   "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
   "type": "module",
+  "smrtRawPrimitives": "strict-buttons",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

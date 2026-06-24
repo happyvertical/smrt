@@ -4,6 +4,7 @@
  * Text area with send button. Shows reply preview when replying.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 
 const { t } = useI18n();
@@ -64,14 +65,16 @@ function handleInput() {
         <span class="message-input__reply-text">{replyTo.content}</span>
       </div>
       {#if oncancelreply}
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           class="message-input__reply-close"
           type="button"
           onclick={oncancelreply}
           aria-label={t(M['chat.message_input.cancel_reply'])}
         >
           <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-        </button>
+        </Button>
       {/if}
     </div>
   {/if}
@@ -88,7 +91,8 @@ function handleInput() {
       oninput={handleInput}
       aria-label={t(M['chat.message_input.input_label'])}
     ></textarea>
-    <button
+    <Button
+      variant="ghost"
       class="message-input__send"
       type="button"
       onclick={handleSend}
@@ -105,7 +109,7 @@ function handleInput() {
           stroke-linejoin="round"
         />
       </svg>
-    </button>
+    </Button>
   </div>
 </div>
 
@@ -155,21 +159,18 @@ function handleInput() {
     text-overflow: ellipsis;
   }
 
-  .message-input__reply-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .message-input__reply :global(.message-input__reply-close) {
     width: 24px;
     height: 24px;
-    border: none;
+    padding: 0;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
     flex-shrink: 0;
   }
 
-  .message-input__reply-close:hover {
+  .message-input__reply :global(.message-input__reply-close:hover) {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
   }
 
@@ -205,28 +206,24 @@ function handleInput() {
     color: var(--smrt-color-outline, #74777f);
   }
 
-  .message-input__send {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .message-input__bar :global(.message-input__send) {
     width: 36px;
     height: 36px;
-    border: none;
+    padding: 0;
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
-    cursor: pointer;
     flex-shrink: 0;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  .message-input__send:hover:not(:disabled) {
+  .message-input__bar :global(.message-input__send:hover:not(:disabled)) {
     background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
   }
 
-  .message-input__send:disabled {
+  .message-input__bar :global(.message-input__send:disabled) {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
     color: var(--smrt-color-outline, #74777f);
-    cursor: not-allowed;
   }
 </style>

@@ -5,6 +5,7 @@
  * Allows selecting an existing session or creating a new one.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 import type { AgentSessionData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
@@ -49,7 +50,8 @@ const statusLabel: Record<string, string> = {
   <div class="session-panel__header">
     <h2 class="session-panel__title">Sessions</h2>
     {#if onnewsession}
-      <button
+      <Button
+        variant="ghost"
         class="session-panel__new-btn"
         type="button"
         onclick={onnewsession}
@@ -59,13 +61,14 @@ const statusLabel: Record<string, string> = {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
         </svg>
-      </button>
+      </Button>
     {/if}
   </div>
 
   <div class="session-panel__list" role="listbox" aria-label={t(M['chat.agent_session_panel.session_list'])}>
     {#each sessions as session (session.id)}
       {@const isCurrent = session.id === currentSessionId}
+      <!-- raw-primitive-allow: large pressable selection card with role=option wrapping rich content (avatar, name, date, status, message count, tool chips) inside a role=listbox; no Button primitive owns this structural listbox-option pattern -->
       <button
         class="session-panel__item"
         class:session-panel__item--active={isCurrent}
@@ -152,27 +155,20 @@ const statusLabel: Record<string, string> = {
     margin: 0;
   }
 
-  .session-panel__new-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+  /* :global() pierces into the Button child's rendered <button> (see #1589). */
+  .session-panel__header :global(.session-panel__new-btn) {
     width: 36px;
     height: 36px;
-    border: none;
+    padding: 0;
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
     border-radius: var(--smrt-radius-full, 9999px);
-    cursor: pointer;
     transition: opacity var(--smrt-duration-short2, 150ms);
   }
 
-  .session-panel__new-btn:hover {
+  .session-panel__header :global(.session-panel__new-btn:hover) {
+    background: var(--smrt-color-primary, #005ac1);
     opacity: 0.85;
-  }
-
-  .session-panel__new-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: 2px;
   }
 
   .session-panel__list {
@@ -314,8 +310,11 @@ const statusLabel: Record<string, string> = {
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .session-panel__item,
-    .session-panel__new-btn {
+    .session-panel__item {
+      transition: none;
+    }
+
+    .session-panel__header :global(.session-panel__new-btn) {
       transition: none;
     }
   }
