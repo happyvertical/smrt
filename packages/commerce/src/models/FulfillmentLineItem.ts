@@ -5,6 +5,7 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type { FulfillmentLineItemOptions } from '../types/index.js';
 
 /**
  * Sub-unit rounding tolerance for the over-fulfillment cap, matching the rest
@@ -64,7 +65,7 @@ export class FulfillmentLineItem extends SmrtObject {
    */
   notes: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: FulfillmentLineItemOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.fulfillmentId !== undefined)
@@ -114,9 +115,7 @@ export class FulfillmentLineItem extends SmrtObject {
       const { ContractLineItemCollection } = await import(
         '../collections/ContractLineItemCollection.js'
       );
-      const lineItems = await (ContractLineItemCollection as any).create(
-        this.options,
-      );
+      const lineItems = await ContractLineItemCollection.create(this.options);
       const orderedLineItem = await lineItems.get(this.contractLineItemId);
       if (!orderedLineItem) {
         throw new Error(
@@ -135,9 +134,7 @@ export class FulfillmentLineItem extends SmrtObject {
         const { FulfillmentCollection } = await import(
           '../collections/FulfillmentCollection.js'
         );
-        const fulfillments = await (FulfillmentCollection as any).create(
-          this.options,
-        );
+        const fulfillments = await FulfillmentCollection.create(this.options);
         const fulfillment = await fulfillments.get(this.fulfillmentId);
         if (
           fulfillment &&
@@ -159,9 +156,7 @@ export class FulfillmentLineItem extends SmrtObject {
       const { FulfillmentLineItemCollection } = await import(
         '../collections/FulfillmentLineItemCollection.js'
       );
-      const siblings = await (FulfillmentLineItemCollection as any).create(
-        this.options,
-      );
+      const siblings = await FulfillmentLineItemCollection.create(this.options);
       const existing = await siblings.findByContractLineItem(
         this.contractLineItemId,
       );

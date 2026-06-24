@@ -5,6 +5,7 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type { PaymentAllocationOptions } from '../types/index.js';
 
 /**
  * Sub-cent rounding tolerance for over-allocation checks, matching the rest
@@ -113,7 +114,7 @@ export class PaymentAllocation extends SmrtObject {
    */
   notes: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: PaymentAllocationOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.paymentId !== undefined) this.paymentId = options.paymentId;
@@ -165,7 +166,7 @@ export class PaymentAllocation extends SmrtObject {
       const { PaymentCollection } = await import(
         '../collections/PaymentCollection.js'
       );
-      const payments = await (PaymentCollection as any).create(this.options);
+      const payments = await PaymentCollection.create(this.options);
       const payment = await payments.get({ id: this.paymentId });
       if (!payment) {
         throw new Error(
@@ -177,7 +178,7 @@ export class PaymentAllocation extends SmrtObject {
       const { PaymentAllocationCollection } = await import(
         '../collections/PaymentAllocationCollection.js'
       );
-      const allocations = await (PaymentAllocationCollection as any).create(
+      const allocations = await PaymentAllocationCollection.create(
         this.options,
       );
       const existing = await allocations.findByPayment(this.paymentId);
@@ -198,7 +199,7 @@ export class PaymentAllocation extends SmrtObject {
       const { InvoiceCollection } = await import(
         '../collections/InvoiceCollection.js'
       );
-      const invoices = await (InvoiceCollection as any).create(this.options);
+      const invoices = await InvoiceCollection.create(this.options);
       const invoice = await invoices.get({ id: this.invoiceId });
       // Only enforce when the invoice resolves and carries a real positive
       // total — a missing/zero-total invoice (not yet persisted, ledger-less
@@ -211,7 +212,7 @@ export class PaymentAllocation extends SmrtObject {
         const { PaymentAllocationCollection } = await import(
           '../collections/PaymentAllocationCollection.js'
         );
-        const allocations = await (PaymentAllocationCollection as any).create(
+        const allocations = await PaymentAllocationCollection.create(
           this.options,
         );
         const existingForInvoice = await allocations.findByInvoice(

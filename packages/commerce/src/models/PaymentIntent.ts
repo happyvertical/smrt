@@ -25,6 +25,7 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
+  type PaymentIntentOptions,
   PaymentIntentStatus,
   type PaymentOption,
   PaymentStatus,
@@ -268,7 +269,7 @@ export class PaymentIntent extends SmrtObject {
    */
   notes: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: PaymentIntentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.skuId !== undefined) this.skuId = options.skuId;
@@ -416,7 +417,9 @@ export class PaymentIntent extends SmrtObject {
    * un-hydrated instance whose WeakMap entry is missing. A create-onto-existing
    * is thus correctly treated as an update.
    */
-  private async loadPersistedRow(): Promise<Record<string, any> | undefined> {
+  private async loadPersistedRow(): Promise<
+    Record<string, unknown> | undefined
+  > {
     if (!this.id) return undefined;
     try {
       const row = await this.db.get(this.tableName, { id: this.id });
@@ -434,7 +437,9 @@ export class PaymentIntent extends SmrtObject {
    * {@link assertBackedByCompletedPayment} binds against — letting it drift
    * would let a repointed `paymentId` match a doctored option.
    */
-  private assertBackingFieldsUnchanged(priorRow: Record<string, any>): void {
+  private assertBackingFieldsUnchanged(
+    priorRow: Record<string, unknown>,
+  ): void {
     const frozen: Array<[string, unknown, unknown]> = [
       ['paymentId', priorRow.payment_id ?? '', this.paymentId],
       [
@@ -519,7 +524,7 @@ export class PaymentIntent extends SmrtObject {
     const { PaymentCollection } = await import(
       '../collections/PaymentCollection.js'
     );
-    const payments = await (PaymentCollection as any).create(this.options);
+    const payments = await PaymentCollection.create(this.options);
     const payment = await payments.get({ id: this.paymentId });
     if (!payment) {
       throw new Error(
@@ -734,7 +739,7 @@ export class PaymentIntent extends SmrtObject {
     const { PaymentCollection } = await import(
       '../collections/PaymentCollection.js'
     );
-    const payments = await (PaymentCollection as any).create(this.options);
+    const payments = await PaymentCollection.create(this.options);
     const payment = await payments.get({ id: args.paymentId });
     if (!payment) {
       throw new Error(

@@ -10,6 +10,10 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type {
+  AccountingLineItemInput,
+  InvoiceLineItemOptions,
+} from '../types/index.js';
 
 /**
  * InvoiceLineItem represents a single line item on an invoice.
@@ -127,7 +131,7 @@ export class InvoiceLineItem extends SmrtObject {
    */
   sortOrder: number = 0;
 
-  constructor(options: any = {}) {
+  constructor(options: InvoiceLineItemOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.invoiceId !== undefined) this.invoiceId = options.invoiceId;
@@ -196,7 +200,7 @@ export class InvoiceLineItem extends SmrtObject {
   /**
    * Convert to line item format for SDK accounting provider
    */
-  toAccountingLineItem(): any {
+  toAccountingLineItem(): AccountingLineItemInput {
     return {
       description: this.description,
       sku: this.sku || undefined,

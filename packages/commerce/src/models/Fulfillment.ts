@@ -7,6 +7,7 @@ import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   type Address,
+  type FulfillmentOptions,
   FulfillmentStatus,
   FulfillmentType,
 } from '../types/index.js';
@@ -146,7 +147,7 @@ export class Fulfillment extends SmrtObject {
    */
   notes: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: FulfillmentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;

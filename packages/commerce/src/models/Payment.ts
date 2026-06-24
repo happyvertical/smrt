@@ -9,9 +9,11 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { Journal } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   PaymentMethod,
+  type PaymentOptions,
   PaymentStatus,
   type RecordPaymentOptions,
 } from '../types/index.js';
@@ -288,7 +290,7 @@ export class Payment extends SmrtObject {
    */
   usdAtConfirmation: number = 0.0;
 
-  constructor(options: any = {}) {
+  constructor(options: PaymentOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
@@ -443,7 +445,9 @@ export class Payment extends SmrtObject {
    * the WeakMap (which is also empty then). Settled-amount columns are
    * snake_case (`native_amount`, etc.); the `status` column is single-word.
    */
-  private async loadPersistedRow(): Promise<Record<string, any> | undefined> {
+  private async loadPersistedRow(): Promise<
+    Record<string, unknown> | undefined
+  > {
     if (!this.id) return undefined;
     try {
       const row = await this.db.get(this.tableName, { id: this.id });
@@ -466,7 +470,9 @@ export class Payment extends SmrtObject {
    * the AUTHORITATIVE persisted row so the freeze holds on every surface, even
    * for an un-hydrated create-onto-existing upsert.
    */
-  private assertSettledAmountsUnchanged(priorRow: Record<string, any>): void {
+  private assertSettledAmountsUnchanged(
+    priorRow: Record<string, unknown>,
+  ): void {
     const frozen: Array<[string, number | string, number | string]> = [
       ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
       [
@@ -559,7 +565,7 @@ export class Payment extends SmrtObject {
    * console.log(`Created journal: ${journal.number}`);
    * ```
    */
-  async recordPayment(options: RecordPaymentOptions): Promise<any> {
+  async recordPayment(options: RecordPaymentOptions): Promise<Journal> {
     if (this.status === PaymentStatus.COMPLETED) {
       throw new Error('Payment already recorded');
     }
@@ -572,9 +578,7 @@ export class Payment extends SmrtObject {
     const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
 
     // Create the journal collection
-    const journalCollection = await (JournalCollection as any).create(
-      this.options,
-    );
+    const journalCollection = await JournalCollection.create(this.options);
 
     // Create a new journal for this payment
     const journal = await journalCollection.create({
@@ -605,8 +609,9 @@ export class Payment extends SmrtObject {
 
     // Update payment record. Announce the verified settlement to the save-time
     // guard so the COMPLETED transition is accepted (the guard rejects any
-    // other route into COMPLETED).
-    this.journalId = journal.id;
+    // other route into COMPLETED). A posted journal always carries an id;
+    // coalesce to satisfy the non-nullable column type.
+    this.journalId = journal.id ?? '';
     this.status = PaymentStatus.COMPLETED;
     this.paidAt = new Date();
     settlementInProgress.add(this);
@@ -618,12 +623,12 @@ export class Payment extends SmrtObject {
   /**
    * Get the linked journal entry (if recorded)
    */
-  async getJournal(): Promise<any | null> {
+  async getJournal(): Promise<Journal | null> {
     if (!this.journalId) return null;
 
     try {
       const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
-      const collection = await (JournalCollection as any).create(this.options);
+      const collection = await JournalCollection.create(this.options);
       return await collection.get({ id: this.journalId });
     } catch {
       // smrt-ledgers not available

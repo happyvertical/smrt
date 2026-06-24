@@ -10,7 +10,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { VendorStatus } from '../types/index.js';
+import { type VendorOptions, VendorStatus } from '../types/index.js';
 
 /**
  * Vendor represents the vendor/supplier role for a Profile.
@@ -112,7 +112,7 @@ export class Vendor extends SmrtObject {
   @field({ sensitive: true })
   payoutAddresses: Record<string, string> = {};
 
-  constructor(options: any = {}) {
+  constructor(options: VendorOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.profileId !== undefined) this.profileId = options.profileId;

@@ -9,8 +9,15 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { InvoiceStatus, type RecognizeRevenueOptions } from '../types/index.js';
+import {
+  type AccountingInvoiceInput,
+  type InvoiceOptions,
+  InvoiceStatus,
+  type RecognizeRevenueOptions,
+} from '../types/index.js';
+import type { InvoiceLineItem } from './InvoiceLineItem.js';
 
 /**
  * Sub-cent rounding tolerance for the invoice's own integrity checks (forged
@@ -348,7 +355,7 @@ export class Invoice extends SmrtObject {
    */
   terms: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: InvoiceOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.customerId !== undefined) this.customerId = options.customerId;
@@ -478,18 +485,18 @@ export class Invoice extends SmrtObject {
       const { InvoiceLineItemCollection } = await import(
         '../collections/InvoiceLineItemCollection.js'
       );
-      const lineItemCollection = await (
-        InvoiceLineItemCollection as any
-      ).create(this.options);
+      const lineItemCollection = await InvoiceLineItemCollection.create(
+        this.options,
+      );
       const lineItems = await lineItemCollection.findByInvoice(this.id);
 
       if (lineItems.length > 0) {
         const subtotal = lineItems.reduce(
-          (sum: number, item: any) => sum + item.getSubtotal(),
+          (sum: number, item: InvoiceLineItem) => sum + item.getSubtotal(),
           0,
         );
         const taxAmount = lineItems.reduce(
-          (sum: number, item: any) => sum + item.getTaxAmount(),
+          (sum: number, item: InvoiceLineItem) => sum + item.getTaxAmount(),
           0,
         );
         // Totals are AUTHORITATIVE from the line items (S5 audit #1390). Any
@@ -513,9 +520,9 @@ export class Invoice extends SmrtObject {
       const { PaymentAllocationCollection } = await import(
         '../collections/PaymentAllocationCollection.js'
       );
-      const allocationCollection = await (
-        PaymentAllocationCollection as any
-      ).create(this.options);
+      const allocationCollection = await PaymentAllocationCollection.create(
+        this.options,
+      );
       const allocated = await allocationCollection.getTotalAllocatedToInvoice(
         this.id,
       );
@@ -861,7 +868,7 @@ export class Invoice extends SmrtObject {
    * });
    * ```
    */
-  async recognizeRevenue(options: RecognizeRevenueOptions): Promise<any> {
+  async recognizeRevenue(options: RecognizeRevenueOptions): Promise<Journal> {
     if (this.arJournalId) {
       throw new Error(
         `Revenue already recognized for invoice ${this.invoiceNumber} (journal ID: ${this.arJournalId})`,
@@ -894,12 +901,10 @@ export class Invoice extends SmrtObject {
     // Dynamic import to avoid hard dependency on smrt-ledgers
     const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
 
-    const journalCollection = await (JournalCollection as any).create(
-      this.options,
-    );
+    const journalCollection = await JournalCollection.create(this.options);
 
     // Build entries array from the now-authoritative totals.
-    const entries: any[] = [
+    const entries: JournalEntryData[] = [
       // Debit AR (assets increase)
       {
         accountId: options.arAccountId,
@@ -937,7 +942,9 @@ export class Invoice extends SmrtObject {
     // smrt-ledgers has no cross-row transaction primitive, and a posted journal
     // is immutable except via void()).
     await journal.post();
-    this.arJournalId = journal.id;
+    // A posted journal always carries an id; coalesce to satisfy the
+    // non-nullable column type without changing runtime behaviour.
+    this.arJournalId = journal.id ?? '';
     try {
       await this.save();
     } catch (err) {
@@ -958,12 +965,12 @@ export class Invoice extends SmrtObject {
   /**
    * Get the AR journal entry (if revenue was recognized)
    */
-  async getArJournal(): Promise<any | null> {
+  async getArJournal(): Promise<Journal | null> {
     if (!this.arJournalId) return null;
 
     try {
       const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
-      const collection = await (JournalCollection as any).create(this.options);
+      const collection = await JournalCollection.create(this.options);
       return await collection.get({ id: this.arJournalId });
     } catch {
       // smrt-ledgers not available
@@ -993,26 +1000,31 @@ export class Invoice extends SmrtObject {
    * await invoice.save();
    * ```
    */
-  async toAccountingInput(): Promise<any> {
+  async toAccountingInput(): Promise<AccountingInvoiceInput> {
     // Dynamically import to avoid circular dependency
     const { InvoiceLineItemCollection } = await import(
       '../collections/InvoiceLineItemCollection.js'
     );
 
-    const lineItemCollection = await (InvoiceLineItemCollection as any).create(
+    const lineItemCollection = await InvoiceLineItemCollection.create(
       this.options,
     );
-    const lineItems = await lineItemCollection.findByInvoice(this.id);
+    // A synced invoice is always persisted; coalesce the optional id to a
+    // string to satisfy the accounting-input shape without changing behaviour.
+    const invoiceId = this.id ?? '';
+    const lineItems = await lineItemCollection.findByInvoice(invoiceId);
 
     return {
-      id: this.id,
+      id: invoiceId,
       externalId: this.externalId || undefined,
       invoiceNumber: this.invoiceNumber,
       customerId: this.customerId,
       customerExternalId: this.customerExternalId || undefined,
       issueDate: this.issueDate,
       dueDate: this.dueDate,
-      lineItems: lineItems.map((item: any) => item.toAccountingLineItem()),
+      lineItems: lineItems.map((item: InvoiceLineItem) =>
+        item.toAccountingLineItem(),
+      ),
       subtotal: this.subtotal,
       taxAmount: this.taxAmount,
       totalAmount: this.totalAmount,

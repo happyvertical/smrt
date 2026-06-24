@@ -24,7 +24,7 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { PayoutStatus } from '../types/index.js';
+import { type PayoutOptions, PayoutStatus } from '../types/index.js';
 import { Vendor } from './Vendor.js';
 
 /**
@@ -184,7 +184,7 @@ export class Payout extends SmrtObject {
    */
   notes: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: PayoutOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.paymentId !== undefined) this.paymentId = options.paymentId;
@@ -490,7 +490,7 @@ export class Payout extends SmrtObject {
     const { PaymentCollection } = await import(
       '../collections/PaymentCollection.js'
     );
-    const payments = await (PaymentCollection as any).create(this.options);
+    const payments = await PaymentCollection.create(this.options);
     const payment = await payments.get({ id: this.paymentId });
     if (!payment) {
       throw new Error(
