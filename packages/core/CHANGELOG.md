@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.34.6
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: adopt smrt-ui chat primitives, drop local duplicates (#1589) (#1626) (chat)
+  - refactor: relocate Provider-free base form primitives to smrt-ui (#1589) (#1625) (ui)
+  - @happyvertical/smrt-config@0.34.6
+  - @happyvertical/smrt-types@0.34.6
+  - @happyvertical/smrt-scanner@0.34.6
+
 ## 0.34.5
 
 ### Patch Changes
