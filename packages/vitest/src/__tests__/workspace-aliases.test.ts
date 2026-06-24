@@ -42,6 +42,22 @@ describe('getWorkspaceViteAliases', () => {
     );
   });
 
+  it('aliases the smrt-ui leaf subpaths to source, including forms (#1589)', () => {
+    // smrt-ui's nested component subpaths are special-cased (they map to dirs,
+    // not the generic `${pkg}/ui` → `src/ui.ts` convention). /forms is the
+    // relocated Provider-free form primitives — without it, consumer tests that
+    // render a migrated form component fail to resolve the import.
+    expect(byFind.get('@happyvertical/smrt-ui/forms')).toMatch(
+      /src\/components\/forms\/index\.ts$/,
+    );
+    expect(byFind.get('@happyvertical/smrt-ui/ui')).toMatch(
+      /src\/components\/ui\/index\.ts$/,
+    );
+    expect(byFind.get('@happyvertical/smrt-ui/chat')).toMatch(
+      /src\/components\/chat\/index\.ts$/,
+    );
+  });
+
   it('sorts entries most-specific first so subpaths win over the bare-package root', () => {
     const lengths = aliases.map((entry) => entry.find.length);
     expect(lengths).toEqual([...lengths].sort((a, b) => b - a));
