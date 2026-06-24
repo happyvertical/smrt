@@ -119,6 +119,7 @@ function getAltText(asset: PersistedAsset): string {
 
           <!-- Selection checkbox -->
           <div class="asset-card__checkbox">
+            <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
             <input
               type="checkbox"
               checked={selected}

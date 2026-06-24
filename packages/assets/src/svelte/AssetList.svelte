@@ -111,6 +111,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     <thead class="list-table__head">
       <tr>
         <th class="col-checkbox">
+          <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input
             type="checkbox"
             checked={allSelected}
@@ -171,6 +172,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             class:list-table__row--selected={selected}
           >
             <td class="col-checkbox">
+              <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
               <input
                 type="checkbox"
                 checked={selected}

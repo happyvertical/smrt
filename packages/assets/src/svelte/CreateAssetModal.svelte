@@ -12,6 +12,7 @@
 // entire smrt-svelte surface — including optional peers like smrt-agents /
 // smrt-users — just to compile this modal.
 import { Modal } from '@happyvertical/smrt-ui/feedback';
+import { Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from './i18n.js';
@@ -167,6 +168,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
           </svg>
           <p class="dropzone__text">{t(M['assets.create_asset_modal.dropzone_text'])}</p>
           <p class="dropzone__hint">{t(M['assets.create_asset_modal.dropzone_hint'])}</p>
+          <!-- raw-primitive-allow: hidden native file input behind the custom drop zone, triggered programmatically; styled Input is unwanted here (visually hidden, opened via the dropzone click/keydown) -->
           <input id="file-input" type="file" class="dropzone__input" onchange={handleFileSelect} />
         </div>
       {:else}
@@ -192,12 +194,12 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
         <div class="form-fields">
           <div class="form-field">
             <label for="asset-name" class="form-label">Name</label>
-            <input id="asset-name" type="text" class="form-input" bind:value={name} placeholder={t(M['assets.create_asset_modal.name_placeholder'])} />
+            <Input id="asset-name" type="text" bind:value={name} placeholder={t(M['assets.create_asset_modal.name_placeholder'])} />
           </div>
 
           <div class="form-field">
             <label for="asset-desc" class="form-label">Description</label>
-            <textarea id="asset-desc" class="form-textarea" bind:value={description} placeholder={t(M['assets.create_asset_modal.description_placeholder'])} rows="2"></textarea>
+            <Textarea id="asset-desc" bind:value={description} placeholder={t(M['assets.create_asset_modal.description_placeholder'])} rows={2} />
           </div>
 
           {#if isImage}
@@ -208,7 +210,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
                   <span class="form-label__warning">{t(M['assets.create_asset_modal.alt_text_recommended_warning'])}</span>
                 {/if}
               </label>
-              <input id="asset-alt" type="text" class="form-input" bind:value={altText} placeholder={t(M['assets.create_asset_modal.alt_text_placeholder'])} />
+              <Input id="asset-alt" type="text" bind:value={altText} placeholder={t(M['assets.create_asset_modal.alt_text_placeholder'])} />
             </div>
           {/if}
         </div>
@@ -375,29 +377,6 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #dc2626);
     margin-left: var(--smrt-spacing-1, 4px);
-  }
-
-  .form-input, .form-textarea {
-    width: 100%;
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
-    background: var(--smrt-color-surface, #ffffff);
-    box-sizing: border-box;
-  }
-
-  .form-input:focus, .form-textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 2px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
-  }
-
-  .form-textarea {
-    resize: vertical;
-    min-height: 60px;
   }
 
 </style>
