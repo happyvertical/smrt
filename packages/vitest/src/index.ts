@@ -402,7 +402,7 @@ export function getWorkspaceViteAliases(
     }
 
     if (packageName === '@happyvertical/smrt-ui') {
-      // smrt-ui holds the domain-agnostic UI leaf (primitives, feedback,
+      // smrt-ui holds the domain-agnostic UI leaf (primitives, forms, feedback,
       // layout, calendar, chat, registry, theme system, i18n client). These
       // subpaths map to nested source dirs, so the generic `${packageName}/ui`
       // → `src/ui.ts` convention misses them; alias the exact source files.
@@ -430,6 +430,11 @@ export function getWorkspaceViteAliases(
         aliases,
         '@happyvertical/smrt-ui/chat',
         join(packageRoot, 'src/components/chat/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/forms',
+        join(packageRoot, 'src/components/forms/index.ts'),
       );
       addAliasIfPresent(
         aliases,
