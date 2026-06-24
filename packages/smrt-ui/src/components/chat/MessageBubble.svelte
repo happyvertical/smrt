@@ -5,18 +5,18 @@
  * Two complementary forms share one styled container:
  *
  * - **Bare bubble** (the common case for a message list that renders its own
- *   author/time/reactions around each row): pass `content` (or a `children`
- *   snippet) plus the visual `variant` and `own` flag. No header or labelled
- *   group is rendered, so it nests cleanly inside an already-labelled message
- *   row without adding a redundant landmark.
- * - **Self-contained card**: also pass `author` (and optionally `timestamp` /
- *   the `reactions` / `actions` snippets). A header and a labelled
- *   `role="group"` (`<author> (<role>)`) are then rendered so assistive tech can
- *   announce who sent each message.
+ *   author/time/reactions around each row): opt into the styling axes by passing
+ *   `variant` and/or `own` (plus `content` or a `children` snippet). No header or
+ *   labelled group is rendered — unless you also pass an `author` — so it nests
+ *   cleanly inside an already-labelled message row without a redundant landmark.
+ * - **Self-contained card** (legacy form): pass `role` / `author` / `timestamp`
+ *   (and optionally the `reactions` / `actions` snippets) without the styling
+ *   axes. A header and a labelled `role="group"` (`<author|role> (<role>)`) are
+ *   rendered so assistive tech can announce who sent each message; `author`
+ *   falls back to a role label ("You" / "Assistant" / "System").
  *
- * `variant` + `own` are the canonical styling axes. The legacy `role` prop is
- * retained for the card form: it sets the header's role label and derives
- * `variant`/`own` when those are not given.
+ * `variant` + `own` are the canonical styling axes. The legacy `role` prop sets
+ * the header's role label and derives `variant`/`own` when those are not given.
  */
 import type { Snippet } from 'svelte';
 import type { ChatMessageRole } from '../../types-generic';
@@ -64,6 +64,12 @@ const {
   actions,
 }: Props = $props();
 
+const roleNoun: Record<ChatMessageRole, string> = {
+  user: 'You',
+  agent: 'Assistant',
+  system: 'System',
+};
+
 // `variant`/`own` are canonical; derive them from the legacy `role` only when
 // they are not explicitly supplied.
 const effectiveVariant = $derived<MessageBubbleVariant>(
@@ -72,10 +78,15 @@ const effectiveVariant = $derived<MessageBubbleVariant>(
 );
 const effectiveOwn = $derived(own ?? role === 'user');
 
-// A header + labelled group are rendered only when an author is supplied; a
-// bare bubble stays a plain styled container (its host row owns the label).
-const hasHeader = $derived(Boolean(author));
-const groupLabel = $derived(`${author} (${role})`);
+// The bare-bubble form is signalled by opting into the explicit styling axes
+// (`variant`/`own`); the legacy card form (`role`/`author`/`timestamp`) is not.
+const isBareForm = $derived(variant !== undefined || own !== undefined);
+const headerName = $derived(author ?? roleNoun[role]);
+// Render a header + labelled group for the legacy card form, or whenever an
+// author is supplied. A bare bubble with no author stays a plain styled
+// container (its host row owns the label).
+const hasHeader = $derived(author !== undefined || !isBareForm);
+const groupLabel = $derived(`${headerName} (${role})`);
 const isoTime = $derived(timestamp ? timestamp.toISOString() : undefined);
 const timeText = $derived(
   timestampLabel ?? timestamp?.toLocaleTimeString() ?? '',
@@ -90,7 +101,7 @@ const timeText = $derived(
 >
   {#if hasHeader}
     <div class="bubble__header">
-      <span class="bubble__author">{author}</span>
+      <span class="bubble__author">{headerName}</span>
       {#if timeText}
         <time class="bubble__time" datetime={isoTime}>{timeText}</time>
       {/if}

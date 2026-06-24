@@ -47,6 +47,15 @@ describe('MessageBubble', () => {
     expect(screen.queryByRole('group')).toBeNull();
   });
 
+  it('renders a legacy card header even without an author', () => {
+    // The legacy card form (role, no styling axes) keeps its header + labelled
+    // group, falling back to the role label.
+    render(MessageBubble, { props: { role: 'agent', children: body('hi') } });
+    expect(
+      screen.getByRole('group', { name: 'Assistant (agent)' }),
+    ).toBeInTheDocument();
+  });
+
   it('is axe-clean as a labelled card', async () => {
     const { container } = render(MessageBubble, {
       props: { role: 'user', author: 'You', children: body('hi') },

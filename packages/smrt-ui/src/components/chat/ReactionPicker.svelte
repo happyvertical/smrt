@@ -4,9 +4,11 @@
  *
  * Each button carries a text accessible name (so the emoji isn't announced as
  * raw glyphs) and the group carries an `aria-label`. Fires `onpick(emoji)` on
- * activation. Labels default to translated `ui.reaction_picker.*` strings;
- * callers that own a domain message catalog can override the group `label` and
- * the per-emoji name via `emojiLabel`. Wraps gracefully for larger emoji sets.
+ * activation. The group label and the fallback name for unrecognised emoji
+ * default to translated `ui.reaction_picker.*` strings; the common reactions use
+ * built-in English names unless a caller supplies `emojiLabel` (e.g. to route
+ * every label through a domain i18n catalog). Wraps gracefully for larger emoji
+ * sets.
  */
 import { M } from '../../i18n/strings.ui.js';
 import { useI18n } from '../../i18n/use-i18n.js';
