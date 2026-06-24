@@ -1,5 +1,35 @@
 # @happyvertical/smrt-core
 
+## 0.34.5
+
+### Patch Changes
+
+- ### Features
+
+  - add buttons-only strict mode to raw-primitive ratchet (#1589) (#1615) (scripts)
+
+  ### Bug Fixes
+
+  - lay out Button children inside the content wrapper (#1589) (#1622) (ui)
+
+  ### Other Changes
+
+  - refactor: migrate buttons to Button, flip content strict-buttons (#1589) (#1623) (content)
+  - refactor: migrate buttons to Button, flip chat strict-buttons (#1589) (#1624) (chat)
+  - refactor: migrate buttons to Button, flip messages strict-buttons (#1589) (#1620) (messages)
+  - refactor: migrate shell buttons to Button, flip strict-buttons (#1589) (#1621) (smrt-svelte)
+  - refactor: migrate buttons to Button, flip images strict-buttons (#1589) (#1619) (images)
+  - refactor: migrate buttons to Button, flip products strict-buttons (#1589) (#1617) (products)
+  - refactor: migrate buttons to Button, flip assets strict-buttons (#1589) (#1618) (assets)
+  - refactor: migrate buttons to Button, flip users strict-buttons (#1589) (#1616) (users)
+  - refactor: migrate buttons to Button, flip agents strict-buttons (#1589) (#1613) (agents)
+  - refactor: adopt Button/form primitives, flip projects strict (#1589) (#1614) (projects)
+  - refactor: adopt Button primitive, flip commerce strict (#1589) (#1612) (commerce)
+  - refactor: adopt Button primitive, flip tenancy strict (#1589) (#1610) (tenancy)
+  - @happyvertical/smrt-config@0.34.5
+  - @happyvertical/smrt-types@0.34.5
+  - @happyvertical/smrt-scanner@0.34.5
+
 ## 0.34.4
 
 ### Patch Changes
