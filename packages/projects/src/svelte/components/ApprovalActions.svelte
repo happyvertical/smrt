@@ -5,6 +5,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type { ApprovalStatus } from './utils.js';
 
@@ -47,58 +48,33 @@ const canDelete = $derived(status === 'draft' && ondelete);
 
 <div class="approval-actions" class:vertical={layout === 'vertical'}>
   {#if canSubmit}
-    <button
-      type="button"
-      class="btn btn-filled"
-      onclick={onsubmit}
-      disabled={disabled || loading}
-    >
+    <Button variant="primary" onclick={onsubmit} disabled={disabled || loading}>
       {loading ? 'Submitting...' : 'Submit for Approval'}
-    </button>
+    </Button>
   {/if}
 
   {#if canApprove}
-    <button
-      type="button"
-      class="btn btn-filled-tonal"
-      onclick={onapprove}
-      disabled={disabled || loading}
-    >
+    <Button variant="primary" onclick={onapprove} disabled={disabled || loading}>
       {loading ? 'Approving...' : 'Approve'}
-    </button>
+    </Button>
   {/if}
 
   {#if canReject}
-    <button
-      type="button"
-      class="btn btn-error"
-      onclick={onreject}
-      disabled={disabled || loading}
-    >
+    <Button variant="danger" onclick={onreject} disabled={disabled || loading}>
       Reject
-    </button>
+    </Button>
   {/if}
 
   {#if canEdit}
-    <button
-      type="button"
-      class="btn btn-outlined"
-      onclick={onedit}
-      disabled={disabled || loading}
-    >
+    <Button variant="secondary" onclick={onedit} disabled={disabled || loading}>
       Edit
-    </button>
+    </Button>
   {/if}
 
   {#if canDelete}
-    <button
-      type="button"
-      class="btn btn-error-outlined"
-      onclick={ondelete}
-      disabled={disabled || loading}
-    >
+    <Button variant="danger" onclick={ondelete} disabled={disabled || loading}>
       Delete
-    </button>
+    </Button>
   {/if}
 
   {#if status === 'approved'}
@@ -125,73 +101,6 @@ const canDelete = $derived(status === 'draft' && ondelete);
   .approval-actions.vertical {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.5rem;
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-label-large-weight, 500);
-    letter-spacing: var(--smrt-typography-label-large-tracking, 0.1px);
-    border-radius: var(--smrt-radius-full, 9999px);
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s var(--smrt-easing-standard);
-  }
-
-  .btn:disabled {
-    opacity: 0.38;
-    cursor: not-allowed;
-  }
-
-  .btn-filled {
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary);
-  }
-
-  .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .btn-filled-tonal {
-    background: var(--smrt-color-secondary-container);
-    color: var(--smrt-color-on-secondary-container);
-  }
-
-  .btn-filled-tonal:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .btn-error {
-    background: var(--smrt-color-error);
-    color: var(--smrt-color-on-error);
-  }
-
-  .btn-error:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .btn-error-outlined {
-    background: transparent;
-    border: 1px solid var(--smrt-color-error);
-    color: var(--smrt-color-error);
-  }
-
-  .btn-error-outlined:hover:not(:disabled) {
-    background: var(--smrt-color-error-container);
-  }
-
-  .btn-outlined {
-    background: transparent;
-    border: 1px solid var(--smrt-color-outline);
-    color: var(--smrt-color-on-surface);
-  }
-
-  .btn-outlined:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-highest);
   }
 
   .status-message {

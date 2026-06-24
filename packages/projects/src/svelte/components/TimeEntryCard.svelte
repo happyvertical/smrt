@@ -74,6 +74,7 @@ function handleKeydown(event: KeyboardEvent) {
 >
   {#if selectable}
     <div class="checkbox-wrapper">
+      <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive, kept native to match the indeterminate select-all in TimeEntryList -->
       <input
         type="checkbox"
         checked={selected}
@@ -93,6 +94,7 @@ function handleKeydown(event: KeyboardEvent) {
       {@render cardBody()}
     </a>
   {:else if onclick}
+    <!-- raw-primitive-allow: pressable selection card wrapping rich content; structural, not a standard action button -->
     <button
       type="button"
       class="card-content"
