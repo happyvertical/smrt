@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.editor.js';
 
@@ -33,7 +34,7 @@ function updateTags(value: string) {
 <div class="content-metadata-fields">
   <label>
     <span>Author</span>
-    <input
+    <Input
       type="text"
       value={data.author || ''}
       oninput={(event) => updateField('author', event.currentTarget.value)}
@@ -41,15 +42,15 @@ function updateTags(value: string) {
   </label>
   <label>
     <span>Description</span>
-    <textarea
-      rows="4"
+    <Textarea
+      rows={4}
       value={data.description || ''}
       oninput={(event) => updateField('description', event.currentTarget.value)}
-    ></textarea>
+    ></Textarea>
   </label>
   <label>
     <span>Tags</span>
-    <input
+    <Input
       type="text"
       value={tagsValue}
       placeholder={t(M['content.content_metadata_fields.tags_placeholder'])}
@@ -58,7 +59,7 @@ function updateTags(value: string) {
   </label>
   <label>
     <span>URL</span>
-    <input
+    <Input
       type="url"
       value={data.url || ''}
       oninput={(event) => updateField('url', event.currentTarget.value)}
@@ -66,7 +67,7 @@ function updateTags(value: string) {
   </label>
   <label>
     <span>{t(M['content.content_metadata_fields.file_key'])}</span>
-    <input
+    <Input
       type="text"
       value={data.fileKey || ''}
       oninput={(event) => updateField('fileKey', event.currentTarget.value)}
@@ -88,20 +89,4 @@ function updateTags(value: string) {
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
-  input,
-  textarea {
-    width: 100%;
-    box-sizing: border-box;
-    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);
-    border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
-    color: var(--smrt-color-on-surface);
-    font: inherit;
-    padding: 0.75rem 0.875rem;
-  }
-
-  textarea {
-    min-height: 7rem;
-    resize: vertical;
-  }
 </style>

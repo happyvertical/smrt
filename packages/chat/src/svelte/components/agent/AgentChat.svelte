@@ -5,6 +5,7 @@
  * Agent messages are styled differently from user messages.
  */
 
+import { Form, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
@@ -92,13 +93,13 @@ $effect(() => {
 </script>
 
 <div class="agent-chat" aria-label={t(M['chat.agent_chat.conversation'])}>
-  <form class="agent-chat__input-bar" onsubmit={(e) => handleSubmit(e)}>
+  <Form class="agent-chat__input-bar" onsubmit={(e) => handleSubmit(e)}>
     {#if !isActive}
       <div class="agent-chat__inactive-notice">
         {t(M['chat.agent_chat.inactive_notice'], { status: session.status })}
       </div>
     {:else}
-      <textarea
+      <Textarea
         class="agent-chat__input"
         placeholder={t(M['chat.agent_chat.input_placeholder'])}
         bind:value={inputValue}
@@ -106,7 +107,7 @@ $effect(() => {
         rows={1}
         disabled={!isActive}
         aria-label={t(M['chat.agent_chat.message_input'])}
-      ></textarea>
+      />
       <Button
         variant="ghost"
         class="agent-chat__send-btn"
@@ -119,7 +120,7 @@ $effect(() => {
         </svg>
       </Button>
     {/if}
-  </form>
+  </Form>
 
   <div
     class="agent-chat__messages"
@@ -311,7 +312,8 @@ $effect(() => {
     color: var(--smrt-color-outline, #74777f);
   }
 
-  .agent-chat__input-bar {
+  /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
+  :global(.agent-chat__input-bar) {
     display: flex;
     align-items: flex-end;
     gap: var(--smrt-spacing-2, 8px);
@@ -329,32 +331,18 @@ $effect(() => {
     font-style: italic;
   }
 
-  .agent-chat__input {
+  /* Layout for the Textarea primitive's rendered <textarea> (tokenised styling
+     comes from the primitive; this only sizes it within the input bar). */
+  :global(.agent-chat__input) {
     flex: 1;
-    border: none;
-    border-radius: var(--smrt-radius-md, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
-    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
-    color: var(--smrt-color-on-surface, #1a1c1e);
-    background: var(--smrt-color-surface-container-low, #f7f7fb);
     resize: none;
-    outline: none;
     min-height: 34px;
     max-height: 80px;
   }
 
-  .agent-chat__input:focus {
-    outline: none;
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-  }
-
-  .agent-chat__input::placeholder {
-    color: var(--smrt-color-outline, #74777f);
-  }
-
-  /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .agent-chat__input-bar :global(.agent-chat__send-btn) {
+  /* :global() pierces into the Button child's rendered <button> (see #1589).
+     The ancestor is the Form primitive's <form>, also global. */
+  :global(.agent-chat__input-bar .agent-chat__send-btn) {
     width: 34px;
     height: 34px;
     padding: 0;
@@ -365,7 +353,7 @@ $effect(() => {
     transition: opacity 150ms;
   }
 
-  .agent-chat__input-bar :global(.agent-chat__send-btn:not(:disabled):hover) {
+  :global(.agent-chat__input-bar .agent-chat__send-btn:not(:disabled):hover) {
     background: var(--smrt-color-primary, #005ac1);
     opacity: 0.85;
   }

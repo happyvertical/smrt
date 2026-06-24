@@ -6,6 +6,7 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
@@ -432,11 +433,11 @@ async function handleSendMessage(content: string) {
     </div>
   {:else if session}
     <div class="model-bar">
-      <select class="smrt-select model-select" bind:value={selectedModelId}>
+      <Select class="smrt-select model-select" bind:value={selectedModelId}>
         {#each availableAIModels as model}
           <option value={model.id}>{model.label}</option>
         {/each}
-      </select>
+      </Select>
     </div>
     
     <div class="chat-main">
@@ -465,9 +466,9 @@ async function handleSendMessage(content: string) {
     <div class="topic-footer">
       {#if showNewTopicInput}
         <div class="new-topic-row">
-          <input 
-            class="new-topic-input" 
-            type="text" 
+          <Input
+            class="new-topic-input"
+            type="text"
             placeholder={t(M['content.content_agent_chat.topic_name_placeholder'])}
             bind:value={newTopicTitle}
             onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') { createNewTopic(); showNewTopicInput = false; } }}
@@ -478,9 +479,9 @@ async function handleSendMessage(content: string) {
           <Button variant="ghost" size="sm" type="button" class="topic-action-btn topic-cancel-btn" onclick={() => { showNewTopicInput = false; }} aria-label={t(M['content.content_agent_chat.cancel'])} title={t(M['content.content_agent_chat.cancel'])}>✕</Button>
         </div>
       {:else}
-        <select 
-          class="smrt-select topic-select" 
-          bind:value={activeThreadId} 
+        <Select
+          class="smrt-select topic-select"
+          value={activeThreadId ?? ''}
           onchange={(e: Event) => loadThread((e.currentTarget as HTMLSelectElement).value)}
           disabled={!threads.length}
         >
@@ -490,7 +491,7 @@ async function handleSendMessage(content: string) {
           {#each threads as thread}
             <option value={thread.id}>{thread.title || t(M['content.content_agent_chat.untitled_topic'])}</option>
           {/each}
-        </select>
+        </Select>
         <Button variant="ghost" size="sm" type="button" class="topic-action-btn" onclick={() => { showNewTopicInput = true; newTopicTitle = ''; }} title={t(M['content.content_agent_chat.new_topic'])}>
           <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           {t(M['content.content_agent_chat.new'])}
@@ -541,7 +542,7 @@ async function handleSendMessage(content: string) {
     background: var(--smrt-color-surface-container-lowest, #ffffff);
   }
 
-  .smrt-select {
+  .content-agent-chat-container :global(.smrt-select) {
     width: 100%;
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-md, 8px);
@@ -552,15 +553,15 @@ async function handleSendMessage(content: string) {
     outline: none;
     cursor: pointer;
   }
-  
-  .smrt-select:disabled {
+
+  .content-agent-chat-container :global(.smrt-select:disabled) {
     background: var(--smrt-color-surface-container, #f3f4f9);
     color: var(--smrt-color-on-surface-variant, #43474e);
     cursor: not-allowed;
     opacity: 0.7;
   }
 
-  .smrt-select:focus {
+  .content-agent-chat-container :global(.smrt-select:focus) {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
@@ -589,7 +590,7 @@ async function handleSendMessage(content: string) {
     background: var(--smrt-color-surface-container-lowest, #ffffff);
   }
 
-  .topic-footer .smrt-select {
+  .topic-footer :global(.smrt-select) {
     flex: 1;
   }
 
@@ -626,7 +627,7 @@ async function handleSendMessage(content: string) {
     width: 100%;
   }
 
-  .new-topic-input {
+  .new-topic-row :global(.new-topic-input) {
     flex: 1;
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
@@ -637,7 +638,7 @@ async function handleSendMessage(content: string) {
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
-  .new-topic-input:focus {
+  .new-topic-row :global(.new-topic-input:focus) {
     border-color: var(--smrt-color-primary, #005ac1);
   }
 </style>

@@ -3,6 +3,7 @@
  * AgentScheduleForm - Create or edit an agent schedule
  */
 
+import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
@@ -101,8 +102,8 @@ const timezones = [
 // Validation
 const isValid = $derived(agentType.trim() !== '' && cron.trim() !== '');
 
-function handleSubmit(event: Event) {
-  event.preventDefault();
+function handleSubmit() {
+  // The Form primitive calls event.preventDefault() before invoking onsubmit.
   if (!isValid || loading) return;
 
   const data: ScheduleFormData = {
@@ -132,20 +133,21 @@ function handleCronPreset(preset: string) {
     <h2>{editMode ? 'Edit Schedule' : 'Create Schedule'}</h2>
   {/snippet}
 
-  <form class="schedule-form" onsubmit={handleSubmit}>
+  <div class="schedule-form-shell">
+  <Form class="schedule-form" onsubmit={handleSubmit}>
     <div class="form-grid">
       <!-- Agent Type -->
       <div class="form-field">
         <label for="agentType">{t(M['agents.schedule_form.agent_type'])}</label>
         {#if agentTypes.length > 0}
-          <select id="agentType" bind:value={agentType} required disabled={loading}>
+          <Select id="agentType" bind:value={agentType} required disabled={loading}>
             <option value="">{t(M['agents.schedule_form.select_agent_type'])}</option>
             {#each agentTypes as type}
               <option value={type}>{type}</option>
             {/each}
-          </select>
+          </Select>
         {:else}
-          <input
+          <Input
             type="text"
             id="agentType"
             bind:value={agentType}
@@ -159,7 +161,7 @@ function handleCronPreset(preset: string) {
       <!-- Agent ID (optional) -->
       <div class="form-field">
         <label for="agentId">{t(M['agents.schedule_form.agent_id'])}</label>
-        <input
+        <Input
           type="text"
           id="agentId"
           bind:value={agentId}
@@ -172,7 +174,7 @@ function handleCronPreset(preset: string) {
       <!-- Method -->
       <div class="form-field">
         <label for="method">Method</label>
-        <input
+        <Input
           type="text"
           id="method"
           bind:value={method}
@@ -185,7 +187,7 @@ function handleCronPreset(preset: string) {
       <!-- Cron Expression -->
       <div class="form-field form-field--full">
         <label for="cron">{t(M['agents.schedule_form.cron_schedule'])}</label>
-        <input
+        <Input
           type="text"
           id="cron"
           bind:value={cron}
@@ -211,17 +213,17 @@ function handleCronPreset(preset: string) {
       <!-- Timezone -->
       <div class="form-field">
         <label for="timezone">Timezone</label>
-        <select id="timezone" bind:value={timezone} disabled={loading}>
+        <Select id="timezone" bind:value={timezone} disabled={loading}>
           {#each timezones as tz}
             <option value={tz}>{tz}</option>
           {/each}
-        </select>
+        </Select>
       </div>
 
       <!-- Max Concurrent -->
       <div class="form-field">
         <label for="maxConcurrent">{t(M['agents.schedule_form.max_concurrent'])}</label>
-        <input
+        <Input
           type="number"
           id="maxConcurrent"
           bind:value={maxConcurrent}
@@ -235,7 +237,7 @@ function handleCronPreset(preset: string) {
       <!-- Timeout -->
       <div class="form-field">
         <label for="timeout">Timeout (ms)</label>
-        <input
+        <Input
           type="number"
           id="timeout"
           bind:value={timeout}
@@ -249,6 +251,7 @@ function handleCronPreset(preset: string) {
       <!-- Enabled -->
       <div class="form-field form-field--checkbox">
         <label>
+          <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input type="checkbox" bind:checked={enabled} disabled={loading} />
           {t(M['agents.schedule_form.enable_schedule_immediately'])}
         </label>
@@ -265,11 +268,12 @@ function handleCronPreset(preset: string) {
         {loading ? 'Saving...' : editMode ? 'Update Schedule' : 'Create Schedule'}
       </Button>
     </div>
-  </form>
+  </Form>
+  </div>
 </Card>
 
 <style>
-  .schedule-form {
+  .schedule-form-shell :global(.schedule-form) {
     padding: var(--smrt-spacing-sm, 0.5rem) 0;
   }
 
@@ -308,28 +312,6 @@ function handleCronPreset(preset: string) {
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
-  .form-field input,
-  .form-field select {
-    padding: var(--smrt-spacing-sm, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    transition: border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .form-field input:focus,
-  .form-field select:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
-  }
-
-  .form-field input:disabled,
-  .form-field select:disabled {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    cursor: not-allowed;
-  }
-
   .form-field small {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
@@ -349,12 +331,5 @@ function handleCronPreset(preset: string) {
     margin-top: var(--smrt-spacing-lg, 1.5rem);
     padding-top: var(--smrt-spacing-md, 1rem);
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .form-field input,
-    .form-field select {
-      transition: none;
-    }
   }
 </style>

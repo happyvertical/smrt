@@ -1,5 +1,6 @@
 <script lang="ts">
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
+import { Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import {
@@ -1128,6 +1129,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                   <details class="claim-audit-item">
                     <summary>
                       <label class="claim-audit-select">
+                        <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
                         <input
                           type="checkbox"
                           checked={isClaimSelected(claim)}
@@ -1251,7 +1253,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
           {#if showFactCatalog}
             <div class="fact-search">
-              <input
+              <Input
                 type="text"
                 bind:value={factQuery}
                 placeholder={t(M['content.governance_panel.search_fact_catalog'])}
@@ -1361,13 +1363,13 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       {#if reviewProfiles.length > 0}
         <label class="workflow-field">
           {t(M['content.governance_panel.review_profile'])}
-          <select bind:value={activeReviewProfileKey}>
+          <Select bind:value={activeReviewProfileKey}>
             {#each reviewProfiles as profile (profile.profileKey)}
               <option value={profile.profileKey}>
                 {formatProfileLabel(profile.profileKey)}
               </option>
             {/each}
-          </select>
+          </Select>
         </label>
       {/if}
 
@@ -1440,23 +1442,23 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         {#if availableCustomPolicies.length > 0}
           <label class="workflow-field">
             {t(M['content.governance_panel.app_review_policy'])}
-            <select bind:value={activeCustomPolicyKey}>
+            <Select bind:value={activeCustomPolicyKey}>
               {#each availableCustomPolicies as policy (policy.key)}
                 <option value={policy.key}>
                   {policy.label}
                 </option>
               {/each}
-            </select>
+            </Select>
           </label>
         {/if}
 
         <label class="workflow-field">
           {customReviewButtonLabel}
-          <textarea
-            rows="3"
+          <Textarea
+            rows={3}
             bind:value={customReviewText}
             placeholder={t(M['content.governance_panel.optional_review_instructions'])}
-          ></textarea>
+          ></Textarea>
         </label>
         <Button
           variant="primary"
@@ -1666,7 +1668,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
         <label class="workflow-field">
           Summary
-          <input
+          <Input
             type="text"
             bind:value={correctionSummary}
             placeholder={t(M['content.governance_panel.what_was_wrong'])}
@@ -1675,33 +1677,34 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
         <label class="workflow-field">
           {t(M['content.governance_panel.related_fact'])}
-          <select bind:value={correctionFactId}>
+          <Select bind:value={correctionFactId}>
             <option value="">{t(M['content.governance_panel.general_correction'])}</option>
             {#each selectedFactsResolved as fact (fact.id)}
               <option value={fact.id ?? ''}>{fact.textRefined}</option>
             {/each}
-          </select>
+          </Select>
         </label>
 
         <label class="workflow-field">
           {t(M['content.governance_panel.corrected_fact_text'])}
-          <textarea
-            rows="4"
+          <Textarea
+            rows={4}
             bind:value={correctedFactText}
             placeholder={t(M['content.governance_panel.provide_corrected_wording'])}
-          ></textarea>
+          ></Textarea>
         </label>
 
         <label class="workflow-field">
           {t(M['content.governance_panel.public_note'])}
-          <textarea
-            rows="3"
+          <Textarea
+            rows={3}
             bind:value={correctionPublicNote}
             placeholder={t(M['content.governance_panel.optional_public_correction_note'])}
-          ></textarea>
+          ></Textarea>
         </label>
 
         <label class="checkbox-row">
+          <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
           <input type="checkbox" bind:checked={publishCorrection} />
           {t(M['content.governance_panel.publish_immediately'])}
         </label>
@@ -1928,20 +1931,6 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     flex-wrap: wrap;
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
-  }
-
-  .fact-search input,
-  .workflow-field input,
-  .workflow-field textarea,
-  .workflow-field select {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.75rem;
-    border-radius: 0.5rem;
-    border: 1px solid var(--smrt-color-outline);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    font-family: inherit;
   }
 
   .workflow-field {

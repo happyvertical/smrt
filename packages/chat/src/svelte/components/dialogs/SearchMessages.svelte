@@ -3,6 +3,7 @@
  * SearchMessages - Message search interface with results list
  * Provides a search input and displays matching messages
  */
+import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
@@ -26,10 +27,15 @@ export interface Props {
 let { isOpen, onclose, onsearch, results, onselectresult }: Props = $props();
 
 let query = $state('');
-let searchInput = $state<HTMLInputElement | null>(null);
 
 const hasResults = $derived(results.length > 0);
 const hasQuery = $derived(query.trim().length > 0);
+
+// The Input primitive doesn't expose its inner element, so resolve it by id.
+function focusSearchInput() {
+  if (typeof document === 'undefined') return;
+  document.getElementById('search-messages-input')?.focus();
+}
 
 function handleSubmit() {
   const trimmed = query.trim();
@@ -95,8 +101,10 @@ $effect(() => {
 });
 
 $effect(() => {
-  if (isOpen && searchInput) {
-    searchInput.focus();
+  if (isOpen) {
+    // Defer a frame so the search input is mounted before focusing.
+    const raf = requestAnimationFrame(focusSearchInput);
+    return () => cancelAnimationFrame(raf);
   }
 });
 </script>
@@ -124,7 +132,7 @@ $effect(() => {
       </Button>
     </div>
 
-    <form
+    <Form
       class="search-form"
       onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}
     >
@@ -133,9 +141,9 @@ $effect(() => {
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.35-4.35" />
         </svg>
-        <input
-          bind:this={searchInput}
+        <Input
           bind:value={query}
+          id="search-messages-input"
           type="search"
           class="search-input"
           placeholder={t(M['chat.search_messages.input_placeholder'])}
@@ -148,7 +156,7 @@ $effect(() => {
             size="sm"
             class="clear-btn"
             type="button"
-            onclick={() => { query = ''; searchInput?.focus(); }}
+            onclick={() => { query = ''; focusSearchInput(); }}
             aria-label={t(M['chat.search_messages.clear'])}
           >
             <svg class="clear-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -158,7 +166,7 @@ $effect(() => {
           </Button>
         {/if}
       </div>
-    </form>
+    </Form>
 
     <div class="search-results" aria-label={t(M['chat.search_messages.results'])}>
       {#if hasResults}
@@ -257,7 +265,8 @@ $effect(() => {
     height: 1rem;
   }
 
-  .search-form {
+  /* :global() targets the Form primitive's rendered <form> (see #1589 scoping trap). */
+  :global(.search-form) {
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
@@ -285,17 +294,24 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .search-input {
+  /* The Input primitive sits inside the bordered .search-input-wrap, which owns
+     the border + focus-within ring — so neutralize the primitive's own chrome
+     (border/background/padding/box-shadow) and let it render borderless. */
+  :global(.search-input) {
     flex: 1;
     border: none;
     outline: none;
+    padding: 0;
     background: transparent;
+    box-shadow: none;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
-  .search-input::placeholder {
-    color: var(--smrt-color-on-surface-variant, #43474e);
+  :global(.search-input:focus) {
+    border: none;
+    outline: none;
+    box-shadow: none;
   }
 
   /* :global() pierces into the Button child's rendered <button> (see #1589). */

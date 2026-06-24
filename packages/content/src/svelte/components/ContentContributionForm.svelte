@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
@@ -119,83 +120,87 @@ function handleSubmit(event: SubmitEvent) {
 }
 </script>
 
-<form
-  class="contribution-form"
-  method="post"
-  enctype="multipart/form-data"
-  {action}
-  onsubmit={handleSubmit}
->
-  <h3>{t(M['content.contribution_form.heading'])}</h3>
+<div class="contribution-form-shell">
+  <Form
+    class="contribution-form"
+    method="post"
+    enctype="multipart/form-data"
+    {action}
+    preventDefault={false}
+    onsubmit={handleSubmit}
+  >
+    <h3>{t(M['content.contribution_form.heading'])}</h3>
 
-  <label>
-    {t(M['content.contribution_form.contribution_type'])}
-    <select name="typeKey" bind:value={draft.typeKey} required>
-      {#each types.filter((type) => type.enabled !== false) as type (type.key)}
-        <option value={type.key}>{type.label}</option>
-      {/each}
-    </select>
-  </label>
-
-  {#if showContributorFields}
-    <div class="grid">
-      <label>
-        Email
-        <input name="contributorEmail" type="email" bind:value={draft.contributorEmail} required />
-      </label>
-      <label>
-        Name
-        <input name="contributorName" type="text" bind:value={draft.contributorName} />
-      </label>
-    </div>
-  {/if}
-
-  <label>
-    Title
-    <input name="title" type="text" bind:value={draft.title} />
-  </label>
-
-  <label>
-    Description
-    <textarea name="description" bind:value={draft.description} rows="2"></textarea>
-  </label>
-
-  <label>
-    Body
-    <textarea name="body" bind:value={draft.body} rows="8"></textarea>
-  </label>
-
-  {#if activeType?.allowFiles !== false}
     <label>
-      {t(M['content.contribution_form.attach_files'])}
-      <input
-        name="files"
-        type="file"
-        multiple
-        onchange={handleFileChange}
-      />
-    </label>
-    {#if draft.files.length > 0}
-      <div class="file-list">
-        {#each draft.files as file (file.name + file.size)}
-          <span>{file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)</span>
+      {t(M['content.contribution_form.contribution_type'])}
+      <Select name="typeKey" bind:value={draft.typeKey} required>
+        {#each types.filter((type) => type.enabled !== false) as type (type.key)}
+          <option value={type.key}>{type.label}</option>
         {/each}
+      </Select>
+    </label>
+
+    {#if showContributorFields}
+      <div class="grid">
+        <label>
+          Email
+          <Input name="contributorEmail" type="email" bind:value={draft.contributorEmail} required />
+        </label>
+        <label>
+          Name
+          <Input name="contributorName" type="text" bind:value={draft.contributorName} />
+        </label>
       </div>
     {/if}
-  {/if}
 
-  <div class="actions">
-    <Button variant="primary" type="submit">{submitLabel}</Button>
-    {#if onCancel}
-      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
-        Cancel
-      </Button>
+    <label>
+      Title
+      <Input name="title" type="text" bind:value={draft.title} />
+    </label>
+
+    <label>
+      Description
+      <Textarea name="description" bind:value={draft.description} rows={2}></Textarea>
+    </label>
+
+    <label>
+      Body
+      <Textarea name="body" bind:value={draft.body} rows={8}></Textarea>
+    </label>
+
+    {#if activeType?.allowFiles !== false}
+      <label>
+        {t(M['content.contribution_form.attach_files'])}
+        <!-- raw-primitive-allow: native file input — the Input primitive binds value, which is invalid for type=file (throws InvalidStateError on the bind write-back) and renders a visible control; a file picker stays native -->
+        <input
+          name="files"
+          type="file"
+          multiple
+          onchange={handleFileChange}
+        />
+      </label>
+      {#if draft.files.length > 0}
+        <div class="file-list">
+          {#each draft.files as file (file.name + file.size)}
+            <span>{file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)</span>
+          {/each}
+        </div>
+      {/if}
     {/if}
-  </div>
-</form>
+
+    <div class="actions">
+      <Button variant="primary" type="submit">{submitLabel}</Button>
+      {#if onCancel}
+        <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
+          Cancel
+        </Button>
+      {/if}
+    </div>
+  </Form>
+</div>
 
 <style>
-  .contribution-form {
+  .contribution-form-shell :global(.contribution-form) {
     display: grid;
     gap: 0.85rem;
   }

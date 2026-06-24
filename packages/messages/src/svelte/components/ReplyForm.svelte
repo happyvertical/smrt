@@ -11,6 +11,7 @@ export interface Props {
 
 <script lang="ts">
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
+  import { Textarea } from '@happyvertical/smrt-ui/forms';
   import { Button } from '@happyvertical/smrt-ui/ui';
   import { M } from '../i18n.js';
 
@@ -60,12 +61,11 @@ export interface Props {
     {replyAll ? 'Reply All' : 'Reply'} to {originalMessage.senderName || originalMessage.senderAddress}
   </div>
 
-  <textarea
-    class="reply-body"
+  <Textarea
     bind:value={body}
     placeholder={t(M['messages.reply_form.body_placeholder'])}
     rows={5}
-  ></textarea>
+  />
 
   <div class="quoted-original">
     <pre class="quoted-text">{quotedBody}</pre>
@@ -107,22 +107,6 @@ export interface Props {
     font-size: var(--smrt-typography-title-small-size, 13px);
     color: var(--smrt-color-on-surface-variant, #49454f);
     font-weight: var(--smrt-typography-weight-medium, 500);
-  }
-
-  .reply-body {
-    width: 100%;
-    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
-    border-radius: var(--smrt-radius-sm, 8px);
-    padding: var(--smrt-spacing-2, 8px);
-    font-family: var(--smrt-font-family, system-ui);
-    font-size: var(--smrt-typography-body-medium-size, 14px);
-    resize: vertical;
-    box-sizing: border-box;
-  }
-
-  .reply-body:focus {
-    outline: 2px solid var(--smrt-color-primary, #6750a4);
-    outline-offset: -1px;
   }
 
   .quoted-original {

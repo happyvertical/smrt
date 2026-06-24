@@ -169,6 +169,7 @@ function getFileIcon(type: string): string {
     ondragleave={handleDragLeave}
   >
     <label class="file-upload__label">
+      <!-- raw-primitive-allow: visually-hidden native file input that backs a custom drag-and-drop zone; the base Input primitive renders a visible bordered control and cannot be the hidden picker behind this drop zone -->
       <input
         type="file"
         class="file-upload__input"

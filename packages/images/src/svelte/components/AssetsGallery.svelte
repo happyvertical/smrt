@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
@@ -158,29 +159,29 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     
     <div class="toolbar">
       <div class="search-box">
-        <input 
-          type="search" 
+        <Input
+          type="search"
           bind:value={searchQuery}
           placeholder={t(M['images.assets_gallery.search_placeholder'])}
         />
       </div>
-      
+
       <div class="filters">
-        <select bind:value={orientationFilter}>
+        <Select class="orientation-select" bind:value={orientationFilter}>
           <option value="all">{t(M['images.assets_gallery.any_orientation'])}</option>
           <option value="landscape">Landscape</option>
           <option value="portrait">Portrait</option>
           <option value="square">Square</option>
-        </select>
-        
-        <input 
-          type="number" 
+        </Select>
+
+        <Input
+          type="number"
           bind:value={minWidth}
           placeholder={t(M['images.assets_gallery.min_width_placeholder'])}
           class="size-input"
         />
-        <input 
-          type="number" 
+        <Input
+          type="number"
           bind:value={minHeight}
           placeholder={t(M['images.assets_gallery.min_height_placeholder'])}
           class="size-input"
@@ -286,45 +287,22 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     min-width: 250px;
   }
 
-  .search-box input {
-    width: 100%;
-    padding: 0.75rem 1.25rem;
-    background: var(--smrt-color-surface-container-highest, #333);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: var(--smrt-radius-full, 9999px);
-    color: inherit;
-    font-size: var(--smrt-typography-body-large-size, 0.95rem);
-    transition: box-shadow 0.2s, border-color 0.2s;
-  }
-
-  .search-box input:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
-  }
-
   .filters {
     display: flex;
     gap: 0.75rem;
     flex-wrap: wrap;
   }
 
-  .filters select, .filters input {
-    padding: 0.75rem 1rem;
-    background: var(--smrt-color-surface-container-high, #242424);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: var(--smrt-radius-sm, 4px);
-    color: inherit;
-    transition: box-shadow 0.2s, border-color 0.2s;
+  /* Layout-only overrides for the migrated filter primitives. The Input / Select
+     primitives own the visual styling; these :global() rules only pierce their
+     rendered controls to size the boxes within the flex row (see #1589 scoping
+     rule). The orientation Select sizes to its content instead of the primitive's
+     full-width default; the min-width/min-height Inputs are capped. */
+  .filters :global(.orientation-select) {
+    width: auto;
   }
 
-  .filters select:focus, .filters input:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
-  }
-
-  .size-input {
+  .filters :global(.size-input) {
     width: 120px;
   }
 

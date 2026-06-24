@@ -214,4 +214,11 @@ const sizeClasses = {
   .toggle--lg .toggle__label {
     font-size: var(--smrt-typography-body-large-size, 1rem);
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toggle__thumb,
+    .toggle__thumb::after {
+      transition: none;
+    }
+  }
 </style>

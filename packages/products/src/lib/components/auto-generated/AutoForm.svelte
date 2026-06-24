@@ -4,6 +4,7 @@
  * Demonstrates "Define Once, Consume Everywhere" - form is generated from Product class definition
  */
 
+import { Form } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
@@ -113,31 +114,33 @@ function _getFieldType(
     </div>
   </header>
 
-  <form class="form-content" onsubmit={handleSubmit}>
-    {#each fieldSchema as field}
-      <FieldRenderer
-        fieldName={field.name}
-        fieldType={field.type}
-        value={formData[field.name]}
-        label={field.label}
-        placeholder={field.placeholder}
-        required={field.required || false}
-        {readonly}
-        onUpdate={(value) => updateField(field.name, value)}
-      />
-    {/each}
+  <div class="form-content-shell">
+    <Form class="form-content" onsubmit={handleSubmit}>
+      {#each fieldSchema as field}
+        <FieldRenderer
+          fieldName={field.name}
+          fieldType={field.type}
+          value={formData[field.name]}
+          label={field.label}
+          placeholder={field.placeholder}
+          required={field.required || false}
+          {readonly}
+          onUpdate={(value) => updateField(field.name, value)}
+        />
+      {/each}
 
-    {#if !readonly}
-      <div class="form-actions">
-        <Button type="submit" variant="primary">
-          {submitLabel}
-        </Button>
-        <Button type="button" variant="secondary" onclick={() => formData = {}}>
-          Reset
-        </Button>
-      </div>
-    {/if}
-  </form>
+      {#if !readonly}
+        <div class="form-actions">
+          <Button type="submit" variant="primary">
+            {submitLabel}
+          </Button>
+          <Button type="button" variant="secondary" onclick={() => formData = {}}>
+            Reset
+          </Button>
+        </div>
+      {/if}
+    </Form>
+  </div>
 
   <!-- Demo: Show current form state -->
   <details class="form-debug">
@@ -174,7 +177,7 @@ function _getFieldType(
     font-style: italic;
   }
 
-  .form-content {
+  .form-content-shell :global(.form-content) {
     display: flex;
     flex-direction: column;
     gap: 1rem;

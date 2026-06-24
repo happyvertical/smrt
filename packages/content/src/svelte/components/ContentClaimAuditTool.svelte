@@ -245,6 +245,7 @@ async function recheckFactClaims(claimIds: string[]) {
               <details class="tool-card">
                 <summary>
                   <label class="claim-audit-select">
+                    <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
                     <input
                       type="checkbox"
                       checked={isClaimSelected(claim)}

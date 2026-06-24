@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
@@ -114,7 +115,7 @@ function removeReference(id: string) {
   {/if}
 
   <div class="reference-input-row">
-    <input
+    <Input
       type="text"
       aria-label={t(M['content.content_references_panel.add_reference_by_id_or_url'])}
       placeholder={t(M['content.content_references_panel.reference_id_or_url_placeholder'])}
@@ -207,24 +208,27 @@ function removeReference(id: string) {
     gap: 0.65rem;
   }
 
-  input,
   .content-references-panel :global(.reference-button) {
     min-height: 2.5rem;
     border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);
     border-radius: 0.5rem;
-    background: var(--smrt-color-surface-container-low);
+    background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     font: inherit;
     padding: 0.55rem 0.875rem;
-  }
-
-  .content-references-panel :global(.reference-button) {
-    background: var(--smrt-color-surface-container);
     cursor: pointer;
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .content-references-panel :global(.reference-button:hover) {
     background: var(--smrt-color-surface-container-high);
+  }
+
+  /* Match the Input primitive's height/radius to the sibling reference-button so
+     the two grid columns of .reference-input-row align (the primitive's base
+     .input has no min-height). */
+  .content-references-panel :global(.input) {
+    min-height: 2.5rem;
+    border-radius: 0.5rem;
   }
 </style>

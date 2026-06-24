@@ -7,6 +7,7 @@ import { onDestroy } from 'svelte';
  * and an upload button.
  */
 
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from './i18n.js';
@@ -108,7 +109,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
       </span>
-      <input
+      <Input
         type="search"
         class="search-field"
         placeholder={t(M['assets.asset_toolbar.search_placeholder'])}
@@ -127,22 +128,22 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </div>
 
     <!-- Type Filter -->
-    <select class="asset-toolbar__select" value={typeValue} onchange={handleTypeFilter} aria-label={t(M['assets.asset_toolbar.filter_by_type'])}>
+    <Select class="asset-toolbar__select" value={typeValue} onchange={handleTypeFilter} aria-label={t(M['assets.asset_toolbar.filter_by_type'])}>
       <option value="">{t(M['assets.asset_toolbar.all_types'])}</option>
       <option value="image">Images</option>
       <option value="video">Videos</option>
       <option value="document">Documents</option>
       <option value="audio">Audio</option>
-    </select>
+    </Select>
 
     <!-- Sort -->
-    <select class="asset-toolbar__select" value={sortValue} onchange={handleSortChange} aria-label={t(M['assets.asset_toolbar.sort_assets'])}>
+    <Select class="asset-toolbar__select" value={sortValue} onchange={handleSortChange} aria-label={t(M['assets.asset_toolbar.sort_assets'])}>
       <option value="createdAt:desc">{t(M['assets.asset_toolbar.newest_first'])}</option>
       <option value="createdAt:asc">{t(M['assets.asset_toolbar.oldest_first'])}</option>
       <option value="name:asc">{t(M['assets.asset_toolbar.name_a_z'])}</option>
       <option value="name:desc">{t(M['assets.asset_toolbar.name_z_a'])}</option>
       <option value="updatedAt:desc">{t(M['assets.asset_toolbar.recently_updated'])}</option>
-    </select>
+    </Select>
   </div>
 
   <div class="asset-toolbar__right">
@@ -247,10 +248,16 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
-  .search-field {
+  /* The search field renders via <Input class="search-field"> (issue #1589). It
+     sits inside the bordered .asset-toolbar__search shell, so the overrides strip
+     the primitive's own border/background/box-shadow to keep it transparent and
+     reach the child <input> through :global() scoping. */
+  .asset-toolbar__search :global(.search-field) {
     flex: 1;
     border: none;
+    border-radius: 0;
     background: transparent;
+    box-shadow: none;
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
@@ -259,11 +266,16 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     min-width: 0;
   }
 
-  .search-field::placeholder {
+  .asset-toolbar__search :global(.search-field:focus) {
+    border: none;
+    box-shadow: none;
+  }
+
+  .asset-toolbar__search :global(.search-field::placeholder) {
     color: var(--smrt-color-on-surface-variant, #9ca3af);
   }
 
-  .search-field::-webkit-search-cancel-button {
+  .asset-toolbar__search :global(.search-field::-webkit-search-cancel-button) {
     display: none;
   }
 
@@ -286,22 +298,21 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     background: var(--smrt-color-surface-container, #f3f4f6);
   }
 
-  /* Selects */
-  .asset-toolbar__select {
+  /* Selects render via <Select class="asset-toolbar__select"> (issue #1589). The
+     base .select primitive owns the chevron + focus ring; these overrides pin the
+     toolbar-matching 36px height, container-low fill, and width, and reach the
+     child <select> through :global() scoping. */
+  .asset-toolbar__left :global(.asset-toolbar__select) {
+    width: auto;
     height: 36px;
-    padding: 0 var(--smrt-spacing-3, 0.75rem);
-    background: var(--smrt-color-surface-container-low, #f9fafb);
+    padding: 0 var(--smrt-spacing-8, 2rem) 0 var(--smrt-spacing-3, 0.75rem);
+    background-color: var(--smrt-color-surface-container-low, #f9fafb);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface, #111827);
     cursor: pointer;
-  }
-
-  .asset-toolbar__select:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
   }
 
   /* View Toggle */

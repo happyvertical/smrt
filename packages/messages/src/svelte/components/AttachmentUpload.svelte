@@ -80,11 +80,12 @@ export interface Props {
     ondragleave={handleDragLeave}
   >
     <label class="upload-label">
+      <!-- raw-primitive-allow: native file input — the Input primitive binds value, which is invalid for type=file (throws InvalidStateError on the bind write-back) and renders a visible control; this hidden picker behind the drop zone stays native -->
       <input
         type="file"
         multiple
         class="file-input"
-        onchange={(e) => handleFiles((e.target as HTMLInputElement).files)}
+        onchange={(e) => handleFiles((e.currentTarget as HTMLInputElement).files)}
       />
       <span class="upload-text">{t(M['messages.attachment_upload.drop_files'])}</span>
     </label>
@@ -155,7 +156,11 @@ export interface Props {
     cursor: pointer;
   }
 
-  .file-input {
+  /*
+   * The native file input stays visually hidden — the visible affordance is the
+   * `.upload-text` label inside the styled drop-zone (issue #1589).
+   */
+  .upload-label .file-input {
     display: none;
   }
 

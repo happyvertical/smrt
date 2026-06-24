@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
@@ -95,81 +96,87 @@ function handleSubmit() {
 }
 </script>
 
-<form class="governance-editor" onsubmit={(event) => {
-  event.preventDefault();
-  handleSubmit();
-}}>
-  <label>
-    Label
-    <input type="text" bind:value={draft.label} />
-  </label>
-  <label>
-    {t(M['content.governance_assignment_editor.content_type'])}
-    <input type="text" bind:value={draft.contentType} required />
-  </label>
-  <label>
-    {t(M['content.governance_assignment_editor.content_variant'])}
-    <input type="text" bind:value={draft.contentVariant} />
-  </label>
-  <label>
-    {t(M['content.governance_assignment_editor.publication_profile'])}
-    <select bind:value={draft.publicationProfileKey}>
-      <option value="" disabled={profiles.length > 0}>{t(M['content.governance_assignment_editor.select_a_profile'])}</option>
-      {#each profiles as profile (profile.key)}
-        <option value={profile.key}>{profile.label}</option>
-      {/each}
-    </select>
-  </label>
-  <label>
-    {t(M['content.governance_assignment_editor.correction_profile'])}
-    <select bind:value={draft.correctionProfileKey}>
-      <option value="" disabled={profiles.length > 0}>{t(M['content.governance_assignment_editor.select_a_profile'])}</option>
-      {#each profiles as profile (profile.key)}
-        <option value={profile.key}>{profile.label}</option>
-      {/each}
-    </select>
-  </label>
-  <label>
-    {t(M['content.governance_assignment_editor.default_fact_relationship'])}
-    <select bind:value={draft.defaultFactRelationship}>
-      <option value="supports">supports</option>
-      <option value="referenced_in">referenced_in</option>
-      <option value="contradicts">contradicts</option>
-      <option value="related">related</option>
-    </select>
-  </label>
+<div class="governance-editor-shell">
+  <Form class="governance-editor" onsubmit={(event) => {
+    event.preventDefault();
+    handleSubmit();
+  }}>
+    <label>
+      Label
+      <Input type="text" bind:value={draft.label} />
+    </label>
+    <label>
+      {t(M['content.governance_assignment_editor.content_type'])}
+      <Input type="text" bind:value={draft.contentType} required />
+    </label>
+    <label>
+      {t(M['content.governance_assignment_editor.content_variant'])}
+      <Input type="text" bind:value={draft.contentVariant} />
+    </label>
+    <label>
+      {t(M['content.governance_assignment_editor.publication_profile'])}
+      <Select bind:value={draft.publicationProfileKey}>
+        <option value="" disabled={profiles.length > 0}>{t(M['content.governance_assignment_editor.select_a_profile'])}</option>
+        {#each profiles as profile (profile.key)}
+          <option value={profile.key}>{profile.label}</option>
+        {/each}
+      </Select>
+    </label>
+    <label>
+      {t(M['content.governance_assignment_editor.correction_profile'])}
+      <Select bind:value={draft.correctionProfileKey}>
+        <option value="" disabled={profiles.length > 0}>{t(M['content.governance_assignment_editor.select_a_profile'])}</option>
+        {#each profiles as profile (profile.key)}
+          <option value={profile.key}>{profile.label}</option>
+        {/each}
+      </Select>
+    </label>
+    <label>
+      {t(M['content.governance_assignment_editor.default_fact_relationship'])}
+      <Select bind:value={draft.defaultFactRelationship}>
+        <option value="supports">supports</option>
+        <option value="referenced_in">referenced_in</option>
+        <option value="contradicts">contradicts</option>
+        <option value="related">related</option>
+      </Select>
+    </label>
 
-  <div class="checkbox-grid">
-    <label class="checkbox">
-      <input type="checkbox" bind:checked={draft.enabled} />
-      Enabled
-    </label>
-    <label class="checkbox">
-      <input type="checkbox" bind:checked={draft.factLinkingEnabled} />
-      {t(M['content.governance_assignment_editor.fact_linking'])}
-    </label>
-    <label class="checkbox">
-      <input type="checkbox" bind:checked={draft.transparencyEnabled} />
-      Transparency
-    </label>
-    <label class="checkbox">
-      <input type="checkbox" bind:checked={draft.enforcePublishReadiness} />
-      {t(M['content.governance_assignment_editor.enforce_publish_readiness'])}
-    </label>
-  </div>
+    <div class="checkbox-grid">
+      <label class="checkbox">
+        <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+        <input type="checkbox" bind:checked={draft.enabled} />
+        Enabled
+      </label>
+      <label class="checkbox">
+        <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+        <input type="checkbox" bind:checked={draft.factLinkingEnabled} />
+        {t(M['content.governance_assignment_editor.fact_linking'])}
+      </label>
+      <label class="checkbox">
+        <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+        <input type="checkbox" bind:checked={draft.transparencyEnabled} />
+        Transparency
+      </label>
+      <label class="checkbox">
+        <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
+        <input type="checkbox" bind:checked={draft.enforcePublishReadiness} />
+        {t(M['content.governance_assignment_editor.enforce_publish_readiness'])}
+      </label>
+    </div>
 
-  <div class="actions">
-    <Button variant="primary" type="submit">{t(M['content.governance_assignment_editor.save_assignment'])}</Button>
-    {#if onCancel}
-      <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
-        Cancel
-      </Button>
-    {/if}
-  </div>
-</form>
+    <div class="actions">
+      <Button variant="primary" type="submit">{t(M['content.governance_assignment_editor.save_assignment'])}</Button>
+      {#if onCancel}
+        <Button variant="secondary" type="button" onclick={() => onCancel?.()}>
+          Cancel
+        </Button>
+      {/if}
+    </div>
+  </Form>
+</div>
 
 <style>
-  .governance-editor {
+  .governance-editor-shell :global(.governance-editor) {
     display: grid;
     gap: 0.75rem;
   }
@@ -178,11 +185,6 @@ function handleSubmit() {
     display: grid;
     gap: 0.35rem;
     font-size: var(--smrt-typography-label-large-size, 0.9rem);
-  }
-
-  input,
-  select {
-    width: 100%;
   }
 
   .checkbox-grid,

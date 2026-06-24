@@ -428,7 +428,7 @@ describe('ContentEditor component', () => {
     });
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -471,7 +471,7 @@ describe('ContentEditor component', () => {
     flushSync();
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -536,7 +536,7 @@ describe('ContentEditor component', () => {
     );
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -595,7 +595,7 @@ describe('ContentEditor component', () => {
     );
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -754,7 +754,7 @@ describe('ContentEditor component', () => {
     flushSync();
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -773,7 +773,7 @@ describe('ContentEditor component', () => {
     flushSync();
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(onSave.mock.calls[1]?.[0].body).not.toContain(
@@ -862,7 +862,7 @@ describe('ContentEditor component', () => {
     flushSync();
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     const saved = onSave.mock.calls[0]?.[0];
@@ -941,7 +941,7 @@ describe('ContentEditor component', () => {
     ).find((input) =>
       (input as HTMLInputElement).placeholder.includes('e.g. news, tech'),
     ) as HTMLInputElement | undefined;
-    const form = target.querySelector('#content-edit-form');
+    const form = target.querySelector('form.editor-main-col');
 
     expect(tagsInput).toBeDefined();
     if (!tagsInput) {
@@ -979,7 +979,7 @@ describe('ContentEditor component', () => {
     const publishDateInput = target.querySelector(
       '#publish-date-input',
     ) as HTMLInputElement | null;
-    const form = target.querySelector('#content-edit-form');
+    const form = target.querySelector('form.editor-main-col');
 
     expect(publishDateInput).not.toBeNull();
     if (!publishDateInput) {
@@ -1016,7 +1016,7 @@ describe('ContentEditor component', () => {
     });
 
     target
-      .querySelector('#content-edit-form')
+      .querySelector('form.editor-main-col')
       ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -1045,7 +1045,7 @@ describe('ContentEditor component', () => {
     const typeSelect = target.querySelector(
       '#type-select',
     ) as HTMLSelectElement | null;
-    const form = target.querySelector('#content-edit-form');
+    const form = target.querySelector('form.editor-main-col');
 
     expect(typeSelect).not.toBeNull();
     if (!typeSelect) {

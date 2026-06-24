@@ -80,4 +80,10 @@ const resolvedInvalid = $derived(
 		cursor: not-allowed;
 		opacity: 0.7;
 	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.select {
+			transition: none;
+		}
+	}
 </style>

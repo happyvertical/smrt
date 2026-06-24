@@ -3,7 +3,7 @@
   "version": "0.34.6",
   "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
   "type": "module",
-  "smrtRawPrimitives": "strict-buttons",
+  "smrtRawPrimitives": "strict",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

@@ -82,4 +82,10 @@ const resolvedInvalid = $derived(
 	.textarea::placeholder {
 		color: var(--smrt-color-on-surface-variant, #9ca3af);
 	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.textarea {
+			transition: none;
+		}
+	}
 </style>

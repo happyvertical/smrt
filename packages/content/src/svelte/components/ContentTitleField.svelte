@@ -1,4 +1,6 @@
 <script lang="ts">
+import { Input } from '@happyvertical/smrt-ui/forms';
+
 export interface Props {
   value?: string;
   placeholder?: string;
@@ -14,17 +16,19 @@ let {
 }: Props = $props();
 </script>
 
-<input
-  class="content-title-field"
-  type="text"
-  {placeholder}
-  {required}
-  value={value || ''}
-  oninput={(event) => onChange?.(event.currentTarget.value)}
-/>
+<div class="content-title-field-shell">
+  <Input
+    class="content-title-field"
+    type="text"
+    {placeholder}
+    {required}
+    value={value || ''}
+    oninput={(event) => onChange?.(event.currentTarget.value)}
+  />
+</div>
 
 <style>
-  .content-title-field {
+  .content-title-field-shell :global(.content-title-field) {
     width: 100%;
     box-sizing: border-box;
     border: 0;
@@ -39,15 +43,15 @@ let {
     padding: 0;
   }
 
-  .content-title-field::placeholder {
+  .content-title-field-shell :global(.content-title-field)::placeholder {
     color: color-mix(in srgb, var(--smrt-color-on-surface-variant) 70%, transparent);
   }
 
-  .content-title-field:focus {
+  .content-title-field-shell :global(.content-title-field):focus {
     outline: none;
   }
 
-  .content-title-field:focus-visible {
+  .content-title-field-shell :global(.content-title-field):focus-visible {
     outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 0.35rem;
   }

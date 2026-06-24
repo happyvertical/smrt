@@ -98,6 +98,7 @@ const _slackMeta = $derived.by(() => {
 >
   {#if onselect}
     <div class="select-col">
+      <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
       <input
         type="checkbox"
         checked={selected}

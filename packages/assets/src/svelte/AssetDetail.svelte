@@ -7,6 +7,7 @@
  */
 
 import { Modal } from '@happyvertical/smrt-ui/feedback';
+import { Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
@@ -202,7 +203,7 @@ function formatDate(date: Date | string | undefined): string {
           <div class="detail__form">
             <div class="form-field">
               <label for="detail-name" class="form-label">Name</label>
-              <input id="detail-name" type="text" class="form-input" bind:value={editName} />
+              <Input id="detail-name" type="text" bind:value={editName} />
             </div>
 
             {#if isImage}
@@ -213,13 +214,13 @@ function formatDate(date: Date | string | undefined): string {
                     <span class="label-warning">{t(M['assets.asset_detail.alt_text_missing_warning'])}</span>
                   {/if}
                 </label>
-                <input id="detail-alt" type="text" class="form-input" bind:value={editAlt} placeholder={t(M['assets.asset_detail.alt_text_placeholder'])} />
+                <Input id="detail-alt" type="text" bind:value={editAlt} placeholder={t(M['assets.asset_detail.alt_text_placeholder'])} />
               </div>
             {/if}
 
             <div class="form-field">
               <label for="detail-desc" class="form-label">Description</label>
-              <textarea id="detail-desc" class="form-textarea" bind:value={editDescription} rows="3" placeholder={t(M['assets.asset_detail.description_placeholder'])}></textarea>
+              <Textarea id="detail-desc" bind:value={editDescription} rows={3} placeholder={t(M['assets.asset_detail.description_placeholder'])} />
             </div>
           </div>
         </section>
@@ -403,29 +404,6 @@ function formatDate(date: Date | string | undefined): string {
     font-size: var(--smrt-typography-label-small-size, 0.7rem);
     color: var(--smrt-color-error, #dc2626);
     margin-left: var(--smrt-spacing-1, 4px);
-  }
-
-  .form-input, .form-textarea {
-    width: 100%;
-    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface, #111827);
-    background: var(--smrt-color-surface, #ffffff);
-    box-sizing: border-box;
-  }
-
-  .form-input:focus, .form-textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 2px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
-  }
-
-  .form-textarea {
-    resize: vertical;
-    min-height: 60px;
   }
 
   /* Metadata */

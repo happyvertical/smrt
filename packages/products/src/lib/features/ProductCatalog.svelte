@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
@@ -103,20 +104,20 @@ function handleCancelForm() {
   
   <div class="catalog-controls">
     <div class="search-filters">
-      <input
+      <Input
         type="text"
         bind:value={searchQuery}
         placeholder={t(M['products.product_catalog.search_placeholder'])}
         aria-label={t(M['products.product_catalog.search_placeholder'])}
         class="search-input"
       />
-      
-      <select bind:value={selectedCategory} class="category-filter">
+
+      <Select bind:value={selectedCategory} class="category-filter">
         <option value="">{t(M['products.product_catalog.all_categories'])}</option>
         {#each productStore.categories as category}
           <option value={category}>{category}</option>
         {/each}
-      </select>
+      </Select>
     </div>
     
     {#if !readonly && (showCreateForm || productStore.items.length === 0)}
@@ -224,20 +225,17 @@ function handleCancelForm() {
     gap: 0.75rem;
     flex: 1;
   }
-  
-  .search-input, .category-filter {
-    padding: 0.5rem;
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: var(--smrt-radius-sm, 4px);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-  }
-  
-  .search-input {
+
+  /* Layout sizing for the migrated <Input>/<Select>. The primitives render the
+     inner element with the forwarded class, so pierce with :global to keep the
+     flex sizing the old scoped rules supplied (#1589); padding/border/font come
+     from the primitives' tokenised styling now. */
+  .search-filters :global(.search-input) {
     flex: 1;
     max-width: 300px;
   }
-  
-  .category-filter {
+
+  .search-filters :global(.category-filter) {
     min-width: 150px;
   }
   

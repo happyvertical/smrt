@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input, Select, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
@@ -219,8 +220,8 @@ async function handleAIEdit() {
           <div class="tool-section">
             <h4>Resize</h4>
             <div class="row">
-              <label>Width <input type="number" bind:value={width} onfocus={() => isEditingDimensions = true} /></label>
-              <label>Height <input type="number" bind:value={height} onfocus={() => isEditingDimensions = true} /></label>
+              <label>Width <Input type="number" class="dim-input" bind:value={width} onfocus={() => isEditingDimensions = true} /></label>
+              <label>Height <Input type="number" class="dim-input" bind:value={height} onfocus={() => isEditingDimensions = true} /></label>
               <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleResize}>{t(M['images.image_editor.apply_resize'])}</Button>
             </div>
             {#if isEditingDimensions}
@@ -231,12 +232,12 @@ async function handleAIEdit() {
           <div class="tool-section">
             <h4>Crop</h4>
             <div class="row">
-              <label>X <input type="number" bind:value={cropX} onfocus={() => isCropping = true} /></label>
-              <label>Y <input type="number" bind:value={cropY} onfocus={() => isCropping = true} /></label>
+              <label>X <Input type="number" class="dim-input" bind:value={cropX} onfocus={() => isCropping = true} /></label>
+              <label>Y <Input type="number" class="dim-input" bind:value={cropY} onfocus={() => isCropping = true} /></label>
             </div>
             <div class="row">
-              <label>W <input type="number" bind:value={cropW} onfocus={() => isCropping = true} /></label>
-              <label>H <input type="number" bind:value={cropH} onfocus={() => isCropping = true} /></label>
+              <label>W <Input type="number" class="dim-input" bind:value={cropW} onfocus={() => isCropping = true} /></label>
+              <label>H <Input type="number" class="dim-input" bind:value={cropH} onfocus={() => isCropping = true} /></label>
               <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleCrop}>{t(M['images.image_editor.apply_crop'])}</Button>
             </div>
             {#if isCropping}
@@ -247,11 +248,11 @@ async function handleAIEdit() {
           <div class="tool-section">
             <h4>{t(M['images.image_editor.convert_format'])}</h4>
             <div class="row">
-              <select bind:value={format}>
+              <Select class="format-select" bind:value={format}>
                 <option value="webp">WebP</option>
                 <option value="jpeg">JPEG</option>
                 <option value="png">PNG</option>
-              </select>
+              </Select>
               <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleConvert}>Convert</Button>
             </div>
           </div>
@@ -260,11 +261,12 @@ async function handleAIEdit() {
           <div class="tool-section">
             <h4>{t(M['images.image_editor.ai_powered_edit'])}</h4>
             <p class="hint">{t(M['images.image_editor.ai_powered_edit_hint'])}</p>
-            <textarea
+            <Textarea
+              class="ai-prompt"
               bind:value={prompt}
               placeholder={t(M['images.image_editor.ai_prompt_placeholder'])}
-              rows="4"
-            ></textarea>
+              rows={4}
+            />
             <Button
               variant="primary"
               class="primary-btn--pill"
@@ -390,30 +392,22 @@ async function handleAIEdit() {
     gap: 0.25rem;
   }
 
-  input, select, textarea {
-    background: var(--smrt-color-surface-container-high, #242424);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
-    color: inherit;
-    padding: 0.6rem 0.75rem;
-    border-radius: var(--smrt-radius-sm, 4px);
-    transition: box-shadow 0.2s, border-color 0.2s;
-  }
-
-  input:focus, select:focus, textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
-  }
-
-  input[type="number"] {
+  /* Layout-only overrides for the migrated form primitives. The Input / Select /
+     Textarea primitives own the visual styling (background, border, focus ring);
+     these :global() rules only pierce their rendered controls to constrain box
+     size and spacing (see #1589 scoping rule). */
+  .row label :global(.dim-input) {
     width: 90px;
   }
 
-  textarea {
-    width: 100%;
-    resize: vertical;
+  /* Size the format Select to its content instead of the primitive's full-width
+     default so it sits inline beside the Convert button in the flex row. */
+  .row :global(.format-select) {
+    width: auto;
+  }
+
+  .tool-section :global(.ai-prompt) {
     margin-bottom: 1rem;
-    font-family: inherit;
   }
 
   /* Migrated Buttons keep their bespoke filled-tonal / text-link / pill looks.
