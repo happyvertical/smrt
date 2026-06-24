@@ -74,7 +74,7 @@ export class Property extends SmrtObject {
 
   constructor(options: PropertyOptions = {}) {
     super(options);
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;
     if (options.domain !== undefined) this.domain = options.domain;
     if (options.url !== undefined) this.url = options.url;
@@ -93,7 +93,7 @@ export class Property extends SmrtObject {
   async getZones(): Promise<import('./Zone').Zone[]> {
     if (!this.id) return [];
     const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
+    const collection = await ZoneCollection.create(this.options);
     return await collection.findByProperty(this.id);
   }
 
@@ -105,7 +105,7 @@ export class Property extends SmrtObject {
   > {
     if (!this.id) return { propertyId: '', roots: [] };
     const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
+    const collection = await ZoneCollection.create(this.options);
     return await collection.getTree(this.id);
   }
 
@@ -119,7 +119,7 @@ export class Property extends SmrtObject {
       throw new Error('Property must be saved before creating zones');
     }
     const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
+    const collection = await ZoneCollection.create(this.options);
     const zone = await collection.create({
       ...options,
       propertyId: this.id,

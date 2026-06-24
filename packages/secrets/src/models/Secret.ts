@@ -3,12 +3,32 @@
  * @packageDocumentation
  */
 
+import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
  * Secret status values
  */
 export type SecretStatus = 'active' | 'disabled' | 'expired';
+
+/**
+ * Constructor options for {@link Secret}. Each field is optional and mirrors a
+ * persisted column; date fields also accept the serialized forms accepted by
+ * `new Date()` so hydrated rows coerce cleanly.
+ */
+export interface SecretOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  name?: string;
+  description?: string;
+  category?: string;
+  encryptedValue?: string;
+  keyVersion?: number;
+  status?: SecretStatus;
+  expiresAt?: Date | string | number | null;
+  lastAccessedAt?: Date | string | number | null;
+  accessCount?: number;
+  metadata?: Record<string, unknown>;
+}
 
 /**
  * Secret represents an encrypted value stored per-tenant.
@@ -112,7 +132,7 @@ export class Secret extends SmrtObject {
    */
   metadata: Record<string, unknown> = {};
 
-  constructor(options: any = {}) {
+  constructor(options: SecretOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;

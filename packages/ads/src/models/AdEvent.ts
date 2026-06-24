@@ -7,10 +7,24 @@ import {
   crossPackageRef,
   foreignKey,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdEventType } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AdEvent}.
+ */
+export interface AdEventOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  variationId?: string;
+  zoneId?: string;
+  siteId?: string;
+  eventType?: AdEventType;
+  timestamp?: Date;
+  metadata?: string;
+}
 
 /**
  * AdEvent tracks ad impressions, clicks, and conversions.
@@ -92,7 +106,7 @@ export class AdEvent extends SmrtObject {
    */
   metadata: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: AdEventOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.variationId !== undefined)
@@ -107,7 +121,7 @@ export class AdEvent extends SmrtObject {
   /**
    * Get metadata as object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -119,7 +133,7 @@ export class AdEvent extends SmrtObject {
   /**
    * Set metadata from object
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 

@@ -3,8 +3,23 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { AdFormatType } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AdFormat}.
+ */
+export interface AdFormatOptions extends SmrtObjectOptions {
+  name?: string;
+  width?: number;
+  height?: number;
+  formatType?: AdFormatType;
+  description?: string;
+}
 
 /**
  * AdFormat defines standard ad dimensions and types (IAB standards).
@@ -56,7 +71,7 @@ export class AdFormat extends SmrtObject {
    */
   description: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: AdFormatOptions = {}) {
     super(options);
     if (options.name !== undefined) this.name = options.name;
     if (options.width !== undefined) this.width = options.width;

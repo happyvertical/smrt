@@ -115,6 +115,14 @@ const INTERIM_FLOORS = {
   // ~66% to 83.79% lines (2026-06-21), clearing the ratified T1 80% floor. The
   // gate now enforces the real tier floor for core. Add new entries here only
   // for packages still measuring below their tier floor.
+  //
+  // affiliates / voice: the S4 noExplicitAny ratchet (#1579) graduated these
+  // T3 packages, but they sit far below the 50% T3 floor (~12% lines) and their
+  // coverage uplift is deferred to Wave 3 per S6 (#1411). Pin the measured
+  // baseline so the type-only ratchet change lands without regressing them;
+  // remove (or ratchet upward) once their coverage is uplifted to the T3 floor.
+  affiliates: 12,
+  voice: 11,
 };
 
 function flagValue(name) {

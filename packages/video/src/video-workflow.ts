@@ -256,7 +256,7 @@ export class VideoWorkflow extends SmrtObject {
    * @param params - Key-value pairs of parameters to inject
    * @returns Modified workflow JSON or null if no workflowJson set
    */
-  injectParameters(params: Record<string, any>): object | null {
+  injectParameters(params: Record<string, unknown>): object | null {
     if (!this.workflowJson) return null;
 
     const workflow = JSON.parse(JSON.stringify(this.workflowJson));

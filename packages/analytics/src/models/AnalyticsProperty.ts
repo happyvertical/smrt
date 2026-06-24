@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
@@ -11,6 +16,27 @@ import {
   smrtAnalyticsAnalyzePerformancePrompt,
 } from '../prompts.js';
 import { AnalyticsPropertyStatus, AnalyticsProvider } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AnalyticsProperty}.
+ */
+export interface AnalyticsPropertyOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  name?: string;
+  displayName?: string;
+  provider?: AnalyticsProvider;
+  externalId?: string;
+  measurementId?: string;
+  apiSecret?: string;
+  siteDomain?: string;
+  timeZone?: string;
+  currencyCode?: string;
+  industryCategory?: string;
+  serviceLevel?: string;
+  status?: AnalyticsPropertyStatus;
+  lastSyncAt?: Date | null;
+  providerMetadata?: string;
+}
 
 /**
  * AnalyticsProperty represents an analytics property (GA4 property,
@@ -126,7 +152,7 @@ export class AnalyticsProperty extends SmrtObject {
   @field({ sensitive: true })
   providerMetadata: string = '{}';
 
-  constructor(options: any = {}) {
+  constructor(options: AnalyticsPropertyOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;

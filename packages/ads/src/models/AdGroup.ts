@@ -7,10 +7,29 @@ import {
   crossPackageRef,
   foreignKey,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdGroupStatus } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AdGroup}.
+ */
+export interface AdGroupOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  contractId?: string;
+  tierId?: string;
+  name?: string;
+  verticalSlug?: string;
+  targeting?: string;
+  zoneIds?: string;
+  startDate?: Date | null;
+  endDate?: Date | null;
+  dailyBudget?: number;
+  totalBudget?: number;
+  status?: AdGroupStatus;
+}
 
 /**
  * AdGroup organizes ad creatives with targeting and budget controls.
@@ -108,7 +127,7 @@ export class AdGroup extends SmrtObject {
    */
   status: AdGroupStatus = AdGroupStatus.DRAFT;
 
-  constructor(options: any = {}) {
+  constructor(options: AdGroupOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.contractId !== undefined) this.contractId = options.contractId;
@@ -175,7 +194,7 @@ export class AdGroup extends SmrtObject {
   /**
    * Get targeting rules as object
    */
-  getTargeting(): Record<string, any> {
+  getTargeting(): Record<string, unknown> {
     if (!this.targeting) return {};
     try {
       return JSON.parse(this.targeting);
@@ -187,7 +206,7 @@ export class AdGroup extends SmrtObject {
   /**
    * Set targeting rules from object
    */
-  setTargeting(rules: Record<string, any>): void {
+  setTargeting(rules: Record<string, unknown>): void {
     this.targeting = JSON.stringify(rules);
   }
 
