@@ -31,6 +31,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import { M } from '../../../i18n/strings.workspace.js';
   import { useI18n } from '@happyvertical/smrt-ui/i18n';
+  import { Button } from '@happyvertical/smrt-ui/ui';
   import type { ToolsDockContext } from '../types.js';
   import type { ToolsDockInstance } from './define-tools-dock.svelte.js';
 
@@ -159,6 +160,7 @@
   {@const def = toolDefById(tool.id)}
   {@const IconComponent = def?.iconComponent}
   {@const iconString = def?.icon}
+  <!-- raw-primitive-allow: dock tool-selector toggle (aria-pressed) with variant-dependent rail/topbar styling, part of the ToolsDock segmented control; not a standard action button -->
   <button
     type="button"
     class:active={isActive}
@@ -209,15 +211,16 @@
   >
     <header class="tools-dock__panel-header">
       <h3>{dock.activeTool ? labelFor(dock.activeTool) : 'Tools'}</h3>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         class="tools-dock__close"
         onclick={handleClose}
         aria-label={closeLabel}
         title={closeLabel}
       >
         ×
-      </button>
+      </Button>
     </header>
 
     <div class="tools-dock__panel-body">
@@ -254,6 +257,7 @@
 {:else}
   <aside class="tools-dock tools-dock--rail" class:tools-dock--open={dock.isOpen}>
     {#if dock.isOpen}
+      <!-- raw-primitive-allow: click-catching overlay/backdrop that closes the dock; a structural full-bleed surface, not a styled action button -->
       <button
         type="button"
         class="tools-dock__overlay"
@@ -326,8 +330,7 @@
   }
 
   .tools-dock__rail-button:focus-visible,
-  .tools-dock__topbar-button:focus-visible,
-  .tools-dock__close:focus-visible {
+  .tools-dock__topbar-button:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #7dd3fc);
     outline-offset: 2px;
   }
@@ -411,7 +414,9 @@
     overflow-y: auto;
   }
 
-  .tools-dock__close {
+  /* The close control now renders through smrt-ui <Button>; pierce Svelte
+     scoping into the child-rendered <button> with `:global` (#1589). */
+  .tools-dock__panel-header :global(.tools-dock__close) {
     width: 2rem;
     height: 2rem;
     display: inline-grid;
@@ -420,7 +425,6 @@
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-high, #1d2228);
     color: inherit;
-    cursor: pointer;
     font-size: var(--smrt-typography-title-large-size, 1.2rem);
     line-height: 1;
   }

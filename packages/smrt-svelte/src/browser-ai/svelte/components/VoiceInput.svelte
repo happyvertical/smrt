@@ -66,6 +66,7 @@ async function handleToggle() {
       <span>{stt.error.message}</span>
     </div>
   {:else}
+    <!-- raw-primitive-allow: bespoke circular mic toggle with a listening-state pulse animation, the core voice-input control; not a standard action button -->
     <button
       type="button"
       class="mic-button"
