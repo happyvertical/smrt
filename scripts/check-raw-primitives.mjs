@@ -53,28 +53,42 @@ const ROOT = resolve(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');
 
 /**
- * Packages held to ERROR. A package opts in by declaring
- * `"smrtRawPrimitives": "strict"` in its own package.json — so the strict list
- * is DERIVED from the per-package flags rather than maintained centrally here.
- * Everything without the flag stays report-only (#1589 Wave 0 baseline; later
- * waves flip packages strict in their own migration PR as they go clean).
+ * Packages held to ERROR. A package opts in via `"smrtRawPrimitives"` in its own
+ * package.json — so the strict list is DERIVED from the per-package flags rather
+ * than maintained centrally here. Two modes:
+ *
+ *   - `"strict"`         → all five raw elements (button/input/select/textarea/
+ *                          form) are errors. Full primitive adoption.
+ *   - `"strict-buttons"` → only raw `<button>` is an error; the form elements
+ *                          (`<input>`/`<select>`/`<textarea>`/`<form>`) are
+ *                          DEFERRED, not flagged. This is the #1589 "buttons-only
+ *                          now, forms later" mode: the form primitives currently
+ *                          require a `<Provider>` and/or create a smrt-cli
+ *                          build-graph cycle for packages in smrt-svelte's
+ *                          closure, so real form adoption waits on relocating the
+ *                          base form primitives down to smrt-ui (the leaf). A
+ *                          package in this mode has migrated its buttons and will
+ *                          flip to `"strict"` when that follow-up lands.
+ *
+ * Everything without the flag stays report-only (#1589 Wave 0 baseline).
  *
  * Why per-package instead of a central Set: every #1589 migration PR would
- * otherwise edit this one line, so two PRs branched from a `main` lacking each
+ * otherwise edit one shared line, so two PRs branched from a `main` lacking each
  * other's entry 3-way-conflict on it. Reading the flag from each package's own
  * package.json keeps every PR's footprint inside its own package, so they merge
  * independently in any order.
  */
-function readStrictPackages() {
-  const strict = new Set();
+function readStrictModes() {
+  /** @type {Map<string, 'strict' | 'strict-buttons'>} */
+  const modes = new Map();
   let entries;
   try {
     entries = readdirSync(PACKAGES, { withFileTypes: true });
   } catch {
-    return strict;
+    return modes;
   }
-  // Sort so the derived set's iteration order (and thus the printed strict-list)
-  // is deterministic — `readdirSync` order is not guaranteed across OS/filesystems.
+  // Sort so iteration order (and thus the printed strict-list) is deterministic
+  // — `readdirSync` order is not guaranteed across OS/filesystems.
   entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -86,12 +100,16 @@ function readStrictPackages() {
     } catch {
       continue; // no/invalid package.json — not a publishable package
     }
-    if (pkgJson.smrtRawPrimitives === 'strict') strict.add(entry.name);
+    const mode = pkgJson.smrtRawPrimitives;
+    if (mode === 'strict' || mode === 'strict-buttons') {
+      modes.set(entry.name, mode);
+    }
   }
-  return strict;
+  return modes;
 }
 
-const STRICT_PACKAGES = readStrictPackages();
+const STRICT_MODES = readStrictModes();
+const STRICT_PACKAGES = new Set(STRICT_MODES.keys());
 
 /**
  * Packages skipped entirely — dev/playground hosts, not shippable product
@@ -117,9 +135,22 @@ const PRIMITIVE_SOURCE_FRAGMENTS = [
 
 /** Raw interactive elements that have a shared primitive and must not be re-rolled. */
 const RAW_ELEMENTS = ['button', 'input', 'select', 'textarea', 'form'];
-// Opening tag for a lowercase HTML element, terminated by whitespace, `>` or
-// `/`. Lowercase-only so PascalCase Svelte components (`<Button>`) never match.
-const RAW_ELEMENT_RE = new RegExp(`<(${RAW_ELEMENTS.join('|')})(\\s|>|/)`, 'g');
+/** The subset flagged in `strict-buttons` mode (form elements are deferred). */
+const BUTTON_ELEMENTS = ['button'];
+// Build an opening-tag regex for a set of lowercase HTML elements, terminated by
+// whitespace, `>` or `/`. Lowercase-only so PascalCase Svelte components
+// (`<Button>`) never match. Cached per element-set so we compile each once.
+const RAW_ELEMENT_RES = new Map();
+function rawElementRe(elements) {
+  const key = elements.join('|');
+  let re = RAW_ELEMENT_RES.get(key);
+  if (!re) {
+    re = new RegExp(`<(${key})(\\s|>|/)`, 'g');
+    RAW_ELEMENT_RES.set(key, re);
+  }
+  re.lastIndex = 0;
+  return re;
+}
 
 /** Recursively list files with one of `exts` under `dir` (skips node_modules/dist). */
 function listFiles(dir, exts) {
@@ -186,13 +217,13 @@ const ALLOW_RE = /<!--\s*raw-primitive-allow:\s*\S[^>]*?-->/gi;
  * annotations are read from the ORIGINAL source — `markupOnly` blanks comments
  * but preserves character positions, so indices line up.
  */
-function findViolations(source) {
+function findViolations(source, elements = RAW_ELEMENTS) {
   const text = markupOnly(source);
   const allowEnds = [...source.matchAll(ALLOW_RE)].map(
     (m) => m.index + m[0].length,
   );
   const hits = [];
-  for (const m of text.matchAll(RAW_ELEMENT_RE)) {
+  for (const m of text.matchAll(rawElementRe(elements))) {
     const idx = m.index;
     // Exempt if an allow annotation immediately precedes this element.
     if (
@@ -244,9 +275,13 @@ for (const file of files) {
   const pkg = packageNameOf(relPath);
   if (SCOPE_EXCLUDED_PACKAGES.has(pkg)) continue;
   if (isPrimitiveSource(relPath)) continue;
-  const hits = findViolations(readFileSync(file, 'utf8'));
+  // `strict-buttons` packages only flag raw <button>; their form elements are
+  // deferred (see readStrictModes). Report-only + full `strict` flag all five.
+  const mode = STRICT_MODES.get(pkg);
+  const elements = mode === 'strict-buttons' ? BUTTON_ELEMENTS : RAW_ELEMENTS;
+  const hits = findViolations(readFileSync(file, 'utf8'), elements);
   if (hits.length === 0) continue;
-  if (STRICT_PACKAGES.has(pkg)) {
+  if (mode) {
     strictViolations.push({ file: relPath, hits });
   } else {
     reportOnly.set(pkg, (reportOnly.get(pkg) ?? 0) + hits.length);
@@ -266,12 +301,28 @@ if (reportOnly.size > 0) {
 }
 
 if (strictViolations.length === 0) {
-  const strict = [...STRICT_PACKAGES];
-  console.log(
-    strict.length > 0
-      ? `✓ raw-primitive-check: no raw interactive elements in strict package(s): ${strict.join(', ')}`
-      : '✓ raw-primitive-check: no strict packages yet (#1589 Wave 0 baseline — report-only).',
-  );
+  if (STRICT_MODES.size > 0) {
+    const full = [...STRICT_MODES]
+      .filter(([, m]) => m === 'strict')
+      .map(([p]) => p);
+    const buttonsOnly = [...STRICT_MODES]
+      .filter(([, m]) => m === 'strict-buttons')
+      .map(([p]) => p);
+    if (full.length > 0) {
+      console.log(
+        `✓ raw-primitive-check: no raw interactive elements in strict package(s): ${full.join(', ')}`,
+      );
+    }
+    if (buttonsOnly.length > 0) {
+      console.log(
+        `✓ raw-primitive-check: no raw <button> in buttons-only package(s) (forms deferred, #1589): ${buttonsOnly.join(', ')}`,
+      );
+    }
+  } else {
+    console.log(
+      '✓ raw-primitive-check: no strict packages yet (#1589 Wave 0 baseline — report-only).',
+    );
+  }
   process.exit(0);
 }
 
