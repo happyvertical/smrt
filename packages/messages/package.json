@@ -3,6 +3,7 @@
   "version": "0.34.4",
   "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
+  "smrtRawPrimitives": "strict-buttons",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

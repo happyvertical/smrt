@@ -2,7 +2,7 @@
 /**
  * AccountCard - Individual account card with status and actions
  */
-import { Card } from '@happyvertical/smrt-ui/ui';
+import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import type { AccountData } from '../types.js';
 import AccountAvatar from './AccountAvatar.svelte';
 
@@ -51,24 +51,24 @@ const _lastSyncFormatted = $derived.by(() => {
 
     <div class="actions">
       {#if onsync && account.isActive}
-        <button class="action-btn" type="button" onclick={() => onsync?.(account)}>
+        <Button variant="ghost" size="sm" class="action-btn" onclick={() => onsync?.(account)}>
           Sync
-        </button>
+        </Button>
       {/if}
       {#if account.isActive && ondeactivate}
-        <button class="action-btn" type="button" onclick={() => ondeactivate?.(account)}>
+        <Button variant="ghost" size="sm" class="action-btn" onclick={() => ondeactivate?.(account)}>
           Deactivate
-        </button>
+        </Button>
       {/if}
       {#if !account.isActive && onactivate}
-        <button class="action-btn" type="button" onclick={() => onactivate?.(account)}>
+        <Button variant="ghost" size="sm" class="action-btn" onclick={() => onactivate?.(account)}>
           Activate
-        </button>
+        </Button>
       {/if}
       {#if onremove}
-        <button class="action-btn action-btn--danger" type="button" onclick={() => onremove?.(account)}>
+        <Button variant="ghost" size="sm" class="action-btn action-btn--danger" onclick={() => onremove?.(account)}>
           Remove
-        </button>
+        </Button>
       {/if}
     </div>
   </div>
@@ -152,21 +152,30 @@ const _lastSyncFormatted = $derived.by(() => {
     gap: 0.375rem;
   }
 
-  .action-btn {
+  /*
+   * The action buttons now render through smrt-ui's <Button variant="ghost">.
+   * Svelte scopes `.action-btn` to this component, but the <button> is emitted
+   * inside the Button child, so a plain `.action-btn {}` rule would not match —
+   * `.actions :global(.action-btn)` anchors on `.actions` (a real element here)
+   * and pierces into the child (issue #1589). These overrides keep the original
+   * outlined-surface look (border/radius/color); the modifier class is
+   * `action-btn--danger`, NOT `danger`, so it never collides with Button's own
+   * `.danger` variant class.
+   */
+  .actions :global(.action-btn) {
     padding: 0.375rem 0.75rem;
     border: 1px solid var(--smrt-color-outline, #72787e);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
-    cursor: pointer;
   }
 
-  .action-btn:hover {
+  .actions :global(.action-btn):hover {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
-  .action-btn--danger {
+  .actions :global(.action-btn--danger) {
     color: var(--smrt-color-error, #ba1a1a);
     border-color: var(--smrt-color-error, #ba1a1a);
   }

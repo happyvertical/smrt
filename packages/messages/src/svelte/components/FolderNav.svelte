@@ -3,6 +3,7 @@
  * FolderNav - Folder/label navigation sidebar
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.messages.js';
 import type { FolderData } from '../types.js';
 
@@ -50,10 +51,10 @@ function getFolderIcon(specialUse?: string): string {
     <ul class="folder-list" role="list">
       {#each _systemFolders as folder (folder.id)}
         <li>
-          <button
-            class="folder-item"
-            class:folder-item--active={folder.id === activeFolderId}
-            type="button"
+          <Button
+            variant="ghost"
+            fullWidth
+            class={folder.id === activeFolderId ? 'folder-item folder-item--active' : 'folder-item'}
             onclick={() => onfolderclick?.(folder)}
             aria-current={folder.id === activeFolderId ? 'true' : undefined}
           >
@@ -62,7 +63,7 @@ function getFolderIcon(specialUse?: string): string {
             {#if showCounts && folder.unreadCount > 0}
               <span class="unread-badge">{folder.unreadCount}</span>
             {/if}
-          </button>
+          </Button>
         </li>
       {/each}
     </ul>
@@ -75,10 +76,10 @@ function getFolderIcon(specialUse?: string): string {
     <ul class="folder-list" role="list">
       {#each _userFolders as folder (folder.id)}
         <li>
-          <button
-            class="folder-item"
-            class:folder-item--active={folder.id === activeFolderId}
-            type="button"
+          <Button
+            variant="ghost"
+            fullWidth
+            class={folder.id === activeFolderId ? 'folder-item folder-item--active' : 'folder-item'}
             onclick={() => onfolderclick?.(folder)}
             aria-current={folder.id === activeFolderId ? 'true' : undefined}
           >
@@ -87,7 +88,7 @@ function getFolderIcon(specialUse?: string): string {
             {#if showCounts && folder.unreadCount > 0}
               <span class="unread-badge">{folder.unreadCount}</span>
             {/if}
-          </button>
+          </Button>
         </li>
       {/each}
     </ul>
@@ -107,7 +108,14 @@ function getFolderIcon(specialUse?: string): string {
     padding: 0;
   }
 
-  .folder-item {
+  /*
+   * Folder rows now render through smrt-ui's <Button variant="ghost" fullWidth>.
+   * The <button> is emitted inside the Button child, so `.folder-list :global(.folder-item)`
+   * anchors on the real `.folder-list` element and pierces the child scope to keep
+   * the nav-row layout, neutral color, hover and active styling (issue #1589). The
+   * active modifier is `folder-item--active`, NOT a Button variant class.
+   */
+  .folder-list :global(.folder-item) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -115,7 +123,6 @@ function getFolderIcon(specialUse?: string): string {
     padding: 0.5rem 0.75rem;
     border: none;
     background: none;
-    cursor: pointer;
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface, #1a1c1e);
     border-radius: var(--smrt-radius-small, 0.25rem);
@@ -123,16 +130,16 @@ function getFolderIcon(specialUse?: string): string {
     text-align: left;
   }
 
-  .folder-item:hover {
+  .folder-list :global(.folder-item):hover {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
-  .folder-item--active {
+  .folder-list :global(.folder-item--active) {
     background: var(--smrt-color-secondary-container, #d7e3f7);
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
-  .folder-item:focus-visible {
+  .folder-list :global(.folder-item):focus-visible {
     outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: -2px;
   }

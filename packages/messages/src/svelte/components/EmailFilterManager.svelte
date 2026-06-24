@@ -6,6 +6,7 @@
  * Works with any backend via callback props.
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type { BlacklistEntry, WhitelistEntry } from '../types.js';
 
@@ -158,33 +159,36 @@ function getPatternPlaceholder(type: string): string {
 
 <div class="email-filter-manager">
   <div class="section-toggle">
-    <button
+    <Button
+      variant={activeSection === 'whitelist' ? 'primary' : 'ghost'}
+      size="sm"
       class="section-btn"
-      class:active={activeSection === 'whitelist'}
       onclick={() => activeSection = 'whitelist'}
     >
       Whitelist
       <span class="count">{whitelist.length}</span>
-    </button>
-    <button
+    </Button>
+    <Button
+      variant={activeSection === 'blacklist' ? 'primary' : 'ghost'}
+      size="sm"
       class="section-btn"
-      class:active={activeSection === 'blacklist'}
       onclick={() => activeSection = 'blacklist'}
     >
       Blacklist
       <span class="count">{blacklist.length}</span>
-    </button>
+    </Button>
   </div>
 
   {#if filterError}
     <div class="filter-error" role="alert" aria-live="assertive">
       {filterError}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         class="dismiss-btn"
         aria-label={t(M['messages.email_filter_manager.dismiss_error'])}
         onclick={() => filterError = null}
-      >&times;</button>
+      >&times;</Button>
     </div>
   {/if}
 
@@ -196,10 +200,12 @@ function getPatternPlaceholder(type: string): string {
           {t(M['messages.email_filter_manager.whitelist_description'])}
         </div>
         {#if !isReadonly && onaddwhitelist}
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             class="add-btn"
             onclick={() => { resetWhitelistForm(); showWhitelistForm = true; }}
-          >+ Add</button>
+          >+ Add</Button>
         {/if}
       </div>
 
@@ -249,10 +255,10 @@ function getPatternPlaceholder(type: string): string {
             </div>
           </div>
           <div class="form-actions">
-            <button class="cancel-btn" onclick={resetWhitelistForm} disabled={savingWhitelist}>Cancel</button>
-            <button class="save-btn" onclick={saveWhitelistEntry} disabled={savingWhitelist || !wlPattern.trim()}>
+            <Button variant="secondary" size="sm" class="cancel-btn" onclick={resetWhitelistForm} disabled={savingWhitelist}>Cancel</Button>
+            <Button variant="primary" size="sm" class="save-btn" onclick={saveWhitelistEntry} disabled={savingWhitelist || !wlPattern.trim()}>
               {savingWhitelist ? 'Saving...' : 'Add'}
-            </button>
+            </Button>
           </div>
         </div>
       {/if}
@@ -276,11 +282,13 @@ function getPatternPlaceholder(type: string): string {
                 {/if}
               </div>
               {#if !isReadonly && onremovewhitelist}
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   class="delete-btn"
                   onclick={() => removeWhitelistEntry(entry)}
                   title={t(M['messages.email_filter_manager.whitelist_remove'])}
-                >&times;</button>
+                >&times;</Button>
               {/if}
             </div>
           {/each}
@@ -296,10 +304,12 @@ function getPatternPlaceholder(type: string): string {
           {t(M['messages.email_filter_manager.blacklist_description'])}
         </div>
         {#if !isReadonly && onaddblacklist}
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             class="add-btn"
             onclick={() => { resetBlacklistForm(); showBlacklistForm = true; }}
-          >+ Add</button>
+          >+ Add</Button>
         {/if}
       </div>
 
@@ -345,10 +355,10 @@ function getPatternPlaceholder(type: string): string {
             </div>
           </div>
           <div class="form-actions">
-            <button class="cancel-btn" onclick={resetBlacklistForm} disabled={savingBlacklist}>Cancel</button>
-            <button class="save-btn" onclick={saveBlacklistEntry} disabled={savingBlacklist || !blPattern.trim()}>
+            <Button variant="secondary" size="sm" class="cancel-btn" onclick={resetBlacklistForm} disabled={savingBlacklist}>Cancel</Button>
+            <Button variant="primary" size="sm" class="save-btn" onclick={saveBlacklistEntry} disabled={savingBlacklist || !blPattern.trim()}>
               {savingBlacklist ? 'Saving...' : 'Add'}
-            </button>
+            </Button>
           </div>
         </div>
       {/if}
@@ -372,11 +382,13 @@ function getPatternPlaceholder(type: string): string {
                 {/if}
               </div>
               {#if !isReadonly && onremoveblacklist}
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   class="delete-btn"
                   onclick={() => removeBlacklistEntry(entry)}
                   title={t(M['messages.email_filter_manager.blacklist_remove'])}
-                >&times;</button>
+                >&times;</Button>
               {/if}
             </div>
           {/each}
@@ -401,28 +413,19 @@ function getPatternPlaceholder(type: string): string {
     border-radius: var(--smrt-radius-md, 8px);
   }
 
-  .section-btn {
+  /*
+   * The whitelist/blacklist toggle now renders through smrt-ui's <Button>,
+   * driven by `variant={active ? 'primary' : 'ghost'}` (a plain class:active view
+   * toggle, not an ARIA tablist). The variants own background/color/hover;
+   * `.section-toggle :global(.section-btn)` only re-asserts the row layout
+   * (flex/gap/radius) inside the pierced Button child scope (issue #1589).
+   */
+  .section-toggle :global(.section-btn) {
     display: flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    border: none;
     border-radius: var(--smrt-radius-md, 8px);
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant, #43474e);
     font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .section-btn.active {
-    background: var(--smrt-color-primary-container, #d8e2ff);
-    color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .section-btn:hover:not(.active) {
-    background: var(--smrt-color-surface-container-high, #e6e7ef);
   }
 
   .count {
@@ -450,23 +453,14 @@ function getPatternPlaceholder(type: string): string {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .add-btn {
-    padding: 0.375rem 0.75rem;
+  /*
+   * The add button now renders through smrt-ui's <Button variant="secondary">.
+   * The variant owns the outlined-primary look + hover; `.section-header-row
+   * :global(.add-btn)` only re-asserts radius and flex-shrink (issue #1589).
+   */
+  .section-header-row :global(.add-btn) {
     border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-primary, #005ac1);
-    background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
-    cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    font-family: inherit;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    transition: all 150ms ease;
     flex-shrink: 0;
-  }
-
-  .add-btn:hover {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
   }
 
   .entry-form {
@@ -557,42 +551,20 @@ function getPatternPlaceholder(type: string): string {
     padding-top: 0.25rem;
   }
 
-  .cancel-btn {
-    padding: 0.375rem 0.75rem;
+  /*
+   * Cancel/Save now use Button's secondary/primary variants (dead bespoke CSS
+   * removed). `.form-actions :global(...)` only re-asserts the rounded radius;
+   * Cancel's neutral outline override keeps it from picking up secondary's
+   * primary border color (issue #1589).
+   */
+  .form-actions :global(.cancel-btn),
+  .form-actions :global(.save-btn) {
     border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    background: transparent;
+  }
+
+  .form-actions :global(.cancel-btn) {
+    border-color: var(--smrt-color-outline-variant, #c2c7cf);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    font-family: inherit;
-    transition: all 150ms ease;
-  }
-
-  .cancel-btn:hover {
-    background: var(--smrt-color-surface-container-high, #e6e7ef);
-  }
-
-  .save-btn {
-    padding: 0.375rem 0.75rem;
-    border-radius: var(--smrt-radius-md, 8px);
-    border: 1px solid var(--smrt-color-primary, #005ac1);
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #fff);
-    cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
-    font-family: inherit;
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    transition: all 150ms ease;
-  }
-
-  .save-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .save-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .entries-list {
@@ -684,7 +656,13 @@ function getPatternPlaceholder(type: string): string {
     flex-shrink: 0;
   }
 
-  .delete-btn {
+  /*
+   * The remove button now renders through smrt-ui's <Button variant="ghost">.
+   * `.entry-card :global(.delete-btn)` anchors on the real `.entry-card` element
+   * and pierces the Button child scope to keep the round icon button and its
+   * red-on-hover affordance (issue #1589).
+   */
+  .entry-card :global(.delete-btn) {
     font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
     padding: 0.125rem 0.5rem;
@@ -692,13 +670,10 @@ function getPatternPlaceholder(type: string): string {
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    cursor: pointer;
-    font-family: inherit;
-    transition: all 150ms ease;
     flex-shrink: 0;
   }
 
-  .delete-btn:hover {
+  .entry-card :global(.delete-btn):hover {
     background: var(--smrt-color-error-container, #fce4ec);
     color: var(--smrt-color-error, #ba1a1a);
     border-color: var(--smrt-color-error, #ba1a1a);
@@ -724,11 +699,16 @@ function getPatternPlaceholder(type: string): string {
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
-  .dismiss-btn {
+  /*
+   * The dismiss button now renders through smrt-ui's <Button variant="ghost">.
+   * `.filter-error :global(.dismiss-btn)` anchors on the real `.filter-error`
+   * element and pierces the Button child scope. `color: inherit` keeps the icon
+   * matching the error banner color (issue #1589).
+   */
+  .filter-error :global(.dismiss-btn) {
     background: transparent;
     border: none;
     font-size: var(--smrt-typography-body-large-size, 1rem);
-    cursor: pointer;
     color: inherit;
     padding: 0 0.25rem;
   }

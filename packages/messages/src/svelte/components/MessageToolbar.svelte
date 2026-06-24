@@ -3,6 +3,7 @@
  * MessageToolbar - Bulk action toolbar
  */
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.messages.js';
 import type { BulkAction } from '../types.js';
@@ -33,37 +34,37 @@ const {
     {#if selectedCount > 0}
       <span class="count">{t(M['messages.message_toolbar.count_selected'], { selectedCount, totalCount })}</span>
       {#if onclearselection}
-        <button class="link-btn" type="button" onclick={onclearselection}>
+        <Button variant="ghost" size="sm" class="link-btn" onclick={onclearselection}>
           Clear
-        </button>
+        </Button>
       {/if}
     {:else}
       <span class="count">{totalCount} messages</span>
     {/if}
     {#if onselectall && selectedCount < totalCount}
-      <button class="link-btn" type="button" onclick={onselectall}>
+      <Button variant="ghost" size="sm" class="link-btn" onclick={onselectall}>
         {t(M['messages.message_toolbar.select_all'])}
-      </button>
+      </Button>
     {/if}
   </div>
 
   {#if selectedCount > 0 && onaction}
     <div class="actions">
-      <button class="action-btn" type="button" onclick={() => onaction?.('markRead')}>
+      <Button variant="ghost" size="sm" class="action-btn" onclick={() => onaction?.('markRead')}>
         {t(M['messages.message_toolbar.mark_read'])}
-      </button>
-      <button class="action-btn" type="button" onclick={() => onaction?.('markUnread')}>
+      </Button>
+      <Button variant="ghost" size="sm" class="action-btn" onclick={() => onaction?.('markUnread')}>
         {t(M['messages.message_toolbar.mark_unread'])}
-      </button>
-      <button class="action-btn" type="button" onclick={() => onaction?.('flag')}>
+      </Button>
+      <Button variant="ghost" size="sm" class="action-btn" onclick={() => onaction?.('flag')}>
         Flag
-      </button>
-      <button class="action-btn" type="button" onclick={() => onaction?.('unflag')}>
+      </Button>
+      <Button variant="ghost" size="sm" class="action-btn" onclick={() => onaction?.('unflag')}>
         Unflag
-      </button>
-      <button class="action-btn action-btn--danger" type="button" onclick={() => onaction?.('delete')}>
+      </Button>
+      <Button variant="ghost" size="sm" class="action-btn action-btn--danger" onclick={() => onaction?.('delete')}>
         Delete
-      </button>
+      </Button>
       {#if extraActions}
         {@render extraActions()}
       {/if}
@@ -94,12 +95,20 @@ const {
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
-  .link-btn {
+  /*
+   * The link and action buttons now render through smrt-ui's <Button
+   * variant="ghost">. The <button> is emitted inside the Button child, so a
+   * plain scoped rule would not match — anchoring on the real `.selection-info`
+   * / `.actions` elements and piercing with `:global(...)` keeps the original
+   * text-link / outlined-surface styling (issue #1589). The destructive button's
+   * modifier is `action-btn--danger`, NOT `danger`, so it never collides with
+   * Button's own `.danger` variant class.
+   */
+  .selection-info :global(.link-btn) {
     border: none;
     background: none;
     font: var(--smrt-typography-label-medium-font, 500 0.75rem / 1.33 sans-serif);
     color: var(--smrt-color-primary, #005ac1);
-    cursor: pointer;
     text-decoration: underline;
     padding: 0;
   }
@@ -110,21 +119,20 @@ const {
     flex-wrap: wrap;
   }
 
-  .action-btn {
+  .actions :global(.action-btn) {
     padding: 0.25rem 0.625rem;
     border: 1px solid var(--smrt-color-outline, #72787e);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
-    cursor: pointer;
   }
 
-  .action-btn:hover {
+  .actions :global(.action-btn):hover {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
-  .action-btn--danger {
+  .actions :global(.action-btn--danger) {
     color: var(--smrt-color-error, #ba1a1a);
     border-color: var(--smrt-color-error, #ba1a1a);
   }

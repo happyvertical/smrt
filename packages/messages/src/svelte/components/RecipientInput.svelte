@@ -10,6 +10,8 @@ export interface Props {
 </script>
 
 <script lang="ts">
+  import { Button } from '@happyvertical/smrt-ui/ui';
+
   let {
     label = 'To',
     recipients = [],
@@ -61,11 +63,12 @@ export interface Props {
     {#each recipients as recipient, i}
       <span class="chip" class:invalid={!recipient.isValid}>
         <span class="chip-text">{recipient.name || recipient.address}</span>
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           class="chip-remove"
           onclick={() => removeRecipient(i)}
-          type="button"
-        >×</button>
+        >×</Button>
       </span>
     {/each}
     <input
@@ -122,17 +125,23 @@ export interface Props {
     color: var(--smrt-color-on-error-container, #410002);
   }
 
-  .chip-remove {
+  /*
+   * The chip remove button now renders through smrt-ui's <Button variant="ghost">.
+   * `.chips-container :global(.chip-remove)` anchors on the real `.chips-container`
+   * element and pierces the Button child scope to keep the compact icon styling.
+   * `color: inherit` keeps it matching the chip text color (including the invalid
+   * chip's error color) — issue #1589.
+   */
+  .chips-container :global(.chip-remove) {
     background: none;
     border: none;
-    cursor: pointer;
     padding: 0 var(--smrt-spacing-1, 4px);
     font-size: var(--smrt-typography-label-large-size, 14px);
     color: inherit;
     opacity: 0.7;
   }
 
-  .chip-remove:hover {
+  .chips-container :global(.chip-remove):hover {
     opacity: 1;
   }
 

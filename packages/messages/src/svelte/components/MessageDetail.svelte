@@ -3,7 +3,7 @@
  * MessageDetail - Full message view with type-adaptive sections
  */
 
-import { Card } from '@happyvertical/smrt-ui/ui';
+import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import type { AccountData, AttachmentData, MessageData } from '../types.js';
 import AttachmentChip from './AttachmentChip.svelte';
@@ -162,19 +162,19 @@ const _displayBody = $derived.by(() => {
     {#if onreply || onforward || ondelete}
       <div class="actions">
         {#if onreply}
-          <button class="action-btn" type="button" onclick={() => onreply?.(message)}>
+          <Button variant="ghost" class="action-btn" onclick={() => onreply?.(message)}>
             ↩ Reply
-          </button>
+          </Button>
         {/if}
         {#if onforward}
-          <button class="action-btn" type="button" onclick={() => onforward?.(message)}>
+          <Button variant="ghost" class="action-btn" onclick={() => onforward?.(message)}>
             ↪ Forward
-          </button>
+          </Button>
         {/if}
         {#if ondelete}
-          <button class="action-btn action-btn--danger" type="button" onclick={() => ondelete?.(message)}>
+          <Button variant="ghost" class="action-btn action-btn--danger" onclick={() => ondelete?.(message)}>
             🗑 Delete
-          </button>
+          </Button>
         {/if}
       </div>
     {/if}
@@ -280,27 +280,34 @@ const _displayBody = $derived.by(() => {
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
 
-  .action-btn {
+  /*
+   * Action buttons now render through smrt-ui's <Button variant="ghost">. The
+   * <button> is emitted inside the Button child, so `.actions :global(.action-btn)`
+   * anchors on the real `.actions` element and pierces the child scope to keep
+   * the original outlined-surface styling (issue #1589). The destructive button's
+   * modifier is `action-btn--danger`, NOT `danger`, to avoid colliding with
+   * Button's own `.danger` variant class.
+   */
+  .actions :global(.action-btn) {
     padding: 0.5rem 1rem;
     border: 1px solid var(--smrt-color-outline, #72787e);
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
     font: var(--smrt-typography-label-large-font, 500 0.875rem / 1.25 sans-serif);
-    cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms);
   }
 
-  .action-btn:hover {
+  .actions :global(.action-btn):hover {
     background: var(--smrt-color-surface-variant, #e1e2ec);
   }
 
-  .action-btn--danger {
+  .actions :global(.action-btn--danger) {
     color: var(--smrt-color-error, #ba1a1a);
     border-color: var(--smrt-color-error, #ba1a1a);
   }
 
-  .action-btn--danger:hover {
+  .actions :global(.action-btn--danger):hover {
     background: var(--smrt-color-error-container, #ffdad6);
   }
 </style>
