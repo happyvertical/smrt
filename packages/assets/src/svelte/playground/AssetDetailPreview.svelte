@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { AssetDetailUpdates } from '../AssetDetail.svelte';
 import AssetDetail from '../AssetDetail.svelte';
 import { M } from '../i18n.js';
@@ -67,7 +68,7 @@ function handleEdit() {
     <p class="eyebrow">{t(M['assets.asset_detail_preview.modal_preview'])}</p>
     <h4>{previewAsset?.name ?? asset.name}</h4>
     <p>{t(M['assets.asset_detail_preview.description'])}</p>
-    <button type="button" onclick={openPreview}>{t(M['assets.asset_detail_preview.open_asset_detail'])}</button>
+    <Button variant="primary" class="preview-open" onclick={openPreview}>{t(M['assets.asset_detail_preview.open_asset_detail'])}</Button>
     {#if statusMessage}
       <p class="status">{statusMessage}</p>
     {/if}
@@ -112,16 +113,15 @@ function handleEdit() {
     color: var(--smrt-color-primary, #0f766e);
   }
 
-  button {
+  /* The open-preview button renders via <Button variant="primary"> (issue
+     #1589). The primary variant owns the fill/color; this override keeps the
+     pill shape and grid placement, reaching the child <button> via :global(). */
+  .preview-card :global(.preview-open) {
     justify-self: start;
     border: 0;
     border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.75rem 1rem;
-    font: inherit;
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    background: var(--smrt-color-primary, #0f766e);
-    color: var(--smrt-color-on-primary, white);
-    cursor: pointer;
   }
 
   .status {

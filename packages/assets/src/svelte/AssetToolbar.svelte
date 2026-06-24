@@ -8,6 +8,7 @@ import { onDestroy } from 'svelte';
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from './i18n.js';
 import type {
   AssetFilters,
@@ -116,12 +117,12 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
         aria-label={t(M['assets.asset_toolbar.search_assets'])}
       />
       {#if searchValue}
-        <button type="button" class="search-clear" onclick={handleClearSearch} aria-label={t(M['assets.asset_toolbar.clear_search'])}>
+        <Button variant="ghost" size="sm" class="search-clear" onclick={handleClearSearch} aria-label={t(M['assets.asset_toolbar.clear_search'])}>
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
           </svg>
-        </button>
+        </Button>
       {/if}
     </div>
 
@@ -148,10 +149,9 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     <!-- View Toggle -->
     <div class="view-toggle" role="group" aria-label={t(M['assets.asset_toolbar.view_mode'])}>
       {#each views as v (v.key)}
-        <button
-          type="button"
+        <Button
+          variant={view === v.key ? 'primary' : 'ghost'}
           class="view-toggle__btn"
-          class:view-toggle__btn--active={view === v.key}
           onclick={() => (onviewchange ?? onViewChange)(v.key)}
           aria-label={t(M['assets.asset_toolbar.view_label'], { label: v.label })}
           aria-pressed={view === v.key}
@@ -173,13 +173,13 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
               <line x1="3" y1="18" x2="3.01" y2="18"></line>
             </svg>
           {/if}
-        </button>
+        </Button>
       {/each}
     </div>
 
     <!-- Upload Button -->
-    <button
-      type="button"
+    <Button
+      variant="primary"
       class="upload-btn"
       onclick={() => (onupload ?? onUpload)()}
     >
@@ -189,7 +189,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
         <line x1="12" y1="3" x2="12" y2="15"></line>
       </svg>
       Upload
-    </button>
+    </Button>
   </div>
 </div>
 
@@ -267,10 +267,10 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     display: none;
   }
 
-  .search-clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* search-clear renders via <Button class="search-clear"> (issue #1589). The
+     overrides shape it into a small round icon button and reach the child
+     <button> via :global() scoping. */
+  .asset-toolbar__search :global(.search-clear) {
     width: 24px;
     height: 24px;
     margin-right: var(--smrt-spacing-1, 0.25rem);
@@ -278,11 +278,10 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    cursor: pointer;
     border-radius: var(--smrt-radius-full, 9999px);
   }
 
-  .search-clear:hover {
+  .asset-toolbar__search :global(.search-clear:hover) {
     color: var(--smrt-color-on-surface, #111827);
     background: var(--smrt-color-surface-container, #f3f4f6);
   }
@@ -313,58 +312,32 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     overflow: hidden;
   }
 
-  .view-toggle__btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* view-toggle__btn renders via <Button> (issue #1589); the active state is the
+     `primary` variant, the inactive state the `ghost` variant. These overrides
+     give the buttons their square icon footprint and the segmented divider, and
+     reach the child <button> via :global() scoping. */
+  .view-toggle :global(.view-toggle__btn) {
     width: 36px;
     height: 36px;
     padding: 0;
     border: none;
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    cursor: pointer;
-    transition: all 150ms ease;
+    border-radius: 0;
   }
 
-  .view-toggle__btn:not(:last-child) {
+  .view-toggle :global(.view-toggle__btn:not(:last-child)) {
     border-right: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
   }
 
-  .view-toggle__btn:hover {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-  }
-
-  .view-toggle__btn--active {
-    background: var(--smrt-color-primary-container, #dbeafe);
-    color: var(--smrt-color-on-primary-container, #002d6c);
-  }
-
-  /* Upload Button */
-  .upload-btn {
-    display: inline-flex;
-    align-items: center;
+  /* Upload Button — renders via <Button variant="primary" class="upload-btn">
+     (issue #1589). The primary variant owns the fill/hover; the override only
+     pins the toolbar-matching 36px height and gap, reaching the child <button>
+     via :global() scoping. */
+  .asset-toolbar__right :global(.upload-btn) {
     gap: var(--smrt-spacing-1, 0.25rem);
     height: 36px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
-    font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    color: var(--smrt-color-on-primary, #ffffff);
-    background: var(--smrt-color-primary, #005ac1);
-    border: none;
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    cursor: pointer;
-    transition: box-shadow 150ms ease;
-  }
-
-  .upload-btn:hover {
-    box-shadow: var(--smrt-elevation-2, 0 1px 3px rgba(0,0,0,0.1));
-  }
-
-  .upload-btn:focus-visible {
-    outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: 2px;
   }
 
   @media (max-width: 640px) {

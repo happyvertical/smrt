@@ -8,6 +8,7 @@
 
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from './i18n.js';
 import type { ActionBarProps } from './types';
 
@@ -56,34 +57,33 @@ const count = $derived(selectedAssets.length);
   <div class="action-bar">
     <div class="action-bar__left">
       <span class="action-bar__count">{count} selected</span>
-      <button
-        type="button"
-        class="action-bar__clear"
+      <Button
+        variant="ghost"
+        size="sm"
         onclick={() => (onclearselection ?? onClearSelection)()}
       >
         Clear
-      </button>
+      </Button>
     </div>
 
     <div class="action-bar__actions">
       {#each customActions as ca (ca.label)}
         {#if ca.multi !== false || count === 1}
-          <button
-            type="button"
-            class="action-btn"
-            class:action-btn--destructive={ca.destructive}
+          <Button
+            variant={ca.destructive ? 'danger' : 'secondary'}
+            size="sm"
             onclick={() => handleCustomAction(ca.action)}
           >
             {#if ca.icon}
               {@render ca.icon()}
             {/if}
             {ca.label}
-          </button>
+          </Button>
         {/if}
       {/each}
 
       <!-- Default: Delete -->
-      <button type="button" class="action-btn action-btn--destructive" onclick={handleDelete}>
+      <Button variant="danger" size="sm" onclick={handleDelete}>
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="3 6 5 6 21 6"></polyline>
           <path d="M19 6l-2 14H7L5 6"></path>
@@ -92,7 +92,7 @@ const count = $derived(selectedAssets.length);
           <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"></path>
         </svg>
         Delete
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -144,55 +144,10 @@ const count = $derived(selectedAssets.length);
     color: var(--smrt-color-on-primary-container, #002d6c);
   }
 
-  .action-bar__clear {
-    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border: none;
-    background: transparent;
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-primary, #005ac1);
-    cursor: pointer;
-    border-radius: var(--smrt-radius-small, 0.25rem);
-  }
-
-  .action-bar__clear:hover {
-    background: color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
-  }
-
   .action-bar__actions {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
-  }
-
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--smrt-spacing-1, 4px);
-    height: 32px;
-    padding: 0 var(--smrt-spacing-3, 0.75rem);
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    background: var(--smrt-color-surface, #ffffff);
-    color: var(--smrt-color-on-surface, #111827);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .action-btn:hover {
-    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0,0,0,0.05));
-  }
-
-  .action-btn--destructive {
-    border-color: var(--smrt-color-error, #dc2626);
-    color: var(--smrt-color-error, #dc2626);
-  }
-
-  .action-btn--destructive:hover {
-    background: var(--smrt-color-error-container, #fef2f2);
   }
 
   @media (prefers-reduced-motion: reduce) {

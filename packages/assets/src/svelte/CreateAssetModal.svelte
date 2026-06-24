@@ -184,9 +184,9 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
               <span class="file-preview__warning">{t(M['assets.create_asset_modal.large_file_warning'])}</span>
             {/if}
           </div>
-          <button type="button" class="file-preview__remove" onclick={() => { file = null; }} aria-label={t(M['assets.create_asset_modal.remove_file'])}>
+          <Button variant="ghost" size="sm" class="file-preview__remove" onclick={() => { file = null; }} aria-label={t(M['assets.create_asset_modal.remove_file'])}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
+          </Button>
         </div>
 
         <div class="form-fields">
@@ -332,10 +332,10 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     margin-top: var(--smrt-spacing-1, 4px);
   }
 
-  .file-preview__remove {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* file-preview__remove renders via <Button class="file-preview__remove">
+     (issue #1589). The overrides shape it into a small round icon button and
+     reach the child <button> via :global() scoping. */
+  .file-preview :global(.file-preview__remove) {
     width: 28px;
     height: 28px;
     flex-shrink: 0;
@@ -343,11 +343,10 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    cursor: pointer;
     border-radius: var(--smrt-radius-full, 9999px);
   }
 
-  .file-preview__remove:hover {
+  .file-preview :global(.file-preview__remove:hover) {
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-error, #dc2626);
   }

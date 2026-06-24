@@ -261,18 +261,18 @@ function formatDate(date: Date | string | undefined): string {
         <section class="detail__section">
           <h3 class="section-heading">{t(M['assets.asset_detail.quick_actions'])}</h3>
           <div class="quick-actions">
-            <button type="button" class="quick-btn" onclick={copyUrl} disabled={!asset.sourceUri}>
+            <Button variant="ghost" size="sm" class="quick-btn" onclick={copyUrl} disabled={!asset.sourceUri}>
               {t(M['assets.asset_detail.copy_url'])}
-            </button>
+            </Button>
             {#if isImage}
-              <button type="button" class="quick-btn" onclick={copyMarkdown} disabled={!asset.sourceUri}>
+              <Button variant="ghost" size="sm" class="quick-btn" onclick={copyMarkdown} disabled={!asset.sourceUri}>
                 {t(M['assets.asset_detail.copy_markdown'])}
-              </button>
+              </Button>
             {/if}
             {#if onedit && isImage}
-              <button type="button" class="quick-btn" onclick={handleEdit}>
+              <Button variant="ghost" size="sm" class="quick-btn" onclick={handleEdit}>
                 {t(M['assets.asset_detail.edit_image'])}
-              </button>
+              </Button>
             {/if}
           </div>
           <div class="copy-feedback" role="status" aria-live="polite">{copyFeedback}</div>
@@ -462,31 +462,23 @@ function formatDate(date: Date | string | undefined): string {
     gap: var(--smrt-spacing-2, 0.5rem);
   }
 
-  .quick-btn {
-    display: inline-flex;
-    align-items: center;
+  /* The quick-action buttons render via <Button> (issue #1589). They keep a
+     bespoke bordered-surface look (vs. the transparent ghost variant), so the
+     overrides reach the child-rendered <button> through :global() scoping. */
+  .quick-actions :global(.quick-btn) {
     gap: var(--smrt-spacing-1, 4px);
     height: 32px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
-    font-family: inherit;
     font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #111827);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    cursor: pointer;
-    transition: all 150ms ease;
   }
 
-  .quick-btn:hover:not(:disabled) {
+  .quick-actions :global(.quick-btn:hover:not(:disabled)) {
     background: var(--smrt-color-surface-container-low, #f9fafb);
     box-shadow: var(--smrt-elevation-1);
-  }
-
-  .quick-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .copy-feedback {
