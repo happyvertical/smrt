@@ -3,7 +3,7 @@
   "version": "0.34.5",
   "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
   "type": "module",
-  "smrtRawPrimitives": "strict-buttons",
+  "smrtRawPrimitives": "strict",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [

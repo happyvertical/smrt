@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Input, Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy } from 'svelte';
@@ -320,12 +321,12 @@ onDestroy(() => {
       {#if showVariation}
         <div class="variation-form">
           <p class="variation-hint">{t(M['images.image_uploader.variation_hint'])}</p>
-          <textarea
+          <Textarea
             bind:value={variationPrompt}
             placeholder={t(M['images.image_uploader.variation_prompt_placeholder'])}
-            rows="3"
+            rows={3}
             disabled={isGenerating}
-          ></textarea>
+          />
           {#if variationError}
             <div class="variation-error">{variationError}</div>
           {/if}
@@ -420,12 +421,13 @@ onDestroy(() => {
           <p>{t(M['images.image_uploader.drag_and_drop'])}</p>
           <span class="divider">or</span>
           <Button variant="primary" class="browse-btn--decorative">{t(M['images.image_uploader.browse_files'])}</Button>
-          <input 
-            type="file" 
-            accept="image/*" 
-            bind:this={uploadInput} 
-            onchange={handleFileSelect} 
-            style="display: none;" 
+          <!-- raw-primitive-allow: hidden file input driven imperatively via a DOM ref (bind:this gives uploadInput so the parent can call .click() and onchange reads target.files); the Input primitive exposes a component instance, not the underlying HTMLInputElement -->
+          <input
+            type="file"
+            accept="image/*"
+            bind:this={uploadInput}
+            onchange={handleFileSelect}
+            style="display: none;"
           />
           {#if uploadError}
             <p class="error">{uploadError}</p>
@@ -458,8 +460,9 @@ onDestroy(() => {
         <div class="external-area">
           <p class="hint">{t(M['images.image_uploader.external_hint'])}</p>
           <div class="input-group">
-            <input 
-              type="url" 
+            <Input
+              type="url"
+              class="external-url-input"
               bind:value={externalUrl}
               placeholder={t(M['images.image_uploader.external_url_placeholder'])}
               onkeydown={(e) => e.key === 'Enter' && handleExternalSubmit()}
@@ -726,21 +729,11 @@ onDestroy(() => {
     gap: 0.5rem;
   }
 
-  .input-group input {
+  /* Layout-only override: let the migrated URL Input flex-grow to fill the row
+     beside the Add button. The Input primitive owns the visual styling; this
+     :global() rule only pierces its rendered <input> (see #1589 scoping rule). */
+  .input-group :global(.external-url-input) {
     flex: 1;
-    padding: 1rem 1.25rem;
-    background: var(--smrt-color-surface-container-high, #242424);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: var(--smrt-radius-sm, 4px);
-    color: var(--smrt-color-on-surface, #fff);
-    font-size: var(--smrt-typography-body-large-size, 1rem);
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .input-group input:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
   }
 
   /* Migrated Add Button sits in the URL input group; keeps square-ish radius
@@ -881,29 +874,6 @@ onDestroy(() => {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-outline, #888);
     margin: 0;
-  }
-
-  .variation-form textarea {
-    width: 100%;
-    padding: 0.75rem;
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: var(--smrt-radius-sm, 4px);
-    color: inherit;
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-large-size, 0.95rem);
-    resize: vertical;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-
-  .variation-form textarea:focus {
-    outline: none;
-    border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
-  }
-
-  .variation-form textarea:disabled {
-    opacity: 0.6;
   }
 
   .variation-error {
