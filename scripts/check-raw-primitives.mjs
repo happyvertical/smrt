@@ -101,14 +101,32 @@ function readStrictModes() {
       continue; // no/invalid package.json — not a publishable package
     }
     const mode = pkgJson.smrtRawPrimitives;
+    if (mode === undefined) continue; // not opted in — report-only
     if (mode === 'strict' || mode === 'strict-buttons') {
       modes.set(entry.name, mode);
+    } else {
+      // Loud-fail on a typo'd/unknown value (e.g. "strict-button", true) — a
+      // silently-ignored flag would leave the package unenforced, the exact
+      // silent-leak this ratchet exists to prevent (PR #1615 review).
+      invalid.push({ pkg: entry.name, value: mode });
     }
   }
   return modes;
 }
 
+/** Packages whose `smrtRawPrimitives` value is set but not a recognized mode. */
+const invalid = [];
 const STRICT_MODES = readStrictModes();
+if (invalid.length > 0) {
+  console.error(
+    '✗ raw-primitive-check: unrecognized "smrtRawPrimitives" value(s) — use ' +
+      '"strict" or "strict-buttons":',
+  );
+  for (const { pkg, value } of invalid) {
+    console.error(`    ${pkg}: ${JSON.stringify(value)}`);
+  }
+  process.exit(1);
+}
 const STRICT_PACKAGES = new Set(STRICT_MODES.keys());
 
 /**
