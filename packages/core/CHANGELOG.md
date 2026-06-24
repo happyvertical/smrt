@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - drop raw-SVG-string icon support in SummaryCard (#1591) (#1642) (smrt-ui)
+
+  ### Other Changes
+
+  - build: establish noExplicitAny ratchet + graduate first 6 packages (#1579) (#1643) (lint)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.34.8
 
 ### Patch Changes
