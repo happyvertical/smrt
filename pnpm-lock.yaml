@@ -1705,6 +1705,37 @@ importers:
         specifier: 4.1.0
         version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.10.2)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@7.3.5(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
 
+  packages/reports:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/sql':
+        specifier: ^0.74.7
+        version: 0.74.7(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: 7.3.5
+        version: 7.3.5(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vitest:
+        specifier: 4.1.0
+        version: 4.1.0(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.10.2)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@7.3.5(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
+
   packages/scanner:
     dependencies:
       fast-glob:

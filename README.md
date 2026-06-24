@@ -113,6 +113,7 @@ All packages are published under `@happyvertical/smrt-*`. 39 packages total.
 | `smrt-affiliates` | Revenue sharing: multi-type partners, multi-tier commissions, payout processing |
 | `smrt-ledgers` | Double-entry accounting, balance enforcement (EPSILON=0.01), journal lifecycle |
 | `smrt-analytics` | GA4/Plausible: properties, data streams, server-side events, AI-powered reports |
+| `smrt-reports` | Materialized aggregate read models with decorators, rebuild/incremental refresh, schedules, and tenant fan-out |
 | `smrt-subscriptions` | Tenant subscription plans, feature grants, usage thresholds, and entitlement resolution |
 
 ### Domain

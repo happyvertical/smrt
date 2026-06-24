@@ -181,6 +181,72 @@ describe('ManifestGenerator', () => {
     });
   });
 
+  describe('report objects', () => {
+    it('defaults read surfaces and conflict columns from report metadata', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/daily-sales-report.ts',
+          objects: [
+            {
+              name: 'dailySalesReport',
+              className: 'DailySalesReport',
+              collection: 'dailySalesReports',
+              filePath: '/path/to/daily-sales-report.ts',
+              fields: {
+                storeId: {
+                  type: 'text',
+                  _meta: {
+                    __report: { kind: 'group', sourceColumn: 'storeId' },
+                  },
+                },
+                issuedDay: {
+                  type: 'datetime',
+                  _meta: {
+                    __report: {
+                      kind: 'bucket',
+                      unit: 'day',
+                      sourceColumn: 'issuedAt',
+                    },
+                  },
+                },
+                revenue: {
+                  type: 'decimal',
+                  _meta: {
+                    __report: {
+                      kind: 'aggregate',
+                      fn: 'sum',
+                      column: 'totalAmount',
+                    },
+                  },
+                },
+              },
+              methods: {},
+              decoratorConfig: {
+                report: { source: 'Sale' },
+              },
+              exportName: 'DailySalesReport',
+              collectionExportName: 'DailySalesReportCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const obj = manifest.objects.dailySalesReport;
+
+      expect(obj.decoratorConfig.api).toEqual({ include: ['list', 'get'] });
+      expect(obj.decoratorConfig.mcp).toEqual({ include: ['list', 'get'] });
+      expect(obj.decoratorConfig.conflictColumns).toEqual([
+        'tenant_id',
+        'store_id',
+        'issued_day',
+      ]);
+    });
+  });
+
   describe('generateRestEndpoints', () => {
     it('should include collection class methods without duplicating CRUD endpoints', () => {
       const generator = new ManifestGenerator();

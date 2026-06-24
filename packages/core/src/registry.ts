@@ -2574,6 +2574,24 @@ export class ObjectRegistry {
       return registered.config.conflictColumns;
     }
 
+    if (registered.config?.report) {
+      const tenantField = registered.tenantScopedConfig?.field;
+      const tenantColumn =
+        tenantField && registered.fields.has(tenantField)
+          ? toSnakeCase(tenantField)
+          : '';
+      const reportConflictColumns = Array.from(registered.fields.entries())
+        .filter(([, field]) => {
+          const kind = field?._meta?.__report?.kind ?? field?.__report?.kind;
+          return kind === 'group' || kind === 'bucket';
+        })
+        .map(([fieldName]) => toSnakeCase(fieldName));
+
+      return reportConflictColumns.length > 0
+        ? [...(tenantColumn ? [tenantColumn] : []), ...reportConflictColumns]
+        : ['id'];
+    }
+
     // Fall back to table strategy-based defaults
     const tableStrategy = ObjectRegistry.getTableStrategy(className);
     return tableStrategy === 'sti'

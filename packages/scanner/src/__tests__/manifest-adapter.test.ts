@@ -245,6 +245,100 @@ describe('ManifestAdapter', () => {
       });
     });
 
+    describe('report field decorators', () => {
+      it('preserves aggregate metadata on converted fields', () => {
+        const field: RawFieldDefinition = {
+          name: 'revenue',
+          accessibility: 'public',
+          typeAnnotation: 'number',
+          initializer: '0.0',
+          optional: false,
+          hasDecimalPoint: true,
+          numericValue: 0,
+          decorators: [
+            {
+              name: 'sum',
+              arguments: ["'totalAmount'"],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.convertField(field);
+
+        expect(result).toBeDefined();
+        expect(result?.type).toBe('decimal');
+        expect(result?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'sum',
+          column: 'totalAmount',
+        });
+      });
+
+      it('preserves time bucket metadata on converted fields', () => {
+        const field: RawFieldDefinition = {
+          name: 'issuedMonth',
+          accessibility: 'public',
+          typeAnnotation: 'Date',
+          initializer: 'new Date()',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name: 'month',
+              arguments: ["'issuedAt'"],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.convertField(field);
+
+        expect(result).toBeDefined();
+        expect(result?.type).toBe('datetime');
+        expect(result?._meta?.__report).toEqual({
+          kind: 'bucket',
+          unit: 'month',
+          sourceColumn: 'issuedAt',
+        });
+      });
+
+      it('parses distinct count metadata', () => {
+        const field: RawFieldDefinition = {
+          name: 'customerCount',
+          accessibility: 'public',
+          typeAnnotation: 'number',
+          initializer: '0',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: 0,
+          decorators: [
+            {
+              name: 'count',
+              arguments: ["'customerId'", '{ distinct: true }'],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.convertField(field);
+
+        expect(result?._meta?.__report).toEqual({
+          kind: 'aggregate',
+          fn: 'count',
+          column: 'customerId',
+          distinct: true,
+        });
+      });
+    });
+
     describe('negative numeric defaults (0 vs 0.0 heuristic)', () => {
       // Regression for the negative-initializer gap: the oxc extractor must
       // unwrap `UnaryExpression('-')` so `numericValue`/`hasDecimalPoint` are

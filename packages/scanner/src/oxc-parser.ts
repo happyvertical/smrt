@@ -730,10 +730,11 @@ export function extractSmrtImports(
     if (!moduleName.startsWith('@happyvertical/smrt-')) continue;
 
     // Get or create the set for this package
-    if (!imports.has(moduleName)) {
-      imports.set(moduleName, new Set());
+    let classSet = imports.get(moduleName);
+    if (!classSet) {
+      classSet = new Set();
+      imports.set(moduleName, classSet);
     }
-    const classSet = imports.get(moduleName)!;
 
     if (!node.specifiers || node.specifiers.length === 0) {
       classSet.add('*');
@@ -881,6 +882,7 @@ function extractClassDeclaration(
   // Extract decorators
   const decorators = node.decorators || [];
   const smrtDecorator = decorators.find((d) => isSmrtDecorator(d));
+  const reportDecorator = decorators.find((d) => isNamedDecorator(d, 'report'));
   const tenantScopedDecorator = decorators.find((d) =>
     isNamedDecorator(d, 'TenantScoped'),
   );
@@ -888,12 +890,23 @@ function extractClassDeclaration(
   const smrtConfig = smrtDecorator
     ? extractDecoratorConfig(smrtDecorator, sourceText)
     : null;
-  const decoratorConfig = tenantScopedDecorator
-    ? {
-        ...(smrtConfig ?? {}),
-        tenantScoped: extractDecoratorConfig(tenantScopedDecorator, sourceText),
-      }
-    : smrtConfig;
+  const decoratorConfig =
+    tenantScopedDecorator || reportDecorator
+      ? {
+          ...(smrtConfig ?? {}),
+          ...(reportDecorator
+            ? { report: extractDecoratorConfig(reportDecorator, sourceText) }
+            : {}),
+          ...(tenantScopedDecorator
+            ? {
+                tenantScoped: extractDecoratorConfig(
+                  tenantScopedDecorator,
+                  sourceText,
+                ),
+              }
+            : {}),
+        }
+      : smrtConfig;
 
   // Extract extends clause
   const { extendsClause, extendsTypeArg } = extractExtendsClause(
@@ -1098,7 +1111,10 @@ function extractExtendsClause(
 
   // Resolve import aliases (e.g., import { Performer as PerformerBase })
   if (extendsClause && importAliases.has(extendsClause)) {
-    extendsClause = importAliases.get(extendsClause)!;
+    const aliasedExtends = importAliases.get(extendsClause);
+    if (aliasedExtends) {
+      extendsClause = aliasedExtends;
+    }
   }
 
   // Get type argument (e.g., Meeting from SmrtCollection<Meeting>)

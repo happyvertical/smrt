@@ -62,6 +62,7 @@
     { "path": "./packages/places" },
     { "path": "./packages/products" },
     { "path": "./packages/profiles" },
+    { "path": "./packages/reports" },
     { "path": "./packages/sites" },
     { "path": "./packages/tags" },
     { "path": "./packages/tenancy" },
