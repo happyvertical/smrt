@@ -195,14 +195,14 @@ function handleCronPreset(preset: string) {
         />
         <div class="cron-presets">
           {#each cronPresets as preset}
-            <button
-              type="button"
-              class="preset-btn"
+            <Button
+              variant="secondary"
+              size="sm"
               onclick={() => handleCronPreset(preset.value)}
               disabled={loading}
             >
               {preset.label}
-            </button>
+            </Button>
           {/each}
         </div>
         <small>{t(M['agents.schedule_form.cron_hint'])}</small>
@@ -342,26 +342,6 @@ function handleCronPreset(preset: string) {
     margin-top: var(--smrt-spacing-xs, 0.25rem);
   }
 
-  .preset-btn {
-    padding: 0.125rem var(--smrt-spacing-sm, 0.5rem);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-small, 0.25rem);
-    background: var(--smrt-color-surface, #ffffff);
-    font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
-    cursor: pointer;
-    transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
-  }
-
-  .preset-btn:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    border-color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .preset-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -373,8 +353,7 @@ function handleCronPreset(preset: string) {
 
   @media (prefers-reduced-motion: reduce) {
     .form-field input,
-    .form-field select,
-    .preset-btn {
+    .form-field select {
       transition: none;
     }
   }
