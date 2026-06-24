@@ -76,7 +76,7 @@ const _formattedSize = $derived.by(() => {
    * #1589). The non-interactive `<span class="chip">` branch still uses the
    * scoped `.chip` rule above.
    */
-  :global(.chip--button) {
+  :global(.chip.chip--button) {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
@@ -90,11 +90,11 @@ const _formattedSize = $derived.by(() => {
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  :global(.chip--button):hover {
+  :global(.chip.chip--button):hover {
     background: color-mix(in srgb, var(--smrt-color-surface-variant, #e1e2ec) 92%, var(--smrt-color-shadow, #000));
   }
 
-  :global(.chip--button):focus-visible {
+  :global(.chip.chip--button):focus-visible {
     outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 1px;
   }
