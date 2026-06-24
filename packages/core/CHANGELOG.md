@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.34.9
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: establish noExplicitAny ratchet + graduate first 6 packages (#1579) (#1643) (lint)
+  - @happyvertical/smrt-config@0.34.9
+  - @happyvertical/smrt-types@0.34.9
+  - @happyvertical/smrt-scanner@0.34.9
+
 ## 0.34.8
 
 ### Patch Changes
