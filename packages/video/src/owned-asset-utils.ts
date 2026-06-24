@@ -1,5 +1,6 @@
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
 
 // Video roles intentionally allow hyphens for legacy compatibility
 // (`seed-image`, `base-motion`, `env-map`, etc.).
@@ -15,13 +16,18 @@ const VIDEO_ASSET_OWNER_COLUMNS = [
 
 export type VideoAssetOwnerColumn = (typeof VIDEO_ASSET_OWNER_COLUMNS)[number];
 
-function getQueryRows(result: any): Record<string, unknown>[] {
+function getQueryRows(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) {
     return result as Record<string, unknown>[];
   }
 
-  if (Array.isArray(result?.rows)) {
-    return result.rows as Record<string, unknown>[];
+  if (
+    typeof result === 'object' &&
+    result !== null &&
+    'rows' in result &&
+    Array.isArray((result as { rows: unknown }).rows)
+  ) {
+    return (result as { rows: Record<string, unknown>[] }).rows;
   }
 
   return [];
@@ -105,7 +111,7 @@ export function assertValidVideoAssetSortOrder(sortOrder: number): void {
 }
 
 export async function resolveOwnedAssets(
-  db: any,
+  db: DatabaseInterface,
   tenantId: string | null | undefined,
   assetIds: Iterable<string | null | undefined>,
 ): Promise<Asset[]> {
@@ -164,7 +170,7 @@ export async function listCanonicalOwnedAssetIds<
 }
 
 export async function listLegacyOwnedAssetIds(options: {
-  db: any;
+  db: DatabaseInterface;
   ownerColumn: VideoAssetOwnerColumn;
   ownerId: string;
   role?: string;

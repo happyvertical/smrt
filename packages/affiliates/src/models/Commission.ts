@@ -7,9 +7,30 @@ import {
   crossPackageRef,
   foreignKey,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { CommissionStatus, CommissionType } from '../types/index.js';
+
+/**
+ * Options for constructing a {@link Commission}.
+ */
+export interface CommissionOptions extends SmrtObjectOptions {
+  eventId?: string;
+  partnerId?: string;
+  commissionType?: CommissionType;
+  grossRevenue?: number;
+  commissionRate?: number;
+  commissionAmount?: number;
+  currency?: string;
+  payoutId?: string;
+  status?: CommissionStatus;
+  eventTimestamp?: Date;
+  networkId?: string;
+  siteId?: string;
+  campaignId?: string;
+  metadata?: string;
+}
 
 /**
  * Commission tracks revenue attribution from ad events to partners.
@@ -144,7 +165,7 @@ export class Commission extends SmrtObject {
    */
   metadata: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: CommissionOptions = {}) {
     super(options);
     if (options.eventId !== undefined) this.eventId = options.eventId;
     if (options.partnerId !== undefined) this.partnerId = options.partnerId;
@@ -240,7 +261,7 @@ export class Commission extends SmrtObject {
   /**
    * Get metadata as object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -252,7 +273,7 @@ export class Commission extends SmrtObject {
   /**
    * Set metadata from object
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 }

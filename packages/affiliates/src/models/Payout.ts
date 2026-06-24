@@ -7,9 +7,32 @@ import {
   crossPackageRef,
   foreignKey,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { PayoutStatus } from '../types/index.js';
+
+/**
+ * Options for constructing a {@link Payout}.
+ */
+export interface PayoutOptions extends SmrtObjectOptions {
+  partnerId?: string;
+  periodStart?: Date;
+  periodEnd?: Date;
+  displayEarnings?: number;
+  referralEarnings?: number;
+  salesEarnings?: number;
+  parentEarnings?: number;
+  overheadEarnings?: number;
+  totalAmount?: number;
+  currency?: string;
+  invoiceId?: string;
+  status?: PayoutStatus;
+  paymentReference?: string;
+  paidAt?: Date | null;
+  notes?: string;
+  metadata?: string;
+}
 
 /**
  * Payout represents an aggregated payment batch for a partner.
@@ -134,7 +157,7 @@ export class Payout extends SmrtObject {
    */
   metadata: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: PayoutOptions = {}) {
     super(options);
     if (options.partnerId !== undefined) this.partnerId = options.partnerId;
     if (options.periodStart !== undefined)
@@ -264,7 +287,7 @@ export class Payout extends SmrtObject {
   /**
    * Get metadata as object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -276,7 +299,7 @@ export class Payout extends SmrtObject {
   /**
    * Set metadata from object
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 

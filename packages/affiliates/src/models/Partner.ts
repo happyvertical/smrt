@@ -7,9 +7,30 @@ import {
   crossPackageRef,
   foreignKey,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { PartnerStatus, PartnerType, PayoutMethod } from '../types/index.js';
+
+/**
+ * Options for constructing a {@link Partner}.
+ */
+export interface PartnerOptions extends SmrtObjectOptions {
+  profileId?: string;
+  propertyId?: string;
+  partnerTypes?: string;
+  parentPartnerId?: string;
+  referredById?: string;
+  parentCommissionShare?: number;
+  displayCommissionRate?: number;
+  referralCommissionRate?: number;
+  salesCommissionRate?: number;
+  payoutThreshold?: number;
+  payoutMethod?: PayoutMethod;
+  currency?: string;
+  status?: PartnerStatus;
+  metadata?: string;
+}
 
 /**
  * Partner represents an entity that earns commissions from ad revenue.
@@ -143,7 +164,7 @@ export class Partner extends SmrtObject {
    */
   metadata: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: PartnerOptions = {}) {
     super(options);
     if (options.profileId !== undefined) this.profileId = options.profileId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;
@@ -255,7 +276,7 @@ export class Partner extends SmrtObject {
   /**
    * Get metadata as object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -267,7 +288,7 @@ export class Partner extends SmrtObject {
   /**
    * Set metadata from object
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
