@@ -1,6 +1,7 @@
 <script lang="ts">
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import {
   type ContentCorrectionData,
   type ContentGovernanceDefinitionsData,
@@ -1078,22 +1079,22 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             <span><strong>{factAudit?.counts.contradicted ?? 0}</strong> contradicted</span>
             <span><strong>{factAudit?.counts.needs_review ?? 0}</strong> review</span>
           </div>
-          <button
+          <Button
+            variant="secondary"
             type="button"
-            class="secondary-button"
             disabled={factAuditBusy || selectedClaimCount === 0}
             onclick={() => void recheckSelectedClaims()}
           >
             {factAuditBusy ? 'Checking...' : `Recheck selected (${selectedClaimCount})`}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
             type="button"
-            class="secondary-button"
             disabled={factAuditBusy}
             onclick={() => void repairFactAudit()}
           >
             {factAuditBusy ? 'Repairing...' : 'Repair audit'}
-          </button>
+          </Button>
         </div>
         <p class="claim-audit-help">
           {t(M['content.governance_panel.article_claims_help'])}
@@ -1141,9 +1142,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                     </summary>
                     <div class="claim-audit-item__body">
                       <div class="claim-audit-item__actions">
-                        <button
+                        <Button
+                          variant="secondary"
                           type="button"
-                          class="secondary-button"
                           disabled={factAuditBusy || !getClaimId(claim)}
                           onclick={() => {
                             const claimId = getClaimId(claim);
@@ -1151,7 +1152,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                           }}
                         >
                           {t(M['content.governance_panel.recheck_support'])}
-                        </button>
+                        </Button>
                       </div>
                       {#if claim.claimQuote}
                         <p><strong>{t(M['content.governance_panel.article_claim_label'])}</strong> {claim.claimQuote}</p>
@@ -1233,13 +1234,15 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                         {fact.status} · confidence {formatPercent(fact.confidence)}
                       </span>
                     </div>
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
                       class="fact-chip__remove"
                       onclick={() => fact.id && removeFact(fact.id)}
                     >
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 {/each}
               </div>
@@ -1253,9 +1256,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                 bind:value={factQuery}
                 placeholder={t(M['content.governance_panel.search_fact_catalog'])}
               />
-              <button type="button" onclick={searchFactsFirstPage}>
+              <Button variant="primary" type="button" onclick={searchFactsFirstPage}>
                 Search
-              </button>
+              </Button>
             </div>
 
             {#if catalogError}
@@ -1278,13 +1281,15 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                           {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
                         </span>
                       </div>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         type="button"
                         disabled={!fact.id || selectedFactIds.includes(fact.id ?? '')}
                         onclick={() => addFact(fact)}
                       >
                         {!fact.id || selectedFactIds.includes(fact.id ?? '') ? 'Selected' : 'Add'}
-                      </button>
+                      </Button>
                     </div>
                   {/each}
                 </div>
@@ -1299,22 +1304,24 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                     {/if}
                   </span>
                   <div class="fact-pagination__actions">
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
-                      class="secondary-button"
                       disabled={catalogLoading || catalogPage <= 1}
                       onclick={browsePreviousFacts}
                     >
                       Previous
-                    </button>
-                    <button
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       type="button"
-                      class="secondary-button"
                       disabled={catalogLoading || !catalogHasNextPage}
                       onclick={browseNextFacts}
                     >
                       Next
-                    </button>
+                    </Button>
                   </div>
                 </div>
               {/if}
@@ -1414,7 +1421,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
       <div class="review-actions">
         {#each activeProfileReviewActions as action (action.policyKey ?? action.kind)}
-          <button
+          <Button
+            variant="primary"
             type="button"
             disabled={reviewBusy !== null}
             onclick={() => void runReview(action)}
@@ -1424,7 +1432,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {:else}
               Run {action.label}
             {/if}
-          </button>
+          </Button>
         {/each}
       </div>
 
@@ -1450,7 +1458,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             placeholder={t(M['content.governance_panel.optional_review_instructions'])}
           ></textarea>
         </label>
-        <button
+        <Button
+          variant="primary"
           type="button"
           disabled={reviewBusy !== null || !canRunCustomReview()}
           onclick={() =>
@@ -1468,7 +1477,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           {:else}
             Run {customReviewButtonLabel}
           {/if}
-        </button>
+        </Button>
       </div>
 
       <div class="review-list">
@@ -1697,13 +1706,14 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           {t(M['content.governance_panel.publish_immediately'])}
         </label>
 
-        <button
+        <Button
+          variant="primary"
           type="button"
           disabled={correctionBusy || correctionSummary.trim().length === 0}
           onclick={() => void issueCorrection()}
         >
           {correctionBusy ? 'Issuing correction...' : 'Issue Correction'}
-        </button>
+        </Button>
 
         <div class="review-list">
           <div class="section-caption">{t(M['content.governance_panel.published_history'])}</div>
@@ -1736,14 +1746,14 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               Versions
             </div>
-            <button
+            <Button
+              variant="secondary"
               type="button"
-              class="secondary-button"
               disabled={versionBusy}
               onclick={(e) => { e.preventDefault(); void createSnapshot(); }}
             >
               {versionBusy ? 'Working...' : 'Create Snapshot'}
-            </button>
+            </Button>
           </div>
           <svg class="drawer-icon" style="margin-left: 1rem;" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </summary>
@@ -1765,9 +1775,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                 {/if}
                 <div class="version-card__footer">
                   <span>{formatTimestamp(version.createdAt)}</span>
-                  <button
+                  <Button
+                    variant="secondary"
                     type="button"
-                    class="secondary-button"
                     disabled={versionBusy || version.version === null || version.version === undefined}
                     onclick={() => {
                       if (
@@ -1779,7 +1789,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                     }}
                   >
                     Restore
-                  </button>
+                  </Button>
                 </div>
               </div>
             {/each}
@@ -1943,30 +1953,6 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
-  .fact-search button,
-  .review-actions button {
-    border: none;
-    border-radius: 0.5rem;
-    padding: 0.7rem 0.95rem;
-    background: var(--smrt-color-primary);
-    color: var(--smrt-color-on-primary, white);
-    cursor: pointer;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .fact-search button:disabled,
-  .review-actions button:disabled,
-  .fact-pagination button:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
-  }
-
-  .secondary-button {
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
-  }
-
   .fact-chip-list,
   .fact-catalog__list,
   .claim-audit-group,
@@ -2060,7 +2046,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     gap: 0.25rem;
   }
 
-  .fact-chip__remove {
+  .fact-chip :global(.fact-chip__remove) {
     background: transparent !important;
     color: var(--smrt-color-error) !important;
     padding: 0 !important;

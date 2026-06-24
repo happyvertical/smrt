@@ -2,6 +2,7 @@
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { untrack } from 'svelte';
 import { extractBodyImages, resolveBodyFormat } from '../../body-format';
 import type {
@@ -929,7 +930,9 @@ function removeAsset(id: string) {
       {#if editorError}
         <div class="editor-message editor-message--error" role="alert" aria-live="assertive">
           <span>{editorError}</span>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             class="editor-message__dismiss"
             onclick={() => {
@@ -938,7 +941,7 @@ function removeAsset(id: string) {
             aria-label={t(M['content.content_editor.dismiss_message'])}
           >
             ×
-          </button>
+          </Button>
         </div>
       {/if}
       <div class="editor-toolbar">
@@ -974,10 +977,10 @@ function removeAsset(id: string) {
         </div>
         {#if showActions}
           <div class="editor-toolbar-right">
-            <button type="submit" class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Save Content'}</button>
-            <button type="button" class="cancel-button" onclick={handleCancel}>
+            <Button variant="primary" type="submit" class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Save Content'}</Button>
+            <Button variant="secondary" type="button" onclick={handleCancel}>
               Cancel
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -1008,9 +1011,9 @@ function removeAsset(id: string) {
               fields: lastAppliedFields.join(', '),
             })}
           </span>
-          <button type="button" class="undo-banner__btn" onclick={undoLastApply}>
+          <Button variant="ghost" size="sm" type="button" class="undo-banner__btn" onclick={undoLastApply}>
             Undo{fieldUndoStack.length > 1 ? ` (${fieldUndoStack.length})` : ''}
-          </button>
+          </Button>
         </div>
       {/if}
 
@@ -1083,14 +1086,14 @@ function removeAsset(id: string) {
                         <img class="media-item-image" src={getAssetImageSource(asset)} alt={asset.name || 'Asset image'} />
                         <div class="media-item-overlay">
                            {#if assetId && assetId !== formData.thumbnailAssetId}
-                             <button type="button" class="btn-make-thumbnail" title={t(M['content.content_editor.make_thumbnail'])} onclick={() => setThumbnail(assetId)}>
+                             <Button variant="ghost" size="sm" type="button" class="btn-make-thumbnail" aria-label={t(M['content.content_editor.make_thumbnail'])} title={t(M['content.content_editor.make_thumbnail'])} onclick={() => setThumbnail(assetId)}>
                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                             </button>
+                             </Button>
                            {/if}
                            {#if assetId}
-                             <button type="button" class="btn-remove-asset" title={t(M['content.content_editor.remove'])} onclick={() => removeAsset(assetId)}>
+                             <Button variant="ghost" size="sm" type="button" class="btn-remove-asset" aria-label={t(M['content.content_editor.remove'])} title={t(M['content.content_editor.remove'])} onclick={() => removeAsset(assetId)}>
                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                             </button>
+                             </Button>
                            {/if}
                         </div>
                         {#if assetId === formData.thumbnailAssetId}
@@ -1103,14 +1106,14 @@ function removeAsset(id: string) {
                   <p class="no-media-text">{t(M['content.content_editor.no_images_attached'])}</p>
                 {/if}
                 {#if !showImageUploader}
-                  <button type="button" class="add-image-btn" onclick={() => showImageUploader = true} style="margin-top: 1rem;">
+                  <Button variant="ghost" type="button" class="add-image-btn" onclick={() => showImageUploader = true} style="margin-top: 1rem;">
                     <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                       <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                       <circle cx="8.5" cy="8.5" r="1.5"></circle>
                       <polyline points="21 15 16 10 5 21"></polyline>
                     </svg>
                     {t(M['content.content_editor.add_image'])}
-                  </button>
+                  </Button>
                 {/if}
 
                 {#if showImageUploader}
@@ -1178,7 +1181,7 @@ function removeAsset(id: string) {
                   {#each formData.referenceIds as refId}
                     <div class="reference-badge">
                       <span class="ref-id">{refId}</span>
-                      <button type="button" class="remove-ref-btn" onclick={() => removeReference(refId)}>×</button>
+                      <Button variant="ghost" size="sm" type="button" class="remove-ref-btn" aria-label={t(M['content.content_editor.remove'])} title={t(M['content.content_editor.remove'])} onclick={() => removeReference(refId)}>×</Button>
                     </div>
                   {/each}
                   {#if formData.referenceIds.length === 0 && auditReferences.length === 0}
@@ -1207,20 +1210,26 @@ function removeAsset(id: string) {
                          <option value={status}>{status}</option>
                        {/each}
                      </select>
-                     <button
+                     <Button
+                       variant="ghost"
+                       size="sm"
                        type="button"
+                       class="evidence-action-button"
                        disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}
                        onclick={() => void updateSelectedEvidenceStatus()}
                      >
                        Mark
-                     </button>
-                     <button
+                     </Button>
+                     <Button
+                       variant="ghost"
+                       size="sm"
                        type="button"
+                       class="evidence-action-button"
                        disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}
                        onclick={() => void repairSelectedReferenceEvidence()}
                      >
                        {t(M['content.content_editor.repair_resources'])}
-                     </button>
+                     </Button>
                    </div>
                    {#each auditReferences as reference, referenceIndex (reference._auditSourceId ?? reference.id ?? reference.url ?? reference.title)}
                      {@const resourceClaims = getResourceClaimsForReference(reference)}
@@ -1245,13 +1254,16 @@ function removeAsset(id: string) {
                                  : M['content.content_editor.evidence_claim_plural'],
                              ),
                            })}</span>
-                           <button
+                           <Button
+                             variant="ghost"
+                             size="sm"
                              type="button"
+                             class="evidence-action-button"
                              disabled={Boolean(evidenceBusy)}
                              onclick={() => void repairReferenceEvidence(reference)}
                            >
                              {evidenceBusy === `repair:${reference.id}` ? 'Repairing...' : 'Repair'}
-                           </button>
+                           </Button>
                          </div>
                        </div>
                        {#if resourceClaims.length > 0}
@@ -1311,26 +1323,31 @@ function removeAsset(id: string) {
                                  {/each}
                                  <div class="resource-claim-actions">
                                    {#each evidenceStatuses as status}
-                                     <button
+                                     <Button
+                                       variant="ghost"
+                                       size="sm"
                                        type="button"
+                                       class="evidence-action-button"
                                        disabled={evidenceIds.length === 0 || Boolean(evidenceBusy)}
                                        onclick={() => void updateEvidenceStatus(evidenceIds, status)}
                                      >
                                        {status}
-                                     </button>
+                                     </Button>
                                    {/each}
                                  </div>
                                </div>
                              </details>
                            {/each}
                            {#if resourceClaims.length > 6}
-                             <button
+                             <Button
+                               variant="ghost"
+                               size="sm"
                                type="button"
                                class="resource-claim-more"
                                onclick={() => toggleReferenceClaims(reference, referenceIndex)}
                              >
                                {resourceClaimsExpanded ? 'Show fewer' : `+ ${resourceClaims.length - 6} more`}
-                             </button>
+                             </Button>
                            {/if}
                          </div>
                        {/if}
@@ -1340,7 +1357,7 @@ function removeAsset(id: string) {
                {/if}
                <div class="add-reference-row">
                   <input type="text" bind:value={newReferenceId} placeholder={t(M['content.content_editor.reference_id_or_url_placeholder'])} />
-                  <button type="button" onclick={addReference}>Add</button>
+                  <Button variant="ghost" type="button" class="add-reference-button" onclick={addReference}>Add</Button>
                </div>
             </div>
 
@@ -1664,7 +1681,7 @@ function removeAsset(id: string) {
     color: var(--smrt-color-on-surface);
   }
 
-  .remove-ref-btn {
+  .reference-badge :global(.remove-ref-btn) {
     background: none;
     border: none;
     color: var(--smrt-color-outline);
@@ -1675,7 +1692,7 @@ function removeAsset(id: string) {
     margin-left: 0.25rem;
   }
 
-  .remove-ref-btn:hover {
+  .reference-badge :global(.remove-ref-btn:hover) {
     color: var(--smrt-color-error);
   }
 
@@ -1725,9 +1742,7 @@ function removeAsset(id: string) {
     white-space: nowrap;
   }
 
-  .reference-detail-actions button,
-  .resource-claim-actions button,
-  .evidence-bulk-toolbar button {
+  .references-section :global(.evidence-action-button) {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.375rem;
@@ -1738,9 +1753,7 @@ function removeAsset(id: string) {
     padding: 0.25rem 0.5rem;
   }
 
-  .reference-detail-actions button:disabled,
-  .resource-claim-actions button:disabled,
-  .evidence-bulk-toolbar button:disabled {
+  .references-section :global(.evidence-action-button:disabled) {
     cursor: not-allowed;
     opacity: 0.55;
   }
@@ -1796,7 +1809,7 @@ function removeAsset(id: string) {
     background: color-mix(in srgb, var(--smrt-color-error) 12%, transparent);
   }
 
-  .editor-message__dismiss {
+  .editor-message :global(.editor-message__dismiss) {
     border: none;
     background: transparent;
     color: inherit;
@@ -1808,18 +1821,19 @@ function removeAsset(id: string) {
 
   .reference-detail-header a,
   .reference-detail-header span,
-  .resource-claim-body,
-  .resource-claim-more {
+  .resource-claim-body {
     color: var(--smrt-color-on-surface-variant);
     font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
-  .resource-claim-more {
+  .references-section :global(.resource-claim-more) {
     align-self: flex-start;
     border: 0;
     background: transparent;
     padding: 0;
     cursor: pointer;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
@@ -1943,7 +1957,7 @@ function removeAsset(id: string) {
     flex: 1;
   }
 
-  .add-reference-row button {
+  .add-reference-row :global(.add-reference-button) {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline);
     color: var(--smrt-color-on-surface-variant);
@@ -1953,11 +1967,11 @@ function removeAsset(id: string) {
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
-  .add-reference-row button:hover {
+  .add-reference-row :global(.add-reference-button:hover) {
     background: var(--smrt-color-surface-container-low, #f1f5f9);
   }
   
-  .add-image-btn {
+  .media-gallery :global(.add-image-btn) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -1970,14 +1984,14 @@ function removeAsset(id: string) {
     cursor: pointer;
     transition: all 0.2s;
   }
-  
-  .add-image-btn:hover {
+
+  .media-gallery :global(.add-image-btn:hover) {
     border-color: var(--smrt-color-primary, #94a3b8);
     color: var(--smrt-color-on-surface, #1e293b);
     background: var(--smrt-color-surface-container-low, #f1f5f9);
   }
 
-  .save-button {
+  .editor-toolbar-right :global(.save-button) {
     background: linear-gradient(
       135deg,
       var(--smrt-color-primary) 0%,
@@ -1992,25 +2006,15 @@ function removeAsset(id: string) {
     transition: transform 0.2s, box-shadow 0.2s;
   }
 
-  .save-button:hover {
+  .editor-toolbar-right :global(.save-button:hover) {
     transform: translateY(-1px);
     box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 40%, transparent);
   }
 
-  .save-button:disabled {
+  .editor-toolbar-right :global(.save-button:disabled) {
     opacity: 0.65;
     transform: none;
     box-shadow: none;
-  }
-
-  .cancel-button {
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
-    padding: 0.75rem 1.25rem;
-    border-radius: 0.5rem;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    cursor: pointer;
   }
 
   .save-notice {
@@ -2069,7 +2073,7 @@ function removeAsset(id: string) {
     flex-shrink: 0;
   }
 
-  .undo-banner__btn {
+  .undo-banner :global(.undo-banner__btn) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-primary);
     border: 1px solid var(--smrt-color-outline);
@@ -2082,7 +2086,7 @@ function removeAsset(id: string) {
     transition: all 0.15s ease;
   }
 
-  .undo-banner__btn:hover {
+  .undo-banner :global(.undo-banner__btn:hover) {
     background: var(--smrt-color-surface-variant);
     border-color: var(--smrt-color-primary);
   }
@@ -2138,7 +2142,8 @@ function removeAsset(id: string) {
     opacity: 1;
   }
 
-  .media-item-overlay button {
+  .media-item-overlay :global(.btn-make-thumbnail),
+  .media-item-overlay :global(.btn-remove-asset) {
     padding: 0.4rem;
     border: none;
     border-radius: 0.375rem;
@@ -2151,12 +2156,13 @@ function removeAsset(id: string) {
     justify-content: center;
   }
 
-  .media-item-overlay button:hover {
+  .media-item-overlay :global(.btn-make-thumbnail:hover),
+  .media-item-overlay :global(.btn-remove-asset:hover) {
     transform: scale(1.1);
     background: var(--smrt-color-surface);
   }
 
-  .btn-remove-asset:hover {
+  .media-item-overlay :global(.btn-remove-asset:hover) {
     background: var(--smrt-color-error-container) !important;
     color: var(--smrt-color-error) !important;
     border-color: var(--smrt-color-error) !important;

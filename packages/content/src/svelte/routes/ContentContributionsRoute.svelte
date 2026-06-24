@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
 import {
   type ContentContributionData,
@@ -413,13 +414,14 @@ async function handleDeleteContributor(data: Record<string, any>) {
                 bind:value={portalEmail}
                 placeholder={t(M['content.contributions.portal_email_placeholder'])}
               />
-              <button
+              <Button
+                variant="ghost"
                 type="submit"
-                class="secondary"
+                class="load-button"
                 disabled={refreshingPortal}
               >
                 {refreshingPortal ? 'Loading...' : 'Load'}
-              </button>
+              </Button>
             </form>
           </div>
 
@@ -721,8 +723,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     color: var(--smrt-color-on-surface);
   }
 
-  .inline-form button,
-  .secondary {
+  .inline-form :global(.load-button) {
     border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid color-mix(
       in srgb,

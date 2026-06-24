@@ -1,6 +1,7 @@
 <script lang="ts">
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
 import { M } from '../i18n.contribution.js';
@@ -176,10 +177,14 @@ function cancelDelete() {
     
     <div class="actions-group">
       <div class="view-toggles">
-        <button 
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
-          class:active={viewMode === 'grid'} 
+          class={`view-toggle-btn${viewMode === 'grid' ? ' view-toggle-btn--active' : ''}`}
+          aria-pressed={viewMode === 'grid'}
           onclick={() => viewMode = 'grid'}
+          aria-label={t(M['content.content_list.grid_view'])}
           title={t(M['content.content_list.grid_view'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
@@ -188,11 +193,15 @@ function cancelDelete() {
             <rect x="14" y="14" width="7" height="7"></rect>
             <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
-        </button>
-        <button 
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
-          class:active={viewMode === 'detailed'} 
+          class={`view-toggle-btn${viewMode === 'detailed' ? ' view-toggle-btn--active' : ''}`}
+          aria-pressed={viewMode === 'detailed'}
           onclick={() => viewMode = 'detailed'}
+          aria-label={t(M['content.content_list.detailed_list'])}
           title={t(M['content.content_list.detailed_list'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
@@ -203,11 +212,15 @@ function cancelDelete() {
             <line x1="3" y1="12" x2="3.01" y2="12"></line>
             <line x1="3" y1="18" x2="3.01" y2="18"></line>
           </svg>
-        </button>
-        <button 
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
-          class:active={viewMode === 'compact'} 
+          class={`view-toggle-btn${viewMode === 'compact' ? ' view-toggle-btn--active' : ''}`}
+          aria-pressed={viewMode === 'compact'}
           onclick={() => viewMode = 'compact'}
+          aria-label={t(M['content.content_list.compact_list'])}
           title={t(M['content.content_list.compact_list'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
@@ -215,16 +228,16 @@ function cancelDelete() {
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
-        </button>
+        </Button>
       </div>
-      
-      <button class="add-button" type="button" onclick={() => onAdd()}>
+
+      <Button variant="ghost" class="add-button" type="button" onclick={() => onAdd()}>
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
         {t(M['content.content_list.add_content'])}
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -261,8 +274,8 @@ function cancelDelete() {
                 {#if getViewHref?.(content)}
                   <a class="icon-btn" href={getViewHref(content) || '#'} title={t(M['content.content_list.view_published_article'])} aria-label={t(M['content.content_list.view_published_article'])}>🔎</a>
                 {/if}
-                <button class="icon-btn" type="button" onclick={() => onEdit(content)} title={t(M['content.content_list.edit'])} aria-label={t(M['content.content_list.edit'])}>✏️</button>
-                <button class="icon-btn delete-icon" type="button" onclick={() => handleDeleteContent(content)} title={t(M['content.content_list.delete'])} aria-label={t(M['content.content_list.delete'])}>🗑️</button>
+                <Button variant="ghost" size="sm" class="icon-btn" type="button" onclick={() => onEdit(content)} title={t(M['content.content_list.edit'])} aria-label={t(M['content.content_list.edit'])}>✏️</Button>
+                <Button variant="ghost" size="sm" class="icon-btn delete-icon" type="button" onclick={() => handleDeleteContent(content)} title={t(M['content.content_list.delete'])} aria-label={t(M['content.content_list.delete'])}>🗑️</Button>
               </td>
             </tr>
           {/each}
@@ -314,14 +327,15 @@ function cancelDelete() {
             {#if getViewHref?.(content)}
               <a href={getViewHref(content) || '#'} class="quiet-action">{t(M['content.content_list.view_article'])}</a>
             {/if}
-            <button type="button" class="quiet-action" onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</button>
-            <button
+            <Button variant="ghost" type="button" class="quiet-action" onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</Button>
+            <Button
+              variant="ghost"
               type="button"
               class="quiet-action quiet-action--danger"
               onclick={() => handleDeleteContent(content)}
             >
               {t(M['content.content_list.delete'])}
-            </button>
+            </Button>
           </div>
         </article>
       {/each}
@@ -374,8 +388,8 @@ function cancelDelete() {
               {#if getViewHref?.(content)}
                 <a href={getViewHref(content) || '#'} class="view-btn">{t(M['content.content_list.view_article_button'])}</a>
               {/if}
-              <button onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</button>
-              <button onclick={() => handleDeleteContent(content)} class="delete-btn">{t(M['content.content_list.delete'])}</button>
+              <Button variant="ghost" type="button" class="content-action-btn" onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</Button>
+              <Button variant="ghost" type="button" class="content-action-btn delete-btn" onclick={() => handleDeleteContent(content)}>{t(M['content.content_list.delete'])}</Button>
             </div>
           </div>
         </div>
@@ -457,7 +471,7 @@ function cancelDelete() {
     border: 1px solid var(--smrt-color-outline-variant);
   }
 
-  .view-toggles button {
+  .view-toggles :global(.view-toggle-btn) {
     background: transparent;
     border: none;
     padding: 0.4rem;
@@ -470,18 +484,18 @@ function cancelDelete() {
     transition: all 0.2s;
   }
 
-  .view-toggles button:hover {
+  .view-toggles :global(.view-toggle-btn:hover) {
     color: var(--smrt-color-on-surface);
     background: color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
   }
 
-  .view-toggles button.active {
+  .view-toggles :global(.view-toggle-btn.view-toggle-btn--active) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0,0,0,0.1));
   }
 
-  .add-button {
+  .actions-group :global(.add-button) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -500,7 +514,7 @@ function cancelDelete() {
     transition: transform 0.2s, box-shadow 0.2s;
   }
 
-  .add-button:hover {
+  .actions-group :global(.add-button:hover) {
     transform: translateY(-1px);
     box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 50%, transparent);
   }
@@ -660,7 +674,7 @@ function cancelDelete() {
     padding-top: 1rem;
   }
 
-  .content-actions button,
+  .content-actions :global(.content-action-btn),
   .content-actions a {
     flex: 1;
     padding: 0.5rem 1rem;
@@ -676,7 +690,7 @@ function cancelDelete() {
     text-decoration: none;
   }
 
-  .content-actions button:hover,
+  .content-actions :global(.content-action-btn:hover),
   .content-actions a:hover {
     background: var(--smrt-color-surface-variant);
     border-color: var(--smrt-color-outline);
@@ -686,11 +700,11 @@ function cancelDelete() {
     color: var(--smrt-color-primary) !important;
   }
 
-  .delete-btn {
+  .content-actions :global(.delete-btn) {
     color: var(--smrt-color-error) !important;
   }
 
-  .delete-btn:hover {
+  .content-actions :global(.delete-btn:hover) {
     background: var(--smrt-color-error-container) !important;
     border-color: var(--smrt-color-error) !important;
   }
@@ -754,7 +768,7 @@ function cancelDelete() {
     min-width: 8.5rem;
   }
 
-  .quiet-action {
+  .content-row__actions :global(.quiet-action) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -769,11 +783,11 @@ function cancelDelete() {
     cursor: pointer;
   }
 
-  .quiet-action:hover {
+  .content-row__actions :global(.quiet-action:hover) {
     background: var(--smrt-color-surface-container-low);
   }
 
-  .quiet-action--danger {
+  .content-row__actions :global(.quiet-action--danger) {
     color: var(--smrt-color-error);
   }
 
@@ -855,7 +869,7 @@ function cancelDelete() {
     white-space: nowrap;
   }
 
-  .icon-btn {
+  .actions-cell :global(.icon-btn) {
     background: transparent;
     border: none;
     cursor: pointer;
@@ -866,12 +880,12 @@ function cancelDelete() {
     opacity: 0.7;
   }
 
-  .icon-btn:hover {
+  .actions-cell :global(.icon-btn:hover) {
     background: var(--smrt-color-surface-variant);
     opacity: 1;
   }
 
-  .delete-icon:hover {
+  .actions-cell :global(.delete-icon:hover) {
     background: var(--smrt-color-error-container);
   }
 

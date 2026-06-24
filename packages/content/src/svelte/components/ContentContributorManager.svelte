@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentContributorData } from '../../mock-smrt-client';
 import { M } from '../i18n.contribution.js';
 
@@ -45,7 +46,7 @@ function handleSubmit() {
       <h3>Contributors</h3>
       <p>{t(M['content.contributor_manager.intro'])}</p>
     </div>
-    <button type="button" onclick={() => (editing = {})}>{t(M['content.contributor_manager.add_contributor'])}</button>
+    <Button variant="ghost" type="button" onclick={() => (editing = {})}>{t(M['content.contributor_manager.add_contributor'])}</Button>
   </header>
 
   <div class="layout">
@@ -57,9 +58,9 @@ function handleSubmit() {
             <div>{contributor.trustLevel || 'standard'}</div>
           </div>
           <div class="actions">
-            <button type="button" class="secondary" onclick={() => (editing = contributor)}>Edit</button>
+            <Button variant="secondary" type="button" onclick={() => (editing = contributor)}>Edit</Button>
             {#if onDelete}
-              <button type="button" class="danger" onclick={() => onDelete?.(contributor)}>Delete</button>
+              <Button variant="danger" type="button" onclick={() => onDelete?.(contributor)}>Delete</Button>
             {/if}
           </div>
         </article>
@@ -91,7 +92,7 @@ function handleSubmit() {
       </label>
 
       <div class="actions">
-        <button type="submit">{t(M['content.contributor_manager.save_contributor'])}</button>
+        <Button variant="primary" type="submit">{t(M['content.contributor_manager.save_contributor'])}</Button>
       </div>
     </form>
   </div>

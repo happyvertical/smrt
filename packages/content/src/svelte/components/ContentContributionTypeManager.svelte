@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ContentContributionTypeData } from '../../mock-smrt-client';
 import { M } from '../i18n.contribution.js';
 
@@ -116,7 +117,7 @@ function handleSubmit() {
       <h3>{t(M['content.contribution_type_manager.heading'])}</h3>
       <p>{t(M['content.contribution_type_manager.intro'])}</p>
     </div>
-    <button type="button" onclick={() => (editing = {})}>{t(M['content.contribution_type_manager.add_type'])}</button>
+    <Button variant="ghost" type="button" onclick={() => (editing = {})}>{t(M['content.contribution_type_manager.add_type'])}</Button>
   </header>
 
   <div class="layout">
@@ -128,9 +129,9 @@ function handleSubmit() {
             <div>{type.key}</div>
           </div>
           <div class="actions">
-            <button type="button" class="secondary" onclick={() => (editing = type)}>Edit</button>
+            <Button variant="secondary" type="button" onclick={() => (editing = type)}>Edit</Button>
             {#if onDelete && type.id}
-              <button type="button" class="danger" onclick={() => onDelete?.(type)}>Delete</button>
+              <Button variant="danger" type="button" onclick={() => onDelete?.(type)}>Delete</Button>
             {/if}
           </div>
         </article>
@@ -231,7 +232,7 @@ function handleSubmit() {
       </label>
 
       <div class="actions">
-        <button type="submit">{t(M['content.contribution_type_manager.save_type'])}</button>
+        <Button variant="primary" type="submit">{t(M['content.contribution_type_manager.save_type'])}</Button>
       </div>
     </form>
   </div>

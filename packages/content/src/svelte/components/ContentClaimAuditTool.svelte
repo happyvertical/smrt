@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type {
   FactAuditClaimData,
   FactAuditStateData,
@@ -197,22 +198,22 @@ async function recheckFactClaims(claimIds: string[]) {
         <span><strong>{factAudit?.counts.contradicted ?? 0}</strong> contradicted</span>
         <span><strong>{factAudit?.counts.needs_review ?? 0}</strong> review</span>
       </div>
-      <button
+      <Button
+        variant="secondary"
         type="button"
-        class="secondary-button"
         disabled={busy || selectedClaimCount === 0}
         onclick={() => void recheckFactClaims(selectedClaimIds)}
       >
         {busy ? 'Checking...' : `Recheck selected (${selectedClaimCount})`}
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="secondary"
         type="button"
-        class="secondary-button"
         disabled={busy}
         onclick={() => void repairFactAudit()}
       >
         {busy ? 'Working...' : 'Repair audit'}
-      </button>
+      </Button>
     </div>
     <p class="empty-copy">
       {t(M['content.claim_audit_tool.article_claims_help'])}
@@ -258,9 +259,9 @@ async function recheckFactClaims(claimIds: string[]) {
                 </summary>
                 <div class="tool-card-body">
                   <div class="claim-audit-actions">
-                    <button
+                    <Button
+                      variant="secondary"
                       type="button"
-                      class="secondary-button"
                       disabled={busy || !getClaimId(claim)}
                       onclick={() => {
                         const claimId = getClaimId(claim);
@@ -268,7 +269,7 @@ async function recheckFactClaims(claimIds: string[]) {
                       }}
                     >
                       {t(M['content.claim_audit_tool.recheck_support'])}
-                    </button>
+                    </Button>
                   </div>
                   {#if claim.claimQuote}
                     <p><strong>{t(M['content.claim_audit_tool.article_claim_label'])}</strong> {claim.claimQuote}</p>
@@ -375,21 +376,6 @@ async function recheckFactClaims(claimIds: string[]) {
   .claim-audit-select {
     display: inline-flex;
     line-height: 1;
-  }
-
-  .secondary-button {
-    border-radius: 0.5rem;
-    padding: 0.65rem 0.85rem;
-    border: 1px solid var(--smrt-color-outline-variant);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
-    cursor: pointer;
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-  }
-
-  .secondary-button:disabled {
-    cursor: not-allowed;
-    opacity: 0.65;
   }
 
   .pill {

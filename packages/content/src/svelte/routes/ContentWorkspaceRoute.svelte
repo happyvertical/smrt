@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
 import type { ContentData } from '../../mock-smrt-client.js';
 import { createClient } from '../../mock-smrt-client.js';
@@ -195,7 +196,7 @@ function closeForms() {
     {:else if error}
       <section class="panel panel--error">
         <p><strong>Error:</strong> {error}</p>
-        <button type="button" onclick={loadContents}>{t(M['content.workspace.try_again'])}</button>
+        <Button variant="secondary" type="button" onclick={loadContents}>{t(M['content.workspace.try_again'])}</Button>
       </section>
     {:else if showAddForm || editingContent}
       <section class="panel">
@@ -230,13 +231,14 @@ function closeForms() {
         >
           {#snippet controls()}
             <div class="workspace-controls">
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 class="secondary-action"
                 onclick={handleAddGovernedContent}
               >
                 {t(M['content.workspace.create_governed'])}
-              </button>
+              </Button>
               <a class="inline-link" href={governanceHref}>
                 {t(M['content.workspace.review_governance'])}
               </a>
@@ -404,7 +406,7 @@ function closeForms() {
     gap: 0.75rem;
   }
 
-  .secondary-action {
+  .workspace-controls :global(.secondary-action) {
     border: 1px solid color-mix(
       in srgb,
       var(--smrt-color-primary) 30%,
