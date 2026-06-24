@@ -247,6 +247,20 @@ const linkProps = $derived(() => {
     to { transform: translate(-50%, -50%) rotate(360deg); }
   }
 
+  /* Lay out the button's own children. The children are rendered inside this
+     wrapper span, so the button-level `gap` does not reach them — without this,
+     an icon + label (`<Button><svg/>Save</Button>`) would render with no gap.
+     Inheriting the wrapper makes multi-child buttons (icon+text, label+count)
+     lay out correctly after the #1589 migration, instead of needing per-button
+     CSS to reach into `.content`. Callers can still override via the `class`
+     passthrough (e.g. `.x :global(.content) { justify-content: space-between }`). */
+  .content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2);
+  }
+
   .content.loading {
     opacity: 0;
   }
