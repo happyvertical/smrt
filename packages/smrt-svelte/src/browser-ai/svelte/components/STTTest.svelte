@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { useAppState } from '../../../hooks/useAppState.svelte.js';
@@ -111,11 +112,20 @@ function clearLogs() {
   <div class="controls">
     <div class="adapter-select">
       <label for="adapter">Adapter:</label>
-      <select id="adapter" bind:value={selectedAdapter} disabled={isRecording}>
+      <Select
+        id="adapter"
+        bind:value={
+          () => selectedAdapter,
+          (v) => {
+            selectedAdapter = v as AdapterType;
+          }
+        }
+        disabled={isRecording}
+      >
         <option value="browser-speech">{t(M['ui.stt_test.adapter_browser'])}</option>
         <option value="whisper-wasm">{t(M['ui.stt_test.adapter_whisper_wasm'])}</option>
         <option value="whisper-cpp">{t(M['ui.stt_test.adapter_whisper_cpp'])}</option>
-      </select>
+      </Select>
     </div>
 
     <Button
@@ -222,13 +232,6 @@ function clearLogs() {
 
   .adapter-select label {
     font: var(--smrt-typography-body-medium-font, 500 0.875rem / 1.25 sans-serif);
-  }
-
-  .adapter-select select {
-    padding: var(--smrt-spacing-sm, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
-    border-radius: var(--smrt-radius-small, 6px);
-    font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
   }
 
   .status {

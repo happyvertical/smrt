@@ -3,7 +3,7 @@
   "version": "0.34.5",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
-  "smrtRawPrimitives": "strict-buttons",
+  "smrtRawPrimitives": "strict",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "svelte": "./dist/index.js",
