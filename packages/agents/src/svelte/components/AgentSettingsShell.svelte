@@ -128,6 +128,7 @@ async function handleSave(slotId: string, config: unknown) {
 				bind:this={tablistEl}
 			>
 				{#each agents as agent}
+					<!-- raw-primitive-allow: tab control in a hand-rolled ARIA tablist with roving tabindex and bind:this keyboard navigation, driving an externally-rendered aria-controls panel; this is a tab role (not a standard action button) and adopting the Tabs primitive would require restructuring the agent/panel wiring -->
 					<button
 						class="agent-button"
 						class:active={activeAgentId === agent.id}

@@ -114,6 +114,7 @@ async function handleSave(config: unknown) {
 <div class="agent-admin-tabs">
 	<div class="tabs-nav" role="tablist" aria-label={t(M['ui.agent_admin_tabs.tablist_label'])} bind:this={tablistEl}>
 		{#each sortedSlots as [slotId, slot]}
+			<!-- raw-primitive-allow: tab control in a hand-rolled ARIA tablist with roving tabindex and bind:this keyboard navigation, driving externally-rendered aria-controls panels; this is a tab role (not a standard action button) and adopting the Tabs primitive would require restructuring the slot/panel wiring -->
 			<button
 				class="tab-button"
 				class:active={activeSlotId === slotId}
