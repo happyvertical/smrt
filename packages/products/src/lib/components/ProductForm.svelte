@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type { ProductData } from '../types';
 
@@ -153,18 +154,18 @@ function handleSubmit(event: Event) {
 
   <div class="form-actions">
     {#if onCancel}
-      <button type="button" onclick={onCancel} disabled={loading} class="cancel-btn">
+      <Button type="button" variant="secondary" onclick={onCancel} disabled={loading}>
         Cancel
-      </button>
+      </Button>
     {/if}
-    
-    <button type="submit" disabled={loading} class="submit-btn">
+
+    <Button type="submit" variant="primary" disabled={loading}>
       {#if loading}
         Saving...
       {:else}
         {product.id ? 'Update Product' : 'Create Product'}
       {/if}
-    </button>
+    </Button>
   </div>
 </form>
 
@@ -250,40 +251,5 @@ function handleSubmit(event: Event) {
     margin-top: 1.5rem;
     padding-top: 1rem;
     border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
-  }
-  
-  .cancel-btn, .submit-btn {
-    padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-sm, 4px);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
-    border: 1px solid;
-    transition: all 0.2s;
-  }
-  
-  .cancel-btn {
-    background: var(--smrt-color-surface, #fff);
-    border-color: var(--smrt-color-outline-variant, #d1d5db);
-    color: var(--smrt-color-on-surface, #374151);
-  }
-
-  .cancel-btn:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-  }
-
-  .submit-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    border-color: var(--smrt-color-primary, #3b82f6);
-    color: var(--smrt-color-on-primary, white);
-  }
-
-  .submit-btn:hover:not(:disabled) {
-    background: var(--smrt-color-primary, #2563eb);
-  }
-  
-  .submit-btn:disabled, .cancel-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 </style>

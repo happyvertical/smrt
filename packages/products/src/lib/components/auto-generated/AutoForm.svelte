@@ -5,6 +5,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.js';
 import type { ProductData } from '../../types';
 import FieldRenderer from './FieldRenderer.svelte';
@@ -128,12 +129,12 @@ function _getFieldType(
 
     {#if !readonly}
       <div class="form-actions">
-        <button type="submit" class="submit-btn">
+        <Button type="submit" variant="primary">
           {submitLabel}
-        </button>
-        <button type="button" class="reset-btn" onclick={() => formData = {}}>
+        </Button>
+        <Button type="button" variant="secondary" onclick={() => formData = {}}>
           Reset
-        </button>
+        </Button>
       </div>
     {/if}
   </form>
@@ -185,36 +186,6 @@ function _getFieldType(
     margin-top: 1.5rem;
     padding-top: 1.5rem;
     border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-  }
-
-  .submit-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    color: var(--smrt-color-on-primary, white);
-    border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: var(--smrt-radius-sm, 0.375rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .submit-btn:hover {
-    background: var(--smrt-color-primary, #2563eb);
-  }
-
-  .reset-btn {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-    color: var(--smrt-color-on-surface, #374151);
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    padding: 0.75rem 1.5rem;
-    border-radius: var(--smrt-radius-sm, 0.375rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .reset-btn:hover {
-    background: var(--smrt-color-surface-container-high, #e5e7eb);
   }
 
   .form-debug {

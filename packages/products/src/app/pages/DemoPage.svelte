@@ -5,6 +5,7 @@
  */
 
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import AutoForm from '../../lib/components/auto-generated/AutoForm.svelte';
 import ProductCard from '../../lib/components/ProductCard.svelte';
 import ProductForm from '../../lib/components/ProductForm.svelte';
@@ -51,27 +52,24 @@ function handleCustomSubmit(data: ProductData) {
   </header>
 
   <nav class="demo-nav">
-    <button
-      class="nav-btn"
-      class:active={currentTab === 'auto'}
+    <Button
+      variant={currentTab === 'auto' ? 'primary' : 'secondary'}
       onclick={() => currentTab = 'auto'}
     >
       Auto-Generated
-    </button>
-    <button
-      class="nav-btn"
-      class:active={currentTab === 'custom'}
+    </Button>
+    <Button
+      variant={currentTab === 'custom' ? 'primary' : 'secondary'}
       onclick={() => currentTab = 'custom'}
     >
       {t(M['products.demo_page.custom_components_tab'])}
-    </button>
-    <button
-      class="nav-btn"
-      class:active={currentTab === 'comparison'}
+    </Button>
+    <Button
+      variant={currentTab === 'comparison' ? 'primary' : 'secondary'}
       onclick={() => currentTab = 'comparison'}
     >
       Side-by-Side
-    </button>
+    </Button>
   </nav>
 
   <main class="demo-content">
@@ -221,27 +219,6 @@ function handleCustomSubmit(data: ProductData) {
     gap: 1rem;
     margin-bottom: 2rem;
     padding: 0 1rem;
-  }
-
-  .nav-btn {
-    padding: 0.75rem 1.5rem;
-    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 90%, transparent);
-    border: 2px solid transparent;
-    border-radius: var(--smrt-radius-md, 0.5rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .nav-btn:hover {
-    background: var(--smrt-color-surface, #fff);
-    transform: translateY(-2px);
-  }
-
-  .nav-btn.active {
-    background: var(--smrt-color-surface, #fff);
-    border-color: var(--smrt-color-primary, #3b82f6);
-    color: var(--smrt-color-primary, #3b82f6);
   }
 
   .demo-content {

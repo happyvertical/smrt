@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { onMount } from 'svelte';
 import ProductCard from '../components/ProductCard.svelte';
 import ProductForm from '../components/ProductForm.svelte';
@@ -119,13 +120,13 @@ function handleCancelForm() {
     </div>
     
     {#if !readonly && (showCreateForm || productStore.items.length === 0)}
-      <button 
-        type="button" 
+      <Button
+        type="button"
+        variant="primary"
         onclick={handleCreateProduct}
-        class="create-btn"
       >
         {t(M['products.product_catalog.add_product'])}
-      </button>
+      </Button>
     {/if}
   </div>
   
@@ -136,18 +137,18 @@ function handleCancelForm() {
   {:else if productStore.error}
     <div class="error-state" role="alert" aria-live="assertive">
       <p>Error: {productStore.error}</p>
-      <button type="button" onclick={() => productStore.loadProducts()}>
+      <Button type="button" variant="danger" onclick={() => productStore.loadProducts()}>
         Retry
-      </button>
+      </Button>
     </div>
   {:else if filteredProducts.length === 0}
     <div class="empty-state" role="status" aria-live="polite">
       {#if productStore.items.length === 0}
         <p>{t(M['products.product_catalog.empty'])}</p>
         {#if !readonly}
-          <button type="button" onclick={handleCreateProduct} class="create-btn">
+          <Button type="button" variant="primary" onclick={handleCreateProduct}>
             {t(M['products.product_catalog.create_first'])}
-          </button>
+          </Button>
         {/if}
       {:else}
         <p>{t(M['products.product_catalog.no_match'])}</p>
@@ -240,21 +241,6 @@ function handleCancelForm() {
     min-width: 150px;
   }
   
-  .create-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    color: var(--smrt-color-on-primary, white);
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-sm, 4px);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-
-  .create-btn:hover {
-    background: var(--smrt-color-primary, #2563eb);
-  }
-  
   .products-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -267,14 +253,12 @@ function handleCancelForm() {
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
-  .error-state button {
+  /* Restore the retry button's spacing from the error message. The old
+     `.error-state button` rule can't reach the <button> rendered inside the
+     smrt-ui <Button>, so pierce into it with `:global` (#1589); the danger
+     variant already supplies the background/color the old rule set. */
+  .error-state :global(.button) {
     margin-top: 0.5rem;
-    background: var(--smrt-color-error, #dc2626);
-    color: var(--smrt-color-on-error, white);
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: var(--smrt-radius-sm, 4px);
-    cursor: pointer;
   }
 
   .form-overlay {
