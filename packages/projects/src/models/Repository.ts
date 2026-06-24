@@ -125,8 +125,7 @@ export class Repository extends SmrtObject {
     if (options.baseUrl !== undefined) this.baseUrl = options.baseUrl;
     if (options.tokenConfigKey !== undefined)
       this.tokenConfigKey = options.tokenConfigKey;
-    if (options.tenantId !== undefined)
-      (this as any).tenantId = options.tenantId;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 
   /**
@@ -216,7 +215,7 @@ export class Repository extends SmrtObject {
    */
   async getIssues(filters?: SearchFilters): Promise<Issue[]> {
     const { IssueCollection } = await import('../collections/Issues');
-    const collection = await (IssueCollection as any).create(this.options);
+    const collection = await IssueCollection.create(this.options);
     return await collection.discover({ repository: this, filters });
   }
 
@@ -230,9 +229,7 @@ export class Repository extends SmrtObject {
     const { PullRequestCollection } = await import(
       '../collections/PullRequests'
     );
-    const collection = await (PullRequestCollection as any).create(
-      this.options,
-    );
+    const collection = await PullRequestCollection.create(this.options);
     return await collection.discover({ repository: this, filters });
   }
 
@@ -366,7 +363,7 @@ export class Repository extends SmrtObject {
     const { RepositoryCollection } = await import(
       '../collections/Repositories'
     );
-    const collection = await (RepositoryCollection as any).create(options);
+    const collection = await RepositoryCollection.create(options);
     return await collection.findByFullName(owner, name);
   }
 }

@@ -158,8 +158,7 @@ export class Project extends SmrtObject {
       this.statusFieldId = options.statusFieldId;
     if (options.statusOptions !== undefined)
       this.statusOptions = options.statusOptions;
-    if (options.tenantId !== undefined)
-      (this as any).tenantId = options.tenantId;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 
   /**
@@ -426,7 +425,7 @@ export class Project extends SmrtObject {
     options: SmrtObjectOptions = {},
   ): Promise<Project | null> {
     const { ProjectCollection } = await import('../collections/Projects');
-    const collection = await (ProjectCollection as any).create(options);
+    const collection = await ProjectCollection.create(options);
     return await collection.findByTitle(title);
   }
 }

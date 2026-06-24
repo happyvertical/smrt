@@ -5,7 +5,7 @@
  * Uses @happyvertical/repos SDK for actual API calls.
  */
 
-import { getAI } from '@happyvertical/ai';
+import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import {
   foreignKey,
   SmrtObject,
@@ -27,6 +27,21 @@ import type {
 } from '../types';
 import type { Comment } from './Comment';
 import type { Repository } from './Repository';
+
+/**
+ * Resolved AI configuration produced by {@link loadEnvConfig} for the
+ * `incorporateFeedback` synthesis path. Mirrors the schema passed to
+ * `loadEnvConfig` (provider/model/apiKey plus tuning knobs).
+ */
+interface ResolvedAiConfig {
+  provider?: string;
+  model?: string;
+  apiKey?: string;
+  timeout?: number;
+  maxRetries?: number;
+  temperature?: number;
+  maxTokens?: number;
+}
 
 export interface IssueOptions extends SmrtObjectOptions {
   repositoryId?: string;
@@ -161,8 +176,7 @@ export class Issue extends SmrtObject {
       this.originalBody = options.originalBody;
     if (options.synthesisCount !== undefined)
       this.synthesisCount = options.synthesisCount;
-    if (options.tenantId !== undefined)
-      (this as any).tenantId = options.tenantId;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 
   /**
@@ -180,7 +194,7 @@ export class Issue extends SmrtObject {
     const { RepositoryCollection } = await import(
       '../collections/Repositories'
     );
-    const collection = await (RepositoryCollection as any).create(this.options);
+    const collection = await RepositoryCollection.create(this.options);
     const repo = await collection.get({ id: this.repositoryId });
 
     if (!repo) {
@@ -413,7 +427,7 @@ export class Issue extends SmrtObject {
 
     const globalAiConfig = smrtConfig.toJSON().ai || {};
     const instanceAiConfig = aiOption ?? {};
-    const aiConfig = loadEnvConfig<any>(
+    const aiConfig = loadEnvConfig<ResolvedAiConfig>(
       {
         ...globalAiConfig,
         ...instanceAiConfig,
@@ -449,7 +463,7 @@ export class Issue extends SmrtObject {
       model: options.model ?? aiConfig.model,
       defaultModel: options.model ?? aiConfig.model,
       apiKey,
-    } as any);
+    } as AIClientOptions);
 
     return this.sendPromptMessage(ai, instructions, options);
   }
@@ -464,17 +478,22 @@ export class Issue extends SmrtObject {
    * `incorporateFeedback()` paths consistent (#1567).
    */
   private async sendPromptMessage(
-    ai: { message: (prompt: string, options?: any) => Promise<string> },
+    ai: {
+      message: (
+        prompt: string,
+        options?: Record<string, unknown>,
+      ) => Promise<string>;
+    },
     instructions: string,
     options: Record<string, unknown>,
   ): Promise<string> {
     const prompt = `--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
     const tools = this.getAvailableTools();
 
-    return (await ai.message(prompt, {
+    return await ai.message(prompt, {
       ...options,
       tools: tools.length > 0 ? tools : undefined,
-    } as any)) as string;
+    });
   }
 
   private isExplicitAiClientOption(

@@ -84,8 +84,7 @@ export class Comment extends SmrtObject {
     if (options.createdAt !== undefined) this.createdAt = options.createdAt;
     if (options.updatedAt !== undefined) this.updatedAt = options.updatedAt;
     if (options.url !== undefined) this.url = options.url;
-    if (options.tenantId !== undefined)
-      (this as any).tenantId = options.tenantId;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 
   /**
