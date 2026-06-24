@@ -169,7 +169,7 @@ export class Fact extends SmrtObject {
     if (!this.previousFactId) return null;
 
     const { FactCollection } = await import('./facts');
-    const collection = await (FactCollection as any).create(this.options);
+    const collection = await FactCollection.create(this.options);
     return await collection.get({ id: this.previousFactId });
   }
 
@@ -178,7 +178,7 @@ export class Fact extends SmrtObject {
    */
   async getSuccessors(): Promise<Fact[]> {
     const { FactCollection } = await import('./facts');
-    const collection = await (FactCollection as any).create(this.options);
+    const collection = await FactCollection.create(this.options);
     return await collection.list({ where: { previousFactId: this.id } });
   }
 
@@ -187,7 +187,7 @@ export class Fact extends SmrtObject {
    */
   async getSources(): Promise<import('./fact-source').FactSource[]> {
     const { FactSourceCollection } = await import('./fact-sources');
-    const collection = await (FactSourceCollection as any).create(this.options);
+    const collection = await FactSourceCollection.create(this.options);
     return await collection.getForFact(this.id as string);
   }
 
@@ -196,9 +196,7 @@ export class Fact extends SmrtObject {
    */
   async getSubjects(): Promise<import('./fact-subject').FactSubject[]> {
     const { FactSubjectCollection } = await import('./fact-subjects');
-    const collection = await (FactSubjectCollection as any).create(
-      this.options,
-    );
+    const collection = await FactSubjectCollection.create(this.options);
     return await collection.getForFact(this.id as string);
   }
 }
