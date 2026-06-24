@@ -3,8 +3,22 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { PricingModel } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AdDeliveryTier}.
+ */
+export interface AdDeliveryTierOptions extends SmrtObjectOptions {
+  name?: string;
+  priority?: number;
+  pricingModel?: PricingModel;
+  description?: string;
+}
 
 /**
  * AdDeliveryTier defines priority levels for ad serving.
@@ -57,7 +71,7 @@ export class AdDeliveryTier extends SmrtObject {
    */
   description: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: AdDeliveryTierOptions = {}) {
     super(options);
     if (options.name !== undefined) this.name = options.name;
     if (options.priority !== undefined) this.priority = options.priority;

@@ -3,9 +3,37 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { TrackingEventStatus } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AnalyticsEvent}.
+ */
+export interface AnalyticsEventOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  propertyId?: string;
+  eventName?: string;
+  clientId?: string;
+  userId?: string;
+  params?: string;
+  eventTimestamp?: Date;
+  status?: TrackingEventStatus;
+  sentAt?: Date | null;
+  errorMessage?: string;
+  retryCount?: number;
+  nonPersonalizedAds?: boolean;
+  sessionId?: string;
+  pagePath?: string;
+  pageTitle?: string;
+  userAgent?: string;
+  ipAddress?: string;
+}
 
 /**
  * AnalyticsEvent represents a tracked analytics event (server-side tracking log).
@@ -122,7 +150,7 @@ export class AnalyticsEvent extends SmrtObject {
    */
   ipAddress: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: AnalyticsEventOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;

@@ -3,9 +3,32 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { DataStreamStatus, DataStreamType } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AnalyticsDataStream}.
+ */
+export interface AnalyticsDataStreamOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  propertyId?: string;
+  displayName?: string;
+  streamType?: DataStreamType;
+  externalId?: string;
+  measurementId?: string;
+  firebaseAppId?: string;
+  defaultUri?: string;
+  bundleId?: string;
+  packageName?: string;
+  status?: DataStreamStatus;
+  enhancedMeasurement?: boolean;
+}
 
 /**
  * AnalyticsDataStream represents a data stream (web, iOS, Android) for an analytics property.
@@ -96,7 +119,7 @@ export class AnalyticsDataStream extends SmrtObject {
    */
   enhancedMeasurement: boolean = true;
 
-  constructor(options: any = {}) {
+  constructor(options: AnalyticsDataStreamOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;

@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
@@ -12,6 +17,36 @@ import {
   smrtAnalyticsHasPositiveTrendsPrompt,
 } from '../prompts.js';
 import { ReportFrequency, ReportStatus } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AnalyticsReport}.
+ *
+ * `metrics` is omitted from the {@link SmrtObjectOptions} base before being
+ * re-declared: the framework option carries an observability `MetricsConfig`,
+ * whereas this report field is a JSON-encoded list of analytics metrics.
+ */
+export interface AnalyticsReportOptions
+  extends Omit<SmrtObjectOptions, 'metrics'> {
+  tenantId?: string | null;
+  propertyId?: string;
+  name?: string;
+  description?: string;
+  dimensions?: string;
+  metrics?: string;
+  dateRangeStart?: string;
+  dateRangeEnd?: string;
+  dimensionFilter?: string;
+  metricFilter?: string;
+  orderBy?: string;
+  maxResults?: number;
+  status?: ReportStatus;
+  frequency?: ReportFrequency;
+  lastRunAt?: Date | null;
+  nextRunAt?: Date | null;
+  resultData?: string;
+  rowCount?: number;
+  lastError?: string;
+}
 
 /**
  * AnalyticsReport represents a saved report configuration with optional scheduling.
@@ -138,8 +173,13 @@ export class AnalyticsReport extends SmrtObject {
    */
   lastError: string = '';
 
-  constructor(options: any = {}) {
-    super(options);
+  constructor(options: AnalyticsReportOptions = {}) {
+    // `AnalyticsReportOptions` re-types `metrics` as the report's JSON string,
+    // which collides with the framework's `metrics?: MetricsConfig` observability
+    // option on `SmrtObjectOptions`. The base never reads a string `metrics` as
+    // config, so the value is forwarded unchanged; the assertion only reconciles
+    // the two unrelated `metrics` types at the `super()` boundary.
+    super(options as SmrtObjectOptions);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;
     if (options.name !== undefined) this.name = options.name;
@@ -317,7 +357,7 @@ export class AnalyticsReport extends SmrtObject {
    * trends, and recommendations) — `insights` mirrors `analysis` so the
    * return shape is preserved without a redundant AI round-trip.
    */
-  async analyzeResults(_options: any = {}): Promise<{
+  async analyzeResults(_options: Record<string, unknown> = {}): Promise<{
     action: string;
     analysis: string;
     insights: string;

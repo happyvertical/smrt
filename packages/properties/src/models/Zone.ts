@@ -83,7 +83,7 @@ export class Zone extends SmrtHierarchical {
 
   constructor(options: ZoneOptions = {}) {
     super(options);
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;
     if (options.parentId !== undefined) this.parentId = options.parentId;
     if (options.name !== undefined) this.name = options.name;
@@ -127,7 +127,7 @@ export class Zone extends SmrtHierarchical {
    */
   async getProperty(): Promise<import('./Property').Property | null> {
     const { PropertyCollection } = await import('../collections/Properties');
-    const collection = await (PropertyCollection as any).create(this.options);
+    const collection = await PropertyCollection.create(this.options);
     return await collection.get({ id: this.propertyId });
   }
 
@@ -164,7 +164,7 @@ export class Zone extends SmrtHierarchical {
       throw new Error('Zone must be saved before creating children');
     }
     const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
+    const collection = await ZoneCollection.create(this.options);
     const zone = await collection.create({
       ...options,
       propertyId: this.propertyId,

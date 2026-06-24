@@ -7,10 +7,28 @@ import {
   crossPackageRef,
   foreignKey,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdVariationStatus } from '../types/index.js';
+
+/**
+ * Options for constructing an {@link AdVariation}.
+ */
+export interface AdVariationOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  groupId?: string;
+  formatId?: string;
+  assetId?: string;
+  name?: string;
+  clickUrl?: string;
+  altText?: string;
+  weight?: number;
+  status?: AdVariationStatus;
+  impressions?: number;
+  clicks?: number;
+}
 
 /**
  * AdVariation represents a creative asset within an ad group.
@@ -101,7 +119,7 @@ export class AdVariation extends SmrtObject {
    */
   clicks: number = 0;
 
-  constructor(options: any = {}) {
+  constructor(options: AdVariationOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.groupId !== undefined) this.groupId = options.groupId;
