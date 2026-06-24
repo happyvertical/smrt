@@ -104,7 +104,7 @@ export class EventSeries extends SmrtObject {
    *
    * @returns Parsed metadata object or empty object
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (!this.metadata) return {};
     try {
       return JSON.parse(this.metadata);
@@ -118,7 +118,7 @@ export class EventSeries extends SmrtObject {
    *
    * @param data - Metadata object to store
    */
-  setMetadata(data: Record<string, any>): void {
+  setMetadata(data: Record<string, unknown>): void {
     this.metadata = JSON.stringify(data);
   }
 
@@ -127,7 +127,7 @@ export class EventSeries extends SmrtObject {
    *
    * @param updates - Partial metadata to merge
    */
-  updateMetadata(updates: Record<string, any>): void {
+  updateMetadata(updates: Record<string, unknown>): void {
     const current = this.getMetadata();
     this.setMetadata({ ...current, ...updates });
   }
@@ -143,7 +143,7 @@ export class EventSeries extends SmrtObject {
     const { EventTypeCollection } = await import(
       '../collections/EventTypeCollection'
     );
-    const collection = await (EventTypeCollection as any).create(this.options);
+    const collection = await EventTypeCollection.create(this.options);
 
     return await collection.get({ id: this.typeId });
   }
@@ -161,7 +161,7 @@ export class EventSeries extends SmrtObject {
       const { ProfileCollection } = await import(
         '@happyvertical/smrt-profiles'
       );
-      const collection = await (ProfileCollection as any).create(this.options);
+      const collection = await ProfileCollection.create(this.options);
 
       return await collection.get({ id: this.organizerId });
     } catch {
@@ -177,7 +177,7 @@ export class EventSeries extends SmrtObject {
    */
   async getEvents() {
     const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await (EventCollection as any).create(this.options);
+    const collection = await EventCollection.create(this.options);
 
     return await collection.list({ where: { seriesId: this.id } });
   }

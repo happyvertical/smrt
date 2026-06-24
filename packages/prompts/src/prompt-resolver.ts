@@ -38,9 +38,7 @@ async function loadPromptBase(
   let collection: PromptOverrideCollection | null = null;
   let cacheDb: ResolvePromptOptions['db'] | undefined = options.db;
   if (options.db) {
-    const initializedCollection = await (
-      PromptOverrideCollection as any
-    ).create({
+    const initializedCollection = await PromptOverrideCollection.create({
       db: options.db,
     });
     collection = initializedCollection;
