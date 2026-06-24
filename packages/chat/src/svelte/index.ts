@@ -18,6 +18,7 @@
  * ```
  */
 
+import { MessageBubble, TypingIndicator } from '@happyvertical/smrt-ui/chat';
 import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { CHAT_MODULE_META } from '../ui.js';
 // Agent components
@@ -43,10 +44,8 @@ import Avatar from './components/shared/Avatar.svelte';
 import FileUpload from './components/shared/FileUpload.svelte';
 import LinkPreview from './components/shared/LinkPreview.svelte';
 import MentionAutocomplete from './components/shared/MentionAutocomplete.svelte';
-import MessageBubble from './components/shared/MessageBubble.svelte';
 import ReactionPicker from './components/shared/ReactionPicker.svelte';
 import ReadReceipts from './components/shared/ReadReceipts.svelte';
-import TypingIndicator from './components/shared/TypingIndicator.svelte';
 import UserPresence from './components/shared/UserPresence.svelte';
 // Tab components
 import ChatTab from './components/tabs/ChatTab.svelte';
@@ -54,6 +53,10 @@ import ChatTabList from './components/tabs/ChatTabList.svelte';
 import ChatTabs from './components/tabs/ChatTabs.svelte';
 import MiniChat from './components/tabs/MiniChat.svelte';
 
+// MessageBubble + TypingIndicator are re-exported from the canonical
+// `@happyvertical/smrt-ui/chat` primitives (consolidated in #1589);
+// ReactionPicker keeps a thin chat-local adapter for the package's i18n + palette.
+export { MessageBubble, TypingIndicator } from '@happyvertical/smrt-ui/chat';
 export { default as AgentChat } from './components/agent/AgentChat.svelte';
 export { default as AgentSelector } from './components/agent/AgentSelector.svelte';
 export { default as AgentSessionPanel } from './components/agent/AgentSessionPanel.svelte';
@@ -73,10 +76,8 @@ export { default as Avatar } from './components/shared/Avatar.svelte';
 export { default as FileUpload } from './components/shared/FileUpload.svelte';
 export { default as LinkPreview } from './components/shared/LinkPreview.svelte';
 export { default as MentionAutocomplete } from './components/shared/MentionAutocomplete.svelte';
-export { default as MessageBubble } from './components/shared/MessageBubble.svelte';
 export { default as ReactionPicker } from './components/shared/ReactionPicker.svelte';
 export { default as ReadReceipts } from './components/shared/ReadReceipts.svelte';
-export { default as TypingIndicator } from './components/shared/TypingIndicator.svelte';
 export { default as UserPresence } from './components/shared/UserPresence.svelte';
 export { default as ChatTab } from './components/tabs/ChatTab.svelte';
 export { default as ChatTabList } from './components/tabs/ChatTabList.svelte';

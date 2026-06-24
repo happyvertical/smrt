@@ -2,15 +2,27 @@
 /**
  * ReactionPicker — a labelled group of emoji reaction buttons.
  *
- * Each button has a text accessible name (so the emoji isn't announced as raw
- * glyphs), and the group carries an `aria-label`. Fires `onpick(emoji)` on
- * activation.
+ * Each button carries a text accessible name (so the emoji isn't announced as
+ * raw glyphs) and the group carries an `aria-label`. Fires `onpick(emoji)` on
+ * activation. Labels default to translated `ui.reaction_picker.*` strings;
+ * callers that own a domain message catalog can override the group `label` and
+ * the per-emoji name via `emojiLabel`. Wraps gracefully for larger emoji sets.
  */
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
 export interface Props {
   /** Emoji set to offer. */
   emojis?: string[];
-  /** Accessible label for the group. */
+  /** Accessible label for the group. Defaults to a translated "Add reaction". */
   label?: string;
+  /**
+   * Accessible name for each emoji button. Defaults to a built-in name for the
+   * common reactions, else a translated "React with {emoji}".
+   */
+  emojiLabel?: (emoji: string) => string;
+  /** Whether the picker is shown. */
+  isOpen?: boolean;
   /** Fired with the chosen emoji. */
   onpick?: (emoji: string) => void;
 }
@@ -27,30 +39,48 @@ const EMOJI_LABELS: Record<string, string> = {
 
 const {
   emojis = DEFAULT_EMOJIS,
-  label = 'Add reaction',
+  label,
+  emojiLabel,
+  isOpen = true,
   onpick,
 }: Props = $props();
+
+const { t } = useI18n();
+
+const groupLabel = $derived(label ?? t(M['ui.reaction_picker.label']));
+
+function nameFor(emoji: string): string {
+  return (
+    emojiLabel?.(emoji) ??
+    EMOJI_LABELS[emoji] ??
+    t(M['ui.reaction_picker.react_with'], { emoji })
+  );
+}
 </script>
 
-<div class="reactions" role="group" aria-label={label}>
-  {#each emojis as emoji (emoji)}
-    <button
-      type="button"
-      class="reactions__btn"
-      aria-label={EMOJI_LABELS[emoji] ?? `React with ${emoji}`}
-      onclick={() => onpick?.(emoji)}
-    >
-      <span aria-hidden="true">{emoji}</span>
-    </button>
-  {/each}
-</div>
+{#if isOpen}
+  <div class="reactions" role="group" aria-label={groupLabel}>
+    {#each emojis as emoji (emoji)}
+      <button
+        type="button"
+        class="reactions__btn"
+        aria-label={nameFor(emoji)}
+        onclick={() => onpick?.(emoji)}
+      >
+        <span aria-hidden="true">{emoji}</span>
+      </button>
+    {/each}
+  </div>
+{/if}
 
 <style>
   .reactions {
     display: inline-flex;
+    flex-wrap: wrap;
     gap: var(--smrt-spacing-1, 4px);
     padding: var(--smrt-spacing-1, 4px);
-    border-radius: var(--smrt-radius-full, 9999px);
+    max-width: 16rem;
+    border-radius: var(--smrt-radius-large, 12px);
     background: var(--smrt-color-surface-container, #f3edf7);
   }
 

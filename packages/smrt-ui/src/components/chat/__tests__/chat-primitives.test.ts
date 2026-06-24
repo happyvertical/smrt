@@ -38,9 +38,25 @@ describe('MessageBubble', () => {
     );
   });
 
-  it('is axe-clean', async () => {
+  it('renders a bare bubble (no header/group) from plain content', () => {
+    render(MessageBubble, {
+      props: { content: 'Hello there', variant: 'default', own: false },
+    });
+    expect(screen.getByText('Hello there')).toBeInTheDocument();
+    // A bare bubble adds no labelled landmark — its host row owns the label.
+    expect(screen.queryByRole('group')).toBeNull();
+  });
+
+  it('is axe-clean as a labelled card', async () => {
     const { container } = render(MessageBubble, {
       props: { role: 'user', author: 'You', children: body('hi') },
+    });
+    await expectNoA11yViolations(container);
+  });
+
+  it('is axe-clean as an own bare bubble', async () => {
+    const { container } = render(MessageBubble, {
+      props: { content: 'Hi', variant: 'default', own: true },
     });
     await expectNoA11yViolations(container);
   });
@@ -64,6 +80,27 @@ describe('ReactionPicker', () => {
     expect(onpick).toHaveBeenCalledWith('❤️');
   });
 
+  it('renders nothing when closed', () => {
+    render(ReactionPicker, { props: { isOpen: false } });
+    expect(screen.queryByRole('group')).toBeNull();
+  });
+
+  it('honors caller-supplied group + per-emoji labels', () => {
+    render(ReactionPicker, {
+      props: {
+        emojis: ['🚀'],
+        label: 'Emoji reactions',
+        emojiLabel: (emoji: string) => `React with ${emoji}`,
+      },
+    });
+    expect(
+      screen.getByRole('group', { name: 'Emoji reactions' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'React with 🚀' }),
+    ).toBeInTheDocument();
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(ReactionPicker);
     await expectNoA11yViolations(container);
@@ -74,6 +111,26 @@ describe('TypingIndicator', () => {
   it('announces who is typing via a status region', () => {
     render(TypingIndicator, { props: { name: 'Assistant' } });
     expect(screen.getByRole('status')).toHaveTextContent('Assistant is typing');
+  });
+
+  it('names a single typist from a list', () => {
+    render(TypingIndicator, { props: { names: ['Ada'] } });
+    expect(screen.getByText('Ada is typing')).toBeInTheDocument();
+  });
+
+  it('names two typists from a list', () => {
+    render(TypingIndicator, { props: { names: ['Ada', 'Bob'] } });
+    expect(screen.getByText('Ada and Bob are typing')).toBeInTheDocument();
+  });
+
+  it('aggregates three or more typists', () => {
+    render(TypingIndicator, { props: { names: ['Ada', 'Bob', 'Cy'] } });
+    expect(screen.getByText('Ada and 2 others are typing')).toBeInTheDocument();
+  });
+
+  it('renders nothing when nobody is typing', () => {
+    const { container } = render(TypingIndicator, { props: { names: [] } });
+    expect(container.querySelector('.typing')).toBeNull();
   });
 
   it('is axe-clean', async () => {

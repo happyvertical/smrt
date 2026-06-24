@@ -53,4 +53,8 @@ export const M = defineMessages({
   'ui.pagination.go_to_page': 'Go to page {page}',
   'ui.pagination.next_page': 'Next page',
   'ui.pagination.last_page': 'Last page ({totalPages})',
+
+  // chat/ReactionPicker.svelte
+  'ui.reaction_picker.label': 'Add reaction',
+  'ui.reaction_picker.react_with': 'React with {emoji}',
 });

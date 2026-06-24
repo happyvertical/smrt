@@ -4,27 +4,49 @@
  *
  * The visible dots are decorative (`aria-hidden`); the meaning is carried by an
  * sr-only label inside a polite `role="status"` live region so screen readers
- * hear "<name> is typing" without the animation noise. Honors reduced-motion.
+ * hear who is typing without the animation noise. Honors reduced-motion.
+ *
+ * Pass `names` to announce one or more typists ("Ada is typing", "Ada and Bob
+ * are typing", "Ada and 2 others are typing") — an empty list renders nothing.
+ * Or pass a single `name` / a full `label` override.
  */
 export interface Props {
-  /** Who is typing (e.g. "Assistant"). */
+  /** Who is typing (single). */
   name?: string;
-  /** Full label override; defaults to "<name> is typing…" / "Typing…". */
+  /** Names of everyone currently typing — aggregated into the label. */
+  names?: string[];
+  /** Full label override; defaults to an aggregation of `names`/`name`. */
   label?: string;
 }
 
-const { name, label }: Props = $props();
-const text = $derived(label ?? (name ? `${name} is typing…` : 'Typing…'));
+const { name, names, label }: Props = $props();
+
+// Names-mode (an explicit list) renders nothing when nobody is typing; the
+// single-`name`/`label` form always renders.
+const inNamesMode = $derived(names !== undefined);
+const show = $derived(!inNamesMode || (names?.length ?? 0) > 0);
+
+const text = $derived.by(() => {
+  if (label) return label;
+  if (names && names.length > 0) {
+    if (names.length === 1) return `${names[0]} is typing`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing`;
+    return `${names[0]} and ${names.length - 1} others are typing`;
+  }
+  return name ? `${name} is typing…` : 'Typing…';
+});
 </script>
 
-<div class="typing" role="status" aria-live="polite">
-  <span class="typing__sr">{text}</span>
-  <span class="typing__dots" aria-hidden="true">
-    <span class="typing__dot"></span>
-    <span class="typing__dot"></span>
-    <span class="typing__dot"></span>
-  </span>
-</div>
+{#if show}
+  <div class="typing" role="status" aria-live="polite">
+    <span class="typing__sr">{text}</span>
+    <span class="typing__dots" aria-hidden="true">
+      <span class="typing__dot"></span>
+      <span class="typing__dot"></span>
+      <span class="typing__dot"></span>
+    </span>
+  </div>
+{/if}
 
 <style>
   .typing {
