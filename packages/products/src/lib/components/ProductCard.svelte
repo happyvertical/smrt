@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ProductData } from '../types';
 
 interface Props {
@@ -42,15 +43,15 @@ const { product, onEdit, onDelete }: Props = $props();
   
   <div class="product-actions">
     {#if onEdit}
-      <button type="button" onclick={() => onEdit?.(product)} class="edit-btn">
+      <Button type="button" variant="secondary" size="sm" onclick={() => onEdit?.(product)}>
         Edit
-      </button>
+      </Button>
     {/if}
-    
+
     {#if onDelete}
-      <button type="button" onclick={() => onDelete?.(product.id)} class="delete-btn">
+      <Button type="button" variant="danger" size="sm" onclick={() => onDelete?.(product.id)}>
         Delete
-      </button>
+      </Button>
     {/if}
   </div>
 </div>
@@ -139,35 +140,5 @@ const { product, onEdit, onDelete }: Props = $props();
     margin-top: 1rem;
     padding-top: 0.75rem;
     border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
-  }
-  
-  .edit-btn, .delete-btn {
-    padding: 0.375rem 0.75rem;
-    border-radius: var(--smrt-radius-sm, 4px);
-    font-size: var(--smrt-typography-label-large-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    border: 1px solid;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  
-  .edit-btn {
-    background: var(--smrt-color-surface-container-low, #f9fafb);
-    border-color: var(--smrt-color-outline-variant, #d1d5db);
-    color: var(--smrt-color-on-surface, #374151);
-  }
-
-  .edit-btn:hover {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-  }
-
-  .delete-btn {
-    background: var(--smrt-color-error-container, #fef2f2);
-    border-color: var(--smrt-color-error, #fecaca);
-    color: var(--smrt-color-error, #dc2626);
-  }
-
-  .delete-btn:hover {
-    background: var(--smrt-color-error-container, #fee2e2);
   }
 </style>

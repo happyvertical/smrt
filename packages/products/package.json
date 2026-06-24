@@ -4,6 +4,7 @@
   "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
   "author": "HappyVertical",
   "type": "module",
+  "smrtRawPrimitives": "strict-buttons",
   "main": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",
   "files": [
