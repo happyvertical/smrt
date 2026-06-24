@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-analytics",
-  "version": "0.34.6",
+  "version": "0.34.7",
   "description": "Analytics integration models for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",

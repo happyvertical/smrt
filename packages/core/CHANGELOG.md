@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.34.7
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: migrate all domain packages to smrt-ui form primitives, flip strict (#1589) (#1632) (forms)
+  - @happyvertical/smrt-config@0.34.7
+  - @happyvertical/smrt-types@0.34.7
+  - @happyvertical/smrt-scanner@0.34.7
+
 ## 0.34.6
 
 ### Patch Changes
