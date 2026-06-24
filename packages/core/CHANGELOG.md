@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.34.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - recursively strip sensitive fields in toPublicJSON() (#1580) (#1641) (core)
+  - close out #1405 stragglers — stale store doc + FieldRenderer derived (#1640) (products)
+  - @happyvertical/smrt-config@0.34.8
+  - @happyvertical/smrt-types@0.34.8
+  - @happyvertical/smrt-scanner@0.34.8
+
 ## 0.34.7
 
 ### Patch Changes
