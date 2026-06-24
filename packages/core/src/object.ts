@@ -1255,24 +1255,93 @@ export class SmrtObject extends SmrtClass {
    * @returns A plain object safe to send to API consumers.
    */
   toPublicJSON(): Record<string, unknown> {
+    return this.projectPublicJSON(new WeakSet<SmrtObject>());
+  }
+
+  /**
+   * Recursive worker behind {@link toPublicJSON}.
+   *
+   * Strips this instance's sensitive fields (top-level + STI `_meta_data`),
+   * then walks the serialized payload and reduces any nested `SmrtObject`
+   * value to its OWN public projection. Without this, a nested instance held
+   * in a field value (or surfaced by a `transformJSON()` override) would be
+   * serialized via `JSON.stringify` -> its `toJSON()`, leaking that nested
+   * object's `@field({ sensitive: true })` values to API/MCP/AI consumers
+   * (#1580).
+   *
+   * @param seen - Ancestor path of `SmrtObject` instances on the current
+   *   branch, used purely to break reference cycles. An instance already on
+   *   the path is dropped rather than recursed into. It is a path set (entries
+   *   are removed on the way back up), not a global visited set, so an object
+   *   legitimately shared across sibling branches is still projected in each.
+   */
+  private projectPublicJSON(
+    seen: WeakSet<SmrtObject>,
+  ): Record<string, unknown> {
     const json = this.toJSON() as Record<string, unknown>;
     const sensitiveFields = this.getSensitiveFieldNames();
-    if (sensitiveFields.size === 0) {
-      return json;
-    }
 
-    const metaData =
-      json._meta_data && typeof json._meta_data === 'object'
-        ? (json._meta_data as Record<string, unknown>)
-        : null;
-
-    for (const name of sensitiveFields) {
-      delete json[name];
-      if (metaData) {
-        delete metaData[name];
+    if (sensitiveFields.size > 0) {
+      const metaData =
+        json._meta_data && typeof json._meta_data === 'object'
+          ? (json._meta_data as Record<string, unknown>)
+          : null;
+      for (const name of sensitiveFields) {
+        delete json[name];
+        if (metaData) {
+          delete metaData[name];
+        }
       }
     }
+
+    seen.add(this);
+    try {
+      for (const key of Object.keys(json)) {
+        json[key] = SmrtObject.sanitizePublicValue(json[key], seen);
+      }
+    } finally {
+      seen.delete(this);
+    }
     return json;
+  }
+
+  /**
+   * Reduce an arbitrary serialized value to its public-safe form: a nested
+   * `SmrtObject` becomes its `toPublicJSON()` projection; plain objects and
+   * arrays are walked; everything else passes through unchanged. Part of the
+   * {@link toPublicJSON} recursive sensitive-field strip (#1580).
+   */
+  private static sanitizePublicValue(
+    value: unknown,
+    seen: WeakSet<SmrtObject>,
+  ): unknown {
+    if (value instanceof SmrtObject) {
+      // Cycle: this instance is already on the current ancestor path.
+      // Drop it (undefined serializes away) rather than recurse forever.
+      if (seen.has(value)) {
+        return undefined;
+      }
+      return value.projectPublicJSON(seen);
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => SmrtObject.sanitizePublicValue(item, seen));
+    }
+    // Only descend into plain objects (e.g. `_meta_data`, parsed JSON fields).
+    // Leave Date / Map / other class instances untouched so we never rewrite
+    // their internals.
+    if (value !== null && typeof value === 'object') {
+      const proto = Object.getPrototypeOf(value);
+      if (proto === Object.prototype || proto === null) {
+        const out: Record<string, unknown> = {};
+        for (const [key, item] of Object.entries(
+          value as Record<string, unknown>,
+        )) {
+          out[key] = SmrtObject.sanitizePublicValue(item, seen);
+        }
+        return out;
+      }
+    }
+    return value;
   }
 
   /**
