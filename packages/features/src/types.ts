@@ -1,11 +1,22 @@
 import type {
   SmartObjectManifest,
   SmrtClassOptions,
+  SmrtObject,
 } from '@happyvertical/smrt-core';
 
 export const GLOBAL_FEATURE_SCOPE_ID = '*';
 
 export type FeatureScopeType = 'global' | 'tenant';
+
+/**
+ * Constructor type for any `@smrt()`-decorated class that may declare feature
+ * toggles. Feature targets always extend `SmrtObject`, so this mirrors
+ * `@happyvertical/smrt-core`'s internal (non-exported) `SmrtObjectConstructor`
+ * and remains assignable to it for `ObjectRegistry.getClassByConstructor`.
+ */
+export type FeatureTargetConstructor = new (
+  ...args: unknown[]
+) => SmrtObject;
 
 export enum FeatureOverrideEffect {
   INHERIT = 'inherit',
@@ -58,7 +69,7 @@ export interface FeatureDefinitionSeed {
 
 export interface SyncDefinitionsOptions {
   classNames?: string[];
-  constructors?: Array<new (...args: any[]) => any>;
+  constructors?: FeatureTargetConstructor[];
   pruneStale?: boolean;
 }
 
@@ -97,11 +108,24 @@ export interface FeatureResolverOptions {
   tenantHierarchyLoader?: FeatureTenantHierarchyLoader;
 }
 
+/**
+ * Minimal structural shape of a tenant record returned by
+ * `@happyvertical/smrt-users`. Only the permission-cascade fields consumed by
+ * feature resolution are modeled; everything else is left unconstrained.
+ */
+export interface FeatureUsersTenantRecord {
+  id: string;
+  inheritPermissions?: boolean;
+  cascadePermissions?: boolean;
+}
+
 export interface FeatureUsersModule {
   TenantCollection: {
     create(options: SmrtClassOptions): Promise<{
-      get(criteria: { id: string }): Promise<any>;
-      getAncestorsFromRoot(tenantId: string): Promise<any[]>;
+      get(criteria: { id: string }): Promise<FeatureUsersTenantRecord | null>;
+      getAncestorsFromRoot(
+        tenantId: string,
+      ): Promise<FeatureUsersTenantRecord[]>;
     }>;
   };
 }

@@ -9,9 +9,13 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '@happyvertical/smrt-core/manifest';
-import type { FeatureDefinitionSeed, FeatureMetadata } from './types.js';
+import type {
+  FeatureDefinitionSeed,
+  FeatureMetadata,
+  FeatureTargetConstructor,
+} from './types.js';
 
-type RegistryEntryLike = {
+export type RegistryEntryLike = {
   name: string;
   qualifiedName?: string;
   packageName?: string;
@@ -301,18 +305,16 @@ function resolveManifestQualifiedClassName(
 }
 
 export function resolveFeatureKeyForTarget(
-  classOrInstance: object | (new (...args: any[]) => any),
+  classOrInstance: object | FeatureTargetConstructor,
   localId: string,
 ): {
   featureKey: string;
   defaultEnabled: boolean;
 } {
-  const ctor =
+  const ctor: FeatureTargetConstructor =
     typeof classOrInstance === 'function'
-      ? (classOrInstance as new (
-          ...args: any[]
-        ) => any)
-      : (classOrInstance as any).constructor;
+      ? (classOrInstance as FeatureTargetConstructor)
+      : (classOrInstance.constructor as FeatureTargetConstructor);
 
   const registration = ObjectRegistry.getClassByConstructor(ctor);
   if (!registration) {

@@ -15,6 +15,7 @@ import {
   extractFeatureSeedsFromRegistryEntry,
   extractTouchedPackagesFromManifest,
   getPackageNameFromRegistry,
+  type RegistryEntryLike,
 } from './utils.js';
 
 export class FeatureSyncService {
@@ -59,9 +60,8 @@ export class FeatureSyncService {
   private async ensureInitialized(): Promise<void> {
     if (!this.initializationPromise) {
       this.initializationPromise = (async () => {
-        this.featureDefinitions = await (
-          FeatureDefinitionCollection as any
-        ).create(this.options);
+        this.featureDefinitions =
+          await FeatureDefinitionCollection.create(this.options);
       })();
     }
 
@@ -69,7 +69,7 @@ export class FeatureSyncService {
   }
 
   private collectDefinitionsFromRegistrations(
-    registrations: Array<any>,
+    registrations: RegistryEntryLike[],
   ): FeatureDefinitionSeed[] {
     const definitions: FeatureDefinitionSeed[] = [];
 
@@ -81,7 +81,7 @@ export class FeatureSyncService {
   }
 
   private collectTouchedPackagesFromRegistrations(
-    registrations: Array<any>,
+    registrations: RegistryEntryLike[],
   ): Set<string> {
     const packages = new Set<string>();
 
@@ -99,7 +99,9 @@ export class FeatureSyncService {
     return packages;
   }
 
-  private collectRegistrations(options: SyncDefinitionsOptions): Array<any> {
+  private collectRegistrations(
+    options: SyncDefinitionsOptions,
+  ): RegistryEntryLike[] {
     if (options.classNames?.length) {
       return options.classNames
         .map((name) => ObjectRegistry.getClass(name))
@@ -108,12 +110,12 @@ export class FeatureSyncService {
 
     if (options.constructors?.length) {
       return options.constructors
-        .map((ctor) => ObjectRegistry.getClassByConstructor(ctor as any))
+        .map((ctor) => ObjectRegistry.getClassByConstructor(ctor))
         .filter((value): value is NonNullable<typeof value> => !!value);
     }
 
-    const registrations: any[] = [];
-    const seen = new Set<any>();
+    const registrations: RegistryEntryLike[] = [];
+    const seen = new Set<RegistryEntryLike>();
 
     for (const registration of ObjectRegistry.getAllClasses().values()) {
       if (seen.has(registration)) {
