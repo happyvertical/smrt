@@ -52,7 +52,7 @@ export class EmailCollection extends MessageCollection {
    * Get unread emails
    */
   override async getUnread(accountId?: string): Promise<Email[]> {
-    const where: Record<string, any> = { isRead: false };
+    const where: Record<string, unknown> = { isRead: false };
     if (accountId) {
       where.accountId = accountId;
     }
@@ -63,7 +63,7 @@ export class EmailCollection extends MessageCollection {
    * Get flagged emails
    */
   override async getFlagged(accountId?: string): Promise<Email[]> {
-    const where: Record<string, any> = { isFlagged: true };
+    const where: Record<string, unknown> = { isFlagged: true };
     if (accountId) {
       where.accountId = accountId;
     }
@@ -74,7 +74,7 @@ export class EmailCollection extends MessageCollection {
    * Get emails with attachments
    */
   async getWithAttachments(accountId?: string): Promise<Email[]> {
-    const where: Record<string, any> = { hasAttachments: true };
+    const where: Record<string, unknown> = { hasAttachments: true };
     if (accountId) {
       where.accountId = accountId;
     }

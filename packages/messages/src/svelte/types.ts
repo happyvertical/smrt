@@ -42,7 +42,7 @@ export interface MessageData {
   date: string | Date;
   folderPath?: string;
   labels?: string[];
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
   sendStatus?:
     | 'draft'
     | 'pending'

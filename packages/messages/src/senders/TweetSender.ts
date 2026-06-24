@@ -44,10 +44,10 @@ export class TweetSender implements MessageSenderInterface {
 
     const client = await getMessageClient({
       type: 'twitter',
-      apiKey: credentials.apiKey,
-      apiSecret: credentials.apiSecret,
-      accessToken: credentials.accessToken,
-      accessSecret: credentials.accessSecret,
+      apiKey: credentials.apiKey as string,
+      apiSecret: credentials.apiSecret as string,
+      accessToken: credentials.accessToken as string,
+      accessSecret: credentials.accessSecret as string,
     });
 
     try {

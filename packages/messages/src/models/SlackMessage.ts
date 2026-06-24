@@ -53,7 +53,7 @@ export class SlackMessage extends Message {
   /**
    * Get blocks as parsed array
    */
-  getBlocks(): any[] {
+  getBlocks(): Record<string, unknown>[] {
     if (!this.blocks) return [];
     try {
       return JSON.parse(this.blocks);

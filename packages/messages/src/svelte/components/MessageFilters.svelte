@@ -53,7 +53,10 @@ $effect(() => {
   searchValue = filters.search ?? '';
 });
 
-function updateFilter(key: keyof MessageFilterState, value: any) {
+function updateFilter(
+  key: keyof MessageFilterState,
+  value: MessageFilterState[keyof MessageFilterState],
+) {
   const updated = { ...filters, [key]: value || undefined };
   onfilterchange?.(updated);
 }

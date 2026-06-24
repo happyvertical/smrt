@@ -41,7 +41,7 @@ export class Account extends SmrtObject {
   constructor(options: AccountOptions = {}) {
     super(options);
 
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;
     if (options.providerType !== undefined)
       this.providerType = options.providerType;
@@ -58,7 +58,7 @@ export class Account extends SmrtObject {
   /**
    * Get settings as parsed object
    */
-  getSettings(): Record<string, any> {
+  getSettings(): Record<string, unknown> {
     if (!this.settings) return {};
     try {
       return JSON.parse(this.settings);
@@ -70,7 +70,7 @@ export class Account extends SmrtObject {
   /**
    * Set settings from object
    */
-  setSettings(settings: Record<string, any>): void {
+  setSettings(settings: Record<string, unknown>): void {
     this.settings = JSON.stringify(settings);
   }
 
@@ -96,7 +96,7 @@ export class Account extends SmrtObject {
    * Store credentials securely using smrt-secrets
    */
   async setCredentials(
-    credentials: Record<string, any>,
+    credentials: Record<string, unknown>,
     options: {
       description?: string;
       category?: string;
@@ -138,7 +138,7 @@ export class Account extends SmrtObject {
   /**
    * Retrieve stored credentials
    */
-  async getCredentials(): Promise<Record<string, any> | null> {
+  async getCredentials(): Promise<Record<string, unknown> | null> {
     if (!this.credentialSecretId) {
       return this.getSettings();
     }

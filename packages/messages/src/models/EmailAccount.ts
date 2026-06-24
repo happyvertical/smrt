@@ -4,6 +4,7 @@
  * Retains email-specific fields and sync capability.
  */
 
+import type { FetchOptions, GetEmailClientOptions } from '@happyvertical/email';
 import { smrt } from '@happyvertical/smrt-core';
 import type {
   EmailAccountOptions,
@@ -66,7 +67,7 @@ export class EmailAccount extends Account {
    */
   async createClient() {
     const { getEmailClient } = await import('@happyvertical/email');
-    let settings: Record<string, any>;
+    let settings: Record<string, unknown>;
 
     // Use secrets integration if available
     if (this.credentialSecretId) {
@@ -83,7 +84,7 @@ export class EmailAccount extends Account {
     return await getEmailClient({
       type: this.providerType as ProviderType,
       ...settings,
-    } as any);
+    } as GetEmailClientOptions);
   }
 
   /**
@@ -117,12 +118,8 @@ export class EmailAccount extends Account {
         '../collections/EmailFolderCollection'
       );
 
-      const emailCollection = await (EmailCollection as any).create(
-        this.options,
-      );
-      const folderCollection = await (EmailFolderCollection as any).create(
-        this.options,
-      );
+      const emailCollection = await EmailCollection.create(this.options);
+      const folderCollection = await EmailFolderCollection.create(this.options);
 
       for (const folderName of foldersToSync) {
         try {
@@ -146,7 +143,7 @@ export class EmailAccount extends Account {
           }
 
           // Fetch messages from server
-          const fetchOptions: Record<string, any> = {
+          const fetchOptions: FetchOptions = {
             folder: folderName,
             limit: options.batchSize || 100,
           };
@@ -166,7 +163,7 @@ export class EmailAccount extends Account {
             try {
               // Check if message already exists
               const existingEmail = await emailCollection.getByMessageId(
-                this.id,
+                accountId,
                 msg.messageId || '',
               );
 
@@ -204,7 +201,7 @@ export class EmailAccount extends Account {
               email.textBody = msg.text || '';
               email.htmlBody = msg.html || '';
               email.body = msg.text || '';
-              email.folderId = folder.id;
+              email.folderId = folder.id ?? '';
               email.folderPath = folderName;
               email.labels = JSON.stringify(msg.labels || []);
               email.flags = JSON.stringify(msg.flags || []);
@@ -239,10 +236,10 @@ export class EmailAccount extends Account {
           }
 
           // Update folder counts
-          folder.messageCount = await emailCollection.countByFolder(folder.id);
-          folder.unreadCount = await emailCollection.countUnreadByFolder(
-            folder.id,
-          );
+          const folderId = folder.id ?? '';
+          folder.messageCount = await emailCollection.countByFolder(folderId);
+          folder.unreadCount =
+            await emailCollection.countUnreadByFolder(folderId);
           await folder.save();
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
@@ -278,9 +275,7 @@ export class EmailAccount extends Account {
     const { EmailFolderCollection } = await import(
       '../collections/EmailFolderCollection'
     );
-    const collection = await (EmailFolderCollection as any).create(
-      this.options,
-    );
+    const collection = await EmailFolderCollection.create(this.options);
 
     return await collection.list({ where: { accountId: this.id } });
   }
@@ -290,9 +285,11 @@ export class EmailAccount extends Account {
    */
   async getEmails(limit?: number) {
     const { EmailCollection } = await import('../collections/EmailCollection');
-    const collection = await (EmailCollection as any).create(this.options);
+    const collection = await EmailCollection.create(this.options);
 
-    const options: Record<string, any> = { where: { accountId: this.id } };
+    const options: { where: Record<string, unknown>; limit?: number } = {
+      where: { accountId: this.id },
+    };
     if (limit) {
       options.limit = limit;
     }
@@ -305,16 +302,16 @@ export class EmailAccount extends Account {
    */
   async getUnreadCount(): Promise<number> {
     const { EmailCollection } = await import('../collections/EmailCollection');
-    const collection = await (EmailCollection as any).create(this.options);
+    const collection = await EmailCollection.create(this.options);
 
-    return await collection.countUnreadByAccount(this.id);
+    return await collection.countUnreadByAccount(this.id ?? '');
   }
 
   /**
    * Store credentials securely using smrt-secrets (email-specific)
    */
   override async setCredentials(
-    credentials: Record<string, any>,
+    credentials: Record<string, unknown>,
     options: {
       description?: string;
       category?: string;
@@ -357,10 +354,10 @@ export class EmailAccount extends Account {
     const { EmailAccountCollection } = await import(
       '../collections/EmailAccountCollection'
     );
-    const collection = await (EmailAccountCollection as any).create({
+    const collection = await EmailAccountCollection.create({
       db: this.db,
     });
-    return collection.syncAll(args);
+    return collection.syncAll(args as SyncOptions | undefined);
   }
 
   /**
