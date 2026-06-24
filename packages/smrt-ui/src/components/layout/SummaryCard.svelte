@@ -5,6 +5,7 @@
  * Shows a label with a prominent value, optionally with a count badge
  * and link functionality.
  */
+import type { Snippet } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 import { Icon } from '../display/index.js';
 
@@ -19,8 +20,18 @@ export interface Props {
   highlight?: boolean;
   /** Make card clickable with href */
   href?: string;
-  /** Optional icon (name for Icon or SVG string) */
+  /** Optional icon name, rendered via the {@link Icon} component. */
   icon?: string;
+  /**
+   * Optional custom icon content, rendered as a Svelte snippet. Use this
+   * escape hatch for bespoke icon markup. It replaces the former raw-SVG
+   * **string** support, removed in #1591: SummaryCard no longer renders any
+   * consumer-supplied value via `{@html}` (an XSS sink). `iconContent` is
+   * rendered as a snippet, so the trust boundary moves to the consumer — the
+   * snippet's contents are whatever the consumer authors. When both
+   * `iconContent` and `icon` are provided, `iconContent` wins.
+   */
+  iconContent?: Snippet;
   /** Value color variant */
   variant?: 'default' | 'success' | 'warning' | 'danger';
 }
@@ -32,6 +43,7 @@ const {
   highlight = false,
   href,
   icon,
+  iconContent,
   variant = 'default',
 }: Props = $props();
 
@@ -48,9 +60,15 @@ const valueColorClass = $derived.by(() => {
       return 'color-default';
   }
 });
-
-const isSvg = $derived(icon?.startsWith('<svg'));
 </script>
+
+{#snippet cardIcon()}
+  {#if iconContent}
+    <span class="card-icon">{@render iconContent()}</span>
+  {:else if icon}
+    <span class="card-icon"><Icon name={icon} size={24} /></span>
+  {/if}
+{/snippet}
 
 {#if href}
   <a 
@@ -60,15 +78,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     {href}
     use:ripple
   >
-    {#if icon}
-      <span class="card-icon">
-        {#if isSvg}
-          {@html icon}
-        {:else}
-          <Icon name={icon} size={24} />
-        {/if}
-      </span>
-    {/if}
+    {@render cardIcon()}
     <div class="card-content">
       <span class="card-label">
         {label}
@@ -84,15 +94,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
   </a>
 {:else}
   <div class="summary-card" class:highlight>
-    {#if icon}
-      <span class="card-icon">
-        {#if isSvg}
-          {@html icon}
-        {:else}
-          <Icon name={icon} size={24} />
-        {/if}
-      </span>
-    {/if}
+    {@render cardIcon()}
     <div class="card-content">
       <span class="card-label">
         {label}

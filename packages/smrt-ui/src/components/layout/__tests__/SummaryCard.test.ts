@@ -6,6 +6,7 @@
  * axe-clean output across a couple of states.
  */
 import { render, screen } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import SummaryCard from '../SummaryCard.svelte';
@@ -43,15 +44,40 @@ describe('SummaryCard', () => {
     expect(container.querySelector('.card-count')).toBeNull();
   });
 
-  it('renders a raw SVG icon when icon starts with <svg', () => {
+  it('renders an icon via the Icon component when icon is a known name', () => {
+    const { container } = render(SummaryCard, {
+      // `search` is a real Icon preset, so the rendered <path> must carry a
+      // non-empty `d` — proving the icon-name path actually resolved (an
+      // unknown name would still render an <svg> but with an empty path).
+      props: { label: 'Visitors', value: 99, icon: 'search' },
+    });
+    const iconPath = container.querySelector('.card-icon svg path');
+    expect(iconPath?.getAttribute('d')).toBeTruthy();
+  });
+
+  it('does NOT inject a raw SVG string as markup (no {@html} sink) — #1591', () => {
     const { container } = render(SummaryCard, {
       props: {
         label: 'Visitors',
         value: 99,
-        icon: '<svg data-testid="svg-icon" viewBox="0 0 24 24"></svg>',
+        // A would-be XSS payload: the string is forwarded to <Icon name>, never
+        // rendered as HTML, so the attacker-controlled element must be absent.
+        icon: '<svg data-evil="1" viewBox="0 0 24 24"></svg>',
       },
     });
-    expect(container.querySelector('.card-icon svg')).not.toBeNull();
+    expect(container.querySelector('svg[data-evil]')).toBeNull();
+  });
+
+  it('renders custom icon markup via the iconContent snippet', () => {
+    const iconContent = createRawSnippet(() => ({
+      render: () => '<span data-testid="custom-icon">★</span>',
+    }));
+    const { container } = render(SummaryCard, {
+      props: { label: 'Starred', value: 1, iconContent },
+    });
+    expect(
+      container.querySelector('.card-icon [data-testid="custom-icon"]'),
+    ).not.toBeNull();
   });
 
   it('renders as a clickable link when href is provided', () => {
