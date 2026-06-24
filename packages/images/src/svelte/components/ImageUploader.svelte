@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { onDestroy } from 'svelte';
 import { M } from '../i18n.js';
 import type {
@@ -276,14 +277,14 @@ onDestroy(() => {
   {#if selectedImage}
     <!-- Gallery Confirmation Step -->
     <div class="header">
-      <button type="button" class="back-btn" onclick={handleBackToChooser}>
+      <Button variant="ghost" size="sm" class="back-btn--link" onclick={handleBackToChooser}>
         <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"></polyline>
         </svg>
         Back
-      </button>
+      </Button>
       {#if onCancel}
-        <button type="button" class="close-btn" onclick={onCancel}>×</button>
+        <Button variant="ghost" size="sm" class="close-btn--x" onclick={onCancel}>×</Button>
       {/if}
     </div>
 
@@ -298,21 +299,22 @@ onDestroy(() => {
       </div>
 
       <div class="confirm-actions">
-        <button type="button" class="primary-btn" onclick={handleConfirmOriginal}>
+        <Button variant="primary" class="primary-btn--pill" onclick={handleConfirmOriginal}>
           {t(M['images.image_uploader.select_image'])}
-        </button>
-        <button 
-          type="button"
-          class="variation-toggle" 
-          class:active={showVariation}
-          onclick={() => showVariation = !showVariation}
+        </Button>
+        <Button
+          variant="ghost"
+          class={showVariation
+            ? 'variation-toggle--chip variation-toggle--active'
+            : 'variation-toggle--chip'}
+          onclick={() => (showVariation = !showVariation)}
         >
           <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 20h9"></path>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
           </svg>
           {t(M['images.image_uploader.create_variation'])}
-        </button>
+        </Button>
       </div>
 
       {#if showVariation}
@@ -327,10 +329,10 @@ onDestroy(() => {
           {#if variationError}
             <div class="variation-error">{variationError}</div>
           {/if}
-          <button 
-            type="button"
-            class="generate-btn"
-            disabled={isGenerating || !variationPrompt.trim()} 
+          <Button
+            variant="primary"
+            class="generate-btn--pill"
+            disabled={isGenerating || !variationPrompt.trim()}
             onclick={handleGenerateVariation}
           >
             {#if isGenerating}
@@ -339,7 +341,7 @@ onDestroy(() => {
             {:else}
               {t(M['images.image_uploader.generate_variation'])}
             {/if}
-          </button>
+          </Button>
         </div>
       {/if}
     </div>
@@ -349,22 +351,38 @@ onDestroy(() => {
     <div class="header">
       <h3>{t(M['images.image_uploader.choose_image'])}</h3>
       {#if onCancel}
-        <button type="button" class="close-btn" onclick={onCancel}>×</button>
+        <Button variant="ghost" size="sm" class="close-btn--x" onclick={onCancel}>×</Button>
       {/if}
     </div>
     
     <div class="tabs">
       {#if allowedTabs.includes('gallery')}
-        <button type="button" class:active={activeTab === 'gallery'} onclick={() => activeTab = 'gallery'}>Gallery</button>
+        <Button
+          variant="ghost"
+          class={activeTab === 'gallery' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          onclick={() => (activeTab = 'gallery')}
+        >Gallery</Button>
       {/if}
       {#if allowedTabs.includes('upload')}
-        <button type="button" class:active={activeTab === 'upload'} onclick={() => activeTab = 'upload'}>Upload</button>
+        <Button
+          variant="ghost"
+          class={activeTab === 'upload' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          onclick={() => (activeTab = 'upload')}
+        >Upload</Button>
       {/if}
       {#if allowedTabs.includes('camera')}
-        <button type="button" class:active={activeTab === 'camera'} onclick={() => activeTab = 'camera'}>Camera</button>
+        <Button
+          variant="ghost"
+          class={activeTab === 'camera' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          onclick={() => (activeTab = 'camera')}
+        >Camera</Button>
       {/if}
       {#if allowedTabs.includes('external')}
-        <button type="button" class:active={activeTab === 'external'} onclick={() => activeTab = 'external'}>{t(M['images.image_uploader.external_url'])}</button>
+        <Button
+          variant="ghost"
+          class={activeTab === 'external' ? 'uploader-tab uploader-tab--active' : 'uploader-tab'}
+          onclick={() => (activeTab = 'external')}
+        >{t(M['images.image_uploader.external_url'])}</Button>
       {/if}
     </div>
     
@@ -401,7 +419,7 @@ onDestroy(() => {
           </div>
           <p>{t(M['images.image_uploader.drag_and_drop'])}</p>
           <span class="divider">or</span>
-          <button type="button" class="browse-btn">{t(M['images.image_uploader.browse_files'])}</button>
+          <Button variant="primary" class="browse-btn--decorative">{t(M['images.image_uploader.browse_files'])}</Button>
           <input 
             type="file" 
             accept="image/*" 
@@ -419,7 +437,7 @@ onDestroy(() => {
           {#if cameraError}
             <div class="error-panel">
               <p>{cameraError}</p>
-              <button type="button" onclick={startCamera}>{t(M['images.image_uploader.try_again'])}</button>
+              <Button variant="secondary" class="try-again-btn" onclick={startCamera}>{t(M['images.image_uploader.try_again'])}</Button>
             </div>
           {:else}
             <div class="video-container">
@@ -429,9 +447,9 @@ onDestroy(() => {
                 <div class="loading-overlay">{t(M['images.image_uploader.starting_camera'])}</div>
               {/if}
             </div>
-            <button type="button" class="capture-btn" disabled={!isCameraActive} onclick={takePicture}>
+            <Button variant="primary" class="capture-btn--pill" disabled={!isCameraActive} onclick={takePicture}>
               {t(M['images.image_uploader.take_picture'])}
-            </button>
+            </Button>
             <canvas bind:this={canvasElement} style="display: none;"></canvas>
           {/if}
         </div>
@@ -446,14 +464,14 @@ onDestroy(() => {
               placeholder={t(M['images.image_uploader.external_url_placeholder'])}
               onkeydown={(e) => e.key === 'Enter' && handleExternalSubmit()}
             />
-            <button 
-              type="button"
-              class="submit-btn" 
-              disabled={!externalUrl.trim()} 
+            <Button
+              variant="primary"
+              class="submit-btn--inline"
+              disabled={!externalUrl.trim()}
               onclick={handleExternalSubmit}
             >
               Add
-            </button>
+            </Button>
           </div>
         </div>
       {/if}
@@ -488,16 +506,16 @@ onDestroy(() => {
     font-size: var(--smrt-typography-title-medium-size, 1.15rem);
   }
 
-  .close-btn {
-    background: transparent;
-    border: none;
+  /* Migrated close Button keeps its muted ghost look; only the × glyph sizing
+     is custom. :global() pierces into the Button child's rendered <button>
+     (see #1589 scoping rule). */
+  .header :global(.close-btn--x) {
     color: var(--smrt-color-outline, #888);
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     line-height: 1;
-    cursor: pointer;
   }
-  
-  .close-btn:hover {
+
+  .header :global(.close-btn--x:hover) {
     color: var(--smrt-color-on-surface, #fff);
   }
 
@@ -507,27 +525,29 @@ onDestroy(() => {
     border-bottom: 1px solid var(--smrt-color-outline-variant, #333);
   }
 
-  .tabs button {
+  /* The tab strip is migrated to ghost Buttons; the active state is the bottom
+     underline rather than a filled variant. :global() pierces into each
+     Button's rendered <button> (see #1589 scoping rule). */
+  .tabs :global(.uploader-tab) {
     flex: 1;
-    background: transparent;
     border: none;
     border-bottom: 2px solid var(--smrt-color-outline-variant, #333);
     padding: 1rem;
     color: var(--smrt-color-outline, #888);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
+    border-radius: 0;
     transition: all 0.2s;
     text-transform: uppercase;
     font-size: var(--smrt-typography-label-large-size, 0.85rem);
     letter-spacing: var(--smrt-typography-label-large-tracking, 0.5px);
   }
 
-  .tabs button:hover {
+  .tabs :global(.uploader-tab:hover) {
     color: var(--smrt-color-on-surface-variant, #ccc);
     background: color-mix(in srgb, var(--smrt-color-on-surface, #fff) 2%, transparent);
   }
 
-  .tabs button.active {
+  .tabs :global(.uploader-tab--active) {
     color: var(--smrt-color-primary, #3b82f6);
     border-bottom: 2px solid var(--smrt-color-primary, #3b82f6);
     background: transparent;
@@ -594,10 +614,10 @@ onDestroy(() => {
     margin-bottom: 1rem;
   }
 
-  .browse-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    color: white;
-    border: none;
+  /* Decorative label inside the click-catching upload area; the parent handles
+     clicks, so this migrated Button stays inert. :global() pierces into the
+     Button child's rendered <button> (see #1589 scoping rule). */
+  .upload-area :global(.browse-btn--decorative) {
     padding: 0.5rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
     font-weight: var(--smrt-typography-weight-medium, 500);
@@ -648,21 +668,18 @@ onDestroy(() => {
     color: white;
   }
 
-  .capture-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    color: white;
-    border: none;
+  /* Large primary capture action; keeps its oversized pill sizing over the
+     primary variant. :global() pierces into the Button child (see #1589). */
+  .camera-area :global(.capture-btn--pill) {
     padding: 1rem 3rem;
     border-radius: var(--smrt-radius-full, 9999px);
     font-size: var(--smrt-typography-body-large-size, 1.1rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
-    cursor: pointer;
   }
 
-  .capture-btn:disabled {
+  .camera-area :global(.capture-btn--pill:disabled) {
     background: var(--smrt-color-outline-variant, #444);
     color: var(--smrt-color-outline, #888);
-    cursor: not-allowed;
   }
 
   .error-panel {
@@ -677,13 +694,14 @@ onDestroy(() => {
     margin-bottom: 1rem;
   }
 
-  .error-panel button {
+  /* Migrated "try again" Button keeps its surface-tinted look over the
+     secondary variant. :global() pierces into the Button child (see #1589). */
+  .error-panel :global(.try-again-btn) {
     background: var(--smrt-color-surface-container-high, #242424);
     color: white;
     border: 1px solid var(--smrt-color-outline-variant, #444);
     padding: 0.5rem 1rem;
     border-radius: var(--smrt-radius-sm, 4px);
-    cursor: pointer;
   }
 
   /* External Tab */
@@ -725,38 +743,35 @@ onDestroy(() => {
     box-shadow: inset 0 0 0 1px var(--smrt-color-primary, #3b82f6);
   }
 
-  .submit-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    color: white;
-    border: none;
+  /* Migrated Add Button sits in the URL input group; keeps square-ish radius
+     and zero vertical padding. :global() pierces into the Button child
+     (see #1589 scoping rule). */
+  .input-group :global(.submit-btn--inline) {
     padding: 0 1.5rem;
     border-radius: var(--smrt-radius-md, 6px);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
   }
 
-  .submit-btn:disabled {
+  .input-group :global(.submit-btn--inline:disabled) {
     background: var(--smrt-color-surface-container-highest, #333);
     color: var(--smrt-color-outline, #666);
-    cursor: not-allowed;
   }
 
   /* --- Back Button --- */
-  .back-btn {
+  /* Migrated ghost Button keeps the icon+label inline layout and tinted hover.
+     :global() pierces into the Button child (see #1589 scoping rule). */
+  .header :global(.back-btn--link) {
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    background: transparent;
-    border: none;
     color: var(--smrt-color-primary, #3b82f6);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-sm, 4px);
     transition: background 0.15s;
   }
 
-  .back-btn:hover {
+  .header :global(.back-btn--link:hover) {
     background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
   }
 
@@ -814,22 +829,20 @@ onDestroy(() => {
     margin-top: 0.5rem;
   }
 
-  .primary-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    color: white;
-    border: none;
+  /* Migrated confirm-action Buttons keep their pill / chip looks. :global()
+     pierces into each Button's rendered <button> (see #1589 scoping rule). */
+  .confirm-actions :global(.primary-btn--pill) {
     padding: 0.65rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     transition: filter 0.15s;
   }
 
-  .primary-btn:hover {
+  .confirm-actions :global(.primary-btn--pill:hover) {
     filter: brightness(1.1);
   }
 
-  .variation-toggle {
+  .confirm-actions :global(.variation-toggle--chip) {
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -839,15 +852,14 @@ onDestroy(() => {
     padding: 0.65rem 1.25rem;
     border-radius: var(--smrt-radius-full, 9999px);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     transition: all 0.2s;
   }
 
-  .variation-toggle:hover {
+  .confirm-actions :global(.variation-toggle--chip:hover) {
     background: var(--smrt-color-surface-container-high, #3f3f3f);
   }
 
-  .variation-toggle.active {
+  .confirm-actions :global(.variation-toggle--active) {
     color: var(--smrt-color-primary, #3b82f6);
     border-color: var(--smrt-color-primary, #3b82f6);
     background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
@@ -902,29 +914,18 @@ onDestroy(() => {
     font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
-  .generate-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+  /* Migrated generate Button keeps its left-aligned pill look and inline
+     spinner. :global() pierces into the Button child (see #1589 scoping rule). */
+  .variation-form :global(.generate-btn--pill) {
     align-self: flex-start;
-    background: var(--smrt-color-primary, #3b82f6);
-    color: white;
-    border: none;
     padding: 0.65rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     transition: filter 0.15s, opacity 0.15s;
   }
 
-  .generate-btn:hover:not(:disabled) {
+  .variation-form :global(.generate-btn--pill:hover:not(:disabled)) {
     filter: brightness(1.1);
-  }
-
-  .generate-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   @keyframes spin {

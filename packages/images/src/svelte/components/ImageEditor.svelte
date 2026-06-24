@@ -1,5 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type {
   ImageConvertRequest,
@@ -180,7 +181,7 @@ async function handleAIEdit() {
   <div class="header">
     <h3>{t(M['images.image_editor.title'])}</h3>
     {#if onCancel}
-      <button class="close-btn" onclick={onCancel}>×</button>
+      <Button variant="ghost" size="sm" class="close-btn--x" onclick={onCancel}>×</Button>
     {/if}
   </div>
 
@@ -194,8 +195,16 @@ async function handleAIEdit() {
       
       <div class="editor-controls">
         <div class="mode-selector">
-          <button class:active={mode === 'standard'} onclick={() => mode = 'standard'}>{t(M['images.image_editor.standard_tools'])}</button>
-          <button class:active={mode === 'ai'} onclick={() => mode = 'ai'}>{t(M['images.image_editor.ai_edit'])}</button>
+          <Button
+            variant={mode === 'standard' ? 'primary' : 'ghost'}
+            class="mode-tab"
+            onclick={() => (mode = 'standard')}
+          >{t(M['images.image_editor.standard_tools'])}</Button>
+          <Button
+            variant={mode === 'ai' ? 'primary' : 'ghost'}
+            class="mode-tab"
+            onclick={() => (mode = 'ai')}
+          >{t(M['images.image_editor.ai_edit'])}</Button>
         </div>
 
         {#if error}
@@ -212,10 +221,10 @@ async function handleAIEdit() {
             <div class="row">
               <label>Width <input type="number" bind:value={width} onfocus={() => isEditingDimensions = true} /></label>
               <label>Height <input type="number" bind:value={height} onfocus={() => isEditingDimensions = true} /></label>
-              <button disabled={isProcessing} onclick={handleResize} class="tonal-btn">{t(M['images.image_editor.apply_resize'])}</button>
+              <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleResize}>{t(M['images.image_editor.apply_resize'])}</Button>
             </div>
             {#if isEditingDimensions}
-               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</button></div>
+               <div class="row"><Button variant="ghost" size="sm" class="text-btn--link" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</Button></div>
             {/if}
           </div>
 
@@ -228,10 +237,10 @@ async function handleAIEdit() {
             <div class="row">
               <label>W <input type="number" bind:value={cropW} onfocus={() => isCropping = true} /></label>
               <label>H <input type="number" bind:value={cropH} onfocus={() => isCropping = true} /></label>
-              <button disabled={isProcessing} onclick={handleCrop} class="tonal-btn">{t(M['images.image_editor.apply_crop'])}</button>
+              <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleCrop}>{t(M['images.image_editor.apply_crop'])}</Button>
             </div>
             {#if isCropping}
-               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</button></div>
+               <div class="row"><Button variant="ghost" size="sm" class="text-btn--link" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</Button></div>
             {/if}
           </div>
 
@@ -243,7 +252,7 @@ async function handleAIEdit() {
                 <option value="jpeg">JPEG</option>
                 <option value="png">PNG</option>
               </select>
-              <button disabled={isProcessing} onclick={handleConvert} class="tonal-btn">Convert</button>
+              <Button variant="ghost" class="tonal-btn--filled" disabled={isProcessing} onclick={handleConvert}>Convert</Button>
             </div>
           </div>
         {:else}
@@ -256,13 +265,14 @@ async function handleAIEdit() {
               placeholder={t(M['images.image_editor.ai_prompt_placeholder'])}
               rows="4"
             ></textarea>
-            <button 
-              disabled={isProcessing || !prompt.trim()} 
+            <Button
+              variant="primary"
+              class="primary-btn--pill"
+              disabled={isProcessing || !prompt.trim()}
               onclick={handleAIEdit}
-              class="primary-btn"
             >
               {isProcessing ? 'Generating...' : 'Apply AI Edit'}
-            </button>
+            </Button>
           </div>
         {/if}
       </div>
@@ -297,12 +307,12 @@ async function handleAIEdit() {
     font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
-  .close-btn {
-    background: transparent;
-    border: none;
+  /* The migrated close Button keeps ghost styling; only bump the × glyph size.
+     :global() pierces into the Button child's rendered <button> (see #1589). */
+  .header :global(.close-btn--x) {
     color: inherit;
     font-size: var(--smrt-typography-headline-small-size, 1.5rem);
-    cursor: pointer;
+    line-height: 1;
   }
 
   .empty-state {
@@ -346,22 +356,14 @@ async function handleAIEdit() {
     gap: 0.25rem;
   }
 
-  .mode-selector button {
+  /* The mode toggles are migrated Buttons (variant primary = active, ghost =
+     inactive). Keep the segmented-pill sizing by piercing into each Button's
+     rendered <button> (see #1589 scoping rule). */
+  .mode-selector :global(.mode-tab) {
     flex: 1;
-    background: transparent;
-    border: none;
     padding: 0.6rem 1rem;
-    color: var(--smrt-color-outline, #666);
-    cursor: pointer;
     font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-full, 9999px);
-    transition: all 0.2s;
-  }
-
-  .mode-selector button.active {
-    background: var(--smrt-color-surface-container, #1a1a1a);
-    color: var(--smrt-color-on-surface, #fff);
-    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
   }
 
   .tool-section h4 {
@@ -414,51 +416,39 @@ async function handleAIEdit() {
     font-family: inherit;
   }
 
-  .tonal-btn {
+  /* Migrated Buttons keep their bespoke filled-tonal / text-link / pill looks.
+     :global() pierces into each Button's rendered <button> (see #1589). */
+  .tool-section :global(.tonal-btn--filled) {
     background: var(--smrt-color-surface-container-highest, #333);
     color: var(--smrt-color-primary, #3b82f6);
     border: 1px solid var(--smrt-color-outline-variant, #444);
     padding: 0.6rem 1.2rem;
     border-radius: var(--smrt-radius-full, 9999px);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
     transition: background 0.2s;
     margin-top: 1.25rem;
   }
 
-  .tonal-btn:hover:not(:disabled) {
+  .tool-section :global(.tonal-btn--filled:hover:not(:disabled)) {
     background: var(--smrt-color-surface-container-high, #3f3f3f);
   }
 
-  .text-btn {
-    background: transparent;
-    border: none;
-    cursor: pointer;
+  .tool-section :global(.text-btn--link) {
     text-decoration: underline;
     padding: 0;
   }
-  .text-btn:hover {
+  .tool-section :global(.text-btn--link:hover) {
     color: var(--smrt-color-on-surface, #fff);
   }
 
-  .primary-btn {
-    background: var(--smrt-color-primary, #3b82f6);
-    color: white;
-    border: none;
+  .tool-section :global(.primary-btn--pill) {
     padding: 0.6rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
     font-weight: var(--smrt-typography-weight-medium, 500);
-    cursor: pointer;
-    transition: background 0.2s, opacity 0.2s;
   }
 
-  .primary-btn:hover:not(:disabled) {
+  .tool-section :global(.primary-btn--pill:hover:not(:disabled)) {
     filter: brightness(1.1);
-  }
-
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .hint {
