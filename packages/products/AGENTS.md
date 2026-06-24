@@ -57,7 +57,7 @@ Same codebase consumed three ways:
 
 Auto-generated via Vite plugins: `@happyvertical/smrt-client` (TypeScript client), `@happyvertical/smrt-types`, `@happyvertical/smrt-routes` (Express), `@happyvertical/smrt-mcp`, `@happyvertical/smrt-manifest`.
 
-Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). Separate `product-store.server.svelte.ts` vs `product-store.client.svelte.ts` for SSR safety.
+Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). `product-store.svelte.ts` is the main store (backed by the SMRT client); `product-store.client.svelte.ts` is a virtual-module-free variant for federation builds.
 
 ## Schema migrations (Phase 1 release)
 
