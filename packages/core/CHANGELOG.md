@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.35.2
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: S4 ratchet wave 3 — graduate 10 more packages off noExplicitAny (#1579) (#1646) (lint)
+  - @happyvertical/smrt-config@0.35.2
+  - @happyvertical/smrt-types@0.35.2
+  - @happyvertical/smrt-scanner@0.35.2
+
 ## 0.35.1
 
 ### Patch Changes
