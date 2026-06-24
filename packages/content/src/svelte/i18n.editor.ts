@@ -15,6 +15,7 @@ export const M = defineMessages({
   'content.content_agent_chat.no_topics': 'No topics...',
   'content.content_agent_chat.topic_name_placeholder': 'Topic name...',
   'content.content_agent_chat.new_topic': 'New Topic',
+  'content.content_agent_chat.cancel': 'Cancel',
   'content.content_agent_chat.new': 'New',
   'content.content_agent_chat.untitled_topic': 'Untitled Topic',
 

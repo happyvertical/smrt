@@ -504,7 +504,7 @@ function closeTry() {
           <div class="try-header">
             <span class="method-badge" style="background: {methodColor(tryEndpoint.method)}">{tryEndpoint.method}</span>
             <code>{tryEndpoint.path}</code>
-            <Button variant="ghost" size="sm" class="close-btn" onclick={closeTry}>✕</Button>
+            <Button variant="ghost" size="sm" class="close-btn" onclick={closeTry} aria-label="Close" title="Close">✕</Button>
           </div>
           {#if tryLoading}
             <p class="try-loading">Fetching...</p>

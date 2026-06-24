@@ -475,7 +475,7 @@ async function handleSendMessage(content: string) {
           <Button variant="ghost" size="sm" type="button" class="topic-action-btn" onclick={() => { createNewTopic(); showNewTopicInput = false; }} disabled={isCreatingTopic}>
             {isCreatingTopic ? '...' : 'Create'}
           </Button>
-          <Button variant="ghost" size="sm" type="button" class="topic-action-btn topic-cancel-btn" onclick={() => { showNewTopicInput = false; }}>✕</Button>
+          <Button variant="ghost" size="sm" type="button" class="topic-action-btn topic-cancel-btn" onclick={() => { showNewTopicInput = false; }} aria-label={t(M['content.content_agent_chat.cancel'])} title={t(M['content.content_agent_chat.cancel'])}>✕</Button>
         </div>
       {:else}
         <select 

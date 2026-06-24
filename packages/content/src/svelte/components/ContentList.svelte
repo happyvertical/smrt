@@ -184,6 +184,7 @@ function cancelDelete() {
           class={`view-toggle-btn${viewMode === 'grid' ? ' view-toggle-btn--active' : ''}`}
           aria-pressed={viewMode === 'grid'}
           onclick={() => viewMode = 'grid'}
+          aria-label={t(M['content.content_list.grid_view'])}
           title={t(M['content.content_list.grid_view'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
@@ -200,6 +201,7 @@ function cancelDelete() {
           class={`view-toggle-btn${viewMode === 'detailed' ? ' view-toggle-btn--active' : ''}`}
           aria-pressed={viewMode === 'detailed'}
           onclick={() => viewMode = 'detailed'}
+          aria-label={t(M['content.content_list.detailed_list'])}
           title={t(M['content.content_list.detailed_list'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
@@ -218,6 +220,7 @@ function cancelDelete() {
           class={`view-toggle-btn${viewMode === 'compact' ? ' view-toggle-btn--active' : ''}`}
           aria-pressed={viewMode === 'compact'}
           onclick={() => viewMode = 'compact'}
+          aria-label={t(M['content.content_list.compact_list'])}
           title={t(M['content.content_list.compact_list'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
