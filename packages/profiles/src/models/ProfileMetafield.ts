@@ -68,7 +68,7 @@ export class ProfileMetafield extends SmrtObject {
 
   description?: string;
 
-  validation?: Record<string, any>; // Validation schema as JSON
+  validation?: ValidationSchema; // Validation schema as JSON
 
   constructor(options: ProfileMetafieldOptions = {}) {
     super(options);
@@ -115,10 +115,10 @@ export class ProfileMetafield extends SmrtObject {
    * @param value - The value to validate
    * @returns True if valid, throws ValidationError if invalid
    */
-  async validateValue(value: any): Promise<boolean> {
+  async validateValue(value: unknown): Promise<boolean> {
     if (!this.validation) return true;
 
-    const schema = this.validation as ValidationSchema;
+    const schema = this.validation;
 
     // Type validation
     if (schema.type) {

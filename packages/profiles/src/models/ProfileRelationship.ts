@@ -49,7 +49,7 @@ export class ProfileRelationship extends SmrtObject {
 
   // Relationships
   @oneToMany('ProfileRelationshipTerm')
-  terms: any[] = [];
+  terms: ProfileRelationshipTerm[] = [];
 
   constructor(options: ProfileRelationshipOptions = {}) {
     super(options);
@@ -83,12 +83,12 @@ export class ProfileRelationship extends SmrtObject {
       '../collections/ProfileRelationshipTermCollection'
     );
 
-    const termCollection = await (
-      ProfileRelationshipTermCollection as any
-    ).create(this.options);
+    const termCollection = await ProfileRelationshipTermCollection.create(
+      this.options,
+    );
 
     const term = await termCollection.create({
-      relationshipId: this.id,
+      relationshipId: this.id ?? undefined,
       startedAt,
       endedAt,
     });
@@ -118,11 +118,11 @@ export class ProfileRelationship extends SmrtObject {
       '../collections/ProfileRelationshipTermCollection'
     );
 
-    const termCollection = await (
-      ProfileRelationshipTermCollection as any
-    ).create(this.options);
+    const termCollection = await ProfileRelationshipTermCollection.create(
+      this.options,
+    );
 
-    return await termCollection.getByRelationship(this.id);
+    return await termCollection.getByRelationship(this.id as string);
   }
 
   /**
@@ -135,10 +135,10 @@ export class ProfileRelationship extends SmrtObject {
       '../collections/ProfileRelationshipTermCollection'
     );
 
-    const termCollection = await (
-      ProfileRelationshipTermCollection as any
-    ).create(this.options);
+    const termCollection = await ProfileRelationshipTermCollection.create(
+      this.options,
+    );
 
-    return await termCollection.getActiveTerm(this.id);
+    return await termCollection.getActiveTerm(this.id as string);
   }
 }

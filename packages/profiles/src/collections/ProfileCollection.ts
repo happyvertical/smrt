@@ -61,8 +61,8 @@ export class ProfileCollection extends SmrtCollection<Profile> {
    */
   async batchGetMetadata(
     profileIds: string[],
-  ): Promise<Map<string, Record<string, any>>> {
-    const result = new Map<string, Record<string, any>>();
+  ): Promise<Map<string, Record<string, string>>> {
+    const result = new Map<string, Record<string, string>>();
 
     for (const profileId of profileIds) {
       const profile = await this.get({ id: profileId });
@@ -81,7 +81,7 @@ export class ProfileCollection extends SmrtCollection<Profile> {
    * @param updates - Array of { profileId, data } objects
    */
   async batchUpdateMetadata(
-    updates: Array<{ profileId: string; data: Record<string, any> }>,
+    updates: Array<{ profileId: string; data: Record<string, unknown> }>,
   ): Promise<void> {
     for (const update of updates) {
       const profile = await this.get({ id: update.profileId });

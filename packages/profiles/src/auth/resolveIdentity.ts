@@ -231,7 +231,7 @@ async function findProfileByExternalId(
     '../collections/OidcIdentityCollection'
   );
 
-  const oidcCollection = await (OidcIdentityCollection as any).create(options);
+  const oidcCollection = await OidcIdentityCollection.create(options);
   const identities = await oidcCollection.findByProvider(provider);
 
   for (const identity of identities) {
@@ -250,7 +250,7 @@ async function findProfileByExternalId(
   const { ProfileCollection } = await import(
     '../collections/ProfileCollection'
   );
-  const profileCollection = await (ProfileCollection as any).create(options);
+  const profileCollection = await ProfileCollection.create(options);
 
   // Try to find by email that looks like a GitHub noreply
   const profiles = await profileCollection.list({
@@ -336,7 +336,7 @@ export async function createProfileFromOidc(
       '../collections/ProfileCollection'
     );
 
-    const profileCollection = await (ProfileCollection as any).create(options);
+    const profileCollection = await ProfileCollection.create(options);
     const existingProfile = await profileCollection.findByEmail(claims.email);
 
     if (existingProfile) {
@@ -367,7 +367,7 @@ export async function createProfileFromOidc(
   );
 
   // Get or create the 'person' type
-  const typeCollection = await (ProfileTypeCollection as any).create(options);
+  const typeCollection = await ProfileTypeCollection.create(options);
   let personType = await typeCollection.getBySlug('person');
 
   if (!personType) {
@@ -463,7 +463,7 @@ export async function createProfileFromNostr(
   );
 
   // Get or create the 'person' type
-  const typeCollection = await (ProfileTypeCollection as any).create(options);
+  const typeCollection = await ProfileTypeCollection.create(options);
   let personType = await typeCollection.getBySlug('person');
 
   if (!personType) {

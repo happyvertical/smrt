@@ -151,7 +151,7 @@ export class MagicLinkToken extends SmrtObject {
     const { MagicLinkTokenCollection } = await import(
       '../collections/MagicLinkTokenCollection'
     );
-    const collection = await (MagicLinkTokenCollection as any).create(options);
+    const collection = await MagicLinkTokenCollection.create(options);
 
     const magicLinkToken = await collection.findOne({
       where: { tokenHash },

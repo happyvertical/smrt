@@ -2,6 +2,8 @@
  * TypeScript type definitions for @have/profiles package
  */
 
+import type { Profile } from './models/Profile';
+
 /**
  * Handler function interface for reciprocal relationships
  *
@@ -11,10 +13,10 @@
  * @param options - Additional options for the handler
  */
 export type ReciprocalHandler = (
-  from: any,
-  to: any,
-  context?: any,
-  options?: any,
+  from: Profile,
+  to: Profile,
+  context?: Profile,
+  options?: Record<string, unknown>,
 ) => Promise<void>;
 
 /**
@@ -49,4 +51,4 @@ export interface ValidationSchema {
 /**
  * Custom validator function type
  */
-export type ValidatorFunction = (value: any) => boolean | Promise<boolean>;
+export type ValidatorFunction = (value: unknown) => boolean | Promise<boolean>;
