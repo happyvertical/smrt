@@ -247,6 +247,22 @@ const linkProps = $derived(() => {
     to { transform: translate(-50%, -50%) rotate(360deg); }
   }
 
+  /* Lay out the button's own children. The children render inside this wrapper
+     span, so the button-level `gap` never reaches them — without making the
+     wrapper itself a flex row, an icon + label (`<Button><svg/>Save</Button>`)
+     would render with no gap. Making `.content` a centered flex row lays out
+     multi-child buttons (icon+text, label+count) correctly after the #1589
+     migration, instead of needing per-button CSS to reach into `.content`. The
+     wrapper is shrink-to-fit, so a caller wanting a spread layout must also give
+     it width — e.g. a full-width button with
+     `.x :global(.content) { width: 100%; justify-content: space-between }`. */
+  .content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--smrt-spacing-2);
+  }
+
   .content.loading {
     opacity: 0;
   }
