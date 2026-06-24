@@ -40,13 +40,6 @@ const emojis = [
 function handleSelect(emoji: string) {
   onreact(emoji);
 }
-
-function handleKeydown(event: KeyboardEvent, emoji: string) {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    handleSelect(emoji);
-  }
-}
 </script>
 
 {#if isOpen}

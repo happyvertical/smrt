@@ -138,11 +138,13 @@ const { tabs, onselect, onclose }: Props = $props();
     font-size: 0;
   }
 
-  .tab-list__item:hover :global(.tab-list__close) {
+  .tab-list__item:hover :global(.tab-list__close),
+  .tab-list__item:focus-within :global(.tab-list__close) {
     display: inline-flex;
   }
 
-  .tab-list__item:hover .tab-list__badge {
+  .tab-list__item:hover .tab-list__badge,
+  .tab-list__item:focus-within .tab-list__badge {
     display: none;
   }
 
