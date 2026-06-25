@@ -706,22 +706,32 @@ async function main() {
 
       switch (name) {
         case 'generate-smrt-class':
-          result = await generateSmrtClass(args as any);
+          result = await generateSmrtClass(
+            args as unknown as Parameters<typeof generateSmrtClass>[0],
+          );
           break;
 
         case 'introspect-project':
-          result = await introspectProject(args as any);
+          result = await introspectProject(
+            args as unknown as Parameters<typeof introspectProject>[0],
+          );
           break;
 
         case 'review-smrt-project':
-          result = await reviewSmrtProject(args as any);
+          result = await reviewSmrtProject(
+            args as unknown as Parameters<typeof reviewSmrtProject>[0],
+          );
           break;
 
         case 'reflect-knowledge': {
-          const index = await buildKnowledgeIndex(args as any);
+          const index = await buildKnowledgeIndex(
+            args as unknown as Parameters<typeof buildKnowledgeIndex>[0],
+          );
           const freshness = await checkKnowledgeFreshnessFromIndex(
             index,
-            args as any,
+            args as unknown as Parameters<
+              typeof checkKnowledgeFreshnessFromIndex
+            >[1],
           );
           result = JSON.stringify(
             {
@@ -739,10 +749,14 @@ async function main() {
         }
 
         case 'reflect-domain-knowledge': {
-          const index = await buildKnowledgeIndex(args as any);
+          const index = await buildKnowledgeIndex(
+            args as unknown as Parameters<typeof buildKnowledgeIndex>[0],
+          );
           const freshness = await checkKnowledgeFreshnessFromIndex(
             index,
-            args as any,
+            args as unknown as Parameters<
+              typeof checkKnowledgeFreshnessFromIndex
+            >[1],
           );
           result = JSON.stringify(
             {
@@ -771,7 +785,9 @@ async function main() {
 
         case 'check-knowledge-freshness':
           result = JSON.stringify(
-            await checkKnowledgeFreshness(args as any),
+            await checkKnowledgeFreshness(
+              args as unknown as Parameters<typeof checkKnowledgeFreshness>[0],
+            ),
             null,
             2,
           );
@@ -779,7 +795,9 @@ async function main() {
 
         case 'check-domain-knowledge':
           result = JSON.stringify(
-            await checkKnowledgeFreshness(args as any),
+            await checkKnowledgeFreshness(
+              args as unknown as Parameters<typeof checkKnowledgeFreshness>[0],
+            ),
             null,
             2,
           );
@@ -787,7 +805,9 @@ async function main() {
 
         case 'build-review-context':
           result = JSON.stringify(
-            await buildReviewContext(args as any),
+            await buildReviewContext(
+              args as unknown as Parameters<typeof buildReviewContext>[0],
+            ),
             null,
             2,
           );
@@ -795,19 +815,29 @@ async function main() {
 
         case 'build-domain-review-context':
           result = JSON.stringify(
-            await buildReviewContext(args as any),
+            await buildReviewContext(
+              args as unknown as Parameters<typeof buildReviewContext>[0],
+            ),
             null,
             2,
           );
           break;
 
         case 'smrt-review':
-          result = JSON.stringify(await smrtReview(args as any), null, 2);
+          result = JSON.stringify(
+            await smrtReview(
+              args as unknown as Parameters<typeof smrtReview>[0],
+            ),
+            null,
+            2,
+          );
           break;
 
         case 'build-architecture-context':
           result = JSON.stringify(
-            await buildArchitectureContext(args as any),
+            await buildArchitectureContext(
+              args as unknown as Parameters<typeof buildArchitectureContext>[0],
+            ),
             null,
             2,
           );
@@ -815,14 +845,22 @@ async function main() {
 
         case 'build-domain-architecture-context':
           result = JSON.stringify(
-            await buildArchitectureContext(args as any),
+            await buildArchitectureContext(
+              args as unknown as Parameters<typeof buildArchitectureContext>[0],
+            ),
             null,
             2,
           );
           break;
 
         case 'smrt-architecture':
-          result = JSON.stringify(await smrtArchitecture(args as any), null, 2);
+          result = JSON.stringify(
+            await smrtArchitecture(
+              args as unknown as Parameters<typeof smrtArchitecture>[0],
+            ),
+            null,
+            2,
+          );
           break;
 
         case 'list-agent-skills':
@@ -830,7 +868,13 @@ async function main() {
           break;
 
         case 'get-agent-skill':
-          result = JSON.stringify(await getAgentSkill(args as any), null, 2);
+          result = JSON.stringify(
+            await getAgentSkill(
+              args as unknown as Parameters<typeof getAgentSkill>[0],
+            ),
+            null,
+            2,
+          );
           break;
 
         default:

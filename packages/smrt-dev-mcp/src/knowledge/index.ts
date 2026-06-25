@@ -782,9 +782,9 @@ function discoverInstalledSdkPackages(
         }),
     )
     .filter((dir) => {
-      const pkg = readJson(join(dir, 'package.json'));
+      const pkg = objectRecord(readJson(join(dir, 'package.json')));
       return (
-        typeof pkg?.name === 'string' &&
+        typeof pkg.name === 'string' &&
         SDK_PACKAGE_NAMES.has(pkg.name) &&
         !pkg.name.startsWith('@happyvertical/smrt-')
       );
@@ -825,10 +825,10 @@ function readKnowledgePackage(
   directory: string,
   includeDocs: boolean,
 ): KnowledgePackage {
-  const packageJson = readJson(join(directory, 'package.json')) ?? {};
-  const dependencies = objectRecord(packageJson.dependencies);
-  const devDependencies = objectRecord(packageJson.devDependencies);
-  const peerDependencies = objectRecord(packageJson.peerDependencies);
+  const packageJson = objectRecord(readJson(join(directory, 'package.json')));
+  const dependencies = stringRecord(packageJson.dependencies);
+  const devDependencies = stringRecord(packageJson.devDependencies);
+  const peerDependencies = stringRecord(packageJson.peerDependencies);
   const allDeps = { ...dependencies, ...devDependencies, ...peerDependencies };
   const name = String(packageJson.name ?? directory);
   const agentsPath = join(directory, 'AGENTS.md');
@@ -867,7 +867,7 @@ function readKnowledgePackage(
     kind: packageKind(name),
     directory,
     relativeDirectory: relative(rootDir, directory),
-    files: Array.isArray(packageJson.files) ? packageJson.files : [],
+    files: stringArray(packageJson.files),
     exportKeys: exportKeys(packageJson.exports),
     dependencies,
     devDependencies,
@@ -936,7 +936,7 @@ function readManifest(
     join(directory, 'dist', 'manifest.json'),
   ]) {
     const content = readJson(path);
-    if (content) return { path, content };
+    if (content) return { path, content: objectRecord(content) };
   }
   return null;
 }
@@ -946,18 +946,15 @@ function readManifestObjects(
 ): KnowledgeObject[] {
   const objects = objectRecord(manifest.objects);
   return Object.values(objects).map((raw) => {
-    const item = raw as Record<string, any>;
+    const item = objectRecord(raw);
+    const schema = objectRecord(item.schema);
     const fields = objectRecord(item.fields);
-    const schemaColumns = objectRecord(item.schema?.columns);
-    const decoratorConfig = item.decoratorConfig as
-      | Record<string, unknown>
-      | undefined;
+    const schemaColumns = objectRecord(schema.columns);
+    const decoratorConfig = objectRecord(item.decoratorConfig);
     const knowledgeFields = Object.entries(fields).map(([fieldName, field]) => {
-      const fieldInfo = field as Record<string, any>;
+      const fieldInfo = objectRecord(field);
       const columnName = camelToSnake(fieldName);
-      const column = schemaColumns[columnName] as
-        | Record<string, any>
-        | undefined;
+      const column = objectRecord(schemaColumns[columnName]);
       return {
         name: fieldName,
         type: String(fieldInfo.type ?? 'unknown'),
@@ -967,7 +964,7 @@ function readManifestObjects(
             : undefined,
         related:
           typeof fieldInfo.related === 'string' ? fieldInfo.related : undefined,
-        columnType: typeof column?.type === 'string' ? column.type : undefined,
+        columnType: typeof column.type === 'string' ? column.type : undefined,
       };
     });
 
@@ -979,17 +976,16 @@ function readManifestObjects(
       extends: typeof item.extends === 'string' ? item.extends : undefined,
       collection:
         typeof item.collection === 'string' ? item.collection : undefined,
-      mcpOperations: mcpOperations(item.decoratorConfig?.mcp),
+      mcpOperations: mcpOperations(decoratorConfig.mcp),
       tableName:
-        typeof decoratorConfig?.tableName === 'string'
+        typeof decoratorConfig.tableName === 'string'
           ? decoratorConfig.tableName
-          : typeof item.schema?.tableName === 'string'
-            ? item.schema.tableName
+          : typeof schema.tableName === 'string'
+            ? schema.tableName
             : undefined,
       idColumnType:
-        typeof (schemaColumns.id as Record<string, any> | undefined)?.type ===
-        'string'
-          ? (schemaColumns.id as Record<string, any>).type
+        typeof objectRecord(schemaColumns.id).type === 'string'
+          ? (objectRecord(schemaColumns.id).type as string)
           : undefined,
       fields: knowledgeFields,
       relationships: knowledgeFields.filter((field) =>
@@ -1826,7 +1822,7 @@ function includesToken(text: string, token: string): boolean {
   return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
 }
 
-function readJson(path: string): any | null {
+function readJson(path: string): unknown {
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
@@ -1847,10 +1843,24 @@ function hashJsonFile(path: string): string {
   return createHash('sha256').update(hashContent).digest('hex');
 }
 
-function objectRecord(value: unknown): Record<string, any> {
+function objectRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, any>)
+    ? (value as Record<string, unknown>)
     : {};
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(objectRecord(value))) {
+    if (typeof entry === 'string') result[key] = entry;
+  }
+  return result;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
 }
 
 function camelToSnake(value: string): string {
