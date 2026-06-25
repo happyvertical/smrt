@@ -103,9 +103,8 @@ export class MagicLinkService {
    * Initialize collections
    */
   async initialize(): Promise<void> {
-    this.tokenCollection = (await (UsersMagicLinkTokenCollection as any).create(
-      this.options,
-    )) as UsersMagicLinkTokenCollection;
+    this.tokenCollection =
+      await UsersMagicLinkTokenCollection.create(this.options);
   }
 
   /**

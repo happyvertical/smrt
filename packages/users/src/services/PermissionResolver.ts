@@ -122,40 +122,22 @@ export class PermissionResolver {
   /**
    * Initialize collections
    *
-   * Note: The `as any` casts are required because `SmrtCollection.create()` is
-   * declared with a protected constructor and a static factory. TypeScript
-   * cannot infer that the static `create()` returns the concrete subclass type
-   * when invoked through a subclass reference, so the cast is needed to call
-   * `create(options)` on each collection. This is a known SMRT framework
-   * limitation around the protected-constructor + static-factory pattern.
+   * Each collection is created via the inherited static `SmrtCollection.create()`
+   * factory, which is generically typed to return the concrete subclass instance.
    */
   async initialize(): Promise<void> {
-    // TypeScript cannot infer that Collection.create() returns the correct subclass type
-    // due to the protected constructor pattern in SmrtCollection
-    this.membershipCollection = await (MembershipCollection as any).create(
-      this.options,
-    );
-    this.rolePermissionCollection = await (
-      RolePermissionCollection as any
-    ).create(this.options);
-    this.membershipOverrideCollection = await (
-      MembershipOverrideCollection as any
-    ).create(this.options);
-    this.groupMemberCollection = await (GroupMemberCollection as any).create(
-      this.options,
-    );
-    this.groupRoleCollection = await (GroupRoleCollection as any).create(
-      this.options,
-    );
-    this.permissionCollection = await (PermissionCollection as any).create(
-      this.options,
-    );
-    this.tenantCollection = await (TenantCollection as any).create(
-      this.options,
-    );
-    this.tenantPermissionOverrideCollection = await (
-      TenantPermissionOverrideCollection as any
-    ).create(this.options);
+    this.membershipCollection = await MembershipCollection.create(this.options);
+    this.rolePermissionCollection =
+      await RolePermissionCollection.create(this.options);
+    this.membershipOverrideCollection =
+      await MembershipOverrideCollection.create(this.options);
+    this.groupMemberCollection =
+      await GroupMemberCollection.create(this.options);
+    this.groupRoleCollection = await GroupRoleCollection.create(this.options);
+    this.permissionCollection = await PermissionCollection.create(this.options);
+    this.tenantCollection = await TenantCollection.create(this.options);
+    this.tenantPermissionOverrideCollection =
+      await TenantPermissionOverrideCollection.create(this.options);
   }
 
   // ============= Tenant Hierarchy Permission Resolution =============

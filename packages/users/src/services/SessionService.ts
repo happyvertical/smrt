@@ -112,13 +112,10 @@ export class SessionService {
    * Initialize collections
    */
   async initialize(): Promise<void> {
-    this.sessionCollection = await (SessionCollection as any).create(
-      this.options,
-    );
-    this.userCollection = await (UserCollection as any).create(this.options);
-    this.membershipCollection = await (MembershipCollection as any).create(
-      this.options,
-    );
+    this.sessionCollection = await SessionCollection.create(this.options);
+    this.userCollection = await UserCollection.create(this.options);
+    this.membershipCollection =
+      await MembershipCollection.create(this.options);
     this.permissionResolver = await PermissionResolver.create(this.options);
   }
 

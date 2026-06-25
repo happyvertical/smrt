@@ -3,8 +3,23 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantPermissionEffect } from '../types/index.js';
+
+/**
+ * Constructor options for {@link TenantPermissionOverride}.
+ */
+export interface TenantPermissionOverrideOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  permissionId?: string;
+  effect?: TenantPermissionEffect;
+}
 
 /**
  * TenantPermissionOverride allows setting explicit permission values at the tenant level.
@@ -73,7 +88,7 @@ export class TenantPermissionOverride extends SmrtObject {
   @field({ type: 'text' })
   effect: TenantPermissionEffect = TenantPermissionEffect.INHERIT;
 
-  constructor(options: any = {}) {
+  constructor(options: TenantPermissionOverrideOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.permissionId !== undefined)

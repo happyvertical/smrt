@@ -3,8 +3,30 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { SessionStatus } from '../types/index.js';
+
+/**
+ * Constructor options for {@link Session}.
+ */
+export interface SessionOptions extends SmrtObjectOptions {
+  userId?: string;
+  tenantId?: string | null;
+  status?: SessionStatus;
+  /** Accepts a Date or any value the Date constructor can coerce. */
+  expiresAt?: Date | string | number;
+  userAgent?: string;
+  ipAddress?: string;
+  /** Accepts a Date or any value the Date constructor can coerce. */
+  lastAccessedAt?: Date | string | number;
+  data?: Record<string, unknown>;
+}
 
 /**
  * Default session TTL: 7 days in seconds
@@ -88,7 +110,7 @@ export class Session extends SmrtObject {
    */
   data: Record<string, unknown> = {};
 
-  constructor(options: any = {}) {
+  constructor(options: SessionOptions = {}) {
     super(options);
     if (options.userId !== undefined) this.userId = options.userId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;

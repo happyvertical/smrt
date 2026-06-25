@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { SmrtCollection, type SmrtCreateInput } from '@happyvertical/smrt-core';
 import { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from '../models/Tenant.js';
 import { TenantStatus } from '../types/index.js';
 
@@ -240,7 +240,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     options: CreateChildTenantOptions,
   ): Promise<Tenant> {
     const parent = await this.get({ id: parentTenantId });
-    if (!parent) {
+    if (!parent?.id) {
       throw new TenantHierarchyError(
         `Parent tenant not found: ${parentTenantId}`,
         'PARENT_NOT_FOUND',
@@ -500,21 +500,22 @@ export class TenantCollection extends SmrtCollection<Tenant> {
 
   /**
    * Override create to automatically set hierarchy fields for new tenants.
-   * Only calculates hierarchy fields if not already provided (preserves
-   * database values during hydration via get()).
+   * Only calculates them when the caller hasn't already supplied
+   * `hierarchyLevel`/`hierarchyPath` in the create input — an explicitly
+   * provided value is preserved as-is.
    */
-  async create(options: any): Promise<Tenant> {
+  async create(options: SmrtCreateInput<Tenant>): Promise<Tenant> {
     // If parentTenantId is provided and hierarchy fields not already set
     if (options.parentTenantId) {
-      // Only calculate if hierarchy fields are missing (new tenant creation)
-      // Preserve existing values when hydrating from database
+      // Only calculate when the caller didn't already supply them
+      // (a provided hierarchyLevel/hierarchyPath is preserved as-is)
       const needsHierarchyCalc =
         options.hierarchyLevel === undefined ||
         options.hierarchyPath === undefined;
 
       if (needsHierarchyCalc) {
         const parent = await this.get({ id: options.parentTenantId });
-        if (!parent) {
+        if (!parent?.id) {
           throw new TenantHierarchyError(
             `Parent tenant not found: ${options.parentTenantId}`,
             'PARENT_NOT_FOUND',

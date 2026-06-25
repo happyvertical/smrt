@@ -68,7 +68,7 @@ export class PermissionCollection extends SmrtCollection<Permission> {
     const results = await this.query(
       `SELECT DISTINCT category FROM ${this.tableName} WHERE category != '' ORDER BY category ASC`,
     );
-    return results.map((r: any) => r.category);
+    return results.map((r) => r.category);
   }
 
   /**

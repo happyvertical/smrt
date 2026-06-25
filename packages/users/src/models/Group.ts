@@ -3,7 +3,21 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
+
+/**
+ * Constructor options for {@link Group}.
+ */
+export interface GroupOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  name?: string;
+  description?: string;
+}
 
 /**
  * Group represents a team or department within a tenant.
@@ -46,7 +60,7 @@ export class Group extends SmrtObject {
    */
   description: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: GroupOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;

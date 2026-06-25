@@ -3,7 +3,20 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
+
+/**
+ * Constructor options for {@link GroupMember}.
+ */
+export interface GroupMemberOptions extends SmrtObjectOptions {
+  groupId?: string;
+  userId?: string;
+}
 
 /**
  * GroupMember is a join table linking Users to Groups.
@@ -42,7 +55,7 @@ export class GroupMember extends SmrtObject {
   @foreignKey('User', { required: true })
   userId?: string;
 
-  constructor(options: any = {}) {
+  constructor(options: GroupMemberOptions = {}) {
     super(options);
     if (options.groupId !== undefined) this.groupId = options.groupId;
     if (options.userId !== undefined) this.userId = options.userId;
