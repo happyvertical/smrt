@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - resolve shared Svelte ComponentType any; graduate agents/types/smrt-ui (#1649) (#1654) (types)
+
+  ### Other Changes
+
+  - build: graduate users off noExplicitAny (#1650) (#1655) (lint)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.35.4
 
 ### Patch Changes
