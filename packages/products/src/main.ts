@@ -6,6 +6,15 @@ import createClient from '@happyvertical/smrt-virt-client';
 import { manifest } from '@happyvertical/smrt-virt-manifest';
 import { tools } from '@happyvertical/smrt-virt-mcp';
 
+// Button click handlers exposed on `window` for the demo page's inline onclick
+// attributes.
+declare global {
+  interface Window {
+    testProducts: () => void;
+    testCategories: () => void;
+  }
+}
+
 // Display discovered objects
 function displayManifest() {
   const output = document.getElementById('manifest-output');
@@ -66,9 +75,11 @@ async function testAPI(collection: 'products' | 'categories') {
   try {
     output.innerHTML = `<div class="status">Testing ${collection}...</div>`;
 
-    // Test listing with proper type safety
-    let items: any;
-    let created: any;
+    // Test listing with proper type safety. The two branches return
+    // different collection shapes (products vs categories) and the values
+    // are only serialized for display, so `unknown` is the honest type.
+    let items: unknown;
+    let created: unknown;
 
     if (collection === 'products') {
       items = await client.products.list();
@@ -87,8 +98,8 @@ async function testAPI(collection: 'products' | 'categories') {
 }
 
 // Global functions for buttons
-(window as any).testProducts = () => testAPI('products');
-(window as any).testCategories = () => testAPI('categories');
+window.testProducts = () => testAPI('products');
+window.testCategories = () => testAPI('categories');
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', () => {

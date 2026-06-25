@@ -35,7 +35,7 @@ export interface ProductOptions extends SmrtObjectOptions {
   model?: string;
   price?: number;
   inStock?: boolean;
-  specifications?: Record<string, any>;
+  specifications?: Record<string, unknown>;
   tags?: string[];
 }
 
@@ -94,7 +94,7 @@ export class Product extends SmrtObject {
   model = '';
   price = 0;
   inStock = true;
-  specifications: Record<string, any> = {};
+  specifications: Record<string, unknown> = {};
   tags: string[] = [];
 
   constructor(options: ProductOptions = {}) {
@@ -121,11 +121,11 @@ export class Product extends SmrtObject {
     this.tags = options.tags || [];
   }
 
-  async getSpecification(key: string): Promise<any> {
+  async getSpecification(key: string): Promise<unknown> {
     return this.specifications[key];
   }
 
-  async updateSpecification(key: string, value: any): Promise<void> {
+  async updateSpecification(key: string, value: unknown): Promise<void> {
     this.specifications[key] = value;
   }
 

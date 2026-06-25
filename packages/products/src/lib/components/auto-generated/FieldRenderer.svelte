@@ -13,12 +13,12 @@ const { t } = useI18n();
 interface Props {
   fieldName: string;
   fieldType: 'string' | 'number' | 'boolean' | 'array' | 'object';
-  value: any;
+  value: unknown;
   label?: string;
   placeholder?: string;
   required?: boolean;
   readonly?: boolean;
-  onUpdate?: (value: any) => void;
+  onUpdate?: (value: unknown) => void;
 }
 
 const {
@@ -41,7 +41,7 @@ const displayLabel = $derived(
 );
 const fieldId = $derived(`field-${fieldName}`);
 
-function handleUpdate(newValue: any) {
+function handleUpdate(newValue: unknown) {
   if (onUpdate && !readonly) {
     onUpdate(newValue);
   }
@@ -97,7 +97,7 @@ function handleObjectInput(event: Event) {
     <Input
       id={fieldId}
       type="text"
-      {value}
+      value={String(value ?? '')}
       {placeholder}
       {readonly}
       {required}
@@ -107,7 +107,7 @@ function handleObjectInput(event: Event) {
     <Input
       id={fieldId}
       type="number"
-      value={value || 0}
+      value={typeof value === 'number' ? value : Number(value) || 0}
       {placeholder}
       {readonly}
       {required}
@@ -119,7 +119,7 @@ function handleObjectInput(event: Event) {
       id={fieldId}
       type="checkbox"
       class="field-checkbox"
-      checked={value || false}
+      checked={Boolean(value)}
       {readonly}
       onchange={handleBooleanInput}
     />

@@ -4,13 +4,26 @@
  * Uses only built-in Node.js modules - no external dependencies
  */
 
-import { createServer } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
 import { URL } from 'node:url';
 
 const port = 37428; // Obscure port number
 
+// Demo records carry an `id` plus arbitrary client-supplied fields and
+// server-stamped timestamps.
+interface StoredRecord {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
 // In-memory storage for demo
-const storage: Record<string, any[]> = {
+const storage: Record<string, StoredRecord[]> = {
   products: [],
   categories: [],
 };
@@ -26,7 +39,7 @@ const corsHeaders = {
 };
 
 // Parse JSON body from request
-function parseBody(req: any): Promise<any> {
+function parseBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let body = '';
     req.on('data', (chunk: Buffer) => {
@@ -49,8 +62,8 @@ function generateId(): string {
 }
 
 // Handle API routes
-async function handleRequest(req: any, res: any) {
-  const url = new URL(req.url, `http://localhost:${port}`);
+async function handleRequest(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url ?? '/', `http://localhost:${port}`);
   const method = req.method;
   const pathname = url.pathname;
 
@@ -81,9 +94,9 @@ async function handleRequest(req: any, res: any) {
 
 // Product route handlers
 async function handleProductRoutes(
-  req: any,
-  res: any,
-  method: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+  method: string | undefined,
   pathname: string,
 ) {
   const parts = pathname.split('/');
@@ -144,9 +157,9 @@ async function handleProductRoutes(
 
 // Category route handlers
 async function handleCategoryRoutes(
-  req: any,
-  res: any,
-  method: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+  method: string | undefined,
   pathname: string,
 ) {
   const parts = pathname.split('/');
