@@ -672,6 +672,7 @@ describe('SvelteKit Route Generator', () => {
       const allRoutes = routeContents.join('\n');
       expect(allRoutes).toContain('getCollection<Widget>');
       expect(allRoutes).not.toContain('getCollection<any>');
+      expect(allRoutes).toContain('if (seen.has(value)) return null;');
     });
 
     it('should pass dynamic path params into custom GET action options', async () => {
@@ -745,7 +746,10 @@ describe('SvelteKit Route Generator', () => {
             collection: 'documents',
             fields: {},
             methods: {},
-            decoratorConfig: { api: true },
+            decoratorConfig: {
+              api: true,
+              tenantScoped: { mode: 'optional' },
+            },
           },
           DocumentCollection: {
             className: 'DocumentCollection',
@@ -788,6 +792,8 @@ describe('SvelteKit Route Generator', () => {
       const content = restoreRoute?.[1] as string;
 
       expect(content).toContain('type ActionArgs = Parameters<');
+      expect(content).toContain("from '@happyvertical/smrt-tenancy'");
+      expect(content).toContain('establishTenantContext(locals);');
       expect(content).toContain('const body: unknown = await request.json();');
       expect(content).toContain(
         'const options = readJsonRecord(body) as ActionOptions;',

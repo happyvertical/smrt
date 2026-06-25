@@ -63,15 +63,17 @@ function toPublicResult(
   seen: WeakSet<object> = new WeakSet(),
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
-  if (hasPublicJson(value)) return value.toPublicJSON();
+  if (seen.has(value)) return null;
+  if (hasPublicJson(value)) {
+    seen.add(value);
+    return toPublicResult(value.toPublicJSON(), seen);
+  }
   if (Array.isArray(value)) {
-    if (seen.has(value)) return value;
     seen.add(value);
     return value.map((entry) => toPublicResult(entry, seen));
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
-  if (seen.has(value)) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
@@ -80,9 +82,27 @@ function toPublicResult(
   return out;
 }
 
+import {
+  enterTenantContext,
+  hasTenantContext,
+} from '@happyvertical/smrt-tenancy';
+
+function establishTenantContext(locals: unknown): void {
+  if (hasTenantContext()) return;
+  if (!locals || typeof locals !== 'object') return;
+  const l = locals as Record<string, unknown>;
+  const user = l.user as Record<string, unknown> | undefined;
+  const session = l.session as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
+  if (typeof tenantId === 'string' && tenantId) {
+    enterTenantContext({ tenantId });
+  }
+}
+
 // Custom collection method: resolveForContent
 export const POST: RequestHandler = async ({ locals, request }) => {
   requireRouteAuth(locals, true);
+  establishTenantContext(locals);
   const collection = await getCollection<ContentGovernanceAssignment>(
     '@happyvertical/smrt-content:ContentGovernanceAssignment',
   );

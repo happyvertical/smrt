@@ -417,15 +417,17 @@ function toPublicResult(
   seen: WeakSet<object> = new WeakSet(),
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
-  if (hasPublicJson(value)) return value.toPublicJSON();
+  if (seen.has(value)) return null;
+  if (hasPublicJson(value)) {
+    seen.add(value);
+    return toPublicResult(value.toPublicJSON(), seen);
+  }
   if (Array.isArray(value)) {
-    if (seen.has(value)) return value;
     seen.add(value);
     return value.map((entry) => toPublicResult(entry, seen));
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
-  if (seen.has(value)) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(
@@ -2092,7 +2094,11 @@ function generateActionRouteTemplate(
     .filter(Boolean)
     .join('\n');
 
-  const tenantScoped = isTenantScoped(objectDef);
+  const tenantScoped =
+    isTenantScoped(objectDef) ||
+    routeSpecs.some(
+      (spec) => !!spec.lookupObjectDef && isTenantScoped(spec.lookupObjectDef),
+    );
   const handlers = routeSpecs
     .map((spec) =>
       generateActionRouteHandler(
