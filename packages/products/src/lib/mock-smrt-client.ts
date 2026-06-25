@@ -144,7 +144,7 @@ class MockApiClient {
       mockProducts.splice(index, 1);
 
       return {
-        data: undefined as any,
+        data: undefined,
         success: true,
         message: 'Product deleted successfully',
       };

@@ -16,8 +16,17 @@ const port = 3001;
 app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
+// Demo records carry an `id` plus arbitrary client-supplied fields and
+// server-stamped timestamps.
+interface StoredRecord {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
 // In-memory storage for demo
-const storage: Record<string, any[]> = {
+const storage: Record<string, StoredRecord[]> = {
   product: [],
   category: [],
 };

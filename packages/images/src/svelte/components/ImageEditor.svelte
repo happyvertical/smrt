@@ -103,8 +103,8 @@ async function handleResize() {
 
     successMessage = 'Image resized successfully (new derivative created).';
     if (onSave) onSave(data.image);
-  } catch (e: any) {
-    error = e.message || 'Failed to resize image';
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Failed to resize image';
   } finally {
     isProcessing = false;
   }
@@ -129,8 +129,8 @@ async function handleCrop() {
 
     successMessage = 'Image cropped successfully (new derivative created).';
     if (onSave) onSave(data.image);
-  } catch (e: any) {
-    error = e.message || 'Failed to crop image';
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Failed to crop image';
   } finally {
     isProcessing = false;
   }
@@ -150,8 +150,8 @@ async function handleConvert() {
 
     successMessage = `Image converted to ${format} successfully (new derivative created).`;
     if (onSave) onSave(data.image);
-  } catch (e: any) {
-    error = e.message || 'Failed to convert image';
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Failed to convert image';
   } finally {
     isProcessing = false;
   }
@@ -170,8 +170,8 @@ async function handleAIEdit() {
 
     successMessage = 'AI edit complete (new derivative created).';
     if (onSave) onSave(data.image);
-  } catch (e: any) {
-    error = e.message || 'Failed to apply AI edit';
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Failed to apply AI edit';
   } finally {
     isProcessing = false;
   }

@@ -143,15 +143,43 @@ type Statement =
   | ExportNamedDeclaration
   | ExportDefaultDeclaration
   | ImportDeclaration
-  | any;
+  | TSTypeAliasDeclaration
+  | TSEnumDeclaration;
 
 interface ClassDeclaration extends BaseNode {
   type: 'ClassDeclaration';
   id: Identifier | null;
   superClass: Expression | null;
   superTypeParameters?: TSTypeParameterInstantiation;
+  // oxc-parser v0.108+ renamed superTypeParameters to superTypeArguments
+  superTypeArguments?: TSTypeParameterInstantiation;
   body: ClassBody;
   decorators?: Decorator[];
+}
+
+interface TSTypeAliasDeclaration extends BaseNode {
+  type: 'TSTypeAliasDeclaration';
+  id: Identifier;
+  typeAnnotation: TSType;
+}
+
+interface TSEnumDeclaration extends BaseNode {
+  type: 'TSEnumDeclaration';
+  id: Identifier;
+  // oxc-parser wraps members in a TSEnumBody node; older shapes expose
+  // `members` directly on the declaration.
+  body?: TSEnumBody;
+  members?: TSEnumMember[];
+}
+
+interface TSEnumBody extends BaseNode {
+  type: 'TSEnumBody';
+  members: TSEnumMember[];
+}
+
+interface TSEnumMember extends BaseNode {
+  type: 'TSEnumMember';
+  initializer?: Expression;
 }
 
 interface ClassBody extends BaseNode {
@@ -159,7 +187,7 @@ interface ClassBody extends BaseNode {
   body: ClassElement[];
 }
 
-type ClassElement = PropertyDefinition | MethodDefinition | any;
+type ClassElement = PropertyDefinition | MethodDefinition;
 
 interface PropertyDefinition extends BaseNode {
   type: 'PropertyDefinition';
@@ -202,8 +230,7 @@ type Pattern =
   | AssignmentPattern
   | RestElement
   | ObjectPattern
-  | ArrayPattern
-  | any;
+  | ArrayPattern;
 
 interface Identifier extends BaseNode {
   type: 'Identifier';
@@ -254,12 +281,18 @@ type Expression =
   | ObjectExpression
   | ArrayExpression
   | NewExpression
-  | any;
+  | UnaryExpression;
 
 interface Literal extends BaseNode {
   type: 'Literal';
   value: string | number | boolean | null | RegExp | bigint;
   raw?: string;
+}
+
+interface UnaryExpression extends BaseNode {
+  type: 'UnaryExpression';
+  operator: string;
+  argument: Expression;
 }
 
 interface CallExpression extends BaseNode {
@@ -336,7 +369,18 @@ type TSType =
   | TSArrayType
   | TSUnionType
   | TSTypeLiteral
-  | any;
+  | TSLiteralType
+  | TSFunctionType;
+
+interface TSLiteralType extends BaseNode {
+  type: 'TSLiteralType';
+  // oxc-parser models the literal as a generic `Literal` node.
+  literal?: Literal;
+}
+
+interface TSFunctionType extends BaseNode {
+  type: 'TSFunctionType';
+}
 
 interface TSStringKeyword extends BaseNode {
   type: 'TSStringKeyword';
@@ -370,6 +414,8 @@ interface TSTypeReference extends BaseNode {
   type: 'TSTypeReference';
   typeName: Identifier | TSQualifiedName;
   typeParameters?: TSTypeParameterInstantiation;
+  // oxc-parser v0.108+ renamed typeParameters to typeArguments
+  typeArguments?: TSTypeParameterInstantiation;
 }
 
 interface TSQualifiedName extends BaseNode {
@@ -396,8 +442,7 @@ interface TSTypeLiteral extends BaseNode {
 type TSTypeElement =
   | TSPropertySignature
   | TSMethodSignature
-  | TSIndexSignature
-  | any;
+  | TSIndexSignature;
 
 interface TSPropertySignature extends BaseNode {
   type: 'TSPropertySignature';
@@ -722,7 +767,7 @@ export function extractSmrtImports(
 
     // Get module specifier string
     const source = node.source;
-    if (!source || !source.value) continue;
+    if (!source || typeof source.value !== 'string') continue;
 
     const moduleName = source.value;
 
@@ -807,9 +852,9 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
       const name = enumDecl.id?.name;
       // OXC wraps members in a TSEnumBody node: enumDecl.body.members
       const members = enumDecl.body?.members ?? enumDecl.members;
-      if (name && isSafeObjectKey(name) && members?.length > 0) {
+      if (name && isSafeObjectKey(name) && members && members.length > 0) {
         const values = members
-          .map((m: any) => {
+          .map((m: TSEnumMember): string | null => {
             if (m.initializer?.type === 'Literal') {
               const val = m.initializer.value;
               if (typeof val === 'string') return `'${val}'`;
@@ -817,11 +862,11 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
             }
             return null;
           })
-          .filter(Boolean);
+          .filter((v): v is string => v !== null);
 
         if (values.length > 0) {
           // All string values → string union, all numeric → number union
-          const allStrings = values.every((v: string) => v.startsWith("'"));
+          const allStrings = values.every((v) => v.startsWith("'"));
           if (allStrings) {
             aliases[name] = values.join(' | ');
           }
@@ -1019,7 +1064,7 @@ function getPropertyKey(node: Expression): string | null {
 /**
  * Extract value from expression
  */
-function extractValue(node: Expression, sourceText: string): unknown {
+function extractValue(node: Expression | Pattern, sourceText: string): unknown {
   switch (node.type) {
     case 'Literal':
       return node.value;
@@ -1104,8 +1149,7 @@ function extractExtendsClause(
   // Get type argument (e.g., Meeting from SmrtCollection<Meeting>)
   // Note: oxc-parser v0.108+ renamed superTypeParameters to superTypeArguments
   const params =
-    (node as any).superTypeArguments?.params ||
-    node.superTypeParameters?.params;
+    node.superTypeArguments?.params || node.superTypeParameters?.params;
   if (params && params.length > 0) {
     const typeParam = params[0];
     extendsTypeArg = extractTypeName(typeParam);
@@ -1286,7 +1330,7 @@ function extractTypeName(type: TSType): string | null {
       // Include type parameters (e.g., Promise<any>, Map<string, number>)
       // Note: oxc-parser v0.108+ renamed typeParameters to typeArguments
       const typeParams =
-        (type as any).typeArguments?.params || type.typeParameters?.params;
+        type.typeArguments?.params || type.typeParameters?.params;
       if (baseName && typeParams?.length) {
         const typeArgs = typeParams
           .map((p: TSType) => extractTypeName(p))
@@ -1314,7 +1358,7 @@ function extractTypeName(type: TSType): string | null {
       return 'undefined';
 
     case 'TSLiteralType': {
-      const literal = (type as any).literal;
+      const literal = type.literal;
       if (!literal) return null;
       // oxc-parser uses generic 'Literal' node type — distinguish by value type
       if (typeof literal.value === 'string') return `'${literal.value}'`;
@@ -1341,9 +1385,11 @@ function extractTypeName(type: TSType): string | null {
       return 'object';
     case 'TSFunctionType':
       return 'Function';
+    // oxc-parser emits many TSType kinds the scanner does not resolve
+    // (e.g. intersections, tuples, conditional types); fall through to null.
+    default:
+      return null;
   }
-
-  return null;
 }
 
 /**

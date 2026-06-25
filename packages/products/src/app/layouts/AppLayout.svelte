@@ -1,9 +1,10 @@
 <script lang="ts">
+import type { Snippet } from 'svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../lib/i18n.js';
 
 interface Props {
-  children: any;
+  children: Snippet;
 }
 
 const { children }: Props = $props();

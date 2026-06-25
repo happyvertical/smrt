@@ -78,7 +78,9 @@ $effect(() => {
   if (asset) {
     editName = asset.name || '';
     editDescription = asset.description || '';
-    editAlt = (asset as any).alt || '';
+    // `alt` lives on the Image subclass (smrt-images), not the base Asset.
+    // Read it defensively without a hard dependency on that subclass.
+    editAlt = (asset as { alt?: string }).alt || '';
   }
 });
 
@@ -133,7 +135,7 @@ function copyUrl() {
 
 function copyMarkdown() {
   if (asset?.sourceUri) {
-    const alt = (asset as any).alt || asset.name || 'image';
+    const alt = (asset as { alt?: string }).alt || asset.name || 'image';
     copyToClipboard(`![${alt}](${asset.sourceUri})`, 'Markdown');
   }
 }

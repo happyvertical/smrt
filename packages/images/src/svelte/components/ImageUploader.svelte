@@ -145,8 +145,9 @@ async function startCamera() {
       videoElement.play().catch(() => {});
       isCameraActive = true;
     }
-  } catch (err: any) {
-    cameraError = `Could not access camera: ${err.message}`;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    cameraError = `Could not access camera: ${message}`;
   }
 }
 
@@ -261,8 +262,9 @@ async function handleGenerateVariation() {
         })();
     onSelect(data.image);
     selectedImage = null;
-  } catch (e: any) {
-    variationError = e.message || 'Failed to generate variation';
+  } catch (e) {
+    variationError =
+      e instanceof Error ? e.message : 'Failed to generate variation';
   } finally {
     isGenerating = false;
   }

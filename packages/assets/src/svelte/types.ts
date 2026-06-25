@@ -54,6 +54,21 @@ export interface AssetAction {
 }
 
 /**
+ * Payload emitted when a new asset is created through the create modal /
+ * uploader flow. Carries the chosen file plus user-supplied metadata.
+ */
+export interface AssetCreateData {
+  /** The file to upload */
+  file: File;
+  /** Asset display name */
+  name: string;
+  /** Asset description */
+  description: string;
+  /** Accessibility alt text */
+  altText: string;
+}
+
+/**
  * Arbitrary database-level filters passed to AssetCollection queries.
  * Any key/value pairs here are forwarded as WHERE conditions.
  *
@@ -78,9 +93,9 @@ export interface AssetManagerUploaderProps {
   /** @deprecated Use onClose */
   onclose?: () => void;
   /** Callback when asset creation/selection is complete */
-  onCreate: (data: any) => void;
+  onCreate: (data: AssetCreateData) => void;
   /** @deprecated Use onCreate */
-  oncreate?: (data: any) => void;
+  oncreate?: (data: AssetCreateData) => void;
 }
 
 /** Props for the main AssetManager component */
@@ -122,12 +137,7 @@ export interface AssetManagerProps {
    * Persist a newly created asset. Consumer-supplied; awaited. A rejection
    * propagates to the create modal, which surfaces it and keeps the form.
    */
-  onCreate?: (data: {
-    file: File;
-    name: string;
-    description: string;
-    altText: string;
-  }) => void | Promise<void>;
+  onCreate?: (data: AssetCreateData) => void | Promise<void>;
   /**
    * Persist asset deletion. Consumer-supplied — when omitted, deletion applies
    * to local state only. Awaited; a rejection surfaces an error and skips the

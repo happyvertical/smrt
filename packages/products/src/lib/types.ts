@@ -15,7 +15,7 @@ export interface ProductData {
   model?: string;
   price?: number;
   inStock?: boolean;
-  specifications?: Record<string, any>;
+  specifications?: Record<string, unknown>;
   tags?: string[];
 }
 
@@ -34,11 +34,11 @@ export interface CategoryData {
 
 export interface Request {
   params: Record<string, string>;
-  query: Record<string, any>;
-  json(): Promise<any>;
+  query: Record<string, unknown>;
+  json(): Promise<unknown>;
 }
 
 export interface Response {
-  json(data: any, init?: { status?: number }): Response;
+  json(data: unknown, init?: { status?: number }): Response;
   status(code: number): Response;
 }

@@ -21,6 +21,7 @@
 
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
 
 // Type alias for any to avoid conflicts with smrt-core's globalThis declarations
@@ -30,6 +31,30 @@ type VitestDatabaseOptions = Parameters<
 >[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
 };
+
+/**
+ * The subset of the `@happyvertical/smrt-core` public API that the vitest
+ * schema-preparation hook depends on. smrt-core is loaded dynamically (with a
+ * monorepo source fallback) so it may be absent in some test environments;
+ * this captures the exact shape consumed by {@link buildSchemaSqlBatches}.
+ */
+interface SmrtCoreSchemaModule {
+  ObjectRegistry: {
+    getAllSchemasAsDefinitions(): Record<string, SchemaDefinition>;
+  };
+  detectEngine(
+    url: string,
+    type?: string,
+  ): 'sqlite' | 'duckdb' | 'json' | 'postgres';
+  generateDDLForEngine(
+    schema: SchemaDefinition,
+    engine: 'sqlite' | 'duckdb' | 'json' | 'postgres',
+  ): {
+    createTable: string;
+    indexes: string[];
+    triggers: string[];
+  };
+}
 
 const preparedSchemasByDb = new WeakMap<object, string>();
 const preparedSchemasByConfig = new Map<string, string>();
@@ -94,17 +119,17 @@ function getSchemaPreparationKey(
   return dbConfig.dbid || `${dbConfig.type || 'sqlite'}:${dbUrl}`;
 }
 
-async function loadSmrtCoreModule(): Promise<any> {
+async function loadSmrtCoreModule(): Promise<SmrtCoreSchemaModule> {
   const specifier = '@happyvertical/smrt-core';
 
   try {
-    const module = (await import(specifier)) as Record<string, any>;
+    const module = (await import(specifier)) as Record<string, unknown>;
     if (
       module.ObjectRegistry &&
       module.detectEngine &&
       module.generateDDLForEngine
     ) {
-      return module;
+      return module as unknown as SmrtCoreSchemaModule;
     }
   } catch {
     // Fall through to the monorepo source fallback below.
@@ -113,7 +138,9 @@ async function loadSmrtCoreModule(): Promise<any> {
   try {
     const fallbackHref = new URL('../../core/src/index.ts', import.meta.url)
       .href;
-    return await importWorkspaceSourceModule(fallbackHref);
+    return await importWorkspaceSourceModule<SmrtCoreSchemaModule>(
+      fallbackHref,
+    );
   } catch {
     throw new Error('Unable to load smrt-core schema helpers');
   }
@@ -126,9 +153,9 @@ async function loadSmrtTableCacheModule(): Promise<{
     const tableCacheSpecifier = '@happyvertical/smrt-core/table-cache';
     const module = (await import(
       /* @vite-ignore */ tableCacheSpecifier
-    )) as Record<string, any>;
+    )) as Record<string, unknown>;
     if (typeof module.resetVerifiedTables === 'function') {
-      return module;
+      return module as { resetVerifiedTables?: () => void };
     }
   } catch {
     // Fall through to the monorepo source fallback below.
@@ -145,7 +172,12 @@ async function loadSmrtTableCacheModule(): Promise<{
   }
 
   try {
-    return await loadSmrtCoreModule();
+    // Legacy full-core modules may expose resetVerifiedTables directly; narrow
+    // to the table-cache slice since SmrtCoreSchemaModule does not model it.
+    const legacyCore = (await loadSmrtCoreModule()) as unknown as {
+      resetVerifiedTables?: () => void;
+    };
+    return legacyCore;
   } catch {
     return {};
   }
@@ -157,20 +189,7 @@ function normalizeSchemaStatement(statement: string): string {
 }
 
 function buildSchemaSqlBatches(
-  smrtCore: {
-    ObjectRegistry: {
-      getAllSchemasAsDefinitions(): Record<string, any>;
-    };
-    detectEngine(url: string, type?: string): string;
-    generateDDLForEngine(
-      schema: any,
-      engine: 'sqlite' | 'duckdb' | 'json' | 'postgres',
-    ): {
-      createTable: string;
-      indexes: string[];
-      triggers: string[];
-    };
-  },
+  smrtCore: SmrtCoreSchemaModule,
   db: { url?: string; exportTable?: unknown },
   options: VitestDatabaseOptions,
 ): string[] {
@@ -181,10 +200,10 @@ function buildSchemaSqlBatches(
   const engine =
     typeof db.exportTable === 'function'
       ? 'json'
-      : (smrtCore.detectEngine(
+      : smrtCore.detectEngine(
           dbConfig.url || db.url || ':memory:',
           dbConfig.type,
-        ) as 'sqlite' | 'duckdb' | 'json' | 'postgres');
+        );
 
   return Object.values(
     smrtCore.ObjectRegistry.getAllSchemasAsDefinitions(),

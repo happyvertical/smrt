@@ -86,7 +86,10 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
       ...override,
       // Ensure nested objects are merged properly
       db: override.db
-        ? { ...(defaults.db as any), ...(override.db as any) }
+        ? {
+            ...(defaults.db as Record<string, unknown>),
+            ...(override.db as Record<string, unknown>),
+          }
         : defaults.db,
       ai: override.ai !== undefined ? override.ai : defaults.ai,
     };
@@ -108,7 +111,10 @@ export async function getCollection<
     ...config,
     ...overrides,
     db: overrides.db
-      ? { ...(config.db as any), ...(overrides.db as any) }
+      ? {
+          ...(config.db as Record<string, unknown>),
+          ...(overrides.db as Record<string, unknown>),
+        }
       : config.db,
     ai: overrides.ai !== undefined ? overrides.ai : config.ai,
   });

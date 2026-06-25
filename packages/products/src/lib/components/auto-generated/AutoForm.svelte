@@ -82,8 +82,10 @@ $effect(() => {
   formData = { ...data };
 });
 
-function updateField(fieldName: string, value: any) {
-  formData[fieldName as keyof ProductData] = value;
+function updateField(fieldName: string, value: unknown) {
+  // Dynamic write keyed by field name; the schema guarantees the key/value
+  // pairing at runtime, so cast the target to a writable string-keyed record.
+  (formData as Record<string, unknown>)[fieldName] = value;
 
   // Trigger change callback
   if (onChange) {

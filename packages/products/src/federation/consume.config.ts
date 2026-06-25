@@ -5,12 +5,22 @@
  * This allows the service to use components and features from other microservices.
  */
 
+/**
+ * Module-federation shared-dependency descriptor.
+ */
+export interface SharedDependencyConfig {
+  singleton?: boolean;
+  requiredVersion?: string;
+  eager?: boolean;
+  strictVersion?: boolean;
+}
+
 export interface ConsumeConfig {
   // Remote services this application consumes from
   remotes: Record<string, string>;
 
   // Shared dependencies configuration
-  shared: Record<string, any>;
+  shared: Record<string, SharedDependencyConfig>;
 }
 
 export const consumeConfig: ConsumeConfig = {
