@@ -1,8 +1,11 @@
 /**
  * All Themes CSS
  *
- * Combined CSS file with all themes (Material, Glass, Studio).
+ * Combined CSS file with all themes (Material, Glass, Studio, SMRT).
  * Use this if your app supports runtime theme switching.
+ *
+ * Note: the SMRT theme's fonts are not imported here (they pull in woff2
+ * binaries). Import './fonts.css' explicitly if you want the SMRT type stack.
  *
  * @usage import '@smrt/svelte/themes/styles/all.css';
  */
@@ -10,3 +13,4 @@
 @import './material.css';
 @import './glass.css';
 @import './studio.css';
+@import './smrt.css';

@@ -5,7 +5,7 @@
  */
 
 /** Available theme presets */
-export type ThemePreset = 'material' | 'glass' | 'studio';
+export type ThemePreset = 'material' | 'glass' | 'studio' | 'smrt';
 
 /** Color scheme mode */
 export type ColorScheme = 'light' | 'dark' | 'system';

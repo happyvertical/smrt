@@ -1,7 +1,7 @@
 /**
  * SMRT Svelte Themes
  *
- * Unified theme system with Material, Glass, and Studio presets.
+ * Unified theme system with Material, Glass, Studio, and SMRT presets.
  * Supports runtime theme switching, dark/light modes, and CSS custom properties.
  *
  * @example
@@ -65,6 +65,7 @@ export {
   spacingScale,
   studioEasing,
 } from './shared.js';
+export { smrtTheme } from './smrt/index.js';
 export { studioTheme } from './studio/index.js';
 // Main components
 export { default as ThemeProvider } from './ThemeProvider.svelte';

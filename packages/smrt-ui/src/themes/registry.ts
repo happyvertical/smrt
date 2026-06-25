@@ -7,6 +7,7 @@
 
 import { glassTheme } from './glass/index.js';
 import { materialTheme } from './material/index.js';
+import { smrtTheme } from './smrt/index.js';
 import { studioTheme } from './studio/index.js';
 import type { Theme, ThemePreset } from './types.js';
 
@@ -17,12 +18,18 @@ export const themes: Record<ThemePreset, Theme> = {
   material: materialTheme,
   glass: glassTheme,
   studio: studioTheme,
+  smrt: smrtTheme,
 };
 
 /**
  * List of available theme presets (built-in only)
  */
-export const availablePresets: ThemePreset[] = ['material', 'glass', 'studio'];
+export const availablePresets: ThemePreset[] = [
+  'material',
+  'glass',
+  'studio',
+  'smrt',
+];
 
 /**
  * Get a theme by preset name

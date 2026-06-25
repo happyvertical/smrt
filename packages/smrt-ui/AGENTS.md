@@ -51,7 +51,9 @@ components are exempt — they *are* the primitives.
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
 | `./theme` | simple `ThemeProvider` + context (`useTheme` consumes this from `smrt-svelte`) |
-| `./themes` | canonical preset token system (material/glass/studio), CSS generation |
+| `./themes` | canonical preset token system (material/glass/studio/smrt), CSS generation |
+| `./themes/styles/smrt.css` | static SMRT theme CSS (dark-first amber instrument-panel look) + signature `.smrt-*` flourish utilities |
+| `./themes/styles/fonts.css` | optional self-hosted `@font-face` for the SMRT type stack (Space Grotesk / Inter / JetBrains Mono) |
 | `./styles/tokens.css` | base token stylesheet |
 
 Also internal: `actions/` (`ripple`, `permission`), `display/`, `data/`,
