@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.35.4
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: S4 ratchet wave 5 — graduate infra + Svelte-debt tail (#1648) (#1653) (lint)
+  - @happyvertical/smrt-config@0.35.4
+  - @happyvertical/smrt-types@0.35.4
+  - @happyvertical/smrt-scanner@0.35.4
+
 ## 0.35.3
 
 ### Patch Changes
