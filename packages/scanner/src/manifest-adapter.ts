@@ -38,14 +38,14 @@ interface FieldDefinition {
     | 'manyToMany'
     | 'meta';
   required?: boolean;
-  default?: any;
+  default?: unknown;
   min?: number;
   max?: number;
   maxLength?: number;
   minLength?: number;
   related?: string;
   description?: string;
-  _meta?: Record<string, any>;
+  _meta?: Record<string, unknown>;
   transient?: boolean;
   /** Sensitive value — excluded from public serialization + where filtering. */
   sensitive?: boolean;
@@ -57,7 +57,7 @@ type FieldDecoratorOptions = {
   type?: FieldDefinition['type'];
   required?: boolean;
   nullable?: boolean;
-  default?: any;
+  default?: unknown;
   min?: number;
   max?: number;
   maxLength?: number;
@@ -92,7 +92,7 @@ interface MethodDefinition {
     name: string;
     type: string;
     optional: boolean;
-    default?: any;
+    default?: unknown;
   }>;
   returnType: string;
   description?: string;
@@ -148,7 +148,7 @@ interface SmartObjectDefinition {
   decoratorConfig: SmartObjectConfig;
   extends?: string;
   extendsTypeArg?: string;
-  staticProperties?: Record<string, any>;
+  staticProperties?: Record<string, unknown>;
 }
 
 interface SmartObjectManifest {
@@ -221,7 +221,7 @@ function sanitizeParsed(value: unknown, seen = new WeakSet<object>()): unknown {
  */
 function parseLiteralInitializer(
   source: string,
-): Record<string, any> | any[] | null {
+): Record<string, unknown> | unknown[] | null {
   const trimmed = source?.trim();
   if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('[')))
     return null;
@@ -231,9 +231,9 @@ function parseLiteralInitializer(
     // The existing pattern (unchanged) uses Function constructor for object literal parsing
     // eslint-disable-next-line no-new-func
     const parsed = new Function(`return (${source})`)() as
-      | Record<string, any>
-      | any[];
-    return sanitizeParsed(parsed) as Record<string, any> | any[];
+      | Record<string, unknown>
+      | unknown[];
+    return sanitizeParsed(parsed) as Record<string, unknown> | unknown[];
   } catch {
     return null;
   }
@@ -385,7 +385,7 @@ export class ManifestAdapter {
     // Use own fields (classDef.fields) not allFields — static properties use
     // child-wins semantics (static override), not parent-wins like STI columns.
     // Fall back to allFields for inherited static props not redeclared by child.
-    let staticProperties: Record<string, any> | undefined;
+    let staticProperties: Record<string, unknown> | undefined;
     const knownStaticProps = ['uiSlots', 'adminRoutes', 'signalSubscriptions'];
     const ownStaticNames = new Set<string>();
     // First pass: own fields (child overrides win)
@@ -1191,7 +1191,7 @@ export class ManifestAdapter {
   private parseDefaultValue(
     initializer: string | null,
     expectedType: 'string' | 'boolean' | 'number',
-  ): any {
+  ): string | number | boolean | undefined {
     if (!initializer) return undefined;
 
     switch (expectedType) {
