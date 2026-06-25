@@ -500,14 +500,15 @@ export class TenantCollection extends SmrtCollection<Tenant> {
 
   /**
    * Override create to automatically set hierarchy fields for new tenants.
-   * Only calculates hierarchy fields if not already provided (preserves
-   * database values during hydration via get()).
+   * Only calculates them when the caller hasn't already supplied
+   * `hierarchyLevel`/`hierarchyPath` in the create input — an explicitly
+   * provided value is preserved as-is.
    */
   async create(options: SmrtCreateInput<Tenant>): Promise<Tenant> {
     // If parentTenantId is provided and hierarchy fields not already set
     if (options.parentTenantId) {
-      // Only calculate if hierarchy fields are missing (new tenant creation)
-      // Preserve existing values when hydrating from database
+      // Only calculate when the caller didn't already supply them
+      // (a provided hierarchyLevel/hierarchyPath is preserved as-is)
       const needsHierarchyCalc =
         options.hierarchyLevel === undefined ||
         options.hierarchyPath === undefined;
