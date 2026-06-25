@@ -101,8 +101,8 @@ async function loadImages(reset = false) {
 
     images = [...images, ...data.items];
     offset += data.items.length;
-  } catch (e: any) {
-    error = e.message || 'Failed to load images';
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'Failed to load images';
   } finally {
     isLoading = false;
   }

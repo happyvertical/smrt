@@ -144,7 +144,7 @@ export class Asset extends SmrtObject {
         typeof options.externalRefs === 'string'
           ? options.externalRefs
           : stringifyAssetRecord(options.externalRefs);
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
   }

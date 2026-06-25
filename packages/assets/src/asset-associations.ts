@@ -20,6 +20,7 @@
 import {
   type JunctionAttachOptions,
   type JunctionFilterOptions,
+  type SmrtCreateInput,
   SmrtJunction,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -73,7 +74,7 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
       assetId,
       metaType,
       metaId,
-    } as any)) as AssetAssociation;
+    } as SmrtCreateInput<AssetAssociation>)) as AssetAssociation;
   }
 
   /**
