@@ -55,6 +55,8 @@ interface ResolvedApiActionRouteConfig {
 
 interface GeneratedActionRouteSpec {
   lookupClassName: string;
+  lookupObjectDef?: SmartObjectDefinition;
+  hostClassName: string;
   actionName: string;
   actionDef: any;
   routeConfig: ResolvedApiActionRouteConfig;
@@ -65,6 +67,11 @@ interface ResolvedStandardRouteSerializers {
   importStatements: string[];
   itemSerializerName?: string;
   listItemSerializerName?: string;
+}
+
+interface GeneratedTypeReference {
+  typeName: string;
+  importStatement?: string;
 }
 
 /**
@@ -167,6 +174,92 @@ function resolveStandardRouteSerializers(
     itemSerializerName,
     listItemSerializerName,
   };
+}
+
+function isValidTypeIdentifier(name: string): boolean {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name);
+}
+
+function resolveObjectTypeReference(
+  projectRoot: string,
+  className: string,
+  objectDef: SmartObjectDefinition | undefined,
+  options: SvelteKitOptions,
+  routeDir?: string,
+): GeneratedTypeReference {
+  const simpleClassName = extractSimpleClassName(className);
+
+  if (!objectDef || !isValidTypeIdentifier(simpleClassName)) {
+    return { typeName: "import('@happyvertical/smrt-core').SmrtObject" };
+  }
+
+  const importPath =
+    isLocalObject(projectRoot, objectDef) || !objectDef.packageName
+      ? getRouteTypeImportPath(
+          projectRoot,
+          objectDef,
+          options,
+          simpleClassName,
+          routeDir,
+        )
+      : objectDef.packageName;
+
+  return {
+    typeName: simpleClassName,
+    importStatement: `import type { ${simpleClassName} } from '${importPath}';`,
+  };
+}
+
+function getRouteTypeImportPath(
+  projectRoot: string,
+  objectDef: SmartObjectDefinition,
+  options: SvelteKitOptions,
+  simpleClassName: string,
+  routeDir?: string,
+): string {
+  if (objectDef.filePath) {
+    const srcLibDir = join(projectRoot, 'src/lib');
+    if (objectDef.filePath.startsWith(`${srcLibDir}/`)) {
+      const libRelative = relative(srcLibDir, objectDef.filePath)
+        .replace(/\\/g, '/')
+        .replace(/\.(ts|js|tsx|jsx)$/, '');
+      return `$lib/${libRelative}`.replace(/\/+/g, '/');
+    }
+
+    if (routeDir) {
+      const routeRelative = relative(routeDir, objectDef.filePath)
+        .replace(/\\/g, '/')
+        .replace(/\.(ts|js|tsx|jsx)$/, '');
+      return routeRelative.startsWith('.')
+        ? routeRelative
+        : `./${routeRelative}`;
+    }
+  }
+
+  return getSvelteKitImportPath(
+    projectRoot,
+    objectDef.filePath,
+    options.objectsDir,
+    simpleClassName,
+  );
+}
+
+function mergeImportStatements(
+  importStatements: Array<string | undefined>,
+): string {
+  return Array.from(new Set(importStatements.filter(Boolean))).join('\n');
+}
+
+function findObjectDefByRegistryKey(
+  manifest: SmartObjectManifest,
+  className: string,
+): SmartObjectDefinition | undefined {
+  return (
+    manifest.objects[className] ??
+    Object.values(manifest.objects).find(
+      (objectDef) => objectDef.className === extractSimpleClassName(className),
+    )
+  );
 }
 
 /**
@@ -303,20 +396,41 @@ function requireRouteAuth(locals: unknown, mutating: boolean): void {
 // object), so recurse and route each through toPublicJSON() rather than letting
 // JSON.stringify call toJSON(). Non-plain instances (Date, etc.) and primitives
 // pass through; a cycle guard prevents infinite loops.
-function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
+interface PublicJsonSource {
+  toPublicJSON(): unknown;
+}
+
+function hasPublicJson(value: object): value is PublicJsonSource {
+  return (
+    'toPublicJSON' in value &&
+    typeof (value as { toPublicJSON?: unknown }).toPublicJSON === 'function'
+  );
+}
+
+function readJsonRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function toPublicResult(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
   if (value === null || typeof value !== 'object') return value;
-  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+  if (hasPublicJson(value)) return value.toPublicJSON();
   if (Array.isArray(value)) {
     if (seen.has(value)) return value;
     seen.add(value);
-    return value.map((entry: any) => toPublicResult(entry, seen));
+    return value.map((entry) => toPublicResult(entry, seen));
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
   if (seen.has(value)) return value;
   seen.add(value);
-  const out: Record<string, any> = {};
-  for (const [key, entry] of Object.entries(value)) {
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
@@ -356,8 +470,10 @@ import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenanc
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
   if (!locals || typeof locals !== 'object') return;
-  const l = locals as Record<string, any>;
-  const tenantId = l.tenantId ?? l.user?.tenantId ?? l.session?.tenantId;
+  const l = locals as Record<string, unknown>;
+  const user = l.user as Record<string, unknown> | undefined;
+  const session = l.session as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
   if (typeof tenantId === 'string' && tenantId) {
     enterTenantContext({ tenantId });
   }
@@ -519,6 +635,123 @@ function buildActionInvocationArgs(actionDef: any): string[] {
   return parameters.map((parameter: any) =>
     buildOptionsPropertyAccess(parameter.name),
   );
+}
+
+function buildObjectTypeProperty(propertyName: string): string {
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(propertyName)) {
+    return propertyName;
+  }
+
+  return JSON.stringify(propertyName);
+}
+
+function buildActionTargetTypeExpression(
+  targetTypeName: string,
+  isStatic: boolean,
+): string {
+  return isStatic ? `(typeof ${targetTypeName})` : targetTypeName;
+}
+
+function buildActionArgsTypeAlias(
+  actionName: string,
+  targetTypeName: string,
+  isStatic: boolean,
+): string {
+  const targetTypeExpression = buildActionTargetTypeExpression(
+    targetTypeName,
+    isStatic,
+  );
+  return `  type ActionArgs = Parameters<${targetTypeExpression}[${JSON.stringify(actionName)}]>;`;
+}
+
+function buildActionOptionsTypeAlias(actionDef: any): string {
+  const parameters = Array.isArray(actionDef.parameters)
+    ? actionDef.parameters
+    : [];
+
+  if (parameters.length <= 1 && parameters[0]?.name === 'options') {
+    return '';
+  }
+
+  return [
+    '  type ActionOptions = {',
+    ...parameters.map(
+      (parameter: any, index: number) =>
+        `    ${buildObjectTypeProperty(parameter.name)}: ActionArgs[${index}];`,
+    ),
+    '  };',
+  ].join('\n');
+}
+
+function buildActionOptionsLoad(
+  actionName: string,
+  actionDef: any,
+  routeConfig: ResolvedApiActionRouteConfig,
+  targetTypeName: string,
+  isStatic: boolean,
+): string {
+  const parameters = Array.isArray(actionDef.parameters)
+    ? actionDef.parameters
+    : [];
+  if (parameters.length === 0) {
+    return '';
+  }
+
+  const hasPathParams = routeConfig.pathParamNames.length > 0;
+  const pathParamsObjectLiteral = buildPathParamsObjectLiteral(
+    routeConfig.pathParamNames,
+  );
+  const isSingleOptionsParameter =
+    parameters.length === 1 && parameters[0]?.name === 'options';
+  const lines = [
+    buildActionArgsTypeAlias(actionName, targetTypeName, isStatic),
+  ];
+  const optionsTypeAlias = buildActionOptionsTypeAlias(actionDef);
+  if (optionsTypeAlias) {
+    lines.push(optionsTypeAlias);
+  }
+
+  if (routeConfig.method === 'GET') {
+    if (hasPathParams) {
+      lines.push(
+        `  const pathParams = ${pathParamsObjectLiteral};`,
+        '  const options = {',
+        '    ...Object.fromEntries(new URL(request.url).searchParams.entries()),',
+        '    ...pathParams,',
+        `  } as ${isSingleOptionsParameter ? 'ActionArgs[0]' : 'ActionOptions'};`,
+        '',
+      );
+    } else {
+      lines.push(
+        '  const options = Object.fromEntries(',
+        '    new URL(request.url).searchParams.entries(),',
+        `  ) as ${isSingleOptionsParameter ? 'ActionArgs[0]' : 'ActionOptions'};`,
+        '',
+      );
+    }
+    return lines.join('\n');
+  }
+
+  if (hasPathParams) {
+    lines.push(
+      `  const pathParams = ${pathParamsObjectLiteral};`,
+      '  const body: unknown = await request.json();',
+      '  const options = {',
+      '    ...readJsonRecord(body),',
+      '    ...pathParams,',
+      `  } as ${isSingleOptionsParameter ? 'ActionArgs[0]' : 'ActionOptions'};`,
+      '',
+    );
+    return lines.join('\n');
+  }
+
+  lines.push('  const body: unknown = await request.json();');
+  if (isSingleOptionsParameter) {
+    lines.push('  const options = body as ActionArgs[0];', '');
+  } else {
+    lines.push('  const options = readJsonRecord(body) as ActionOptions;', '');
+  }
+  return lines.join('\n');
 }
 
 function buildOptionsPropertyAccess(propertyName: string): string {
@@ -687,7 +920,9 @@ function clearGeneratedRouteFiles(routesRoot: string): void {
 }
 
 function knowledgeRouteDir(projectRoot: string, options: SvelteKitOptions) {
-  const basePath = options.knowledge?.api?.basePath || '/__smrt/knowledge';
+  const basePath = String(
+    options.knowledge?.api?.basePath || '/__smrt/knowledge',
+  );
   const routeRoot = svelteKitRouteRoot(options.routesDir);
   const segments = basePath
     .split('/')
@@ -739,7 +974,7 @@ function generateKnowledgeRoute(
 
 function readKnowledgeRouteArtifact(
   projectRoot: string,
-): Record<string, any> | null {
+): Record<string, unknown> | null {
   for (const relativePath of [
     '.smrt/smrt-knowledge.json',
     'dist/smrt-knowledge.json',
@@ -1135,6 +1370,7 @@ async function generateRoutesForObject(
       objectDef,
       includedActions,
       options,
+      routeDir,
     );
     writeRoute(routeDir, '+server.ts', collectionRoute);
   }
@@ -1151,6 +1387,7 @@ async function generateRoutesForObject(
       objectDef,
       includedActions,
       options,
+      join(routeDir, '[id]'),
     );
     writeRoute(join(routeDir, '[id]'), '+server.ts', itemRoute);
   }
@@ -1189,6 +1426,8 @@ async function generateRoutesForObject(
       routeDir: join(actionBaseDir, ...routeConfig.pathSegments),
       spec: {
         lookupClassName: className,
+        lookupObjectDef: objectDef,
+        hostClassName: className,
         actionName,
         actionDef,
         routeConfig,
@@ -1202,6 +1441,7 @@ async function generateRoutesForObject(
   )) {
     const actionRoute = generateActionRouteTemplate(
       projectRoot,
+      actionRouteDir,
       routeSpecs,
       objectDef,
       options,
@@ -1229,6 +1469,7 @@ async function generateCollectionRoutesForObject(
     objectDef,
     manifest,
   );
+  const lookupObjectDef = findObjectDefByRegistryKey(manifest, lookupClassName);
 
   const customActions = Object.entries(objectDef.methods).filter(
     ([name, method]) =>
@@ -1267,6 +1508,8 @@ async function generateCollectionRoutesForObject(
       routeDir: join(routeDir, ...routeConfig.pathSegments),
       spec: {
         lookupClassName,
+        lookupObjectDef,
+        hostClassName: className,
         actionName,
         actionDef,
         routeConfig,
@@ -1280,6 +1523,7 @@ async function generateCollectionRoutesForObject(
   )) {
     const actionRoute = generateActionRouteTemplate(
       projectRoot,
+      actionRouteDir,
       routeSpecs,
       objectDef,
       options,
@@ -1553,14 +1797,22 @@ function isLocalObject(
  * Generates collection route template (GET list, POST create)
  */
 function generateCollectionRouteTemplate(
-  _projectRoot: string,
+  projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
   includedActions: string[],
-  _options: SvelteKitOptions,
+  options: SvelteKitOptions,
+  routeDir: string,
 ): string {
   const hasGet = includedActions.includes('list');
   const hasPost = includedActions.includes('create');
+  const modelType = resolveObjectTypeReference(
+    projectRoot,
+    className,
+    objectDef,
+    options,
+    routeDir,
+  );
   const serializers = resolveStandardRouteSerializers(
     objectDef.decoratorConfig?.api,
   );
@@ -1573,7 +1825,7 @@ import { error, json } from '@sveltejs/kit';
 ${
   serializerImports ? `${serializerImports}\n` : ''
 }import { getCollection } from '$lib/server/smrt';
-import type { RequestHandler } from './$types';
+${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
 ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}`;
 
@@ -1585,7 +1837,7 @@ ${routeGuardPreamble(objectDef, false)}
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
-${generateCollectionLoad(className)}
+${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const items = await collection.list({ limit, offset });
   const count = await collection.count();
 ${
@@ -1609,9 +1861,10 @@ ${
 // Create new ${className.toLowerCase()}
 export const POST: RequestHandler = async ({ locals, request }) => {
 ${routeGuardPreamble(objectDef, true)}
-  const data = applyWritablePolicy(await request.json());
+  const body: unknown = await request.json();
+  const data = applyWritablePolicy(body);
 
-${generateCollectionLoad(className)}
+${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.create(data);
   await item.save();
 ${
@@ -1632,9 +1885,9 @@ ${
 
 function generateCollectionLoad(
   className: string,
-  options: { generic?: boolean } = {},
+  options: { typeName?: string } = {},
 ): string {
-  const genericSuffix = options.generic ? '<any>' : '';
+  const genericSuffix = options.typeName ? `<${options.typeName}>` : '';
 
   return [
     `  const collection = await getCollection${genericSuffix}(`,
@@ -1683,16 +1936,24 @@ function generateClassNotRegisteredError(className: string): string {
  * Generates item route template (GET, PUT, DELETE)
  */
 function generateItemRouteTemplate(
-  _projectRoot: string,
+  projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
   includedActions: string[],
-  _options: SvelteKitOptions,
+  options: SvelteKitOptions,
+  routeDir: string,
 ): string {
   const hasGet = includedActions.includes('get');
   const hasPut = includedActions.includes('update');
   const hasDelete = includedActions.includes('delete');
   const simpleClassName = extractSimpleClassName(className);
+  const modelType = resolveObjectTypeReference(
+    projectRoot,
+    className,
+    objectDef,
+    options,
+    routeDir,
+  );
   const serializers = resolveStandardRouteSerializers(
     objectDef.decoratorConfig?.api,
   );
@@ -1703,7 +1964,7 @@ function generateItemRouteTemplate(
 
 import { error, json } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
-import type { RequestHandler } from './$types';
+${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}`;
 
   const getHandler = hasGet
@@ -1711,7 +1972,7 @@ ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenan
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ locals, params }) => {
 ${routeGuardPreamble(objectDef, false)}
-${generateCollectionLoad(className, { generic: true })}
+${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
 ${
@@ -1732,11 +1993,12 @@ ${
 // Update ${simpleClassName.toLowerCase()}
 export const PUT: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, true)}
-${generateCollectionLoad(className, { generic: true })}
+${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
 
-  const data = applyWritablePolicy(await request.json());
+  const body: unknown = await request.json();
+  const data = applyWritablePolicy(body);
   Object.assign(item, data);
   await item.save();
 ${
@@ -1757,7 +2019,7 @@ ${
 // Delete ${simpleClassName.toLowerCase()}
 export const DELETE: RequestHandler = async ({ locals, params }) => {
 ${routeGuardPreamble(objectDef, true)}
-${generateCollectionLoad(className, { generic: true })}
+${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
 
@@ -1774,10 +2036,11 @@ ${generateNotFoundError(className)}
  * Generates custom action route template
  */
 function generateActionRouteTemplate(
-  _projectRoot: string,
+  projectRoot: string,
+  routeDir: string,
   routeSpecs: GeneratedActionRouteSpec[],
   objectDef: SmartObjectDefinition,
-  _options: SvelteKitOptions,
+  options: SvelteKitOptions,
 ): string {
   if (routeSpecs.length === 0) {
     throw new Error('Cannot generate a custom action route without handlers');
@@ -1785,6 +2048,24 @@ function generateActionRouteTemplate(
 
   const [firstSpec] = routeSpecs;
   const { lookupClassName, routeConfig, hostType } = firstSpec;
+  const lookupModelType = resolveObjectTypeReference(
+    projectRoot,
+    lookupClassName,
+    firstSpec.lookupObjectDef,
+    options,
+    routeDir,
+  );
+  const hostModelType = resolveObjectTypeReference(
+    projectRoot,
+    firstSpec.hostClassName,
+    objectDef,
+    options,
+    routeDir,
+  );
+  const typeImports = mergeImportStatements([
+    lookupModelType.importStatement,
+    hostModelType.importStatement,
+  ]);
 
   const hasMixedHosts = routeSpecs.some(
     (spec) =>
@@ -1800,18 +2081,16 @@ function generateActionRouteTemplate(
     );
   }
 
-  const importBlock =
-    hostType === 'collection'
-      ? `import { error, json } from '@sveltejs/kit';
-import { getCollection } from '$lib/server/smrt';
-import type { RequestHandler } from './$types';`
-      : routeConfig.scope === 'collection'
-        ? `import { error, json } from '@sveltejs/kit';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
-import type { RequestHandler } from './$types';`
-        : `import { error, json } from '@sveltejs/kit';
-import { getCollection } from '$lib/server/smrt';
-import type { RequestHandler } from './$types';`;
+  const importBlock = [
+    "import { error, json } from '@sveltejs/kit';",
+    hostType === 'collection' || routeConfig.scope !== 'collection'
+      ? "import { getCollection } from '$lib/server/smrt';"
+      : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
+    typeImports,
+    "import type { RequestHandler } from './$types';",
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   const tenantScoped = isTenantScoped(objectDef);
   const handlers = routeSpecs
@@ -1823,6 +2102,8 @@ import type { RequestHandler } from './$types';`;
         spec.routeConfig,
         spec.hostType,
         tenantScoped,
+        lookupModelType.typeName,
+        hostModelType.typeName,
       ),
     )
     .join('\n');
@@ -1842,6 +2123,8 @@ function generateActionRouteHandler(
   routeConfig: ResolvedApiActionRouteConfig,
   hostType: 'item' | 'collection',
   tenantScoped: boolean,
+  lookupTypeName: string,
+  hostTypeName: string,
 ): string {
   const handlerName = routeConfig.method;
   // Mutating verbs require auth even when reads are public (#1540). Tenant-scoped
@@ -1856,57 +2139,37 @@ function generateActionRouteHandler(
   const hasInput = actionDef.parameters.length > 0;
   const needsRequest = hasInput;
   const invocationArgs = buildActionInvocationArgs(actionDef);
-  const hasPathParams = routeConfig.pathParamNames.length > 0;
-  const pathParamsObjectLiteral = buildPathParamsObjectLiteral(
-    routeConfig.pathParamNames,
-  );
-  const optionsLoad =
-    hasInput && routeConfig.method === 'GET'
-      ? hasPathParams
-        ? [
-            `  const pathParams = ${pathParamsObjectLiteral};`,
-            '  const options = {',
-            '    ...Object.fromEntries(new URL(request.url).searchParams.entries()),',
-            '    ...pathParams,',
-            '  };',
-            '',
-          ].join('\n')
-        : [
-            '  const options = Object.fromEntries(',
-            '    new URL(request.url).searchParams.entries(),',
-            '  );',
-            '',
-          ].join('\n')
-      : hasInput
-        ? hasPathParams
-          ? [
-              `  const pathParams = ${pathParamsObjectLiteral};`,
-              '  const options = {',
-              '    ...(await request.json()),',
-              '    ...pathParams,',
-              '  };',
-              '',
-            ].join('\n')
-          : '  const options = await request.json();\n'
-        : '';
   const collectionHandlerArgs = buildRouteHandlerArgs(
-    hasPathParams,
+    routeConfig.pathParamNames.length > 0,
     needsRequest,
   );
   const itemHandlerArgs = buildRouteHandlerArgs(true, needsRequest);
 
   if (hostType === 'collection') {
+    const optionsLoad = buildActionOptionsLoad(
+      actionName,
+      actionDef,
+      routeConfig,
+      hostTypeName,
+      actionDef.isStatic,
+    );
+    const receiverExpression = actionDef.isStatic
+      ? 'CollectionClass'
+      : 'typedCollection';
+    const staticTargetLoad = actionDef.isStatic
+      ? `  const CollectionClass = typedCollection.constructor as typeof ${hostTypeName};\n`
+      : '';
+
     return `// Custom collection method: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
-${generateCollectionLoad(lookupClassName, { generic: true })}
-  const typedCollection = collection as any;
+${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
+  const typedCollection = collection as unknown as ${hostTypeName};
 ${generateCollectionNotRegisteredError(lookupClassName)}
+${staticTargetLoad}
 
 ${optionsLoad}  const result = ${buildActionInvocationExpression(
-      actionDef.isStatic
-        ? '(typedCollection.constructor as any)'
-        : 'typedCollection',
+      receiverExpression,
       actionName,
       invocationArgs,
     )};
@@ -1917,13 +2180,20 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
   }
 
   if (routeConfig.scope === 'collection') {
+    const optionsLoad = buildActionOptionsLoad(
+      actionName,
+      actionDef,
+      routeConfig,
+      hostTypeName,
+      true,
+    );
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
   const registered = ObjectRegistry.getClass('${lookupClassName}');
 ${generateClassNotRegisteredError(lookupClassName)}
 
-${optionsLoad}  const ClassRef = registered.constructor as any;
+${optionsLoad}  const ClassRef = registered.constructor as typeof ${hostTypeName};
   const result = ${buildActionInvocationExpression(
     'ClassRef',
     actionName,
@@ -1935,10 +2205,17 @@ ${optionsLoad}  const ClassRef = registered.constructor as any;
 `;
   }
 
+  const optionsLoad = buildActionOptionsLoad(
+    actionName,
+    actionDef,
+    routeConfig,
+    hostTypeName,
+    false,
+  );
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
 ${authGuardLine}
-${generateCollectionLoad(lookupClassName, { generic: true })}
+${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(lookupClassName)}
 
@@ -1955,7 +2232,7 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
 
 function generateKnowledgeRouteTemplate(
   knowledge: DomainKnowledgeConfig,
-  artifact: Record<string, any> | null,
+  artifact: Record<string, unknown> | null,
 ): string {
   const api = knowledge.api ?? {};
   const includeDocs = api.includeDocs === true;
@@ -1973,7 +2250,7 @@ import type { RequestHandler } from './$types';
 const INCLUDE_DOCS_BY_DEFAULT = ${JSON.stringify(includeDocs)};
 const INCLUDE_PROMPTS_BY_DEFAULT = ${JSON.stringify(includePrompts)};
 const REQUIRE_ADMIN = ${JSON.stringify(requireAdmin)};
-const KNOWLEDGE_ARTIFACT: Record<string, any> | null = ${artifactLiteral};
+const KNOWLEDGE_ARTIFACT: Record<string, unknown> | null = ${artifactLiteral};
 
 if (!dev && !REQUIRE_ADMIN) {
   console.warn('[smrt] PUBLIC knowledge API route enabled; unauthenticated responses are sanitized.');
@@ -1982,7 +2259,7 @@ if (!dev && !REQUIRE_ADMIN) {
 export const GET: RequestHandler = async ({ locals, url, setHeaders }) => {
   setHeaders({ 'cache-control': 'private, no-store' });
 
-  if (!dev && REQUIRE_ADMIN && !isKnowledgeAdmin(locals as Record<string, any>)) {
+  if (!dev && REQUIRE_ADMIN && !isKnowledgeAdmin(locals)) {
     throw error(403, 'SMRT knowledge requires dev mode or admin access');
   }
 
@@ -2001,7 +2278,7 @@ export const GET: RequestHandler = async ({ locals, url, setHeaders }) => {
   }));
 };
 
-function readKnowledgeArtifact(): Record<string, any> {
+function readKnowledgeArtifact(): Record<string, unknown> {
   if (!KNOWLEDGE_ARTIFACT) throw error(404, 'SMRT knowledge artifact not found');
   return KNOWLEDGE_ARTIFACT;
 }
@@ -2013,9 +2290,9 @@ function queryBoolean(url: URL, name: string, defaultValue: boolean): boolean {
 }
 
 function sanitizeKnowledgeArtifact(
-  artifact: Record<string, any>,
+  artifact: Record<string, unknown>,
   options: { includeDocs: boolean; includePrompts: boolean; publicAccess: boolean },
-): Record<string, any> {
+): Record<string, unknown> {
   const sanitized = { ...artifact };
 
   if (!options.includeDocs) {
@@ -2036,21 +2313,32 @@ function sanitizeKnowledgeArtifact(
   return sanitized;
 }
 
-function isKnowledgeAdmin(locals: Record<string, any>): boolean {
-  if (locals.smrtKnowledgeAdmin === true || locals.smrtAdmin === true) {
+function recordValue(value: unknown, key: string): unknown {
+  if (!value || typeof value !== 'object') return undefined;
+  return (value as Record<string, unknown>)[key];
+}
+
+function isKnowledgeAdmin(locals: unknown): boolean {
+  if (!locals || typeof locals !== 'object') return false;
+  const localRecord = locals as Record<string, unknown>;
+  if (
+    localRecord.smrtKnowledgeAdmin === true ||
+    localRecord.smrtAdmin === true
+  ) {
     return true;
   }
 
-  const userRoles = rolesFrom(locals.user);
-  const sessionRoles = rolesFrom(locals.session?.user);
+  const userRoles = rolesFrom(localRecord.user);
+  const sessionRoles = rolesFrom(recordValue(localRecord.session, 'user'));
   return [...userRoles, ...sessionRoles].some((role) =>
     ['admin', 'owner', 'superadmin'].includes(role),
   );
 }
 
-function rolesFrom(value: any): string[] {
+function rolesFrom(value: unknown): string[] {
   if (!value || typeof value !== 'object') return [];
-  const roles = Array.isArray(value.roles) ? value.roles : [value.role];
+  const roleList = recordValue(value, 'roles');
+  const roles = Array.isArray(roleList) ? roleList : [recordValue(value, 'role')];
   return roles
     .filter((role): role is string => typeof role === 'string')
     .map((role) => role.toLowerCase());

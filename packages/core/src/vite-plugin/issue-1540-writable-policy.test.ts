@@ -100,11 +100,13 @@ describe('Issue #1540 (2b): writable-field allowlist on generated routes', () =>
 
     // POST + PUT bodies are routed through the guard.
     expect(collectionRoute).toContain(
-      'const data = applyWritablePolicy(await request.json());',
+      'const body: unknown = await request.json();',
     );
-    expect(itemRoute).toContain(
-      'const data = applyWritablePolicy(await request.json());',
+    expect(collectionRoute).toContain(
+      'const data = applyWritablePolicy(body);',
     );
+    expect(itemRoute).toContain('const body: unknown = await request.json();');
+    expect(itemRoute).toContain('const data = applyWritablePolicy(body);');
 
     // Server-managed fields are always stripped; read-only fields are listed.
     expect(collectionRoute).toContain("'tenantId'");
