@@ -174,7 +174,7 @@ export class SignalSanitizer {
       ...(signal.step && { step: signal.step }),
       ...(signal.duration !== undefined && { duration: signal.duration }),
       ...(signal.args && { args: this.sanitizeValue(signal.args) }),
-      ...(signal.result
+      ...(signal.result !== undefined
         ? { result: this.sanitizeValue(signal.result) }
         : {}),
       ...(signal.error && { error: this.sanitizeValue(signal.error) }),
