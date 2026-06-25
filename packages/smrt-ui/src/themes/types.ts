@@ -1,7 +1,7 @@
 /**
  * Unified Theme System Types
  *
- * Core types for the multi-theme architecture supporting Material, Glass, and Studio themes.
+ * Core types for the multi-theme architecture supporting Material, Glass, Studio, and SMRT themes.
  */
 
 /** Available theme presets */

@@ -7,7 +7,7 @@
  * Note: the SMRT theme's fonts are not imported here (they pull in woff2
  * binaries). Import './fonts.css' explicitly if you want the SMRT type stack.
  *
- * @usage import '@smrt/svelte/themes/styles/all.css';
+ * @usage import '@happyvertical/smrt-ui/themes/styles/all.css';
  */
 
 @import './material.css';

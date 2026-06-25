@@ -105,7 +105,7 @@ const packageRoot = process.cwd().endsWith('packages/smrt-ui')
   ? process.cwd()
   : join(process.cwd(), 'packages/smrt-ui');
 
-const STATIC_STYLE_PATHS: Record<string, string> = {
+const STATIC_STYLE_PATHS: Record<keyof typeof themes, string> = {
   material: join(packageRoot, 'src/themes/styles/material.css'),
   glass: join(packageRoot, 'src/themes/styles/glass.css'),
   studio: join(packageRoot, 'src/themes/styles/studio.css'),

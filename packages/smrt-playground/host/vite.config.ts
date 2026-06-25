@@ -80,6 +80,10 @@ export default defineConfig({
         replacement: resolve(__dirname, '../src/index.ts'),
       },
       {
+        find: /^@happyvertical\/smrt-ui\/themes\/styles\/(.*)$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/themes/styles/$1'),
+      },
+      {
         find: /^@happyvertical\/smrt-ui\/themes$/,
         replacement: resolve(__dirname, '../../smrt-ui/src/themes/index.ts'),
       },
