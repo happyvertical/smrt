@@ -7,10 +7,21 @@ import {
   crossPackageRef,
   field,
   SmrtObject,
+  type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
 import type { User as UserContract } from '@happyvertical/smrt-types';
 import { UserStatus } from '../types/index.js';
+
+/**
+ * Constructor options for {@link User}.
+ */
+export interface UserOptions extends SmrtObjectOptions {
+  profileId?: string;
+  email?: string;
+  status?: UserStatus;
+  lastLoginAt?: Date | null;
+}
 
 /**
  * Basic email validation regex.
@@ -84,7 +95,7 @@ export class User extends SmrtObject implements UserContract {
    */
   lastLoginAt: Date | null = null;
 
-  constructor(options: any = {}) {
+  constructor(options: UserOptions = {}) {
     super(options);
     if (options.profileId !== undefined) this.profileId = options.profileId;
     if (options.email !== undefined) this.email = normalizeEmail(options.email);

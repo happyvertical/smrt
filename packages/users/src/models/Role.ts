@@ -3,8 +3,23 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import type { Role as RoleContract } from '@happyvertical/smrt-types';
+
+/**
+ * Constructor options for {@link Role}.
+ */
+export interface RoleOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  name?: string;
+  description?: string;
+  isSystem?: boolean;
+}
 
 /**
  * Role represents a permission template that can be assigned to users.
@@ -61,7 +76,7 @@ export class Role extends SmrtObject implements RoleContract {
    */
   isSystem: boolean = false;
 
-  constructor(options: any = {}) {
+  constructor(options: RoleOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;

@@ -3,9 +3,29 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import type { Tenant as TenantContract } from '@happyvertical/smrt-types';
 import { TenantStatus } from '../types/index.js';
+
+/**
+ * Constructor options for {@link Tenant}.
+ */
+export interface TenantOptions extends SmrtObjectOptions {
+  name?: string;
+  status?: TenantStatus;
+  description?: string;
+  parentTenantId?: string | null;
+  hierarchyLevel?: number;
+  hierarchyPath?: string;
+  cascadePermissions?: boolean;
+  inheritPermissions?: boolean;
+}
 
 /**
  * Maximum allowed depth for tenant hierarchy.
@@ -127,7 +147,7 @@ export class Tenant extends SmrtObject implements TenantContract {
    */
   inheritPermissions: boolean = true;
 
-  constructor(options: any = {}) {
+  constructor(options: TenantOptions = {}) {
     super(options);
     if (options.name !== undefined) this.name = options.name;
     if (options.status !== undefined) this.status = options.status;

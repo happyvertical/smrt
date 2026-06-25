@@ -3,7 +3,20 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
+
+/**
+ * Constructor options for {@link GroupRole}.
+ */
+export interface GroupRoleOptions extends SmrtObjectOptions {
+  groupId?: string;
+  roleId?: string;
+}
 
 /**
  * GroupRole is a join table linking Groups to Roles.
@@ -42,7 +55,7 @@ export class GroupRole extends SmrtObject {
   @foreignKey('Role', { required: true })
   roleId?: string;
 
-  constructor(options: any = {}) {
+  constructor(options: GroupRoleOptions = {}) {
     super(options);
     if (options.groupId !== undefined) this.groupId = options.groupId;
     if (options.roleId !== undefined) this.roleId = options.roleId;

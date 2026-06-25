@@ -344,7 +344,7 @@ export function generatePostgresPermissionSql(
 
   for (const metadata of ObjectRegistry.getAllObjectMetadata()) {
     const registered =
-      ObjectRegistry.getClassByConstructor(metadata.constructor as any) ??
+      ObjectRegistry.getClassByConstructor(metadata.constructor) ??
       ObjectRegistry.getClass(metadata.name);
     const tenantScoped = registered?.tenantScopedConfig;
     const manifestEntry = registered?.qualifiedName

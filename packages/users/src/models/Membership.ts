@@ -3,9 +3,25 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import type { Membership as MembershipContract } from '@happyvertical/smrt-types';
 import { MembershipStatus } from '../types/index.js';
+
+/**
+ * Constructor options for {@link Membership}.
+ */
+export interface MembershipOptions extends SmrtObjectOptions {
+  userId?: string;
+  tenantId?: string;
+  roleId?: string;
+  status?: MembershipStatus;
+}
 
 /**
  * Membership represents a user's membership in a tenant with an assigned role.
@@ -57,7 +73,7 @@ export class Membership extends SmrtObject implements MembershipContract {
   @field({ type: 'text' })
   status: MembershipStatus = MembershipStatus.ACTIVE;
 
-  constructor(options: any = {}) {
+  constructor(options: MembershipOptions = {}) {
     super(options);
     if (options.userId !== undefined) this.userId = options.userId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;

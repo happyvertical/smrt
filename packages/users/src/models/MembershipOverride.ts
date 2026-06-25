@@ -3,8 +3,23 @@
  * @packageDocumentation
  */
 
-import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { OverrideEffect } from '../types/index.js';
+
+/**
+ * Constructor options for {@link MembershipOverride}.
+ */
+export interface MembershipOverrideOptions extends SmrtObjectOptions {
+  membershipId?: string;
+  permissionId?: string;
+  effect?: OverrideEffect;
+}
 
 /**
  * MembershipOverride allows granting or denying specific permissions
@@ -57,7 +72,7 @@ export class MembershipOverride extends SmrtObject {
   @field({ type: 'text' })
   effect: OverrideEffect = OverrideEffect.GRANT;
 
-  constructor(options: any = {}) {
+  constructor(options: MembershipOverrideOptions = {}) {
     super(options);
     if (options.membershipId !== undefined)
       this.membershipId = options.membershipId;

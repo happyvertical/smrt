@@ -3,7 +3,20 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
+
+/**
+ * Constructor options for {@link RolePermission}.
+ */
+export interface RolePermissionOptions extends SmrtObjectOptions {
+  roleId?: string;
+  permissionId?: string;
+}
 
 /**
  * RolePermission is a join table linking Roles to Permissions.
@@ -42,7 +55,7 @@ export class RolePermission extends SmrtObject {
   @foreignKey('Permission', { required: true })
   permissionId?: string;
 
-  constructor(options: any = {}) {
+  constructor(options: RolePermissionOptions = {}) {
     super(options);
     if (options.roleId !== undefined) this.roleId = options.roleId;
     if (options.permissionId !== undefined)

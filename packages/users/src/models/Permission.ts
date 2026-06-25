@@ -3,7 +3,11 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
 
 /**
  * Parsed permission slug components
@@ -51,6 +55,15 @@ export function isValidPermissionSlug(slug: string): boolean {
 }
 
 /**
+ * Constructor options for {@link Permission}.
+ */
+export interface PermissionOptions extends SmrtObjectOptions {
+  name?: string;
+  description?: string;
+  category?: string;
+}
+
+/**
  * Permission represents a named capability in the system.
  *
  * Permissions are defined by the application and assigned to roles.
@@ -90,7 +103,7 @@ export class Permission extends SmrtObject {
    */
   category: string = '';
 
-  constructor(options: any = {}) {
+  constructor(options: PermissionOptions = {}) {
     super(options);
     if (options.name !== undefined) this.name = options.name;
     if (options.description !== undefined)

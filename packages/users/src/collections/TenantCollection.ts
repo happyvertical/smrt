@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { SmrtCollection, type SmrtCreateInput } from '@happyvertical/smrt-core';
 import { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from '../models/Tenant.js';
 import { TenantStatus } from '../types/index.js';
 
@@ -240,7 +240,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     options: CreateChildTenantOptions,
   ): Promise<Tenant> {
     const parent = await this.get({ id: parentTenantId });
-    if (!parent) {
+    if (!parent?.id) {
       throw new TenantHierarchyError(
         `Parent tenant not found: ${parentTenantId}`,
         'PARENT_NOT_FOUND',
@@ -503,7 +503,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
    * Only calculates hierarchy fields if not already provided (preserves
    * database values during hydration via get()).
    */
-  async create(options: any): Promise<Tenant> {
+  async create(options: SmrtCreateInput<Tenant>): Promise<Tenant> {
     // If parentTenantId is provided and hierarchy fields not already set
     if (options.parentTenantId) {
       // Only calculate if hierarchy fields are missing (new tenant creation)
@@ -514,7 +514,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
 
       if (needsHierarchyCalc) {
         const parent = await this.get({ id: options.parentTenantId });
-        if (!parent) {
+        if (!parent?.id) {
           throw new TenantHierarchyError(
             `Parent tenant not found: ${options.parentTenantId}`,
             'PARENT_NOT_FOUND',
