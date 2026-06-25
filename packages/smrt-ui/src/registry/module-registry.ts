@@ -39,8 +39,10 @@ import type {
  * Follows the same pattern as createUIRegistry() in smrt-agents.
  */
 export function createModuleUIRegistry(): ModuleUIRegistryInterface {
-  // biome-ignore lint/suspicious/noExplicitAny: ComponentType needs any
-  const components = new Map<string, ModuleComponentType<any>>();
+  // ModuleComponentType owns the single irreducible component-registry `any`
+  // (documented at its definition in @happyvertical/smrt-types); the default
+  // `Props` is fine here since the stored function signature is Props-agnostic.
+  const components = new Map<string, ModuleComponentType>();
   const modules = new Map<string, SmrtModuleMeta>();
 
   const makeKey = (moduleName: string, slotId: string) =>

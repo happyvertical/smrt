@@ -1,4 +1,8 @@
-import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
+import type {
+  ModuleComponentType,
+  ModuleUISlot,
+  SmrtModuleMeta,
+} from '@happyvertical/smrt-types';
 
 /**
  * UI type definitions for SMRT Agents
@@ -19,28 +23,16 @@ import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
  */
 
 /**
- * Svelte component type (compatible with svelte's ComponentType)
+ * Svelte component type for agent admin-panel slots.
  *
- * Using a generic function type to avoid requiring svelte as a dependency
- * and to avoid DOM type references that don't exist in Node.js builds.
- *
- * In practice, the actual Svelte component will be passed and used
- * with `<svelte:component this={Component} />` in SvelteKit apps.
- *
- * The `any`s here are irreducible (#1579, S4): this placeholder must be
- * simultaneously assignable FROM arbitrary concrete Svelte components (the
- * `register()`/`registerByKey()` storage side) and assignable TO Svelte's
- * `ConstructorOfATypedSvelteComponent | Component<any, any, any>` render union
- * (the `<Component this={...} />` site in AgentAdminPanel.svelte). Under
- * `strictFunctionTypes` no single non-`any` function type satisfies both
- * directions, and aliasing to svelte's `Component<Props>` additionally trips
- * the `Props extends Record<string, any>` constraint against the registry's
- * `register<TProps extends AdminPanelBaseProps>` generic (an interface with no
- * index signature). This mirrors the unresolved `ModuleComponentType` in
- * `@happyvertical/smrt-types` and `createModuleUIRegistry` in
- * `@happyvertical/smrt-ui`.
+ * Re-exported from the canonical {@link ModuleComponentType} in
+ * `@happyvertical/smrt-types` — the single shared definition that owns the
+ * irreducible `any` (see its inline note: the placeholder must be assignable
+ * both FROM arbitrary concrete components and TO Svelte's render union, which
+ * no non-`any` type satisfies under `strictFunctionTypes`). Aliased here so
+ * this package's public UI surface keeps the local `ComponentType` name.
  */
-export type ComponentType<Props = any> = (...args: any[]) => any;
+export type ComponentType<Props = unknown> = ModuleComponentType<Props>;
 
 /**
  * Base props that all admin panel components receive
