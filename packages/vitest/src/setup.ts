@@ -42,7 +42,10 @@ interface SmrtCoreSchemaModule {
   ObjectRegistry: {
     getAllSchemasAsDefinitions(): Record<string, SchemaDefinition>;
   };
-  detectEngine(url: string, type?: string): string;
+  detectEngine(
+    url: string,
+    type?: string,
+  ): 'sqlite' | 'duckdb' | 'json' | 'postgres';
   generateDDLForEngine(
     schema: SchemaDefinition,
     engine: 'sqlite' | 'duckdb' | 'json' | 'postgres',
@@ -197,10 +200,10 @@ function buildSchemaSqlBatches(
   const engine =
     typeof db.exportTable === 'function'
       ? 'json'
-      : (smrtCore.detectEngine(
+      : smrtCore.detectEngine(
           dbConfig.url || db.url || ':memory:',
           dbConfig.type,
-        ) as 'sqlite' | 'duckdb' | 'json' | 'postgres');
+        );
 
   return Object.values(
     smrtCore.ObjectRegistry.getAllSchemasAsDefinitions(),
