@@ -110,6 +110,7 @@ describe('Content API Endpoints', () => {
     mockLocals = {
       tenantId: 'test-tenant',
       profileId: 'test-user',
+      smrtAuth: true,
       // We pass the global test db down through a mocked context or expect getSmrtClient to pick up the global test registry
     };
   });

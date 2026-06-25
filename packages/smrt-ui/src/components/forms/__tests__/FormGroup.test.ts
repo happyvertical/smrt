@@ -6,9 +6,9 @@
  * aria-describedby, and aria-invalid in the error state.
  */
 
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
+import { expectNoA11yViolations } from '../../../test-support/a11y';
 import Fixture from './form-group-input.fixture.svelte';
 
 describe('FormGroup a11y wiring', () => {

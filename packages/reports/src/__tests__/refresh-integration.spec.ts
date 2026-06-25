@@ -22,9 +22,11 @@ import {
 
 class IntegrationInvoice extends SmrtObject {}
 class IntegrationRevenueReport extends SmrtReport {}
+class IntegrationMonthlyRevenueReport extends SmrtReport {}
 
 const SOURCE_TABLE = 'integration_invoices';
 const REPORT_TABLE = 'integration_revenue_reports';
+const MONTHLY_REPORT_TABLE = 'integration_monthly_revenue_reports';
 
 beforeEach(() => {
   ObjectRegistry.clear();
@@ -56,6 +58,9 @@ function registerIntegrationClasses() {
     type: 'decimal',
   });
   ObjectRegistry.registerFieldDecorator('IntegrationInvoice', 'updatedAt', {
+    type: 'datetime',
+  });
+  ObjectRegistry.registerFieldDecorator('IntegrationInvoice', 'issuedAt', {
     type: 'datetime',
   });
   ObjectRegistry.registerFieldDecorator('IntegrationInvoice', 'deletedAt', {
@@ -137,6 +142,62 @@ function registerIntegrationClasses() {
       },
     },
   });
+
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationMonthlyRevenueReport',
+    'tenantId',
+    {
+      type: 'foreignKey',
+      related: 'Tenant',
+      nullable: true,
+      _meta: {
+        sqlType: 'UUID',
+        __tenancy: { isTenantIdField: true, mode: 'optional' },
+      },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationMonthlyRevenueReport',
+    'issuedMonth',
+    {
+      type: 'datetime',
+      __report: {
+        kind: 'bucket',
+        unit: 'month',
+        sourceColumn: 'issuedAt',
+      },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationMonthlyRevenueReport',
+    'revenue',
+    {
+      type: 'decimal',
+      __report: {
+        kind: 'aggregate',
+        fn: 'sum',
+        column: 'totalAmount',
+      },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationMonthlyRevenueReport',
+    'refreshedAt',
+    { type: 'datetime' },
+  );
+  ObjectRegistry.register(IntegrationMonthlyRevenueReport, {
+    tableName: MONTHLY_REPORT_TABLE,
+    tenantScoped: { mode: 'optional' },
+    conflictColumns: ['tenant_id', 'issued_month'],
+    report: {
+      source: 'IntegrationInvoice',
+      refresh: {
+        mode: 'incremental',
+        watermarkColumn: 'updatedAt',
+        softDeleteColumn: 'deletedAt',
+      },
+    },
+  });
 }
 
 function registerJobsManifest() {
@@ -162,6 +223,7 @@ async function setupDb(): Promise<DatabaseInterface> {
       tenant_id TEXT,
       customer_id TEXT NOT NULL,
       total_amount REAL NOT NULL,
+      issued_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT,
       created_at TEXT,
@@ -185,6 +247,22 @@ async function setupDb(): Promise<DatabaseInterface> {
   `);
   await db.query(
     `CREATE UNIQUE INDEX ${REPORT_TABLE}_tenant_customer_idx ON ${REPORT_TABLE} (tenant_id, customer_id)`,
+  );
+  await db.query(`
+    CREATE TABLE ${MONTHLY_REPORT_TABLE} (
+      id TEXT PRIMARY KEY,
+      slug TEXT,
+      context TEXT,
+      tenant_id TEXT,
+      issued_month TEXT NOT NULL,
+      revenue REAL,
+      refreshed_at TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    )
+  `);
+  await db.query(
+    `CREATE UNIQUE INDEX ${MONTHLY_REPORT_TABLE}_tenant_month_idx ON ${MONTHLY_REPORT_TABLE} (tenant_id, issued_month)`,
   );
   await createRuntimeTables(db);
   return db;
@@ -340,6 +418,7 @@ async function insertInvoice(
     tenantId?: string | null;
     customerId: string;
     amount: number;
+    issuedAt?: string;
     updatedAt: string;
     deletedAt?: string | null;
   },
@@ -351,6 +430,7 @@ async function insertInvoice(
     tenant_id: row.tenantId ?? null,
     customer_id: row.customerId,
     total_amount: row.amount,
+    issued_at: row.issuedAt ?? row.updatedAt,
     updated_at: row.updatedAt,
     deleted_at: row.deletedAt ?? null,
     created_at: row.updatedAt,
@@ -360,6 +440,13 @@ async function insertInvoice(
 async function reportRows(db: DatabaseInterface) {
   const result = await db.query(
     `SELECT tenant_id, customer_id, revenue, avg_total, invoice_count FROM ${REPORT_TABLE} ORDER BY tenant_id, customer_id`,
+  );
+  return result.rows;
+}
+
+async function monthlyRows(db: DatabaseInterface) {
+  const result = await db.query(
+    `SELECT tenant_id, issued_month, revenue FROM ${MONTHLY_REPORT_TABLE} ORDER BY tenant_id, issued_month`,
   );
   return result.rows;
 }
@@ -440,6 +527,64 @@ describe('report refresh integration', () => {
     );
     await refreshReport(IntegrationRevenueReport, { db, mode: 'incremental' });
     expect(await reportRows(db)).toEqual([]);
+  });
+
+  it('recomputes affected time-bucket groups incrementally', async () => {
+    const db = await setupDb();
+    await insertInvoice(db, {
+      id: 'jan-invoice-1',
+      customerId: 'customer-a',
+      amount: 10,
+      issuedAt: '2026-01-10T00:00:00.000Z',
+      updatedAt: '2026-01-10T00:00:00.000Z',
+    });
+
+    await refreshReport(IntegrationMonthlyRevenueReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(await monthlyRows(db)).toMatchObject([
+      {
+        issued_month: '2026-01-01 00:00:00',
+        revenue: 10,
+      },
+    ]);
+
+    await insertInvoice(db, {
+      id: 'jan-invoice-2',
+      customerId: 'customer-b',
+      amount: 25,
+      issuedAt: '2026-01-20T00:00:00.000Z',
+      updatedAt: '2026-01-20T00:00:00.000Z',
+    });
+
+    const updated = await refreshReport(IntegrationMonthlyRevenueReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(updated.changedGroupCount).toBe(1);
+    expect(await monthlyRows(db)).toMatchObject([
+      {
+        issued_month: '2026-01-01 00:00:00',
+        revenue: 35,
+      },
+    ]);
+  });
+
+  it('requires watermarks for incremental refresh even without runs or locks', async () => {
+    const db = await setupDb();
+    await db.query('DROP TABLE _smrt_report_watermarks');
+
+    await expect(
+      refreshReport(IntegrationRevenueReport, {
+        db,
+        mode: 'incremental',
+        lock: false,
+        trackRuns: false,
+      }),
+    ).rejects.toThrow(
+      "Report runtime table '_smrt_report_watermarks' does not exist",
+    );
   });
 
   it('fans out tenant refreshes into one shared report table and tenant-scoped reads', async () => {

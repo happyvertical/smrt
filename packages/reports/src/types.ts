@@ -35,6 +35,12 @@ export interface ReportRefreshConfig {
   mode?: ReportRefreshMode;
   schedule?: string;
   onChange?: ReportSource[];
+  /**
+   * Milliseconds before collection reads trigger a synchronous refresh.
+   *
+   * TTL refresh checks add a read-time MAX(refreshedAt) query, and stale reads
+   * perform the refresh before returning list/get results.
+   */
   ttl?: number;
   manual?: boolean;
   watermarkColumn?: string;

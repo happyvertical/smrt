@@ -4,10 +4,56 @@ import {
   SmrtObject,
   type SmrtObjectOptions,
 } from '@happyvertical/smrt-core';
+import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { validateColumnName } from '@happyvertical/sql';
 import { buildReportDefinition } from './compiler.js';
 import { refreshReport } from './refresh.js';
 import type { ReportRefreshOptions, ReportRefreshResult } from './types.js';
+
+type RegistryField = {
+  columnName?: string;
+  _meta?: {
+    columnName?: string;
+    __tenancy?: { isTenantIdField?: boolean };
+  };
+};
+
+function registryColumnName(fieldName: string, field?: RegistryField): string {
+  return validateColumnName(
+    field?.columnName ?? field?._meta?.columnName ?? toSnakeCase(fieldName),
+  );
+}
+
+function findFieldColumn(
+  fields: Map<string, RegistryField>,
+  fieldName: string,
+): string {
+  const direct = fields.get(fieldName);
+  if (direct) return registryColumnName(fieldName, direct);
+  const requestedColumn = toSnakeCase(fieldName);
+  for (const [name, field] of fields.entries()) {
+    if (toSnakeCase(name) === requestedColumn) {
+      return registryColumnName(name, field);
+    }
+  }
+  return validateColumnName(requestedColumn);
+}
+
+function findTenantColumn(
+  fields: Map<string, RegistryField>,
+  configuredField?: string,
+): string | null {
+  if (configuredField) {
+    return registryColumnName(configuredField, fields.get(configuredField));
+  }
+  for (const [fieldName, field] of fields.entries()) {
+    if (fieldName === 'tenantId' || field?._meta?.__tenancy?.isTenantIdField) {
+      return registryColumnName(fieldName, field);
+    }
+  }
+  return null;
+}
 
 export class SmrtReport extends SmrtObject {
   static readonly _isReportBase = true as const;
@@ -61,20 +107,24 @@ export class SmrtReportCollection<
     const tableName = ObjectRegistry.getTableName(reportClass);
     if (!tableName) return;
 
-    const fields = await ObjectRegistry.getAllFields(reportClass);
-    const tenantField = [...fields.entries()].find(
-      ([fieldName, field]) =>
-        fieldName === 'tenantId' || field?._meta?.__tenancy?.isTenantIdField,
+    const fields = (await ObjectRegistry.getAllFields(reportClass)) as Map<
+      string,
+      RegistryField
+    >;
+    const safeTableName = validateColumnName(tableName);
+    const refreshedAtColumn = findFieldColumn(fields, 'refreshedAt');
+    const tenantColumn = findTenantColumn(
+      fields,
+      registered?.tenantScopedConfig?.field,
     );
-    const tenantColumn = tenantField ? 'tenant_id' : null;
     const tenantId = getTenantId() ?? null;
     const result = tenantColumn
       ? await this.db.query(
-          `SELECT MAX(refreshed_at) AS refreshed_at FROM ${tableName} WHERE ${tenantColumn} ${tenantId ? '= ?' : 'IS NULL'}`,
+          `SELECT MAX(${refreshedAtColumn}) AS refreshed_at FROM ${safeTableName} WHERE ${tenantColumn} ${tenantId ? '= ?' : 'IS NULL'}`,
           ...(tenantId ? [tenantId] : []),
         )
       : await this.db.query(
-          `SELECT MAX(refreshed_at) AS refreshed_at FROM ${tableName}`,
+          `SELECT MAX(${refreshedAtColumn}) AS refreshed_at FROM ${safeTableName}`,
         );
     const refreshedAt = result.rows[0]?.refreshed_at
       ? new Date(result.rows[0].refreshed_at as string)

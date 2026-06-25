@@ -5,11 +5,12 @@
  * it forwards native attributes, renders children, and (by default) prevents the
  * native submit so the consumer's `onsubmit` runs without a page navigation.
  */
-import { expectNoA11yViolations } from '../../../test-support/a11y';
+
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { expectNoA11yViolations } from '../../../test-support/a11y';
 import Form from '../Form.svelte';
 
 const children = createRawSnippet(() => ({

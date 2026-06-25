@@ -462,6 +462,9 @@ export class ReportScheduleRunner extends EventEmitter {
       }
       if (this.running) {
         this.pollTimer = setTimeout(poll, this.config.pollInterval);
+        if (typeof this.pollTimer.unref === 'function') {
+          this.pollTimer.unref();
+        }
       }
     };
     poll();

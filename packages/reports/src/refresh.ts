@@ -59,32 +59,33 @@ interface ReportLockHandle {
   release(): Promise<void>;
 }
 
+function isSqlAdapterType(value: unknown): value is SqlAdapterType {
+  return (
+    value === 'sqlite' ||
+    value === 'postgres' ||
+    value === 'duckdb' ||
+    value === 'json'
+  );
+}
+
 function adapterTypeFromDb(
   db: DatabaseInterface,
   fallback?: SqlAdapterType,
 ): SqlAdapterType {
-  const candidate =
-    fallback ??
-    (db as any).type ??
-    (db as any).config?.type ??
-    (db as any).options?.type;
-  if (
-    candidate === 'sqlite' ||
-    candidate === 'postgres' ||
-    candidate === 'duckdb' ||
-    candidate === 'json'
-  ) {
-    return candidate;
-  }
-  const url = String(db.url ?? (db as any).config?.url ?? '');
+  if (isSqlAdapterType(fallback)) return fallback;
+
+  const url = String(db.url ?? '');
   if (url.startsWith('postgres://') || url.startsWith('postgresql://')) {
     return 'postgres';
+  }
+  if (url.endsWith('.duckdb')) {
+    return 'duckdb';
   }
   if (url === ':memory:' || url.endsWith('.sqlite') || url.endsWith('.db')) {
     return 'sqlite';
   }
   throw new Error(
-    'Report refresh requires a database adapter type. Pass { adapterType } or use a db that exposes type/config.type.',
+    'Report refresh requires a database adapter type. Pass { adapterType }.',
   );
 }
 
@@ -607,47 +608,67 @@ async function acquireLock(
   ttlMs: number,
 ): Promise<ReportLockHandle | null> {
   const now = new Date();
+  const nowIso = now.toISOString();
   const ownerId = randomUUID();
-  const result = await db.query(
-    `SELECT owner_id, expires_at FROM ${REPORT_LOCKS_TABLE}
-      WHERE report_class = ? AND scope_key = ?
-      LIMIT 1`,
-    definition.reportClassName,
-    scope.scopeKey,
-  );
-  const existing = result.rows[0] as
-    | { owner_id?: string | null; expires_at?: string | Date | null }
-    | undefined;
-  if (existing?.owner_id && existing.expires_at) {
-    const expiresAt =
-      existing.expires_at instanceof Date
-        ? existing.expires_at
-        : new Date(existing.expires_at);
-    if (expiresAt.getTime() > now.getTime()) {
-      return null;
-    }
-  }
-
   const expiresAt = new Date(now.getTime() + ttlMs);
+  const expiresAtIso = expiresAt.toISOString();
   const id = stableReportId([
     'lock',
     definition.reportClassName,
     scope.scopeKey,
   ]);
-  await db.upsert(REPORT_LOCKS_TABLE, ['report_class', 'scope_key'], {
+  await db.query(
+    `INSERT INTO ${REPORT_LOCKS_TABLE} (
+        id,
+        slug,
+        context,
+        tenant_id,
+        scope_key,
+        report_class,
+        owner_id,
+        acquired_at,
+        heartbeat_at,
+        expires_at,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(report_class, scope_key) DO UPDATE SET
+        tenant_id = excluded.tenant_id,
+        owner_id = excluded.owner_id,
+        acquired_at = excluded.acquired_at,
+        heartbeat_at = excluded.heartbeat_at,
+        expires_at = excluded.expires_at,
+        updated_at = excluded.updated_at
+      WHERE ${REPORT_LOCKS_TABLE}.owner_id IS NULL
+        OR ${REPORT_LOCKS_TABLE}.expires_at IS NULL
+        OR ${REPORT_LOCKS_TABLE}.expires_at <= ?`,
     id,
-    slug: id,
-    context: scope.scopeKey,
-    tenant_id: scope.tenantId,
-    scope_key: scope.scopeKey,
-    report_class: definition.reportClassName,
-    owner_id: ownerId,
-    acquired_at: now.toISOString(),
-    heartbeat_at: now.toISOString(),
-    expires_at: expiresAt.toISOString(),
-    created_at: now.toISOString(),
-    updated_at: now.toISOString(),
-  });
+    id,
+    scope.scopeKey,
+    scope.tenantId,
+    scope.scopeKey,
+    definition.reportClassName,
+    ownerId,
+    nowIso,
+    nowIso,
+    expiresAtIso,
+    nowIso,
+    nowIso,
+    nowIso,
+  );
+
+  const claimed = await db.query(
+    `SELECT owner_id FROM ${REPORT_LOCKS_TABLE}
+      WHERE report_class = ? AND scope_key = ?
+      LIMIT 1`,
+    definition.reportClassName,
+    scope.scopeKey,
+  );
+  const row = claimed.rows[0] as { owner_id?: unknown } | undefined;
+  if (row?.owner_id !== ownerId) {
+    return null;
+  }
 
   return {
     ownerId,
@@ -848,6 +869,7 @@ async function refreshReportOnce(
 
   const definition = await buildReportDefinition(reportCtor);
   const reportTable = getReportTableName(reportCtor);
+  const requestedMode = options.mode ?? definition.refresh?.mode ?? 'rebuild';
   const exists = await tableExists(options.db, reportTable);
   if (!exists) {
     throw new Error(
@@ -858,11 +880,12 @@ async function refreshReportOnce(
 
   if (options.trackRuns !== false || options.lock !== false) {
     await assertReportTablesReady(options.db);
+  } else if (requestedMode === 'incremental') {
+    await assertReportTablesReady(options.db, [REPORT_WATERMARKS_TABLE]);
   }
 
   const adapterType = adapterTypeFromDb(options.db, options.adapterType);
   const scope = await resolveScope(definition, options);
-  const requestedMode = options.mode ?? definition.refresh?.mode ?? 'rebuild';
   const lock =
     options.lock === false
       ? null

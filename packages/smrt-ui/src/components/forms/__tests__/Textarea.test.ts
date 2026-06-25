@@ -5,10 +5,10 @@
  * a wrapping FormGroup via context.
  */
 
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
+import { expectNoA11yViolations } from '../../../test-support/a11y';
 import Textarea from '../Textarea.svelte';
 
 describe('Textarea', () => {

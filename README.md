@@ -68,7 +68,7 @@ const analysis = await product.analyze();
 
 ## Packages
 
-All packages are published under `@happyvertical/smrt-*`. 39 packages total.
+All packages are published under `@happyvertical/smrt-*`. 40 packages total.
 
 ### Foundation
 

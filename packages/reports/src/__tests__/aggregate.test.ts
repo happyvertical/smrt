@@ -46,7 +46,7 @@ describe('report aggregate SQL builder', () => {
       "date_trunc('quarter', created_at)",
     );
     expect(bucketExpr('sqlite', 'week', 'created_at')).toBe(
-      "date(created_at, printf('-%d days', (CAST(strftime('%w', created_at) AS INTEGER) + 6) % 7))",
+      "strftime('%Y-%m-%d 00:00:00', date(created_at, printf('-%d days', (CAST(strftime('%w', created_at) AS INTEGER) + 6) % 7)))",
     );
   });
 
