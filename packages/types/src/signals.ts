@@ -92,12 +92,12 @@ export interface Signal {
    * Sanitized method arguments (sensitive data removed)
    * Objects with @sensitive JSDoc tags are excluded
    */
-  args?: any[];
+  args?: unknown[];
 
   /**
    * Method result (only present on 'end' signals)
    */
-  result?: any;
+  result?: unknown;
 
   /**
    * Error that was thrown (only present on 'error' signals)
@@ -119,7 +119,7 @@ export interface Signal {
    * Optional additional context
    * Can include tracing IDs, user context, request metadata, etc.
    */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

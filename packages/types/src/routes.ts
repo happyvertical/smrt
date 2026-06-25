@@ -99,6 +99,17 @@ export interface SmrtRouteModule {
   displayName: string;
   /** Optional module description. */
   description?: string;
-  /** Route definitions keyed by package-local name. */
+  /**
+   * Route definitions keyed by package-local name.
+   *
+   * A heterogeneous registry: each entry is a `SmrtRouteDefinition` with its
+   * own `TData`/`TLoadInput`/`TProps`. `TLoadInput` sits in a contravariant
+   * position (`load?: (input: TLoadInput) => …`), so a concrete route
+   * (`SmrtRouteDefinition<Foo, Bar>`) is NOT assignable to
+   * `SmrtRouteDefinition<unknown, unknown, unknown>` — narrowing the params to
+   * `unknown` would reject every real route registration. Like
+   * {@link ModuleComponentType}, this is an irreducible registry `any`.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous route registry — contravariant TLoadInput rejects unknown; see the field doc above
   routes: Record<string, SmrtRouteDefinition<any, any, any>>;
 }
