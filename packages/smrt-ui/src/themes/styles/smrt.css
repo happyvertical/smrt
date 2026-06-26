@@ -1,0 +1,646 @@
+/**
+ * SMRT Theme CSS
+ *
+ * Static CSS for the SMRT theme — a dark-first "engineering instrument panel"
+ * look (amber signal accent on near-black surfaces) adapted from
+ * happyvertical.com. Import at build time for SSR or when JS theming is not
+ * needed.
+ *
+ *   import '@happyvertical/smrt-ui/themes/styles/fonts.css'; // optional fonts
+ *   import '@happyvertical/smrt-ui/themes/styles/smrt.css';
+ *
+ * The two `[data-theme="smrt"]` token blocks below are the exact output of the
+ * theme generator (src/themes/css-generator.ts) for `smrtTheme`, so this
+ * static-CSS delivery path and the JS ThemeProvider emit identical values
+ * (#1586). Regenerate them from `generateThemeCSS(smrtTheme, …)` after editing
+ * src/themes/smrt/index.ts. The signature flourishes follow.
+ */
+
+[data-theme="smrt"][data-color-scheme="light"] {
+  --smrt-theme-id: smrt;
+  --smrt-theme-name: SMRT;
+  --smrt-color-scheme: light;
+  --smrt-font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --smrt-color-primary: #e35d12;
+  --smrt-color-on-primary: #ffffff;
+  --smrt-color-primary-container: #ffe6d4;
+  --smrt-color-on-primary-container: #7a2e00;
+  --smrt-color-secondary: #5b6470;
+  --smrt-color-on-secondary: #ffffff;
+  --smrt-color-secondary-container: #e7eaee;
+  --smrt-color-on-secondary-container: #2a2f37;
+  --smrt-color-tertiary: #6b4eff;
+  --smrt-color-on-tertiary: #ffffff;
+  --smrt-color-tertiary-container: #e7e0ff;
+  --smrt-color-on-tertiary-container: #3a2b8c;
+  --smrt-color-error: #c0362c;
+  --smrt-color-on-error: #ffffff;
+  --smrt-color-error-container: #fbe0dd;
+  --smrt-color-on-error-container: #6b1109;
+  --smrt-color-warning: #b06a00;
+  --smrt-color-on-warning: #ffffff;
+  --smrt-color-warning-container: #ffedd0;
+  --smrt-color-on-warning-container: #6b4200;
+  --smrt-color-success: #0f7a5f;
+  --smrt-color-on-success: #ffffff;
+  --smrt-color-success-container: #d7f2e8;
+  --smrt-color-on-success-container: #043a2c;
+  --smrt-color-surface: #ffffff;
+  --smrt-color-on-surface: #14171c;
+  --smrt-color-surface-variant: #f5f6f8;
+  --smrt-color-on-surface-variant: #5b6470;
+  --smrt-color-surface-container: #f5f6f8;
+  --smrt-color-surface-container-low: #fafbfc;
+  --smrt-color-surface-container-high: #eef1f4;
+  --smrt-color-surface-container-highest: #e7eaee;
+  --smrt-color-surface-container-lowest: #ffffff;
+  --smrt-color-surface-dim: #e3e6ea;
+  --smrt-color-surface-bright: #ffffff;
+  --smrt-color-background: #edeff2;
+  --smrt-color-on-background: #14171c;
+  --smrt-color-outline: #c6ccd4;
+  --smrt-color-outline-variant: #dfe3e8;
+  --smrt-color-inverse-surface: #14171c;
+  --smrt-color-inverse-on-surface: #f4f6f8;
+  --smrt-color-inverse-primary: #ff7a1a;
+  --smrt-color-shadow: rgba(20, 26, 36, 0.28);
+  --smrt-color-scrim: rgba(0, 0, 0, 0.5);
+  --smrt-typography-display-large-size: 3.5rem;
+  --smrt-typography-display-large-line-height: 0.98;
+  --smrt-typography-display-large-weight: 600;
+  --smrt-typography-display-large-tracking: -0.03em;
+  --smrt-typography-display-large-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-large-font: 600 3.5rem/0.98 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-medium-size: 2.75rem;
+  --smrt-typography-display-medium-line-height: 1;
+  --smrt-typography-display-medium-weight: 600;
+  --smrt-typography-display-medium-tracking: -0.03em;
+  --smrt-typography-display-medium-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-medium-font: 600 2.75rem/1 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-small-size: 2.25rem;
+  --smrt-typography-display-small-line-height: 1.05;
+  --smrt-typography-display-small-weight: 600;
+  --smrt-typography-display-small-tracking: -0.02em;
+  --smrt-typography-display-small-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-small-font: 600 2.25rem/1.05 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-large-size: 2rem;
+  --smrt-typography-headline-large-line-height: 1.1;
+  --smrt-typography-headline-large-weight: 600;
+  --smrt-typography-headline-large-tracking: -0.02em;
+  --smrt-typography-headline-large-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-large-font: 600 2rem/1.1 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-medium-size: 1.6rem;
+  --smrt-typography-headline-medium-line-height: 1.15;
+  --smrt-typography-headline-medium-weight: 600;
+  --smrt-typography-headline-medium-tracking: -0.02em;
+  --smrt-typography-headline-medium-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-medium-font: 600 1.6rem/1.15 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-small-size: 1.3rem;
+  --smrt-typography-headline-small-line-height: 1.2;
+  --smrt-typography-headline-small-weight: 600;
+  --smrt-typography-headline-small-tracking: -0.01em;
+  --smrt-typography-headline-small-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-small-font: 600 1.3rem/1.2 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-title-large-size: 1.125rem;
+  --smrt-typography-title-large-line-height: 1.3;
+  --smrt-typography-title-large-weight: 600;
+  --smrt-typography-title-large-tracking: -0.01em;
+  --smrt-typography-title-large-font-family: var(--smrt-font-family);
+  --smrt-typography-title-large-font: 600 1.125rem/1.3 var(--smrt-font-family);
+  --smrt-typography-title-medium-size: 1rem;
+  --smrt-typography-title-medium-line-height: 1.4;
+  --smrt-typography-title-medium-weight: 600;
+  --smrt-typography-title-medium-tracking: 0;
+  --smrt-typography-title-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-title-medium-font: 600 1rem/1.4 var(--smrt-font-family);
+  --smrt-typography-title-small-size: 0.875rem;
+  --smrt-typography-title-small-line-height: 1.4;
+  --smrt-typography-title-small-weight: 600;
+  --smrt-typography-title-small-tracking: 0;
+  --smrt-typography-title-small-font-family: var(--smrt-font-family);
+  --smrt-typography-title-small-font: 600 0.875rem/1.4 var(--smrt-font-family);
+  --smrt-typography-body-large-size: 1.0625rem;
+  --smrt-typography-body-large-line-height: 1.6;
+  --smrt-typography-body-large-weight: 400;
+  --smrt-typography-body-large-tracking: 0;
+  --smrt-typography-body-large-font-family: var(--smrt-font-family);
+  --smrt-typography-body-large-font: 400 1.0625rem/1.6 var(--smrt-font-family);
+  --smrt-typography-body-medium-size: 0.9375rem;
+  --smrt-typography-body-medium-line-height: 1.6;
+  --smrt-typography-body-medium-weight: 400;
+  --smrt-typography-body-medium-tracking: 0;
+  --smrt-typography-body-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-body-medium-font: 400 0.9375rem/1.6 var(--smrt-font-family);
+  --smrt-typography-body-small-size: 0.8125rem;
+  --smrt-typography-body-small-line-height: 1.55;
+  --smrt-typography-body-small-weight: 400;
+  --smrt-typography-body-small-tracking: 0;
+  --smrt-typography-body-small-font-family: var(--smrt-font-family);
+  --smrt-typography-body-small-font: 400 0.8125rem/1.55 var(--smrt-font-family);
+  --smrt-typography-label-large-size: 0.8125rem;
+  --smrt-typography-label-large-line-height: 1.4;
+  --smrt-typography-label-large-weight: 600;
+  --smrt-typography-label-large-tracking: 0.04em;
+  --smrt-typography-label-large-font-family: var(--smrt-font-family);
+  --smrt-typography-label-large-font: 600 0.8125rem/1.4 var(--smrt-font-family);
+  --smrt-typography-label-medium-size: 0.6875rem;
+  --smrt-typography-label-medium-line-height: 1.4;
+  --smrt-typography-label-medium-weight: 600;
+  --smrt-typography-label-medium-tracking: 0.08em;
+  --smrt-typography-label-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-label-medium-font: 600 0.6875rem/1.4 var(--smrt-font-family);
+  --smrt-typography-label-small-size: 0.625rem;
+  --smrt-typography-label-small-line-height: 1.4;
+  --smrt-typography-label-small-weight: 600;
+  --smrt-typography-label-small-tracking: 0.1em;
+  --smrt-typography-label-small-font-family: var(--smrt-font-family);
+  --smrt-typography-label-small-font: 600 0.625rem/1.4 var(--smrt-font-family);
+  --smrt-spacing-0: 0;
+  --smrt-spacing-1: 0.25rem;
+  --smrt-spacing-2: 0.5rem;
+  --smrt-spacing-3: 0.75rem;
+  --smrt-spacing-4: 1rem;
+  --smrt-spacing-5: 1.25rem;
+  --smrt-spacing-6: 1.5rem;
+  --smrt-spacing-7: 1.75rem;
+  --smrt-spacing-8: 2rem;
+  --smrt-spacing-9: 2.25rem;
+  --smrt-spacing-10: 2.5rem;
+  --smrt-spacing-11: 2.75rem;
+  --smrt-spacing-12: 3rem;
+  --smrt-spacing-14: 3.5rem;
+  --smrt-spacing-16: 4rem;
+  --smrt-spacing-20: 5rem;
+  --smrt-spacing-24: 6rem;
+  --smrt-spacing-0_5: 0.125rem;
+  --smrt-spacing-1_5: 0.375rem;
+  --smrt-spacing-2_5: 0.625rem;
+  --smrt-spacing-3_5: 0.875rem;
+  --smrt-spacing-xs: 0.25rem;
+  --smrt-spacing-sm: 0.5rem;
+  --smrt-spacing-md: 1rem;
+  --smrt-spacing-lg: 1.5rem;
+  --smrt-spacing-xl: 2rem;
+  --smrt-spacing-2xl: 3rem;
+  --smrt-spacing-3xl: 4rem;
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+  --smrt-radius-extra-small: 0.25rem;
+  --smrt-radius-small: 0.25rem;
+  --smrt-radius-medium: 0.5rem;
+  --smrt-radius-large: 0.75rem;
+  --smrt-radius-extra-large: 1rem;
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: inset 0 0 0 1px rgba(20, 26, 36, 0.08);
+  --smrt-elevation-2: 0 18px 44px -28px rgba(20, 26, 36, 0.18);
+  --smrt-elevation-3: 0 24px 56px -34px rgba(20, 26, 36, 0.22);
+  --smrt-elevation-4: 0 30px 70px -40px rgba(20, 26, 36, 0.28);
+  --smrt-elevation-5: 0 40px 90px -50px rgba(20, 26, 36, 0.3);
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+  --smrt-duration-short1: 50ms;
+  --smrt-duration-short2: 100ms;
+  --smrt-duration-short3: 150ms;
+  --smrt-duration-short4: 200ms;
+  --smrt-duration-medium1: 250ms;
+  --smrt-duration-medium2: 300ms;
+  --smrt-duration-medium3: 350ms;
+  --smrt-duration-medium4: 400ms;
+  --smrt-duration-long1: 450ms;
+  --smrt-duration-long2: 500ms;
+  --smrt-duration-long3: 550ms;
+  --smrt-duration-long4: 600ms;
+  --smrt-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.16, 1, 0.3, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-font-family-mono: ui-monospace, "SF Mono", "Monaco", "Cascadia Code", "Consolas", monospace;
+  --smrt-typography-weight-normal: 400;
+  --smrt-typography-weight-medium: 500;
+  --smrt-typography-weight-semibold: 600;
+  --smrt-typography-weight-bold: 700;
+  --smrt-z-index-dropdown: 1000;
+  --smrt-z-index-sticky: 1100;
+  --smrt-z-index-overlay: 1200;
+  --smrt-z-index-modal: 1300;
+  --smrt-z-index-dialog: 1300;
+  --smrt-z-index-popover: 1400;
+  --smrt-z-index-toast: 1500;
+  --smrt-z-index-tooltip: 1600;
+  --smrt-z-index-loading: 1700;
+}
+
+[data-theme="smrt"][data-color-scheme="dark"] {
+  --smrt-theme-id: smrt;
+  --smrt-theme-name: SMRT;
+  --smrt-color-scheme: dark;
+  --smrt-font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --smrt-color-primary: #ff7a1a;
+  --smrt-color-on-primary: #1a0e02;
+  --smrt-color-primary-container: #2a1a0c;
+  --smrt-color-on-primary-container: #ffb784;
+  --smrt-color-secondary: #9aa3af;
+  --smrt-color-on-secondary: #14171c;
+  --smrt-color-secondary-container: #23272e;
+  --smrt-color-on-secondary-container: #e6e9ee;
+  --smrt-color-tertiary: #b9a8ff;
+  --smrt-color-on-tertiary: #241a4d;
+  --smrt-color-tertiary-container: #2a2350;
+  --smrt-color-on-tertiary-container: #ddd4ff;
+  --smrt-color-error: #ff6b6b;
+  --smrt-color-on-error: #2a0a0a;
+  --smrt-color-error-container: #3a1414;
+  --smrt-color-on-error-container: #ffc4c4;
+  --smrt-color-warning: #ffb020;
+  --smrt-color-on-warning: #1a0e02;
+  --smrt-color-warning-container: #3a2a0c;
+  --smrt-color-on-warning-container: #ffd9a3;
+  --smrt-color-success: #3fb98f;
+  --smrt-color-on-success: #00261c;
+  --smrt-color-success-container: #103a30;
+  --smrt-color-on-success-container: #7fd9be;
+  --smrt-color-surface: #121417;
+  --smrt-color-on-surface: #c9cdd3;
+  --smrt-color-surface-variant: #181b1f;
+  --smrt-color-on-surface-variant: #9aa3af;
+  --smrt-color-surface-container: #121417;
+  --smrt-color-surface-container-low: #0e1013;
+  --smrt-color-surface-container-high: #181b1f;
+  --smrt-color-surface-container-highest: #1f242b;
+  --smrt-color-surface-container-lowest: #0a0c10;
+  --smrt-color-surface-dim: #0b0c0e;
+  --smrt-color-surface-bright: #23272e;
+  --smrt-color-background: #0b0c0e;
+  --smrt-color-on-background: #c9cdd3;
+  --smrt-color-outline: #333842;
+  --smrt-color-outline-variant: #23272e;
+  --smrt-color-inverse-surface: #edeff2;
+  --smrt-color-inverse-on-surface: #14171c;
+  --smrt-color-inverse-primary: #b34d00;
+  --smrt-color-shadow: rgba(0, 0, 0, 0.8);
+  --smrt-color-scrim: rgba(0, 0, 0, 0.7);
+  --smrt-typography-display-large-size: 3.5rem;
+  --smrt-typography-display-large-line-height: 0.98;
+  --smrt-typography-display-large-weight: 600;
+  --smrt-typography-display-large-tracking: -0.03em;
+  --smrt-typography-display-large-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-large-font: 600 3.5rem/0.98 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-medium-size: 2.75rem;
+  --smrt-typography-display-medium-line-height: 1;
+  --smrt-typography-display-medium-weight: 600;
+  --smrt-typography-display-medium-tracking: -0.03em;
+  --smrt-typography-display-medium-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-medium-font: 600 2.75rem/1 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-small-size: 2.25rem;
+  --smrt-typography-display-small-line-height: 1.05;
+  --smrt-typography-display-small-weight: 600;
+  --smrt-typography-display-small-tracking: -0.02em;
+  --smrt-typography-display-small-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-display-small-font: 600 2.25rem/1.05 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-large-size: 2rem;
+  --smrt-typography-headline-large-line-height: 1.1;
+  --smrt-typography-headline-large-weight: 600;
+  --smrt-typography-headline-large-tracking: -0.02em;
+  --smrt-typography-headline-large-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-large-font: 600 2rem/1.1 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-medium-size: 1.6rem;
+  --smrt-typography-headline-medium-line-height: 1.15;
+  --smrt-typography-headline-medium-weight: 600;
+  --smrt-typography-headline-medium-tracking: -0.02em;
+  --smrt-typography-headline-medium-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-medium-font: 600 1.6rem/1.15 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-small-size: 1.3rem;
+  --smrt-typography-headline-small-line-height: 1.2;
+  --smrt-typography-headline-small-weight: 600;
+  --smrt-typography-headline-small-tracking: -0.01em;
+  --smrt-typography-headline-small-font-family: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-headline-small-font: 600 1.3rem/1.2 "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --smrt-typography-title-large-size: 1.125rem;
+  --smrt-typography-title-large-line-height: 1.3;
+  --smrt-typography-title-large-weight: 600;
+  --smrt-typography-title-large-tracking: -0.01em;
+  --smrt-typography-title-large-font-family: var(--smrt-font-family);
+  --smrt-typography-title-large-font: 600 1.125rem/1.3 var(--smrt-font-family);
+  --smrt-typography-title-medium-size: 1rem;
+  --smrt-typography-title-medium-line-height: 1.4;
+  --smrt-typography-title-medium-weight: 600;
+  --smrt-typography-title-medium-tracking: 0;
+  --smrt-typography-title-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-title-medium-font: 600 1rem/1.4 var(--smrt-font-family);
+  --smrt-typography-title-small-size: 0.875rem;
+  --smrt-typography-title-small-line-height: 1.4;
+  --smrt-typography-title-small-weight: 600;
+  --smrt-typography-title-small-tracking: 0;
+  --smrt-typography-title-small-font-family: var(--smrt-font-family);
+  --smrt-typography-title-small-font: 600 0.875rem/1.4 var(--smrt-font-family);
+  --smrt-typography-body-large-size: 1.0625rem;
+  --smrt-typography-body-large-line-height: 1.6;
+  --smrt-typography-body-large-weight: 400;
+  --smrt-typography-body-large-tracking: 0;
+  --smrt-typography-body-large-font-family: var(--smrt-font-family);
+  --smrt-typography-body-large-font: 400 1.0625rem/1.6 var(--smrt-font-family);
+  --smrt-typography-body-medium-size: 0.9375rem;
+  --smrt-typography-body-medium-line-height: 1.6;
+  --smrt-typography-body-medium-weight: 400;
+  --smrt-typography-body-medium-tracking: 0;
+  --smrt-typography-body-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-body-medium-font: 400 0.9375rem/1.6 var(--smrt-font-family);
+  --smrt-typography-body-small-size: 0.8125rem;
+  --smrt-typography-body-small-line-height: 1.55;
+  --smrt-typography-body-small-weight: 400;
+  --smrt-typography-body-small-tracking: 0;
+  --smrt-typography-body-small-font-family: var(--smrt-font-family);
+  --smrt-typography-body-small-font: 400 0.8125rem/1.55 var(--smrt-font-family);
+  --smrt-typography-label-large-size: 0.8125rem;
+  --smrt-typography-label-large-line-height: 1.4;
+  --smrt-typography-label-large-weight: 600;
+  --smrt-typography-label-large-tracking: 0.04em;
+  --smrt-typography-label-large-font-family: var(--smrt-font-family);
+  --smrt-typography-label-large-font: 600 0.8125rem/1.4 var(--smrt-font-family);
+  --smrt-typography-label-medium-size: 0.6875rem;
+  --smrt-typography-label-medium-line-height: 1.4;
+  --smrt-typography-label-medium-weight: 600;
+  --smrt-typography-label-medium-tracking: 0.08em;
+  --smrt-typography-label-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-label-medium-font: 600 0.6875rem/1.4 var(--smrt-font-family);
+  --smrt-typography-label-small-size: 0.625rem;
+  --smrt-typography-label-small-line-height: 1.4;
+  --smrt-typography-label-small-weight: 600;
+  --smrt-typography-label-small-tracking: 0.1em;
+  --smrt-typography-label-small-font-family: var(--smrt-font-family);
+  --smrt-typography-label-small-font: 600 0.625rem/1.4 var(--smrt-font-family);
+  --smrt-spacing-0: 0;
+  --smrt-spacing-1: 0.25rem;
+  --smrt-spacing-2: 0.5rem;
+  --smrt-spacing-3: 0.75rem;
+  --smrt-spacing-4: 1rem;
+  --smrt-spacing-5: 1.25rem;
+  --smrt-spacing-6: 1.5rem;
+  --smrt-spacing-7: 1.75rem;
+  --smrt-spacing-8: 2rem;
+  --smrt-spacing-9: 2.25rem;
+  --smrt-spacing-10: 2.5rem;
+  --smrt-spacing-11: 2.75rem;
+  --smrt-spacing-12: 3rem;
+  --smrt-spacing-14: 3.5rem;
+  --smrt-spacing-16: 4rem;
+  --smrt-spacing-20: 5rem;
+  --smrt-spacing-24: 6rem;
+  --smrt-spacing-0_5: 0.125rem;
+  --smrt-spacing-1_5: 0.375rem;
+  --smrt-spacing-2_5: 0.625rem;
+  --smrt-spacing-3_5: 0.875rem;
+  --smrt-spacing-xs: 0.25rem;
+  --smrt-spacing-sm: 0.5rem;
+  --smrt-spacing-md: 1rem;
+  --smrt-spacing-lg: 1.5rem;
+  --smrt-spacing-xl: 2rem;
+  --smrt-spacing-2xl: 3rem;
+  --smrt-spacing-3xl: 4rem;
+  --smrt-radius-none: 0;
+  --smrt-radius-sm: 0.25rem;
+  --smrt-radius-md: 0.5rem;
+  --smrt-radius-lg: 0.75rem;
+  --smrt-radius-xl: 1rem;
+  --smrt-radius-2xl: 1.5rem;
+  --smrt-radius-3xl: 2rem;
+  --smrt-radius-full: 9999px;
+  --smrt-radius-extra-small: 0.25rem;
+  --smrt-radius-small: 0.25rem;
+  --smrt-radius-medium: 0.5rem;
+  --smrt-radius-large: 0.75rem;
+  --smrt-radius-extra-large: 1rem;
+  --smrt-elevation-0: none;
+  --smrt-elevation-1: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --smrt-elevation-2: 0 18px 44px -28px rgba(0, 0, 0, 0.6);
+  --smrt-elevation-3: 0 24px 56px -34px rgba(0, 0, 0, 0.72);
+  --smrt-elevation-4: 0 30px 66px -40px rgba(0, 0, 0, 0.82);
+  --smrt-elevation-5: 0 40px 90px -50px rgba(0, 0, 0, 0.88);
+  --smrt-duration-instant: 0ms;
+  --smrt-duration-fast: 100ms;
+  --smrt-duration-normal: 200ms;
+  --smrt-duration-slow: 300ms;
+  --smrt-duration-slower: 500ms;
+  --smrt-duration-short1: 50ms;
+  --smrt-duration-short2: 100ms;
+  --smrt-duration-short3: 150ms;
+  --smrt-duration-short4: 200ms;
+  --smrt-duration-medium1: 250ms;
+  --smrt-duration-medium2: 300ms;
+  --smrt-duration-medium3: 350ms;
+  --smrt-duration-medium4: 400ms;
+  --smrt-duration-long1: 450ms;
+  --smrt-duration-long2: 500ms;
+  --smrt-duration-long3: 550ms;
+  --smrt-duration-long4: 600ms;
+  --smrt-easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --smrt-easing-standard-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --smrt-easing-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-easing-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --smrt-easing-emphasized-decelerate: cubic-bezier(0.16, 1, 0.3, 1);
+  --smrt-easing-emphasized-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --smrt-font-family-mono: ui-monospace, "SF Mono", "Monaco", "Cascadia Code", "Consolas", monospace;
+  --smrt-typography-weight-normal: 400;
+  --smrt-typography-weight-medium: 500;
+  --smrt-typography-weight-semibold: 600;
+  --smrt-typography-weight-bold: 700;
+  --smrt-z-index-dropdown: 1000;
+  --smrt-z-index-sticky: 1100;
+  --smrt-z-index-overlay: 1200;
+  --smrt-z-index-modal: 1300;
+  --smrt-z-index-dialog: 1300;
+  --smrt-z-index-popover: 1400;
+  --smrt-z-index-toast: 1500;
+  --smrt-z-index-tooltip: 1600;
+  --smrt-z-index-loading: 1700;
+}
+
+/* ============================================================================
+ * Signature flourishes (opt-in utility classes)
+ *
+ * The "engineering instrument panel" motifs from happyvertical.com, expressed
+ * against the SMRT theme tokens. Add these classes to your own markup — they
+ * are not applied automatically. They read best under `data-theme="smrt"`,
+ * where `--smrt-color-primary` is the signal amber.
+ * ========================================================================== */
+
+/* Faint engineering-grid background with a radial fade.
+ * Put on a full-bleed section or a fixed underlay element. */
+.smrt-grid-bg {
+  position: relative;
+}
+.smrt-grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--smrt-color-outline-variant) 1px, transparent 1px),
+    linear-gradient(90deg, var(--smrt-color-outline-variant) 1px, transparent 1px);
+  background-size: 44px 44px;
+  opacity: 0.32;
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 35%, transparent 100%);
+  mask-image: radial-gradient(120% 90% at 50% 0%, #000 35%, transparent 100%);
+}
+.smrt-grid-bg > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Amber wash — a soft radial accent glow behind a hero/section. */
+.smrt-accent-wash {
+  background:
+    radial-gradient(
+      120% 120% at 80% -10%,
+      color-mix(in srgb, var(--smrt-color-primary) 9%, transparent),
+      transparent 55%
+    ),
+    var(--smrt-color-background);
+}
+
+/* Glow utility — amber drop glow for marks, logos, key controls. */
+.smrt-glow {
+  box-shadow: 0 8px 24px -6px color-mix(in srgb, var(--smrt-color-primary) 45%, transparent);
+}
+.smrt-text-glow {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--smrt-color-primary) 45%, transparent);
+}
+
+/* Oscilloscope hairline — a thin top progress/scan line. Set width on the
+ * fill (e.g. via inline style bound to scroll progress). */
+.smrt-scope {
+  position: relative;
+  height: 2px;
+  width: 100%;
+  background: var(--smrt-color-outline-variant);
+  overflow: hidden;
+}
+.smrt-scope-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--smrt-color-primary) 80%, #b34d00),
+    var(--smrt-color-primary)
+  );
+  box-shadow: 0 0 10px color-mix(in srgb, var(--smrt-color-primary) 70%, transparent);
+  transition: width 1.1s var(--smrt-easing-emphasized);
+}
+
+/* Live status dot — pulsing amber indicator. */
+.smrt-livedot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--smrt-color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 22%, transparent);
+  animation: smrt-pulse 2.4s var(--smrt-easing-emphasized) infinite;
+}
+
+/* Technical label — monospace, uppercase, wide tracking. The `[// LABEL]`
+ * bracket-slash voice from the site. */
+.smrt-label {
+  font-family: 'JetBrains Mono', var(--smrt-font-family-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--smrt-color-on-surface-variant);
+}
+
+/* Instrument readout panel — gradient surface, dashed rows, mono metadata. */
+.smrt-readout {
+  border: 1px solid var(--smrt-color-outline);
+  border-radius: var(--smrt-radius-lg);
+  background: linear-gradient(
+    180deg,
+    var(--smrt-color-surface-bright),
+    var(--smrt-color-surface)
+  );
+  overflow: hidden;
+  color: var(--smrt-color-on-surface);
+  box-shadow: var(--smrt-elevation-4);
+}
+.smrt-readout-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 14px;
+  font-family: 'JetBrains Mono', var(--smrt-font-family-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  border-bottom: 1px dashed var(--smrt-color-outline-variant);
+}
+.smrt-readout-row:last-child {
+  border-bottom: none;
+}
+
+/* Terminal / code surface. */
+.smrt-terminal {
+  border: 1px solid var(--smrt-color-outline);
+  border-radius: var(--smrt-radius-lg);
+  overflow: hidden;
+  background: var(--smrt-color-surface-container-lowest);
+  box-shadow: var(--smrt-elevation-4);
+}
+.smrt-terminal pre,
+.smrt-terminal code {
+  margin: 0;
+  padding: 18px;
+  font-family: 'JetBrains Mono', var(--smrt-font-family-mono);
+  font-size: 0.78rem;
+  line-height: 1.75;
+  color: var(--smrt-color-on-surface);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Blinking caret (typewriter cursor). */
+.smrt-caret {
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  vertical-align: text-bottom;
+  background: var(--smrt-color-primary);
+  animation: smrt-blink 1.05s steps(1) infinite;
+}
+
+@keyframes smrt-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes smrt-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smrt-livedot,
+  .smrt-caret {
+    animation: none;
+  }
+  .smrt-scope-fill {
+    transition: none;
+  }
+}

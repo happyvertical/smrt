@@ -1,11 +1,11 @@
 /**
  * Unified Theme System Types
  *
- * Core types for the multi-theme architecture supporting Material, Glass, and Studio themes.
+ * Core types for the multi-theme architecture supporting Material, Glass, Studio, and SMRT themes.
  */
 
 /** Available theme presets */
-export type ThemePreset = 'material' | 'glass' | 'studio';
+export type ThemePreset = 'material' | 'glass' | 'studio' | 'smrt';
 
 /** Color scheme mode */
 export type ColorScheme = 'light' | 'dark' | 'system';

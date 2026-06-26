@@ -1,4 +1,5 @@
 <script lang="ts">
+import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import { PlaygroundHost } from '@happyvertical/smrt-playground/svelte';
 import { playgroundModules } from 'virtual:smrt-playground/modules';
 </script>

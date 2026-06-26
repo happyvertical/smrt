@@ -1,10 +1,10 @@
 # SMRT Svelte Themes
 
-A comprehensive, multi-theme system for SMRT Svelte with support for Material Design, Apple Glass, and Google AI Studio aesthetics. All themes include both light and dark modes.
+A comprehensive, multi-theme system for SMRT Svelte with support for Material Design, Apple Glass, Google AI Studio, and the SMRT instrument-panel aesthetic. All themes include both light and dark modes.
 
 ## Features
 
-- **3 Theme Presets**: Material (improved M3), Glass (Apple-style), Studio (Google AI Studio flat)
+- **4 Theme Presets**: Material (improved M3), Glass (Apple-style), Studio (Google AI Studio flat), SMRT (dark-first amber instrument panel)
 - **Light & Dark Modes**: Automatic system detection with manual override
 - **Runtime Theme Switching**: Change themes without page reload
 - **CSS Custom Properties**: Full theming via CSS variables
@@ -366,6 +366,45 @@ Google AI Studio-inspired flat design with minimal aesthetics.
 <div class="smrt-flat">Flat bordered surface</div>
 <div class="smrt-flat-inset">Inset border effect</div>
 <div class="smrt-flat-subtle">Subtle elevation</div>
+```
+
+### SMRT
+
+Dark-first "engineering instrument panel" theme adapted from happyvertical.com:
+an amber signal accent (`#ff7a1a`) on near-black surfaces, hairline outlines,
+deep low shadows, and a Space Grotesk / Inter / JetBrains Mono type stack.
+
+- **Colors**: Near-black engineering surfaces, signal-amber primary, SMRT-violet
+  tertiary, cool slate neutrals
+- **Elevation**: Deep, soft, low-spread drop shadows with a hairline inset
+- **Typography**: Space Grotesk display (tight, negative tracking) over Inter body
+- **Use for**: Developer tools, agent dashboards, technical/terminal aesthetics
+
+**Fonts (optional, self-hosted):**
+
+```svelte
+<script>
+  // Bundled woff2 — Space Grotesk / Inter / JetBrains Mono (SIL OFL). Omit to
+  // fall back to system-ui / ui-monospace stacks.
+  import '@happyvertical/smrt-ui/themes/styles/fonts.css';
+</script>
+
+<ThemeProvider preset="smrt" colorScheme="dark">
+  <YourApp />
+</ThemeProvider>
+```
+
+**SMRT Flourish Utility Classes** (opt-in signature motifs):
+
+```html
+<section class="smrt-grid-bg">Faint engineering-grid background</section>
+<div class="smrt-accent-wash">Soft amber radial wash</div>
+<span class="smrt-livedot"></span> <!-- pulsing amber status dot -->
+<span class="smrt-label">// SECTION</span> <!-- mono, uppercase, tracked -->
+<div class="smrt-readout"><div class="smrt-readout-row">…</div></div>
+<div class="smrt-terminal"><pre>$ smrt …</pre></div>
+<div class="smrt-scope"><span class="smrt-scope-fill" style="width:42%"></span></div>
+<span class="smrt-glow">amber drop glow</span>
 ```
 
 ## Project Integration Patterns

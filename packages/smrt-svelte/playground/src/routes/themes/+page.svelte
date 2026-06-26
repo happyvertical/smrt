@@ -256,6 +256,16 @@ const surfaceTokens = [
           <li>Clean sans-serif typography</li>
         </ul>
       </div>
+      <div class="comparison-card" class:active={theme.state.preset === 'smrt'}>
+        <h3>🟠 SMRT</h3>
+        <ul>
+          <li>Dark-first instrument panel</li>
+          <li>Amber signal accent</li>
+          <li>Deep, soft drop shadows</li>
+          <li>Engineering / terminal aesthetic</li>
+          <li>Space Grotesk + Inter + JetBrains Mono</li>
+        </ul>
+      </div>
     </div>
   </section>
 </div>

@@ -21,5 +21,8 @@ export const themeStyles = {
   material: './material.css',
   glass: './glass.css',
   studio: './studio.css',
+  smrt: './smrt.css',
+  /** @font-face declarations for the SMRT theme (Space Grotesk / Inter / JetBrains Mono). */
+  fonts: './fonts.css',
   all: './all.css',
 } as const;

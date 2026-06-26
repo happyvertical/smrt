@@ -1,5 +1,9 @@
 <script lang="ts">
-import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+import {
+  ColorSchemeToggle,
+  ThemeProvider,
+  ThemeSwitcher,
+} from '@happyvertical/smrt-ui/themes';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
 import { mergePlaygroundModules } from './runtime.js';
@@ -218,6 +222,11 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
         <p>{subtitle}</p>
       </div>
 
+      <div class="theme-controls" data-testid="playground-theme-controls">
+        <ThemeSwitcher variant="select" label="Theme" />
+        <ColorSchemeToggle />
+      </div>
+
       <label class="search">
         <span>Filter previews</span>
         <input bind:value={searchTerm} placeholder="Search packages or entries" />
@@ -404,6 +413,21 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   .empty-card p {
     margin: 0;
     line-height: 1.55;
+  }
+
+  .theme-controls {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  .theme-controls :global(.smrt-theme-switcher) {
+    flex: 1;
+  }
+
+  .theme-controls :global(.smrt-theme-switcher__select) {
+    width: 100%;
   }
 
   .search span {
