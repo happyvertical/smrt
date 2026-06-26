@@ -245,6 +245,72 @@ describe('ManifestGenerator', () => {
         'issued_day',
       ]);
     });
+
+    it('normalizes report objects in the manual Vite plugin pass order', () => {
+      const generator = new ManifestGenerator();
+      const manifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        objects: {
+          dailySalesReport: {
+            name: 'dailySalesReport',
+            className: 'DailySalesReport',
+            collection: 'dailySalesReports',
+            filePath: '/path/to/daily-sales-report.ts',
+            fields: {
+              storeId: {
+                type: 'text',
+                _meta: {
+                  __report: { kind: 'group', sourceColumn: 'storeId' },
+                },
+              },
+              revenue: {
+                type: 'decimal',
+                _meta: {
+                  __report: {
+                    kind: 'aggregate',
+                    fn: 'sum',
+                    column: 'totalAmount',
+                  },
+                },
+              },
+            },
+            methods: {},
+            decoratorConfig: {
+              report: { source: 'Sale' },
+            },
+            exportName: 'DailySalesReport',
+            collectionExportName: 'DailySalesReportCollection',
+          },
+        },
+      };
+
+      generator.normalizeReportTenantScope(manifest);
+      generator.injectTenantScopedFields(manifest);
+      generator.mergeInheritedFields(manifest);
+      generator.normalizeReportObjects(manifest);
+      generator.generateValidationRules(manifest);
+      generator.generateSchemas(manifest);
+      generator.assertTenantScopedSchemaContract(manifest);
+
+      const obj = manifest.objects.dailySalesReport;
+      expect(obj.fields.tenantId).toEqual(
+        expect.objectContaining({
+          _meta: expect.objectContaining({
+            __tenancy: expect.objectContaining({
+              mode: 'optional',
+            }),
+          }),
+        }),
+      );
+      expect(obj.schema?.columns.tenant_id).toEqual(
+        expect.objectContaining({ type: 'UUID', referenceKind: 'tenantId' }),
+      );
+      expect(obj.decoratorConfig.conflictColumns).toEqual([
+        'tenant_id',
+        'store_id',
+      ]);
+    });
   });
 
   describe('generateRestEndpoints', () => {

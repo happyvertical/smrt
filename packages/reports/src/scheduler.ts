@@ -46,6 +46,7 @@ export interface ReportRefreshJobArgs {
   tenantIds?: string[];
   scheduleId?: string;
   adapterType?: SqlAdapterType;
+  changedRows?: Record<string, unknown>[];
   _scheduleId?: string;
 }
 
@@ -193,6 +194,13 @@ function tenantIdFromInstance(instance: SmrtObject): string | null {
     : (getTenantId() ?? null);
 }
 
+function changedRowSnapshot(instance: SmrtObject): Record<string, unknown> {
+  const serializable = instance.toJSON();
+  return serializable && typeof serializable === 'object'
+    ? (serializable as Record<string, unknown>)
+    : {};
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: '_smrt_report_refresh_tasks',
@@ -230,6 +238,7 @@ export class SmrtReportRefreshTask extends SmrtObject {
       tenantIds: args.tenantIds,
       adapterType: args.adapterType,
       scheduleId: args.scheduleId ?? args._scheduleId,
+      changedRows: args.changedRows,
     });
   }
 }
@@ -256,6 +265,7 @@ export async function enqueueReportRefresh(
         tenantId: options.tenantId,
         tenantIds: options.tenantIds,
         adapterType: options.adapterType,
+        changedRows: options.changedRows,
         scheduleId,
         _scheduleId: scheduleId,
       },
@@ -582,12 +592,14 @@ async function triggerReportsForInstance(
 
     const mode = definition.refresh?.mode ?? 'incremental';
     const tenantId = tenantIdFromInstance(instance);
+    const changedRows = [changedRowSnapshot(instance)];
     if (options.enqueue === false) {
       await refreshReport(reportCtor, {
         db: options.db,
         mode,
         trigger: 'change',
         tenantId,
+        changedRows,
       });
       continue;
     }
@@ -602,6 +614,7 @@ async function triggerReportsForInstance(
       priority: options.priority,
       timeout: options.timeout,
       tenantJobCap: options.tenantJobCap,
+      changedRows,
     });
   }
 }

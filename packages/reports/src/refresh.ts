@@ -319,6 +319,9 @@ function compileChangedGroupSpec(
   return withRefreshFilters(
     {
       ...spec,
+      // Ignore the report filter while finding changed groups so rows that
+      // just stopped matching `report.where` still trigger a recompute/delete.
+      where: undefined,
       select:
         select.length > 0
           ? select
@@ -384,6 +387,58 @@ function predicateSql(
     sql: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
     values,
   };
+}
+
+function dedupeGroupRows(
+  definition: ReportDefinition,
+  rows: Array<Record<string, unknown> | null>,
+): Record<string, unknown>[] {
+  const groupingColumns = getActualGroupingColumns(definition);
+  const groups = new Map<string, Record<string, unknown>>();
+
+  for (const row of rows) {
+    if (!row) continue;
+    const groupRow =
+      groupingColumns.length === 0
+        ? {}
+        : Object.fromEntries(
+            groupingColumns.map((column) => [column, row[column] ?? null]),
+          );
+    const key =
+      groupingColumns.length === 0
+        ? '__smrt_global_group__'
+        : JSON.stringify(groupingColumns.map((column) => groupRow[column]));
+    if (!groups.has(key)) {
+      groups.set(key, groupRow);
+    }
+  }
+
+  return [...groups.values()];
+}
+
+async function readMaterializedGroups(
+  db: DatabaseInterface,
+  tableName: string,
+  definition: ReportDefinition,
+  scope: RefreshScope,
+): Promise<Record<string, unknown>[]> {
+  const groupingColumns = getActualGroupingColumns(definition);
+  if (groupingColumns.length === 0) {
+    return [{}];
+  }
+
+  const where = scope.reportTenantColumn
+    ? predicateSql(tableName, { [scope.reportTenantColumn]: scope.tenantId })
+    : { sql: '', values: [] as unknown[] };
+  const columns = groupingColumns.map((column) => validateColumnName(column));
+  const result = await db.query(
+    `SELECT ${columns.join(', ')} FROM ${validateColumnName(tableName)} ${where.sql}`,
+    ...where.values,
+  );
+
+  return result.rows
+    .map((row) => parseMaybeJson<Record<string, unknown>>(row))
+    .filter((row): row is Record<string, unknown> => Boolean(row));
 }
 
 async function deleteMaterializedGroup(
@@ -698,19 +753,24 @@ async function rebuildReport(
   scope: RefreshScope,
   adapterType: SqlAdapterType,
   runId: string | undefined,
+  watermark?: WatermarkConfig | null,
 ): Promise<RefreshWorkResult> {
-  const watermarkColumn =
+  const explicitWatermarkColumn =
     definition.refresh?.watermarkColumn &&
     (await fieldColumn(
       definition.sourceClassName,
       definition.refresh.watermarkColumn,
     ));
-  const softDeleteColumn =
+  const explicitSoftDeleteColumn =
     definition.refresh?.softDeleteColumn &&
     (await fieldColumn(
       definition.sourceClassName,
       definition.refresh.softDeleteColumn,
     ));
+  const watermarkColumn =
+    watermark?.watermarkColumn ?? explicitWatermarkColumn ?? null;
+  const softDeleteColumn =
+    watermark?.softDeleteColumn ?? explicitSoftDeleteColumn ?? null;
   const deletedFilter = softDeleteColumn ? { [softDeleteColumn]: null } : {};
   const spec = withRefreshFilters(
     compileReportDefinition(definition),
@@ -753,6 +813,7 @@ async function incrementalReport(
   scope: RefreshScope,
   adapterType: SqlAdapterType,
   runId: string | undefined,
+  changedRows: Record<string, unknown>[] = [],
 ): Promise<RefreshWorkResult> {
   const watermark = await resolveWatermarkConfig(definition);
   const watermarkBefore = await readWatermark(
@@ -770,6 +831,7 @@ async function incrementalReport(
       scope,
       adapterType,
       runId,
+      watermark,
     );
     return {
       ...seeded,
@@ -791,7 +853,16 @@ async function incrementalReport(
   const changedGroups = changed.rows.map((row) =>
     parseMaybeJson<Record<string, unknown>>(row),
   );
-  if (changedGroups.length === 0) {
+  const materializedGroups =
+    changedGroups.length > 0 || changedRows.length > 0
+      ? await readMaterializedGroups(db, reportTable, definition, scope)
+      : [];
+  const affectedGroups = dedupeGroupRows(definition, [
+    ...changedGroups,
+    ...materializedGroups,
+  ]);
+
+  if (affectedGroups.length === 0) {
     return {
       rowCount: 0,
       changedGroupCount: 0,
@@ -804,8 +875,7 @@ async function incrementalReport(
   let rowCount = 0;
   const conflicts = conflictColumns(definition, scope);
 
-  for (const groupRow of changedGroups) {
-    if (!groupRow) continue;
+  for (const groupRow of affectedGroups) {
     const affectedSpec = compileAffectedGroupSpec(
       definition,
       scope,
@@ -852,11 +922,22 @@ async function incrementalReport(
 
   return {
     rowCount,
-    changedGroupCount: changedGroups.length,
+    changedGroupCount: affectedGroups.length,
     watermarkBefore,
     watermarkAfter,
     mode: 'incremental',
   };
+}
+
+function requiredReportRuntimeTables(
+  mode: ReportRefreshMode,
+  options: ReportRefreshOptions,
+): string[] {
+  const tables = new Set<string>();
+  if (options.trackRuns !== false) tables.add(REPORT_RUNS_TABLE);
+  if (mode === 'incremental') tables.add(REPORT_WATERMARKS_TABLE);
+  if (options.lock !== false) tables.add(REPORT_LOCKS_TABLE);
+  return [...tables];
 }
 
 async function refreshReportOnce(
@@ -878,10 +959,9 @@ async function refreshReportOnce(
     );
   }
 
-  if (options.trackRuns !== false || options.lock !== false) {
-    await assertReportTablesReady(options.db);
-  } else if (requestedMode === 'incremental') {
-    await assertReportTablesReady(options.db, [REPORT_WATERMARKS_TABLE]);
+  const requiredTables = requiredReportRuntimeTables(requestedMode, options);
+  if (requiredTables.length > 0) {
+    await assertReportTablesReady(options.db, requiredTables);
   }
 
   const adapterType = adapterTypeFromDb(options.db, options.adapterType);
@@ -934,6 +1014,7 @@ async function refreshReportOnce(
             scope,
             adapterType,
             runId,
+            options.changedRows,
           )
         : await rebuildReport(
             options.db,

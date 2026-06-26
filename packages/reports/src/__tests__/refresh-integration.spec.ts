@@ -23,10 +23,14 @@ import {
 class IntegrationInvoice extends SmrtObject {}
 class IntegrationRevenueReport extends SmrtReport {}
 class IntegrationMonthlyRevenueReport extends SmrtReport {}
+class IntegrationDefaultWatermarkReport extends SmrtReport {}
+class IntegrationPaidRevenueReport extends SmrtReport {}
 
 const SOURCE_TABLE = 'integration_invoices';
 const REPORT_TABLE = 'integration_revenue_reports';
 const MONTHLY_REPORT_TABLE = 'integration_monthly_revenue_reports';
+const DEFAULT_WATERMARK_REPORT_TABLE = 'integration_default_watermark_reports';
+const PAID_REPORT_TABLE = 'integration_paid_revenue_reports';
 
 beforeEach(() => {
   ObjectRegistry.clear();
@@ -56,6 +60,9 @@ function registerIntegrationClasses() {
   });
   ObjectRegistry.registerFieldDecorator('IntegrationInvoice', 'totalAmount', {
     type: 'decimal',
+  });
+  ObjectRegistry.registerFieldDecorator('IntegrationInvoice', 'status', {
+    type: 'text',
   });
   ObjectRegistry.registerFieldDecorator('IntegrationInvoice', 'updatedAt', {
     type: 'datetime',
@@ -198,6 +205,109 @@ function registerIntegrationClasses() {
       },
     },
   });
+
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationDefaultWatermarkReport',
+    'tenantId',
+    {
+      type: 'foreignKey',
+      related: 'Tenant',
+      nullable: true,
+      _meta: {
+        sqlType: 'UUID',
+        __tenancy: { isTenantIdField: true, mode: 'optional' },
+      },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationDefaultWatermarkReport',
+    'customerId',
+    {
+      type: 'text',
+      __report: { kind: 'group', sourceColumn: 'customerId' },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationDefaultWatermarkReport',
+    'revenue',
+    {
+      type: 'decimal',
+      __report: {
+        kind: 'aggregate',
+        fn: 'sum',
+        column: 'totalAmount',
+      },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationDefaultWatermarkReport',
+    'refreshedAt',
+    { type: 'datetime' },
+  );
+  ObjectRegistry.register(IntegrationDefaultWatermarkReport, {
+    tableName: DEFAULT_WATERMARK_REPORT_TABLE,
+    tenantScoped: { mode: 'optional' },
+    conflictColumns: ['tenant_id', 'customer_id'],
+    report: {
+      source: 'IntegrationInvoice',
+      refresh: {
+        mode: 'incremental',
+      },
+    },
+  });
+
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationPaidRevenueReport',
+    'tenantId',
+    {
+      type: 'foreignKey',
+      related: 'Tenant',
+      nullable: true,
+      _meta: {
+        sqlType: 'UUID',
+        __tenancy: { isTenantIdField: true, mode: 'optional' },
+      },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationPaidRevenueReport',
+    'customerId',
+    {
+      type: 'text',
+      __report: { kind: 'group', sourceColumn: 'customerId' },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationPaidRevenueReport',
+    'revenue',
+    {
+      type: 'decimal',
+      __report: {
+        kind: 'aggregate',
+        fn: 'sum',
+        column: 'totalAmount',
+      },
+    },
+  );
+  ObjectRegistry.registerFieldDecorator(
+    'IntegrationPaidRevenueReport',
+    'refreshedAt',
+    { type: 'datetime' },
+  );
+  ObjectRegistry.register(IntegrationPaidRevenueReport, {
+    tableName: PAID_REPORT_TABLE,
+    tenantScoped: { mode: 'optional' },
+    conflictColumns: ['tenant_id', 'customer_id'],
+    report: {
+      source: 'IntegrationInvoice',
+      where: { status: 'paid' },
+      refresh: {
+        mode: 'incremental',
+        watermarkColumn: 'updatedAt',
+        softDeleteColumn: 'deletedAt',
+      },
+    },
+  });
 }
 
 function registerJobsManifest() {
@@ -223,6 +333,7 @@ async function setupDb(): Promise<DatabaseInterface> {
       tenant_id TEXT,
       customer_id TEXT NOT NULL,
       total_amount REAL NOT NULL,
+      status TEXT NOT NULL,
       issued_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT,
@@ -263,6 +374,38 @@ async function setupDb(): Promise<DatabaseInterface> {
   `);
   await db.query(
     `CREATE UNIQUE INDEX ${MONTHLY_REPORT_TABLE}_tenant_month_idx ON ${MONTHLY_REPORT_TABLE} (tenant_id, issued_month)`,
+  );
+  await db.query(`
+    CREATE TABLE ${DEFAULT_WATERMARK_REPORT_TABLE} (
+      id TEXT PRIMARY KEY,
+      slug TEXT,
+      context TEXT,
+      tenant_id TEXT,
+      customer_id TEXT NOT NULL,
+      revenue REAL,
+      refreshed_at TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    )
+  `);
+  await db.query(
+    `CREATE UNIQUE INDEX ${DEFAULT_WATERMARK_REPORT_TABLE}_tenant_customer_idx ON ${DEFAULT_WATERMARK_REPORT_TABLE} (tenant_id, customer_id)`,
+  );
+  await db.query(`
+    CREATE TABLE ${PAID_REPORT_TABLE} (
+      id TEXT PRIMARY KEY,
+      slug TEXT,
+      context TEXT,
+      tenant_id TEXT,
+      customer_id TEXT NOT NULL,
+      revenue REAL,
+      refreshed_at TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    )
+  `);
+  await db.query(
+    `CREATE UNIQUE INDEX ${PAID_REPORT_TABLE}_tenant_customer_idx ON ${PAID_REPORT_TABLE} (tenant_id, customer_id)`,
   );
   await createRuntimeTables(db);
   return db;
@@ -418,6 +561,7 @@ async function insertInvoice(
     tenantId?: string | null;
     customerId: string;
     amount: number;
+    status?: string;
     issuedAt?: string;
     updatedAt: string;
     deletedAt?: string | null;
@@ -430,6 +574,7 @@ async function insertInvoice(
     tenant_id: row.tenantId ?? null,
     customer_id: row.customerId,
     total_amount: row.amount,
+    status: row.status ?? 'paid',
     issued_at: row.issuedAt ?? row.updatedAt,
     updated_at: row.updatedAt,
     deleted_at: row.deletedAt ?? null,
@@ -447,6 +592,13 @@ async function reportRows(db: DatabaseInterface) {
 async function monthlyRows(db: DatabaseInterface) {
   const result = await db.query(
     `SELECT tenant_id, issued_month, revenue FROM ${MONTHLY_REPORT_TABLE} ORDER BY tenant_id, issued_month`,
+  );
+  return result.rows;
+}
+
+async function paidRows(db: DatabaseInterface) {
+  const result = await db.query(
+    `SELECT tenant_id, customer_id, revenue FROM ${PAID_REPORT_TABLE} ORDER BY tenant_id, customer_id`,
   );
   return result.rows;
 }
@@ -569,6 +721,179 @@ describe('report refresh integration', () => {
         revenue: 35,
       },
     ]);
+  });
+
+  it('recomputes old materialized groups when source grouping keys change', async () => {
+    const db = await setupDb();
+    await insertInvoice(db, {
+      id: 'regrouped-invoice',
+      customerId: 'customer-a',
+      amount: 40,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await refreshReport(IntegrationRevenueReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(await reportRows(db)).toMatchObject([
+      {
+        customer_id: 'customer-a',
+        revenue: 40,
+      },
+    ]);
+
+    await db.update(
+      SOURCE_TABLE,
+      { id: 'regrouped-invoice' },
+      {
+        customer_id: 'customer-b',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      },
+    );
+
+    const updated = await refreshReport(IntegrationRevenueReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(updated.changedGroupCount).toBe(2);
+    expect(await reportRows(db)).toMatchObject([
+      {
+        customer_id: 'customer-b',
+        revenue: 40,
+      },
+    ]);
+  });
+
+  it('recomputes materialized groups for hard deletes with a change signal', async () => {
+    const db = await setupDb();
+    await insertInvoice(db, {
+      id: 'hard-deleted-invoice',
+      customerId: 'customer-a',
+      amount: 40,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await refreshReport(IntegrationRevenueReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(await reportRows(db)).toMatchObject([
+      {
+        customer_id: 'customer-a',
+        revenue: 40,
+      },
+    ]);
+
+    await db.query(
+      `DELETE FROM ${SOURCE_TABLE} WHERE id = ?`,
+      'hard-deleted-invoice',
+    );
+    const updated = await refreshReport(IntegrationRevenueReport, {
+      db,
+      mode: 'incremental',
+      changedRows: [{ id: 'hard-deleted-invoice' }],
+    });
+
+    expect(updated.changedGroupCount).toBe(1);
+    expect(await reportRows(db)).toEqual([]);
+  });
+
+  it('recomputes groups when changed rows stop matching report filters', async () => {
+    const db = await setupDb();
+    await insertInvoice(db, {
+      id: 'voided-invoice',
+      customerId: 'customer-a',
+      amount: 25,
+      status: 'paid',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await refreshReport(IntegrationPaidRevenueReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(await paidRows(db)).toMatchObject([
+      {
+        customer_id: 'customer-a',
+        revenue: 25,
+      },
+    ]);
+
+    await db.update(
+      SOURCE_TABLE,
+      { id: 'voided-invoice' },
+      {
+        status: 'void',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      },
+    );
+
+    const updated = await refreshReport(IntegrationPaidRevenueReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(updated.changedGroupCount).toBe(1);
+    expect(await paidRows(db)).toEqual([]);
+  });
+
+  it('seeds default updatedAt watermarks during the first incremental rebuild', async () => {
+    const db = await setupDb();
+    await insertInvoice(db, {
+      id: 'default-watermark-invoice',
+      customerId: 'customer-a',
+      amount: 15,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const seeded = await refreshReport(IntegrationDefaultWatermarkReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(seeded.mode).toBe('rebuild');
+
+    const watermarks = await db.query(
+      `SELECT watermark_column, watermark_value
+        FROM _smrt_report_watermarks
+        WHERE report_class LIKE ?
+        ORDER BY watermark_column`,
+      '%IntegrationDefaultWatermarkReport',
+    );
+    expect(watermarks.rows).toMatchObject([
+      {
+        watermark_column: 'updated_at',
+        watermark_value: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+
+    const noOp = await refreshReport(IntegrationDefaultWatermarkReport, {
+      db,
+      mode: 'incremental',
+    });
+    expect(noOp.mode).toBe('incremental');
+    expect(noOp.changedGroupCount).toBe(0);
+  });
+
+  it('does not require the locks table when locks are disabled', async () => {
+    const db = await setupDb();
+    await db.query('DROP TABLE _smrt_report_locks');
+    await insertInvoice(db, {
+      id: 'lockless-invoice',
+      customerId: 'customer-a',
+      amount: 10,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(
+      refreshReport(IntegrationRevenueReport, {
+        db,
+        mode: 'incremental',
+        lock: false,
+      }),
+    ).resolves.toMatchObject({
+      rowCount: 1,
+      mode: 'rebuild',
+    });
   });
 
   it('requires watermarks for incremental refresh even without runs or locks', async () => {

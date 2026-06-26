@@ -648,7 +648,7 @@ export class ManifestGenerator {
     this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
   }
 
-  private normalizeReportObjects(manifest: SmartObjectManifest): void {
+  normalizeReportObjects(manifest: SmartObjectManifest): void {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.decoratorConfig?.report) continue;
 
@@ -681,7 +681,7 @@ export class ManifestGenerator {
     }
   }
 
-  private normalizeReportTenantScope(manifest: SmartObjectManifest): void {
+  normalizeReportTenantScope(manifest: SmartObjectManifest): void {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.decoratorConfig?.report) continue;
       obj.decoratorConfig.tenantScoped ??= { mode: 'optional' };
