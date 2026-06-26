@@ -5,6 +5,16 @@
 
 import type { SmrtManifest } from '@happyvertical/smrt-virt-manifest';
 
+/** A single object definition as carried by the virtual manifest. */
+type SmrtObjectEntry = SmrtManifest['objects'][string];
+
+/**
+ * Minimal structural view of the generated API client (see
+ * `generateClientModule`): a map of collection key to its CRUD operations. The
+ * dashboard only invokes `list()`, so that is the only operation typed here.
+ */
+type ApiClient = Record<string, { list(): Promise<unknown[]> }>;
+
 // Create the UI
 async function createUI() {
   const app = document.getElementById('app');
@@ -36,7 +46,7 @@ async function createUI() {
   }
 }
 
-function renderDashboard(manifest: SmrtManifest, client: any): string {
+function renderDashboard(manifest: SmrtManifest, client: ApiClient): string {
   const objects = Object.entries(manifest.objects);
   const totalObjects = objects.length;
   const totalMethods = objects.reduce(
@@ -96,7 +106,11 @@ function renderEmptyState(): string {
   `;
 }
 
-function renderCollection(_name: string, obj: any, _client: any): string {
+function renderCollection(
+  _name: string,
+  obj: SmrtObjectEntry,
+  _client: ApiClient,
+): string {
   const fields = Object.entries(obj.fields);
   const methods = Object.entries(obj.methods);
   const customMethods = methods.filter(
@@ -171,7 +185,7 @@ function renderCollection(_name: string, obj: any, _client: any): string {
   `;
 }
 
-function attachEventListeners(manifest: SmrtManifest, client: any) {
+function attachEventListeners(manifest: SmrtManifest, client: ApiClient) {
   // Load counts for each collection
   void Promise.all(
     Object.values(manifest.objects).map(async (obj) => {
@@ -224,7 +238,7 @@ function attachEventListeners(manifest: SmrtManifest, client: any) {
   });
 }
 
-async function handleList(collection: string, client: any) {
+async function handleList(collection: string, client: ApiClient) {
   try {
     const items = await client[collection].list();
     console.log(`${collection} items:`, items);
@@ -277,7 +291,7 @@ async function handleList(collection: string, client: any) {
 async function handleCreate(
   collection: string,
   manifest: SmrtManifest,
-  _client: any,
+  _client: ApiClient,
 ) {
   // Get fields for this collection
   const obj = Object.values(manifest.objects).find(
@@ -389,7 +403,7 @@ async function handleCreate(
 async function handleCustomAction(
   collection: string,
   action: string,
-  client: any,
+  client: ApiClient,
 ) {
   // For custom actions, we need to get an item first
   const shouldContinue = confirm(

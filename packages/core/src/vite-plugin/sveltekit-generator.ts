@@ -20,6 +20,7 @@ import type {
   ApiSerializerReference,
 } from '../registry/types.js';
 import type {
+  MethodDefinition,
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
@@ -58,7 +59,7 @@ interface GeneratedActionRouteSpec {
   lookupObjectDef?: SmartObjectDefinition;
   hostClassName: string;
   actionName: string;
-  actionDef: any;
+  actionDef: MethodDefinition;
   routeConfig: ResolvedApiActionRouteConfig;
   hostType: 'item' | 'collection';
 }
@@ -621,7 +622,7 @@ ${pathParamNames
   }`;
 }
 
-function buildActionInvocationArgs(actionDef: any): string[] {
+function buildActionInvocationArgs(actionDef: MethodDefinition): string[] {
   const parameters = Array.isArray(actionDef.parameters)
     ? actionDef.parameters
     : [];
@@ -634,7 +635,7 @@ function buildActionInvocationArgs(actionDef: any): string[] {
     return ['options'];
   }
 
-  return parameters.map((parameter: any) =>
+  return parameters.map((parameter) =>
     buildOptionsPropertyAccess(parameter.name),
   );
 }
@@ -666,7 +667,7 @@ function buildActionArgsTypeAlias(
   return `  type ActionArgs = Parameters<${targetTypeExpression}[${JSON.stringify(actionName)}]>;`;
 }
 
-function buildActionOptionsTypeAlias(actionDef: any): string {
+function buildActionOptionsTypeAlias(actionDef: MethodDefinition): string {
   const parameters = Array.isArray(actionDef.parameters)
     ? actionDef.parameters
     : [];
@@ -678,7 +679,7 @@ function buildActionOptionsTypeAlias(actionDef: any): string {
   return [
     '  type ActionOptions = {',
     ...parameters.map(
-      (parameter: any, index: number) =>
+      (parameter, index) =>
         `    ${buildObjectTypeProperty(parameter.name)}: ActionArgs[${index}];`,
     ),
     '  };',
@@ -687,7 +688,7 @@ function buildActionOptionsTypeAlias(actionDef: any): string {
 
 function buildActionOptionsLoad(
   actionName: string,
-  actionDef: any,
+  actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
   targetTypeName: string,
   isStatic: boolean,
@@ -1567,16 +1568,17 @@ function resolveStandardCrudActions(apiConfig: unknown): string[] {
  * subtract `exclude`. Both filters apply together, matching principle of least
  * surprise for users supplying both lists.
  */
-function shouldIncludeInApi(actionName: string, apiConfig: any): boolean {
+function shouldIncludeInApi(actionName: string, apiConfig: unknown): boolean {
   if (apiConfig === false) return false;
   if (apiConfig === true || apiConfig === undefined) return true;
 
-  if (typeof apiConfig === 'object') {
-    const included = apiConfig.include
-      ? apiConfig.include.includes(actionName)
+  if (typeof apiConfig === 'object' && apiConfig !== null) {
+    const config = apiConfig as { include?: string[]; exclude?: string[] };
+    const included = config.include
+      ? config.include.includes(actionName)
       : true;
-    const excluded = apiConfig.exclude
-      ? apiConfig.exclude.includes(actionName)
+    const excluded = config.exclude
+      ? config.exclude.includes(actionName)
       : false;
     return included && !excluded;
   }
@@ -2125,7 +2127,7 @@ ${handlers}`;
 function generateActionRouteHandler(
   lookupClassName: string,
   actionName: string,
-  actionDef: any,
+  actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
   hostType: 'item' | 'collection',
   tenantScoped: boolean,
