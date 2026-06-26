@@ -8,7 +8,13 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { SchemaGenerator } from '../schema/generator.js';
+import type {
+  ColumnDefinition,
+  SchemaDefinition,
+  SQLDataType,
+} from '../schema/types.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
 import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import { createQualifiedName } from '../utils/qualified-names.js';
@@ -21,8 +27,10 @@ import type {
   AgentMenuItem,
   AgentPermission,
   AgentUISlotManifest,
+  FieldDefinition,
   ManifestColumnDefinition,
   ManifestSchema,
+  MethodDefinition,
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -30,8 +38,39 @@ import type {
   ValidationRule,
 } from './types.js';
 
+/** Package.json shape consumed for import-path and component discovery. */
+interface PackageJsonLike {
+  name?: string;
+  main?: string;
+  exports?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
+ * Object form of the `@smrt({ tenantScoped })` config. Mirrors the object
+ * branch of `SmartObjectConfig['tenantScoped']`; all keys optional because
+ * the boolean shorthand normalizes to `{}`.
+ */
+interface TenantScopedOptions {
+  mode?: 'required' | 'optional';
+  field?: string;
+  autoFilter?: boolean;
+  autoPopulate?: boolean;
+  allowSuperAdminBypass?: boolean;
+}
+
+/** JSON Schema property entry emitted for a field in generated MCP tools. */
+interface JsonSchemaProperty {
+  type: string;
+  description: string;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+}
+
 type SchemaGeneratorLike = {
-  generateSQL: (schema: any, engine?: any) => string;
+  generateSQL: (schema: SchemaDefinition, engine?: DatabaseEngine) => string;
 };
 
 // Create require function for synchronous module loading in ESM context
@@ -103,7 +142,7 @@ export class ManifestGenerator {
     options?: {
       packageName?: string;
       packageVersion?: string;
-      packageJson?: any;
+      packageJson?: PackageJsonLike;
       smrtDependencies?: string[];
       includeVisibility?: SmrtVisibility[];
     },
@@ -415,7 +454,7 @@ export class ManifestGenerator {
   }
 
   private normalizeTenantScopedConfig(tenantScoped: unknown): {
-    tenantOptions: Record<string, any>;
+    tenantOptions: TenantScopedOptions;
     tenantConfig: {
       mode: string;
       field: string;
@@ -424,8 +463,10 @@ export class ManifestGenerator {
       allowSuperAdminBypass: boolean;
     };
   } {
-    const tenantOptions: Record<string, any> =
-      typeof tenantScoped === 'boolean' ? {} : (tenantScoped as any);
+    const tenantOptions: TenantScopedOptions =
+      typeof tenantScoped === 'boolean'
+        ? {}
+        : (tenantScoped as TenantScopedOptions);
 
     return {
       tenantOptions,
@@ -527,7 +568,12 @@ export class ManifestGenerator {
             rules.push({
               field: fieldName,
               rule: 'pattern',
-              value: typeof pattern === 'string' ? pattern : pattern.source,
+              // RegExp patterns expose `.source`; a JSON-collapsed RegExp ({})
+              // has none, preserving the prior `undefined` value exactly.
+              value:
+                typeof pattern === 'string'
+                  ? pattern
+                  : (pattern as { source?: string }).source,
               fieldType: field.type,
             });
           }
@@ -804,20 +850,22 @@ export class ManifestGenerator {
     owner: { name: string; obj: SmartObjectDefinition } | undefined,
     manifest: SmartObjectManifest,
   ): void {
-    const schemaDefinition = {
+    const columns: Record<string, ColumnDefinition> = {};
+    for (const [name, column] of Object.entries(schema.columns)) {
+      columns[name] = {
+        // ManifestColumnDefinition stores `type` as a plain string; it is
+        // always a valid SQLDataType for DDL rendering.
+        type: column.type as SQLDataType,
+        primaryKey: column.primaryKey,
+        notNull: column.notNull,
+        unique: column.unique,
+        defaultValue: column.default,
+      };
+    }
+
+    const schemaDefinition: SchemaDefinition = {
       tableName: schema.tableName,
-      columns: Object.fromEntries(
-        Object.entries(schema.columns).map(([name, column]) => [
-          name,
-          {
-            type: column.type,
-            primaryKey: column.primaryKey,
-            notNull: column.notNull,
-            unique: column.unique,
-            defaultValue: column.default,
-          },
-        ]),
-      ),
+      columns,
       indexes: (schema.indexes || []).map((index) => ({
         name: index.name,
         columns: index.columns,
@@ -1185,9 +1233,9 @@ export class ManifestGenerator {
   private normalizeFrameworkInheritedField(
     ancestorName: string,
     fieldName: string,
-    fieldDef: any,
+    fieldDef: FieldDefinition,
     childClassName: string,
-  ): any {
+  ): FieldDefinition {
     if (
       this.simpleClassName(ancestorName) === 'SmrtHierarchical' &&
       fieldName === 'parentId'
@@ -1325,8 +1373,8 @@ export class ManifestGenerator {
       // their own `@smrt()` decorator have their own tables in CTI, so
       // merging their columns onto a descendant would generate the wrong
       // schema.
-      const mergedFields: Record<string, any> = {};
-      const mergedMethods: Record<string, any> = {};
+      const mergedFields: Record<string, FieldDefinition> = {};
+      const mergedMethods: Record<string, MethodDefinition> = {};
 
       for (const ancestorName of inheritanceChain) {
         const ancestor = objectsByName.get(ancestorName);
@@ -1806,8 +1854,13 @@ export class ManifestGenerator {
    * 3. package.json main - Main field
    * 4. Fallback to package name
    */
-  private determineImportPath(packageJson: any, _filePath?: string): string {
-    const packageName = packageJson.name;
+  private determineImportPath(
+    packageJson: PackageJsonLike,
+    _filePath?: string,
+  ): string {
+    // Only invoked once a package name is known (guarded at the call site),
+    // so `name` is always present here.
+    const packageName = packageJson.name as string;
 
     // Strategy 1: Check for specific exports
     if (packageJson.exports) {
@@ -1820,11 +1873,15 @@ export class ManifestGenerator {
       const mainExport = packageJson.exports['.'];
       if (mainExport) {
         // Handle conditional exports
-        if (typeof mainExport === 'object') {
-          if (mainExport.import) {
+        if (mainExport && typeof mainExport === 'object') {
+          const conditional = mainExport as {
+            import?: unknown;
+            default?: unknown;
+          };
+          if (conditional.import) {
             return packageName;
           }
-          if (mainExport.default) {
+          if (conditional.default) {
             return packageName;
           }
         }
@@ -2278,9 +2335,9 @@ ${fields}
    * Generate JSON schema properties for fields
    */
   private generateSchemaProperties(
-    fields: Record<string, any>,
-  ): Record<string, any> {
-    const properties: Record<string, any> = {};
+    fields: Record<string, FieldDefinition>,
+  ): Record<string, JsonSchemaProperty> {
+    const properties: Record<string, JsonSchemaProperty> = {};
 
     for (const [name, field] of Object.entries(fields)) {
       properties[name] = {
@@ -2342,15 +2399,19 @@ ${fields}
   generateAgentManifests(
     manifest: SmartObjectManifest,
     packageName?: string,
-    packageJson?: any,
+    packageJson?: PackageJsonLike,
   ): void {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.decoratorConfig.agent) continue;
 
       const agentConfig = obj.decoratorConfig.agent;
       const slug = obj.className.toLowerCase();
+      // staticProperties is an untyped AST capture; assert the shape the
+      // scanner records for `static uiSlots` on Agent subclasses.
       const uiSlots: Record<string, AgentUISlotManifest> =
-        obj.staticProperties?.uiSlots ?? {};
+        (obj.staticProperties?.uiSlots as
+          | Record<string, AgentUISlotManifest>
+          | undefined) ?? {};
 
       // Derive permissions
       const permissions: AgentPermission[] = [];
@@ -2435,11 +2496,14 @@ ${fields}
 
       // Capture adminRoutes from static property (same pattern as uiSlots)
       const adminRoutes: AgentAdminRouteManifest[] =
-        obj.staticProperties?.adminRoutes ?? [];
+        (obj.staticProperties?.adminRoutes as
+          | AgentAdminRouteManifest[]
+          | undefined) ?? [];
 
       // Capture signalSubscriptions from static property
       const signalSubscriptions: string[] =
-        obj.staticProperties?.signalSubscriptions ?? [];
+        (obj.staticProperties?.signalSubscriptions as string[] | undefined) ??
+        [];
 
       const agentManifest: AgentManifest = {
         name: obj.className,
@@ -2492,7 +2556,7 @@ ${fields}
   /**
    * Check if an export value has a svelte condition (indicating a component export)
    */
-  private hasSvelteExport(exportValue: any): boolean {
+  private hasSvelteExport(exportValue: unknown): boolean {
     if (!exportValue || typeof exportValue !== 'object') return false;
 
     // Check for { svelte: ... } condition
@@ -2537,7 +2601,7 @@ export function generateManifest(
   options?: {
     packageName?: string;
     packageVersion?: string;
-    packageJson?: any;
+    packageJson?: PackageJsonLike;
     smrtDependencies?: string[];
     includeVisibility?: SmrtVisibility[];
   },

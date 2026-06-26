@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import type {
   FieldDefinition,
+  FieldMeta,
   ManifestColumnDefinition,
   ManifestIndexDefinition,
   ManifestSchema,
@@ -29,13 +30,37 @@ import type {
   TriggerDefinition,
 } from './types.js';
 
+/**
+ * Structural shape of a field as read from either the build-time manifest
+ * (`FieldDefinition`) or the runtime ObjectRegistry (`getAllFields()` returns
+ * `Map<string, any>` upstream). The schema generator consumes both through a
+ * single set of property reads, so this interface captures every field key the
+ * generator touches without coupling to either source's exact type.
+ *
+ * `_meta` carries the structured field-helper metadata (`FieldMeta`); a few
+ * legacy fields (`indexed`, `idType`, `__tenancy`) may also appear at the top
+ * level depending on the source, so they are declared here too.
+ */
+interface RegistryField {
+  type?: FieldDefinition['type'];
+  related?: string;
+  required?: boolean;
+  default?: unknown;
+  description?: string;
+  transient?: boolean;
+  indexed?: boolean;
+  idType?: 'uuid' | 'text';
+  __tenancy?: FieldMeta['__tenancy'];
+  _meta?: FieldMeta;
+}
+
 type SchemaGeneratorConfig = {
   conflictColumns?: string[];
   idType?: 'uuid' | 'text';
   registry?: {
     getConfig?(className: string): { idType?: 'uuid' | 'text' };
     getDescendants(baseClassName: string): string[];
-    getAllFields(className: string): Promise<Map<string, any>>;
+    getAllFields(className: string): Promise<Map<string, RegistryField>>;
     getSTIBase?(className: string): string | null;
   };
 };
@@ -99,7 +124,7 @@ export class SchemaGenerator {
     return config?.idType === 'text' ? 'TEXT' : 'UUID';
   }
 
-  private getRelationshipColumnType(field: any): SQLDataType {
+  private getRelationshipColumnType(field: RegistryField): SQLDataType {
     if (field?._meta?.sqlType) {
       return String(field._meta.sqlType).toUpperCase() as SQLDataType;
     }
@@ -115,7 +140,7 @@ export class SchemaGenerator {
   }
 
   private getReferenceKind(
-    field: any,
+    field: RegistryField,
   ): ColumnDefinition['referenceKind'] | undefined {
     if (
       field?.__tenancy?.isTenantIdField ||
@@ -135,7 +160,10 @@ export class SchemaGenerator {
     return undefined;
   }
 
-  private shouldEmitDefault(field: any, defaultValue: unknown): boolean {
+  private shouldEmitDefault(
+    field: RegistryField,
+    defaultValue: unknown,
+  ): boolean {
     return !(
       this.getReferenceKind(field) === 'tenantId' &&
       this.getRelationshipColumnType(field) === 'UUID' &&
@@ -173,7 +201,7 @@ export class SchemaGenerator {
 
   private reconcileRegistryForeignKeyColumnTypes(
     columns: Record<string, ColumnDefinition>,
-    fields: Map<string, any>,
+    fields: Map<string, RegistryField>,
     registry: SchemaGeneratorConfig['registry'] | undefined,
   ): void {
     if (!registry?.getConfig) {
@@ -469,7 +497,7 @@ export class SchemaGenerator {
   generateSchemaFromRegistry(
     className: string,
     tableName: string,
-    fields: Map<string, any>,
+    fields: Map<string, RegistryField>,
     config?: SchemaGeneratorConfig,
   ): SchemaDefinition {
     const columns: Record<string, ColumnDefinition> = {};
@@ -600,7 +628,7 @@ export class SchemaGenerator {
       if (field.type === 'foreignKey') {
         // Type cast to access relationship-specific properties
         const relatedName = field.related; // Top-level property
-        const onDeleteAction = (field._meta as any)?.onDelete;
+        const onDeleteAction = field._meta?.onDelete;
 
         if (relatedName) {
           columnDef.foreignKey = {
@@ -615,8 +643,7 @@ export class SchemaGenerator {
       // Track opt-in column indexes for regular (non-FK, non-unique) fields.
       // FK columns already get auto-indexed below; unique columns produce
       // their own unique index; meta fields go through the jsonPath path.
-      const isIndexed =
-        field._meta?.indexed === true || (field as any).indexed === true;
+      const isIndexed = field._meta?.indexed === true || field.indexed === true;
       if (
         isIndexed &&
         !columnDef.foreignKey &&
@@ -760,7 +787,7 @@ export class SchemaGenerator {
   async generateSTISchemaFromRegistry(
     baseClassName: string,
     tableName: string,
-    _fields: Map<string, any>,
+    _fields: Map<string, RegistryField>,
     config?: SchemaGeneratorConfig,
   ): Promise<SchemaDefinition> {
     const ObjectRegistry =
@@ -820,7 +847,8 @@ export class SchemaGenerator {
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
-      const classFields = await ObjectRegistry.getAllFields(className);
+      const classFields: Map<string, RegistryField> =
+        await ObjectRegistry.getAllFields(className);
       fkColumnsByClass.set(className, new Set());
 
       for (const [fieldName, field] of classFields.entries()) {
@@ -910,7 +938,7 @@ export class SchemaGenerator {
         // Handle foreign keys
         if (field.type === 'foreignKey') {
           const relatedName = field.related; // Top-level property
-          const onDeleteAction = (field._meta as any)?.onDelete;
+          const onDeleteAction = field._meta?.onDelete;
 
           if (relatedName) {
             columnDef.foreignKey = {
@@ -927,7 +955,7 @@ export class SchemaGenerator {
 
         // Track opt-in column indexes for regular STI columns
         const isIndexed =
-          field._meta?.indexed === true || (field as any).indexed === true;
+          field._meta?.indexed === true || field.indexed === true;
         if (isIndexed && !columnDef.foreignKey) {
           indexedStiColumns.add(columnName);
         }
@@ -1130,11 +1158,13 @@ export class SchemaGenerator {
           continue;
         }
 
-        // Capture indexed meta fields before the skip-meta branch below
+        // Capture indexed meta fields before the skip-meta branch below.
+        // `indexed` is normally carried in `_meta`, but tolerate a legacy
+        // top-level flag too — RegistryField models both placements.
+        const indexedField: RegistryField = field;
         if (
           field.type === 'meta' &&
-          ((field as any).indexed === true ||
-            (field as any)._meta?.indexed === true)
+          (indexedField.indexed === true || field._meta?.indexed === true)
         ) {
           indexedMetaFields.add(fieldName);
         }
@@ -1193,8 +1223,7 @@ export class SchemaGenerator {
 
         // Track opt-in column indexes for regular STI columns
         const isIndexed =
-          (field as any).indexed === true ||
-          (field as any)._meta?.indexed === true;
+          indexedField.indexed === true || field._meta?.indexed === true;
         if (isIndexed && field.type !== 'foreignKey') {
           indexedStiColumns.add(columnName);
         }
@@ -1575,7 +1604,7 @@ export class SchemaGenerator {
    * @param type - Column SQL type
    * @returns Formatted SQL default value expression
    */
-  private formatDefaultValue(value: any, type: SQLDataType): string {
+  private formatDefaultValue(value: unknown, type: SQLDataType): string {
     // Delegate to the shared, injection-safe formatter so all DDL paths
     // converge on one set of rules (allowlisted keyword/function defaults
     // instead of "contains `(`", type-driven quoting, no string-"null" fold).
