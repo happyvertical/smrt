@@ -195,24 +195,28 @@ export async function discoverInstalledTemplates(): Promise<
 /**
  * Validate template configuration has required fields
  */
-function validateTemplateConfig(config: any, source: string): void {
+function validateTemplateConfig(config: unknown, source: string): void {
+  const record =
+    config && typeof config === 'object'
+      ? (config as Record<string, unknown>)
+      : {};
   const required = ['name', 'description', 'dependencies'];
 
   for (const field of required) {
-    if (!config[field]) {
+    if (!record[field]) {
       throw new Error(
         `Invalid template config at ${source}: missing required field '${field}'`,
       );
     }
   }
 
-  if (typeof config.dependencies !== 'object') {
+  if (typeof record.dependencies !== 'object') {
     throw new Error(
       `Invalid template config at ${source}: 'dependencies' must be an object`,
     );
   }
 
-  if (config.devDependencies && typeof config.devDependencies !== 'object') {
+  if (record.devDependencies && typeof record.devDependencies !== 'object') {
     throw new Error(
       `Invalid template config at ${source}: 'devDependencies' must be an object`,
     );

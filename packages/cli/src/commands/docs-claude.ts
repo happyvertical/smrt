@@ -41,6 +41,15 @@ interface DocsCommandOptions {
   deprecated?: boolean;
 }
 
+/**
+ * Parsed option bag for the docs:agents / docs:claude handler. The CLI parser
+ * produces `Record<string, unknown>`; this narrows the flags the command reads.
+ */
+interface DocsHandlerOptions {
+  output?: string;
+  'dry-run'?: boolean;
+}
+
 function createDocsCommand(config: DocsCommandOptions): CLICommand {
   return {
     name: config.commandName,
@@ -61,7 +70,7 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         short: 'd',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: DocsHandlerOptions) => {
       try {
         if (config.deprecated) {
           console.warn(

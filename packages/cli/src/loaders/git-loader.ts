@@ -28,6 +28,18 @@ import type { TemplateConfig } from './template-loader.js';
 
 const logger = createLogger({ level: 'info' });
 
+/**
+ * A template config loaded from a git repository, annotated with the internal
+ * temp-directory bookkeeping fields used for overlay and cleanup. These fields
+ * are private to the git loader and are not part of the public TemplateConfig.
+ */
+interface GitTemplateConfig extends TemplateConfig {
+  /** Repo-root temp dir to remove after the template is consumed. */
+  __tempDir?: string;
+  /** Subdir-resolved template root used as the overlay source. */
+  __templateRoot?: string;
+}
+
 // Track temp directories for cleanup on process exit
 const tempDirectories = new Set<string>();
 let cleanupHandlersRegistered = false;
@@ -366,7 +378,7 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
     try {
       const configUrl = pathToFileURL(configPath).href;
       const module = await import(configUrl);
-      const config = module.default || module;
+      const config: GitTemplateConfig = module.default || module;
 
       // Validate
       validateTemplateConfig(config, configPath);
@@ -375,8 +387,8 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
       // (`templateDir`) for overlay. For non-subdir templates these are equal;
       // for `github:user/repo/subdir` the overlay must read from the subdir,
       // not the repo root (regression #1385).
-      (config as any).__tempDir = tempDir;
-      (config as any).__templateRoot = templateDir;
+      config.__tempDir = tempDir;
+      config.__templateRoot = templateDir;
 
       return config;
     } catch (_error) {
@@ -385,11 +397,11 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
         const tsConfigPath = join(templateDir, 'template.config.ts');
         const configUrl = pathToFileURL(tsConfigPath).href;
         const module = await import(configUrl);
-        const config = module.default || module;
+        const config: GitTemplateConfig = module.default || module;
 
         validateTemplateConfig(config, tsConfigPath);
-        (config as any).__tempDir = tempDir;
-        (config as any).__templateRoot = templateDir;
+        config.__tempDir = tempDir;
+        config.__templateRoot = templateDir;
 
         return config;
       } catch {
@@ -413,8 +425,8 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
  * Falls back to `__tempDir` for configs loaded before the field existed.
  */
 export function getGitTemplateDir(config: TemplateConfig): string {
-  const templateRoot =
-    (config as any).__templateRoot ?? (config as any).__tempDir;
+  const gitConfig = config as GitTemplateConfig;
+  const templateRoot = gitConfig.__templateRoot ?? gitConfig.__tempDir;
   if (!templateRoot) {
     throw new Error('Template was not loaded from git repository');
   }
@@ -427,7 +439,7 @@ export function getGitTemplateDir(config: TemplateConfig): string {
 export async function cleanupGitTemplate(
   config: TemplateConfig,
 ): Promise<void> {
-  const tempDir = (config as any).__tempDir;
+  const tempDir = (config as GitTemplateConfig).__tempDir;
   if (tempDir) {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -436,24 +448,28 @@ export async function cleanupGitTemplate(
 /**
  * Validate template configuration has required fields
  */
-function validateTemplateConfig(config: any, source: string): void {
+function validateTemplateConfig(config: unknown, source: string): void {
+  const record =
+    config && typeof config === 'object'
+      ? (config as Record<string, unknown>)
+      : {};
   const required = ['name', 'description', 'dependencies'];
 
   for (const field of required) {
-    if (!config[field]) {
+    if (!record[field]) {
       throw new Error(
         `Invalid template config at ${source}: missing required field '${field}'`,
       );
     }
   }
 
-  if (typeof config.dependencies !== 'object') {
+  if (typeof record.dependencies !== 'object') {
     throw new Error(
       `Invalid template config at ${source}: 'dependencies' must be an object`,
     );
   }
 
-  if (config.devDependencies && typeof config.devDependencies !== 'object') {
+  if (record.devDependencies && typeof record.devDependencies !== 'object') {
     throw new Error(
       `Invalid template config at ${source}: 'devDependencies' must be an object`,
     );

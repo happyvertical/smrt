@@ -8,8 +8,65 @@
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators';
 import { generateDeclarationsFromCLI } from '@happyvertical/smrt-core/prebuild';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '@happyvertical/smrt-core/scanner';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad, loadManifestFile } from '../discovery/index.js';
+
+/**
+ * Parsed option bags for the code-generation command handlers. The CLI parser
+ * yields `Record<string, unknown>`; these interfaces narrow the options each
+ * command reads without resorting to `any`.
+ */
+interface GenerateTypesOptions {
+  'output-dir'?: string;
+}
+
+interface GenerateMcpOptions {
+  'output-path'?: string;
+  name?: string;
+  version?: string;
+  modular?: boolean;
+  debug?: boolean;
+  'no-config'?: boolean;
+  'no-readme'?: boolean;
+}
+
+interface GenerateRoutesOptions {
+  'routes-dir'?: string;
+  'objects-dir'?: string;
+  'config-path'?: string;
+  'config-file'?: string;
+  'kebab-routes'?: boolean;
+}
+
+interface GenerateRegisterOptions {
+  'output-path'?: string;
+}
+
+/**
+ * Minimal structural view of a manifest object definition as read by the
+ * generators. Manifest entries are loosely-typed JSON, so unknown-valued
+ * fields are narrowed at each use site.
+ */
+interface ManifestObjectDef {
+  name?: string;
+  packageName?: string;
+  qualifiedName?: string;
+  className?: string;
+  exportName?: string;
+  collectionExportName?: string;
+  collection?: string;
+  importPath?: string;
+  hasCollection?: boolean;
+  visibility?: string;
+  extends?: string;
+  extendsQualified?: string;
+  extendsTypeArg?: unknown;
+  [key: string]: unknown;
+}
 
 /**
  * Code generation commands for CLI
@@ -26,7 +83,7 @@ export const generateCommands: Record<string, CLICommand> = {
         description: 'Output directory for generated types',
       },
     },
-    handler: async (args: string[], options: any) => {
+    handler: async (args: string[], options: GenerateTypesOptions) => {
       const manifestPath = args[0];
       if (!manifestPath) {
         throw new Error(
@@ -89,7 +146,7 @@ export const generateCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: GenerateMcpOptions) => {
       try {
         // Get registered SMRT objects
         const registeredClasses = ObjectRegistry.getAllClasses();
@@ -199,7 +256,7 @@ export const generateCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: GenerateRoutesOptions) => {
       console.log('\n🔍 Discovering SMRT objects...\n');
 
       try {
@@ -221,7 +278,7 @@ export const generateCommands: Record<string, CLICommand> = {
 
         // Load ALL discovered manifests and merge their objects
         console.log('📦 Loading manifests:');
-        const mergedObjects: Record<string, any> = {};
+        const mergedObjects: Record<string, ManifestObjectDef> = {};
 
         for (const manifestInfo of discovered) {
           const manifestData = await loadManifestFile(manifestInfo.path);
@@ -232,7 +289,7 @@ export const generateCommands: Record<string, CLICommand> = {
 
             // Merge objects, adding packageName if from external package
             for (const [name, def] of Object.entries(manifestData.objects)) {
-              const defObj = def as Record<string, unknown>;
+              const defObj = def as ManifestObjectDef;
               mergedObjects[name] = {
                 ...defObj,
                 // Ensure packageName is set for external packages
@@ -248,11 +305,17 @@ export const generateCommands: Record<string, CLICommand> = {
           process.exit(1);
         }
 
-        // Create merged manifest
-        const manifest = {
+        // Create merged manifest. The merged entries are loosely-typed manifest
+        // objects assembled from multiple sources; the route generator reads
+        // them structurally, so cast to the full manifest definition shape at
+        // this boundary.
+        const manifest: SmartObjectManifest = {
           version: '1.0.0',
           timestamp: Date.now(),
-          objects: mergedObjects,
+          objects: mergedObjects as unknown as Record<
+            string,
+            SmartObjectDefinition
+          >,
         };
 
         // Import the SvelteKit route generator
@@ -294,7 +357,7 @@ export const generateCommands: Record<string, CLICommand> = {
         console.log('📁 Generated structure:');
         console.log(`   ${routesDir}/`);
         for (const objectDef of Object.values(manifest.objects)) {
-          const collection = (objectDef as any).collection;
+          const collection = objectDef.collection;
           console.log(`     ${collection}/+server.ts     (list, create)`);
           console.log(
             `     ${collection}/[id]/+server.ts (get, update, delete)`,
@@ -329,7 +392,7 @@ export const generateCommands: Record<string, CLICommand> = {
         short: 'o',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: GenerateRegisterOptions) => {
       console.log('\n🔍 Discovering external SMRT packages...\n');
 
       try {
@@ -376,10 +439,13 @@ export const generateCommands: Record<string, CLICommand> = {
           const packageName = manifestInfo.packageName as string;
           let packageImportedEntryCount = 0;
           let packageRegisteredObjectCount = 0;
-          const manifestObjects = manifestData.objects as Record<string, any>;
-          const manifestObjectLookup = new Map<string, any>();
+          const manifestObjects = manifestData.objects as Record<
+            string,
+            ManifestObjectDef
+          >;
+          const manifestObjectLookup = new Map<string, ManifestObjectDef>();
           for (const [key, objectDef] of Object.entries(manifestObjects)) {
-            const candidate = objectDef as any;
+            const candidate = objectDef;
             const lookupKeys = [
               key,
               key.includes(':') ? key.split(':').pop() : undefined,
@@ -397,7 +463,7 @@ export const generateCommands: Record<string, CLICommand> = {
 
           const collectionClassMemo = new WeakMap<object, boolean>();
           const isCollectionClass = (
-            def: any,
+            def: ManifestObjectDef,
             seen = new Set<string>(),
           ): boolean => {
             if (!def || typeof def !== 'object') {
@@ -436,7 +502,7 @@ export const generateCommands: Record<string, CLICommand> = {
           for (const [objectName, objectDef] of Object.entries(
             manifestObjects,
           )) {
-            const def = objectDef as any;
+            const def = objectDef;
 
             // Skip test-visibility objects (test fixtures, perf tests, etc.)
             if (def.visibility === 'test') continue;

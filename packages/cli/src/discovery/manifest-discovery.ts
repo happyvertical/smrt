@@ -25,6 +25,20 @@ export interface DiscoveredManifest {
 }
 
 /**
+ * Loosely-typed view of a manifest file as loaded from disk. The file is
+ * untrusted JSON (or a re-exported module), so `objects` and other members are
+ * narrowed/cast by callers. The index signature keeps arbitrary fields readable
+ * without falling back to `any`.
+ */
+export interface LoadedManifestFile {
+  objects?: Record<string, unknown>;
+  packageName?: string;
+  version?: string;
+  smrtDependencies?: unknown;
+  [key: string]: unknown;
+}
+
+/**
  * Tracks all versions found for each @happyvertical/smrt-* package.
  * Used to detect version conflicts that could cause runtime issues.
  */
@@ -266,7 +280,9 @@ function checkSmrtVersionConflicts(): void {
 /**
  * Load a manifest file (handles both .js and .json)
  */
-export async function loadManifestFile(manifestPath: string): Promise<any> {
+export async function loadManifestFile(
+  manifestPath: string,
+): Promise<LoadedManifestFile> {
   if (manifestPath.endsWith('.js')) {
     // Dynamic import for .js files
     const manifestUrl = pathToFileURL(manifestPath).href;

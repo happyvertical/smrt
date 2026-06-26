@@ -7,8 +7,22 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
+
+/**
+ * Parsed option bag for the config:export handler. The CLI parser produces
+ * `Record<string, unknown>`; this narrows the flags the command reads.
+ */
+interface ConfigExportOptions {
+  agent?: string;
+  output?: string;
+  format?: string;
+  'include-secrets'?: boolean;
+  slot?: string;
+  json?: boolean;
+}
 
 export const configExportCommand: CLICommand = {
   name: 'config:export',
@@ -50,8 +64,8 @@ export const configExportCommand: CLICommand = {
       short: 'j',
     },
   },
-  handler: async (_args: string[], options: any) => {
-    let db: any;
+  handler: async (_args: string[], options: ConfigExportOptions) => {
+    let db: DatabaseInterface | undefined;
 
     try {
       // 0. Validate required agent option
@@ -98,7 +112,7 @@ export const configExportCommand: CLICommand = {
 
       // 5. Query configs for the specified agent
       const agentId = options.agent;
-      const whereClause: Record<string, any> = { agentId };
+      const whereClause: Record<string, string | undefined> = { agentId };
 
       if (options.slot) {
         whereClause.slotId = options.slot;
@@ -119,7 +133,7 @@ export const configExportCommand: CLICommand = {
       }
 
       // 6. Build export object
-      const exportData: Record<string, any> = {};
+      const exportData: Record<string, unknown> = {};
 
       for (const cfg of configs) {
         exportData[cfg.slotId] = cfg.configData;
@@ -148,8 +162,12 @@ export const configExportCommand: CLICommand = {
         includeSecrets,
       });
 
-      // Write to file
-      const outputPath = path.resolve(process.cwd(), options.output);
+      // Write to file. The --output flag defaults to 'smrt.exported.json'
+      // (see option config); mirror that here for the typed fallback.
+      const outputPath = path.resolve(
+        process.cwd(),
+        options.output ?? 'smrt.exported.json',
+      );
       const outputDir = path.dirname(outputPath);
 
       // Ensure output directory exists

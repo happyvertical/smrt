@@ -6,18 +6,30 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
-import type { SmartObjectDefinition } from '@happyvertical/smrt-core/scanner';
+import type { SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '@happyvertical/smrt-core/scanner';
 
+/**
+ * Dynamically-imported SMRT class references. The loader treats these as opaque
+ * constructor handles (registered/instantiated by the registry), so they are
+ * typed as the framework base-class constructors rather than `any`.
+ */
 export interface LoadedClasses {
-  ObjectClass: any;
-  CollectionClass?: any;
+  ObjectClass: typeof SmrtObject;
+  CollectionClass?: typeof SmrtCollection;
 }
+
+/** Namespace object produced by a dynamic `import()` of a package module. */
+type ModuleNamespace = Record<string, unknown>;
 
 /**
  * Dynamically load SMRT classes from external packages
  */
 export class DynamicClassLoader {
-  private loadedModules = new Map<string, any>();
+  private loadedModules = new Map<string, ModuleNamespace>();
   private classCache = new Map<string, LoadedClasses>();
   private verbose: boolean;
   // verbose traces are debug-level; the logger level follows the flag so they
@@ -56,19 +68,23 @@ export class DynamicClassLoader {
       // Dynamic import
       let module = this.loadedModules.get(importPath);
       if (!module) {
-        module = await import(importPath);
-        this.loadedModules.set(importPath, module);
+        const imported: ModuleNamespace = await import(importPath);
+        module = imported;
+        this.loadedModules.set(importPath, imported);
 
         if (this.verbose) {
           this.logger.debug(`[ClassLoader] Imported module ${importPath}`);
         }
       }
 
-      // Extract classes
-      const ObjectClass =
-        module[objectDef.exportName || objectDef.className] || module.default;
+      // Extract classes. Module exports are loosely-typed at the dynamic-import
+      // boundary; narrow them to the framework base-class constructor handles.
+      const ObjectClass = (module[objectDef.exportName || objectDef.className] ||
+        module.default) as typeof SmrtObject | undefined;
       const CollectionClass = objectDef.collectionExportName
-        ? module[objectDef.collectionExportName]
+        ? (module[objectDef.collectionExportName] as
+            | typeof SmrtCollection
+            | undefined)
         : undefined;
 
       if (!ObjectClass) {
@@ -77,7 +93,7 @@ export class DynamicClassLoader {
         );
       }
 
-      const result = { ObjectClass, CollectionClass };
+      const result: LoadedClasses = { ObjectClass, CollectionClass };
       this.classCache.set(cacheKey, result);
 
       if (this.verbose) {
@@ -119,15 +135,13 @@ export class DynamicClassLoader {
    * Load all classes from manifest
    */
   async loadAllFromManifest(
-    manifest: any,
+    manifest: SmartObjectManifest,
   ): Promise<Map<string, LoadedClasses>> {
     const loaded = new Map<string, LoadedClasses>();
 
     for (const [objectName, objectDef] of Object.entries(manifest.objects)) {
       try {
-        const classes = await this.loadClass(
-          objectDef as SmartObjectDefinition,
-        );
+        const classes = await this.loadClass(objectDef);
         loaded.set(objectName, classes);
       } catch (error) {
         if (this.verbose) {
