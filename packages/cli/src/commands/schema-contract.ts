@@ -1,11 +1,38 @@
 import { resolve } from 'node:path';
 import type { SchemaContractConfig } from '@happyvertical/smrt-config';
+import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import glob from 'fast-glob';
 import type { DiscoveredManifest } from '../discovery/manifest-discovery.js';
 
 export type { SchemaContractConfig };
+
+/**
+ * The subset of a registered SMRT class entry this module reads.
+ *
+ * `ObjectRegistry.getClass()` returns the full `RegisteredClass`, which is not
+ * exported from the package entrypoint; we only need its name, cached schema,
+ * and qualified name here.
+ */
+interface RegistryClassEntry {
+  name: string;
+  qualifiedName?: string;
+  schema?: SchemaDefinition;
+}
+
+/**
+ * Loose live-table-schema shape returned by `db.getTableSchema()`.
+ *
+ * Adapters surface columns as a keyed record, but indexes are tolerated in
+ * either the array form (`IndexDefinition[]`) or an object-map form keyed by
+ * index name, so both are modelled here.
+ */
+interface LiveTableSchema {
+  columns?: Record<string, unknown>;
+  indexes?: Array<{ name?: string }> | Record<string, unknown>;
+}
 
 export interface ContractFailure {
   code:
@@ -113,7 +140,7 @@ function uniqueSorted(values: Iterable<string | undefined>): string[] {
   ).sort();
 }
 
-function resolveClass(ref: string): any {
+function resolveClass(ref: string): RegistryClassEntry | undefined {
   if (ref.includes(':')) {
     return (
       ObjectRegistry.getClassByQualifiedName(ref) ??
@@ -139,7 +166,9 @@ function parseRequiredField(ref: string): {
   };
 }
 
-function inferTableName(entry: any): string | undefined {
+function inferTableName(
+  entry: RegistryClassEntry | undefined,
+): string | undefined {
   const className = entry?.name;
   if (!className) return entry?.schema?.tableName;
 
@@ -153,7 +182,10 @@ function inferTableName(entry: any): string | undefined {
   return ObjectRegistry.getTableName(className) ?? entry?.schema?.tableName;
 }
 
-async function checkTable(db: any, tableName: string): Promise<any | null> {
+async function checkTable(
+  db: DatabaseInterface,
+  tableName: string,
+): Promise<LiveTableSchema | null> {
   if (typeof db?.getTableSchema !== 'function') {
     return null;
   }
@@ -161,23 +193,29 @@ async function checkTable(db: any, tableName: string): Promise<any | null> {
   return (await db.getTableSchema(tableName)) ?? null;
 }
 
-function schemaHasColumn(schema: any, columnName: string): boolean {
+function schemaHasColumn(
+  schema: LiveTableSchema | null,
+  columnName: string,
+): boolean {
   return Boolean(schema?.columns?.[columnName]);
 }
 
-function schemaHasIndex(schema: any, indexName: string): boolean {
+function schemaHasIndex(
+  schema: LiveTableSchema | null,
+  indexName: string,
+): boolean {
   if (Array.isArray(schema?.indexes)) {
-    return schema.indexes.some((index: any) => index?.name === indexName);
+    return schema.indexes.some((index) => index?.name === indexName);
   }
 
   return Boolean(schema?.indexes?.[indexName]);
 }
 
 async function checkDatabaseShape(
-  db: any,
+  db: DatabaseInterface,
   report: SchemaContractReport,
 ): Promise<void> {
-  const tableCache = new Map<string, any | null>();
+  const tableCache = new Map<string, LiveTableSchema | null>();
   const getTable = async (tableName: string) => {
     if (!tableCache.has(tableName)) {
       tableCache.set(tableName, await checkTable(db, tableName));
@@ -274,7 +312,7 @@ export async function assertNoUnsupportedMigrationFiles(
 export async function evaluateSchemaContract(options: {
   discovered: DiscoveredManifest[];
   schemaContract?: SchemaContractConfig;
-  db?: any;
+  db?: DatabaseInterface;
 }): Promise<SchemaContractReport> {
   const { discovered, schemaContract = {}, db } = options;
   const projectManifests = discovered.filter(isSchemaProjectManifest);

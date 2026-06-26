@@ -5,12 +5,27 @@
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
 
 const UNSUPPORTED_GENERATE_MESSAGE =
   'File-backed SMRT migrations are not supported. SMRT schema migrations are manifest-driven; update @smrt object definitions and run smrt db:migrate.';
+
+/** Parsed CLI options for the `db:diff` command. */
+interface DbDiffOptions {
+  // Unsupported file-backed-migration options, retained so they can be
+  // detected and rejected.
+  generate?: boolean;
+  name?: string;
+  format?: string;
+  'with-down'?: boolean;
+  output?: string;
+  json?: boolean;
+  verbose?: boolean;
+  'drop-indexes'?: boolean;
+}
 
 export const dbDiffCommand: CLICommand = {
   name: 'db:diff',
@@ -63,17 +78,13 @@ export const dbDiffCommand: CLICommand = {
       default: false,
     },
   },
-  handler: async (_args: string[], options: any) => {
-    let db: any;
+  handler: async (_args: string[], options: DbDiffOptions) => {
+    let db: DatabaseInterface | undefined;
 
     try {
-      const unsupportedFileOptions = [
-        'generate',
-        'name',
-        'format',
-        'with-down',
-        'output',
-      ].filter(
+      const unsupportedFileOptions = (
+        ['generate', 'name', 'format', 'with-down', 'output'] as const
+      ).filter(
         (option) => options[option] !== undefined && options[option] !== false,
       );
 
@@ -179,7 +190,7 @@ export const dbDiffCommand: CLICommand = {
           JSON.stringify(
             {
               hasChanges: diff.has_changes,
-              addedTables: diff.added_tables.map((t: any) => t.tableName),
+              addedTables: diff.added_tables.map((t) => t.tableName),
               droppedTables: diff.dropped_tables,
               changes: diff.changes,
             },
@@ -206,27 +217,21 @@ export const dbDiffCommand: CLICommand = {
         console.log();
       }
 
-      const columnChanges = diff.changes.filter(
-        (c: any) => c.type === 'add_column',
-      );
-      const indexChanges = diff.changes.filter(
-        (c: any) => c.type === 'add_index',
-      );
-      const indexDrops = diff.changes.filter(
-        (c: any) => c.type === 'drop_index',
-      );
+      const columnChanges = diff.changes.filter((c) => c.type === 'add_column');
+      const indexChanges = diff.changes.filter((c) => c.type === 'add_index');
+      const indexDrops = diff.changes.filter((c) => c.type === 'drop_index');
       const typeUpgrades = diff.changes.filter(
-        (c: any) => c.type === 'type_upgrade',
+        (c) => c.type === 'type_upgrade',
       );
       const typeMismatches = diff.changes.filter(
-        (c: any) => c.type === 'type_mismatch',
+        (c) => c.type === 'type_mismatch',
       );
 
       // Identify shape-drift recreate pairs (drop+add on same name) so the
       // operator sees them as a single repair action rather than two
       // disconnected events. Issue #1165.
       const recreateNames = new Set<string>();
-      const dropNames = new Set(indexDrops.map((c: any) => c.name));
+      const dropNames = new Set(indexDrops.map((c) => c.name));
       for (const add of indexChanges) {
         if (add.name && dropNames.has(add.name)) {
           recreateNames.add(add.name);
@@ -244,7 +249,7 @@ export const dbDiffCommand: CLICommand = {
       if (recreateNames.size > 0) {
         console.log(`  ♻️  Indexes to recreate (${recreateNames.size}):`);
         for (const name of recreateNames) {
-          const add = indexChanges.find((c: any) => c.name === name);
+          const add = indexChanges.find((c) => c.name === name);
           const cols = add?.index?.columns?.join(', ') ?? '?';
           const unique = add?.index?.unique ? 'UNIQUE ' : '';
           console.log(`     ↻ ${name} → ${unique}(${cols})`);
@@ -255,7 +260,7 @@ export const dbDiffCommand: CLICommand = {
       }
 
       const orphanDrops = indexDrops.filter(
-        (c: any) => !recreateNames.has(c.name),
+        (c) => !(c.name && recreateNames.has(c.name)),
       );
       if (orphanDrops.length > 0) {
         console.log(`  🗑️  Indexes to drop (${orphanDrops.length}):`);
@@ -266,7 +271,7 @@ export const dbDiffCommand: CLICommand = {
       }
 
       const newIndexes = indexChanges.filter(
-        (c: any) => !recreateNames.has(c.name),
+        (c) => !(c.name && recreateNames.has(c.name)),
       );
       if (newIndexes.length > 0) {
         console.log(`  🗂️  New indexes (${newIndexes.length}):`);

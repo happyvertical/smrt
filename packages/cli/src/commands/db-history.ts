@@ -6,6 +6,7 @@
 
 import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { MigrationStatus } from '@happyvertical/smrt-core/migrations';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
@@ -38,6 +39,16 @@ type AnnotatedHistoryEntry = {
   classification: FailedMigrationClassification | null;
   recommendation: string | null;
 };
+
+/** Parsed CLI options for the `db:history` command. */
+interface DbHistoryOptions {
+  limit?: number;
+  since?: string;
+  // Raw `--status` flag value; narrowed to MigrationStatus at use site.
+  status?: string;
+  json?: boolean;
+  verbose?: boolean;
+}
 
 function getLegacyFailedMigrationClassification(
   assessment: FailedMigrationAssessment,
@@ -87,8 +98,8 @@ export const dbHistoryCommand: CLICommand = {
       short: 'v',
     },
   },
-  handler: async (_args: string[], options: any) => {
-    let db: any;
+  handler: async (_args: string[], options: DbHistoryOptions) => {
+    let db: DatabaseInterface | undefined;
 
     try {
       // 1. Load CLI config

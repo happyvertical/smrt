@@ -66,6 +66,7 @@
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
@@ -73,6 +74,15 @@ import {
   formatDatabaseDisplayUrl,
   quoteIdentifier,
 } from './db-command-utils.js';
+
+/** Parsed CLI options for the `db:migrate-uuid` command. */
+interface DbMigrateUuidOptions {
+  rename?: string;
+  table?: string;
+  'skip-convert'?: boolean;
+  'dry-run'?: boolean;
+  verbose?: boolean;
+}
 
 const UUID_RE =
   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
@@ -258,9 +268,9 @@ export const dbMigrateUuidCommand: CLICommand = {
       short: 'v',
     },
   },
-  handler: async (_args: string[], options: any) => {
+  handler: async (_args: string[], options: DbMigrateUuidOptions) => {
     const dryRun = Boolean(options['dry-run']);
-    let db: any;
+    let db: DatabaseInterface | undefined;
 
     try {
       // 1. Load CLI config + validate DB.
@@ -374,7 +384,7 @@ export const dbMigrateUuidCommand: CLICommand = {
         );
 
         const liveColumns: LiveTextColumn[] = [];
-        for (const row of candidates as any[]) {
+        for (const row of candidates) {
           // Gate (b) data-shape: only count rows for columns we might convert.
           // For columns the schema does not declare UUID we skip the (possibly
           // expensive) full-column scan entirely — they can never convert.
@@ -391,7 +401,7 @@ export const dbMigrateUuidCommand: CLICommand = {
                 WHERE nullif(btrim(${c}), '') IS NOT NULL
                   AND btrim(${c}) !~* '${UUID_RE}'`,
             );
-            nonUuid = Number((rows as any[])[0]?.n ?? '0');
+            nonUuid = Number(rows[0]?.n ?? '0');
           }
           liveColumns.push({
             table: row.table_name,
@@ -407,7 +417,7 @@ export const dbMigrateUuidCommand: CLICommand = {
         );
 
         console.log(
-          `Found ${(candidates as any[]).length} TEXT id/FK column(s): ${convert.length} convertible, ${skipDirtyData.length + skipNotDeclared.length} skipped.`,
+          `Found ${candidates.length} TEXT id/FK column(s): ${convert.length} convertible, ${skipDirtyData.length + skipNotDeclared.length} skipped.`,
         );
         if (skipDirtyData.length > 0) {
           console.log(
@@ -511,7 +521,7 @@ function nullifEmpty(isPostgres: boolean, quotedCol: string): string {
  * too. A dry run executes nothing regardless.
  */
 async function applyRenameBackfills(
-  db: any,
+  db: DatabaseInterface,
   isPostgres: boolean,
   renameSpecs: RenameSpec[],
   dryRun: boolean,
@@ -629,7 +639,7 @@ async function loadDeclaredUuidColumns(): Promise<Set<string>> {
 }
 
 async function columnExists(
-  db: any,
+  db: DatabaseInterface,
   isPostgres: boolean,
   table: string,
   column: string,
@@ -640,21 +650,21 @@ async function columnExists(
         WHERE table_schema = 'public' AND table_name = '${table.replaceAll("'", "''")}'
           AND column_name = '${column.replaceAll("'", "''")}'`,
     );
-    return (rows as any[]).length > 0;
+    return rows.length > 0;
   }
   // SQLite / DuckDB: PRAGMA-style introspection.
   try {
     const { rows } = await db.query(
       `PRAGMA table_info(${quoteIdentifier(table)})`,
     );
-    return (rows as any[]).some((r) => r.name === column);
+    return rows.some((r) => r.name === column);
   } catch {
     return false;
   }
 }
 
 async function columnIsUuid(
-  db: any,
+  db: DatabaseInterface,
   table: string,
   column: string,
 ): Promise<boolean> {
@@ -663,5 +673,5 @@ async function columnIsUuid(
       WHERE table_schema = 'public' AND table_name = '${table.replaceAll("'", "''")}'
         AND column_name = '${column.replaceAll("'", "''")}'`,
   );
-  return (rows as any[])[0]?.data_type === 'uuid';
+  return rows[0]?.data_type === 'uuid';
 }
