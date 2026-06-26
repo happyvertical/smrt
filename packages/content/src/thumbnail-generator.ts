@@ -283,12 +283,18 @@ export class ThumbnailGenerator {
   private async generateStaticMap(
     options: StaticMapThumbnailOptions,
   ): Promise<Image> {
+    // Coordinates live in the loose `metadata` bag (typed `unknown` values);
+    // read them at a documented `string | number` boundary for arithmetic.
+    const coordinateMetadata = this.content.metadata as Record<
+      string,
+      string | number | null | undefined
+    >;
     const rawLatitude =
-      this.content.metadata?.latitude ?? this.content.metadata?.lat;
+      coordinateMetadata?.latitude ?? coordinateMetadata?.lat;
     const rawLongitude =
-      this.content.metadata?.longitude ??
-      this.content.metadata?.lng ??
-      this.content.metadata?.lon;
+      coordinateMetadata?.longitude ??
+      coordinateMetadata?.lng ??
+      coordinateMetadata?.lon;
 
     if (rawLatitude == null || rawLongitude == null) {
       throw new Error(
