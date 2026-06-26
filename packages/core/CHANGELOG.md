@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.36.3
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: graduate content off noExplicitAny (#1579) (#1659) (lint)
+  - @happyvertical/smrt-config@0.36.3
+  - @happyvertical/smrt-types@0.36.3
+  - @happyvertical/smrt-scanner@0.36.3
+
 ## 0.36.2
 
 ### Patch Changes
