@@ -19,7 +19,11 @@ export class SmrtClient {
   /**
    * Make an authenticated request
    */
-  async request(method: string, path: string, data?: any): Promise<any> {
+  async request(
+    method: string,
+    path: string,
+    data?: unknown,
+  ): Promise<unknown> {
     const url = `${this.options.baseUrl}${this.options.basePath}${path}`;
 
     const headers: Record<string, string> = {
@@ -79,7 +83,10 @@ export class SmrtClient {
   /**
    * GET request
    */
-  async get(path: string, params?: Record<string, any>): Promise<any> {
+  async get(
+    path: string,
+    params?: Record<string, unknown>,
+  ): Promise<unknown> {
     let url = path;
     if (params && Object.keys(params).length > 0) {
       const searchParams = new URLSearchParams();
@@ -97,28 +104,28 @@ export class SmrtClient {
   /**
    * POST request
    */
-  async post(path: string, data?: any): Promise<any> {
+  async post(path: string, data?: unknown): Promise<unknown> {
     return this.request('POST', path, data);
   }
 
   /**
    * PUT request
    */
-  async put(path: string, data?: any): Promise<any> {
+  async put(path: string, data?: unknown): Promise<unknown> {
     return this.request('PUT', path, data);
   }
 
   /**
    * PATCH request
    */
-  async patch(path: string, data?: any): Promise<any> {
+  async patch(path: string, data?: unknown): Promise<unknown> {
     return this.request('PATCH', path, data);
   }
 
   /**
    * DELETE request
    */
-  async delete(path: string): Promise<any> {
+  async delete(path: string): Promise<unknown> {
     return this.request('DELETE', path);
   }
 }
