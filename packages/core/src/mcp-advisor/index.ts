@@ -30,6 +30,19 @@ import { listRegisteredObjects } from './tools/list-registered-objects.js';
 import { previewApiEndpoints } from './tools/preview-api-endpoints.js';
 import { previewMcpTools } from './tools/preview-mcp-tools.js';
 import { validateSmrtObject } from './tools/validate-smrt-object.js';
+import type {
+  AddAiMethodsInput,
+  ConfigureDecoratorsInput,
+  GenerateCollectionInput,
+  GenerateFieldDefinitionsInput,
+  GenerateSmrtClassInput,
+  GetObjectConfigInput,
+  GetObjectSchemaInput,
+  ListRegisteredObjectsInput,
+  PreviewApiEndpointsInput,
+  PreviewMcpToolsInput,
+  ValidateSmrtObjectInput,
+} from './types.js';
 
 // Server configuration
 const SERVER_NAME = 'smrt-advisor';
@@ -375,30 +388,37 @@ export const TOOLS = [
  * Exported so the routing switch can be unit-tested in-process (the stdio
  * entrypoint guard below keeps importing this module side-effect free).
  */
-export async function handleToolCall(name: string, args: any): Promise<any> {
+export async function handleToolCall(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
   switch (name) {
     case 'generate-smrt-class':
-      return generateSmrtClass(args);
+      return generateSmrtClass(args as unknown as GenerateSmrtClassInput);
     case 'add-ai-methods':
-      return addAiMethods(args);
+      return addAiMethods(args as unknown as AddAiMethodsInput);
     case 'generate-field-definitions':
-      return generateFieldDefinitions(args);
+      return generateFieldDefinitions(
+        args as unknown as GenerateFieldDefinitionsInput,
+      );
     case 'generate-collection':
-      return generateCollection(args);
+      return generateCollection(args as unknown as GenerateCollectionInput);
     case 'configure-decorators':
-      return configureDecorators(args);
+      return configureDecorators(args as unknown as ConfigureDecoratorsInput);
     case 'validate-smrt-object':
-      return validateSmrtObject(args);
+      return validateSmrtObject(args as unknown as ValidateSmrtObjectInput);
     case 'preview-api-endpoints':
-      return previewApiEndpoints(args);
+      return previewApiEndpoints(args as unknown as PreviewApiEndpointsInput);
     case 'preview-mcp-tools':
-      return previewMcpTools(args);
+      return previewMcpTools(args as unknown as PreviewMcpToolsInput);
     case 'list-registered-objects':
-      return listRegisteredObjects(args);
+      return listRegisteredObjects(
+        args as unknown as ListRegisteredObjectsInput,
+      );
     case 'get-object-schema':
-      return getObjectSchema(args);
+      return getObjectSchema(args as unknown as GetObjectSchemaInput);
     case 'get-object-config':
-      return getObjectConfig(args);
+      return getObjectConfig(args as unknown as GetObjectConfigInput);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

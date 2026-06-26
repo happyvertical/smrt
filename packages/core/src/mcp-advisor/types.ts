@@ -9,7 +9,7 @@
  */
 export interface ToolResponse {
   success: boolean;
-  data?: any;
+  data?: unknown;
   error?: string;
   warnings?: string[];
 }
@@ -54,7 +54,7 @@ export interface GenerateFieldDefinitionsInput {
       | 'datetime'
       | 'json'
       | 'foreignKey';
-    _meta?: Record<string, any>;
+    _meta?: Record<string, unknown>;
   }>;
 }
 
@@ -161,7 +161,7 @@ export interface McpToolDefinition {
   description: string;
   inputSchema: {
     type: string;
-    properties: Record<string, any>;
+    properties: Record<string, unknown>;
     required?: string[];
   };
 }
@@ -201,9 +201,9 @@ export interface FieldDefinition {
   name: string;
   type: string;
   required: boolean;
-  default?: any;
+  default?: unknown;
   description?: string;
-  constraints?: Record<string, any>;
+  constraints?: Record<string, unknown>;
 }
 
 /**

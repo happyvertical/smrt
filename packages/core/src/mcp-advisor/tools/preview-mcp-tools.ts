@@ -54,7 +54,10 @@ export async function previewMcpTools(
 /**
  * Format tools as markdown table
  */
-function formatToolsAsMarkdown(tools: any[], className: string): string {
+function formatToolsAsMarkdown(
+  tools: McpToolDefinition[],
+  className: string,
+): string {
   let markdown = `# MCP Tools for ${className}\n\n`;
   markdown += `| Tool Name | Description | Parameters |\n`;
   markdown += `|-----------|-------------|------------|\n`;

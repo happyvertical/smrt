@@ -64,8 +64,10 @@ export async function getObjectSchema(
 /**
  * Extract constraints from field options
  */
-function extractConstraints(options: any): Record<string, any> {
-  const constraints: Record<string, any> = {};
+function extractConstraints(
+  options: Record<string, unknown>,
+): Record<string, unknown> {
+  const constraints: Record<string, unknown> = {};
 
   if (options.min !== undefined) constraints.min = options.min;
   if (options.max !== undefined) constraints.max = options.max;
