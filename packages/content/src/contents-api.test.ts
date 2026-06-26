@@ -108,6 +108,11 @@ describe('Content API Endpoints', () => {
     await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
 
     mockLocals = {
+      // Mark the request authenticated for the generated routes' fail-closed
+      // auth guard (#1540). Content declares no `api.public`, so PUBLIC_ACCESS
+      // is false and every route — read and write — requires a resolved
+      // principal; `smrtAuth: true` is the guard's explicit opt-in marker.
+      smrtAuth: true,
       tenantId: 'test-tenant',
       profileId: 'test-user',
       // We pass the global test db down through a mocked context or expect getSmrtClient to pick up the global test registry

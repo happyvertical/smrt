@@ -3,31 +3,157 @@
 
 import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
+import type { ContentCorrection } from '../../../../../content-correction';
 import type { RequestHandler } from './$types';
+
+// Fail-closed authorization (#1540): generated routes require an authenticated
+// principal on `locals` unless explicitly marked `@smrt({ api: { public } })`.
+const PUBLIC_ACCESS: boolean | 'read' = false;
+
+function hasAuthenticatedPrincipal(locals: unknown): boolean {
+  if (!locals || typeof locals !== 'object') return false;
+  const l = locals as Record<string, unknown>;
+  // Only a resolved, object-shaped principal counts. We intentionally do NOT
+  // treat `locals.auth` as a signal: Auth.js/SvelteKit put a callable
+  // `auth()` helper on every request (including anonymous ones), so honoring
+  // it would fail OPEN. Booleans don't count either (no convention sets
+  // `locals.user = true`); the only boolean accepted is the explicit
+  // `smrtAuth` opt-in marker.
+  const isResolvedPrincipal = (v: unknown) =>
+    typeof v === 'object' && v !== null;
+  return (
+    isResolvedPrincipal(l.user) ||
+    isResolvedPrincipal(l.session) ||
+    l.smrtAuth === true
+  );
+}
+
+function requireRouteAuth(locals: unknown, mutating: boolean): void {
+  if (PUBLIC_ACCESS === true) return;
+  if (PUBLIC_ACCESS === 'read' && !mutating) return;
+  if (!hasAuthenticatedPrincipal(locals)) {
+    throw error(401, 'Authentication required');
+  }
+}
+
+// Sensitive-field-safe serialization for custom-action results (#1540): a
+// custom method may return a SmrtObject (or one nested in an array/plain
+// object), so recurse and route each through toPublicJSON() rather than letting
+// JSON.stringify call toJSON(). Non-plain instances (Date, etc.) and primitives
+// pass through; a cycle guard prevents infinite loops.
+interface PublicJsonSource {
+  toPublicJSON(): unknown;
+}
+
+function hasPublicJson(value: object): value is PublicJsonSource {
+  return (
+    'toPublicJSON' in value &&
+    typeof (value as { toPublicJSON?: unknown }).toPublicJSON === 'function'
+  );
+}
+
+function readJsonRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function toPublicResult(
+  value: unknown,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return null;
+  if (hasPublicJson(value)) {
+    seen.add(value);
+    return toPublicResult(value.toPublicJSON(), seen);
+  }
+  if (Array.isArray(value)) {
+    seen.add(value);
+    return value.map((entry) => toPublicResult(entry, seen));
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  seen.add(value);
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = toPublicResult(entry, seen);
+  }
+  return out;
+}
+
+import {
+  enterTenantContext,
+  hasTenantContext,
+} from '@happyvertical/smrt-tenancy';
+
+function establishTenantContext(locals: unknown): void {
+  if (hasTenantContext()) return;
+  if (!locals || typeof locals !== 'object') return;
+  const l = locals as Record<string, unknown>;
+  const user = l.user as Record<string, unknown> | undefined;
+  const session = l.session as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
+  if (typeof tenantId === 'string' && tenantId) {
+    enterTenantContext({ tenantId });
+  }
+}
+
+// Mass-assignment guard (#1540): strip framework/server-managed + read-only
+// fields from create/update request bodies before they reach the model.
+const WRITABLE_ALLOWLIST: string[] | null = null;
+const READONLY_FIELDS: string[] = [];
+const SERVER_MANAGED_FIELDS = [
+  'id',
+  'tenantId',
+  'tenant_id',
+  'createdAt',
+  'created_at',
+  'updatedAt',
+  'updated_at',
+];
+
+function applyWritablePolicy(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== 'object') return {};
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (key.startsWith('_')) continue;
+    if (SERVER_MANAGED_FIELDS.includes(key)) continue;
+    if (READONLY_FIELDS.includes(key)) continue;
+    if (WRITABLE_ALLOWLIST && !WRITABLE_ALLOWLIST.includes(key)) continue;
+    result[key] = value;
+  }
+  return result;
+}
+
 // Get single contentcorrection
-export const GET: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<any>(
+export const GET: RequestHandler = async ({ locals, params }) => {
+  requireRouteAuth(locals, false);
+  establishTenantContext(locals);
+  const collection = await getCollection<ContentCorrection>(
     '@happyvertical/smrt-content:ContentCorrection',
   );
   const item = await collection.get(params.id);
   if (!item)
     throw error(404, '@happyvertical/smrt-content:ContentCorrection not found');
 
-  return json(item);
+  return json(item.toPublicJSON());
 };
 
 // Update contentcorrection
-export const PUT: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<any>(
+export const PUT: RequestHandler = async ({ locals, params, request }) => {
+  requireRouteAuth(locals, true);
+  establishTenantContext(locals);
+  const collection = await getCollection<ContentCorrection>(
     '@happyvertical/smrt-content:ContentCorrection',
   );
   const item = await collection.get(params.id);
   if (!item)
     throw error(404, '@happyvertical/smrt-content:ContentCorrection not found');
 
-  const data = await request.json();
+  const body: unknown = await request.json();
+  const data = applyWritablePolicy(body);
   Object.assign(item, data);
   await item.save();
 
-  return json(item);
+  return json(item.toPublicJSON());
 };
