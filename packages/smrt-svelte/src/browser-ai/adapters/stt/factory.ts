@@ -80,7 +80,7 @@ export async function getSTT(options: GetSTTOptions = {}): Promise<STTAdapter> {
     return new WhisperWasmSTTAdapter(options);
   }
 
-  throw new UnsupportedAdapterError((options as any).type, [
+  throw new UnsupportedAdapterError(String((options as GetSTTOptions).type), [
     'browser-speech',
     'whisper-cpp',
     'whisper-wasm',

@@ -154,8 +154,13 @@ export interface WebLLMOptions extends BaseBrowserAIOptions {
   type?: 'webllm';
   /** Default model to load */
   defaultModel?: string;
-  /** App configuration for WebLLM */
-  appConfig?: any;
+  /**
+   * App configuration for WebLLM. Passed straight through to
+   * `CreateMLCEngine(model, { appConfig })`. Typed as an opaque options blob
+   * (`@mlc-ai/web-llm`'s `AppConfig`) rather than importing the peer
+   * dependency's type into this package's public surface.
+   */
+  appConfig?: Record<string, unknown>;
 }
 
 /**

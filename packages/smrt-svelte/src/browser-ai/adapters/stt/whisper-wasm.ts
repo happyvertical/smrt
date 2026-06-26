@@ -35,6 +35,47 @@ const MODEL_SIZES: Record<string, number> = {
 };
 
 /**
+ * Minimal structural types for the subset of the transformers.js API
+ * (`@xenova/transformers` v2 / `@huggingface/transformers` v3) this adapter
+ * touches. Both packages are optional peer dependencies loaded via
+ * `importOptional`, so their full types aren't pulled into this module's
+ * surface — these locals describe only the shapes consumed here.
+ */
+interface TransformersProgress {
+  status?: string;
+  /** Download progress percentage (0-100) for the current file. */
+  progress?: number;
+  /** File currently being downloaded. */
+  file?: string;
+}
+
+interface TransformersPipelineOptions {
+  progress_callback?: (progress: TransformersProgress) => void;
+}
+
+/** Output of the automatic-speech-recognition pipeline call. */
+interface TranscriberResult {
+  text?: string;
+}
+
+/** The transcriber returned by `pipeline('automatic-speech-recognition', ...)`. */
+type Transcriber = (audio: Float32Array) => Promise<TranscriberResult>;
+
+interface TransformersEnv {
+  allowLocalModels?: boolean;
+  useBrowserCache?: boolean;
+}
+
+interface TransformersModule {
+  pipeline(
+    task: string,
+    model: string,
+    options?: TransformersPipelineOptions,
+  ): Promise<Transcriber>;
+  env?: TransformersEnv;
+}
+
+/**
  * Whisper adapter for high-accuracy speech recognition
  * Uses transformers.js v2 pipeline API
  */
@@ -57,7 +98,7 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
   private endListeners = new Set<() => void>();
 
   // Transformers.js v2 pipeline
-  private transcriber: any = null;
+  private transcriber: Transcriber | null = null;
 
   // Promise that resolves when transcription is complete
   private processingPromise: Promise<void> | null = null;
@@ -121,7 +162,7 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
         'automatic-speech-recognition',
         modelId,
         {
-          progress_callback: (progress: any) => {
+          progress_callback: (progress: TransformersProgress) => {
             if (
               progress.status === 'progress' &&
               progress.progress !== undefined
@@ -159,18 +200,20 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
   }
 
   // Store the transformers module for read_audio utility
-  private transformersModule: any = null;
+  private transformersModule: TransformersModule | null = null;
 
-  private async importTransformers(): Promise<any> {
+  private async importTransformers(): Promise<TransformersModule> {
     try {
       // Try v2 (@xenova/transformers) first
-      this.transformersModule = await importOptional('@xenova/transformers');
+      this.transformersModule = await importOptional<TransformersModule>(
+        '@xenova/transformers',
+      );
       this.configureTransformersEnv(this.transformersModule);
       return this.transformersModule;
     } catch {
       try {
         // Fall back to v3 (@huggingface/transformers)
-        this.transformersModule = await importOptional(
+        this.transformersModule = await importOptional<TransformersModule>(
           '@huggingface/transformers',
         );
         this.configureTransformersEnv(this.transformersModule);
@@ -187,7 +230,7 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
   /**
    * Configure transformers.js environment settings
    */
-  private configureTransformersEnv(transformers: any): void {
+  private configureTransformersEnv(transformers: TransformersModule): void {
     if (transformers.env) {
       // Default to remote models unless explicitly allowing local
       const allowLocal = this.options.allowLocalModels ?? false;

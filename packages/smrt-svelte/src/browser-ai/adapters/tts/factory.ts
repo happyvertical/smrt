@@ -66,7 +66,7 @@ export async function getTTS(options: GetTTSOptions = {}): Promise<TTSAdapter> {
     throw new UnsupportedAdapterError('transformers', ['browser-synthesis']);
   }
 
-  throw new UnsupportedAdapterError((options as any).type, [
+  throw new UnsupportedAdapterError(String((options as GetTTSOptions).type), [
     'browser-synthesis',
   ]);
 }

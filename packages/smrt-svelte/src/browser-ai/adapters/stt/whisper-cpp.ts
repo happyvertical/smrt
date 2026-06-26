@@ -38,6 +38,31 @@ type WhisperModel =
   | 'small';
 
 /**
+ * Minimal structural type for the subset of `@remotion/whisper-web`'s API
+ * this adapter touches. The package is an optional peer dependency loaded
+ * via `importOptional`, so its full types aren't pulled into this module's
+ * surface — this local describes only the shapes consumed here.
+ */
+interface WhisperWebModule {
+  canUseWhisperWeb(
+    model: string,
+  ): Promise<{ supported: boolean; error?: string }>;
+  downloadWhisperModel(params: {
+    model: string;
+    onProgress?: (progress: { progress: number }) => void;
+  }): Promise<unknown>;
+  resampleTo16Khz(params: {
+    file: File;
+    onProgress?: (progress: number) => void;
+  }): Promise<{ channelWaveform?: Float32Array } & Record<string, unknown>>;
+  transcribe(params: {
+    channelWaveform: unknown;
+    model: string;
+    onProgress?: (progress: number) => void;
+  }): Promise<{ transcription: Array<{ text: string }> }>;
+}
+
+/**
  * Whisper.cpp adapter for high-accuracy speech recognition
  */
 export class WhisperCppSTTAdapter implements STTAdapter {
@@ -59,7 +84,7 @@ export class WhisperCppSTTAdapter implements STTAdapter {
   private endListeners = new Set<() => void>();
 
   // @remotion/whisper-web module
-  private whisperWeb: any = null;
+  private whisperWeb: WhisperWebModule | null = null;
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: Used in init/dispose
   private modelDownloaded = false;
 
@@ -177,9 +202,9 @@ export class WhisperCppSTTAdapter implements STTAdapter {
     }
   }
 
-  private async importWhisperWeb(): Promise<any> {
+  private async importWhisperWeb(): Promise<WhisperWebModule> {
     try {
-      return await importOptional('@remotion/whisper-web');
+      return await importOptional<WhisperWebModule>('@remotion/whisper-web');
     } catch {
       throw new InitializationError(
         'whisper-cpp',
@@ -302,6 +327,10 @@ export class WhisperCppSTTAdapter implements STTAdapter {
     console.log('[WhisperCpp] Audio blob size:', audioBlob.size);
 
     try {
+      if (!this.whisperWeb) {
+        throw new Error('whisper-web not initialized');
+      }
+
       // Convert blob to File for resampleTo16Khz
       const audioFile = new File([audioBlob], 'recording.webm', {
         type: audioBlob.type,

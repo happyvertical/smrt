@@ -31,6 +31,56 @@ import { RECOMMENDED_MODELS } from './types.js';
 const DEFAULT_MODEL = 'SmolLM2-360M-Instruct-q4f16_1-MLC';
 
 /**
+ * Minimal structural types for the subset of `@mlc-ai/web-llm`'s API this
+ * adapter touches. The package is an optional peer dependency loaded via
+ * `importOptional`, so its full types aren't pulled into this module's
+ * surface — these locals describe only the shapes consumed here.
+ */
+interface WebLLMProgressReport {
+  /** Fractional progress (0-1). */
+  progress: number;
+  /** Human-readable status text for the current step. */
+  text: string;
+}
+
+interface WebLLMChatCompletion {
+  choices: Array<{
+    message?: { content?: string | null };
+    delta?: { content?: string | null };
+    finish_reason?: string | null;
+  }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+interface WebLLMEngine {
+  chat: {
+    completions: {
+      create(
+        params: Record<string, unknown> & { stream: false },
+      ): Promise<WebLLMChatCompletion>;
+      create(
+        params: Record<string, unknown> & { stream: true },
+      ): Promise<AsyncIterable<WebLLMChatCompletion>>;
+    };
+  };
+  unload(): Promise<void>;
+}
+
+interface WebLLMModule {
+  CreateMLCEngine(
+    model: string,
+    options: {
+      initProgressCallback?: (report: WebLLMProgressReport) => void;
+      appConfig?: Record<string, unknown>;
+    },
+  ): Promise<WebLLMEngine>;
+}
+
+/**
  * WebLLM adapter for in-browser LLM inference
  */
 export class WebLLMAdapter implements LLMAdapter {
@@ -41,7 +91,7 @@ export class WebLLMAdapter implements LLMAdapter {
   private options: WebLLMOptions;
 
   // WebLLM engine instance
-  private engine: any = null;
+  private engine: WebLLMEngine | null = null;
 
   constructor(options: WebLLMOptions = {}) {
     this.options = {
@@ -98,7 +148,7 @@ export class WebLLMAdapter implements LLMAdapter {
       const webllm = await this.importWebLLM();
 
       // Create progress callback wrapper
-      const progressCallback = (report: any) => {
+      const progressCallback = (report: WebLLMProgressReport) => {
         if (!onProgress) return;
 
         const progress: DownloadProgressInfo = {
@@ -145,9 +195,9 @@ export class WebLLMAdapter implements LLMAdapter {
     }
   }
 
-  private async importWebLLM(): Promise<any> {
+  private async importWebLLM(): Promise<WebLLMModule> {
     try {
-      return await importOptional('@mlc-ai/web-llm');
+      return await importOptional<WebLLMModule>('@mlc-ai/web-llm');
     } catch {
       throw new InitializationError(
         'webllm',

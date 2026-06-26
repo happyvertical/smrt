@@ -1,4 +1,8 @@
-import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtObject,
+  type SmrtObjectOptions,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   JobBuilder,
@@ -97,11 +101,34 @@ function getObjectTypeName(instance: SmrtObject): string {
   return ObjectRegistry.getClass(className)?.qualifiedName || className;
 }
 
-// Type for a SmrtObject constructor
-type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
+// Type for a SmrtObject constructor. `never[]` (not `any[]`) satisfies
+// noExplicitAny while preserving assignability: constructor parameters are
+// checked contravariantly under strictFunctionTypes, and `never` (the bottom
+// type) is assignable to any concrete parameter type, so a typed-options
+// constructor like `new (options?: SmrtObjectOptions) => Doc` still satisfies
+// the constraint — `unknown[]` would NOT, since `unknown` is not assignable to
+// `SmrtObjectOptions`, breaking the documented `withBackgroundJobs(Document)`
+// API for consumers.
+type SmrtObjectConstructor = new (...args: never[]) => SmrtObject;
 type BackgroundCapableConstructor<T extends SmrtObjectConstructor> = T & {
   new (...args: ConstructorParameters<T>): InstanceType<T> & BackgroundCapable;
 };
+
+// Compile-time regression guard (#1658, PR #1658): a typed-options SmrtObject
+// subclass constructor — the documented `withBackgroundJobs(Document)` pattern,
+// where a model's ctor is `(options?: SomeOptions)` — MUST satisfy the
+// constraint. A `unknown[]` rest param (instead of `never[]`) makes this
+// resolve to `false` and fails the build, since `unknown` is not assignable to
+// the typed options parameter. Test files are excluded from `tsc`, so this
+// lives in typechecked source rather than a `*.test.ts`.
+type AssertTrue<T extends true> = T;
+type _TypedOptionsCtorStaysAssignable = AssertTrue<
+  (new (
+    options?: SmrtObjectOptions,
+  ) => SmrtObject) extends SmrtObjectConstructor
+    ? true
+    : false
+>;
 
 function requireObjectDb(instance: SmrtObject): DatabaseInterface {
   const db = (instance as unknown as { _db?: DatabaseInterface })._db;
