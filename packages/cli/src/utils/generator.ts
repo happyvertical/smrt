@@ -256,9 +256,12 @@ async function mergePackageJson(
     name?: string;
     version?: string;
     private?: boolean;
-    scripts: Record<string, string>;
-    dependencies: Record<string, string>;
-    devDependencies: Record<string, string>;
+    // Optional: a parsed package.json commonly omits these (only the
+    // generated-from-scratch fallback below sets them all). Normalized to
+    // {} after load so the downstream merges/access stay safe.
+    scripts?: Record<string, string>;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
     [key: string]: unknown;
   }
 
@@ -277,6 +280,12 @@ async function mergePackageJson(
       devDependencies: {},
     };
   }
+
+  // Normalize optional maps so the merges/access below are safe even when a
+  // parsed package.json omitted them.
+  pkg.scripts ??= {};
+  pkg.dependencies ??= {};
+  pkg.devDependencies ??= {};
 
   // Update name
   pkg.name = projectName;
