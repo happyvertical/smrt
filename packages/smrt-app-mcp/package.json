@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-app-mcp",
-  "version": "0.36.5",
+  "version": "0.36.6",
   "description": "App-runtime MCP server scaffolding for SMRT apps — `createMcpAppServer` plus transport adapters (SvelteKit today) for exposing a SMRT app's MCP surface over HTTP.",
   "type": "module",
   "main": "./dist/index.js",

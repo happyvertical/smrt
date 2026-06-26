@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.36.6
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: core noExplicitAny Phase 2 — build tooling (#1579) (#1662) (types)
+  - @happyvertical/smrt-config@0.36.6
+  - @happyvertical/smrt-types@0.36.6
+  - @happyvertical/smrt-scanner@0.36.6
+
 ## 0.36.5
 
 ### Patch Changes
