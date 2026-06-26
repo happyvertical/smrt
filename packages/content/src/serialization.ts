@@ -32,16 +32,6 @@ function asModel(value: unknown): SerializableModel {
   return value && typeof value === 'object' ? (value as SerializableModel) : {};
 }
 
-function callMethod(
-  model: SerializableModel,
-  name: keyof SerializableModel,
-): unknown {
-  const method = model[name];
-  return typeof method === 'function'
-    ? (method as () => unknown).call(model)
-    : undefined;
-}
-
 function toJSON(value: unknown): SerializedRecord {
   const model = asModel(value);
   if (typeof model.toJSON === 'function') {

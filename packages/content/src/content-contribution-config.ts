@@ -250,9 +250,10 @@ function mapPersistedTypeRow(
   row: Record<string, unknown>,
 ): PersistedContentContributionTypeRecord {
   return {
-    // `id` is an optional string column; a falsy DB value collapses to
-    // undefined to match the record's `id?: string` shape.
-    id: (row.id as string | undefined) || undefined,
+    // `id` is an optional string column; coerce non-string/empty driver
+    // values to undefined so a numeric id can't leak past the `id?: string`
+    // shape (mirrors the getRowString pattern used elsewhere).
+    id: typeof row.id === 'string' && row.id ? row.id : undefined,
     key: String(row.key || ''),
     label: String(row.label || row.key || ''),
     enabled: row.enabled !== false && row.enabled !== 0,
