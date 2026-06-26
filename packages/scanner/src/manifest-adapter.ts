@@ -82,6 +82,8 @@ type FieldDecoratorOptions = {
   sensitive?: boolean;
   /** read-only over generated write surfaces */
   readonly?: boolean;
+  /** report grouping/bucket/aggregate metadata */
+  __report?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -964,16 +966,104 @@ export class ManifestAdapter {
   private extractFieldDecoratorOptions(
     field: RawFieldDefinition,
   ): FieldDecoratorOptions {
+    const options: FieldDecoratorOptions = {};
+
     for (const decorator of field.decorators) {
+      const reportMetadata = this.parseReportFieldDecorator(decorator, field);
+      if (reportMetadata) {
+        options.__report = reportMetadata;
+        continue;
+      }
+
       if (decorator.name !== 'field') continue;
 
       const parsed = this.parseFieldDecoratorOptions(decorator.arguments[0]);
       if (parsed) {
-        return parsed;
+        Object.assign(options, parsed);
       }
     }
 
-    return {};
+    return options;
+  }
+
+  private parseReportFieldDecorator(
+    decorator: { name: string; arguments: string[] },
+    field: RawFieldDefinition,
+  ): Record<string, unknown> | null {
+    if (decorator.name === 'groupBy') {
+      return {
+        kind: 'group',
+        sourceColumn: stripQuotes(decorator.arguments[0]?.trim()) ?? field.name,
+      };
+    }
+
+    const bucketUnits = new Set([
+      'minute',
+      'hour',
+      'day',
+      'week',
+      'month',
+      'quarter',
+      'year',
+    ]);
+    if (bucketUnits.has(decorator.name)) {
+      const sourceColumn = stripQuotes(decorator.arguments[0]?.trim());
+      if (!sourceColumn) return null;
+      return {
+        kind: 'bucket',
+        unit: decorator.name,
+        sourceColumn,
+      };
+    }
+
+    if (decorator.name === 'aggregate') {
+      const parsed = this.parseFieldDecoratorOptions(decorator.arguments[0]);
+      if (!parsed?.fn || typeof parsed.fn !== 'string') return null;
+      return {
+        kind: 'aggregate',
+        fn: parsed.fn,
+        ...(typeof parsed.column === 'string' ? { column: parsed.column } : {}),
+        ...(typeof parsed.distinct === 'boolean'
+          ? { distinct: parsed.distinct }
+          : {}),
+      };
+    }
+
+    const aggregateNames = new Set(['sum', 'avg', 'min', 'max']);
+    if (aggregateNames.has(decorator.name)) {
+      const column = stripQuotes(decorator.arguments[0]?.trim());
+      const parsedOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[1],
+      );
+      return {
+        kind: 'aggregate',
+        fn: decorator.name,
+        ...(column ? { column } : {}),
+        ...(typeof parsedOptions?.distinct === 'boolean'
+          ? { distinct: parsedOptions.distinct }
+          : {}),
+      };
+    }
+
+    if (decorator.name === 'count') {
+      const firstArg = decorator.arguments[0]?.trim();
+      const firstOptions = this.parseFieldDecoratorOptions(firstArg);
+      const secondOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[1],
+      );
+      const column = firstOptions ? undefined : stripQuotes(firstArg);
+      const options = firstOptions ?? secondOptions;
+      return {
+        kind: 'aggregate',
+        fn: 'count',
+        ...(column ? { column } : {}),
+        ...(typeof options?.distinct === 'boolean'
+          ? { distinct: options.distinct }
+          : {}),
+      };
+    }
+
+    return null;
   }
 
   private parseFieldDecoratorOptions(

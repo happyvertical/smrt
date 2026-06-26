@@ -147,6 +147,12 @@ export type SmrtWhereClause<T extends SmrtObject> = Record<string, unknown>;
  */
 export interface SmrtCollectionOptions extends SmrtClassOptions {}
 
+export type SmrtCollectionItemClass<ModelType extends SmrtObject> = (new (
+  options: any,
+) => ModelType) & {
+  create(options: any): ModelType | Promise<ModelType>;
+};
+
 /**
  * Typed CRUD collection for a specific `SmrtObject` subclass.
  *
@@ -513,17 +519,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   /**
    * Gets the class constructor for items in this collection
    */
-  protected get _itemClass(): (new (
-    options: any,
-  ) => ModelType) & {
-    create(options: any): ModelType | Promise<ModelType>;
-  } {
+  protected get _itemClass(): SmrtCollectionItemClass<ModelType> {
     const ctor = this.constructor as {
-      readonly _itemClass?: (new (
-        options: any,
-      ) => ModelType) & {
-        create(options: any): ModelType | Promise<ModelType>;
-      };
+      readonly _itemClass?: SmrtCollectionItemClass<ModelType>;
     };
     if (!ctor._itemClass) {
       const className = this.constructor.name;
@@ -541,6 +539,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       throw new Error(errorMessage);
     }
     return ctor._itemClass;
+  }
+
+  /**
+   * Gets the model class constructor handled by this collection.
+   */
+  public getItemClass(): SmrtCollectionItemClass<ModelType> {
+    return this._itemClass;
   }
 
   /**

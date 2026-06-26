@@ -96,6 +96,7 @@ export {
 // Schedule runner (for cron-based agent scheduling)
 export {
   createScheduleRunner,
+  getNextCronDate,
   type ScheduleInfo,
   ScheduleRunner,
   type ScheduleRunnerConfig,

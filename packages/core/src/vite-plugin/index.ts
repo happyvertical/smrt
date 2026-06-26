@@ -914,10 +914,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         dist: '../scanner.js',
       });
       const manifestGen = new ManifestGenerator();
-      // IMPORTANT: Materialize tenantScoped fields and merge inherited fields
-      // BEFORE generating schemas so migration manifests contain every column.
+      // IMPORTANT: keep this pass order aligned with generateManifest().
+      manifestGen.normalizeReportTenantScope(newManifest);
       manifestGen.injectTenantScopedFields(newManifest);
       manifestGen.mergeInheritedFields(newManifest);
+      manifestGen.normalizeReportObjects(newManifest);
       manifestGen.generateValidationRules(newManifest);
       manifestGen.generateSchemas(newManifest);
       manifestGen.assertTenantScopedSchemaContract(newManifest);

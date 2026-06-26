@@ -162,6 +162,23 @@ export interface ApiConfig {
   writable?: string[];
 }
 
+export interface ReportConfig {
+  source: string | Function;
+  where?: Record<string, unknown> | Record<string, unknown>[][];
+  having?: Record<string, unknown> | Record<string, unknown>[][];
+  refresh?: {
+    mode?: 'rebuild' | 'incremental';
+    schedule?: string;
+    onChange?: Array<string | Function>;
+    ttl?: number;
+    manual?: boolean;
+    watermarkColumn?: string;
+    softDeleteColumn?: string;
+    fullRebuildSchedule?: string;
+    tenantFanout?: boolean;
+  };
+}
+
 /**
  * Configuration options for SMRT objects registered in the system
  *
@@ -299,6 +316,12 @@ export interface SmartObjectConfig {
    * augments package-level knowledge defaults from smrt.config.
    */
   knowledge?: false | Pick<DomainKnowledgeConfig, 'tags' | 'summary' | 'risks'>;
+
+  /**
+   * Report/materialized aggregate metadata. Usually produced by the
+   * `@report()` decorator from `@happyvertical/smrt-reports`.
+   */
+  report?: ReportConfig;
 
   /**
    * API configuration

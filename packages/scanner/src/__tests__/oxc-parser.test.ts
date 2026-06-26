@@ -164,6 +164,29 @@ describe('OXC Parser', () => {
       });
     });
 
+    it('should extract report decorator config', () => {
+      const source = `
+        @report({
+          source: Invoice,
+          where: { status: 'paid' },
+          refresh: { manual: true }
+        })
+        class MonthlyRevenue extends SmrtReport {
+          customerId: string = '';
+        }
+      `;
+
+      const result = parseSource(source);
+      const config = result.classes[0].decoratorConfig;
+
+      expect(result.errors).toHaveLength(0);
+      expect(config?.report).toEqual({
+        source: 'Invoice',
+        where: { status: 'paid' },
+        refresh: { manual: true },
+      });
+    });
+
     it('should extract method definitions', () => {
       const source = `
         @smrt()

@@ -38,6 +38,7 @@
       "@happyvertical/smrt-prompts",
       "@happyvertical/smrt-projects",
       "@happyvertical/smrt-properties",
+      "@happyvertical/smrt-reports",
       "@happyvertical/smrt-secrets",
       "@happyvertical/smrt-sites",
       "@happyvertical/smrt-subscriptions",

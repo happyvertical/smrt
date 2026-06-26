@@ -41,7 +41,7 @@ const require = createRequire(import.meta.url);
  * Framework abstract base classes whose declared fields must be merged
  * into every subclass's `fields` map.
  *
- * These classes live in `@happyvertical/smrt-core`, have no `@smrt()`
+ * These classes live in SMRT framework packages, have no `@smrt()`
  * decorator, no table of their own, and contribute structural fields
  * (e.g. `SmrtHierarchical.parentId`) that subclasses query against —
  * without merging, downstream WHERE-clause validation rejects queries on
@@ -63,6 +63,8 @@ const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
   'SmrtJunction',
   'SmrtHierarchical',
   'SmrtPolymorphicAssociation',
+  'SmrtReport',
+  'SmrtReportCollection',
 ]);
 
 /**
@@ -206,12 +208,22 @@ export class ManifestGenerator {
       }
     }
 
+    // Report cache rows are safe to scope by tenant even when a report is
+    // global: optional mode keeps tenant-less rows readable outside a tenant
+    // context and gives tenant-scoped reports the tenant_id column their raw
+    // aggregate refresh path must write.
+    this.normalizeReportTenantScope(manifest);
+
     // Second pass: materialize implicit tenant fields before inheritance and schema generation.
     this.injectTenantScopedFields(manifest);
 
     // Third pass: Merge inherited fields for STI classes
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
+
+    // Report models are read-only cache tables. Fill in the generated surface
+    // and natural conflict key from report metadata before schema generation.
+    this.normalizeReportObjects(manifest);
 
     // Fourth pass: Generate validation rules for all objects
     // This pre-computes validation rules from field definitions, eliminating
@@ -558,6 +570,10 @@ export class ManifestGenerator {
     );
 
     for (const [name, obj] of Object.entries(manifest.objects)) {
+      if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(obj.className)) {
+        continue;
+      }
+
       // Determine table name (may have been inherited from external STI base)
       // Use obj.className (PascalCase) for consistent table name derivation with runtime
       const tableName =
@@ -630,6 +646,46 @@ export class ManifestGenerator {
     }
 
     this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
+  }
+
+  normalizeReportObjects(manifest: SmartObjectManifest): void {
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.decoratorConfig?.report) continue;
+
+      obj.decoratorConfig.api ??= { include: ['list', 'get'] };
+      obj.decoratorConfig.mcp ??= { include: ['list', 'get'] };
+
+      if (obj.decoratorConfig.conflictColumns) continue;
+
+      const tenantScoped = obj.decoratorConfig.tenantScoped;
+      const tenantField =
+        tenantScoped && typeof tenantScoped === 'object'
+          ? tenantScoped.field || 'tenantId'
+          : tenantScoped
+            ? 'tenantId'
+            : undefined;
+      const tenantColumn =
+        tenantField && obj.fields[tenantField] ? toSnakeCase(tenantField) : '';
+
+      const conflictColumns = Object.entries(obj.fields)
+        .filter(([, field]) => {
+          const kind = field._meta?.__report?.kind;
+          return kind === 'group' || kind === 'bucket';
+        })
+        .map(([fieldName]) => toSnakeCase(fieldName));
+
+      obj.decoratorConfig.conflictColumns =
+        conflictColumns.length > 0
+          ? [...(tenantColumn ? [tenantColumn] : []), ...conflictColumns]
+          : ['id'];
+    }
+  }
+
+  normalizeReportTenantScope(manifest: SmartObjectManifest): void {
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.decoratorConfig?.report) continue;
+      obj.decoratorConfig.tenantScoped ??= { mode: 'optional' };
+    }
   }
 
   private resolveSamePackageForeignKeyColumnTypes(
