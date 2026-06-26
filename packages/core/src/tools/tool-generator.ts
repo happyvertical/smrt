@@ -9,6 +9,27 @@ import type { AITool } from '@happyvertical/ai';
 import type { MethodDefinition } from '../scanner/types.js';
 
 /**
+ * A JSON Schema fragment. The shape is open-ended (different keywords appear
+ * for primitives, arrays, unions, etc.), so values are `unknown`; callers
+ * narrow specific keys (e.g. `.default`) at the point of use.
+ */
+type JsonSchema = Record<string, unknown>;
+
+/**
+ * The `parameters` object of a generated tool: a JSON Schema `object` with a
+ * `properties` bag (each entry a nested schema) and a `required` name list.
+ */
+interface ToolParametersSchema {
+  type: 'object';
+  properties: Record<string, JsonSchema>;
+  /**
+   * Optional so the empty array can be `delete`d (omitting the key from the
+   * emitted JSON Schema). It is always present while parameters are collected.
+   */
+  required?: string[];
+}
+
+/**
  * Configuration for AI-callable methods
  */
 export interface AiConfig {
@@ -37,7 +58,7 @@ export interface AiConfig {
  * @param tsType - TypeScript type string (e.g., 'string', 'number', '{ foo: string }')
  * @returns JSON Schema representation
  */
-export function convertTypeToJsonSchema(tsType: string): Record<string, any> {
+export function convertTypeToJsonSchema(tsType: string): JsonSchema {
   // Remove whitespace
   const cleanType = tsType.trim();
 
@@ -169,7 +190,7 @@ export function generateToolFromMethod(
   config?: AiConfig,
 ): AITool {
   // Build parameters JSON Schema
-  const parameters: Record<string, any> = {
+  const parameters: ToolParametersSchema = {
     type: 'object',
     properties: {},
     required: [],
@@ -181,7 +202,7 @@ export function generateToolFromMethod(
 
     // Add to required if not optional
     if (!param.optional) {
-      parameters.required.push(param.name);
+      parameters.required?.push(param.name);
     }
 
     // Add default value if present
@@ -191,7 +212,7 @@ export function generateToolFromMethod(
   }
 
   // Remove empty required array
-  if (parameters.required.length === 0) {
+  if (parameters.required?.length === 0) {
     delete parameters.required;
   }
 
