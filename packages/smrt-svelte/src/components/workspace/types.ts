@@ -196,7 +196,7 @@ export interface AvailableTool {
  * - `TActions` types the shape of `actions` — the host-supplied callback
  *   map tools may invoke to reach back into the page (`triggerSave`,
  *   `openDialog`, etc.). Defaults to a permissive
- *   `Record<string, (...args: any[]) => unknown>` so the untyped pattern
+ *   `Record<string, (...args: never[]) => unknown>` so the untyped pattern
  *   `dock.setContext({ actions: { triggerSave() {} } })` keeps compiling
  *   without a generic argument.
  *
@@ -324,7 +324,7 @@ export interface ToolsDockEvents {
  * - `TData` types the shape of `context.data`. Defaults to
  *   `Record<string, unknown>`.
  * - `TActions` types the shape of `context.actions`. Defaults to
- *   `Record<string, (...args: any[]) => unknown>` so the untyped pattern
+ *   `Record<string, (...args: never[]) => unknown>` so the untyped pattern
  *   `dock.setContext({ actions: { triggerSave() {} } })` keeps compiling
  *   without a generic argument.
  *
