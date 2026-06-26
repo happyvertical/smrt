@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.36.7
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: core noExplicitAny Phase 3 — generators (#1579) (#1671) (types)
+  - @happyvertical/smrt-config@0.36.7
+  - @happyvertical/smrt-types@0.36.7
+  - @happyvertical/smrt-scanner@0.36.7
+
 ## 0.36.6
 
 ### Patch Changes
