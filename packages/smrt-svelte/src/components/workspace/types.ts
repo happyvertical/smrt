@@ -4,6 +4,7 @@
  * See @happyvertical/smrt#1226 (epic) and #1227 / #1228 / #1229 (implementers).
  */
 
+import type { ModuleComponentType } from '@happyvertical/smrt-types';
 import type { Component } from 'svelte';
 
 // ────────────────────────────────────────────────
@@ -124,10 +125,11 @@ export interface ToolDef {
    * ```
    *
    * The dock erases tool-specific types at registration (tools are stored
-   * as a homogeneous `ToolDef[]`), so the props type is intentionally
-   * `Component<any>`. Svelte component props are checked contravariantly,
-   * which means a hard-coded `Component<{ context: ToolsDockContext | null; ... }>`
-   * slot would reject any component declaring a narrower
+   * as a homogeneous `ToolDef[]`), so the props type is the framework's
+   * shared `ModuleComponentType` placeholder. Svelte component props are
+   * checked contravariantly, which means a hard-coded
+   * `Component<{ context: ToolsDockContext | null; ... }>` slot would reject
+   * any component declaring a narrower
    * `context: ToolsDockContext<MyData, MyActions> | null` prop — defeating
    * the point of letting consumers type the prop locally. Erasing here
    * means the per-component prop annotation shown above compiles without
@@ -140,11 +142,17 @@ export interface ToolDef {
    * shape preserves the typed-context ergonomics while removing both the
    * useless generic and the registration-site cast.
    */
-  // Registration is intentionally type-erased; see JSDoc above. The `any`
-  // here is load-bearing — see Copilot/codex/claude review threads on PR
-  // #1239 for the contravariance rationale.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  component: Component<any>;
+  // Registration is intentionally type-erased; see JSDoc above. The dock
+  // stores tools as a homogeneous `ToolDef[]`, so `component` must accept a
+  // component declaring NARROWER `context` props (Svelte checks props
+  // contravariantly). The shared `ModuleComponentType` — the framework's
+  // single documented component-registry placeholder (see
+  // `@happyvertical/smrt-types`) — is the irreducible type for this slot:
+  // it is assignable both FROM arbitrary Svelte components and TO Svelte's
+  // render union, which no concrete `Component<...>` instantiation
+  // satisfies under `strictFunctionTypes`. See Copilot/codex/claude review
+  // threads on PR #1239 for the original contravariance rationale.
+  component: ModuleComponentType;
   badge?: number | string | null;
   /**
    * Optional gate IDs that must all evaluate to true for the tool to be
@@ -193,12 +201,17 @@ export interface AvailableTool {
  *   without a generic argument.
  *
  * The constraint is a self-mapped
- * `{ [K in keyof TActions]: (...args: any[]) => any }` rather than
+ * `{ [K in keyof TActions]: (...args: never[]) => unknown }` rather than
  * `Record<string, ...>`. This accepts interface-style action maps without
  * an explicit string index signature — the common pattern Copilot flagged
  * in the original PR review. A bare `Record<string, ...>` constraint
  * rejects interfaces (which have no index signature) under strict TS,
- * forcing consumers to use type aliases or add `[key: string]: ...`.
+ * forcing consumers to use type aliases or add `[key: string]: ...`. The
+ * `(...args: never[]) => unknown` shape is the canonical "any function"
+ * bound: parameters are contravariant so `never[]` accepts any argument
+ * list, and `unknown` accepts any return — so concrete signatures like
+ * `triggerSave(): void` / `triggerReview(kind: string): void` satisfy it
+ * without resorting to `any`.
  *
  * Recommended consumer pattern: thread these generics into the tool
  * component's own `context` prop so `context?.actions?.foo()` is fully
@@ -220,10 +233,9 @@ export interface AvailableTool {
  */
 export interface ToolsDockContext<
   TData = Record<string, unknown>,
-  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
-    string,
-    (...args: any[]) => unknown
-  >,
+  TActions extends {
+    [K in keyof TActions]: (...args: never[]) => unknown;
+  } = Record<string, (...args: never[]) => unknown>,
 > {
   type: string;
   title?: string;
@@ -317,8 +329,9 @@ export interface ToolsDockEvents {
  *   without a generic argument.
  *
  * The constraint mirrors {@link ToolsDockContext} — a self-mapped
- * `{ [K in keyof TActions]: (...args: any[]) => any }` — so interface-style
- * action maps satisfy the bound without requiring a string index signature.
+ * `{ [K in keyof TActions]: (...args: never[]) => unknown }` — so
+ * interface-style action maps satisfy the bound without requiring a string
+ * index signature.
  *
  * @example
  * ```ts
@@ -338,10 +351,9 @@ export interface ToolsDockEvents {
  */
 export interface ToolsDockApi<
   TData = Record<string, unknown>,
-  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
-    string,
-    (...args: any[]) => unknown
-  >,
+  TActions extends {
+    [K in keyof TActions]: (...args: never[]) => unknown;
+  } = Record<string, (...args: never[]) => unknown>,
 > {
   readonly activeTool: string | null;
   readonly isOpen: boolean;

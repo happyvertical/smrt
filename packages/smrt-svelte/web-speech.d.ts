@@ -60,7 +60,17 @@ interface SpeechRecognition extends EventTarget {
   abort(): void;
 }
 
-declare var SpeechRecognition: {
+interface SpeechRecognitionConstructor {
   prototype: SpeechRecognition;
   new (): SpeechRecognition;
-};
+}
+
+declare var SpeechRecognition: SpeechRecognitionConstructor;
+
+// Some browsers only expose the vendor-prefixed constructor. Declaring both
+// on `Window` lets the browser-speech STT adapter read them with a typed
+// access instead of casting `window` to `any`.
+interface Window {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+}

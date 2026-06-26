@@ -60,10 +60,10 @@ export const TOOLS_DOCK_KEY = Symbol('smrt-tools-dock');
  * Defaults to `Record<string, unknown>` so existing callers keep compiling.
  *
  * `TActions` types the shape of `context.actions` and flows the same way.
- * Defaults to `Record<string, (...args: any[]) => unknown>` so the untyped
+ * Defaults to `Record<string, (...args: never[]) => unknown>` so the untyped
  * `dock.setContext({ actions: { triggerSave() {} } })` pattern keeps
  * compiling without a generic argument. The constraint is a self-mapped
- * `{ [K in keyof TActions]: (...args: any[]) => any }` so interface-style
+ * `{ [K in keyof TActions]: (...args: never[]) => unknown }` so interface-style
  * action maps (without a string index signature) satisfy the bound —
  * see the JSDoc on {@link ToolsDockContext} for rationale.
  *
@@ -73,10 +73,9 @@ export const TOOLS_DOCK_KEY = Symbol('smrt-tools-dock');
  */
 export interface DefineToolsDockOptions<
   TData = Record<string, unknown>,
-  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
-    string,
-    (...args: any[]) => unknown
-  >,
+  TActions extends {
+    [K in keyof TActions]: (...args: never[]) => unknown;
+  } = Record<string, (...args: never[]) => unknown>,
 > {
   /** Registered tools. Order is preserved when rendering the activation rail/topbar. */
   tools: ToolDef[];
@@ -135,10 +134,9 @@ export interface DefineToolsDockOptions<
  */
 export interface ToolsDockInstance<
   TData = Record<string, unknown>,
-  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
-    string,
-    (...args: any[]) => unknown
-  >,
+  TActions extends {
+    [K in keyof TActions]: (...args: never[]) => unknown;
+  } = Record<string, (...args: never[]) => unknown>,
 > extends ToolsDockApi<TData, TActions> {
   readonly tools: ReadonlyArray<ToolDef>;
   readonly layout: 'rail' | 'topbar';
@@ -208,10 +206,9 @@ function safeWriteStorage(key: string, payload: PersistedState): void {
  */
 export function defineToolsDock<
   TData = Record<string, unknown>,
-  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
-    string,
-    (...args: any[]) => unknown
-  >,
+  TActions extends {
+    [K in keyof TActions]: (...args: never[]) => unknown;
+  } = Record<string, (...args: never[]) => unknown>,
 >(
   options: DefineToolsDockOptions<TData, TActions>,
 ): ToolsDockInstance<TData, TActions> {

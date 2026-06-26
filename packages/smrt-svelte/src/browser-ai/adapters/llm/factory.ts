@@ -55,7 +55,7 @@ export async function getLLM(options: GetLLMOptions = {}): Promise<LLMAdapter> {
     throw new UnsupportedAdapterError('transformers-llm', ['webllm']);
   }
 
-  throw new UnsupportedAdapterError((options as any).type, [
+  throw new UnsupportedAdapterError(String((options as GetLLMOptions).type), [
     'webllm',
     'transformers-llm',
   ]);
