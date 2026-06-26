@@ -15,7 +15,10 @@ export interface SmrtServerOptions {
       };
   auth?: {
     type: 'bearer' | 'basic' | 'custom';
-    verify?: (token: string) => Promise<boolean>;
+    // App-provided verifier: may resolve a literal boolean OR a truthy
+    // decoded user/session object. `authenticate()` consumes it for
+    // truthiness only, so the public return stays permissive (not `boolean`).
+    verify?: (token: string) => Promise<unknown>;
   };
 }
 

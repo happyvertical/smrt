@@ -358,8 +358,9 @@ export class SmrtServer {
       ? pathname.slice(this.options.basePath.length)
       : pathname;
 
-    // Parse query parameters
-    const query: Record<string, string> = {};
+    // Parse query parameters into a null-prototype dictionary so untrusted
+    // keys (`__proto__`, `constructor`) can't pollute Object.prototype.
+    const query: Record<string, string> = Object.create(null);
     url.searchParams.forEach((value, key) => {
       query[key] = value;
     });
@@ -489,20 +490,20 @@ export class SmrtServer {
       case 'bearer': {
         const token = authHeader.replace('Bearer ', '');
         return this.options.auth.verify
-          ? await this.options.auth.verify(token)
+          ? Boolean(await this.options.auth.verify(token))
           : true;
       }
 
       case 'basic': {
         const credentials = authHeader.replace('Basic ', '');
         return this.options.auth.verify
-          ? await this.options.auth.verify(credentials)
+          ? Boolean(await this.options.auth.verify(credentials))
           : true;
       }
 
       case 'custom':
         return this.options.auth.verify
-          ? await this.options.auth.verify(authHeader)
+          ? Boolean(await this.options.auth.verify(authHeader))
           : true;
 
       default:
