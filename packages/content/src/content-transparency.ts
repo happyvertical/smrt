@@ -11,7 +11,7 @@ export interface ContentTransparencySource {
   sourceTitle: string | null;
   credibility: number | null;
   extractedAt: string | null;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface ContentTransparencyFact {
@@ -22,9 +22,9 @@ export interface ContentTransparencyFact {
   domain?: string | null;
   confidence?: number | null;
   sourceCount?: number | null;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   relationship?: string | null;
-  linkMetadata?: Record<string, any>;
+  linkMetadata?: Record<string, unknown>;
   usedInArticle?: boolean;
   sources?: ContentTransparencySource[];
 }
@@ -54,7 +54,41 @@ export interface ContentTransparencyVersionHistoryItem {
   kind: string | null;
   summary: string;
   createdAt: string | null;
-  provenance: Record<string, any>;
+  provenance: Record<string, unknown>;
+}
+
+/**
+ * Serialized review record carried in a transparency snapshot. Only the fields
+ * consumers read are named; the index signature preserves the remaining
+ * serialized properties.
+ */
+export interface ContentTransparencyReview {
+  id?: string | null;
+  kind?: string | null;
+  policyKey?: string | null;
+  status?: string | null;
+  summary?: string | null;
+  createdAt?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Serialized review-profile evaluation carried in a transparency snapshot.
+ */
+export interface ContentTransparencyReviewProfile {
+  profileKey?: string | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Serialized correction record carried in a transparency snapshot.
+ */
+export interface ContentTransparencyCorrection {
+  id?: string | null;
+  summary?: string | null;
+  publicNote?: string | null;
+  publishedAt?: string | null;
+  [key: string]: unknown;
 }
 
 export interface ContentTransparencyData {
@@ -69,17 +103,19 @@ export interface ContentTransparencyData {
   linkedFacts: ContentTransparencyFact[];
   otherExtractedFacts: ContentTransparencyFact[];
   references: ContentTransparencyReference[];
-  reviews: Record<string, any>[];
-  reviewProfiles: Record<string, any>[];
-  corrections: Record<string, any>[];
+  reviews: ContentTransparencyReview[];
+  reviewProfiles: ContentTransparencyReviewProfile[];
+  corrections: ContentTransparencyCorrection[];
   versionHistory: ContentTransparencyVersionHistoryItem[];
 }
 
 function asObject(
   value: unknown,
-  fallback: Record<string, any> = {},
-): Record<string, any> {
-  return value && typeof value === 'object' ? { ...(value as any) } : fallback;
+  fallback: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return value && typeof value === 'object'
+    ? { ...(value as Record<string, unknown>) }
+    : fallback;
 }
 
 function asString(value: unknown): string | null {
@@ -248,9 +284,11 @@ export function normalizeContentTransparency(
     linkedFacts,
     otherExtractedFacts,
     references,
-    reviews: asArray<Record<string, any>>(snapshot.reviews),
-    reviewProfiles: asArray<Record<string, any>>(snapshot.reviewProfiles),
-    corrections: asArray<Record<string, any>>(snapshot.corrections),
+    reviews: asArray<ContentTransparencyReview>(snapshot.reviews),
+    reviewProfiles: asArray<ContentTransparencyReviewProfile>(
+      snapshot.reviewProfiles,
+    ),
+    corrections: asArray<ContentTransparencyCorrection>(snapshot.corrections),
     versionHistory: asArray<unknown>(snapshot.versionHistory).map(
       normalizeVersionHistoryItem,
     ),
