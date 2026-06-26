@@ -11,9 +11,12 @@ import type {
   Fact,
   FactClaimSupportAssessment,
   FactClaimSupportStatus,
+  FactContent,
   FactContentRelationship,
+  FactEvidence,
   FactEvidenceStatus,
   FactExtractionCandidate,
+  FactSource,
 } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
@@ -106,23 +109,23 @@ type FactEvidenceStatusUpdateOptions = {
 
 type FactAuditClaim = {
   id: string | null;
-  fact: Record<string, any>;
+  fact: Record<string, unknown>;
   supportStatus: FactClaimSupportStatus;
   claimQuote: string | null;
   rationale: string | null;
   confidence: number | null;
   relationship: string | null;
-  linkMetadata: Record<string, any>;
-  evidence: Record<string, any>[];
+  linkMetadata: Record<string, unknown>;
+  evidence: Record<string, unknown>[];
   matchedFacts: Array<{
-    fact: Record<string, any>;
-    evidence: Record<string, any>[];
+    fact: Record<string, unknown>;
+    evidence: Record<string, unknown>[];
   }>;
 };
 
 type FactAuditResourceClaim = {
   id: string | null;
-  fact: Record<string, any>;
+  fact: Record<string, unknown>;
   sourceKind: string | null;
   sourceId: string | null;
   sourceUrl: string | null;
@@ -131,8 +134,115 @@ type FactAuditResourceClaim = {
   quote: string | null;
   status: FactEvidenceStatus;
   confidence: number | null;
-  evidence: Record<string, any>[];
+  evidence: Record<string, unknown>[];
 };
+
+/**
+ * Minimal structural view of a metadata-bearing SMRT record (fact link,
+ * fact, evidence, source, version, review, correction). The fact-audit and
+ * transparency code paths interact with these entities loosely via their
+ * accessor methods rather than importing the concrete cross-package classes
+ * (which would create circular dependencies). `getMetadata`/`setMetadata`
+ * are optional because some paths receive plain serialized records.
+ */
+interface MetadataBearer {
+  getMetadata?: () => Record<string, unknown>;
+  setMetadata?: (metadata: Record<string, unknown>) => void;
+  updateMetadata?: (patch: Record<string, unknown>) => unknown;
+  metadata?: unknown;
+}
+
+/**
+ * Structural view of a content↔fact link as consumed by the fact-audit
+ * pipeline. Backed by `FactContent` from `@happyvertical/smrt-facts`.
+ */
+interface FactAuditLinkLike extends MetadataBearer {
+  factId?: string | null;
+  relationship?: string | null;
+  save?: () => Promise<unknown>;
+  delete?: () => Promise<unknown>;
+}
+
+/**
+ * Structural view of a fact-evidence record as consumed by the fact-audit
+ * pipeline. Backed by `FactEvidence` from `@happyvertical/smrt-facts`.
+ */
+interface FactAuditEvidenceLike extends MetadataBearer {
+  id?: string | null;
+  factId?: string | null;
+  status?: string | null;
+  sourceKind?: string | null;
+  sourceId?: string | null;
+  sourceUrl?: string | null;
+  sourceTitle?: string | null;
+  locator?: string | null;
+  quote?: string | null;
+  confidence?: number | null;
+  evidenceKey?: string | null;
+  tenantId?: string | null;
+  delete?: () => Promise<unknown>;
+}
+
+/**
+ * Structural view of a fact-source record as consumed by the fact-audit
+ * pipeline. Backed by `FactSource` from `@happyvertical/smrt-facts`.
+ */
+interface FactAuditSourceLike extends MetadataBearer {
+  id?: string | null;
+  sourceType?: string | null;
+  delete?: () => Promise<unknown>;
+}
+
+/**
+ * Loosely-read extra fields the fact-audit source scanner probes on an
+ * {@link Asset}. These are not declared `Asset` fields (assets vary by
+ * provider); they are read defensively and normalized via `normalizeAuditText`.
+ */
+interface FactAuditAssetExtraFields {
+  text?: unknown;
+  body?: unknown;
+  title?: unknown;
+  filename?: unknown;
+  url?: unknown;
+  sourceUrl?: unknown;
+  fileKey?: unknown;
+}
+
+/**
+ * Structural view of a support candidate carried through claim assessment.
+ * The `evidence` array holds the serialized evidence summaries built in
+ * {@link Content.getCurrentFactAuditSupportCandidates}.
+ */
+interface FactAuditSupportCandidate {
+  id: string;
+  statement: string;
+  evidence: Array<{ id?: string | null; [key: string]: unknown }>;
+}
+
+/**
+ * Loose view of a serialized record produced by the `serialize*` helpers
+ * (which return index-signature records that erase named keys at the type
+ * level). Adds back the few keys the transparency snapshot reads while keeping
+ * the rest as `unknown`.
+ */
+interface SerializedRecord {
+  id?: string | null;
+  status?: unknown;
+  usedInArticle?: boolean;
+  metadata?: unknown;
+  [key: string]: unknown;
+}
+
+/**
+ * Transient, non-persisted fields synchronized into junction links during
+ * `save()`. They are attached dynamically from constructor options rather
+ * than declared as ORM-managed fields, so callers narrow `this` to this
+ * shape instead of reaching in untyped.
+ */
+interface ContentTransientLinkIds {
+  referenceIds?: string[];
+  assetIds?: string[];
+}
 
 type FactAuditState = {
   counts: Record<FactClaimSupportStatus | 'total', number>;
@@ -186,57 +296,82 @@ function normalizeAuditText(value: unknown): string {
     .replace(/\s+/g, ' ');
 }
 
+/**
+ * Extract a human-readable message from an unknown caught value. Mirrors the
+ * previous `error.message || error` template interpolation without relying on
+ * an `any`-typed catch binding.
+ */
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message?: unknown }).message === 'string'
+  ) {
+    return (error as { message: string }).message;
+  }
+  return String(error);
+}
+
 function createFactAuditRunId(contentId: string): string {
   return `fact-audit-${hashFingerprint(
     `${contentId}:${new Date().toISOString()}:${Math.random()}`,
   )}`;
 }
 
-function parseAuditMetadata(value: unknown): Record<string, any> {
+function parseAuditMetadata(value: unknown): Record<string, unknown> {
   if (!value) return {};
-  if (typeof value === 'object') return value as Record<string, any>;
+  if (typeof value === 'object') return value as Record<string, unknown>;
   try {
-    return JSON.parse(String(value)) as Record<string, any>;
+    return JSON.parse(String(value)) as Record<string, unknown>;
   } catch {
     return {};
   }
 }
 
-function getLinkMetadata(link: any): Record<string, any> {
+function getLinkMetadata(link: MetadataBearer): Record<string, unknown> {
   return typeof link?.getMetadata === 'function' ? link.getMetadata() : {};
 }
 
-function getFactMetadata(fact: any): Record<string, any> {
+function getFactMetadata(fact: MetadataBearer): Record<string, unknown> {
   return typeof fact?.getMetadata === 'function'
     ? fact.getMetadata()
     : parseAuditMetadata(fact?.metadata);
 }
 
-function getGeneratedFactAuditMetadata(link: any): Record<string, any> | null {
+function getGeneratedFactAuditMetadata(
+  link: MetadataBearer,
+): Record<string, unknown> | null {
   const metadata = getLinkMetadata(link);
   if (metadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
     return metadata;
   }
 
+  const nested = metadata.factAudit;
   if (
-    metadata.factAudit &&
-    typeof metadata.factAudit === 'object' &&
-    metadata.factAudit.generatedBy === FACT_AUDIT_GENERATED_BY
+    nested &&
+    typeof nested === 'object' &&
+    (nested as Record<string, unknown>).generatedBy === FACT_AUDIT_GENERATED_BY
   ) {
-    return metadata.factAudit as Record<string, any>;
+    return nested as Record<string, unknown>;
   }
 
   return null;
 }
 
-function getEvidenceMetadata(evidence: any): Record<string, any> {
+function getEvidenceMetadata(
+  evidence: MetadataBearer,
+): Record<string, unknown> {
   return typeof evidence?.getMetadata === 'function'
     ? evidence.getMetadata()
     : parseAuditMetadata(evidence?.metadata);
 }
 
 function isGeneratedFactAuditEvidence(
-  evidence: any,
+  evidence: MetadataBearer,
   contentId: string,
 ): boolean {
   const metadata = getEvidenceMetadata(evidence);
@@ -246,7 +381,10 @@ function isGeneratedFactAuditEvidence(
   );
 }
 
-function isGeneratedArticleClaimFact(fact: any, contentId: string): boolean {
+function isGeneratedArticleClaimFact(
+  fact: MetadataBearer,
+  contentId: string,
+): boolean {
   const metadata = getFactMetadata(fact);
   if (metadata.generatedBy !== FACT_AUDIT_GENERATED_BY) {
     return false;
@@ -305,11 +443,66 @@ function getContentText(content: Content): string {
     .join('\n\n');
 }
 
-function getPublicPrompt(metadata: Record<string, any>): string | null {
+function readNestedString(
+  source: Record<string, unknown>,
+  path: string[],
+): string | null {
+  let current: unknown = source;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'string' && current ? current : null;
+}
+
+/**
+ * Coerce an unknown value into a plain record. Objects pass through; JSON
+ * strings are parsed (falling back to `{}` on failure); anything else yields
+ * an empty record. Used to read loosely-typed `metadata` fields that may be
+ * stored either as parsed objects or JSON strings.
+ */
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/**
+ * Walk a nested record path, returning the record at the end of the path or
+ * an empty record if any segment is missing/non-record-shaped.
+ */
+function readNestedRecord(
+  source: Record<string, unknown>,
+  path: string[],
+): Record<string, unknown> {
+  let current: unknown = source;
+  for (const key of path) {
+    if (!current || typeof current !== 'object') {
+      return {};
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return asRecord(current);
+}
+
+function getPublicPrompt(metadata: Record<string, unknown>): string | null {
   return (
-    metadata?.transparency?.generation?.publicPrompt ||
-    metadata?.generation?.publicPrompt ||
-    metadata?.publicPrompt ||
+    readNestedString(metadata, ['transparency', 'generation', 'publicPrompt']) ||
+    readNestedString(metadata, ['generation', 'publicPrompt']) ||
+    readNestedString(metadata, ['publicPrompt']) ||
     null
   );
 }
@@ -410,7 +603,7 @@ export interface ContentOptions extends SmrtObjectOptions {
   /**
    * Additional metadata
    */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 
   /**
    * ID of the thumbnail asset for this content
@@ -522,7 +715,7 @@ export interface ContentOptions extends SmrtObjectOptions {
 })
 export class Content
   extends SmrtObject
-  implements AssetAssociable, MetadataAccessor
+  implements AssetAssociable, MetadataAccessor<Record<string, unknown>>
 {
   /**
    * Tenant ID for multi-tenant isolation
@@ -635,7 +828,7 @@ export class Content
   /**
    * Additional JSON metadata for flexible schema extension
    */
-  public metadata: Record<string, any> = {};
+  public metadata: Record<string, unknown> = {};
 
   /**
    * ID of the thumbnail asset for this content
@@ -669,11 +862,12 @@ export class Content
     this.state = options.state || 'active';
     this.metadata = options.metadata || {};
     this.thumbnailAssetId = options.thumbnailAssetId ?? null;
+    const transient = this as Content & ContentTransientLinkIds;
     if (Array.isArray(options.referenceIds)) {
-      (this as any).referenceIds = [...options.referenceIds];
+      transient.referenceIds = [...options.referenceIds];
     }
     if (Array.isArray(options.assetIds)) {
-      (this as any).assetIds = [...options.assetIds];
+      transient.assetIds = [...options.assetIds];
     }
   }
 
@@ -991,7 +1185,7 @@ export class Content
         .map((reference) => reference.id)
         .filter(Boolean)
         .sort(),
-      facts: facts.map((fact: any) => ({
+      facts: facts.map((fact) => ({
         id: fact.id || null,
         // Pre-R3-C this was `parentId`; renamed to `previousFactId` in
         // smrt-facts. Existing cached fingerprints will invalidate, which
@@ -1005,7 +1199,7 @@ export class Content
         metadata:
           typeof fact?.getMetadata === 'function' ? fact.getMetadata() : {},
       })),
-      factLinks: factLinks.map((link: any) => ({
+      factLinks: factLinks.map((link) => ({
         factId: link.factId || null,
         relationship: link.relationship || null,
         metadata:
@@ -1051,7 +1245,7 @@ export class Content
     ]);
 
     const factSources = await this.getFactSourceCollection();
-    const factSourcesByFactId = new Map<string, any[]>();
+    const factSourcesByFactId = new Map<string, FactSource[]>();
 
     for (const fact of facts) {
       const factId = fact.id as string | undefined;
@@ -1065,18 +1259,18 @@ export class Content
 
     const usedFactIds = new Set(
       factLinks
-        .filter((link: any) =>
+        .filter((link) =>
           USED_FACT_RELATIONSHIPS.has(
             (link.relationship || 'related') as FactContentRelationship,
           ),
         )
-        .map((link: any) => link.factId)
+        .map((link) => link.factId)
         .filter(Boolean),
     );
 
-    const linkedFacts = facts.map((fact: any) => {
+    const linkedFacts = facts.map((fact) => {
       const factId = fact.id as string | undefined;
-      const link = factLinks.find((entry: any) => entry.factId === factId);
+      const link = factLinks.find((entry) => entry.factId === factId);
       const sources = (factId ? factSourcesByFactId.get(factId) : []) || [];
 
       return {
@@ -1085,7 +1279,7 @@ export class Content
         linkMetadata:
           typeof link?.getMetadata === 'function' ? link.getMetadata() : {},
         usedInArticle: factId ? usedFactIds.has(factId) : false,
-        sources: sources.map((source: any) => ({
+        sources: sources.map((source) => ({
           id: source.id || null,
           sourceType: source.sourceType || null,
           sourceUrl: source.sourceUrl || null,
@@ -1108,7 +1302,7 @@ export class Content
           reference.source,
         ].filter(Boolean) as string[];
 
-        const extractedFacts = new Map<string, any>();
+        const extractedFacts = new Map<string, Fact>();
         for (const sourceUrl of sourceUrls) {
           const matches = await factSources.list({
             where: { sourceUrl },
@@ -1127,15 +1321,15 @@ export class Content
           }
         }
 
-        const extractedFactRecords = [...extractedFacts.values()].map(
-          (fact) => {
-            const factId = fact.id as string | undefined;
-            return {
-              ...serializeFact(fact),
-              usedInArticle: factId ? usedFactIds.has(factId) : false,
-            };
-          },
-        );
+        const extractedFactRecords: SerializedRecord[] = [
+          ...extractedFacts.values(),
+        ].map((fact) => {
+          const factId = fact.id as string | undefined;
+          return {
+            ...serializeFact(fact),
+            usedInArticle: factId ? usedFactIds.has(factId) : false,
+          };
+        });
 
         return {
           id: reference.id || null,
@@ -1145,26 +1339,24 @@ export class Content
           type: reference.type || null,
           source: reference.source || null,
           usedFactIds: extractedFactRecords
-            .filter((fact: any) => fact.id && usedFactIds.has(fact.id))
-            .map((fact: any) => fact.id),
+            .filter((fact) => fact.id && usedFactIds.has(fact.id))
+            .map((fact) => fact.id),
           extractedFacts: extractedFactRecords,
         };
       }),
     );
 
-    const publicGeneration = (this.metadata?.transparency?.generation ??
-      {}) as Record<string, any>;
-    const generationMetadata = (this.metadata?.generation ?? {}) as Record<
-      string,
-      any
-    >;
-    const serializedCorrections = corrections
-      .filter((correction: any) => correction.status === 'published')
-      .map((correction: any) => {
-        const correctionMetadata =
-          typeof correction?.getMetadata === 'function'
-            ? correction.getMetadata()
-            : (correction.metadata as Record<string, any>) || {};
+    const publicGeneration = readNestedRecord(this.metadata, [
+      'transparency',
+      'generation',
+    ]);
+    const generationMetadata = readNestedRecord(this.metadata, ['generation']);
+    const serializedCorrections = (corrections as SerializedRecord[])
+      .filter((correction) => correction.status === 'published')
+      .map((correction) => {
+        // `corrections` is already serialized to plain records, so the
+        // metadata is the parsed object on `correction.metadata`.
+        const correctionMetadata = asRecord(correction.metadata);
 
         return {
           ...serializeContentCorrection(correction),
@@ -1179,36 +1371,36 @@ export class Content
           },
         };
       });
-    const serializedVersionHistory = versions.map((version: any) => {
-      const versionMetadata =
-        typeof version?.getMetadata === 'function'
-          ? version.getMetadata()
-          : (version.metadata as Record<string, any>) || {};
+    const serializedVersionHistory = (versions as SerializedRecord[]).map(
+      (version) => {
+        // `versions` is already serialized to plain records.
+        const versionMetadata = asRecord(version.metadata);
 
-      return {
-        id: version.id || null,
-        version: version.version ?? null,
-        kind: version.kind || null,
-        summary: version.summary || '',
-        createdAt: version.createdAt || null,
-        provenance: {
-          policyKey: versionMetadata.policyKey || null,
-          reviewFingerprint:
-            versionMetadata.reviewFingerprint ||
-            versionMetadata.contentFingerprint ||
-            null,
-          factId: versionMetadata.factId || null,
-          replacementFactId: versionMetadata.replacementFactId || null,
-          sourceCorrectionVersionId:
-            versionMetadata.sourceCorrectionVersionId || null,
-          sourceCorrectionVersionNumber:
-            versionMetadata.sourceCorrectionVersionNumber || null,
-          correctionDraft: versionMetadata.correctionDraft || null,
-          publicationSnapshotFingerprint:
-            versionMetadata.publicationSnapshotFingerprint || null,
-        },
-      };
-    });
+        return {
+          id: version.id || null,
+          version: version.version ?? null,
+          kind: version.kind || null,
+          summary: version.summary || '',
+          createdAt: version.createdAt || null,
+          provenance: {
+            policyKey: versionMetadata.policyKey || null,
+            reviewFingerprint:
+              versionMetadata.reviewFingerprint ||
+              versionMetadata.contentFingerprint ||
+              null,
+            factId: versionMetadata.factId || null,
+            replacementFactId: versionMetadata.replacementFactId || null,
+            sourceCorrectionVersionId:
+              versionMetadata.sourceCorrectionVersionId || null,
+            sourceCorrectionVersionNumber:
+              versionMetadata.sourceCorrectionVersionNumber || null,
+            correctionDraft: versionMetadata.correctionDraft || null,
+            publicationSnapshotFingerprint:
+              versionMetadata.publicationSnapshotFingerprint || null,
+          },
+        };
+      },
+    );
 
     return normalizeContentTransparency(
       {
@@ -1228,7 +1420,7 @@ export class Content
         factsUsed: linkedFacts.filter((fact) => fact.usedInArticle),
         linkedFacts,
         otherExtractedFacts: referenceGroups.flatMap((reference) =>
-          reference.extractedFacts.filter((fact: any) => !fact.usedInArticle),
+          reference.extractedFacts.filter((fact) => !fact.usedInArticle),
         ),
         references: referenceGroups,
         reviews,
@@ -1306,7 +1498,7 @@ export class Content
         }))
         .sort((a, b) => String(a.targetId).localeCompare(String(b.targetId))),
       facts: facts
-        .map((fact: any) => ({
+        .map((fact) => ({
           id: fact.id || null,
           previousFactId: fact.previousFactId || null,
           status: fact.status || null,
@@ -1316,17 +1508,15 @@ export class Content
           metadata:
             typeof fact?.getMetadata === 'function' ? fact.getMetadata() : {},
         }))
-        .sort((a: any, b: any) => String(a.id).localeCompare(String(b.id))),
+        .sort((a, b) => String(a.id).localeCompare(String(b.id))),
       factLinks: factLinks
-        .map((link: any) => ({
+        .map((link) => ({
           factId: link.factId || null,
           relationship: link.relationship || null,
           metadata:
             typeof link?.getMetadata === 'function' ? link.getMetadata() : {},
         }))
-        .sort((a: any, b: any) =>
-          String(a.factId).localeCompare(String(b.factId)),
-        ),
+        .sort((a, b) => String(a.factId).localeCompare(String(b.factId))),
     });
   }
 
@@ -1352,8 +1542,8 @@ export class Content
     options: IssueContentCorrectionOptions,
     replacementFactId: string,
   ): Promise<{
-    snapshot: Record<string, any>;
-    metadata: Record<string, any>;
+    snapshot: Record<string, unknown>;
+    metadata: Record<string, unknown>;
   }> {
     const correctedText =
       options.correctedText || options.correctedFactText || '';
@@ -1412,7 +1602,7 @@ export class Content
         metadata: {
           ...(this.metadata || {}),
           governance: {
-            ...((this.metadata?.governance || {}) as Record<string, any>),
+            ...asRecord(this.metadata.governance),
             correctionDraft: {
               summary: options.summary,
               incorrectText,
@@ -1526,7 +1716,8 @@ export class Content
   }
 
   private getPendingReferenceIds(): string[] | null {
-    const pendingReferenceIds = (this as any).referenceIds;
+    const pendingReferenceIds = (this as Content & ContentTransientLinkIds)
+      .referenceIds;
 
     if (!Array.isArray(pendingReferenceIds)) {
       return null;
@@ -1545,7 +1736,8 @@ export class Content
   }
 
   private getPendingAssetIds(): string[] | null {
-    const pendingAssetIds = (this as any).assetIds;
+    const pendingAssetIds = (this as Content & ContentTransientLinkIds)
+      .assetIds;
 
     if (!Array.isArray(pendingAssetIds)) {
       return null;
@@ -1881,7 +2073,7 @@ export class Content
   public async addFact(
     fact: Fact | string,
     relationship?: FactContentRelationship,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
   ) {
     const governance = await this.requireFactLinking('fact association');
 
@@ -1995,13 +2187,16 @@ export class Content
     for (const reference of references) {
       const referenceId = (reference.id as string | undefined) || '';
       const text = getContentText(reference);
+      // `sourceUrl` is not a declared Content field; read it structurally.
+      const referenceSourceUrl = (reference as { sourceUrl?: unknown })
+        .sourceUrl;
       const sourceUrl =
-        normalizeAuditText((reference as any).url) ||
-        normalizeAuditText((reference as any).sourceUrl) ||
-        normalizeAuditText((reference as any).fileKey);
+        normalizeAuditText(reference.url) ||
+        normalizeAuditText(referenceSourceUrl) ||
+        normalizeAuditText(reference.fileKey);
       const sourceTitle =
         normalizeAuditText(reference.title) ||
-        normalizeAuditText((reference as any).name) ||
+        normalizeAuditText(reference.name) ||
         sourceUrl ||
         referenceId;
 
@@ -2022,7 +2217,7 @@ export class Content
       });
     }
 
-    for (const asset of assets as any[]) {
+    for (const asset of assets as Array<Asset & FactAuditAssetExtraFields>) {
       const metadata =
         typeof asset?.getMetadata === 'function'
           ? asset.getMetadata()
@@ -2067,7 +2262,10 @@ export class Content
     return { sources, warnings };
   }
 
-  private factMatchesTenant(fact: any): boolean {
+  private factMatchesTenant(fact: {
+    tenantId?: string | null;
+    tenant_id?: string | null;
+  }): boolean {
     return (
       fact.tenantId === this.tenantId ||
       fact.tenant_id === this.tenantId ||
@@ -2081,15 +2279,15 @@ export class Content
     const normalizedStatement = normalizeAuditText(statement);
     const facts = await this.getFactCollection();
     const linkedClaimFacts = await Promise.all(
-      (await this.getFactLinks({ relationship: 'referenced_in' })).map(
-        (link: any) => facts.get({ id: link.factId }),
+      (await this.getFactLinks({ relationship: 'referenced_in' })).map((link) =>
+        facts.get({ id: link.factId }),
       ),
     );
     const linkedMatch = linkedClaimFacts.find(
-      (fact: any): fact is Fact =>
+      (fact): fact is Fact =>
         Boolean(fact) &&
-        this.factMatchesTenant(fact) &&
-        normalizeAuditText(fact.textRefined) === normalizedStatement,
+        this.factMatchesTenant(fact as Fact) &&
+        normalizeAuditText((fact as Fact).textRefined) === normalizedStatement,
     );
     if (linkedMatch) {
       return linkedMatch;
@@ -2102,7 +2300,7 @@ export class Content
 
     return (
       matches.find(
-        (fact: any) =>
+        (fact) =>
           this.factMatchesTenant(fact) &&
           this.id &&
           isGeneratedArticleClaimFact(fact, this.id as string),
@@ -2113,12 +2311,12 @@ export class Content
   private async safeAuditLink(
     factId: string,
     relationship: FactContentRelationship,
-    metadata: Record<string, any>,
+    metadata: Record<string, unknown>,
   ) {
     const links = await this.getFactContentCollection();
     const existing = (
       await links.byRight(this.id as string, { relationship })
-    ).find((link: any) => link.factId === factId);
+    ).find((link) => link.factId === factId);
 
     if (existing) {
       const existingMetadata = getLinkMetadata(existing);
@@ -2131,10 +2329,7 @@ export class Content
         existing.setMetadata?.({
           ...existingMetadata,
           factAudit: {
-            ...(existingMetadata.factAudit &&
-            typeof existingMetadata.factAudit === 'object'
-              ? existingMetadata.factAudit
-              : {}),
+            ...asRecord(existingMetadata.factAudit),
             ...metadata,
           },
         });
@@ -2156,14 +2351,15 @@ export class Content
       this.getFactEvidenceCollection(),
     ]);
 
-    for (const link of links as any[]) {
+    for (const link of links) {
       const metadata = getLinkMetadata(link);
+      const nestedFactAudit = asRecord(metadata.factAudit);
       if (metadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
         await link.delete();
       } else if (
         metadata.factAudit &&
         typeof metadata.factAudit === 'object' &&
-        metadata.factAudit.generatedBy === FACT_AUDIT_GENERATED_BY
+        nestedFactAudit.generatedBy === FACT_AUDIT_GENERATED_BY
       ) {
         const { factAudit: _removed, ...preservedMetadata } = metadata;
         link.setMetadata?.(preservedMetadata);
@@ -2174,7 +2370,7 @@ export class Content
     const generatedEvidence = await evidences.list({
       where: { tenantId: this.tenantId ?? null },
     });
-    for (const evidence of generatedEvidence as any[]) {
+    for (const evidence of generatedEvidence) {
       const metadata =
         typeof evidence.getMetadata === 'function'
           ? evidence.getMetadata()
@@ -2204,7 +2400,7 @@ export class Content
     });
     const deletedSourceIds: string[] = [];
 
-    for (const source of generatedSources as any[]) {
+    for (const source of generatedSources) {
       const metadata =
         typeof source.getMetadata === 'function' ? source.getMetadata() : {};
       const sourceKey = `${source.sourceType || ''}:${metadata.sourceId || ''}`;
@@ -2266,9 +2462,9 @@ export class Content
           maxFacts: options.maxFactsPerSource ?? 24,
           tenantId: this.tenantId,
         });
-      } catch (error: any) {
+      } catch (error) {
         warnings.push(
-          `Failed to extract facts from ${source.sourceTitle}: ${error.message || error}`,
+          `Failed to extract facts from ${source.sourceTitle}: ${errorMessage(error)}`,
         );
         continue;
       }
@@ -2342,8 +2538,8 @@ export class Content
   ) {
     const evidences = await this.getFactEvidenceCollection();
     const allFacts = await this.getFactCollection();
-    const candidateFacts = new Map<string, any>();
-    const candidateEvidence = new Map<string, any>();
+    const candidateFacts = new Map<string, FactAuditSupportCandidate>();
+    const candidateEvidence = new Map<string, FactEvidence>();
     const sourceKeys = new Set(
       (options.sources || []).map(
         (source) => `${source.sourceKind}:${source.sourceId}`,
@@ -2367,7 +2563,7 @@ export class Content
           where: { tenantId: this.tenantId ?? null },
         });
 
-    for (const entry of evidenceEntries as any[]) {
+    for (const entry of evidenceEntries) {
       if (!isGeneratedFactAuditEvidence(entry, this.id as string)) {
         continue;
       }
@@ -2469,9 +2665,9 @@ export class Content
           maxFacts: options.maxArticleClaims ?? 32,
           tenantId: this.tenantId,
         });
-      } catch (error: any) {
+      } catch (error) {
         warnings.push(
-          `Failed to extract article claims: ${error.message || error}`,
+          `Failed to extract article claims: ${errorMessage(error)}`,
         );
       }
     }
@@ -2491,9 +2687,9 @@ export class Content
           supportCandidates,
           { tenantId: this.tenantId },
         );
-      } catch (error: any) {
+      } catch (error) {
         warnings.push(
-          `Failed to assess claim "${claim.statement}": ${error.message || error}`,
+          `Failed to assess claim "${claim.statement}": ${errorMessage(error)}`,
         );
         assessment = {
           status: 'needs_review' as FactClaimSupportStatus,
@@ -2579,12 +2775,12 @@ export class Content
           continue;
         }
         const candidate = supportCandidates.find(
-          (entry: any) => entry.id === matchedFactId,
+          (entry) => entry.id === matchedFactId,
         );
         supportingEvidenceIds = [
           ...supportingEvidenceIds,
           ...(candidate?.evidence || [])
-            .map((entry: any) => entry.id)
+            .map((entry) => entry.id)
             .filter((id: unknown): id is string => typeof id === 'string'),
         ];
       }
@@ -2733,7 +2929,7 @@ export class Content
   ): Promise<void> {
     const links = await this.getFactLinks();
 
-    for (const link of links as any[]) {
+    for (const link of links) {
       if (
         link.relationship !== 'supports' &&
         link.relationship !== 'contradicts'
@@ -2780,12 +2976,14 @@ export class Content
     const claimLinks = (
       await links.byRight(this.id as string, { relationship: 'referenced_in' })
     )
-      .map((link: any) => ({
+      .map((link) => ({
         link,
         metadata: getGeneratedFactAuditMetadata(link),
       }))
       .filter(
-        (entry): entry is { link: any; metadata: Record<string, any> } =>
+        (
+          entry,
+        ): entry is { link: FactContent; metadata: Record<string, unknown> } =>
           entry.metadata !== null &&
           (claimIdFilter.size === 0 || claimIdFilter.has(entry.link.factId)),
       );
@@ -2813,9 +3011,9 @@ export class Content
           supportCandidates,
           { tenantId: this.tenantId },
         );
-      } catch (error: any) {
+      } catch (error) {
         warnings.push(
-          `Failed to recheck claim "${claimText}": ${error.message || error}`,
+          `Failed to recheck claim "${claimText}": ${errorMessage(error)}`,
         );
         assessment = {
           status: 'needs_review',
@@ -2842,11 +3040,11 @@ export class Content
       if (supportingEvidenceIds.length === 0) {
         for (const matchedFactId of matchedFactIds) {
           const candidate = supportCandidates.find(
-            (entry: any) => entry.id === matchedFactId,
+            (entry) => entry.id === matchedFactId,
           );
           supportingEvidenceIds.push(
             ...(candidate?.evidence || [])
-              .map((entry: any) => entry.id)
+              .map((entry) => entry.id)
               .filter((id: unknown): id is string => typeof id === 'string'),
           );
         }
@@ -2958,7 +3156,7 @@ export class Content
     const allowedEvidenceIds: string[] = [];
 
     for (const evidenceId of requestedEvidenceIds) {
-      const evidence = (await evidences.get({ id: evidenceId })) as any;
+      const evidence = await evidences.get({ id: evidenceId });
       if (!evidence) {
         continue;
       }
@@ -2999,7 +3197,7 @@ export class Content
         status,
         requestedEvidenceIds,
         updatedEvidenceIds: updated
-          .map((entry: any) => entry.id)
+          .map((entry) => entry.id)
           .filter((id: unknown): id is string => typeof id === 'string'),
         skippedEvidenceIds: requestedEvidenceIds.filter(
           (id) => !allowedEvidenceIds.includes(id),
@@ -3042,18 +3240,20 @@ export class Content
     ]);
     const factMap = new Map(
       facts
-        .filter((fact: any) => fact.id)
-        .map((fact: any) => [fact.id as string, fact]),
+        .filter((fact) => fact.id)
+        .map((fact) => [fact.id as string, fact] as const),
     );
     const evidences = await this.getFactEvidenceCollection();
     const allFacts = await this.getFactCollection();
     const generatedLinks = factLinks
-      .map((link: any) => ({
+      .map((link) => ({
         link,
         metadata: getGeneratedFactAuditMetadata(link),
       }))
       .filter(
-        (entry): entry is { link: any; metadata: Record<string, any> } =>
+        (
+          entry,
+        ): entry is { link: FactContent; metadata: Record<string, unknown> } =>
           entry.metadata !== null,
       );
     const claims: FactAuditClaim[] = [];
@@ -3067,7 +3267,9 @@ export class Content
         continue;
       }
 
-      latestAuditRunId = metadata.auditRunId || latestAuditRunId;
+      // Opaque audit-link metadata values; cast at the read boundary.
+      latestAuditRunId =
+        (metadata.auditRunId as string | null) || latestAuditRunId;
       const status = (metadata.supportStatus ||
         'needs_review') as FactClaimSupportStatus;
       const matchedFactIds = Array.isArray(metadata.supportingFactIds)
@@ -3090,15 +3292,15 @@ export class Content
           matchedFactIds.map(async (factId: string) => {
             const matchedFact = await allFacts.get({ id: factId });
             const matchedEvidence = (await evidences.getForFact(factId)).filter(
-              (entry: any) =>
+              (entry) =>
                 supportingEvidenceIds.size === 0
                   ? entry.sourceKind !== 'content' || entry.sourceId !== this.id
-                  : supportingEvidenceIds.has(entry.id),
+                  : supportingEvidenceIds.has(entry.id as string),
             );
             return matchedFact
               ? {
                   fact: serializeFact(matchedFact),
-                  evidence: matchedEvidence.map((entry: any) => ({
+                  evidence: matchedEvidence.map((entry) => ({
                     ...serializeFact(entry),
                     metadata:
                       typeof entry.getMetadata === 'function'
@@ -3110,7 +3312,7 @@ export class Content
           }),
         ),
       ]);
-      const claimEvidence = allClaimEvidence.filter((entry: any) =>
+      const claimEvidence = allClaimEvidence.filter((entry) =>
         articleEvidenceId
           ? entry.id === articleEvidenceId
           : entry.sourceKind === 'content' && entry.sourceId === this.id,
@@ -3120,12 +3322,13 @@ export class Content
         id: fact.id as string,
         fact: serializeFact(fact),
         supportStatus: status,
-        claimQuote: metadata.claimQuote || null,
-        rationale: metadata.rationale || null,
-        confidence: metadata.confidence ?? null,
+        // Opaque audit-link metadata values; cast at the read boundary.
+        claimQuote: (metadata.claimQuote as string | null) || null,
+        rationale: (metadata.rationale as string | null) || null,
+        confidence: (metadata.confidence as number | null) ?? null,
         relationship: link.relationship || null,
         linkMetadata: metadata,
-        evidence: claimEvidence.map((entry: any) => ({
+        evidence: claimEvidence.map((entry) => ({
           ...serializeFact(entry),
           metadata:
             typeof entry.getMetadata === 'function' ? entry.getMetadata() : {},
@@ -3139,7 +3342,7 @@ export class Content
     const generatedEvidence = await evidences.list({
       where: { tenantId: this.tenantId ?? null },
     });
-    for (const evidence of generatedEvidence as any[]) {
+    for (const evidence of generatedEvidence) {
       const metadata =
         typeof evidence.getMetadata === 'function'
           ? evidence.getMetadata()
@@ -3251,7 +3454,7 @@ export class Content
     ]);
 
     return {
-      factIds: facts.map((fact: any) => fact.id).filter(Boolean),
+      factIds: facts.map((fact) => fact.id).filter(Boolean),
       facts: facts.map(serializeFact),
       factLinks: factLinks.map(serializeFactLink),
     };
@@ -3681,7 +3884,7 @@ export class Content
         tenantId: existing.tenantId ?? this.tenantId ?? null,
         previousFactId: options.factId,
         evolutionType: 'correction',
-      } as any);
+      });
       existing.status = 'superseded';
       await existing.save();
       replacementFactId = replacement.id as string;
@@ -3945,7 +4148,7 @@ export class Content
    * NULL column on the next save. Callers that want to normalise the
    * stored field should use {@link Content.setMetadata}.
    */
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     return isPlainMetadataRecord(this.metadata) ? this.metadata : {};
   }
 
@@ -3954,7 +4157,7 @@ export class Content
    * non-record value such as an array) clears it to an empty object so
    * downstream readers can rely on the field always being a plain object.
    */
-  setMetadata(metadata: Record<string, any> | null | undefined): void {
+  setMetadata(metadata: Record<string, unknown> | null | undefined): void {
     this.metadata = isPlainMetadataRecord(metadata) ? { ...metadata } : {};
   }
 
@@ -3964,7 +4167,9 @@ export class Content
    * {@link Content.getMetadata}, this method does intentionally write back
    * to `this.metadata` because the merge is a write.
    */
-  updateMetadata(patch: Partial<Record<string, any>>): Record<string, any> {
+  updateMetadata(
+    patch: Partial<Record<string, unknown>>,
+  ): Record<string, unknown> {
     const next = { ...this.getMetadata(), ...(patch ?? {}) };
     this.metadata = next;
     return next;
@@ -3983,8 +4188,8 @@ export class Content
       return null;
     }
 
-    const images = await (ImageCollection as any).create({
-      db: (this as any).options?.db,
+    const images = await ImageCollection.create({
+      db: this.options?.db,
     });
 
     return images.get({ id: this.thumbnailAssetId });
@@ -4034,7 +4239,7 @@ export class Content
    * ```
    */
   async generateThumbnail(options: ThumbnailOptions): Promise<Image> {
-    const generator = new ThumbnailGenerator(this, (this as any).options);
+    const generator = new ThumbnailGenerator(this, this.options);
     const image = await generator.generate(options);
     await this.setThumbnail(image);
     return image;

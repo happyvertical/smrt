@@ -5,8 +5,16 @@ import { M } from '../i18n.editor.js';
 
 const { t } = useI18n();
 
+export interface ContentStatusFieldData {
+  type?: string;
+  state?: string;
+  status?: string;
+  publish_date?: string;
+  [key: string]: unknown;
+}
+
 export interface Props {
-  data: Record<string, any>;
+  data: ContentStatusFieldData;
   onChange?: (change: Record<string, unknown>) => void;
 }
 

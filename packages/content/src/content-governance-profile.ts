@@ -14,7 +14,7 @@ export interface ContentGovernanceProfileOptions extends SmrtObjectOptions {
   description?: string;
   enabled?: boolean;
   requirements?: string | ContentReviewRequirement[];
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -82,9 +82,9 @@ export class ContentGovernanceProfile extends SmrtObject {
     }
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (this.metadata && typeof this.metadata === 'object') {
-      return { ...(this.metadata as Record<string, any>) };
+      return { ...(this.metadata as Record<string, unknown>) };
     }
 
     try {

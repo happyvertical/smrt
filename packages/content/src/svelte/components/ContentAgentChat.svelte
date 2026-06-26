@@ -6,6 +6,11 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
+import type {
+  AgentSessionData,
+  ChatMessageData,
+  ChatThreadData,
+} from '@happyvertical/smrt-chat/svelte';
 import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
@@ -58,10 +63,10 @@ let {
   onclose = undefined,
 }: Props = $props();
 
-let session = $state<any>(null);
-let threads = $state<any[]>([]);
+let session = $state<AgentSessionData | null>(null);
+let threads = $state<ChatThreadData[]>([]);
 let activeThreadId = $state<string | null>(null);
-let messages = $state<any[]>([]);
+let messages = $state<ChatMessageData[]>([]);
 
 let loadingSession = $state(true);
 let loadingMessages = $state(false);
@@ -147,8 +152,17 @@ $effect(() => {
   void loadSession();
 });
 
+/**
+ * Raw message shape as returned from the chat API before UI normalization.
+ * Fields are loosely typed because the wire payload may omit UI-only fields.
+ */
+interface RawAgentMessage extends Partial<ChatMessageData> {
+  created_at?: string | Date;
+  [key: string]: unknown;
+}
+
 /** Ensure every message has the UI fields that AgentChat.svelte requires */
-function normalizeMessage(msg: any): any {
+function normalizeMessage(msg: RawAgentMessage): ChatMessageData {
   return {
     ...msg,
     senderName:
@@ -161,10 +175,14 @@ function normalizeMessage(msg: any): any {
         : msg.attachments
       : [],
     createdAt: msg.createdAt || msg.created_at || new Date().toISOString(),
-  };
+  } as ChatMessageData;
 }
 
-function parseSessionContext(sessionValue: any): Record<string, unknown> {
+type SessionWithContext = AgentSessionData & { sessionContext?: unknown };
+
+function parseSessionContext(
+  sessionValue: SessionWithContext | null | undefined,
+): Record<string, unknown> {
   const rawContext = sessionValue?.sessionContext;
   if (!rawContext) {
     return {};
@@ -209,7 +227,9 @@ function normalizeAllowedModels(value: unknown): string[] {
   return models;
 }
 
-function applySessionModelPreference(sessionValue: any): void {
+function applySessionModelPreference(
+  sessionValue: SessionWithContext | null | undefined,
+): void {
   const ctx = parseSessionContext(sessionValue);
   const sessionAllowedModels = normalizeAllowedModels(ctx.allowedModels);
   allowedModelIds = sessionAllowedModels;
@@ -271,8 +291,8 @@ async function loadSession() {
       newTopicTitle = 'General';
       await createNewTopic();
     }
-  } catch (err: any) {
-    error = err.message;
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
   } finally {
     loadingSession = false;
   }
@@ -306,8 +326,8 @@ async function loadThread(threadId: string) {
 
     // Check if there is a saved model preference on the session context
     applySessionModelPreference(session);
-  } catch (err: any) {
-    error = err.message;
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
   } finally {
     loadingMessages = false;
   }
@@ -339,8 +359,8 @@ async function createNewTopic() {
     threads = [data.thread, ...threads];
     newTopicTitle = '';
     await loadThread(data.thread.id);
-  } catch (err: any) {
-    error = err.message;
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
   } finally {
     isCreatingTopic = false;
   }
@@ -350,16 +370,14 @@ async function handleSendMessage(content: string) {
   if (!session || !activeThreadId) return;
 
   const tempId = `temp-${Date.now()}`;
-  messages = [
-    ...messages,
-    {
-      id: tempId,
-      content,
-      role: 'user',
-      messageType: 'text',
-      createdAt: new Date(),
-    },
-  ];
+  const tempMessage = {
+    id: tempId,
+    content,
+    role: 'user',
+    messageType: 'text',
+    createdAt: new Date(),
+  } as ChatMessageData;
+  messages = [...messages, tempMessage];
 
   sendingMessage = true;
   try {
@@ -412,7 +430,7 @@ async function handleSendMessage(content: string) {
         match = jsonBlockRegex.exec(data.agentMessage.content);
       }
     }
-  } catch (err: any) {
+  } catch (err) {
     messages = messages.filter((m) => m.id !== tempId);
     error = 'Failed to send message.';
   } finally {

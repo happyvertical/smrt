@@ -615,12 +615,19 @@ export function htmlToMarkdown(html: string): string {
     return '';
   }
 
-  const Parser = (globalThis as Record<string, any>).DOMParser;
+  const Parser = (globalThis as Record<string, unknown>).DOMParser;
   if (typeof Parser !== 'function') {
     return fallbackHtmlToMarkdown(sanitized);
   }
 
-  const parser = new Parser();
+  // Structural view of the DOMParser API we rely on; avoids depending on the
+  // DOM lib in this environment-agnostic module.
+  const parser = new (Parser as new () => {
+    parseFromString: (
+      source: string,
+      mimeType: string,
+    ) => { body?: { childNodes?: ArrayLike<MarkdownDomNode> } | null };
+  })();
   const document = parser.parseFromString(
     `<body>${sanitized}</body>`,
     'text/html',
@@ -759,15 +766,33 @@ export function extractBodyImages(
   return images;
 }
 
-export function getImageSource(asset: any): string {
+/**
+ * Structural view of the asset-like inputs accepted by the image helpers.
+ * Callers pass assorted asset shapes (Asset models, plain DTOs, etc.); only
+ * these optional fields are read.
+ */
+export interface ImageAssetLike {
+  id?: unknown;
+  sourceUri?: unknown;
+  url?: unknown;
+  src?: unknown;
+  alt?: unknown;
+  name?: unknown;
+  title?: unknown;
+  width?: unknown;
+}
+
+export function getImageSource(asset: ImageAssetLike | null | undefined): string {
   return String(asset?.sourceUri || asset?.url || asset?.src || '');
 }
 
-export function getImageAlt(asset: any): string {
+export function getImageAlt(asset: ImageAssetLike | null | undefined): string {
   return String(asset?.alt || asset?.name || asset?.title || 'Image');
 }
 
-export function imageAssetToHtml(asset: any): string {
+export function imageAssetToHtml(
+  asset: ImageAssetLike | null | undefined,
+): string {
   const src = sanitizeUrl(getImageSource(asset));
   if (!src) {
     return '';

@@ -22,7 +22,7 @@ export interface ContentCorrectionOptions extends SmrtObjectOptions {
   incorrectText?: string;
   correctedText?: string;
   publicNote?: string;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
   publishedAt?: Date | null;
   createdAt?: Date;
@@ -94,7 +94,7 @@ export class ContentCorrection extends SmrtObject {
     }
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     try {
       return this.metadata ? JSON.parse(this.metadata) : {};
     } catch {

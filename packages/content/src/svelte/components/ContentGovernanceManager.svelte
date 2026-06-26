@@ -56,8 +56,10 @@ async function loadDefinitions() {
     const response = await governanceClient.contents.getGovernanceDefinitions();
     definitions = response.data;
     onChange?.(response.data);
-  } catch (err: any) {
-    error = err.message || 'Failed to load governance definitions';
+  } catch (err) {
+    error =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to load governance definitions';
   } finally {
     loading = false;
   }

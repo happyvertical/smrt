@@ -75,7 +75,7 @@ export interface ContentReviewPolicyDefinition {
   kind: ContentReviewKind;
   instructions: string;
   enabled?: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ContentGovernanceProfileDefinition {
@@ -84,7 +84,7 @@ export interface ContentGovernanceProfileDefinition {
   description?: string;
   enabled?: boolean;
   requirements: ContentReviewRequirement[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ContentGovernanceAssignmentDefinition {
@@ -99,7 +99,7 @@ export interface ContentGovernanceAssignmentDefinition {
   correctionProfileKey?: string | null;
   enforcePublishReadiness?: boolean;
   defaultFactRelationship?: FactContentRelationship;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface ContentGovernanceConfig {
@@ -158,8 +158,8 @@ export interface ContentGovernanceState extends ResolvedContentGovernance {
 export interface CreateContentVersionOptions {
   kind?: ContentVersionKind;
   summary?: string;
-  metadata?: Record<string, any>;
-  snapshot?: Record<string, any>;
+  metadata?: Record<string, unknown>;
+  snapshot?: Record<string, unknown>;
 }
 
 export interface RunContentReviewOptions {
@@ -169,7 +169,7 @@ export interface RunContentReviewOptions {
   instructions?: string;
   facts?: Fact[];
   factIds?: string[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createVersion?: boolean;
 }
 
@@ -181,7 +181,7 @@ export interface IssueContentCorrectionOptions {
   incorrectText?: string;
   correctedText?: string;
   publicNote?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createVersion?: boolean;
   publish?: boolean;
 }
@@ -453,7 +453,7 @@ function isMissingGovernanceTableError(error: unknown): boolean {
 }
 
 function getRowTimestamp(
-  row: Record<string, any>,
+  row: Record<string, unknown>,
   primaryKey: 'createdAt' | 'updatedAt',
 ): string | null {
   const snakeCaseKey = primaryKey === 'createdAt' ? 'created_at' : 'updated_at';
@@ -461,24 +461,37 @@ function getRowTimestamp(
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function getRowTenantId(row: Record<string, any>): string | null {
+function getRowTenantId(row: Record<string, unknown>): string | null {
   const value = row.tenantId ?? row.tenant_id ?? null;
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function safeParseJSONObject(value: unknown): Record<string, any> {
+function getRowString(
+  row: Record<string, unknown>,
+  ...keys: string[]
+): string | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'string' && value.length > 0) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function safeParseJSONObject(value: unknown): Record<string, unknown> {
   if (!value) {
     return {};
   }
 
   if (typeof value === 'object' && !Array.isArray(value)) {
-    return { ...(value as Record<string, any>) };
+    return { ...(value as Record<string, unknown>) };
   }
 
   try {
     const parsed = JSON.parse(String(value));
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? { ...(parsed as Record<string, any>) }
+      ? { ...(parsed as Record<string, unknown>) }
       : {};
   } catch {
     return {};
@@ -505,7 +518,7 @@ function safeParseJSONArray<T>(value: unknown, mapEntry: (entry: T) => T): T[] {
 }
 
 function mapPersistedPolicyRow(
-  row: Record<string, any>,
+  row: Record<string, unknown>,
 ): PersistedContentGovernancePolicyRecord {
   return {
     id: typeof row.id === 'string' ? row.id : undefined,
@@ -525,7 +538,7 @@ function mapPersistedPolicyRow(
 }
 
 function mapPersistedProfileRow(
-  row: Record<string, any>,
+  row: Record<string, unknown>,
 ): PersistedContentGovernanceProfileRecord {
   return {
     id: typeof row.id === 'string' ? row.id : undefined,
@@ -547,7 +560,7 @@ function mapPersistedProfileRow(
 }
 
 function mapPersistedAssignmentRow(
-  row: Record<string, any>,
+  row: Record<string, unknown>,
 ): PersistedContentGovernanceAssignmentRecord {
   return {
     id: typeof row.id === 'string' ? row.id : undefined,
@@ -568,18 +581,28 @@ function mapPersistedAssignmentRow(
         row.transparencyEnabled === true ||
         row.transparency_enabled === true ||
         row.transparency_enabled === 1,
-      publicationProfileKey:
-        row.publicationProfileKey || row.publication_profile_key || null,
-      correctionProfileKey:
-        row.correctionProfileKey || row.correction_profile_key || null,
+      publicationProfileKey: getRowString(
+        row,
+        'publicationProfileKey',
+        'publication_profile_key',
+      ),
+      correctionProfileKey: getRowString(
+        row,
+        'correctionProfileKey',
+        'correction_profile_key',
+      ),
       enforcePublishReadiness:
         row.enforcePublishReadiness === true ||
         row.enforce_publish_readiness === true ||
         row.enforce_publish_readiness === 1,
+      // The relationship is stored as a string; trust the persisted value and
+      // fall back to the default when absent.
       defaultFactRelationship:
-        row.defaultFactRelationship ||
-        row.default_fact_relationship ||
-        DEFAULT_FACT_RELATIONSHIP,
+        (getRowString(
+          row,
+          'defaultFactRelationship',
+          'default_fact_relationship',
+        ) as FactContentRelationship | null) || DEFAULT_FACT_RELATIONSHIP,
       metadata: safeParseJSONObject(row.metadata),
     }),
   };
@@ -604,26 +627,26 @@ export async function loadPersistedContentGovernanceDefinitions(
       db.list('content_governance_assignments', {}),
     ]);
 
-    policyRows.sort((a: any, b: any) =>
+    const byCreatedAt = (
+      a: Record<string, unknown>,
+      b: Record<string, unknown>,
+    ): number =>
       String(a.created_at || a.createdAt || '').localeCompare(
         String(b.created_at || b.createdAt || ''),
-      ),
-    );
-    profileRows.sort((a: any, b: any) =>
-      String(a.created_at || a.createdAt || '').localeCompare(
-        String(b.created_at || b.createdAt || ''),
-      ),
-    );
-    assignmentRows.sort((a: any, b: any) =>
-      String(a.created_at || a.createdAt || '').localeCompare(
-        String(b.created_at || b.createdAt || ''),
-      ),
-    );
+      );
+
+    policyRows.sort(byCreatedAt);
+    profileRows.sort(byCreatedAt);
+    assignmentRows.sort(byCreatedAt);
 
     return {
-      policies: policyRows.map((row: any) => mapPersistedPolicyRow(row)),
-      profiles: profileRows.map((row: any) => mapPersistedProfileRow(row)),
-      assignments: assignmentRows.map((row: any) =>
+      policies: policyRows.map((row: Record<string, unknown>) =>
+        mapPersistedPolicyRow(row),
+      ),
+      profiles: profileRows.map((row: Record<string, unknown>) =>
+        mapPersistedProfileRow(row),
+      ),
+      assignments: assignmentRows.map((row: Record<string, unknown>) =>
         mapPersistedAssignmentRow(row),
       ),
     };
@@ -982,23 +1005,33 @@ export function parseContentReviewResponse(raw: string): ContentReviewResult {
 
   if (jsonCandidate) {
     try {
-      const parsed = JSON.parse(jsonCandidate) as Partial<ContentReviewResult>;
+      const parsed = JSON.parse(jsonCandidate) as {
+        status?: unknown;
+        summary?: unknown;
+        findings?: unknown;
+      };
       const findings = Array.isArray(parsed.findings)
-        ? parsed.findings.map((finding: any) => ({
-            severity: normalizeSeverity(finding?.severity),
-            title: String(finding?.title || 'Review finding'),
-            detail: String(finding?.detail || ''),
-            factId:
-              typeof finding?.factId === 'string' ? finding.factId : undefined,
-            quote:
-              typeof finding?.quote === 'string' ? finding.quote : undefined,
-            suggestedChange:
-              typeof finding?.suggestedChange === 'string'
-                ? finding.suggestedChange
-                : undefined,
-            ruleId:
-              typeof finding?.ruleId === 'string' ? finding.ruleId : undefined,
-          }))
+        ? parsed.findings.map((rawFinding): ContentReviewFinding => {
+            const finding =
+              rawFinding && typeof rawFinding === 'object'
+                ? (rawFinding as Record<string, unknown>)
+                : {};
+            return {
+              severity: normalizeSeverity(finding.severity),
+              title: String(finding.title || 'Review finding'),
+              detail: String(finding.detail || ''),
+              factId:
+                typeof finding.factId === 'string' ? finding.factId : undefined,
+              quote:
+                typeof finding.quote === 'string' ? finding.quote : undefined,
+              suggestedChange:
+                typeof finding.suggestedChange === 'string'
+                  ? finding.suggestedChange
+                  : undefined,
+              ruleId:
+                typeof finding.ruleId === 'string' ? finding.ruleId : undefined,
+            };
+          })
         : [];
 
       return {

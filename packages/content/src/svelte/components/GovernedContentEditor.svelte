@@ -84,7 +84,10 @@ let factAudit = $state<FactAuditStateData | null>(null);
 let editorAssistantRegistration =
   $state<ContentEditorAssistantRegistration | null>(null);
 const resolvedContentId = $derived(content?.id ?? contentId);
-let innerEditor = $state<any>(null);
+interface ContentEditorInstance {
+  triggerSave?: () => void;
+}
+let innerEditor = $state<ContentEditorInstance | null>(null);
 
 export function triggerSave() {
   if (publishSaveDisabled) return;
@@ -93,7 +96,10 @@ export function triggerSave() {
   }
 }
 
-let governancePanel = $state<any>(null);
+interface GovernancePanelInstance {
+  triggerReview?: (actionKind: string) => void;
+}
+let governancePanel = $state<GovernancePanelInstance | null>(null);
 
 export function triggerReview(actionKind: string) {
   if (governancePanel && typeof governancePanel.triggerReview === 'function') {

@@ -20,7 +20,7 @@ export interface ContentGovernanceAssignmentOptions extends SmrtObjectOptions {
   correctionProfileKey?: string | null;
   enforcePublishReadiness?: boolean;
   defaultFactRelationship?: FactContentRelationship;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -98,9 +98,9 @@ export class ContentGovernanceAssignment extends SmrtObject {
     }
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (this.metadata && typeof this.metadata === 'object') {
-      return { ...(this.metadata as Record<string, any>) };
+      return { ...(this.metadata as Record<string, unknown>) };
     }
 
     try {

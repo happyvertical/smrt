@@ -20,7 +20,7 @@ export interface ContentContributionTypeOptions extends SmrtObjectOptions {
   allowEmptyText?: boolean;
   intakeRules?: ContentContributionIntakeRules | string;
   promotion?: ContentContributionPromotionMapping | string;
-  metadata?: Record<string, any> | string;
+  metadata?: Record<string, unknown> | string;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -145,11 +145,11 @@ export class ContentContributionType extends SmrtObject {
     this.promotion = JSON.stringify(promotion || {});
   }
 
-  getMetadata(): Record<string, any> {
-    return parseJSON<Record<string, any>>(this.metadata, {});
+  getMetadata(): Record<string, unknown> {
+    return parseJSON<Record<string, unknown>>(this.metadata, {});
   }
 
-  setMetadata(metadata: Record<string, any>): void {
+  setMetadata(metadata: Record<string, unknown>): void {
     this.metadata = JSON.stringify(metadata || {});
   }
 
@@ -168,7 +168,7 @@ export class ContentContributionType extends SmrtObject {
     };
   }
 
-  protected override transformJSON(json: Record<string, any>) {
+  protected override transformJSON(json: Record<string, unknown>) {
     return {
       ...json,
       allowedChannels: this.getAllowedChannels(),

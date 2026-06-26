@@ -244,7 +244,9 @@ export class ThumbnailGenerator {
         return this.generateWithAI(options);
       default:
         throw new Error(
-          `Unknown thumbnail strategy: ${(options as any).strategy}`,
+          // `options` is narrowed to `never` here (exhaustive switch); read the
+          // runtime discriminant through a minimal structural view.
+          `Unknown thumbnail strategy: ${(options as { strategy: string }).strategy}`,
         );
     }
   }
@@ -281,12 +283,18 @@ export class ThumbnailGenerator {
   private async generateStaticMap(
     options: StaticMapThumbnailOptions,
   ): Promise<Image> {
+    // Coordinates live in the loose `metadata` bag (typed `unknown` values);
+    // read them at a documented `string | number` boundary for arithmetic.
+    const coordinateMetadata = this.content.metadata as Record<
+      string,
+      string | number | null | undefined
+    >;
     const rawLatitude =
-      this.content.metadata?.latitude ?? this.content.metadata?.lat;
+      coordinateMetadata?.latitude ?? coordinateMetadata?.lat;
     const rawLongitude =
-      this.content.metadata?.longitude ??
-      this.content.metadata?.lng ??
-      this.content.metadata?.lon;
+      coordinateMetadata?.longitude ??
+      coordinateMetadata?.lng ??
+      coordinateMetadata?.lon;
 
     if (rawLatitude == null || rawLongitude == null) {
       throw new Error(
@@ -476,7 +484,7 @@ export class ThumbnailGenerator {
       name: string;
     },
   ): Promise<Image> {
-    const images = await (ImageCollection as any).create({
+    const images = await ImageCollection.create({
       db: this.options.db,
     });
 

@@ -10,6 +10,7 @@ import {
   type ContentBodyImagePlacement,
   editorHtmlToBody,
   extractBodyImages,
+  type ImageAssetLike,
   imageAssetToHtml,
   normalizeEditorHtml,
   resolveBodyFormat,
@@ -35,7 +36,7 @@ export interface Props {
   onUseImageAsThumbnail?: (assetId: string) => void;
   onResolveImage?: (
     selected: ImageLike | File | string,
-  ) => Promise<any | null> | any | null;
+  ) => Promise<unknown> | unknown;
 }
 
 let {
@@ -667,7 +668,7 @@ function insertImageHtml(html: string) {
   emitChange();
 }
 
-export function insertImageAsset(asset: any) {
+export function insertImageAsset(asset: ImageAssetLike | null | undefined) {
   insertImageHtml(imageAssetToHtml(asset));
 }
 
@@ -863,9 +864,13 @@ function startImageMove(event: PointerEvent) {
 }
 
 async function resolveAndInsertImage(selected: ImageLike | File | string) {
+  // Dynamic boundary: the consumer-supplied `onResolveImage` callback returns an
+  // opaque resolved value (or, without it, the raw ImageLike/File/string). The
+  // image helpers read optional fields defensively, so coerce to the structural
+  // ImageAssetLike shape rather than widening the public insertImageAsset param.
   const asset = onResolveImage ? await onResolveImage(selected) : selected;
   if (asset) {
-    insertImageAsset(asset);
+    insertImageAsset(asset as ImageAssetLike);
   }
 }
 

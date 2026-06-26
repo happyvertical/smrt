@@ -16,7 +16,7 @@ export interface ContentReviewOptions extends SmrtObjectOptions {
   summary?: string;
   findings?: string | ContentReviewFinding[];
   reviewer?: string;
-  metadata?: string | Record<string, any>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -90,9 +90,9 @@ export class ContentReview extends SmrtObject {
     }
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     if (this.metadata && typeof this.metadata === 'object') {
-      return { ...(this.metadata as Record<string, any>) };
+      return { ...(this.metadata as Record<string, unknown>) };
     }
 
     try {

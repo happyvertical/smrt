@@ -22,13 +22,20 @@ import type {
   FactEvidenceStatus,
 } from '../../mock-smrt-client';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
+import type { ContentData } from '../../mock-smrt-client';
 import {
+  type ContentEditorAsset,
   type ContentEditorFormData,
+  type ContentEditorInitialContent,
+  type ContentEditorReference,
+  type ContentEditorSavePayload,
   getContentEditorInitialFormData,
   getContentEditorSavePayload,
   getContentEditorSnapshot,
   normalizePublishDate,
 } from '../content-editor-form';
+
+type ContentEditorSnapshot = ReturnType<typeof getContentEditorSnapshot>;
 import { M } from '../i18n.editor.js';
 import ContentAgentChat from './ContentAgentChat.svelte';
 import ContentBodyEditor, {
@@ -40,7 +47,7 @@ const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
-  content?: any;
+  content?: ContentData | null;
   contentId?: string;
   factAudit?: FactAuditStateData | null;
   saveDisabled?: boolean;
@@ -51,9 +58,9 @@ export interface Props {
   hideChat?: boolean;
   assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
   onAssistantContextChange?: ContentEditorAssistantContextChange;
-  onChange?: (data: any) => void;
+  onChange?: (data: ContentEditorSnapshot) => void;
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
-  onSave: (data: any) => void;
+  onSave: (data: ContentEditorSavePayload) => void;
   onCancel: () => void;
 }
 
@@ -177,7 +184,11 @@ $effect(() => {
   const newKey = content?.id ?? contentId;
   if (newKey !== lastContentKey) {
     lastContentKey = newKey;
-    formData = getContentEditorInitialFormData(content);
+    // ContentData carries a nullable bodyFormat; the form initializer accepts
+    // the editor's stricter ContentEditorInitialContent shape and normalizes it.
+    formData = getContentEditorInitialFormData(
+      content as ContentEditorInitialContent | null,
+    );
     fieldUndoStack = [];
     showUndoBanner = false;
   }
@@ -249,7 +260,7 @@ function undoLastApply() {
   }
 }
 
-function getReferenceLabel(reference: any): string {
+function getReferenceLabel(reference: ContentEditorReference): string {
   return (
     reference?.title ||
     reference?.name ||
@@ -260,12 +271,12 @@ function getReferenceLabel(reference: any): string {
   );
 }
 
-function getReferenceUrl(reference: any): string | null {
+function getReferenceUrl(reference: ContentEditorReference): string | null {
   return reference?.url || reference?.originalUrl || reference?.source || null;
 }
 
 function getResourceClaimsForReference(
-  reference: any,
+  reference: ContentEditorReference,
 ): FactAuditResourceClaimData[] {
   const selector = getReferenceSourceSelector(reference);
   const referenceId = String(reference?.id || '');
@@ -290,7 +301,7 @@ function getResourceClaimsForReference(
   });
 }
 
-function getAuditReferences(): any[] {
+function getAuditReferences(): ContentEditorReference[] {
   const references = [...(formData.references ?? [])];
   const seen = new Set<string>();
 
@@ -329,7 +340,10 @@ function getAuditReferences(): any[] {
   return references;
 }
 
-function getReferenceExpansionKey(reference: any, index: number): string {
+function getReferenceExpansionKey(
+  reference: ContentEditorReference,
+  index: number,
+): string {
   return String(
     reference?.id ||
       reference?.url ||
@@ -339,13 +353,19 @@ function getReferenceExpansionKey(reference: any, index: number): string {
   );
 }
 
-function isReferenceClaimsExpanded(reference: any, index: number): boolean {
+function isReferenceClaimsExpanded(
+  reference: ContentEditorReference,
+  index: number,
+): boolean {
   return expandedReferenceClaimKeys.includes(
     getReferenceExpansionKey(reference, index),
   );
 }
 
-function toggleReferenceClaims(reference: any, index: number) {
+function toggleReferenceClaims(
+  reference: ContentEditorReference,
+  index: number,
+) {
   const key = getReferenceExpansionKey(reference, index);
   expandedReferenceClaimKeys = expandedReferenceClaimKeys.includes(key)
     ? expandedReferenceClaimKeys.filter((expandedKey) => expandedKey !== key)
@@ -432,7 +452,7 @@ function toggleResourceClaimSelection(claim: FactAuditResourceClaimData) {
     : [...new Set([...selectedEvidenceIds, ...evidenceIds])];
 }
 
-function getReferenceSourceSelector(reference: any): {
+function getReferenceSourceSelector(reference: ContentEditorReference): {
   sourceKind: string;
   sourceId: string;
 } | null {
@@ -496,7 +516,7 @@ function getEvidenceStatusIcon(status: FactEvidenceStatus | null | undefined) {
 async function runFactAuditAction(
   path: string,
   method: 'POST' | 'PUT',
-  body: Record<string, any>,
+  body: Record<string, unknown>,
 ): Promise<FactAuditStateData> {
   if (!contentId || contentId === 'new') {
     throw new Error('Save this content before updating evidence.');
@@ -540,8 +560,10 @@ async function updateEvidenceStatus(
     );
     evidenceNotice = `Updated ${evidenceIds.length} evidence item${evidenceIds.length === 1 ? '' : 's'}.`;
     onFactAuditChange?.(nextAudit);
-  } catch (error: any) {
-    evidenceError = error.message || 'Failed to update evidence status.';
+  } catch (error) {
+    evidenceError =
+      (error instanceof Error ? error.message : '') ||
+      'Failed to update evidence status.';
   } finally {
     evidenceBusy = null;
   }
@@ -551,7 +573,7 @@ async function updateSelectedEvidenceStatus() {
   await updateEvidenceStatus(selectedEvidenceIds, bulkEvidenceStatus);
 }
 
-async function repairReferenceEvidence(reference: any) {
+async function repairReferenceEvidence(reference: ContentEditorReference) {
   const selector = getReferenceSourceSelector(reference);
   if (!selector || evidenceBusy) {
     return;
@@ -568,8 +590,10 @@ async function repairReferenceEvidence(reference: any) {
     selectedEvidenceIds = [];
     evidenceNotice = 'Reference evidence repaired.';
     onFactAuditChange?.(nextAudit);
-  } catch (error: any) {
-    evidenceError = error.message || 'Failed to repair reference evidence.';
+  } catch (error) {
+    evidenceError =
+      (error instanceof Error ? error.message : '') ||
+      'Failed to repair reference evidence.';
   } finally {
     evidenceBusy = null;
   }
@@ -592,8 +616,10 @@ async function repairSelectedReferenceEvidence() {
     selectedEvidenceIds = [];
     evidenceNotice = `Repaired ${sources.length} reference${sources.length === 1 ? '' : 's'}.`;
     onFactAuditChange?.(nextAudit);
-  } catch (error: any) {
-    evidenceError = error.message || 'Failed to repair selected references.';
+  } catch (error) {
+    evidenceError =
+      (error instanceof Error ? error.message : '') ||
+      'Failed to repair selected references.';
   } finally {
     evidenceBusy = null;
   }
@@ -610,7 +636,11 @@ function removeReference(id: string) {
 let showImageUploader = $state(false);
 let showInlineImageUploader = $state(false);
 let expandedReferenceClaimKeys = $state<string[]>([]);
-let bodyEditor = $state<any>(null);
+interface BodyEditorInstance {
+  focusImage?: (index: number) => void;
+  insertImageAsset?: (asset: ContentEditorAsset) => void;
+}
+let bodyEditor = $state<BodyEditorInstance | null>(null);
 let selectedBodyImageIndex = $state(-1);
 const bodyImages = $derived(
   extractBodyImages(
@@ -623,8 +653,14 @@ const bodyImages = $derived(
 let imageDragOver = $state(false);
 let refDragOver = $state(false);
 
-function getImageRecord(payload: any) {
-  return payload?.data ?? payload;
+function getImageRecord(payload: unknown): ContentEditorAsset {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const data = (payload as { data?: ContentEditorAsset }).data;
+    if (data) {
+      return data;
+    }
+  }
+  return (payload ?? {}) as ContentEditorAsset;
 }
 
 // ---------- Image drag-and-drop ----------
@@ -791,7 +827,7 @@ async function createImageRecord(input: {
   name: string;
   sourceUri: string;
   mimeType: string;
-}): Promise<any | null> {
+}): Promise<ContentEditorAsset | null> {
   const resp = await fetch(joinApiUrl(apiBaseUrl, '/images'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -807,7 +843,7 @@ async function createImageRecord(input: {
 
 async function resolveSelectedImage(
   selected: ImageLike | File | string,
-): Promise<any | null> {
+): Promise<ContentEditorAsset | null> {
   if (selected && typeof selected === 'object' && 'id' in selected) {
     addSelectedAsset(selected);
     return selected;
@@ -853,11 +889,14 @@ function handleImageSelect(selected: ImageLike | File | string) {
   })();
 }
 
-function getAssetImageSource(asset: any): string {
+function getAssetImageSource(asset: ContentEditorAsset): string {
   return String(asset?.sourceUri || asset?.url || asset?.src || '');
 }
 
-function handleAttachedImageDragStart(event: DragEvent, asset: any) {
+function handleAttachedImageDragStart(
+  event: DragEvent,
+  asset: ContentEditorAsset,
+) {
   if (!event.dataTransfer) {
     return;
   }
@@ -902,8 +941,8 @@ async function resolveBodyDropImage(selected: ImageLike | File | string) {
   }
 }
 
-function addSelectedAsset(asset: any) {
-  const assetId = asset.id;
+function addSelectedAsset(asset: ContentEditorAsset) {
+  const assetId = asset.id ?? '';
   if (!formData.assetIds.includes(assetId)) {
     formData.assetIds = [...formData.assetIds, assetId];
     formData.assets = [...formData.assets, asset];
@@ -919,7 +958,7 @@ function setThumbnail(id: string) {
 
 function removeAsset(id: string) {
   formData.assetIds = formData.assetIds.filter((aId: string) => aId !== id);
-  formData.assets = formData.assets.filter((a: any) => a.id !== id);
+  formData.assets = formData.assets.filter((a) => a.id !== id);
   if (formData.thumbnailAssetId === id) {
     formData.thumbnailAssetId = null;
   }

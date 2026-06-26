@@ -31,6 +31,45 @@ import type {
 const logger = createLogger({ level: 'info' });
 
 /**
+ * Options accepted by {@link Contents.generateMissingThumbnails}. Also reused
+ * (as a `Partial`) for the `thumbnail` config block passed through the
+ * collection constructor from `smrt.config.js`.
+ */
+export interface GenerateMissingThumbnailsOptions {
+  /**
+   * Thumbnail generation strategy
+   */
+  strategy: ThumbnailStrategy;
+
+  /**
+   * Optional filter for content to process
+   */
+  where?: Record<string, unknown>;
+
+  /**
+   * Maximum number of thumbnails to generate
+   */
+  limit?: number;
+
+  // Headline card options
+  brandColor?: string;
+  backgroundColor?: string;
+  logoUrl?: string;
+  template?: 'default' | 'news' | 'minimal';
+
+  // Static map options
+  mapProvider?: 'mapbox' | 'google';
+  zoom?: number;
+
+  // AI options
+  style?: 'photorealistic' | 'illustration' | 'abstract' | 'minimal';
+
+  // Common options
+  width?: number;
+  height?: number;
+}
+
+/**
  * Configuration options for Contents collection
  */
 export interface ContentsOptions extends SmrtCollectionOptions {
@@ -38,6 +77,12 @@ export interface ContentsOptions extends SmrtCollectionOptions {
    * Directory to store content files
    */
   contentDir?: string;
+
+  /**
+   * Default thumbnail-generation settings sourced from `smrt.config.js`. Merged
+   * under per-call options in `generateMissingThumbnails`.
+   */
+  thumbnail?: Partial<GenerateMissingThumbnailsOptions>;
 }
 
 function isAIClientOptions(
@@ -193,9 +238,13 @@ export class Contents extends SmrtCollection<Content> {
       });
 
       return results.map(serializeFact);
-    } catch (error: any) {
+    } catch (error) {
       // Gracefully handle missing facts table (cross-package dependency)
-      if (error?.code === 'DB_SCHEMA_MISSING') {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: unknown }).code === 'DB_SCHEMA_MISSING'
+      ) {
         return [];
       }
       throw error;
@@ -343,7 +392,7 @@ export class Contents extends SmrtCollection<Content> {
         slug,
         context: options.context || '',
         body,
-      } as any);
+      });
       await content.initialize();
       await content.save();
       return content;
@@ -502,46 +551,16 @@ export class Contents extends SmrtCollection<Content> {
    * }
    * ```
    */
-  public async generateMissingThumbnails(options: {
-    /**
-     * Thumbnail generation strategy
-     */
-    strategy: ThumbnailStrategy;
-
-    /**
-     * Optional filter for content to process
-     */
-    where?: Record<string, any>;
-
-    /**
-     * Maximum number of thumbnails to generate
-     */
-    limit?: number;
-
-    // Headline card options
-    brandColor?: string;
-    backgroundColor?: string;
-    logoUrl?: string;
-    template?: 'default' | 'news' | 'minimal';
-
-    // Static map options
-    mapProvider?: 'mapbox' | 'google';
-    zoom?: number;
-
-    // AI options
-    style?: 'photorealistic' | 'illustration' | 'abstract' | 'minimal';
-
-    // Common options
-    width?: number;
-    height?: number;
-  }): Promise<{
+  public async generateMissingThumbnails(
+    options: GenerateMissingThumbnailsOptions,
+  ): Promise<{
     images: Image[];
     failed: Array<{ contentId: string; error: string }>;
   }> {
     // Merge with thumbnail config from smrt.config.js (passed via constructor)
     // This allows CLI users to configure defaults in smrt.config.js:
     //   thumbnail: { strategy: 'headline-card', brandColor: '#1976d2' }
-    const configDefaults = (this.options as any)?.thumbnail || {};
+    const configDefaults = this.options?.thumbnail || {};
     const mergedOptions = {
       ...configDefaults,
       ...options,

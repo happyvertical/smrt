@@ -447,8 +447,8 @@ async function handleTry(endpoint: Endpoint) {
     const res = await fetch(endpoint.path);
     const data = await res.json();
     tryResult = JSON.stringify(data, null, 2);
-  } catch (err: any) {
-    tryError = err.message;
+  } catch (err) {
+    tryError = err instanceof Error ? err.message : String(err);
   } finally {
     tryLoading = false;
   }

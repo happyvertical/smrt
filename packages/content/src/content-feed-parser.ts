@@ -161,16 +161,23 @@ export function parseContentFeed(
     removeNSPrefix: true,
     trimValues: true,
   });
-  const doc = parser.parse(xml) as Record<string, any>;
+  // Parsed XML is an untyped node tree; every field is read through the
+  // unknown-tolerant helpers above, so a loose record shape is sufficient.
+  type FeedNode = Record<string, unknown>;
+  const doc = parser.parse(xml) as {
+    rss?: { channel?: FeedNode };
+    channel?: FeedNode;
+    feed?: FeedNode;
+  };
 
   if (doc.rss?.channel || doc.channel) {
-    const channel = doc.rss?.channel ?? doc.channel;
+    const channel = (doc.rss?.channel ?? doc.channel) as FeedNode;
     return {
       format: 'rss',
       title: firstText(channel.title) || null,
       homepageUrl: parseRssLink(channel.link, baseUrl) || null,
       items: dedupeItems(
-        asArray(channel.item)
+        asArray<FeedNode>(channel.item as FeedNode | FeedNode[] | undefined)
           .map(
             (item): ParsedContentFeedItem => ({
               title: firstText(item.title),
@@ -201,7 +208,7 @@ export function parseContentFeed(
       title: firstText(feed.title) || null,
       homepageUrl: parseAtomLink(feed.link, baseUrl) || null,
       items: dedupeItems(
-        asArray(feed.entry)
+        asArray<FeedNode>(feed.entry as FeedNode | FeedNode[] | undefined)
           .map(
             (entry): ParsedContentFeedItem => ({
               title: firstText(entry.title),

@@ -3,6 +3,7 @@
  * Runs once on first access — checks if images exist and creates sample ones if empty.
  */
 
+import { Image } from '@happyvertical/smrt-images';
 import { getCollection } from './smrt.js';
 
 let seeded = false;
@@ -44,7 +45,7 @@ export async function seedImages(): Promise<void> {
   seeded = true;
 
   try {
-    const collection = await getCollection<any>(
+    const collection = await getCollection<Image>(
       '@happyvertical/smrt-images:Image',
     );
     const existing = await collection.list({});

@@ -3,9 +3,32 @@
  * Runs once on first access — checks if contents exist and creates sample ones if empty.
  */
 
+import { Content } from '../../content';
 import { getCollection } from './smrt.js';
 
 let seeded = false;
+
+/**
+ * Shape of a seed record. The literal-union fields mirror `Content`'s typed
+ * properties (via indexed access) so the seed values are validated against the
+ * model. Applied with `satisfies` (not an annotation) so the inferred value
+ * type stays an object-literal array assignable to `collection.create()`'s
+ * input — a named interface lacks the index signature `SmrtCreateInput`
+ * requires.
+ */
+interface SeedContent {
+  type: string;
+  name: string;
+  title: string;
+  body: string;
+  bodyFormat: NonNullable<Content['bodyFormat']>;
+  state: Content['state'];
+  status: Content['status'];
+  slug: string;
+  author: string;
+  description: string;
+  tags: string[];
+}
 
 const SEED_CONTENTS = [
   {
@@ -50,14 +73,14 @@ const SEED_CONTENTS = [
       'A deep dive into why Svelte 5 runes matter and how to migrate from Svelte 4.',
     tags: ['Svelte', 'Frontend', 'Tutorial'],
   },
-];
+] satisfies SeedContent[];
 
 export async function seedContents(): Promise<void> {
   if (seeded) return;
   seeded = true;
 
   try {
-    const collection = await getCollection<any>(
+    const collection = await getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const existing = await collection.list({});

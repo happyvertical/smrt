@@ -51,7 +51,7 @@ export class ContentReviewCollection extends SmrtCollection<ContentReview> {
     policyKey: string;
     reviewer?: string;
     result: ContentReviewResult;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     tenantId?: string | null;
   }): Promise<ContentReview> {
     return this.create({

@@ -48,7 +48,7 @@ export interface ContentContributionTypeDefinition {
   allowEmptyText?: boolean;
   intakeRules?: ContentContributionIntakeRules;
   promotion?: ContentContributionPromotionMapping;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PersistedContentContributionTypeRecord
@@ -101,13 +101,13 @@ function cloneJSONArray<T>(items: T[] | null | undefined): T[] {
   return Array.isArray(items) ? items.map((item) => structuredClone(item)) : [];
 }
 
-function safeParseJSONObject(raw: unknown): Record<string, any> {
+function safeParseJSONObject(raw: unknown): Record<string, unknown> {
   if (!raw) {
     return {};
   }
 
   if (typeof raw === 'object') {
-    return { ...(raw as Record<string, any>) };
+    return { ...(raw as Record<string, unknown>) };
   }
 
   if (typeof raw !== 'string') {
@@ -247,10 +247,13 @@ function isMissingContributionTypesTableError(error: unknown): boolean {
 }
 
 function mapPersistedTypeRow(
-  row: Record<string, any>,
+  row: Record<string, unknown>,
 ): PersistedContentContributionTypeRecord {
   return {
-    id: row.id || null,
+    // `id` is an optional string column; coerce non-string/empty driver
+    // values to undefined so a numeric id can't leak past the `id?: string`
+    // shape (mirrors the getRowString pattern used elsewhere).
+    id: typeof row.id === 'string' && row.id ? row.id : undefined,
     key: String(row.key || ''),
     label: String(row.label || row.key || ''),
     enabled: row.enabled !== false && row.enabled !== 0,
@@ -269,12 +272,18 @@ function mapPersistedTypeRow(
       row.allowEmptyText === true ||
       row.allow_empty_text === true ||
       row.allow_empty_text === 1,
-    intakeRules: safeParseJSONObject(row.intakeRules || row.intake_rules),
-    promotion: safeParseJSONObject(row.promotion || row.promotion_mapping),
+    // Persisted JSON blobs deserialize to the documented intake/promotion
+    // shapes; they are re-normalized structurally by clone* helpers downstream.
+    intakeRules: safeParseJSONObject(
+      row.intakeRules || row.intake_rules,
+    ) as ContentContributionIntakeRules,
+    promotion: safeParseJSONObject(
+      row.promotion || row.promotion_mapping,
+    ) as ContentContributionPromotionMapping,
     metadata: safeParseJSONObject(row.metadata),
-    tenantId: row.tenantId ?? row.tenant_id ?? null,
-    createdAt: row.createdAt || row.created_at || null,
-    updatedAt: row.updatedAt || row.updated_at || null,
+    tenantId: (row.tenantId ?? row.tenant_id ?? null) as string | null,
+    createdAt: (row.createdAt || row.created_at || null) as string | null,
+    updatedAt: (row.updatedAt || row.updated_at || null) as string | null,
   };
 }
 
@@ -313,13 +322,16 @@ export async function loadPersistedContentContributionTypes(
   }
 
   try {
-    const rows = await options.db.list('content_contribution_types', {});
-    rows.sort((a: any, b: any) =>
+    const rows = (await options.db.list(
+      'content_contribution_types',
+      {},
+    )) as Record<string, unknown>[];
+    rows.sort((a, b) =>
       String(a.created_at || a.createdAt || '').localeCompare(
         String(b.created_at || b.createdAt || ''),
       ),
     );
-    return rows.map((row: any) => mapPersistedTypeRow(row));
+    return rows.map((row) => mapPersistedTypeRow(row));
   } catch (error) {
     if (isMissingContributionTypesTableError(error)) {
       return [];

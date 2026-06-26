@@ -9,8 +9,34 @@
 // Import SMRT objects to register them via @smrt() decorators
 import './smrt-register.js';
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type {
+  DatabaseConfig,
+  SmrtClassOptions,
+  SmrtObject,
+} from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+
+/**
+ * Shallow-merge two database configs, layering `override` over `base`.
+ *
+ * Preserves the prior `{ ...base, ...override }` spread semantics exactly while
+ * avoiding `any`: `DatabaseConfig` is a union (`string | object |
+ * DatabaseInterface`), so we spread each side through its object-record view.
+ * In practice both sides are the object form (`{ url, type }`); the cast only
+ * satisfies the union, it does not change runtime behavior.
+ */
+function mergeDbConfig(
+  base: DatabaseConfig | undefined,
+  override: DatabaseConfig | undefined,
+): DatabaseConfig {
+  if (!override) {
+    return base as DatabaseConfig;
+  }
+  return {
+    ...(base as Record<string, unknown>),
+    ...(override as Record<string, unknown>),
+  } as DatabaseConfig;
+}
 
 /**
  * Per-object configuration overrides
@@ -85,9 +111,7 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
       ...defaults,
       ...override,
       // Ensure nested objects are merged properly
-      db: override.db
-        ? { ...(defaults.db as any), ...(override.db as any) }
-        : defaults.db,
+      db: mergeDbConfig(defaults.db, override.db),
       ai: override.ai !== undefined ? override.ai : defaults.ai,
     };
   }
@@ -99,17 +123,16 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
  * Helper to get a collection with centralized configuration
  * Automatically applies project defaults or object-specific overrides
  */
-export async function getCollection<
-  T extends import('@happyvertical/smrt-core').SmrtObject,
->(className: string, overrides: Partial<SmrtClassOptions> = {}) {
+export async function getCollection<T extends SmrtObject>(
+  className: string,
+  overrides: Partial<SmrtClassOptions> = {},
+) {
   const config = getSmrtConfig(className);
 
   return await ObjectRegistry.getCollection<T>(className, {
     ...config,
     ...overrides,
-    db: overrides.db
-      ? { ...(config.db as any), ...(overrides.db as any) }
-      : config.db,
+    db: mergeDbConfig(config.db, overrides.db),
     ai: overrides.ai !== undefined ? overrides.ai : config.ai,
   });
 }

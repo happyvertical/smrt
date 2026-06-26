@@ -1,5 +1,6 @@
 import { createLogger } from '@happyvertical/logger';
 import { json, type RequestHandler } from '@sveltejs/kit';
+import { Content } from '../../../../../../content.js';
 import { getCollection } from '$lib/server/smrt';
 import {
   createContentEditorChatThread,
@@ -28,7 +29,7 @@ export const GET: RequestHandler = async ({ params, request, locals }) => {
   }
 
   try {
-    const contents = await getCollection<any>(
+    const contents = await getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -48,12 +49,19 @@ export const GET: RequestHandler = async ({ params, request, locals }) => {
       session,
       threads,
     });
-  } catch (error: any) {
-    if (error?.message === 'Content not found') {
-      return json({ error: error.message }, { status: 404 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : undefined;
+    // `code` is a non-standard property on some DB errors, so read it from the
+    // structural object shape rather than `Error`.
+    const code =
+      error && typeof error === 'object' && 'code' in error
+        ? (error as { code?: unknown }).code
+        : undefined;
+    if (message === 'Content not found') {
+      return json({ error: message }, { status: 404 });
     }
     // Gracefully handle missing chat tables (cross-package dependency)
-    if (error?.code === 'DB_SCHEMA_MISSING') {
+    if (code === 'DB_SCHEMA_MISSING') {
       return json({
         session: null,
         threads: [],
@@ -63,7 +71,7 @@ export const GET: RequestHandler = async ({ params, request, locals }) => {
     }
     logger.error(`Error fetching chat for content ${id}`, { error });
     return json(
-      { error: error.message || 'Failed to find or create chat session' },
+      { error: message || 'Failed to find or create chat session' },
       { status: 500 },
     );
   }
@@ -89,7 +97,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
   }
 
   try {
-    const contents = await getCollection<any>(
+    const contents = await getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -130,18 +138,19 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       thread,
       session,
     });
-  } catch (error: any) {
-    if (error?.message === 'Active session not found') {
-      return json({ error: error.message }, { status: 404 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : undefined;
+    if (message === 'Active session not found') {
+      return json({ error: message }, { status: 404 });
     }
-    if (error?.message === 'Content not found') {
-      return json({ error: error.message }, { status: 404 });
+    if (message === 'Content not found') {
+      return json({ error: message }, { status: 404 });
     }
-    if (error?.message === 'AI model is not allowed for content chat') {
-      return json({ error: error.message }, { status: 400 });
+    if (message === 'AI model is not allowed for content chat') {
+      return json({ error: message }, { status: 400 });
     }
-    if (error?.message === 'Active session is missing a chat room') {
-      return json({ error: error.message }, { status: 500 });
+    if (message === 'Active session is missing a chat room') {
+      return json({ error: message }, { status: 500 });
     }
     logger.error(`Error sending message for content ${id}`, { error });
     return json({ error: 'Failed to process message' }, { status: 500 });
