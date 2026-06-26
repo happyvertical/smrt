@@ -28,7 +28,7 @@ export interface ColumnDefinition {
   referenceKind?: 'id' | 'foreignKey' | 'crossPackageRef' | 'tenantId';
   unique?: boolean;
   notNull?: boolean;
-  defaultValue?: any;
+  defaultValue?: unknown;
   foreignKey?: {
     table: string;
     column: string;

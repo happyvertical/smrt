@@ -90,7 +90,7 @@ export interface DDLStrategy {
    * @param type - The column type
    * @returns Formatted default value SQL
    */
-  formatDefaultValue(value: any, type: SQLDataType): string;
+  formatDefaultValue(value: unknown, type: SQLDataType): string;
 
   /**
    * Whether this engine supports database triggers

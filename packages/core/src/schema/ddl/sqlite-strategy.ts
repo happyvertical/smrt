@@ -77,7 +77,7 @@ export class SQLiteStrategy extends BaseDDLStrategy {
    * literals — so SQLite booleans render as 0/1 and no CAST expression is ever
    * emitted in a DEFAULT clause.
    */
-  protected formatBooleanDefault(value: any): string {
+  protected formatBooleanDefault(value: boolean): string {
     return value ? '1' : '0';
   }
 

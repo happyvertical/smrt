@@ -320,7 +320,7 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
    * the SQL NULL keyword. Boolean rendering is bridged through
    * `formatBooleanDefault` so engine overrides (SQLite → 0/1) still apply.
    */
-  formatDefaultValue(value: any, type: SQLDataType): string {
+  formatDefaultValue(value: unknown, type: SQLDataType): string {
     return formatDefaultValueShared(value, type, {
       booleanLiterals: [
         this.formatBooleanDefault(true),
@@ -333,7 +333,7 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
    * Format boolean default
    * Override for engines that use INTEGER (SQLite)
    */
-  protected formatBooleanDefault(value: any): string {
+  protected formatBooleanDefault(value: boolean): string {
     return value ? 'TRUE' : 'FALSE';
   }
 
