@@ -19,9 +19,31 @@
  *   enabled) the command throws rather than ranging across all tenants.
  */
 
+import type { AIClient, AIClientOptions } from '@happyvertical/ai';
 import type { SmrtCollection } from '../collection';
+import type { DatabaseConfig } from '../database.js';
+import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
+import type { RegisteredClass } from '../registry/types.js';
 import { runWithTenantGate } from './tenant-gate.js';
+
+/**
+ * Public-data view exposed by SMRT objects: `toPublicJSON()` strips
+ * `@field({ sensitive })` values before serialization (#1540).
+ */
+interface PublicSerializable {
+  toPublicJSON(): unknown;
+}
+
+/**
+ * View of an instance/collection for dispatching custom methods by name. Each
+ * key is potentially a callable taking the parsed CLI options; callers narrow
+ * with `typeof === 'function'` before invoking.
+ */
+type DynamicallyCallable = Record<
+  string,
+  ((options: Record<string, unknown>) => unknown) | unknown
+>;
 
 /**
  * Configuration for a generated CLI.
@@ -40,9 +62,9 @@ export interface CLIConfig {
  */
 export interface CLIContext {
   /** Database handle passed to collections. */
-  db?: any;
+  db?: DatabaseConfig;
   /** AI provider passed to collections. */
-  ai?: any;
+  ai?: AIClientOptions | AIClient;
   /** Authenticated operator, when the host establishes one. */
   user?: {
     id: string;
@@ -240,7 +262,7 @@ export class CLIGenerator {
    * Resolve a registered class by simple name (case-insensitive), mirroring the
    * MCP generator's lookup.
    */
-  private resolveClass(objectName: string): any {
+  private resolveClass(objectName: string): RegisteredClass | null {
     const registeredClasses = ObjectRegistry.getAllClasses();
     for (const [key, info] of registeredClasses) {
       const simpleName = info.name || key;
@@ -312,7 +334,7 @@ export class CLIGenerator {
    */
   private async getCollection(
     objectName: string,
-  ): Promise<SmrtCollection<any>> {
+  ): Promise<SmrtCollection<SmrtObject>> {
     return ObjectRegistry.getCollection(objectName, {
       ai: this.context.ai,
       db: this.context.db,
@@ -323,15 +345,20 @@ export class CLIGenerator {
    * Execute a parsed command against a collection.
    */
   private async executeAction(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     objectName: string,
     parsed: ParsedInvocation,
-  ): Promise<any> {
+  ): Promise<unknown> {
     const { action, positional, flags } = parsed;
 
     switch (action) {
       case 'list': {
-        const listOptions: any = {
+        const listOptions: {
+          limit: number;
+          offset: number;
+          orderBy?: string;
+          where?: Record<string, unknown>;
+        } = {
           limit: Math.min(this.toNumber(flags.limit, 50), 1000),
           offset: this.toNumber(flags.offset, 0),
         };
@@ -357,8 +384,8 @@ export class CLIGenerator {
           await this.readPayload(flags),
         );
         if (this.context.user) {
-          (data as any).created_by = this.context.user.id;
-          (data as any).owner_id = this.context.user.id;
+          data.created_by = this.context.user.id;
+          data.owner_id = this.context.user.id;
         }
         const created = await collection.create(data);
         await created.save();
@@ -376,7 +403,10 @@ export class CLIGenerator {
         );
         Object.assign(existing, data);
         if (this.context.user) {
-          (existing as any).updated_by = this.context.user.id;
+          // Stamp the server-managed audit column on the instance; this field
+          // is not part of the public SmrtObject surface.
+          (existing as unknown as Record<string, unknown>).updated_by =
+            this.context.user.id;
         }
         await existing.save();
         return existing;
@@ -401,25 +431,31 @@ export class CLIGenerator {
    * collection (singleton actions). Mirrors the MCP custom-action path.
    */
   private async executeCustomAction(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     action: string,
     positional: string | undefined,
     flags: Record<string, string | boolean>,
-  ): Promise<any> {
+  ): Promise<unknown> {
     const options = this.customOptions(flags);
     const id = positional ?? this.flagString(flags.id);
 
     if (id) {
-      const object = (await collection.get(id)) as any;
+      const object = await collection.get(id);
       if (!object) throw new Error('Object not found');
-      if (typeof object[action] !== 'function') {
+      // Custom methods are dispatched dynamically by name; index through a
+      // callable-keyed view of the instance, narrowing before invoking.
+      const candidate = (object as unknown as DynamicallyCallable)[action];
+      if (typeof candidate !== 'function') {
         throw new Error(`Method '${action}' not found on object instance`);
       }
-      return object[action](options);
+      return candidate.call(object, options);
     }
 
-    if (typeof (collection as any)[action] === 'function') {
-      return (collection as any)[action](options);
+    const collectionCandidate = (collection as unknown as DynamicallyCallable)[
+      action
+    ];
+    if (typeof collectionCandidate === 'function') {
+      return collectionCandidate.call(collection, options);
     }
     throw new Error(
       `Method '${action}' not found on collection. Provide an id for object-specific actions.`,
@@ -433,7 +469,7 @@ export class CLIGenerator {
    */
   private async readPayload(
     flags: Record<string, string | boolean>,
-  ): Promise<Record<string, any>> {
+  ): Promise<Record<string, unknown>> {
     const fromFile = flags['from-file'];
     if (typeof fromFile === 'string' && fromFile) {
       const { readFile } = await import('node:fs/promises');
@@ -442,10 +478,10 @@ export class CLIGenerator {
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         throw new Error('--from-file must contain a JSON object');
       }
-      return parsed as Record<string, any>;
+      return parsed as Record<string, unknown>;
     }
 
-    const data: Record<string, any> = {};
+    const data: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(flags)) {
       if (RESERVED_FLAGS.has(key)) continue;
       data[key] = this.coerceValue(value);
@@ -456,8 +492,8 @@ export class CLIGenerator {
   /** Collect non-reserved flags as custom-action options. */
   private customOptions(
     flags: Record<string, string | boolean>,
-  ): Record<string, any> {
-    const options: Record<string, any> = {};
+  ): Record<string, unknown> {
+    const options: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(flags)) {
       if (RESERVED_FLAGS.has(key)) continue;
       options[key] = this.coerceValue(value);
@@ -473,8 +509,8 @@ export class CLIGenerator {
    */
   private applyWritablePolicy(
     objectName: string | undefined,
-    data: any,
-  ): Record<string, any> {
+    data: unknown,
+  ): Record<string, unknown> {
     if (!data || typeof data !== 'object') return {};
 
     const serverManaged = new Set([
@@ -507,7 +543,7 @@ export class CLIGenerator {
       }
     }
 
-    const result: Record<string, any> = {};
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) continue;
       if (serverManaged.has(key)) continue;
@@ -523,9 +559,16 @@ export class CLIGenerator {
    * Recurses arrays/plain objects so a SmrtObject nested in a custom-action
    * result is stripped too; a cycle guard prevents infinite loops.
    */
-  private toPublicData(value: any, seen: WeakSet<object> = new WeakSet()): any {
+  private toPublicData(
+    value: unknown,
+    seen: WeakSet<object> = new WeakSet(),
+  ): unknown {
     if (value === null || typeof value !== 'object') return value;
-    if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+    if (
+      typeof (value as Partial<PublicSerializable>).toPublicJSON === 'function'
+    ) {
+      return (value as PublicSerializable).toPublicJSON();
+    }
     if (Array.isArray(value)) {
       if (seen.has(value)) return value;
       seen.add(value);
@@ -535,7 +578,7 @@ export class CLIGenerator {
     if (proto !== Object.prototype && proto !== null) return value;
     if (seen.has(value)) return value;
     seen.add(value);
-    const out: Record<string, any> = {};
+    const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       out[key] = this.toPublicData(entry, seen);
     }
@@ -612,7 +655,7 @@ export class CLIGenerator {
   }
 
   /** Coerce a flag value to a JSON scalar/object where it parses cleanly. */
-  private coerceValue(value: string | boolean): any {
+  private coerceValue(value: string | boolean): unknown {
     if (typeof value !== 'string') return value;
     if (value === 'true') return true;
     if (value === 'false') return false;

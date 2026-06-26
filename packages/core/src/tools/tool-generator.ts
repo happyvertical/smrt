@@ -9,6 +9,27 @@ import type { AITool } from '@happyvertical/ai';
 import type { MethodDefinition } from '../scanner/types.js';
 
 /**
+ * A JSON Schema fragment. The shape is open-ended (different keywords appear
+ * for primitives, arrays, unions, etc.), so values are `unknown`; callers
+ * narrow specific keys (e.g. `.default`) at the point of use.
+ */
+type JsonSchema = Record<string, unknown>;
+
+/**
+ * The `parameters` object of a generated tool: a JSON Schema `object` with a
+ * `properties` bag (each entry a nested schema) and a `required` name list.
+ */
+interface ToolParametersSchema {
+  type: 'object';
+  properties: Record<string, JsonSchema>;
+  /**
+   * Optional so the empty array can be `delete`d (omitting the key from the
+   * emitted JSON Schema). It is always present while parameters are collected.
+   */
+  required?: string[];
+}
+
+/**
  * Configuration for AI-callable methods
  */
 export interface AiConfig {
@@ -37,7 +58,7 @@ export interface AiConfig {
  * @param tsType - TypeScript type string (e.g., 'string', 'number', '{ foo: string }')
  * @returns JSON Schema representation
  */
-export function convertTypeToJsonSchema(tsType: string): Record<string, any> {
+export function convertTypeToJsonSchema(tsType: string): JsonSchema {
   // Remove whitespace
   const cleanType = tsType.trim();
 
@@ -168,32 +189,32 @@ export function generateToolFromMethod(
   method: MethodDefinition,
   config?: AiConfig,
 ): AITool {
-  // Build parameters JSON Schema
-  const parameters: Record<string, any> = {
-    type: 'object',
-    properties: {},
-    required: [],
-  };
+  // Build parameters JSON Schema. `required` is a guaranteed-present local
+  // array while collecting, then attached only when non-empty — avoids both
+  // optional-chaining on an invariant and a post-hoc `delete`.
+  const properties: ToolParametersSchema['properties'] = {};
+  const required: string[] = [];
 
   for (const param of method.parameters) {
     // Convert parameter type to JSON Schema
-    parameters.properties[param.name] = convertTypeToJsonSchema(param.type);
+    properties[param.name] = convertTypeToJsonSchema(param.type);
 
     // Add to required if not optional
     if (!param.optional) {
-      parameters.required.push(param.name);
+      required.push(param.name);
     }
 
     // Add default value if present
     if (param.default !== undefined) {
-      parameters.properties[param.name].default = param.default;
+      properties[param.name].default = param.default;
     }
   }
 
-  // Remove empty required array
-  if (parameters.required.length === 0) {
-    delete parameters.required;
-  }
+  const parameters: ToolParametersSchema = {
+    type: 'object',
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+  };
 
   // Get description (custom override or from JSDoc)
   const description =

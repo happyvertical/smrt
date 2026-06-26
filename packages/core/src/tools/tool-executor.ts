@@ -12,6 +12,25 @@ import type { SignalBus } from '../signals/bus.js';
 const logger = createLogger({ level: 'info' });
 
 /**
+ * A dynamically-dispatched tool target (typically a SmrtObject instance, but
+ * typed structurally so any object whose method names are resolved at runtime
+ * from the AI tool call is accepted). No index signature is declared so plain
+ * class instances like `SmrtObject` remain assignable; dynamic method lookup
+ * goes through a `Record<string, unknown>` cast at the call boundary.
+ */
+interface ToolCallTarget {
+  id?: string | null;
+  constructor?: { name?: string };
+}
+
+/**
+ * A callable resolved from a {@link ToolCallTarget} by method name. The method
+ * is actually invoked with the parsed (untyped JSON) tool-call arguments, so
+ * the parameter list is `unknown[]` rather than `never[]`.
+ */
+type InstanceMethod = (...args: unknown[]) => unknown;
+
+/**
  * Tool call structure from AI response
  */
 export interface ToolCall {
@@ -58,12 +77,12 @@ export interface ToolCallResult {
   /**
    * Parsed arguments that were used
    */
-  arguments: Record<string, any>;
+  arguments: Record<string, unknown>;
 
   /**
    * Result returned from the method
    */
-  result: any;
+  result: unknown;
 
   /**
    * Whether the call succeeded
@@ -91,7 +110,7 @@ export interface ToolCallResult {
  */
 export function validateToolCall(
   methodName: string,
-  args: Record<string, any>,
+  args: Record<string, unknown>,
   allowedMethods: string[],
 ): void {
   // Check if method is allowed
@@ -123,7 +142,7 @@ export function validateToolCall(
  * @returns Result of the tool call execution
  */
 export async function executeToolCall(
-  instance: any,
+  instance: ToolCallTarget,
   toolCall: ToolCall,
   allowedMethods: string[],
   signalBus?: SignalBus,
@@ -133,7 +152,7 @@ export async function executeToolCall(
   const executionId = signalBus?.generateExecutionId() ?? toolCall.id;
 
   // Declare args outside try blocks so it's accessible in catch block
-  let args: Record<string, any> | undefined;
+  let args: Record<string, unknown> | undefined;
 
   try {
     // Parse arguments
@@ -159,12 +178,17 @@ export async function executeToolCall(
     // Validate tool call
     validateToolCall(methodName, args, allowedMethods);
 
-    // Check method exists
-    if (typeof instance[methodName] !== 'function') {
+    // Check method exists. The target is dynamically dispatched, so the method
+    // is resolved by string index (cast to a record) and the result is
+    // `unknown`; narrow it to a callable at this boundary after the runtime
+    // `typeof === 'function'` guard.
+    const method = (instance as Record<string, unknown>)[methodName];
+    if (typeof method !== 'function') {
       throw RuntimeError.operationFailed(
         `Method '${methodName}' not found on object`,
       );
     }
+    const invokeMethod = method as InstanceMethod;
 
     // Emit start signal
     if (signalBus) {
@@ -180,8 +204,10 @@ export async function executeToolCall(
       await signalBus.emit(startSignal);
     }
 
-    // Execute method
-    const result = await instance[methodName](args);
+    // Execute method. `.call(instance, …)` preserves the receiver binding of
+    // the original member call (`instance[methodName](args)`) — AI-callable
+    // methods routinely read/write `this`.
+    const result = await invokeMethod.call(instance, args);
 
     // Emit end signal
     if (signalBus) {
@@ -249,7 +275,7 @@ export async function executeToolCall(
  * @returns Array of tool call results
  */
 export async function executeToolCalls(
-  instance: any,
+  instance: ToolCallTarget,
   toolCalls: ToolCall[],
   allowedMethods: string[],
   signalBus?: SignalBus,

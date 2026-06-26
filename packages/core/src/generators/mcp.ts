@@ -9,6 +9,8 @@ import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
+import type { RegisteredClass } from '../registry/types.js';
+import type { FieldDefinition } from '../scanner/types.js';
 import {
   generateClaudeConfig,
   generateMCPDocumentation,
@@ -17,6 +19,26 @@ import {
   type RuntimeOptions,
 } from './mcp-runtime-template.js';
 import { runWithTenantGate } from './tenant-gate.js';
+
+/**
+ * A JSON Schema fragment for an MCP tool input property. The shape varies by
+ * field kind (string/number/object/…), so values are `unknown`; this is only
+ * ever serialized into the generated tool definitions, never read back.
+ */
+type McpJsonSchema = Record<string, unknown>;
+
+/**
+ * Runtime tool-call arguments. They arrive as untyped JSON from the MCP client,
+ * so individual keys are narrowed (`as`) at each action's boundary.
+ */
+type ToolArgs = Record<string, unknown>;
+
+/**
+ * A method resolved dynamically (by action name) from an object/collection
+ * instance and invoked with the parsed tool-call arguments. Narrowed to this
+ * type at the call boundary after a `typeof === 'function'` guard.
+ */
+type InstanceCallable = (...args: unknown[]) => unknown;
 
 export interface MCPConfig {
   name?: string;
@@ -29,8 +51,8 @@ export interface MCPConfig {
 }
 
 export interface MCPContext {
-  db?: any;
-  ai?: any;
+  db?: unknown;
+  ai?: unknown;
   user?: {
     id: string;
     roles?: string[];
@@ -55,7 +77,7 @@ export interface MCPTool {
   description: string;
   inputSchema: {
     type: string;
-    properties: Record<string, any>;
+    properties: Record<string, McpJsonSchema>;
     required?: string[];
   };
 }
@@ -64,7 +86,7 @@ export interface MCPRequest {
   method: string;
   params: {
     name: string;
-    arguments: Record<string, any>;
+    arguments: ToolArgs;
   };
 }
 
@@ -81,7 +103,7 @@ export interface MCPResponse {
 export class MCPGenerator {
   private config: MCPConfig;
   private context: MCPContext;
-  private collections = new Map<string, SmrtCollection<any>>();
+  private collections = new Map<string, SmrtCollection<SmrtObject>>();
 
   constructor(config: MCPConfig = {}, context: MCPContext = {}) {
     this.config = {
@@ -229,7 +251,7 @@ export class MCPGenerator {
 
     // CREATE tool
     if (shouldInclude('create')) {
-      const properties: Record<string, any> = {};
+      const properties: Record<string, McpJsonSchema> = {};
       const required: string[] = [];
 
       for (const [fieldName, field] of fields) {
@@ -252,7 +274,7 @@ export class MCPGenerator {
 
     // UPDATE tool
     if (shouldInclude('update')) {
-      const properties: Record<string, any> = {
+      const properties: Record<string, McpJsonSchema> = {
         id: {
           type: 'string',
           description: 'ID of the object to update',
@@ -431,13 +453,21 @@ export class MCPGenerator {
       // Check if method exists on the prototype
       const prototype = classConstructor.prototype;
 
-      // Check if the method exists and is a function
-      if (typeof (prototype as any)[methodName] === 'function') {
+      // Check if the method exists and is a function. Dynamic name lookup, so
+      // index through a record view of the prototype/constructor.
+      if (
+        typeof (prototype as unknown as Record<string, unknown>)[methodName] ===
+        'function'
+      ) {
         return true;
       }
 
       // Also check static methods
-      if (typeof (classConstructor as any)[methodName] === 'function') {
+      if (
+        typeof (classConstructor as unknown as Record<string, unknown>)[
+          methodName
+        ] === 'function'
+      ) {
         return true;
       }
 
@@ -454,8 +484,8 @@ export class MCPGenerator {
   /**
    * Convert field definition to MCP schema
    */
-  private fieldToMCPSchema(field: any): any {
-    const schema: any = {
+  private fieldToMCPSchema(field: FieldDefinition): McpJsonSchema {
+    const schema: McpJsonSchema = {
       description: field._meta?.description || `${field.type} field`,
     };
 
@@ -586,8 +616,8 @@ export class MCPGenerator {
    */
   private async getCollection(
     objectName: string,
-    classInfo: any,
-  ): Promise<SmrtCollection<any>> {
+    classInfo: RegisteredClass,
+  ): Promise<SmrtCollection<SmrtObject>> {
     if (!this.collections.has(objectName)) {
       // Ensure we have a valid collection constructor
       if (
@@ -630,9 +660,15 @@ export class MCPGenerator {
    * would otherwise call its `toJSON()`. Non-plain instances (Date, etc.) and
    * primitives pass through unchanged; a cycle guard prevents infinite loops.
    */
-  private toPublicData(value: any, seen: WeakSet<object> = new WeakSet()): any {
+  private toPublicData(
+    value: unknown,
+    seen: WeakSet<object> = new WeakSet(),
+  ): unknown {
     if (value === null || typeof value !== 'object') return value;
-    if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+    const publicSource = value as { toPublicJSON?: () => unknown };
+    if (typeof publicSource.toPublicJSON === 'function') {
+      return publicSource.toPublicJSON();
+    }
     if (Array.isArray(value)) {
       if (seen.has(value)) return value;
       seen.add(value);
@@ -642,7 +678,7 @@ export class MCPGenerator {
     if (proto !== Object.prototype && proto !== null) return value;
     if (seen.has(value)) return value;
     seen.add(value);
-    const out: Record<string, any> = {};
+    const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       out[key] = this.toPublicData(entry, seen);
     }
@@ -656,8 +692,8 @@ export class MCPGenerator {
    */
   private applyWritablePolicy(
     objectName: string | undefined,
-    data: any,
-  ): Record<string, any> {
+    data: unknown,
+  ): Record<string, unknown> {
     if (!data || typeof data !== 'object') {
       return {};
     }
@@ -692,7 +728,7 @@ export class MCPGenerator {
       }
     }
 
-    const result: Record<string, any> = {};
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) continue;
       if (serverManaged.has(key)) continue;
@@ -732,11 +768,11 @@ export class MCPGenerator {
   }
 
   private async executeAction(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     action: string,
-    args: any,
+    args: ToolArgs,
     objectName?: string,
-  ): Promise<any> {
+  ): Promise<unknown> {
     const mutating = action !== 'list' && action !== 'get';
     this.requireToolAuth(objectName, mutating);
 
@@ -812,31 +848,36 @@ export class MCPGenerator {
    * invoked inside the tenant gate established by {@link executeAction}.
    */
   private async runAction(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     action: string,
-    args: any,
+    args: ToolArgs,
     objectName?: string,
-  ): Promise<any> {
+  ): Promise<unknown> {
     switch (action) {
       case 'list': {
-        const listOptions: any = {
-          limit: Math.min(args.limit || 50, 1000),
-          offset: args.offset || 0,
+        // Args arrive as untyped JSON; narrow each query field at this
+        // boundary. `where`/`orderBy` are passed through to the collection's
+        // typed query API.
+        const listOptions: Parameters<typeof collection.list>[0] = {
+          limit: Math.min((args.limit as number | undefined) || 50, 1000),
+          offset: (args.offset as number | undefined) || 0,
         };
 
         if (args.where) {
-          listOptions.where = args.where;
+          listOptions.where = args.where as (typeof listOptions)['where'];
         }
 
         if (args.orderBy) {
-          listOptions.orderBy = args.orderBy;
+          listOptions.orderBy = args.orderBy as string | string[];
         }
 
         const results = await collection.list(listOptions);
-        const total = await collection.count({ where: args.where || {} });
+        const total = await collection.count({
+          where: (args.where as (typeof listOptions)['where']) || {},
+        });
 
         return {
-          data: results.map((result: any) => this.toPublicData(result)),
+          data: results.map((result) => this.toPublicData(result)),
           meta: {
             total,
             limit: listOptions.limit,
@@ -851,7 +892,7 @@ export class MCPGenerator {
           throw new Error('Either id or slug is required');
         }
 
-        const filter = args.id ? args.id : args.slug;
+        const filter = (args.id ? args.id : args.slug) as string;
         const item = await collection.get(filter);
 
         if (!item) {
@@ -863,7 +904,7 @@ export class MCPGenerator {
 
       case 'create': {
         // Mass-assignment guard (#1540): only writable fields from the caller.
-        const createData: Record<string, any> = this.applyWritablePolicy(
+        const createData: Record<string, unknown> = this.applyWritablePolicy(
           objectName,
           args,
         );
@@ -873,14 +914,18 @@ export class MCPGenerator {
           createData.owner_id = this.context.user.id;
         }
 
-        const newItem = await collection.create(createData);
+        // The writable-policy output is a dynamically-shaped record of caller
+        // data; cast to the collection's create input at this boundary.
+        const newItem = await collection.create(
+          createData as Parameters<typeof collection.create>[0],
+        );
         await newItem.save();
 
         return this.toPublicData(newItem);
       }
 
       case 'update': {
-        const { id } = args;
+        const id = args.id as string | undefined;
         if (!id) {
           throw new Error('ID is required for update');
         }
@@ -895,9 +940,11 @@ export class MCPGenerator {
         const updateData = this.applyWritablePolicy(objectName, args);
         Object.assign(existing, updateData);
 
-        // Add user context
+        // Add user context. `updated_by` is a server-set audit column, not a
+        // declared model field, so assign it through a record view.
         if (this.context.user) {
-          (existing as any).updated_by = this.context.user.id;
+          (existing as unknown as Record<string, unknown>).updated_by =
+            this.context.user.id;
         }
 
         await existing.save();
@@ -910,7 +957,7 @@ export class MCPGenerator {
           throw new Error('ID is required for delete');
         }
 
-        const toDelete = await collection.get(args.id);
+        const toDelete = await collection.get(args.id as string);
         if (!toDelete) {
           throw new Error('Object not found');
         }
@@ -933,39 +980,56 @@ export class MCPGenerator {
    * Execute a custom action on a collection/object
    */
   private async executeCustomAction(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     action: string,
-    args: any,
-  ): Promise<any> {
-    const { id, options = {}, ...directArgs } = args;
+    args: ToolArgs,
+  ): Promise<unknown> {
+    const { id, options: rawOptions = {}, ...directArgs } = args;
+    // Args arrive as untyped JSON; `options` is a nested object bag.
+    const options = rawOptions as Record<string, unknown>;
 
     try {
       // If an ID is provided, get the specific object and call the method on it
       if (id) {
-        const object = await collection.get(id);
+        const object = await collection.get(id as string);
         if (!object) {
           throw new Error('Object not found');
         }
 
-        // Check if the method exists on the object instance
-        // Cast to any to access dynamic method names
-        const objectWithMethods = object as any;
-        if (typeof objectWithMethods[action] === 'function') {
+        // Custom action names are resolved dynamically, so index the instance
+        // through a record view and narrow the value to a callable after the
+        // `typeof === 'function'` guard.
+        const objectWithMethods = object as unknown as Record<string, unknown>;
+        const objectMethod = objectWithMethods[action];
+        if (typeof objectMethod === 'function') {
           // Call the method with the provided options
           // If options is provided, use it; otherwise use directArgs
           const methodArgs =
             Object.keys(options).length > 0 ? options : directArgs;
-          const result = await objectWithMethods[action](methodArgs);
+          // `.call(object, …)` preserves the receiver binding of the original
+          // member call (`object[action](…)`) — the method relies on `this`.
+          const result = await (objectMethod as InstanceCallable).call(
+            object,
+            methodArgs,
+          );
           return result;
         } else {
           throw new Error(`Method '${action}' not found on object instance`);
         }
       } else {
         // No ID provided, try to call the method on the collection
-        if (typeof (collection as any)[action] === 'function') {
+        const collectionMethod = (
+          collection as unknown as Record<string, unknown>
+        )[action];
+        if (typeof collectionMethod === 'function') {
           const methodArgs =
             Object.keys(options).length > 0 ? options : directArgs;
-          const result = await (collection as any)[action](methodArgs);
+          // `.call(collection, …)` preserves the receiver binding of the
+          // original member call (`collection[action](…)`).
+          const result = await (collectionMethod as InstanceCallable).call(
+            collection,
+            methodArgs,
+          );
           return result;
         } else {
           throw new Error(

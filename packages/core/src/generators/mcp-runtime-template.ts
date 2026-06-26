@@ -42,7 +42,7 @@ export interface RuntimeOptions {
   tools?: Array<{
     name: string;
     description: string;
-    inputSchema: any;
+    inputSchema: Record<string, unknown>;
   }>;
 
   /**
