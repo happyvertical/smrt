@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.36.1
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] fix(core): type generated SvelteKit routes
+  - @happyvertical/smrt-config@0.36.1
+  - @happyvertical/smrt-types@0.36.1
+  - @happyvertical/smrt-scanner@0.36.1
+
 ## 1.0.0
 
 ### Minor Changes
