@@ -19,6 +19,7 @@ import type {
   MigrationDefinition,
   MigrationResult,
 } from '@happyvertical/smrt-core/migrations';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { configExportCommand } from './config-export.js';
@@ -155,6 +156,88 @@ function formatStiConflictIdentity(
 }
 
 /**
+ * Parsed option bags for the utility command handlers. The CLI parser produces
+ * `Record<string, unknown>` (see `ParsedArgs.options`); these interfaces narrow
+ * the specific options each command reads without claiming `any`.
+ */
+interface IntrospectOptions {
+  verbose?: boolean;
+}
+
+interface TestOptions {
+  output?: string;
+  manifestOnly?: boolean;
+}
+
+interface DbSetupOptions {
+  drop?: boolean;
+  'dry-run'?: boolean;
+  verbose?: boolean;
+}
+
+interface DbClearCacheOptions {
+  verbose?: boolean;
+}
+
+interface DbValidateOptions {
+  data?: string;
+  quick?: boolean;
+  json?: boolean;
+  verbose?: boolean;
+  fix?: boolean;
+}
+
+interface DbMigrateOptions {
+  'dry-run'?: boolean;
+  'postgres-safe'?: boolean;
+  force?: boolean;
+  'repair-data'?: boolean;
+  'upgrade-sti'?: boolean;
+  'drop-indexes'?: boolean;
+  verbose?: boolean;
+}
+
+interface DoctorOptions {
+  fix?: boolean;
+}
+
+/**
+ * Subset of `package.json` fields the doctor command inspects when assessing
+ * project health and publish surface.
+ */
+interface DoctorPackageJson {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  private?: boolean;
+  main?: unknown;
+  module?: unknown;
+  svelte?: unknown;
+  types?: unknown;
+  exports?: unknown;
+}
+
+/**
+ * Narrowed shape for SMRT/database errors that attach a `context` payload with
+ * the original driver error and offending SQL. Used for richer CLI diagnostics.
+ */
+interface ErrorWithContext {
+  context?: {
+    originalError?: unknown;
+    sql?: unknown;
+  };
+}
+
+function getErrorContext(error: unknown): ErrorWithContext['context'] {
+  if (error && typeof error === 'object' && 'context' in error) {
+    const context = (error as ErrorWithContext).context;
+    if (context && typeof context === 'object') {
+      return context;
+    }
+  }
+  return undefined;
+}
+
+/**
  * Utility commands for CLI
  */
 export const utilityCommands: Record<string, CLICommand> = {
@@ -170,7 +253,7 @@ export const utilityCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: IntrospectOptions) => {
       console.log('\n🔍 Introspecting SMRT project...\n');
 
       // Auto-discover manifests
@@ -240,7 +323,7 @@ export const utilityCommands: Record<string, CLICommand> = {
         default: 'src/manifest',
       },
     },
-    handler: async (args: string[], options: any) => {
+    handler: async (args: string[], options: TestOptions) => {
       // Show deprecation warning
       console.log(`
 ╔═══════════════════════════════════════════════════════════════════════╗
@@ -424,7 +507,7 @@ export default testManifest;
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: DbSetupOptions) => {
       console.warn(
         '\n⚠️  db:setup is deprecated. Use "smrt db:migrate" instead.\n' +
           '   db:migrate now creates new tables automatically.\n' +
@@ -432,7 +515,7 @@ export default testManifest;
       );
       console.log('🔍 Discovering SMRT objects...\n');
 
-      let db: any;
+      let db: DatabaseInterface | undefined;
 
       try {
         // 1. Load CLI config
@@ -725,7 +808,7 @@ export default testManifest;
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: DbClearCacheOptions) => {
       try {
         const { clearConnectionCache } = await import('@happyvertical/sql');
         clearConnectionCache();
@@ -788,7 +871,7 @@ export default testManifest;
         short: 'f',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: DbValidateOptions) => {
       const startTime = Date.now();
 
       try {
@@ -1006,10 +1089,10 @@ export default testManifest;
         short: 'v',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: DbMigrateOptions) => {
       console.log('\n🔄 Migrating database schema...\n');
 
-      let db: any;
+      let db: DatabaseInterface | undefined;
 
       try {
         // 1. Load CLI config
@@ -1503,11 +1586,10 @@ export default testManifest;
             // Show underlying database error if available
             if (
               error instanceof Error &&
-              'context' in error &&
-              (error as any).context?.originalError
+              getErrorContext(error)?.originalError
             ) {
               console.error(
-                `     Cause: ${(error as any).context.originalError}`,
+                `     Cause: ${getErrorContext(error)?.originalError}`,
               );
             }
             if (options.verbose && error instanceof Error && error.stack) {
@@ -1643,11 +1725,11 @@ export default testManifest;
                   } else if (repair.conflicts.length === 0) {
                     stiSkippedCount++;
                   }
-                } catch (error: any) {
+                } catch (error: unknown) {
                   const qualifiedName = resolution.currentQualifiedName;
                   const errorMsg =
                     error instanceof Error ? error.message : String(error);
-                  const originalError = error?.context?.originalError;
+                  const originalError = getErrorContext(error)?.originalError;
                   console.error(
                     `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${originalError || errorMsg}`,
                   );
@@ -1750,7 +1832,7 @@ export default testManifest;
         );
         if (error instanceof Error) {
           console.error(`   ${error.message}`);
-          const ctx = (error as any).context;
+          const ctx = getErrorContext(error);
           if (ctx) {
             if (ctx.originalError) {
               console.error(`   Database error: ${ctx.originalError}`);
@@ -1787,7 +1869,7 @@ export default testManifest;
         short: 'f',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: DoctorOptions) => {
       const { existsSync, readFileSync } = await import('node:fs');
       const { resolve, join } = await import('node:path');
 
@@ -1825,7 +1907,7 @@ export default testManifest;
       const hasPackageJson = existsSync(packageJsonPath);
       check('package.json exists', hasPackageJson, 'Missing package.json');
 
-      let packageJson: any = {};
+      let packageJson: DoctorPackageJson = {};
       if (hasPackageJson) {
         try {
           packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
@@ -1836,9 +1918,10 @@ export default testManifest;
       }
 
       // 2. Check for SMRT core dependency
-      const hasSmrtCore =
+      const hasSmrtCore = Boolean(
         packageJson.dependencies?.['@happyvertical/smrt-core'] ||
-        packageJson.devDependencies?.['@happyvertical/smrt-core'];
+          packageJson.devDependencies?.['@happyvertical/smrt-core'],
+      );
       check(
         '@happyvertical/smrt-core installed',
         hasSmrtCore,

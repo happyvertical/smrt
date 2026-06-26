@@ -169,9 +169,14 @@ async function overlayTemplate(
       // For git templates the temp directory is stored on the config. Prefer
       // the subdir-resolved `__templateRoot` so `github:user/repo/subdir`
       // overlays from the subdir, not the repo root (#1385); fall back to
-      // `__tempDir` for the non-subdir case / older configs.
-      const baseGitDir =
-        (config as any).__templateRoot ?? (config as any).__tempDir;
+      // `__tempDir` for the non-subdir case / older configs. These internal
+      // fields are attached by the git loader and are not part of the public
+      // TemplateConfig shape.
+      const gitConfig = config as TemplateConfig & {
+        __templateRoot?: string;
+        __tempDir?: string;
+      };
+      const baseGitDir = gitConfig.__templateRoot ?? gitConfig.__tempDir;
       if (!baseGitDir) {
         throw new Error('Git template temp directory not found');
       }
@@ -188,8 +193,8 @@ async function overlayTemplate(
   // Check for template directory first (full project templates)
   // Then fall back to overlay directory (overlay on base generator output)
   // Also check templateDir from config
-  const templateDir = (config as any).templateDir
-    ? join(baseDir, (config as any).templateDir)
+  const templateDir = config.templateDir
+    ? join(baseDir, config.templateDir)
     : null;
 
   let sourceDir: string | null = null;
@@ -246,10 +251,24 @@ async function mergePackageJson(
 ): Promise<void> {
   const pkgPath = join(outputDir, 'package.json');
 
-  let pkg: any;
+  /** Minimal package.json shape touched by this merge step. */
+  interface MergeablePackageJson {
+    name?: string;
+    version?: string;
+    private?: boolean;
+    // Optional: a parsed package.json commonly omits these (only the
+    // generated-from-scratch fallback below sets them all). Normalized to
+    // {} after load so the downstream merges/access stay safe.
+    scripts?: Record<string, string>;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    [key: string]: unknown;
+  }
+
+  let pkg: MergeablePackageJson;
   try {
     const content = await readFile(pkgPath, 'utf-8');
-    pkg = JSON.parse(content);
+    pkg = JSON.parse(content) as MergeablePackageJson;
   } catch {
     // If no package.json exists, create one
     pkg = {
@@ -261,6 +280,12 @@ async function mergePackageJson(
       devDependencies: {},
     };
   }
+
+  // Normalize optional maps so the merges/access below are safe even when a
+  // parsed package.json omitted them.
+  pkg.scripts ??= {};
+  pkg.dependencies ??= {};
+  pkg.devDependencies ??= {};
 
   // Update name
   pkg.name = projectName;

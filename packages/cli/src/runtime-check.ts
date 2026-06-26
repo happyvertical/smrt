@@ -429,9 +429,11 @@ async function tryLoadManifestFile(
   manifestPath: string,
 ): Promise<SmartObjectManifest | null> {
   try {
+    // loadManifestFile returns a loosely-typed LoadedManifestFile; narrow it to
+    // the strict manifest shape at this boundary after the structural check.
     const manifest = (await loadManifestFile(
       manifestPath,
-    )) as SmartObjectManifest;
+    )) as unknown as SmartObjectManifest;
     return manifest?.objects && typeof manifest.objects === 'object'
       ? manifest
       : null;
@@ -640,7 +642,7 @@ async function checkRuntimeHydration(
     }
 
     const expectedOwnFields = getOwnFieldNames(entry.definition);
-    let resolvedFields: Map<string, any>;
+    let resolvedFields: Map<string, unknown>;
 
     try {
       resolvedFields = await ObjectRegistry.getAllFields(qualifiedName);
@@ -794,9 +796,11 @@ export async function runRuntimeCheck(
     };
   }
 
+  // loadManifestFile returns a loosely-typed LoadedManifestFile; the project
+  // manifest is known to conform to the strict shape, so narrow at this boundary.
   const projectManifest = (await loadManifestFile(
     projectManifestInfo.path,
-  )) as SmartObjectManifest;
+  )) as unknown as SmartObjectManifest;
   const dependencyManifests = await loadDependencyManifests(
     projectManifest,
     projectRoot,

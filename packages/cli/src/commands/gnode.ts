@@ -14,6 +14,19 @@ import {
 import { generate } from '../utils/generator.js';
 
 /**
+ * Parsed option bag for the `gnode create` handler. The CLI parser produces
+ * `Record<string, unknown>`; this narrows the flags the command reads.
+ */
+interface GnodeCreateOptions {
+  template?: string;
+  outputDir?: string;
+  location?: string;
+  lat?: string;
+  lon?: string;
+  timezone?: string;
+}
+
+/**
  * Gnode commands for CLI
  */
 export const gnodeCommands: Record<string, CLICommand> = {
@@ -50,7 +63,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
         default: 'America/Edmonton',
       },
     },
-    handler: async (args: string[], options: any) => {
+    handler: async (args: string[], options: GnodeCreateOptions) => {
       const name = args[0];
       if (!name) {
         throw new Error('Project name is required: smrt gnode create <name>');
@@ -104,7 +117,7 @@ export const gnodeCommands: Record<string, CLICommand> = {
     name: 'gnode list-templates',
     description: 'List available gnode templates',
     aliases: ['gnode ls'],
-    handler: async (_args: string[], _options: any) => {
+    handler: async (_args: string[], _options: Record<string, unknown>) => {
       console.log('📦 Discovering installed templates...\n');
 
       const templates = await discoverInstalledTemplates();

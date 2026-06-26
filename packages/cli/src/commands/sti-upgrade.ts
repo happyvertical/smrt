@@ -5,8 +5,19 @@ import {
 } from '@happyvertical/smrt-core';
 import { quoteIdentifier } from './db-command-utils.js';
 
+/** A database row as returned by the raw `query` API: keyed by column name. */
+type DbRow = Record<string, unknown>;
+
+/**
+ * Result of a raw `query` call. Adapters return either a bare row array or an
+ * envelope with `rows`/`rowCount`; both shapes are narrowed at the use site.
+ */
+type QueryResult =
+  | DbRow[]
+  | { rows?: DbRow[]; rowCount?: number };
+
 type QueryableDb = {
-  query(sql: string, ...params: any[]): Promise<any>;
+  query(sql: string, ...params: unknown[]): Promise<QueryResult>;
 };
 
 export type StiDiscriminatorUpgradeResult =
@@ -27,7 +38,7 @@ export interface StiDiscriminatorRepairConflict {
   qualifiedMetaType: string;
   legacyId: string | null;
   qualifiedId: string | null;
-  conflictIdentity: Record<string, any>;
+  conflictIdentity: Record<string, unknown>;
 }
 
 export interface StiDiscriminatorRepairResult {
@@ -75,15 +86,17 @@ export function resolveStiDiscriminatorUpgrade(
   };
 }
 
-function rowsFromResult(result: any): any[] {
+function rowsFromResult(result: QueryResult): DbRow[] {
   if (Array.isArray(result)) {
     return result;
   }
   return Array.isArray(result?.rows) ? result.rows : [];
 }
 
-function getRowCount(result: any): number | undefined {
-  return typeof result?.rowCount === 'number' ? result.rowCount : undefined;
+function getRowCount(result: QueryResult): number | undefined {
+  return !Array.isArray(result) && typeof result?.rowCount === 'number'
+    ? result.rowCount
+    : undefined;
 }
 
 function buildNullSafeIdentityPredicate(columns: string[]): string {
@@ -95,8 +108,18 @@ function buildNullSafeIdentityPredicate(columns: string[]): string {
     .join(' AND ');
 }
 
-function getIdentityParams(row: Record<string, any>, columns: string[]): any[] {
-  const params: any[] = [];
+/**
+ * Read a row's `id` as a nullable string. STI tables always key on a string
+ * `id`; this normalizes the loosely-typed row value for the conflict report
+ * without altering the underlying value semantics.
+ */
+function getRowId(row: DbRow): string | null {
+  const id = row.id;
+  return id == null ? null : (id as string);
+}
+
+function getIdentityParams(row: DbRow, columns: string[]): unknown[] {
+  const params: unknown[] = [];
   for (const column of columns) {
     params.push(row[column], row[column]);
   }
@@ -166,8 +189,8 @@ export async function repairStiDiscriminatorRows(options: {
         tableName,
         legacyMetaType,
         qualifiedMetaType,
-        legacyId: row.id ?? null,
-        qualifiedId: duplicateRows[0].id ?? null,
+        legacyId: getRowId(row),
+        qualifiedId: getRowId(duplicateRows[0]),
         conflictIdentity,
       });
       continue;

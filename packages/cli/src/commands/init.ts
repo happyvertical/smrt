@@ -9,6 +9,24 @@ import { resolve } from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
 
 /**
+ * Parsed option bag for the init handler. The CLI parser produces
+ * `Record<string, unknown>`; this narrows the flags the command reads.
+ */
+interface InitOptions {
+  database?: string;
+  force?: boolean;
+  skipExample?: boolean;
+}
+
+/**
+ * Subset of `package.json` fields the init command inspects.
+ */
+interface InitPackageJson {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+/**
  * Template for smrt.config.ts
  */
 const SMRT_CONFIG_TEMPLATE = `/**
@@ -219,7 +237,7 @@ export const initCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: InitOptions) => {
       console.log('\n🚀 Initializing SMRT in your project...\n');
 
       const cwd = process.cwd();
@@ -236,7 +254,7 @@ export const initCommands: Record<string, CLICommand> = {
         process.exit(1);
       }
 
-      let packageJson: any;
+      let packageJson: InitPackageJson;
       try {
         packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
       } catch {

@@ -45,7 +45,7 @@ export const dbGenerateCommand: CLICommand = {
       short: 'j',
     },
   },
-  handler: async (_args: string[], options: any) => {
+  handler: async (_args: string[], options: { json?: boolean }) => {
     if (options.json) {
       console.log(JSON.stringify({ error: UNSUPPORTED_MESSAGE }));
     } else {

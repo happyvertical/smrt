@@ -13,6 +13,18 @@ import type { CLICommand } from '../cli-generator.js';
 
 type PlaygroundTarget = 'package' | 'app';
 
+/**
+ * Loosely-typed view of a `package.json` as read by the playground commands.
+ * Only the fields the commands touch are declared; the index signature keeps
+ * other JSON members accessible without `any`.
+ */
+interface PackageJsonLike {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, string>;
+  [key: string]: unknown;
+}
+
 type SmrtPlaygroundRuntime = Pick<
   typeof import('@happyvertical/smrt-playground'),
   | 'createAppPlaygroundRouteTemplate'
@@ -40,7 +52,7 @@ function loadPlaygroundRuntime(): Promise<SmrtPlaygroundRuntime> {
   return playgroundRuntimePromise;
 }
 
-function readJson(path: string): any {
+function readJson(path: string): PackageJsonLike {
   return JSON.parse(readFileSync(path, 'utf-8'));
 }
 
@@ -251,7 +263,10 @@ export const playgroundCommands: Record<string, CLICommand> = {
         short: 'f',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (
+      _args: string[],
+      options: { target?: string; force?: boolean },
+    ) => {
       const projectRoot = process.cwd();
       const packageJsonPath = resolve(projectRoot, 'package.json');
 
@@ -280,7 +295,9 @@ export const playgroundCommands: Record<string, CLICommand> = {
         const packageResult = writeFileIfAllowed(
           packagePlaygroundPath,
           (await loadPlaygroundRuntime()).createPackagePlaygroundTemplate(
-            packageJson.name,
+            // The package target is only reached for a named SMRT package;
+            // String() preserves the previous (untyped) pass-through exactly.
+            String(packageJson.name),
           ),
           force,
         );

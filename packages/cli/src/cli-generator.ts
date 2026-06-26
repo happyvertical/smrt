@@ -10,11 +10,17 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import type { SmrtCollection } from '@happyvertical/smrt-core';
+import type {
+  SmrtCollection,
+  SmrtCollectionOptions,
+  SmrtObject,
+} from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type Command,
+  type OptionConfig,
   type ParsedArgs,
   parseCliArgs,
 } from '@happyvertical/utils';
@@ -123,14 +129,43 @@ export interface CLIConfig {
 }
 
 export interface CLIContext {
-  db?: any;
-  ai?: any;
+  db?: DatabaseInterface;
+  /**
+   * Opaque AI client passed through to collection/instance configs. The
+   * concrete client type is owned by the consumer's runtime config, so it is
+   * only ever truthiness-checked and forwarded here.
+   */
+  ai?: unknown;
   user?: {
     id: string;
     roles?: string[];
   };
   /** Timing data for --timing flag */
   timing?: Record<string, number>;
+}
+
+/**
+ * Loosely-typed bag of parsed CLI options for a single command invocation.
+ * `parseCliArgs` yields `Record<string, unknown>`-shaped option values
+ * (strings for `type: 'string'`, booleans for `type: 'boolean'`); handlers
+ * narrow individual keys as needed.
+ */
+type CliOptions = Record<string, unknown>;
+
+/**
+ * Subset of a registry method definition consumed by the CLI generator when
+ * mapping method parameters onto CLI options and call arguments. Mirrors the
+ * `methods`/`getAllMethods()` manifest shape from `@happyvertical/smrt-core`.
+ */
+interface CliMethodDefinition {
+  isPublic?: boolean;
+  description?: string;
+  parameters?: Array<{
+    name: string;
+    type?: string;
+    optional?: boolean;
+    default?: unknown;
+  }>;
 }
 
 // Re-export Command as CLICommand for backward compatibility
@@ -145,7 +180,7 @@ export type { ParsedArgs } from '@happyvertical/utils';
 export class CLIGenerator {
   private config: CLIConfig;
   private context: CLIContext;
-  private collections = new Map<string, SmrtCollection<any>>();
+  private collections = new Map<string, SmrtCollection<SmrtObject>>();
   private commandCache: CLICommand[] | null = null;
   /** Lazy-loaded cache for object commands (key: objectName lowercase) */
   private objectCommandsCache = new Map<string, CLICommand[]>();
@@ -170,11 +205,17 @@ export class CLIGenerator {
    * Check if running in test environment
    */
   private isTestMode(): boolean {
+    // Vitest/Jest inject `it`/`describe` as globals; probe them structurally
+    // without asserting their full type surface.
+    const testGlobals = global as unknown as {
+      it?: unknown;
+      describe?: unknown;
+    };
     return (
       process.env.NODE_ENV === 'test' ||
       process.env.VITEST === 'true' ||
-      typeof (global as any).it === 'function' ||
-      typeof (global as any).describe === 'function'
+      typeof testGlobals.it === 'function' ||
+      typeof testGlobals.describe === 'function'
     );
   }
 
@@ -301,16 +342,25 @@ export class CLIGenerator {
     const fileUrl = `file://${fullPath}`;
     const importedModule = await import(fileUrl);
 
-    // Register collections from exports
+    // Register collections from exports. A SmrtCollection subclass carries a
+    // static `_itemClass` pointing at the item constructor it manages.
+    type CollectionConstructor = (new (
+      options: SmrtCollectionOptions,
+    ) => SmrtCollection<SmrtObject>) & {
+      _itemClass?: { SMRT_TABLE_NAME?: string; name: string };
+    };
     for (const [exportName, exportValue] of Object.entries(importedModule)) {
       if (exportValue && typeof exportValue === 'function') {
-        const itemClass = (exportValue as any)._itemClass;
+        const itemClass = (exportValue as CollectionConstructor)._itemClass;
         if (itemClass) {
           const tableName =
             itemClass.SMRT_TABLE_NAME || itemClass.name.toLowerCase();
           const existing = ObjectRegistry.getClass(tableName);
           if (existing && !existing.collectionConstructor) {
-            ObjectRegistry.registerCollection(tableName, exportValue as any);
+            ObjectRegistry.registerCollection(
+              tableName,
+              exportValue as CollectionConstructor,
+            );
             if (config.verbose) {
               console.log(`[CLI] Registered local collection ${exportName}`);
             }
@@ -720,7 +770,7 @@ export class CLIGenerator {
    */
   private async generateObjectCommands(
     objectName: string,
-    _classInfo: any,
+    _classInfo: ReturnType<typeof ObjectRegistry.getClass>,
   ): Promise<CLICommand[]> {
     const commands: CLICommand[] = [];
     const lowerName = objectName.toLowerCase();
@@ -798,7 +848,7 @@ export class CLIGenerator {
 
     // CREATE command
     if (shouldInclude('create')) {
-      const options: Record<string, any> = {
+      const options: Record<string, OptionConfig> = {
         interactive: {
           type: 'boolean',
           description: 'interactive mode with prompts',
@@ -828,7 +878,7 @@ export class CLIGenerator {
 
     // UPDATE command
     if (shouldInclude('update')) {
-      const options: Record<string, any> = {
+      const options: Record<string, OptionConfig> = {
         interactive: {
           type: 'boolean',
           description: 'interactive mode with prompts',
@@ -882,7 +932,10 @@ export class CLIGenerator {
       (item) => !crudOperations.includes(item),
     );
 
-    for (const [methodName, methodDef] of methods) {
+    for (const [methodName, methodDef] of methods as Map<
+      string,
+      CliMethodDefinition
+    >) {
       // Check if method should be included in CLI
       const shouldIncludeMethod = () => {
         // Skip if not public (private/protected methods shouldn't be in CLI)
@@ -908,7 +961,7 @@ export class CLIGenerator {
       if (!shouldIncludeMethod()) continue;
 
       // Build options from method parameters
-      const methodOptions: Record<string, any> = {
+      const methodOptions: Record<string, OptionConfig> = {
         json: {
           type: 'boolean',
           description: 'Output as JSON only (suppress other output)',
@@ -1252,7 +1305,7 @@ export class CLIGenerator {
 
         if (options.json) {
           // JSON output mode
-          const output: Record<string, any> = {};
+          const output: Record<string, unknown> = {};
           for (const [key, classInfo] of registeredClasses) {
             // Issue #951: Use qualified key to avoid collisions in JSON output,
             // include simple name as a display field
@@ -1395,8 +1448,11 @@ export class CLIGenerator {
   /**
    * Create schema command handler
    */
-  private createSchemaHandler(): (args: any, options: any) => Promise<void> {
-    return async (args: any, _options: any) => {
+  private createSchemaHandler(): (
+    args: string[],
+    options: CliOptions,
+  ) => Promise<void> {
+    return async (args: string[], _options: CliOptions) => {
       const objectName = args[0];
       const fields = ObjectRegistry.getFields(objectName);
       if (fields.size === 0) {
@@ -1605,25 +1661,30 @@ export class CLIGenerator {
   /**
    * Handle LIST command
    */
-  private async handleList(objectName: string, options: any): Promise<void> {
+  private async handleList(
+    objectName: string,
+    options: CliOptions,
+  ): Promise<void> {
     const spinner = this.createSpinner(`Listing ${objectName} objects...`);
 
     try {
       const collection = await this.getCollection(objectName);
 
-      const listOptions: any = {
-        limit: Number.parseInt(options.limit, 10),
-        offset: Number.parseInt(options.offset, 10),
+      const listOptions: NonNullable<
+        Parameters<SmrtCollection<SmrtObject>['list']>[0]
+      > = {
+        limit: Number.parseInt(String(options.limit), 10),
+        offset: Number.parseInt(String(options.offset), 10),
       };
 
       // `parseCliArgs` returns the declared kebab key verbatim ('order-by'),
       // so read that first; keep the camel fallback for handler-direct callers.
       const orderBy = options['order-by'] ?? options.orderBy;
-      if (orderBy) {
+      if (typeof orderBy === 'string' && orderBy) {
         listOptions.orderBy = orderBy;
       }
 
-      if (options.where) {
+      if (typeof options.where === 'string' && options.where) {
         listOptions.where = JSON.parse(options.where);
       }
 
@@ -1650,7 +1711,7 @@ export class CLIGenerator {
   private async handleGet(
     objectName: string,
     id: string,
-    options: any,
+    options: CliOptions,
   ): Promise<void> {
     const spinner = this.createSpinner(`Getting ${objectName}...`);
 
@@ -1683,14 +1744,17 @@ export class CLIGenerator {
   /**
    * Handle CREATE command
    */
-  private async handleCreate(objectName: string, options: any): Promise<void> {
+  private async handleCreate(
+    objectName: string,
+    options: CliOptions,
+  ): Promise<void> {
     try {
-      let data: any = {};
+      let data: Record<string, unknown> = {};
 
       // Declared kebab option ('from-file') arrives verbatim from parseCliArgs;
       // keep the camel fallback for handler-direct callers.
       const fromFile = options['from-file'] ?? options.fromFile;
-      if (fromFile) {
+      if (typeof fromFile === 'string' && fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
         const content = await fs.readFile(fromFile, 'utf-8');
@@ -1704,7 +1768,7 @@ export class CLIGenerator {
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
           if (options[optionName] !== undefined) {
-            data[fieldName] = this.parseFieldValue(options[optionName]);
+            data[fieldName] = this.parseFieldValue(String(options[optionName]));
           }
         }
       }
@@ -1733,7 +1797,7 @@ export class CLIGenerator {
   private async handleUpdate(
     objectName: string,
     id: string,
-    options: any,
+    options: CliOptions,
   ): Promise<void> {
     try {
       const collection = await this.getCollection(objectName);
@@ -1744,26 +1808,30 @@ export class CLIGenerator {
         return;
       }
 
-      let data: any = {};
+      let data: Record<string, unknown> = {};
 
       // Declared kebab option ('from-file') arrives verbatim from parseCliArgs;
       // keep the camel fallback for handler-direct callers.
       const fromFile = options['from-file'] ?? options.fromFile;
-      if (fromFile) {
+      if (typeof fromFile === 'string' && fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
         const content = await fs.readFile(fromFile, 'utf-8');
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
-        // Interactive mode with current values
-        data = await this.promptForFields(objectName, existing);
+        // Interactive mode with current values. The persisted instance is
+        // treated as a plain field bag for prompting/diffing.
+        data = await this.promptForFields(
+          objectName,
+          existing as unknown as Record<string, unknown>,
+        );
       } else {
         // From command line options
         const fields = ObjectRegistry.getFields(objectName);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
           if (options[optionName] !== undefined) {
-            data[fieldName] = this.parseFieldValue(options[optionName]);
+            data[fieldName] = this.parseFieldValue(String(options[optionName]));
           }
         }
       }
@@ -1791,7 +1859,7 @@ export class CLIGenerator {
   private async handleDelete(
     objectName: string,
     id: string,
-    options: any,
+    options: CliOptions,
   ): Promise<void> {
     try {
       const collection = await this.getCollection(objectName);
@@ -1804,8 +1872,12 @@ export class CLIGenerator {
 
       // Confirmation prompt
       if (!options.force && this.config.prompt) {
+        // `name` is a common-but-optional domain field that is not part of the
+        // SmrtObject base; read it structurally for a friendlier prompt label.
+        const label =
+          (existing as { name?: string }).name || existing.slug || existing.id;
         const confirmed = await this.confirm(
-          `Are you sure you want to delete ${objectName} "${(existing as any).name || existing.slug || existing.id}"?`,
+          `Are you sure you want to delete ${objectName} "${label}"?`,
         );
         if (!confirmed) {
           console.log('Cancelled');
@@ -1832,7 +1904,7 @@ export class CLIGenerator {
     objectName: string,
     id: string,
     methodName: string,
-    options: any,
+    options: CliOptions,
   ): Promise<void> {
     try {
       const collection = await this.getCollection(objectName);
@@ -1845,7 +1917,8 @@ export class CLIGenerator {
 
       // Get method metadata for parameter mapping (including inherited methods)
       const methods = await ObjectRegistry.getAllMethods(objectName);
-      const methodDef = methods.get(methodName);
+      const methodDef: CliMethodDefinition | undefined =
+        methods.get(methodName);
 
       if (!methodDef) {
         this.exitWithError(`Method ${methodName} not found on ${objectName}`);
@@ -1868,7 +1941,7 @@ export class CLIGenerator {
       // Map CLI options to method parameters (kebab-case to camelCase)
       // Handle both flat parameters and object type parameters (fix for issue #620)
       const methodParams = methodDef.parameters || [];
-      const methodCallArgs: any[] = [];
+      const methodCallArgs: unknown[] = [];
 
       for (const param of methodParams) {
         const typeStr = param.type || '';
@@ -1876,7 +1949,7 @@ export class CLIGenerator {
 
         if (isObjectType) {
           // Object type parameter - reconstruct from individual CLI options
-          const objArg: any = {};
+          const objArg: Record<string, unknown> = {};
           // Extract property definitions from type string
           const match = typeStr.match(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/);
           if (match) {
@@ -1890,7 +1963,7 @@ export class CLIGenerator {
                 .toLowerCase();
               if (options[optionName] !== undefined) {
                 // Auto-parse JSON objects and arrays from CLI strings
-                let value = options[optionName];
+                let value: unknown = options[optionName];
                 if (
                   typeof value === 'string' &&
                   (value.startsWith('{') || value.startsWith('['))
@@ -1928,15 +2001,19 @@ export class CLIGenerator {
         }
       }
 
-      // Call the method on the object instance
-      const method = (obj as any)[methodName];
+      // Call the method on the object instance. Dynamic method names are not
+      // expressible on the SmrtObject type, so read through an indexable view.
+      const method = (obj as unknown as Record<string, unknown>)[methodName];
       if (typeof method !== 'function') {
         spinner.fail(`Method ${methodName} is not a function`);
         this.exitWithError(`Method ${methodName} is not callable`);
         return;
       }
 
-      const result = await method.call(obj, ...methodCallArgs);
+      const result = await (method as (...args: unknown[]) => unknown).call(
+        obj,
+        ...methodCallArgs,
+      );
 
       spinner.succeed(`Executed ${methodName}`);
 
@@ -1956,15 +2033,8 @@ export class CLIGenerator {
   private async handleSingletonMethod(
     objectName: string,
     methodName: string,
-    options: any,
-    methodDef?: {
-      parameters?: Array<{
-        name: string;
-        type?: string;
-        optional?: boolean;
-        default?: any;
-      }>;
-    },
+    options: CliOptions,
+    methodDef?: CliMethodDefinition,
   ): Promise<void> {
     try {
       const classInfo = ObjectRegistry.getClass(objectName);
@@ -2008,7 +2078,7 @@ export class CLIGenerator {
       const smrtConfig = getConfig() || {};
       // Get module-specific config (e.g., modules.praeco for Praeco class)
       const moduleConfig = getModuleConfig(objectName.toLowerCase(), {}) as {
-        db?: any;
+        db?: DatabaseInterface;
       };
 
       // Get database config and create connection
@@ -2025,9 +2095,11 @@ export class CLIGenerator {
         });
       }
 
-      // Check if we have a real constructor (not just a manifest stub)
+      // Check if we have a real constructor (not just a manifest stub).
+      // Manifest stubs tag their constructor with `_isManifestStub`.
       const isManifestStub =
-        (classInfo.constructor as any)?._isManifestStub === true;
+        (classInfo.constructor as { _isManifestStub?: boolean } | undefined)
+          ?._isManifestStub === true;
 
       if (process.env.DEBUG) {
         console.log(`[DEBUG] ${objectName} constructor info:`);
@@ -2070,8 +2142,8 @@ export class CLIGenerator {
       const instanceConfig = {
         ...smrtConfig,
         ...moduleConfig,
-        ...(useCliDb && { db }),
-        ...(this.context.ai && { ai: this.context.ai }),
+        ...(useCliDb ? { db } : {}),
+        ...(this.context.ai ? { ai: this.context.ai } : {}),
         // In JSON mode, silence all log output to ensure clean JSON
         ...(jsonMode && { silent: true }),
       };
@@ -2083,8 +2155,9 @@ export class CLIGenerator {
         await obj.initialize();
       }
 
-      // Call the method
-      const method = (obj as any)[methodName];
+      // Call the method. Dynamic method names are not expressible on the
+      // instance type, so read through an indexable view.
+      const method = (obj as unknown as Record<string, unknown>)[methodName];
       if (typeof method !== 'function') {
         spinner.fail(`Method ${methodName} is not a function`);
         this.exitWithError(`Method ${methodName} is not callable`);
@@ -2094,7 +2167,7 @@ export class CLIGenerator {
       // Map CLI options to method parameters (kebab-case to camelCase)
       // Handle both flat parameters and object type parameters
       const methodParams = methodDef?.parameters || [];
-      const methodCallArgs: any[] = [];
+      const methodCallArgs: unknown[] = [];
 
       for (const param of methodParams) {
         const typeStr = param.type || '';
@@ -2102,7 +2175,7 @@ export class CLIGenerator {
 
         if (isObjectType) {
           // Object type parameter - reconstruct from individual CLI options
-          const objArg: any = {};
+          const objArg: Record<string, unknown> = {};
           // Extract property definitions from type string
           const match = typeStr.match(/\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/);
           if (match) {
@@ -2117,7 +2190,7 @@ export class CLIGenerator {
               if (options[optionName] !== undefined) {
                 // Auto-parse JSON objects and arrays from CLI strings
                 // Note: Only values starting with { or [ are parsed as JSON
-                let value = options[optionName];
+                let value: unknown = options[optionName];
                 if (
                   typeof value === 'string' &&
                   (value.startsWith('{') || value.startsWith('['))
@@ -2156,7 +2229,10 @@ export class CLIGenerator {
         }
       }
 
-      const result = await method.call(obj, ...methodCallArgs);
+      const result = await (method as (...args: unknown[]) => unknown).call(
+        obj,
+        ...methodCallArgs,
+      );
 
       spinner.succeed(`Executed ${methodName}`);
 
@@ -2193,7 +2269,7 @@ export class CLIGenerator {
    */
   private async getCollection(
     objectName: string,
-  ): Promise<SmrtCollection<any>> {
+  ): Promise<SmrtCollection<SmrtObject>> {
     if (!this.collections.has(objectName)) {
       const classInfo = ObjectRegistry.getClass(objectName);
       if (!classInfo || !classInfo.collectionConstructor) {
@@ -2254,10 +2330,10 @@ export class CLIGenerator {
    */
   private async promptForFields(
     objectName: string,
-    current: any,
-  ): Promise<any> {
+    current: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     const fields = ObjectRegistry.getFields(objectName);
-    const result: any = {};
+    const result: Record<string, unknown> = {};
 
     for (const [fieldName, field] of fields) {
       const currentValue = current[fieldName];
@@ -2288,7 +2364,7 @@ export class CLIGenerator {
   /**
    * Parse field value from string
    */
-  private parseFieldValue(value: string): any {
+  private parseFieldValue(value: string): unknown {
     // Try to parse as JSON first
     try {
       return JSON.parse(value);
@@ -2301,17 +2377,19 @@ export class CLIGenerator {
   /**
    * Display results as table
    */
-  private displayTable(results: any[], objectName: string): void {
+  private displayTable(results: SmrtObject[], objectName: string): void {
     if (results.length === 0) {
       console.log(`No ${objectName} objects found`);
       return;
     }
 
-    // Simple table display
+    // Simple table display. Some columns (name, created_at) are domain fields
+    // not present on the SmrtObject base, so read them through a record view.
     const keys = ['id', 'name', 'slug', 'created_at'];
-    const rows = results.map((item) =>
-      keys.map((key) => String(item[key] || '').substring(0, 30)),
-    );
+    const rows = results.map((item) => {
+      const record = item as unknown as Record<string, unknown>;
+      return keys.map((key) => String(record[key] || '').substring(0, 30));
+    });
 
     console.log();
     console.log(keys.join('\t'));
@@ -2325,7 +2403,7 @@ export class CLIGenerator {
   /**
    * Convert object to YAML-like string
    */
-  private toYamlString(obj: any, indent = 0): string {
+  private toYamlString(obj: object, indent = 0): string {
     const spaces = '  '.repeat(indent);
     let result = '';
 

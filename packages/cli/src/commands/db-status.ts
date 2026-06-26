@@ -9,6 +9,7 @@
 
 import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { SchemaDiff } from '@happyvertical/smrt-core/migrations';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
@@ -57,15 +58,37 @@ type FailedMigrationSummary = {
 
 type FailedMigrationBuckets = ReturnType<typeof summarizeFailedMigrations>;
 
+/** Parsed CLI options for the `db:status` command. */
+interface DbStatusOptions {
+  json?: boolean;
+  verbose?: boolean;
+}
+
 const CANONICAL_UUID_RE =
   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
-function getSchemaColumn(schema: any, columnName: string): any | null {
+/** Minimal column shape this command reads (manifest or live db column). */
+type SchemaColumnLike = { name?: string; type?: unknown };
+
+/**
+ * Minimal schema shape this command reads. Covers both manifest definitions
+ * (`getAllSchemasAsDefinitions()`) and live `getTableSchema()` results, whose
+ * `columns` are keyed records; an array form is tolerated defensively.
+ */
+type SchemaLike = {
+  tableName?: string;
+  columns?: Record<string, SchemaColumnLike> | SchemaColumnLike[];
+};
+
+function getSchemaColumn(
+  schema: SchemaLike | null | undefined,
+  columnName: string,
+): SchemaColumnLike | null {
   const columns = schema?.columns;
   if (!columns) return null;
 
   if (Array.isArray(columns)) {
-    return columns.find((column: any) => column?.name === columnName) ?? null;
+    return columns.find((column) => column?.name === columnName) ?? null;
   }
 
   return columns[columnName] ?? null;
@@ -92,18 +115,18 @@ function isPostgresDatabase(dbType: string, dbUrl: string): boolean {
 }
 
 function manifestDeclaresTenantIdUuid(
-  manifestSchemas: Record<string, any>,
+  manifestSchemas: Record<string, SchemaLike>,
 ): boolean {
   const tenantSchema =
     manifestSchemas.tenants ??
     Object.values(manifestSchemas).find(
-      (schema: any) => schema?.tableName === 'tenants',
+      (schema) => schema?.tableName === 'tenants',
     );
   const idColumn = getSchemaColumn(tenantSchema, 'id');
   return normalizeColumnType(idColumn?.type) === 'uuid';
 }
 
-async function countNonUuidTenantIds(db: any): Promise<number> {
+async function countNonUuidTenantIds(db: DatabaseInterface): Promise<number> {
   const result = await db.query(
     `SELECT count(*)::text AS count
        FROM tenants
@@ -115,10 +138,10 @@ async function countNonUuidTenantIds(db: any): Promise<number> {
 }
 
 export async function checkTenantIdUuidPreconditions(input: {
-  db: any;
+  db: DatabaseInterface;
   dbType: string;
   dbUrl: string;
-  manifestSchemas: Record<string, any>;
+  manifestSchemas: Record<string, SchemaLike>;
 }): Promise<StatusPrecondition[]> {
   const { db, dbType, dbUrl, manifestSchemas } = input;
   if (
@@ -284,8 +307,8 @@ export const dbStatusCommand: CLICommand = {
       short: 'v',
     },
   },
-  handler: async (_args: string[], options: any) => {
-    let db: any;
+  handler: async (_args: string[], options: DbStatusOptions) => {
+    let db: DatabaseInterface | undefined;
 
     try {
       // 1. Load CLI config
@@ -610,7 +633,7 @@ function printFailedMigrationGroup(
     recommendation: string;
     errorMessage: string | null;
   }>,
-  verbose: boolean,
+  verbose: boolean | undefined,
 ): void {
   if (migrations.length === 0) {
     return;

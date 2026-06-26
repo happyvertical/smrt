@@ -14,8 +14,46 @@ import type {
   ExportFileConfig,
   ExportFilterValue,
 } from '@happyvertical/smrt-config';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
+
+/**
+ * Minimal structural view of a registry field definition, covering only the
+ * properties the export pipeline reads. Mirrors the relevant fields of
+ * `FieldDefinition` from `@happyvertical/smrt-core` (which is not re-exported
+ * from the package root).
+ */
+interface ExportFieldDef {
+  type?: string;
+  transient?: boolean;
+  exported?: boolean;
+  _meta?: { __smrtSystemField?: boolean } & Record<string, unknown>;
+}
+
+/** A single exportable database row keyed by column/field name. */
+type ExportRow = Record<string, unknown>;
+
+/** WHERE-clause filter map: field name → comparison value. */
+type ExportFilters = Record<string, unknown>;
+
+/** Per-file export summary entry. */
+interface ExportFileSummary {
+  types: string[];
+  records: number;
+  fields: number;
+  path: string;
+}
+
+/** Parsed options for the `export` command handler. */
+interface ExportCliOptions {
+  output: string;
+  file?: string;
+  'show-drafts'?: boolean;
+  'dry-run'?: boolean;
+  json?: boolean;
+  verbose?: boolean;
+}
 
 function toSnakeCase(str: string): string {
   return str
@@ -113,8 +151,9 @@ async function getExportableFields(
 
   const exportableFields: string[] = [];
 
-  for (const [fieldName, fieldDef] of fields) {
-    if ((fieldDef as any)._meta?.__smrtSystemField === true) continue;
+  for (const [fieldName, rawFieldDef] of fields) {
+    const fieldDef = rawFieldDef as ExportFieldDef;
+    if (fieldDef._meta?.__smrtSystemField === true) continue;
 
     // Skip transient and relationship fields
     if (fieldDef.transient) continue;
@@ -122,7 +161,7 @@ async function getExportableFields(
       continue;
 
     // Check field-level export annotation (from @field({ exported: ... }))
-    const exportedAnnotation = (fieldDef as any).exported;
+    const exportedAnnotation = fieldDef.exported;
 
     // exported: false means never export (cannot be overridden)
     if (exportedAnnotation === false) continue;
@@ -167,10 +206,10 @@ async function getExportableFields(
  */
 function buildWhereClause(
   filters: Record<string, string[] | number[] | ExportFilterValue> | undefined,
-): Record<string, any> {
+): ExportFilters {
   if (!filters) return {};
 
-  const where: Record<string, any> = {};
+  const where: ExportFilters = {};
 
   for (const [field, value] of Object.entries(filters)) {
     if (Array.isArray(value)) {
@@ -206,14 +245,14 @@ function buildWhereClause(
  * Query records with field projection
  */
 export async function queryWithProjection(
-  db: any,
+  db: DatabaseInterface,
   tableName: string,
   types: string[],
   fields: string[],
-  filters: Record<string, any>,
+  filters: ExportFilters,
   orderBy?: string,
   limit?: number,
-): Promise<any[]> {
+): Promise<ExportRow[]> {
   const projection =
     types.length > 0
       ? await getProjectionCapabilities(types[0])
@@ -232,7 +271,7 @@ export async function queryWithProjection(
 
   // Build WHERE clause
   const whereClauses: string[] = [];
-  const whereValues: any[] = [];
+  const whereValues: unknown[] = [];
 
   // Filter by _meta_type if specified types
   if (types.length > 0 && projection.includeMetaType) {
@@ -338,11 +377,11 @@ function parseExportValue(value: unknown) {
 }
 
 export function formatProjectedRecords(
-  records: any[],
+  records: ExportRow[],
   fieldColumns: Array<{ field: string; column: string }>,
 ) {
-  return records.map((row: any) => {
-    const record: Record<string, any> = {};
+  return records.map((row: ExportRow) => {
+    const record: Record<string, unknown> = {};
     for (const { field, column } of fieldColumns) {
       const rawValue =
         row[field] !== undefined && row[field] !== null
@@ -458,8 +497,8 @@ export const exportCommand: CLICommand = {
       default: false,
     },
   },
-  handler: async (_args: string[], options: any) => {
-    let db: any;
+  handler: async (_args: string[], options: ExportCliOptions) => {
+    let db: DatabaseInterface | undefined;
 
     try {
       // 1. Load config
@@ -545,7 +584,7 @@ export const exportCommand: CLICommand = {
 
       // 6. Process each export file
       const outputDir = path.resolve(process.cwd(), options.output);
-      const summary: Record<string, any> = {};
+      const summary: Record<string, ExportFileSummary> = {};
       const onlyFile = options.file;
 
       // Ensure output directory exists
@@ -632,13 +671,13 @@ export const exportCommand: CLICommand = {
           let content: string;
           if (format === 'ndjson') {
             content = formattedRecords
-              .map((r: any) => JSON.stringify(r))
+              .map((r) => JSON.stringify(r))
               .join('\n');
           } else if (format === 'csv') {
             // Simple CSV (headers + rows)
             if (formattedRecords.length > 0) {
               const headers = Object.keys(formattedRecords[0]);
-              const rows = formattedRecords.map((r: any) =>
+              const rows = formattedRecords.map((r) =>
                 headers.map((h) => JSON.stringify(r[h] ?? '')).join(','),
               );
               content = [headers.join(','), ...rows].join('\n');
@@ -675,7 +714,7 @@ export const exportCommand: CLICommand = {
         console.log(`   Output: ${outputDir}`);
         console.log(`   Files: ${Object.keys(summary).length}`);
         console.log(
-          `   Records: ${Object.values(summary).reduce((acc, s: any) => acc + s.records, 0)}`,
+          `   Records: ${Object.values(summary).reduce((acc, s) => acc + s.records, 0)}`,
         );
         if (showDrafts) {
           console.log('   Mode: Including drafts');

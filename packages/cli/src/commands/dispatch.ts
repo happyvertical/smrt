@@ -4,13 +4,62 @@
  * Commands for managing the dispatch queue and subscriptions.
  */
 
+import type {
+  DispatchBus,
+  DispatchRetryOptions,
+  DispatchStatus,
+} from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
+
+/** Parsed options for `dispatch:list`. */
+interface DispatchListCliOptions {
+  status?: DispatchStatus;
+  source?: string;
+  type?: string;
+  limit?: number;
+  json?: boolean;
+}
+
+/** Parsed options for `dispatch:process`. */
+interface DispatchProcessCliOptions {
+  subscriber?: string;
+  limit?: number;
+  dry?: boolean;
+}
+
+/** Parsed options for `dispatch:retry`. */
+interface DispatchRetryCliOptions {
+  'max-attempts'?: number;
+  type?: string;
+}
+
+/** Parsed options for `dispatch:cleanup`. */
+interface DispatchCleanupCliOptions {
+  'completed-older-than'?: number;
+  'failed-older-than'?: number;
+  dry?: boolean;
+}
+
+/** Parsed options for `dispatch:subscriptions`. */
+interface DispatchSubscriptionsCliOptions {
+  subscriber?: string;
+  json?: boolean;
+}
+
+/** Parsed options for `dispatch:subscribe`. */
+interface DispatchSubscribeCliOptions {
+  handler?: string;
+}
 
 /**
  * Get dispatch bus with database from config
  */
-async function getDispatchBus() {
+async function getDispatchBus(): Promise<{
+  bus: DispatchBus;
+  db: DatabaseInterface;
+}> {
   const { createDispatchBus } = await import('@happyvertical/smrt-core');
   const { getPackageConfig } = await import('@happyvertical/smrt-config');
   const { getDatabase } = await import('@happyvertical/sql');
@@ -25,7 +74,7 @@ async function getDispatchBus() {
     );
   }
 
-  let db: any;
+  let db: DatabaseInterface | undefined;
 
   try {
     db = await getDatabase({
@@ -78,8 +127,8 @@ export const dispatchCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
-      let db: any;
+    handler: async (_args: string[], options: DispatchListCliOptions) => {
+      let db: DatabaseInterface | undefined;
 
       try {
         const context = await getDispatchBus();
@@ -157,13 +206,13 @@ export const dispatchCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: DispatchProcessCliOptions) => {
       if (!options.subscriber) {
         console.error('Error: --subscriber is required');
         process.exit(1);
       }
 
-      let db: any;
+      let db: DatabaseInterface | undefined;
 
       try {
         const context = await getDispatchBus();
@@ -248,15 +297,15 @@ export const dispatchCommands: Record<string, CLICommand> = {
         short: 't',
       },
     },
-    handler: async (_args: string[], options: any) => {
-      let db: any;
+    handler: async (_args: string[], options: DispatchRetryCliOptions) => {
+      let db: DatabaseInterface | undefined;
 
       try {
         const context = await getDispatchBus();
         db = context.db;
         const { bus } = context;
 
-        const retryOptions: any = {
+        const retryOptions: DispatchRetryOptions = {
           maxAttempts: options['max-attempts'] || 3,
         };
 
@@ -301,8 +350,8 @@ export const dispatchCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
-      let db: any;
+    handler: async (_args: string[], options: DispatchCleanupCliOptions) => {
+      let db: DatabaseInterface | undefined;
 
       try {
         const context = await getDispatchBus();
@@ -374,8 +423,11 @@ export const dispatchCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (_args: string[], options: any) => {
-      let db: any;
+    handler: async (
+      _args: string[],
+      options: DispatchSubscriptionsCliOptions,
+    ) => {
+      let db: DatabaseInterface | undefined;
 
       try {
         const context = await getDispatchBus();
@@ -436,7 +488,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
         default: 'handleDispatch',
       },
     },
-    handler: async (args: string[], options: any) => {
+    handler: async (args: string[], options: DispatchSubscribeCliOptions) => {
       if (args.length < 2) {
         console.error(
           'Usage: smrt dispatch:subscribe <signal-type> <subscriber>',
@@ -445,7 +497,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
       }
 
       const [signalType, subscriber] = args;
-      let db: any;
+      let db: DatabaseInterface | undefined;
 
       try {
         const context = await getDispatchBus();
@@ -487,7 +539,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
       }
 
       const [signalType, subscriber] = args;
-      let db: any;
+      let db: DatabaseInterface | undefined;
 
       try {
         const context = await getDispatchBus();

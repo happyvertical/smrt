@@ -10,6 +10,36 @@ import { resolve } from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
 
 /**
+ * Structural JSON value types for the merge driver.
+ *
+ * The driver operates on arbitrary parsed JSON (`JSON.parse` output), so values
+ * are modeled as the recursive JSON shape rather than concrete SMRT objects.
+ */
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+type JsonObject = { [key: string]: JsonValue };
+
+/**
+ * Options accepted by the `git:init` command handler.
+ */
+interface GitInitOptions {
+  patterns?: string;
+  global?: boolean;
+  force?: boolean;
+}
+
+/**
+ * Options accepted by the `merge-json` command handler.
+ */
+interface MergeJsonOptions {
+  verbose?: boolean;
+  /** Declared kebab option name from parseCliArgs. */
+  'dry-run'?: boolean;
+  /** Camel fallback for handler-direct callers/tests. */
+  dryRun?: boolean;
+}
+
+/**
  * Default patterns for SMRT data files
  */
 const DEFAULT_DATA_PATTERNS = ['data/*.json', '*.data.json'];
@@ -25,38 +55,47 @@ const DEFAULT_DATA_PATTERNS = ['data/*.json', '*.data.json'];
  * - Sort by `created_at` (ascending) or `id` for consistent ordering
  */
 export function mergeArraysByKey(
-  base: any[],
-  ours: any[],
-  theirs: any[],
+  base: unknown[],
+  ours: unknown[],
+  theirs: unknown[],
   keyField: string = 'id',
-): any[] {
-  const merged = new Map<string, any>();
-  const keylessObjects: any[] = [];
+): Record<string, unknown>[] {
+  // Tracked entries carry an internal `_source` provenance marker that is
+  // stripped before returning.
+  type MergeEntry = Record<string, unknown> & { _source?: string };
+  const merged = new Map<string, MergeEntry>();
+  const keylessObjects: Record<string, unknown>[] = [];
 
-  // Helper to get key from object
-  const getKey = (obj: any): string | null => {
+  // Helper to get key from object. Resolves `keyField` then `slug`; a missing
+  // key yields null. The resolved value is used verbatim as the Map key
+  // (preserving the original behavior, where ids/slugs are always strings).
+  const getKey = (obj: unknown): string | null => {
     if (!obj || typeof obj !== 'object') return null;
-    return obj[keyField] ?? obj.slug ?? null;
+    const record = obj as Record<string, unknown>;
+    const key = record[keyField] ?? record.slug ?? null;
+    // Map key is always a string id/slug in practice; narrow the unknown value.
+    return key as string | null;
   };
 
   // Helper to get timestamp for conflict resolution
   // Returns 0 for invalid/missing timestamps
-  const getTimestamp = (obj: any): number => {
+  const getTimestamp = (obj: Record<string, unknown>): number => {
     if (obj.updated_at) {
-      const t = new Date(obj.updated_at).getTime();
+      const t = new Date(obj.updated_at as string).getTime();
       return Number.isNaN(t) ? 0 : t;
     }
     if (obj.created_at) {
-      const t = new Date(obj.created_at).getTime();
+      const t = new Date(obj.created_at as string).getTime();
       return Number.isNaN(t) ? 0 : t;
     }
     return 0;
   };
 
   // Add base objects first
-  for (const obj of base) {
-    const key = getKey(obj);
+  for (const item of base) {
+    const key = getKey(item);
     if (key) {
+      const obj = item as Record<string, unknown>;
       merged.set(key, { ...obj, _source: 'base' });
     }
     // Note: keyless objects from base are not preserved
@@ -64,24 +103,26 @@ export function mergeArraysByKey(
   }
 
   // Process "ours" - overwrites base if same ID
-  for (const obj of ours) {
-    const key = getKey(obj);
+  for (const item of ours) {
+    const key = getKey(item);
     if (key) {
+      const obj = item as Record<string, unknown>;
       const existing = merged.get(key);
       if (!existing || existing._source === 'base') {
         // New in ours or replacing base
         merged.set(key, { ...obj, _source: 'ours' });
       }
-    } else if (obj && typeof obj === 'object') {
+    } else if (item && typeof item === 'object') {
       // Preserve objects without keys from "ours"
-      keylessObjects.push(obj);
+      keylessObjects.push(item as Record<string, unknown>);
     }
   }
 
   // Process "theirs" - conflict resolution by timestamp
-  for (const obj of theirs) {
-    const key = getKey(obj);
+  for (const item of theirs) {
+    const key = getKey(item);
     if (key) {
+      const obj = item as Record<string, unknown>;
       const existing = merged.get(key);
       if (!existing) {
         // New in theirs only
@@ -115,9 +156,9 @@ export function mergeArraysByKey(
   result.push(...keylessObjects);
 
   // Sort by created_at (ascending) for consistent ordering
-  const safeGetTime = (val: any): number => {
+  const safeGetTime = (val: unknown): number => {
     if (!val) return 0;
-    const t = new Date(val).getTime();
+    const t = new Date(val as string | number | Date).getTime();
     return Number.isNaN(t) ? 0 : t;
   };
 
@@ -144,21 +185,23 @@ const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
  * consumer that copies them with bracket assignment, can mutate prototypes.
  * This produces a clean copy with the dangerous keys removed at every depth.
  */
-function sanitizeMergeValue(value: any): any {
+function sanitizeMergeValue(value: unknown): JsonValue {
   if (Array.isArray(value)) {
     return value.map((item) => sanitizeMergeValue(item));
   }
 
   if (value === null || typeof value !== 'object') {
-    return value;
+    // Primitives (and undefined, treated as the value itself) pass through.
+    return value as JsonValue;
   }
 
-  const clean: Record<string, any> = {};
-  for (const key of Object.keys(value)) {
+  const source = value as Record<string, unknown>;
+  const clean: JsonObject = {};
+  for (const key of Object.keys(source)) {
     if (DANGEROUS_KEYS.has(key)) {
       continue;
     }
-    clean[key] = sanitizeMergeValue(value[key]);
+    clean[key] = sanitizeMergeValue(source[key]);
   }
   return clean;
 }
@@ -170,7 +213,11 @@ function sanitizeMergeValue(value: any): any {
  * For arrays of objects with IDs, use array merge logic.
  * For other values, prefer ours over theirs.
  */
-export function mergeObjects(base: any, ours: any, theirs: any): any {
+export function mergeObjects(
+  base: unknown,
+  ours: unknown,
+  theirs: unknown,
+): JsonValue {
   // Handle arrays at root level
   if (Array.isArray(ours) && Array.isArray(theirs)) {
     const baseArray = Array.isArray(base) ? base : [];
@@ -179,7 +226,7 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
 
   // Handle non-object types
   if (typeof ours !== 'object' || ours === null) {
-    return ours;
+    return ours as JsonValue;
   }
   if (typeof theirs !== 'object' || theirs === null) {
     // `ours` is an object here and is returned wholesale — it can still carry
@@ -188,11 +235,15 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
     return sanitizeMergeValue(ours);
   }
 
-  const result: any = {};
+  const baseObj = (base ?? {}) as Record<string, unknown>;
+  const oursObj = ours as Record<string, unknown>;
+  const theirsObj = theirs as Record<string, unknown>;
+
+  const result: JsonObject = {};
   const allKeys = new Set([
-    ...Object.keys(base || {}),
-    ...Object.keys(ours),
-    ...Object.keys(theirs),
+    ...Object.keys(baseObj),
+    ...Object.keys(oursObj),
+    ...Object.keys(theirsObj),
   ]);
 
   for (const key of allKeys) {
@@ -206,9 +257,9 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
       continue;
     }
 
-    const baseVal = base?.[key];
-    const oursVal = ours[key];
-    const theirsVal = theirs[key];
+    const baseVal = baseObj[key];
+    const oursVal = oursObj[key];
+    const theirsVal = theirsObj[key];
 
     // Check if this key holds an array of objects (common SMRT pattern)
     if (Array.isArray(oursVal) || Array.isArray(theirsVal)) {
@@ -306,7 +357,7 @@ export const gitCommands: Record<string, CLICommand> = {
         short: 'f',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: GitInitOptions) => {
       console.log('\n🔧 Configuring SMRT JSON merge driver...\n');
 
       // Check if in a git repository
@@ -478,7 +529,7 @@ export const gitCommands: Record<string, CLICommand> = {
         default: false,
       },
     },
-    handler: async (args: string[], options: any) => {
+    handler: async (args: string[], options: MergeJsonOptions) => {
       const [basePath, oursPath, theirsPath] = args;
 
       if (!basePath || !oursPath || !theirsPath) {
@@ -499,9 +550,9 @@ export const gitCommands: Record<string, CLICommand> = {
 
       try {
         // Read all three files
-        let base: any = {};
-        let ours: any = {};
-        let theirs: any = {};
+        let base: unknown = {};
+        let ours: unknown = {};
+        let theirs: unknown = {};
 
         // Base might not exist for new files
         if (existsSync(basePath)) {
@@ -584,15 +635,17 @@ export const gitCommands: Record<string, CLICommand> = {
 /**
  * Helper to count objects in a structure
  */
-function countObjects(data: any): number {
+function countObjects(data: unknown): number {
   if (Array.isArray(data)) {
     return data.length;
   }
   if (typeof data === 'object' && data !== null) {
+    const record = data as Record<string, unknown>;
     let count = 0;
-    for (const key of Object.keys(data)) {
-      if (Array.isArray(data[key])) {
-        count += data[key].length;
+    for (const key of Object.keys(record)) {
+      const value = record[key];
+      if (Array.isArray(value)) {
+        count += value.length;
       } else {
         count += 1;
       }

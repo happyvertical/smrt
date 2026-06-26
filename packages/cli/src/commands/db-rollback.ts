@@ -4,8 +4,29 @@
  * Reverts applied migrations using their DOWN scripts.
  */
 
+import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
+
+/** Parsed CLI options for the `db:rollback` command. */
+interface DbRollbackOptions {
+  steps?: number;
+  to?: string;
+  'dry-run'?: boolean;
+  // Camel fallback honoured for handler-direct callers/tests (see handler).
+  dryRun?: boolean;
+  force?: boolean;
+  json?: boolean;
+  verbose?: boolean;
+}
+
+/** Per-migration outcome recorded while executing rollbacks. */
+interface RollbackResult {
+  name: string;
+  success: boolean;
+  noDownScript?: boolean;
+  error?: string;
+}
 
 export const dbRollbackCommand: CLICommand = {
   name: 'db:rollback',
@@ -48,8 +69,8 @@ export const dbRollbackCommand: CLICommand = {
       short: 'v',
     },
   },
-  handler: async (_args: string[], options: any) => {
-    let db: any;
+  handler: async (_args: string[], options: DbRollbackOptions) => {
+    let db: DatabaseInterface | undefined;
 
     // `parseCliArgs` returns option keys verbatim, so the declared `'dry-run'`
     // arrives as the kebab key `options['dry-run']` — not `options.dryRun`.
@@ -235,7 +256,7 @@ export const dbRollbackCommand: CLICommand = {
 
       let successCount = 0;
       let errorCount = 0;
-      const results: any[] = [];
+      const results: RollbackResult[] = [];
 
       for (const migration of migrationsToRollback) {
         try {

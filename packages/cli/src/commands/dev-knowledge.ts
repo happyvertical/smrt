@@ -12,10 +12,45 @@ import {
   buildReviewContext,
   checkKnowledgeFreshness,
   diffKnowledgeIndex,
+  type KnowledgeScope,
   renderFreshnessResult,
   renderKnowledgeIndexMarkdown,
 } from '@happyvertical/smrt-dev-mcp/knowledge';
 import type { CLICommand } from '../cli-generator.js';
+
+/**
+ * Parsed option bags for the dev:knowledge-* handlers. The CLI parser produces
+ * `Record<string, unknown>`; these interfaces narrow the flags each command
+ * reads. `scope` mirrors the documented {@link KnowledgeScope} values.
+ */
+interface KnowledgeScopeOptions {
+  scope?: KnowledgeScope;
+  package?: string;
+}
+
+interface KnowledgeIndexOptions extends KnowledgeScopeOptions {
+  format?: string;
+}
+
+interface KnowledgeCheckOptions extends KnowledgeScopeOptions {
+  changed?: boolean;
+  strict?: boolean;
+  format?: string;
+  json?: boolean;
+}
+
+interface KnowledgeDiffOptions extends KnowledgeScopeOptions {
+  base?: string;
+  format?: string;
+  json?: boolean;
+}
+
+interface KnowledgeContextOptions extends KnowledgeScopeOptions {
+  format?: string;
+  json?: boolean;
+  focus?: string;
+  idea?: string;
+}
 
 export const devKnowledgeCommands: Record<string, CLICommand> = {
   'dev:knowledge-index': {
@@ -41,7 +76,7 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         description: 'Package name or short name to focus',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: KnowledgeIndexOptions) => {
       const index = await buildKnowledgeIndex({
         scope: options.scope,
         package: options.package,
@@ -91,7 +126,7 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         description: 'Package name or short name to focus',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: KnowledgeCheckOptions) => {
       const result = await checkKnowledgeFreshness({
         changed: Boolean(options.changed),
         strict: Boolean(options.strict),
@@ -141,7 +176,7 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         description: 'Package name or short name to focus',
       },
     },
-    handler: async (_args: string[], options: any) => {
+    handler: async (_args: string[], options: KnowledgeDiffOptions) => {
       const result = await diffKnowledgeIndex({
         base: options.base ?? 'HEAD',
         scope: options.scope,
@@ -167,7 +202,7 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
     aliases: ['knowledge:review-context'],
     args: [],
     options: contextOptions('markdown'),
-    handler: async (args: string[], options: any) => {
+    handler: async (args: string[], options: KnowledgeContextOptions) => {
       const result = await buildReviewContext({
         focus: args.join(' ') || options.focus,
         scope: options.scope,
@@ -188,7 +223,7 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
     aliases: ['knowledge:architecture-context'],
     args: [],
     options: contextOptions('markdown'),
-    handler: async (args: string[], options: any) => {
+    handler: async (args: string[], options: KnowledgeContextOptions) => {
       const result = await buildArchitectureContext({
         idea: args.join(' ') || options.idea,
         focus: options.focus,
