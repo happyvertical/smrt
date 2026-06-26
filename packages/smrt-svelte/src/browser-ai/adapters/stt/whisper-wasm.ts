@@ -205,8 +205,9 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
   private async importTransformers(): Promise<TransformersModule> {
     try {
       // Try v2 (@xenova/transformers) first
-      this.transformersModule =
-        await importOptional<TransformersModule>('@xenova/transformers');
+      this.transformersModule = await importOptional<TransformersModule>(
+        '@xenova/transformers',
+      );
       this.configureTransformersEnv(this.transformersModule);
       return this.transformersModule;
     } catch {
