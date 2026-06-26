@@ -45,14 +45,14 @@ export abstract class SmrtError extends Error {
     | 'network'
     | 'configuration'
     | 'runtime';
-  public readonly details?: Record<string, any>;
+  public readonly details?: Record<string, unknown>;
   public readonly cause?: Error;
 
   constructor(
     message: string,
     code: string,
     category: SmrtError['category'],
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message);
@@ -177,7 +177,7 @@ export class DatabaseError extends SmrtError {
   constructor(
     message: string,
     code: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message, code, 'database', details, cause);
@@ -223,7 +223,7 @@ export class DatabaseError extends SmrtError {
 
   static constraintViolation(
     constraint: string,
-    value: any,
+    value: unknown,
     cause?: Error,
   ): DatabaseError {
     return new DatabaseError(
@@ -268,7 +268,7 @@ export class DatabaseError extends SmrtError {
     id: string;
     slug: string;
     context: string;
-    conflictIdentity: Record<string, any>;
+    conflictIdentity: Record<string, unknown>;
     legacyMetaType: string;
     qualifiedMetaType: string;
     duplicateId: string;
@@ -313,7 +313,7 @@ export class AIError extends SmrtError {
   constructor(
     message: string,
     code: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message, code, 'ai', details, cause);
@@ -340,7 +340,7 @@ export class AIError extends SmrtError {
     );
   }
 
-  static invalidResponse(provider: string, response: any): AIError {
+  static invalidResponse(provider: string, response: unknown): AIError {
     return new AIError(
       `AI provider '${provider}' returned invalid response`,
       'AI_INVALID_RESPONSE',
@@ -371,7 +371,7 @@ export class FilesystemError extends SmrtError {
   constructor(
     message: string,
     code: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message, code, 'filesystem', details, cause);
@@ -422,7 +422,7 @@ export class ValidationError extends SmrtError {
   constructor(
     message: string,
     code: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message, code, 'validation', details, cause);
@@ -438,7 +438,7 @@ export class ValidationError extends SmrtError {
 
   static invalidValue(
     fieldName: string,
-    value: any,
+    value: unknown,
     expectedType: string,
   ): ValidationError {
     return new ValidationError(
@@ -448,9 +448,9 @@ export class ValidationError extends SmrtError {
     );
   }
 
-  static uniqueConstraint(fieldName: string, value: any): ValidationError {
+  static uniqueConstraint(fieldName: string, value: unknown): ValidationError {
     return new ValidationError(
-      `Unique constraint violation for field '${fieldName}' with value: ${value}`,
+      `Unique constraint violation for field '${fieldName}' with value: ${String(value)}`,
       'VALIDATION_UNIQUE_CONSTRAINT',
       { fieldName, value },
     );
@@ -492,7 +492,7 @@ export class NetworkError extends SmrtError {
   constructor(
     message: string,
     code: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message, code, 'network', details, cause);
@@ -553,7 +553,7 @@ export class ConfigurationError extends SmrtError {
   constructor(
     message: string,
     code: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message, code, 'configuration', details, cause);
@@ -572,7 +572,7 @@ export class ConfigurationError extends SmrtError {
 
   static invalidConfiguration(
     configKey: string,
-    value: any,
+    value: unknown,
     expected: string,
   ): ConfigurationError {
     return new ConfigurationError(
@@ -655,7 +655,7 @@ export class RuntimeError extends SmrtError {
   constructor(
     message: string,
     code: string,
-    details?: Record<string, any>,
+    details?: Record<string, unknown>,
     cause?: Error,
   ) {
     super(message, code, 'runtime', details, cause);
@@ -676,7 +676,7 @@ export class RuntimeError extends SmrtError {
 
   static invalidState(
     message: string,
-    context?: Record<string, any>,
+    context?: Record<string, unknown>,
   ): RuntimeError {
     return new RuntimeError(message, 'RUNTIME_INVALID_STATE', context);
   }
@@ -741,7 +741,7 @@ export class TenantIsolationError extends SmrtError {
     details?: {
       tenantId?: string;
       attemptedTenantId?: string;
-      [key: string]: any;
+      [key: string]: unknown;
     },
     cause?: Error,
   ) {
@@ -857,8 +857,8 @@ export class ErrorUtils {
   /**
    * Sanitizes an error for safe logging (removes sensitive information)
    */
-  static sanitizeError(error: Error): Record<string, any> {
-    const sanitized: Record<string, any> = {
+  static sanitizeError(error: Error): Record<string, unknown> {
+    const sanitized: Record<string, unknown> = {
       name: error.name,
       message: error.message,
       stack: error.stack,
@@ -870,7 +870,8 @@ export class ErrorUtils {
 
       // Sanitize details to remove potential sensitive information
       if (error.details) {
-        sanitized.details = { ...error.details };
+        const details: Record<string, unknown> = { ...error.details };
+        sanitized.details = details;
 
         // Remove common sensitive fields
         const sensitiveFields = [
@@ -881,8 +882,8 @@ export class ErrorUtils {
           'apiKey',
         ];
         for (const field of sensitiveFields) {
-          if (sanitized.details[field]) {
-            sanitized.details[field] = '[REDACTED]';
+          if (details[field]) {
+            details[field] = '[REDACTED]';
           }
         }
       }
@@ -1006,7 +1007,7 @@ export class ValidationUtils {
    */
   static async validateField(
     fieldName: string,
-    value: any,
+    value: unknown,
     options: {
       required?: boolean;
       min?: number;
@@ -1015,7 +1016,7 @@ export class ValidationUtils {
       maxLength?: number;
       pattern?: string | RegExp;
       type?: string;
-      customValidator?: (value: any) => boolean | Promise<boolean>;
+      customValidator?: (value: unknown) => boolean | Promise<boolean>;
       customMessage?: string;
     },
     objectType: string = 'Object',
@@ -1114,7 +1115,7 @@ export class ValidationUtils {
    */
   static validateRequired(
     fieldName: string,
-    value: any,
+    value: unknown,
     objectType: string = 'Object',
   ): ValidationError | null {
     if (value === null || value === undefined || value === '') {

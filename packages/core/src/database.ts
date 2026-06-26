@@ -7,7 +7,7 @@
  * @module
  */
 
-import type { DatabaseInterface } from '@happyvertical/sql';
+import type { DatabaseInterface, SchemasOption } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 
 /**
@@ -41,7 +41,7 @@ export type DatabaseConfig =
       url?: string;
       type?: 'sqlite' | 'postgres' | 'duckdb' | 'json';
       authToken?: string;
-      [key: string]: any;
+      [key: string]: unknown;
     }
   | DatabaseInterface;
 
@@ -66,7 +66,7 @@ export function isDatabaseInterface(
     value !== null &&
     typeof value === 'object' &&
     'query' in value &&
-    typeof (value as any).query === 'function'
+    typeof (value as { query: unknown }).query === 'function'
   );
 }
 
@@ -86,7 +86,7 @@ export interface ResolveDatabaseOptions {
    * Intended for explicit tooling and test utilities that bootstrap schema
    * ahead of runtime. Core runtime no longer passes these automatically.
    */
-  schemas?: Record<string, any>;
+  schemas?: SchemasOption;
 }
 
 /**
@@ -145,10 +145,14 @@ export async function resolveDatabase(
   const canUseMemory = !config.type || config.type === 'sqlite';
   const dbUrl = config.url || (canUseMemory ? ':memory:' : '');
   const isMemoryDb = dbUrl === ':memory:';
+  // `config` is the loosely-typed config-object variant of `DatabaseConfig`
+  // (it carries an open `[key: string]: unknown` index for adapter-specific
+  // options). Cast the merged options to `getDatabase`'s own parameter type at
+  // this boundary; the adapter validates the concrete shape at runtime.
   return getDatabase({
     ...config,
     url: dbUrl,
     schemas,
     ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${dbUrl}` }),
-  } as any);
+  } as Parameters<typeof getDatabase>[0]);
 }

@@ -1,5 +1,7 @@
 import { createLogger } from '@happyvertical/logger';
+import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
+import type { SmrtObjectConstructor } from './registry/types';
 import {
   classnameToTablename,
   pluralize,
@@ -36,8 +38,10 @@ export function toCamelCase(str: string): string {
  * @param obj - Object with camelCase keys
  * @returns Object with snake_case keys
  */
-export function keysToSnakeCase(obj: Record<string, any>): Record<string, any> {
-  const result: Record<string, any> = {};
+export function keysToSnakeCase(
+  obj: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     result[toSnakeCase(key)] = value;
   }
@@ -50,8 +54,10 @@ export function keysToSnakeCase(obj: Record<string, any>): Record<string, any> {
  * @param obj - Object with snake_case keys
  * @returns Object with camelCase keys
  */
-export function keysToCamelCase(obj: Record<string, any>): Record<string, any> {
-  const result: Record<string, any> = {};
+export function keysToCamelCase(
+  obj: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     result[toCamelCase(key)] = value;
   }
@@ -130,12 +136,15 @@ export function dateAsObject(date: Date | string) {
  * ```
  */
 export async function fieldsFromClass(
-  ClassType: new (...args: any[]) => any,
-  values?: Record<string, any>,
+  ClassType: new (...args: never[]) => SmrtObject,
+  values?: Record<string, unknown>,
 ) {
+  // `getClassByConstructor` expects the registry's `SmrtObjectConstructor`
+  // (`new (...args: any[]) => SmrtObject`); the narrower `never[]` param type
+  // is contravariantly assignable, so this widening cast is purely structural.
   const className =
-    ObjectRegistry.getClassByConstructor(ClassType as any)?.name ||
-    ClassType.name;
+    ObjectRegistry.getClassByConstructor(ClassType as SmrtObjectConstructor)
+      ?.name || ClassType.name;
   // NEW: Use getAllFields() to include inherited fields from parent classes
   const cachedFields = await ObjectRegistry.getAllFields(className);
 
@@ -147,7 +156,7 @@ export async function fieldsFromClass(
   }
 
   // Use cached field definitions from AST manifest
-  const fields: Record<string, any> = {};
+  const fields: Record<string, unknown> = {};
 
   // Add/override with fields from cached registry
   for (const [key, field] of cachedFields.entries()) {
@@ -256,11 +265,13 @@ export function generateTableRenameMigrations(classNames: string[]): string[] {
  */
 export function tableNameFromClass(
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  ClassType: Function | (new (...args: any[]) => any),
+  ClassType: Function | (new (...args: never[]) => SmrtObject),
 ) {
   // Check for SMRT_TABLE_NAME property set by @smrt() decorator (survives minification)
   if ('SMRT_TABLE_NAME' in ClassType) {
-    return (ClassType as any).SMRT_TABLE_NAME;
+    // The `in` guard above proves the static decorator property exists; read it
+    // through a typed shape rather than `any`.
+    return (ClassType as { SMRT_TABLE_NAME: string }).SMRT_TABLE_NAME;
   }
 
   // Fallback: derive from class name (breaks with minification)
@@ -277,15 +288,21 @@ export function tableNameFromClass(
  * Formats data for JavaScript by converting date strings to Date objects
  * and snake_case column names to camelCase properties
  *
+ * Generic over the input row type `T` so callers preserve their (typically
+ * loose) row typing across the hydration boundary — this matches the historic
+ * behavior where a `Record<string, any>` / `any` row produced an equally loose
+ * result. Keys are re-cased and values are type-converted at runtime; the
+ * return is the same `Record` shape, so it is reasserted as `T` at this DB
+ * boundary rather than widened to an unrelated type.
+ *
  * @param data - Object with data to format (snake_case column names from DB)
  * @param fields - Optional field definitions to determine types (from fieldsFromClass)
  * @returns Object with properly typed values and camelCase property names for JavaScript
  */
-export function formatDataJs(
-  data: Record<string, any>,
-  fields?: Record<string, { type?: string }>,
-) {
-  const normalizedData: Record<string, any> = {};
+export function formatDataJs<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(data: T, fields?: Record<string, { type?: string }>): T {
+  const normalizedData: Record<string, unknown> = {};
 
   if (process.env.DEBUG_STI) {
     logger.debug('[formatDataJs] Input data', {
@@ -299,12 +316,15 @@ export function formatDataJs(
   // fields are available during formatting. This must never mutate the caller's
   // `data` argument — `formatDataJs` is a public export and external callers may
   // pass shared objects that would otherwise get silent field injection (#1378).
-  let mergedData: Record<string, any> = data;
+  let mergedData: Record<string, unknown> = data;
   if (data._meta_data) {
-    const metaData =
+    // `_meta_data` is the STI meta column: a JSON string from the DB or an
+    // already-parsed object. Either way it is an object of meta fields; type it
+    // as such at this boundary so the merge/key-walk below stays sound.
+    const metaData: Record<string, unknown> =
       typeof data._meta_data === 'string'
         ? JSON.parse(data._meta_data)
-        : data._meta_data;
+        : (data._meta_data as Record<string, unknown>);
 
     if (process.env.DEBUG_STI) {
       logger.debug('[formatDataJs] Merging _meta_data', {
@@ -396,7 +416,10 @@ export function formatDataJs(
     });
   }
 
-  return normalizedData;
+  // Reassert the re-cased/type-converted row as the caller's row type `T`.
+  // The output is structurally a `Record<string, unknown>`; this boundary cast
+  // preserves the historic loose-in/loose-out hydration contract without `any`.
+  return normalizedData as T;
 }
 
 /**
@@ -406,7 +429,7 @@ export function formatDataJs(
  * @param value - Value to check
  * @returns Always false (Field class no longer exists)
  */
-export function isFieldInstance(value: any): value is never {
+export function isFieldInstance(value: unknown): value is never {
   return false;
 }
 
@@ -417,8 +440,8 @@ export function isFieldInstance(value: any): value is never {
  * @param data - Object with data to format (camelCase property names from JavaScript)
  * @returns Object with properly formatted values and snake_case column names for SQL
  */
-export function formatDataSql(data: Record<string, any>) {
-  const normalizedData: Record<string, any> = {};
+export function formatDataSql(data: Record<string, unknown>) {
+  const normalizedData: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     // Convert camelCase to snake_case for SQL
     const snakeKey = toSnakeCase(key);

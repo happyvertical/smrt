@@ -355,11 +355,14 @@ export function getClassConfigResolvers(
 ): Record<string, ConfigResolver> | undefined {
   if (typeof ctor !== 'function') return undefined;
 
-  let current: any = ctor;
+  let current: unknown = ctor;
   let collected: Record<string, ConfigResolver> | undefined;
 
   while (current && current !== Function.prototype) {
-    const resolvers = current.configResolvers;
+    // Each link in the prototype chain is an object/function; read its optional
+    // static `configResolvers` map through a typed shape rather than `any`.
+    const resolvers = (current as { configResolvers?: unknown })
+      .configResolvers;
     if (resolvers && typeof resolvers === 'object') {
       collected = {
         ...(resolvers as Record<string, ConfigResolver>),

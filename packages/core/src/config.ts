@@ -57,7 +57,7 @@ export interface AIConfig {
   /**
    * Additional provider-specific options
    */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
