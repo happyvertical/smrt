@@ -839,12 +839,13 @@ export function startRestServer(
     const shutdown = (): Promise<void> => {
       return new Promise((shutdownResolve) => {
         console.log('🛑 Shutting down server gracefully...');
-        // Bun-era shutdown API (`.stop()`); not present on Node's `http.Server`
-        // type, so cast to the structural shape this path expects. Runtime call
-        // is unchanged.
-        (server as unknown as { stop(): void }).stop();
-        console.log('✅ Server shut down complete');
-        shutdownResolve();
+        // Node's http.Server#close stops accepting new connections and invokes
+        // the callback once in-flight ones drain. (The prior `.stop()` was a
+        // Bun-era API absent on http.Server — it would have thrown.)
+        server.close(() => {
+          console.log('✅ Server shut down complete');
+          shutdownResolve();
+        });
       });
     };
 

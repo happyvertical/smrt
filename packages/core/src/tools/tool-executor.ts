@@ -204,8 +204,10 @@ export async function executeToolCall(
       await signalBus.emit(startSignal);
     }
 
-    // Execute method
-    const result = await invokeMethod(args);
+    // Execute method. `.call(instance, …)` preserves the receiver binding of
+    // the original member call (`instance[methodName](args)`) — AI-callable
+    // methods routinely read/write `this`.
+    const result = await invokeMethod.call(instance, args);
 
     // Emit end signal
     if (signalBus) {

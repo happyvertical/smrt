@@ -189,32 +189,32 @@ export function generateToolFromMethod(
   method: MethodDefinition,
   config?: AiConfig,
 ): AITool {
-  // Build parameters JSON Schema
-  const parameters: ToolParametersSchema = {
-    type: 'object',
-    properties: {},
-    required: [],
-  };
+  // Build parameters JSON Schema. `required` is a guaranteed-present local
+  // array while collecting, then attached only when non-empty — avoids both
+  // optional-chaining on an invariant and a post-hoc `delete`.
+  const properties: ToolParametersSchema['properties'] = {};
+  const required: string[] = [];
 
   for (const param of method.parameters) {
     // Convert parameter type to JSON Schema
-    parameters.properties[param.name] = convertTypeToJsonSchema(param.type);
+    properties[param.name] = convertTypeToJsonSchema(param.type);
 
     // Add to required if not optional
     if (!param.optional) {
-      parameters.required?.push(param.name);
+      required.push(param.name);
     }
 
     // Add default value if present
     if (param.default !== undefined) {
-      parameters.properties[param.name].default = param.default;
+      properties[param.name].default = param.default;
     }
   }
 
-  // Remove empty required array
-  if (parameters.required?.length === 0) {
-    delete parameters.required;
-  }
+  const parameters: ToolParametersSchema = {
+    type: 'object',
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+  };
 
   // Get description (custom override or from JSDoc)
   const description =
