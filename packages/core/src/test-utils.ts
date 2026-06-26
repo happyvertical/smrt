@@ -5,28 +5,48 @@
  * to support both CLI and API generator testing scenarios.
  */
 
-import { vi } from 'vitest';
+import { type Mock, vi } from 'vitest';
 import { ObjectRegistry } from './registry.js';
 
-type RegistryTestState = {
+/**
+ * Internal test-only view onto ObjectRegistry's private registration maps.
+ * Snapshot/restore copies these Maps opaquely (values are never inspected),
+ * so the value types are `unknown` rather than the registry's concrete
+ * registration shapes. This is the single boundary where test utilities reach
+ * into registry internals; access goes through a documented cast below.
+ */
+interface RegistryTestSurface {
   // Release B (#1133) removed classNameMap — the `classes` Map below is the
   // single source of truth for every case-insensitive lookup.
-  classes: Map<string, any>;
+  classes: Map<string, unknown>;
   collectionTableNames: Map<string, string>;
-  collections: Map<string, any>;
-  fieldDecorators: Map<string, Map<string, any>>;
+  collections: Map<string, unknown>;
+  fieldDecorators: Map<string, Map<string, unknown>>;
   nextDbId: number;
   stiSiblingsLoaded: Set<string>;
-};
+  clear(): void;
+}
+
+type RegistryTestState = Pick<
+  RegistryTestSurface,
+  | 'classes'
+  | 'collectionTableNames'
+  | 'collections'
+  | 'fieldDecorators'
+  | 'nextDbId'
+  | 'stiSiblingsLoaded'
+>;
 
 function cloneNestedMap(
-  source: Map<string, Map<string, any>>,
-): Map<string, Map<string, any>> {
+  source: Map<string, Map<string, unknown>>,
+): Map<string, Map<string, unknown>> {
   return new Map(Array.from(source, ([key, value]) => [key, new Map(value)]));
 }
 
-function getRegistryForTests() {
-  return ObjectRegistry as any;
+function getRegistryForTests(): RegistryTestSurface {
+  // Documented boundary cast: ObjectRegistry's registration maps are private
+  // statics; tests snapshot them to isolate registry mutations.
+  return ObjectRegistry as unknown as RegistryTestSurface;
 }
 
 /**
@@ -80,20 +100,33 @@ export interface MockObject {
   slug?: string;
   created_at?: string;
   updated_at?: string;
-  [key: string]: any;
+  [key: string]: unknown;
   save: () => Promise<MockObject>;
   delete: () => Promise<void>;
   initialize: () => Promise<void>;
 }
 
 /**
+ * Query options accepted by the mock collection's `list()`.
+ * Mirrors the loosely-typed SmrtCollection query surface used in tests:
+ * `where` keys may carry operator suffixes (e.g. `"age >"`), values are
+ * arbitrary, and ordering/pagination are simple primitives.
+ */
+export interface MockListOptions {
+  where?: Record<string, unknown>;
+  orderBy?: string;
+  offset?: number;
+  limit?: number;
+}
+
+/**
  * Mock collection with all CRUD operations
  */
 export interface MockCollection {
-  list: (options?: any) => Promise<MockObject[]>;
+  list: (options?: MockListOptions) => Promise<MockObject[]>;
   get: (id: string) => Promise<MockObject | null>;
-  create: (data: any) => Promise<MockObject>;
-  update: (id: string, data: any) => Promise<MockObject>;
+  create: (data: Partial<MockObject>) => Promise<MockObject>;
+  update: (id: string, data: Partial<MockObject>) => Promise<MockObject>;
   delete: (id: string) => Promise<void>;
   initialize: () => Promise<void>;
   save: (object: MockObject) => Promise<MockObject>;
@@ -185,85 +218,86 @@ export class MockCollectionFactory {
     }
 
     return {
-      list: vi.fn().mockImplementation(async (options: any = {}) => {
-        let results = Array.from(this.storage.values());
+      list: vi
+        .fn()
+        .mockImplementation(async (options: MockListOptions = {}) => {
+          let results = Array.from(this.storage.values());
 
-        // Apply where filters
-        if (options.where) {
-          results = results.filter((obj) => {
-            return Object.entries(options.where).every(
-              ([key, value]: [string, any]) => {
+          // Apply where filters
+          const where = options.where;
+          if (where) {
+            results = results.filter((obj) => {
+              return Object.entries(where).every(([key, value]) => {
                 if (key.includes(' >')) {
                   const field = key.replace(' >', '');
-                  return obj[field] > (value as number);
+                  return (obj[field] as number) > (value as number);
                 }
                 if (key.includes(' <')) {
                   const field = key.replace(' <', '');
-                  return obj[field] < (value as number);
+                  return (obj[field] as number) < (value as number);
                 }
                 if (key.includes(' >=')) {
                   const field = key.replace(' >=', '');
-                  return obj[field] >= (value as number);
+                  return (obj[field] as number) >= (value as number);
                 }
                 if (key.includes(' like')) {
                   const field = key.replace(' like', '');
-                  return obj[field]
+                  return (obj[field] as { toString(): string } | undefined)
                     ?.toString()
                     .includes((value as string).replace(/%/g, ''));
                 }
                 if (key.includes(' in')) {
                   const field = key.replace(' in', '');
-                  return (
-                    Array.isArray(value) &&
-                    (value as any[]).includes(obj[field])
-                  );
+                  return Array.isArray(value) && value.includes(obj[field]);
                 }
                 return obj[key] === value;
-              },
-            );
-          });
-        }
+              });
+            });
+          }
 
-        // Apply ordering
-        if (options.orderBy) {
-          const [field, direction] = options.orderBy.split(' ');
-          results.sort((a, b) => {
-            const comparison = a[field] > b[field] ? 1 : -1;
-            return direction === 'DESC' ? -comparison : comparison;
-          });
-        }
+          // Apply ordering
+          if (options.orderBy) {
+            const [field, direction] = options.orderBy.split(' ');
+            results.sort((a, b) => {
+              const comparison =
+                (a[field] as number) > (b[field] as number) ? 1 : -1;
+              return direction === 'DESC' ? -comparison : comparison;
+            });
+          }
 
-        // Apply pagination
-        const offset = options.offset || 0;
-        const limit = options.limit || 50;
-        results = results.slice(offset, offset + limit);
+          // Apply pagination
+          const offset = options.offset || 0;
+          const limit = options.limit || 50;
+          results = results.slice(offset, offset + limit);
 
-        return results;
-      }),
+          return results;
+        }),
 
       get: vi.fn().mockImplementation(async (id: string) => {
         return this.storage.get(id) || null;
       }),
 
-      create: vi.fn().mockImplementation(async (data: any) => {
+      create: vi.fn().mockImplementation(async (data: Partial<MockObject>) => {
         const obj = generator({ ...data, id: TestDataFactory.generateId() });
         this.storage.set(obj.id, obj);
         return obj;
       }),
 
-      update: vi.fn().mockImplementation(async (id: string, data: any) => {
-        const existing = this.storage.get(id);
-        if (!existing) {
-          throw new Error(`Object with id ${id} not found`);
-        }
-        const updated = {
-          ...existing,
-          ...data,
-          updated_at: new Date().toISOString(),
-        };
-        this.storage.set(id, updated);
-        return updated;
-      }),
+      update: vi
+        .fn()
+        .mockImplementation(async (id: string, data: Partial<MockObject>) => {
+          const existing = this.storage.get(id);
+          if (!existing) {
+            throw new Error(`Object with id ${id} not found`);
+          }
+          const updated = {
+            ...existing,
+            ...data,
+            updated_at: new Date().toISOString(),
+          };
+          this.storage.set(id, updated);
+          return updated;
+        }),
 
       delete: vi.fn().mockImplementation(async (id: string) => {
         const deleted = this.storage.delete(id);
@@ -297,6 +331,18 @@ export class MockCollectionFactory {
 }
 
 /**
+ * Overrides accepted by {@link MockContextFactory.createMockContext}.
+ * `db`/`ai`/`user` are shallow-merged into the default mock sub-contexts; any
+ * additional keys are spread onto the resulting context object.
+ */
+export interface MockContextOverrides {
+  db?: Record<string, unknown>;
+  ai?: Record<string, unknown>;
+  user?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
  * Complete mock context factory for CLI and API testing
  */
 export class MockContextFactory {
@@ -305,7 +351,7 @@ export class MockContextFactory {
   /**
    * Create a comprehensive mock context with database and AI
    */
-  createMockContext(overrides: any = {}) {
+  createMockContext(overrides: MockContextOverrides = {}) {
     return {
       db: {
         query: vi.fn().mockResolvedValue({ rows: [] }),
@@ -369,13 +415,17 @@ export class TestSetup {
   /**
    * Mock collection constructor to return mock instances
    */
-  static mockCollectionConstructors(mockCollections: any): any {
-    return vi.fn().mockImplementation((options: any) => {
+  static mockCollectionConstructors(
+    mockCollections: Partial<
+      Record<'TestUser' | 'TestProduct', MockCollection>
+    >,
+  ): Mock {
+    return vi.fn().mockImplementation((options?: Record<string, unknown>) => {
       const mockCollection =
         mockCollections.TestUser || mockCollections.TestProduct;
       // Add context options to mock if needed
       if (options) {
-        Object.assign(mockCollection, options);
+        Object.assign(mockCollection as object, options);
       }
       return mockCollection;
     });
