@@ -5,6 +5,7 @@
  */
 
 import { ObjectRegistry } from '../registry';
+import type { FieldDefinition } from '../scanner/types';
 
 export interface OpenAPIConfig {
   title?: string;
@@ -15,9 +16,28 @@ export interface OpenAPIConfig {
 }
 
 /**
+ * Loose structural types for the generated OpenAPI 3.0 document. The generator
+ * builds these objects by progressively assigning heterogeneous spec fields, so
+ * the value surface is intentionally open (`unknown`) rather than a fully-typed
+ * OpenAPI model (no shared OpenAPI types are available in this package).
+ */
+type OpenAPISchemaObject = Record<string, unknown>;
+type OpenAPIPathItem = Record<string, unknown>;
+type OpenAPISpec = Record<string, unknown>;
+
+/**
+ * Minimal Express-like surface consumed by {@link setupSwaggerUI}. Avoids a hard
+ * dependency on Express types for what is an optional integration helper.
+ */
+interface SwaggerApp {
+  use(path: string, ...handlers: unknown[]): unknown;
+  get(path: string, ...handlers: unknown[]): unknown;
+}
+
+/**
  * Generate OpenAPI specification (tree-shakeable)
  */
-export function generateOpenAPISpec(config: OpenAPIConfig = {}): any {
+export function generateOpenAPISpec(config: OpenAPIConfig = {}): OpenAPISpec {
   const {
     title = 'smrt API',
     version = '1.0.0',
@@ -77,8 +97,8 @@ export function generateOpenAPISpec(config: OpenAPIConfig = {}): any {
 /**
  * Generate schemas for all registered objects
  */
-function generateSchemas(): Record<string, any> {
-  const schemas: Record<string, any> = {};
+function generateSchemas(): Record<string, OpenAPISchemaObject> {
+  const schemas: Record<string, OpenAPISchemaObject> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [key, classInfo] of registeredClasses) {
@@ -119,9 +139,9 @@ function generateSchemas(): Record<string, any> {
 /**
  * Generate schema for a specific object
  */
-function generateObjectSchema(objectName: string): any {
+function generateObjectSchema(objectName: string): OpenAPISchemaObject {
   const fields = ObjectRegistry.getFields(objectName);
-  const properties: Record<string, any> = {
+  const properties: Record<string, OpenAPISchemaObject> = {
     id: { type: 'string', format: 'uuid' },
     slug: { type: 'string' },
     created_at: { type: 'string', format: 'date-time' },
@@ -143,8 +163,8 @@ function generateObjectSchema(objectName: string): any {
 /**
  * Convert field to OpenAPI schema
  */
-function fieldToOpenAPISchema(field: any): any {
-  const schema: any = {
+function fieldToOpenAPISchema(field: FieldDefinition): OpenAPISchemaObject {
+  const schema: OpenAPISchemaObject = {
     description: field._meta?.description || '',
   };
 
@@ -194,8 +214,8 @@ function fieldToOpenAPISchema(field: any): any {
 /**
  * Generate API paths
  */
-function generatePaths(basePath: string): Record<string, any> {
-  const paths: Record<string, any> = {};
+function generatePaths(basePath: string): Record<string, OpenAPIPathItem> {
+  const paths: Record<string, OpenAPIPathItem> = {};
   const registeredClasses = ObjectRegistry.getAllClasses();
 
   for (const [key, classInfo] of registeredClasses) {
@@ -353,7 +373,11 @@ function generatePaths(basePath: string): Record<string, any> {
 /**
  * Setup Swagger UI (optional peer dependency)
  */
-export function setupSwaggerUI(app: any, spec: any, path = '/docs') {
+export function setupSwaggerUI(
+  app: SwaggerApp,
+  spec: OpenAPISpec,
+  path = '/docs',
+) {
   try {
     const swaggerUi = require('swagger-ui-express');
 
@@ -365,9 +389,12 @@ export function setupSwaggerUI(app: any, spec: any, path = '/docs') {
       }),
     );
 
-    app.get(`${path}/openapi.json`, (_req: any, res: any) => {
-      res.json(spec);
-    });
+    app.get(
+      `${path}/openapi.json`,
+      (_req: unknown, res: { json(body: unknown): void }) => {
+        res.json(spec);
+      },
+    );
 
     console.log(`📚 Swagger UI available at ${path}`);
   } catch (_error) {

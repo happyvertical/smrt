@@ -8,6 +8,7 @@ import http from 'node:http';
 import type { SmrtCollection } from '../collection';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
+import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
 
 export interface APIConfig {
   basePath?: string;
@@ -28,8 +29,8 @@ export interface APIConfig {
 }
 
 export interface APIContext {
-  db?: any;
-  ai?: any;
+  db?: unknown;
+  ai?: unknown;
   user?: {
     id: string;
     username?: string;
@@ -42,7 +43,7 @@ export interface APIContext {
  */
 export class APIGenerator {
   private config: APIConfig;
-  private collections = new Map<string, SmrtCollection<any>>();
+  private collections = new Map<string, SmrtCollection<SmrtObject>>();
   private context: APIContext;
 
   constructor(config: APIConfig = {}, context: APIContext = {}) {
@@ -64,14 +65,17 @@ export class APIGenerator {
    * @param name - URL path segment for the collection (e.g., 'products' for /api/products)
    * @param collection - Pre-initialized SmrtCollection instance
    */
-  registerCollection(name: string, collection: SmrtCollection<any>): void {
+  registerCollection(
+    name: string,
+    collection: SmrtCollection<SmrtObject>,
+  ): void {
     this.collections.set(name, collection);
   }
 
   /**
    * Create Node.js HTTP server with all routes
    */
-  createServer(): { server: any; url: string } {
+  createServer(): { server: http.Server; url: string } {
     const server = http.createServer(async (req, res) => {
       try {
         const request = await this.nodeRequestToWebRequest(req);
@@ -250,7 +254,7 @@ export class APIGenerator {
     const registeredClasses = ObjectRegistry.getAllClasses();
     const pluralName = this.pluralize(objectType);
 
-    let classInfo: any = null;
+    let classInfo: RegisteredClass | null = null;
     for (const [_key, info] of registeredClasses) {
       // Issue #951: Use simple name (info.name) for URL matching, not the map key
       // which may be a qualified name like '@happyvertical/smrt-events:Event'
@@ -301,7 +305,7 @@ export class APIGenerator {
    */
   private async executeCrudOperation(
     req: Request,
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     objectId: string | undefined,
     url: URL,
     objectName?: string,
@@ -423,11 +427,19 @@ export class APIGenerator {
   }
 
   private getCollectionObjectName(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
   ): string | undefined {
-    const itemClass =
-      (collection as any)._itemClass ||
-      (collection.constructor as any)?._itemClass;
+    // `_itemClass` lives on the instance (protected getter) or the collection
+    // constructor (static). Read it through a structural shape rather than the
+    // class's private surface; behavior is unchanged.
+    const itemClass: SmrtObjectConstructor | undefined =
+      (collection as unknown as { _itemClass?: SmrtObjectConstructor })
+        ._itemClass ||
+      (
+        collection.constructor as unknown as {
+          _itemClass?: SmrtObjectConstructor;
+        }
+      )?._itemClass;
 
     if (!itemClass) {
       return undefined;
@@ -441,7 +453,7 @@ export class APIGenerator {
    * Handle GET /objects/:id
    */
   private async handleGet(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     id: string,
   ): Promise<Response> {
     const object = await collection.get(id);
@@ -455,7 +467,7 @@ export class APIGenerator {
    * Handle GET /objects (list with query params)
    */
   private async handleList(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     params: URLSearchParams,
   ): Promise<Response> {
     const limit = Number.parseInt(params.get('limit') || '50', 10);
@@ -464,7 +476,7 @@ export class APIGenerator {
 
     // Build where clause from query params
     // Convert REST-style operators (price[gt]) to SQL-style (price >)
-    const where: any = {};
+    const where: Record<string, string | string[]> = {};
     for (const [key, value] of params.entries()) {
       if (!['limit', 'offset', 'orderBy'].includes(key)) {
         // Parse REST operator format: field[operator]
@@ -500,7 +512,7 @@ export class APIGenerator {
     });
 
     return this.createJsonResponse(
-      objects.map((object: any) => this.toPublicData(object)),
+      objects.map((object: SmrtObject) => this.toPublicData(object)),
     );
   }
 
@@ -508,11 +520,11 @@ export class APIGenerator {
    * Handle GET /objects/count
    */
   private async handleCount(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     params: URLSearchParams,
   ): Promise<Response> {
     // Build where clause from query params (same logic as handleList)
-    const where: any = {};
+    const where: Record<string, string | string[]> = {};
     for (const [key, value] of params.entries()) {
       // Parse REST operator format: field[operator]
       const match = key.match(/^(.+)\[(.+)\]$/);
@@ -549,7 +561,7 @@ export class APIGenerator {
    * Handle POST /objects
    */
   private async handleCreate(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     req: Request,
     objectName?: string,
   ): Promise<Response> {
@@ -563,7 +575,7 @@ export class APIGenerator {
    * Handle PUT/PATCH /objects/:id
    */
   private async handleUpdate(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     id: string,
     req: Request,
     objectName?: string,
@@ -586,7 +598,7 @@ export class APIGenerator {
    * Handle DELETE /objects/:id
    */
   private async handleDelete(
-    collection: SmrtCollection<any>,
+    collection: SmrtCollection<SmrtObject>,
     id: string,
   ): Promise<Response> {
     const object = await collection.get(id);
@@ -602,9 +614,17 @@ export class APIGenerator {
   /**
    * Get or create collection instance
    */
-  private getCollection(classInfo: any): SmrtCollection<any> {
+  private getCollection(
+    classInfo: RegisteredClass,
+  ): SmrtCollection<SmrtObject> {
     if (!this.collections.has(classInfo.name)) {
-      const collection = new classInfo.collectionConstructor({
+      // `collectionConstructor` is typed optional on RegisteredClass, but the
+      // auto-discovery path only reaches here for classes that declare one.
+      // Narrow to the non-optional constructor type before instantiating.
+      const ctor = classInfo.collectionConstructor as NonNullable<
+        RegisteredClass['collectionConstructor']
+      >;
+      const collection = new ctor({
         ai: this.context.ai,
         db: this.context.db,
       });
@@ -622,8 +642,8 @@ export class APIGenerator {
    */
   private applyWritablePolicy(
     objectName: string | undefined,
-    data: any,
-  ): Record<string, any> {
+    data: unknown,
+  ): Record<string, unknown> {
     if (!data || typeof data !== 'object') {
       return {};
     }
@@ -658,7 +678,7 @@ export class APIGenerator {
       }
     }
 
-    const result: Record<string, any> = {};
+    const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) continue;
       if (serverManaged.has(key)) continue;
@@ -673,16 +693,17 @@ export class APIGenerator {
    * Serialize a SmrtObject for a network response, excluding sensitive fields
    * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
    */
-  private toPublicData(object: any): any {
-    return typeof object?.toPublicJSON === 'function'
-      ? object.toPublicJSON()
+  private toPublicData(object: unknown): unknown {
+    const serializable = object as { toPublicJSON?: () => unknown } | null;
+    return typeof serializable?.toPublicJSON === 'function'
+      ? serializable.toPublicJSON()
       : object;
   }
 
   /**
    * Create JSON response with proper headers
    */
-  private createJsonResponse(data: any, status = 200): Response {
+  private createJsonResponse(data: unknown, status = 200): Response {
     return new Response(JSON.stringify(data), {
       status,
       headers: {
@@ -787,7 +808,7 @@ export function createRestServer(
   objects: (typeof SmrtObject)[],
   context: APIContext = {},
   config: RestServerConfig = {},
-): { server: any; url: string } {
+): { server: http.Server; url: string } {
   // Register objects if not already registered
   objects.forEach((obj) => {
     if (!ObjectRegistry.hasClass(obj.name)) {
@@ -818,7 +839,10 @@ export function startRestServer(
     const shutdown = (): Promise<void> => {
       return new Promise((shutdownResolve) => {
         console.log('🛑 Shutting down server gracefully...');
-        server.stop();
+        // Bun-era shutdown API (`.stop()`); not present on Node's `http.Server`
+        // type, so cast to the structural shape this path expects. Runtime call
+        // is unchanged.
+        (server as unknown as { stop(): void }).stop();
         console.log('✅ Server shut down complete');
         shutdownResolve();
       });
