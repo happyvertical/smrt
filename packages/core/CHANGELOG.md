@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.36.2
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: graduate assets-ergot, jobs, smrt-svelte off noExplicitAny (#1579) (#1658) (lint)
+  - @happyvertical/smrt-config@0.36.2
+  - @happyvertical/smrt-types@0.36.2
+  - @happyvertical/smrt-scanner@0.36.2
+
 ## 0.36.1
 
 ### Patch Changes
