@@ -9,6 +9,33 @@ import type { SmrtRequest, SmrtServerOptions } from './types';
 const logger = createLogger({ level: 'info' });
 
 /**
+ * Express-style response object handed to RouteApp-compatibility handlers
+ * (registered via {@link SmrtServer.get}/`post`/`put`/`delete`). It mirrors the
+ * subset of the Express `res` API that {@link SmrtServer.addExpressStyleRoute}
+ * constructs; each terminal method (`json`/`send`/`end`) resolves the wrapped
+ * SMRT handler with a Web {@link Response}.
+ */
+interface ExpressStyleResponse {
+  status(code: number): ExpressStyleResponse;
+  json(data: unknown): void;
+  send(data?: unknown): void;
+  end(data?: string): void;
+  setHeader(key: string, value: string): ExpressStyleResponse;
+  statusCode: number;
+  headers: Record<string, string>;
+}
+
+/**
+ * Express-style request/response handler accepted by the RouteApp-compatibility
+ * route methods. Receives the parsed {@link SmrtRequest} and an
+ * {@link ExpressStyleResponse}.
+ */
+type ExpressStyleHandler = (
+  req: SmrtRequest,
+  res: ExpressStyleResponse,
+) => void;
+
+/**
  * Signals a malformed client request (e.g. invalid JSON body) so that
  * {@link SmrtServer.handleRequest} can answer 400 instead of a generic 500
  * (#1378). Internal to this module.
@@ -50,28 +77,28 @@ export class SmrtServer {
   /**
    * Add GET route handler (RouteApp compatibility)
    */
-  get(path: string, handler: (req: any, res: any) => void): void {
+  get(path: string, handler: ExpressStyleHandler): void {
     this.addExpressStyleRoute('GET', path, handler);
   }
 
   /**
    * Add POST route handler (RouteApp compatibility)
    */
-  post(path: string, handler: (req: any, res: any) => void): void {
+  post(path: string, handler: ExpressStyleHandler): void {
     this.addExpressStyleRoute('POST', path, handler);
   }
 
   /**
    * Add PUT route handler (RouteApp compatibility)
    */
-  put(path: string, handler: (req: any, res: any) => void): void {
+  put(path: string, handler: ExpressStyleHandler): void {
     this.addExpressStyleRoute('PUT', path, handler);
   }
 
   /**
    * Add DELETE route handler (RouteApp compatibility)
    */
-  delete(path: string, handler: (req: any, res: any) => void): void {
+  delete(path: string, handler: ExpressStyleHandler): void {
     this.addExpressStyleRoute('DELETE', path, handler);
   }
 
@@ -81,7 +108,7 @@ export class SmrtServer {
   private addExpressStyleRoute(
     method: string,
     path: string,
-    handler: (req: any, res: any) => void,
+    handler: ExpressStyleHandler,
   ) {
     const smrtHandler = async (req: SmrtRequest): Promise<Response> => {
       return new Promise((resolve, reject) => {
@@ -100,12 +127,12 @@ export class SmrtServer {
           reject(error);
         };
         // Create Express-style response object
-        const res = {
+        const res: ExpressStyleResponse = {
           status: (code: number) => {
             res.statusCode = code;
             return res;
           },
-          json: (data: any) => {
+          json: (data: unknown) => {
             settle(
               new Response(JSON.stringify(data), {
                 status: res.statusCode || 200,
@@ -116,7 +143,7 @@ export class SmrtServer {
               }),
             );
           },
-          send: (data: any) => {
+          send: (data?: unknown) => {
             const body = typeof data === 'string' ? data : JSON.stringify(data);
             settle(
               new Response(body, {
@@ -131,7 +158,7 @@ export class SmrtServer {
               }),
             );
           },
-          end: (data?: any) => {
+          end: (data?: string) => {
             settle(
               new Response(data || '', {
                 status: res.statusCode || 200,
@@ -175,7 +202,7 @@ export class SmrtServer {
   /**
    * Start the server
    */
-  async start(): Promise<{ server: any; url: string }> {
+  async start(): Promise<{ server: http.Server; url: string }> {
     const server = http.createServer(async (req, res) => {
       try {
         const request = await this.nodeRequestToWebRequest(req);
@@ -332,7 +359,7 @@ export class SmrtServer {
       : pathname;
 
     // Parse query parameters
-    const query: Record<string, any> = {};
+    const query: Record<string, string> = {};
     url.searchParams.forEach((value, key) => {
       query[key] = value;
     });
@@ -341,7 +368,7 @@ export class SmrtServer {
     // for an empty body, so reading text first lets us treat an empty body as
     // "no body" (undefined) and surface only genuinely malformed JSON as a 400
     // rather than letting request.json() throw a generic 500 (#1378).
-    let body: any;
+    let body: unknown;
     if (
       request.body &&
       (request.method === 'POST' ||
