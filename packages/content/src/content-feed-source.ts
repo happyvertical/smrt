@@ -24,7 +24,7 @@ export interface ContentFeedSourceOptions extends SmrtObjectOptions {
   lastFetchedAt?: Date | string | null;
   lastSuccessAt?: Date | string | null;
   lastError?: string | null;
-  metadata?: Record<string, any> | string;
+  metadata?: Record<string, unknown> | string;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -44,8 +44,8 @@ function parseDate(value: Date | string | null | undefined): Date | null {
 }
 
 function parseMetadata(
-  value: Record<string, any> | string | undefined,
-): Record<string, any> {
+  value: Record<string, unknown> | string | undefined,
+): Record<string, unknown> {
   if (!value) return {};
   if (typeof value === 'object') return structuredClone(value);
 
@@ -99,7 +99,7 @@ export class ContentFeedSource extends SmrtObject {
   lastFetchedAt: Date | null = null;
   lastSuccessAt: Date | null = null;
   lastError: string | null = null;
-  metadata: Record<string, any> = {};
+  metadata: Record<string, unknown> = {};
   createdAt = new Date();
   updatedAt = new Date();
 
@@ -138,11 +138,11 @@ export class ContentFeedSource extends SmrtObject {
       this.updatedAt = parseDate(options.updatedAt) ?? new Date();
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     return structuredClone(this.metadata);
   }
 
-  setMetadata(metadata: Record<string, any>): void {
+  setMetadata(metadata: Record<string, unknown>): void {
     this.metadata = structuredClone(metadata);
     this.updatedAt = new Date();
   }
@@ -174,7 +174,7 @@ export class ContentFeedSource extends SmrtObject {
   }
 
   protected override transformJSON(
-    json: Record<string, any>,
+    json: Record<string, unknown>,
   ): Record<string, unknown> {
     return {
       ...json,

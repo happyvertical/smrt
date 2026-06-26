@@ -100,7 +100,7 @@ export class Mirror extends Content {
     if (options.dedupeKey !== undefined) this.dedupeKey = options.dedupeKey;
   }
 
-  protected override transformJSON(json: Record<string, any>) {
+  protected override transformJSON(json: Record<string, unknown>) {
     return {
       ...json,
       feedSourceId: this.feedSourceId,

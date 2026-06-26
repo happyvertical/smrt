@@ -244,7 +244,9 @@ export class ThumbnailGenerator {
         return this.generateWithAI(options);
       default:
         throw new Error(
-          `Unknown thumbnail strategy: ${(options as any).strategy}`,
+          // `options` is narrowed to `never` here (exhaustive switch); read the
+          // runtime discriminant through a minimal structural view.
+          `Unknown thumbnail strategy: ${(options as { strategy: string }).strategy}`,
         );
     }
   }
@@ -476,7 +478,7 @@ export class ThumbnailGenerator {
       name: string;
     },
   ): Promise<Image> {
-    const images = await (ImageCollection as any).create({
+    const images = await ImageCollection.create({
       db: this.options.db,
     });
 

@@ -66,7 +66,7 @@ export interface AssetAssociable {
  * without leaking the `metadata: Record<string, any>` type into call sites.
  */
 export interface MetadataAccessor<
-  TMetadata extends Record<string, any> = Record<string, any>,
+  TMetadata extends Record<string, unknown> = Record<string, unknown>,
 > {
   /**
    * Get the full metadata record. Always returns an object (never `null`).
@@ -144,7 +144,7 @@ export function isMetadataAccessor(value: unknown): value is MetadataAccessor {
  */
 export function isPlainMetadataRecord(
   value: unknown,
-): value is Record<string, any> {
+): value is Record<string, unknown> {
   if (!value || typeof value !== 'object') return false;
   if (Array.isArray(value)) return false;
   const proto = Object.getPrototypeOf(value);

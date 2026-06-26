@@ -4,6 +4,20 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ContentVersionKind } from './content-governance';
 import { normalizeContentTransparency } from './content-transparency';
 
+/**
+ * Shape of the loosely-structured `metadata` JSON bag stored on a content
+ * version. Known fields are typed; unrecognized keys remain accessible via the
+ * index signature.
+ */
+export interface ContentVersionMetadata {
+  /**
+   * Fingerprint of the snapshot captured for the latest publication version,
+   * used to detect post-publication drift.
+   */
+  publicationSnapshotFingerprint?: string;
+  [key: string]: unknown;
+}
+
 export interface ContentVersionOptions extends SmrtObjectOptions {
   contentId?: string;
   version?: number;
@@ -13,8 +27,8 @@ export interface ContentVersionOptions extends SmrtObjectOptions {
   body?: string;
   status?: string;
   summary?: string;
-  snapshot?: string | Record<string, any>;
-  metadata?: string | Record<string, any>;
+  snapshot?: string | Record<string, unknown>;
+  metadata?: string | Record<string, unknown>;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
@@ -83,7 +97,7 @@ export class ContentVersion extends SmrtObject {
     }
   }
 
-  getSnapshot(): Record<string, any> {
+  getSnapshot(): Record<string, unknown> {
     try {
       return this.snapshot ? JSON.parse(this.snapshot) : {};
     } catch {
@@ -91,7 +105,7 @@ export class ContentVersion extends SmrtObject {
     }
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): ContentVersionMetadata {
     try {
       return this.metadata ? JSON.parse(this.metadata) : {};
     } catch {

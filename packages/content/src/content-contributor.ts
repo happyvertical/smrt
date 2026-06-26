@@ -13,19 +13,19 @@ export interface ContentContributorOptions extends SmrtObjectOptions {
   email?: string;
   name?: string;
   trustLevel?: ContentContributorTrustLevel;
-  metadata?: Record<string, any> | string;
+  metadata?: Record<string, unknown> | string;
   tenantId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-function parseMetadata(raw: unknown): Record<string, any> {
+function parseMetadata(raw: unknown): Record<string, unknown> {
   if (!raw) {
     return {};
   }
 
   if (typeof raw === 'object') {
-    return { ...(raw as Record<string, any>) };
+    return { ...(raw as Record<string, unknown>) };
   }
 
   if (typeof raw !== 'string') {
@@ -35,7 +35,7 @@ function parseMetadata(raw: unknown): Record<string, any> {
   try {
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object'
-      ? (parsed as Record<string, any>)
+      ? (parsed as Record<string, unknown>)
       : {};
   } catch {
     return {};
@@ -86,15 +86,15 @@ export class ContentContributor extends SmrtObject {
     }
   }
 
-  getMetadata(): Record<string, any> {
+  getMetadata(): Record<string, unknown> {
     return parseMetadata(this.metadata);
   }
 
-  setMetadata(metadata: Record<string, any>): void {
+  setMetadata(metadata: Record<string, unknown>): void {
     this.metadata = JSON.stringify(metadata || {});
   }
 
-  protected override transformJSON(json: Record<string, any>) {
+  protected override transformJSON(json: Record<string, unknown>) {
     return {
       ...json,
       profileId: this.profileId || null,

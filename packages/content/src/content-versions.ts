@@ -9,15 +9,19 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
   static readonly _itemClass = ContentVersion;
 
   private buildSnapshotFactRelationships(
-    snapshot: Record<string, any>,
+    snapshot: Record<string, unknown>,
     defaultRelationship: FactContentRelationship,
   ): Map<FactContentRelationship, string[]> {
     const byRelationship = new Map<FactContentRelationship, string[]>();
-    const rawLinks = Array.isArray(snapshot.factLinks)
+    const rawLinks: unknown[] = Array.isArray(snapshot.factLinks)
       ? snapshot.factLinks
       : [];
 
-    for (const link of rawLinks) {
+    for (const rawLink of rawLinks) {
+      const link = rawLink as {
+        factId?: unknown;
+        relationship?: unknown;
+      } | null;
       const factId =
         typeof link?.factId === 'string' && link.factId.length > 0
           ? link.factId
@@ -231,9 +235,13 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       'thumbnailAssetId',
     ];
 
+    // Restore snapshot values onto the live Content instance by field name.
+    // Indexing a class instance by an arbitrary string key requires a record
+    // view; the keys are a fixed, known set of Content fields.
+    const writableContent = content as unknown as Record<string, unknown>;
     for (const key of keysToRestore) {
       if (snapshot[key] !== undefined) {
-        (content as any)[key] = snapshot[key];
+        writableContent[key] = snapshot[key];
       }
     }
 
@@ -247,15 +255,16 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       targetId: string;
       targetVersion: number | null;
     }> = Array.isArray(snapshot.referenceEdges)
-      ? snapshot.referenceEdges
+      ? (snapshot.referenceEdges as unknown[])
           .filter(
-            (edge: any) =>
-              edge &&
-              typeof edge.targetId === 'string' &&
-              edge.targetId.length > 0,
+            (edge): edge is { targetId: string; targetVersion?: unknown } =>
+              !!edge &&
+              typeof edge === 'object' &&
+              typeof (edge as { targetId?: unknown }).targetId === 'string' &&
+              (edge as { targetId: string }).targetId.length > 0,
           )
-          .map((edge: any) => ({
-            targetId: edge.targetId as string,
+          .map((edge) => ({
+            targetId: edge.targetId,
             targetVersion:
               typeof edge.targetVersion === 'number'
                 ? edge.targetVersion
@@ -274,13 +283,11 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       Array.isArray(snapshot.referenceEdges) ||
       Array.isArray(snapshot.referenceIds)
     ) {
-      (content as any).referenceIds = snapshotEdges.map(
-        (edge) => edge.targetId,
-      );
+      writableContent.referenceIds = snapshotEdges.map((edge) => edge.targetId);
     }
 
     if (Array.isArray(snapshot.assetIds)) {
-      (content as any).assetIds = [...snapshot.assetIds];
+      writableContent.assetIds = [...snapshot.assetIds];
     }
 
     await content.save();
@@ -340,7 +347,7 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       const currentLinks = await content.getFactLinks();
       const currentRelationships = new Set(
         currentLinks.map(
-          (link: any) =>
+          (link) =>
             (link.relationship as FactContentRelationship) ||
             governance.defaultFactRelationship,
         ),

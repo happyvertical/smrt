@@ -1,6 +1,7 @@
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import {
   AttachmentCollection,
+  type Email,
   EmailCollection,
 } from '@happyvertical/smrt-messages';
 import type { ContentContributionAttachmentInput } from './content-contribution';
@@ -21,7 +22,7 @@ export interface SubmitWebContentContributionOptions {
   description?: string | null;
   body?: string | null;
   attachments?: ContentContributionAttachmentInput[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   tenantId?: string | null;
 }
 
@@ -257,7 +258,11 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
     options: IngestEmailContentContributionOptions,
   ) {
     const emailCollection = await this.getEmailCollection();
-    const email = (await emailCollection.get({ id: options.emailId })) as any;
+    // EmailCollection.get() is typed as the Message base; the rows it returns
+    // are Emails, so narrow to Email to read the email-specific fields below.
+    const email = (await emailCollection.get({
+      id: options.emailId,
+    })) as Email | null;
     if (!email) {
       throw new Error(`Email "${options.emailId}" not found.`);
     }
@@ -276,8 +281,8 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
     );
     const normalizedAttachments: ContentContributionAttachmentInput[] =
       inboundAttachments
-        .filter((attachment: any) => !attachment.isInline())
-        .map((attachment: any) => ({
+        .filter((attachment) => !attachment.isInline())
+        .map((attachment) => ({
           filename: attachment.filename || 'attachment',
           mimeType: attachment.contentType || 'application/octet-stream',
           size: attachment.size || 0,
@@ -328,7 +333,7 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
           contribution: existing.toJSON(),
           intake,
           revision: null,
-          attachments: (await existing.getAttachments()).map((item: any) =>
+          attachments: (await existing.getAttachments()).map((item) =>
             item.toJSON(),
           ),
         };
