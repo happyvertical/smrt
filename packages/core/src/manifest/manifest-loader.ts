@@ -25,6 +25,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
+import type { SmrtObjectConstructor } from '../registry/types.js';
 import { ObjectRegistry } from '../registry.js';
 import type {
   FieldDefinition,
@@ -468,7 +469,7 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
  */
 export function getPackageName(
-  ctor: new (...args: any[]) => any,
+  ctor: SmrtObjectConstructor,
   skipRegistry: boolean = false,
 ): string | null {
   try {
@@ -486,8 +487,9 @@ export function getPackageName(
     }
 
     // 2. Check if class has __package__ metadata (could be added by build tooling)
-    if ((ctor as any).__package__) {
-      return (ctor as any).__package__;
+    const packageMeta = (ctor as { __package__?: string }).__package__;
+    if (packageMeta) {
+      return packageMeta;
     }
 
     // 3. Try require.resolve() to find package.json from constructor location
@@ -1100,14 +1102,14 @@ export function findManifestEntryByQualifiedName(
  * @throws {Error} If class name collision detected across different packages
  */
 export async function discoverManifestEntry(
-  ctor: new (...args: any[]) => any,
+  ctor: SmrtObjectConstructor,
   className: string,
 ): Promise<ManifestEntry | undefined> {
   // ✅ FAST PATH: O(1) constructor-based lookup for already-registered classes
   // Skip manifest scanning if we already know this constructor's qualified name via WeakMap
   // This provides instant resolution and prevents collisions (each constructor is unique in memory)
-  if (!(ctor as any)._isManifestStub) {
-    const registered = ObjectRegistry.getClassByConstructor(ctor as any);
+  if (!(ctor as { _isManifestStub?: boolean })._isManifestStub) {
+    const registered = ObjectRegistry.getClassByConstructor(ctor);
     if (
       registered?.qualifiedName &&
       isQualifiedName(registered.qualifiedName)

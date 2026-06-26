@@ -11,7 +11,7 @@ export interface NoteOptions {
   /** Normalized identifier (e.g., URL, entity ID) */
   key: string;
   /** Strategy data (regex patterns, selectors, etc.) */
-  value: any;
+  value: unknown;
   /** Additional metadata */
   metadata?: NoteMetadata;
   /** Confidence score (0.0 to 1.0) */
@@ -56,7 +56,7 @@ export interface NoteMetadata {
   /** Review notes */
   reviewNotes?: string;
   /** Allow any other properties */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

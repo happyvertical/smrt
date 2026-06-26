@@ -9,7 +9,9 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import type { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
+import type { FieldDefinition } from '../scanner/types.js';
 import { tableNameFromClass } from '../utils.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import { SchemaManager } from './schema-manager.js';
@@ -33,8 +35,13 @@ export { isJsonPathIndex, renderIndexTarget } from './index-utils.js';
  * @returns SQL schema creation statement with CREATE TABLE and CREATE INDEX statements
  */
 export async function generateSchema(
-  ClassType: new (...args: any[]) => any,
-  providedFields?: Map<string, any>,
+  // Accepts any SmrtObject constructor: the registry-stored `typeof SmrtObject`
+  // as well as collection item classes whose construct signature is narrower
+  // than the full static surface. Only `.name` and the construct identity are
+  // used here. `never[]` keeps the construct signature contravariantly
+  // compatible with constructors that declare their own argument shapes.
+  ClassType: { new (...args: never[]): SmrtObject; readonly name: string },
+  providedFields?: Map<string, FieldDefinition>,
   options: { engine?: DatabaseEngine } = {},
 ) {
   const className = ClassType.name;
@@ -55,11 +62,15 @@ export async function generateSchema(
   // Throw error if no fields found
   if (cachedFields.size === 0) {
     // Detect if running in test environment
+    const testGlobals = globalThis as {
+      describe?: unknown;
+      it?: unknown;
+    };
     const isTestEnv =
       process.env.NODE_ENV === 'test' ||
       process.env.VITEST === 'true' ||
-      typeof (globalThis as any).describe !== 'undefined' ||
-      typeof (globalThis as any).it !== 'undefined';
+      typeof testGlobals.describe !== 'undefined' ||
+      typeof testGlobals.it !== 'undefined';
 
     const testHint = isTestEnv
       ? `\n\n⚠️  Are you using 'smrt test'? ` +

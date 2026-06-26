@@ -19,6 +19,21 @@ import {
 import type { SchemaDefinition } from './types.js';
 
 /**
+ * Normalize a `db.query` result into an array of rows.
+ *
+ * Adapters return either a bare row array or a `{ rows }` envelope. This
+ * mirrors the prior inline `Array.isArray(result) ? result : result?.rows ?? []`
+ * narrowing while keeping the row shape typed for callers.
+ */
+function extractRows<Row>(result: unknown): Row[] {
+  if (Array.isArray(result)) {
+    return result as Row[];
+  }
+  const rows = (result as { rows?: unknown } | null | undefined)?.rows;
+  return Array.isArray(rows) ? (rows as Row[]) : [];
+}
+
+/**
  * Schema Manager Options
  */
 export interface SchemaManagerOptions {
@@ -52,7 +67,7 @@ export class SchemaManager {
     // Detect or use provided engine
     if (options.engine) {
       this.engine = options.engine;
-    } else if ((db as any).exportTable) {
+    } else if ((db as { exportTable?: unknown }).exportTable) {
       // JSON adapter detected (has unique exportTable method)
       // JSON adapter uses DuckDB internally, but native UUID values do not
       // round-trip through the SDK row objects as canonical UUID strings.
@@ -100,7 +115,13 @@ export class SchemaManager {
     // Prefer adapter's syncSchema if available (handles adapter-specific transformations)
     // This is critical for JSON adapter which needs to convert UNIQUE indexes to
     // inline constraints for DuckDB compatibility
-    if ((this.db as any).syncSchema) {
+    // Adapters that support direct DDL sync expose an optional `syncSchema`
+    // method beyond the base `DatabaseInterface`; narrow to it here so both the
+    // capability check and the call preserve `this.db` as the receiver.
+    const dbWithSync = this.db as DatabaseInterface & {
+      syncSchema?: (schema: string) => Promise<void>;
+    };
+    if (dbWithSync.syncSchema) {
       // Combine DDL into single schema string for adapter's syncSchema
       const fullSchema = [
         ddl.createTable,
@@ -116,7 +137,7 @@ export class SchemaManager {
       }
 
       try {
-        await (this.db as any).syncSchema(fullSchema);
+        await dbWithSync.syncSchema(fullSchema);
 
         // FIX #735: Verify table was actually created
         // Some adapters (notably PostgreSQL) may silently fail to create tables
@@ -198,9 +219,7 @@ export class SchemaManager {
           'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
           tableName,
         );
-        const rows = Array.isArray(result)
-          ? result
-          : ((result as any)?.rows ?? []);
+        const rows = extractRows<{ column_name: string }>(result);
         for (const row of rows) {
           columns.add(row.column_name);
         }
@@ -209,9 +228,7 @@ export class SchemaManager {
         const result = await this.db.query(
           `PRAGMA table_info(${this.quoteIdentifier(tableName)})`,
         );
-        const rows = Array.isArray(result)
-          ? result
-          : ((result as any)?.rows ?? []);
+        const rows = extractRows<{ name: string }>(result);
         for (const row of rows) {
           columns.add(row.name);
         }

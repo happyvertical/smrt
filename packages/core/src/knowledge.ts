@@ -12,10 +12,22 @@ import type {
   SmartObjectManifest,
 } from './scanner/types.js';
 
+/**
+ * Minimal package.json shape consumed by the knowledge builder.
+ * `name`/`version` are typed concretely because they flow into the manifest's
+ * string-typed metadata fields; everything else is read via `unknown`-accepting
+ * helpers (`record()`, `exportKeys()`), so an index signature is sufficient.
+ */
+export interface PackageJsonLike {
+  name?: string;
+  version?: string;
+  [key: string]: unknown;
+}
+
 export interface BuildDomainKnowledgeOptions {
   manifest: SmartObjectManifest;
   rootDir: string;
-  packageJson?: Record<string, any>;
+  packageJson?: PackageJsonLike;
   manifestPath?: string;
   config?: DomainKnowledgeConfig;
 }
@@ -365,7 +377,7 @@ function existingPath(rootDir: string, path: string): string | undefined {
   return existsSync(fullPath) ? fullPath : undefined;
 }
 
-function readPackageJson(rootDir: string): Record<string, any> | null {
+function readPackageJson(rootDir: string): PackageJsonLike | null {
   const path = join(rootDir, 'package.json');
   if (!existsSync(path)) return null;
   return JSON.parse(readFileSync(path, 'utf8'));

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
-import type { SmartObjectManifest } from '../scanner/types.js';
+import type { ScanResult, SmartObjectManifest } from '../scanner/types.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -97,12 +97,12 @@ export class ManifestManager {
    * Generates a manifest from scan results and writes it.
    */
   async generateFromScanResults(
-    scanResults: any[],
+    scanResults: ScanResult[],
     options: {
       mode: 'dev' | 'build';
       packageName?: string;
       packageVersion?: string;
-      packageJson?: any;
+      packageJson?: Record<string, unknown>;
       smrtDependencies?: string[];
     },
   ): Promise<SmartObjectManifest> {

@@ -64,7 +64,7 @@ export function stringify(
     | null,
   space?: number | string,
 ): string {
-  return getAdapter().stringify(value, replacer as any, space as any);
+  return getAdapter().stringify(value, replacer, space);
 }
 
 /**

@@ -11,14 +11,17 @@ import type { EmbeddingProviderType, ProjectEmbeddingConfig } from './types';
 /**
  * Dynamically import an optional dependency.
  * Uses a variable to prevent TypeScript from statically analyzing the import.
+ *
+ * The resolved value is the imported module namespace; callers narrow it to a
+ * concrete shape (e.g. {@link TransformersModule}) at the point of use.
  */
-async function importOptional(moduleName: string): Promise<any> {
+async function importOptional(moduleName: string): Promise<unknown> {
   // Using a variable prevents TypeScript from trying to resolve the module at compile time
   const name = moduleName;
   return import(/* @vite-ignore */ name);
 }
 
-export type OptionalModuleImporter = (moduleName: string) => Promise<any>;
+export type OptionalModuleImporter = (moduleName: string) => Promise<unknown>;
 
 export const LOCAL_TRANSFORMERS_PACKAGES = [
   '@huggingface/transformers',
@@ -28,8 +31,21 @@ export const LOCAL_TRANSFORMERS_PACKAGES = [
 export type LocalTransformersPackage =
   (typeof LOCAL_TRANSFORMERS_PACKAGES)[number];
 
+/**
+ * Minimal surface of a transformers.js package used for local embeddings.
+ * Only the `pipeline` factory is consumed; its result is narrowed to a
+ * {@link FeatureExtractionPipeline} at the call site.
+ */
+export interface TransformersModule {
+  pipeline: (task: string, model: string) => Promise<unknown>;
+}
+
 export interface TransformersModuleResolution {
-  module: any;
+  /**
+   * The imported module namespace. Typed as `unknown` because the importer may
+   * resolve arbitrary modules; consumers cast to {@link TransformersModule}.
+   */
+  module: unknown;
   packageName: LocalTransformersPackage;
 }
 
@@ -109,7 +125,11 @@ export class EmbeddingProvider {
   constructor(config: ProjectEmbeddingConfig, ai?: unknown) {
     this.config = config;
     // Cast to EmbeddingCapableAI if it has an embed method
-    if (ai && typeof (ai as any).embed === 'function') {
+    if (
+      typeof ai === 'object' &&
+      ai !== null &&
+      typeof (ai as { embed?: unknown }).embed === 'function'
+    ) {
       this.ai = ai as EmbeddingCapableAI;
     } else {
       this.ai = null;
@@ -185,8 +205,10 @@ export class EmbeddingProvider {
    * Initialize the local embedding pipeline
    */
   private async initLocalPipeline(): Promise<FeatureExtractionPipeline> {
-    const { module: transformers } = await resolveLocalTransformersModule();
-    const { pipeline } = transformers;
+    const { module } = await resolveLocalTransformersModule();
+    // The resolved module is the transformers.js namespace; narrow to the
+    // minimal surface we consume.
+    const { pipeline } = module as TransformersModule;
 
     const model = this.config.localModel || 'Xenova/bge-base-en-v1.5';
 

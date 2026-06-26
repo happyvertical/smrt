@@ -339,10 +339,12 @@ export class SchemaAggregator {
       const localPath = localPaths[packageName];
       if (existsSync(localPath)) {
         try {
-          const content = JSON.parse(readFileSync(localPath, 'utf-8'));
+          const content = JSON.parse(
+            readFileSync(localPath, 'utf-8'),
+          ) as SmartObjectManifest;
           // Only use local if it has schemas
           const hasSchemas = Object.values(content.objects || {}).some(
-            (obj: any) => obj.schema?.ddl,
+            (obj) => obj.schema?.ddl,
           );
           if (hasSchemas) return content;
         } catch {
@@ -393,10 +395,10 @@ export class SchemaAggregator {
 
     for (const manifest of manifests) {
       for (const [_key, object] of Object.entries(manifest.objects)) {
-        const schema = (object as any).schema;
+        const schema = object.schema;
         if (!schema?.ddl) continue;
 
-        const className: string = (object as any).className || _key;
+        const className: string = object.className || _key;
         const tableName: string = schema.tableName;
         const existing = tables.get(tableName);
 

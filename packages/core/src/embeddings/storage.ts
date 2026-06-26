@@ -120,7 +120,7 @@ export class EmbeddingStorage {
         // Parameter numbering starts at $2 because vector.search() reserves
         // $1 for the query vector embedding in its internal SQL query.
         const conditions: string[] = ['object_class = $2'];
-        const params: any[] = [objectClass];
+        const params: unknown[] = [objectClass];
 
         if (field) {
           conditions.push(`field_name = $${params.length + 2}`);

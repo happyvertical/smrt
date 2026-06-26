@@ -21,7 +21,7 @@ export interface SanitizationConfig {
    * Custom replacer function for sanitization
    * Return undefined to redact the value entirely
    */
-  replacer?: (key: string, value: any) => any;
+  replacer?: (key: string, value: unknown) => unknown;
 
   /**
    * Replacement value for redacted fields
@@ -89,7 +89,7 @@ export class SignalSanitizer {
    *
    * Redacts sensitive keys and truncates long strings
    */
-  private defaultReplacer(key: string, value: any): any {
+  private defaultReplacer(key: string, value: unknown): unknown {
     // Check if key should be redacted
     const lowerKey = key.toLowerCase();
     if (
@@ -109,7 +109,7 @@ export class SignalSanitizer {
   /**
    * Sanitize a value using the configured replacer
    */
-  private sanitizeValue(value: any, seen = new WeakSet()): any {
+  private sanitizeValue(value: unknown, seen = new WeakSet()): unknown {
     // Handle null/undefined
     if (value == null) {
       return value;
@@ -146,7 +146,7 @@ export class SignalSanitizer {
     }
 
     // Handle regular objects
-    const sanitized: Record<string, any> = {};
+    const sanitized: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value)) {
       const replacedValue = this.config.replacer(key, val);
       if (replacedValue !== undefined) {
@@ -173,12 +173,25 @@ export class SignalSanitizer {
       timestamp: signal.timestamp,
       ...(signal.step && { step: signal.step }),
       ...(signal.duration !== undefined && { duration: signal.duration }),
-      ...(signal.args && { args: this.sanitizeValue(signal.args) }),
+      // `signal.args` is an array, so `sanitizeValue` always returns an array
+      // (the `Array.isArray` branch maps element-wise).
+      ...(signal.args && { args: this.sanitizeValue(signal.args) as unknown[] }),
       ...(signal.result !== undefined
         ? { result: this.sanitizeValue(signal.result) }
         : {}),
-      ...(signal.error && { error: this.sanitizeValue(signal.error) }),
-      ...(signal.metadata && { metadata: this.sanitizeValue(signal.metadata) }),
+      // `sanitizeValue` flattens an `Error` into an Error-shaped plain object
+      // (`{ message, name, stack }`); the Signal contract still types it as
+      // `Error`, so retain that surface here.
+      ...(signal.error && {
+        error: this.sanitizeValue(signal.error) as Error,
+      }),
+      // Sanitizing an object yields a `Record<string, unknown>`.
+      ...(signal.metadata && {
+        metadata: this.sanitizeValue(signal.metadata) as Record<
+          string,
+          unknown
+        >,
+      }),
     };
   }
 }

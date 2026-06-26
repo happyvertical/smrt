@@ -80,6 +80,30 @@ interface PackageInfo {
 }
 
 /**
+ * Subset of the smrt-auto-service Vite plugin options we probe when reading
+ * baseClasses out of a project's vite.config.ts.
+ */
+interface VitePluginOptions {
+  baseClasses?: string[];
+  followImports?: boolean;
+}
+
+/**
+ * Structural shape of a loaded Vite plugin entry as probed by
+ * loadViteConfigBaseClasses(). The plugin may expose its options directly, on
+ * `_options`, or via an `api` object/function — all optional and discovered at
+ * runtime, so each is modeled as optional here.
+ */
+interface VitePluginProbe {
+  name?: string;
+  options?: VitePluginOptions;
+  _options?: VitePluginOptions;
+  api?:
+    | { options?: VitePluginOptions }
+    | (() => { options?: VitePluginOptions });
+}
+
+/**
  * Orchestrates manifest generation with configurable options
  *
  * Consolidates logic from generate-manifest.js and generate-test-manifest.js
@@ -252,13 +276,13 @@ export class ManifestBuilder {
     // Read package.json for metadata
     let packageName: string | undefined;
     let packageVersion: string | undefined;
-    let packageJson: any;
+    let packageJson: { name?: string; version?: string } | undefined;
     try {
       const pkgPath = resolve(process.cwd(), 'package.json');
       const pkgContent = readFileSync(pkgPath, 'utf-8');
       packageJson = JSON.parse(pkgContent);
-      packageName = packageJson.name || undefined;
-      packageVersion = packageJson.version || undefined;
+      packageName = packageJson?.name || undefined;
+      packageVersion = packageJson?.version || undefined;
     } catch {
       // package.json not found - continue without packageName
     }
@@ -439,15 +463,18 @@ export default ${exportName};
         return null;
       }
 
+      // Vite's loaded plugins are a recursive PluginOption[] (plugins, arrays,
+      // falsy values, promises). We only probe a few optional fields, so model
+      // them structurally and narrow defensively instead of using `any`.
+      const plugins = loaded.config.plugins as readonly VitePluginProbe[];
+
       console.log(
         '[smrt] Vite config loaded, plugins:',
-        loaded.config.plugins.map((p: any) => p?.name),
+        plugins.map((p) => p?.name),
       );
 
       // Find smrtPlugin in plugins array
-      const smrtPlugin = loaded.config.plugins.find(
-        (p: any) => p?.name === 'smrt-auto-service',
-      );
+      const smrtPlugin = plugins.find((p) => p?.name === 'smrt-auto-service');
 
       if (!smrtPlugin) {
         console.log(
@@ -459,15 +486,15 @@ export default ${exportName};
       console.log('[smrt] Found smrt-auto-service plugin');
 
       // Try different ways to access options
-      let opts =
-        (smrtPlugin as any).api?.options ||
-        (smrtPlugin as any).options ||
-        (smrtPlugin as any)._options;
+      const api = smrtPlugin.api;
+      let opts: VitePluginOptions | undefined =
+        (typeof api === 'object' && api !== null ? api.options : undefined) ||
+        smrtPlugin.options ||
+        smrtPlugin._options;
 
-      if (!opts && typeof (smrtPlugin as any).api === 'function') {
+      if (!opts && typeof api === 'function') {
         try {
-          const api = (smrtPlugin as any).api();
-          opts = api.options;
+          opts = api().options;
         } catch (e) {
           console.log('[smrt] Could not call plugin.api()');
         }
@@ -486,8 +513,11 @@ export default ${exportName};
 
       console.log('[smrt] Could not access plugin options');
       return null;
-    } catch (error: any) {
-      console.log('[smrt] Error loading vite.config.ts:', error.message);
+    } catch (error) {
+      console.log(
+        '[smrt] Error loading vite.config.ts:',
+        error instanceof Error ? error.message : String(error),
+      );
       console.log('[smrt] Using default baseClasses');
       return null;
     }
@@ -511,13 +541,13 @@ export default ${exportName};
 
       try {
         const manifestContent = readFileSync(manifestPath, 'utf-8');
-        const manifest = JSON.parse(manifestContent);
+        const manifest: SmartObjectManifest = JSON.parse(manifestContent);
 
         // Extract all class names from this package
         const foundClassNames: string[] = [];
         for (const objDef of Object.values(manifest.objects)) {
-          if ((objDef as any).className) {
-            const className = (objDef as any).className;
+          if (objDef.className) {
+            const className = objDef.className;
             foundClassNames.push(className);
             externalBaseClasses.push(className);
           }
@@ -526,9 +556,9 @@ export default ${exportName};
         console.log(
           `[smrt]   ${pkgName}: found ${foundClassNames.length} class(es) - ${foundClassNames.join(', ')}`,
         );
-      } catch (error: any) {
+      } catch (error) {
         console.log(
-          `[smrt]   ${pkgName}: manifest not found or invalid - ${error.message}`,
+          `[smrt]   ${pkgName}: manifest not found or invalid - ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }

@@ -310,7 +310,8 @@ export async function getTestDatabase(
   // Use the same schema generation as production
   const schemaGenerator = new SchemaGenerator();
   const ddlEngine =
-    type === 'json' || typeof (db as any).exportTable === 'function'
+    type === 'json' ||
+    typeof (db as { exportTable?: unknown }).exportTable === 'function'
       ? 'json'
       : 'sqlite';
 

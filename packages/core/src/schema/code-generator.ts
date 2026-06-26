@@ -4,7 +4,13 @@
  */
 
 import type { SmartObjectDefinition } from '../scanner/types.js';
-import type { SchemaDefinition } from './types.js';
+import type {
+  ColumnDefinition,
+  ForeignKeyDefinition,
+  IndexDefinition,
+  SchemaDefinition,
+  TriggerDefinition,
+} from './types.js';
 
 export class SchemaCodeGenerator {
   /**
@@ -86,7 +92,7 @@ export class SchemaCodeGenerator {
   /**
    * Generate columns object
    */
-  private generateColumns(columns: Record<string, any>): string {
+  private generateColumns(columns: Record<string, ColumnDefinition>): string {
     const entries = Object.entries(columns).map(([name, def]) => {
       const defStr = JSON.stringify(def, null, 6).replace(/^/gm, '      ');
       return `    ${JSON.stringify(name)}: ${defStr}`;
@@ -100,7 +106,7 @@ ${entries.join(',\n')}
   /**
    * Generate indexes array
    */
-  private generateIndexes(indexes: any[]): string {
+  private generateIndexes(indexes: IndexDefinition[]): string {
     if (indexes.length === 0) return '[]';
 
     const indexStrings = indexes.map((idx) =>
@@ -115,7 +121,7 @@ ${indexStrings.join(',\n')}
   /**
    * Generate triggers array
    */
-  private generateTriggers(triggers: any[]): string {
+  private generateTriggers(triggers: TriggerDefinition[]): string {
     if (triggers.length === 0) return '[]';
 
     const triggerStrings = triggers.map((trigger) =>
@@ -130,7 +136,7 @@ ${triggerStrings.join(',\n')}
   /**
    * Generate foreign keys array
    */
-  private generateForeignKeys(foreignKeys: any[]): string {
+  private generateForeignKeys(foreignKeys: ForeignKeyDefinition[]): string {
     if (foreignKeys.length === 0) return '[]';
 
     const fkStrings = foreignKeys.map((fk) =>

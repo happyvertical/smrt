@@ -6,8 +6,11 @@
 import { createHash } from 'node:crypto';
 import type {
   ColumnDefinition,
+  ForeignKeyDefinition,
+  IndexDefinition,
   SchemaDefinition,
   SchemaOverride,
+  TriggerDefinition,
 } from './types.js';
 
 export class SchemaOverrideSystem {
@@ -91,9 +94,9 @@ export class SchemaOverrideSystem {
     extensions: {
       addColumns?: Record<string, ColumnDefinition>;
       removeColumns?: string[];
-      addIndexes?: Array<any>;
+      addIndexes?: IndexDefinition[];
       removeIndexes?: string[];
-      addTriggers?: Array<any>;
+      addTriggers?: TriggerDefinition[];
       removeTriggers?: string[];
     },
   ): SchemaOverride {
@@ -273,8 +276,8 @@ export class SchemaOverrideSystem {
    */
   private static extractForeignKeys(
     columns: Record<string, ColumnDefinition>,
-  ): Array<any> {
-    const foreignKeys: Array<any> = [];
+  ): ForeignKeyDefinition[] {
+    const foreignKeys: ForeignKeyDefinition[] = [];
 
     for (const [columnName, columnDef] of Object.entries(columns)) {
       if (columnDef.foreignKey) {

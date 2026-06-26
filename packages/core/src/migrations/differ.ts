@@ -123,7 +123,7 @@ export class SchemaComparer {
     // lets callers override when `db.url` is empty or points at an adapter
     // whose engine isn't obvious from the URL alone (some in-memory wrappers).
     this.engine =
-      typeof (this.db as any).exportTable === 'function'
+      typeof (this.db as { exportTable?: unknown }).exportTable === 'function'
         ? 'json'
         : detectEngine(resolveDatabaseUrl(this.db), this.options.engineHint);
     this.ddlStrategy = getDDLStrategy(this.engine);
