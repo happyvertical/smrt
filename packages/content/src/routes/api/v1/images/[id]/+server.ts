@@ -1,3 +1,5 @@
+import { Asset } from '@happyvertical/smrt-assets';
+import { Image } from '@happyvertical/smrt-images';
 import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
@@ -17,7 +19,7 @@ const MUTABLE_IMAGE_FIELDS = new Set([
 ]);
 
 async function ensureImageBaseTables() {
-  await getCollection<any>('@happyvertical/smrt-assets:Asset');
+  await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
 }
 
 function pickMutableImageFields(data: Record<string, unknown>) {
@@ -29,7 +31,7 @@ function pickMutableImageFields(data: Record<string, unknown>) {
 export const GET: RequestHandler = async ({ params }) => {
   await ensureImageBaseTables();
 
-  const collection = await getCollection<any>(
+  const collection = await getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const item = await collection.get(params.id);
@@ -40,7 +42,7 @@ export const GET: RequestHandler = async ({ params }) => {
 export const PUT: RequestHandler = async ({ params, request }) => {
   await ensureImageBaseTables();
 
-  const collection = await getCollection<any>(
+  const collection = await getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const item = await collection.get(params.id);
@@ -56,7 +58,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 export const DELETE: RequestHandler = async ({ params }) => {
   await ensureImageBaseTables();
 
-  const collection = await getCollection<any>(
+  const collection = await getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const item = await collection.get(params.id);

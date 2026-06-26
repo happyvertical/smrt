@@ -1,4 +1,6 @@
 import { createLogger } from '@happyvertical/logger';
+import { Asset } from '@happyvertical/smrt-assets';
+import { Image } from '@happyvertical/smrt-images';
 import { json } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
@@ -9,7 +11,7 @@ import type { RequestHandler } from './$types';
 const logger = createLogger({ level: 'info' });
 
 async function ensureImageBaseTables() {
-  await getCollection<any>('@happyvertical/smrt-assets:Asset');
+  await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
 }
 
 export const GET: RequestHandler = async () => {
@@ -20,7 +22,7 @@ export const GET: RequestHandler = async () => {
 
     await ensureImageBaseTables();
 
-    const collection = await getCollection<any>(
+    const collection = await getCollection<Image>(
       '@happyvertical/smrt-images:Image',
     );
     const items = await collection.list({});
@@ -29,12 +31,13 @@ export const GET: RequestHandler = async () => {
       items: items,
       meta: { total: items.length },
     });
-  } catch (err: any) {
+  } catch (err) {
     logger.error('GET Images Error', { error: err });
+    const stack = err instanceof Error ? err.stack : undefined;
     return json(
       {
         error: 'Internal server error',
-        ...(dev && err?.stack ? { stack: err.stack } : {}),
+        ...(dev && stack ? { stack } : {}),
       },
       { status: 500 },
     );
@@ -44,10 +47,10 @@ export const GET: RequestHandler = async () => {
 export const POST: RequestHandler = async ({ request }) => {
   await ensureImageBaseTables();
 
-  const collection = await getCollection<any>(
+  const collection = await getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
-  const data = await request.json();
+  const data: Record<string, unknown> = await request.json();
 
   const newItem = await collection.create(data);
   return json(newItem);

@@ -1,5 +1,6 @@
 import { createLogger } from '@happyvertical/logger';
 import { json, type RequestHandler } from '@sveltejs/kit';
+import { Content } from '../../../../../../../../content.js';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
 import {
   type ContentChatAIConfig,
@@ -28,7 +29,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   }
 
   try {
-    const contentsCollection = await getCollection<any>(
+    const contentsCollection = await getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -49,12 +50,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
       thread,
       messages: messages.map(serializeContentChatMessageForUI),
     });
-  } catch (error: any) {
-    if (
-      error?.message === 'Thread not found' ||
-      error?.message === 'Content not found'
-    ) {
-      return json({ error: error.message }, { status: 404 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : undefined;
+    if (message === 'Thread not found' || message === 'Content not found') {
+      return json({ error: message }, { status: 404 });
     }
     logger.error(`Error fetching messages for thread ${threadId}`, { error });
     return json({ error: 'Failed to find thread messages' }, { status: 500 });
@@ -91,7 +90,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
   }
 
   try {
-    const contentsCollection = await getCollection<any>(
+    const contentsCollection = await getCollection<Content>(
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
@@ -127,23 +126,24 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       agentMessage: agentJson,
       session: sessionJson,
     });
-  } catch (error: any) {
+  } catch (error) {
+    const message = error instanceof Error ? error.message : undefined;
     if (
-      error?.message === 'Active session not found' ||
-      error?.message === 'Thread not found' ||
-      error?.message === 'Content not found'
+      message === 'Active session not found' ||
+      message === 'Thread not found' ||
+      message === 'Content not found'
     ) {
-      return json({ error: error.message }, { status: 404 });
+      return json({ error: message }, { status: 404 });
     }
-    if (error?.message === 'Active session is missing a chat room') {
-      return json({ error: error.message }, { status: 500 });
+    if (message === 'Active session is missing a chat room') {
+      return json({ error: message }, { status: 500 });
     }
-    if (error?.message === 'AI model is not allowed for content chat') {
-      return json({ error: error.message }, { status: 400 });
+    if (message === 'AI model is not allowed for content chat') {
+      return json({ error: message }, { status: 400 });
     }
     logger.error(`Error processing message for thread ${threadId}`, { error });
     return json(
-      { error: error.message || 'Failed to process message' },
+      { error: message || 'Failed to process message' },
       { status: 500 },
     );
   }

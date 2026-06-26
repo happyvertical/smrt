@@ -158,8 +158,18 @@ async function bootstrapSchema() {
       await registerContentWorkspaceRuntime();
 
       const config = getSmrtConfig('@happyvertical/smrt-content:Content');
-      const dbUrl = (config.db as any)?.url || '.smrt/local.db';
-      const dbType = (config.db as any)?.type || 'sqlite';
+      // `config.db` is a `DatabaseConfig` union; only the object-config form
+      // carries `url`/`type`. Narrow to that shape (the string and
+      // DatabaseInterface variants fall through to the defaults below).
+      const dbConfig =
+        config.db && typeof config.db === 'object'
+          ? (config.db as {
+              url?: string;
+              type?: 'sqlite' | 'postgres' | 'duckdb' | 'json';
+            })
+          : undefined;
+      const dbUrl = dbConfig?.url || '.smrt/local.db';
+      const dbType = dbConfig?.type || 'sqlite';
       const db = await getDatabase({ url: dbUrl, type: dbType });
 
       // Only generate schema for persisted object classes. Collection classes

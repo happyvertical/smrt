@@ -1,11 +1,13 @@
+import { Asset } from '@happyvertical/smrt-assets';
+import { Image } from '@happyvertical/smrt-images';
 import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
 // Mock AI Variation
 export const POST: RequestHandler = async ({ params, request }) => {
-  await getCollection<any>('@happyvertical/smrt-assets:Asset');
-  const collection = await getCollection<any>(
+  await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
+  const collection = await getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
   const image = await collection.get(params.id);
