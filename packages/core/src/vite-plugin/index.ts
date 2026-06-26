@@ -6,11 +6,15 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
-import type { Plugin, ViteDevServer } from 'vite';
+import type {
+  DomainKnowledgeConfig,
+  DomainKnowledgeManifest,
+} from '@happyvertical/smrt-types';
+import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import type { SmartObjectManifest } from '../scanner/types';
+import type { SchemaDefinition } from '../schema/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
 import { importBuildAwareModule } from './import-build-aware.js';
@@ -34,6 +38,17 @@ export {
   resolveApiActionSet,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
+
+/**
+ * Minimal structural shape of a parsed `package.json`. Only the fields the
+ * plugin reads are typed; the index signature keeps the rest accessible (e.g.
+ * `exports`, consumed downstream by agent-manifest generation).
+ */
+interface PackageJsonShape {
+  name?: string;
+  version?: string;
+  [key: string]: unknown;
+}
 
 export interface SmrtPluginOptions {
   /** Glob patterns for SMRT source files */
@@ -161,7 +176,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let manifest: SmartObjectManifest | null = null;
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
-  let config: any = null; // Store resolved config for closeBundle hook
+  let config: ResolvedConfig | null = null; // Store resolved config for closeBundle hook
   let resolvedPluginNames: string[] = [];
 
   /**
@@ -294,18 +309,20 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
   function preserveKnowledgeGeneratedAt(
     outputPath: string,
-    nextKnowledge: Record<string, any>,
-  ): Record<string, any> {
+    nextKnowledge: DomainKnowledgeManifest,
+  ): DomainKnowledgeManifest {
     if (!existsSync(outputPath)) return nextKnowledge;
 
     try {
-      const current = JSON.parse(readFileSync(outputPath, 'utf8'));
+      const current = JSON.parse(
+        readFileSync(outputPath, 'utf8'),
+      ) as Partial<DomainKnowledgeManifest>;
       if (
         semanticKnowledgeJson(current) === semanticKnowledgeJson(nextKnowledge)
       ) {
         return {
           ...nextKnowledge,
-          generatedAt: current.generatedAt,
+          generatedAt: current.generatedAt ?? nextKnowledge.generatedAt,
         };
       }
     } catch {
@@ -315,7 +332,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     return nextKnowledge;
   }
 
-  function semanticKnowledgeJson(artifact: Record<string, any>): string {
+  function semanticKnowledgeJson(
+    artifact: Partial<DomainKnowledgeManifest>,
+  ): string {
     const { generatedAt: _generatedAt, ...rest } = artifact ?? {};
     return JSON.stringify(sortJson(rest));
   }
@@ -749,7 +768,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     async closeBundle() {
       // Write manifest to disk during library builds
       // This allows published packages to include their manifest
-      if (!manifest || !config.build?.lib) {
+      if (!manifest || !config?.build?.lib) {
         return;
       }
 
@@ -757,11 +776,15 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         const { writeFileSync, mkdirSync } = await import('node:fs');
         const { resolve, dirname } = await import('node:path');
 
-        // Determine output directory
-        const outDir =
-          config.build?.rollupOptions?.output?.dir ||
-          config.build?.outDir ||
-          'dist';
+        // Determine output directory.
+        // `rollupOptions.output` may be a single object or an array; mirror the
+        // prior runtime behavior where reading `.dir` off an array yields
+        // undefined and falls through to `build.outDir`.
+        const rollupOutput = config.build?.rollupOptions?.output;
+        const rollupOutputDir = Array.isArray(rollupOutput)
+          ? undefined
+          : rollupOutput?.dir;
+        const outDir = rollupOutputDir || config.build?.outDir || 'dist';
         const manifestPath = resolve(projectRoot, outDir, 'manifest.json');
         const knowledgePath = resolve(
           projectRoot,
@@ -868,13 +891,13 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // packageJson is also needed for agent manifest generation (component discovery)
       let packageName: string | undefined;
       let packageVersion: string | undefined;
-      let packageJson: any;
+      let packageJson: PackageJsonShape | undefined;
       try {
         const { readFileSync } = await import('node:fs');
         const { join } = await import('node:path');
         const pkgPath = join(rootDir, 'package.json');
         const pkgContent = readFileSync(pkgPath, 'utf-8');
-        packageJson = JSON.parse(pkgContent);
+        packageJson = JSON.parse(pkgContent) as PackageJsonShape;
         packageName = packageJson.name || undefined;
         packageVersion = packageJson.version || undefined;
       } catch {
@@ -2002,7 +2025,7 @@ async function generateSchemaModule(
     });
 
     const schemaGenerator = new SchemaGenerator();
-    const schemas: Record<string, any> = {};
+    const schemas: Record<string, SchemaDefinition> = {};
 
     // Generate schemas for all SMRT objects
     for (const [className, objectDef] of Object.entries(manifest.objects)) {
@@ -2017,9 +2040,7 @@ async function generateSchemaModule(
       packageName: manifest.packageName || 'unknown',
       schemas: schemas,
       dependencies: Array.from(
-        new Set(
-          Object.values(schemas).flatMap((s: any) => s.dependencies || []),
-        ),
+        new Set(Object.values(schemas).flatMap((s) => s.dependencies || [])),
       ),
     };
 

@@ -7,6 +7,57 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin } from 'vite';
 import { generateDeclarations } from '../prebuild/index.js';
+import type { SmartObjectManifest } from '../scanner/types.js';
+
+/**
+ * Loosely-typed view of an object definition as carried by an external
+ * package's static manifest. The static manifests are read from JSON at the
+ * package boundary, so only the fields this plugin consumes are typed; the
+ * index signature preserves any additional fields (e.g. for spreads). This is
+ * a structural superset of a manifest `SmartObjectDefinition` plus the
+ * consumer-only `hasCollection` marker.
+ */
+interface ConsumerObjectDefinition {
+  className?: string;
+  packageName?: string;
+  packageVersion?: string;
+  qualifiedName?: string;
+  importPath?: string;
+  exportName?: string;
+  collectionExportName?: string;
+  hasCollection?: boolean;
+  collection?: string;
+  extends?: string;
+  extendsQualified?: string;
+  extendsTypeArg?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Aggregated manifest assembled by the consumer plugin from one or more
+ * external package manifests. Loosely typed because the inputs originate from
+ * JSON read at the package boundary.
+ */
+interface ConsumerManifest {
+  version: string;
+  timestamp: number;
+  packageName?: string;
+  packageVersion?: string;
+  objects: Record<string, ConsumerObjectDefinition>;
+}
+
+/**
+ * Minimal structural shape of a parsed `package.json` consumed here (name,
+ * version, and the export map used to derive import paths). The index
+ * signature keeps the remaining fields accessible.
+ */
+interface ConsumerPackageJson {
+  name?: string;
+  version?: string;
+  main?: string;
+  exports?: Record<string, unknown>;
+  [key: string]: unknown;
+}
 
 export interface SmrtConsumerOptions {
   /** SMRT packages to scan (e.g., ['@my-org/products', '@my-org/content']) */
@@ -46,7 +97,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   } = options;
 
   let smrtPackages: string[] = [];
-  let typeManifest: any = null;
+  let typeManifest: ConsumerManifest | null = null;
   let typesGenerated = false;
 
   return {
@@ -199,11 +250,11 @@ async function hasSmrtManifest(
 async function aggregateTypeManifests(
   packages: string[],
   projectRoot: string,
-): Promise<any> {
-  const aggregatedManifest = {
+): Promise<ConsumerManifest> {
+  const aggregatedManifest: ConsumerManifest = {
     version: '1.0.0',
     timestamp: Date.now(),
-    objects: {} as Record<string, any>,
+    objects: {},
   };
 
   for (const packageName of packages) {
@@ -212,10 +263,10 @@ async function aggregateTypeManifests(
 
       // Load package.json for version and export information
       const packageJsonPath = path.join(packageDir, 'package.json');
-      let packageJson: any;
+      let packageJson: ConsumerPackageJson;
       try {
         const packageJsonContent = fs.readFileSync(packageJsonPath, 'utf-8');
-        packageJson = JSON.parse(packageJsonContent);
+        packageJson = JSON.parse(packageJsonContent) as ConsumerPackageJson;
       } catch {
         console.warn(
           `[smrt:consumer] Could not read package.json for ${packageName}`,
@@ -233,13 +284,13 @@ async function aggregateTypeManifests(
       for (const manifestPath of manifestCandidates) {
         if (fs.existsSync(manifestPath)) {
           // Import or read the manifest
-          let manifest: any;
+          let manifest: Partial<ConsumerManifest> | undefined;
           if (manifestPath.endsWith('.js')) {
             const manifestModule = await import(manifestPath);
             manifest = manifestModule.staticManifest || manifestModule.default;
           } else {
             const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
-            manifest = JSON.parse(manifestContent);
+            manifest = JSON.parse(manifestContent) as Partial<ConsumerManifest>;
           }
 
           if (manifest?.objects) {
@@ -251,7 +302,7 @@ async function aggregateTypeManifests(
             for (const [objectName, objectDef] of Object.entries(
               manifest.objects,
             )) {
-              const def = objectDef as any;
+              const def = objectDef;
 
               aggregatedManifest.objects[objectName] = {
                 ...def,
@@ -289,7 +340,7 @@ async function aggregateTypeManifests(
 /**
  * Determine import path from package.json
  */
-function determineImportPath(packageJson: any): string {
+function determineImportPath(packageJson: ConsumerPackageJson): string {
   const packageName = packageJson.name;
 
   if (!packageName) {
@@ -307,11 +358,12 @@ function determineImportPath(packageJson: any): string {
     const mainExport = packageJson.exports['.'];
     if (mainExport) {
       // Handle conditional exports
-      if (typeof mainExport === 'object') {
-        if (mainExport.import) {
+      if (typeof mainExport === 'object' && mainExport !== null) {
+        const conditional = mainExport as Record<string, unknown>;
+        if (conditional.import) {
           return packageName;
         }
-        if (mainExport.default) {
+        if (conditional.default) {
           return packageName;
         }
       }
@@ -332,7 +384,7 @@ function determineImportPath(packageJson: any): string {
  * Save aggregated manifest to .smrt/manifest.json for CLI discovery
  */
 async function saveAggregatedManifest(
-  manifest: any,
+  manifest: ConsumerManifest,
   projectRoot: string,
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
@@ -362,7 +414,7 @@ async function saveAggregatedManifest(
  * for all external SMRT objects discovered during build.
  */
 async function generateRegistrationFile(
-  manifest: any,
+  manifest: ConsumerManifest,
   projectRoot: string,
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
@@ -374,10 +426,10 @@ async function generateRegistrationFile(
   let importedEntryCount = 0;
   let registeredObjectCount = 0;
 
-  const manifestObjects = manifest.objects as Record<string, any>;
-  const manifestObjectLookup = new Map<string, any>();
+  const manifestObjects = manifest.objects;
+  const manifestObjectLookup = new Map<string, ConsumerObjectDefinition>();
   for (const [key, def] of Object.entries(manifestObjects)) {
-    const candidate = def as any;
+    const candidate = def;
     const lookupKeys = [
       key,
       key.includes(':') ? key.split(':').pop() : undefined,
@@ -395,7 +447,10 @@ async function generateRegistrationFile(
 
   const collectionClassMemo = new WeakMap<object, boolean>();
 
-  const isCollectionClass = (def: any, seen = new Set<string>()): boolean => {
+  const isCollectionClass = (
+    def: ConsumerObjectDefinition | undefined,
+    seen = new Set<string>(),
+  ): boolean => {
     if (!def || typeof def !== 'object') {
       return false;
     }
@@ -428,7 +483,7 @@ async function generateRegistrationFile(
   };
 
   for (const [objectName, objectDef] of Object.entries(manifestObjects)) {
-    const def = objectDef as any;
+    const def = objectDef;
 
     // Skip local objects (they're imported from local entry point)
     if (!def.packageName || def.packageName === manifest.packageName) {
@@ -523,7 +578,7 @@ export function registerAll() {
  * Generate project-specific types
  */
 async function generateProjectTypes(
-  typeManifest: any,
+  typeManifest: ConsumerManifest,
   typesDir: string,
   projectRoot: string,
 ): Promise<void> {
@@ -535,7 +590,10 @@ async function generateProjectTypes(
   }
 
   await generateDeclarations({
-    manifest: typeManifest,
+    // The aggregated manifest is a runtime SMRT manifest assembled from external
+    // package manifests; it is intentionally typed loosely at the JSON boundary,
+    // so narrow it to the declaration generator's strict manifest shape here.
+    manifest: typeManifest as unknown as SmartObjectManifest,
     outDir: typesDir,
     projectRoot,
     includeVirtualModules: true,
@@ -574,7 +632,7 @@ export default setupRoutes;
 `;
 }
 
-function generateFallbackClientModule(manifest: any): string {
+function generateFallbackClientModule(manifest: ConsumerManifest): string {
   const objects = Object.entries(manifest?.objects || {});
   if (objects.length === 0) {
     return `
@@ -589,7 +647,7 @@ export default createClient;
 
   // Generate basic client from manifest
   const clientMethods = objects
-    .map(([name, obj]: [string, any]) => {
+    .map(([name, obj]) => {
       const { collection } = obj;
       return `
   ${name}: {
@@ -634,14 +692,14 @@ export default createMCPServer;
 `;
 }
 
-function generateFallbackTypesModule(manifest: any): string {
+function generateFallbackTypesModule(manifest: ConsumerManifest): string {
   const objects = Object.entries(manifest?.objects || {});
   if (objects.length === 0) {
     return `// No types available`;
   }
 
   // Generate basic interfaces
-  const interfaces = objects.map(([_name, obj]: [string, any]) => {
+  const interfaces = objects.map(([_name, obj]) => {
     return `export interface ${obj.className}Data {
   id?: string;
   created_at?: string;
@@ -653,7 +711,7 @@ function generateFallbackTypesModule(manifest: any): string {
   return interfaces.join('\n\n');
 }
 
-function generateFallbackManifestModule(manifest: any): string {
+function generateFallbackManifestModule(manifest: ConsumerManifest): string {
   return `
 // Auto-generated manifest from SMRT consumer
 export const manifest = ${JSON.stringify(manifest, null, 2)};

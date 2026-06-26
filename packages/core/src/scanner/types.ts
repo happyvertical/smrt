@@ -11,6 +11,61 @@ import type { SmartObjectConfig } from '../registry.js';
 export type QualifiedClassName = `${string}:${string}`;
 
 /**
+ * Structured metadata attached to a field definition under `_meta`.
+ *
+ * Captures the field-helper options the scanner and schema/manifest
+ * generators read off a field (`sqlType`, `nullable`, `__tenancy`, …). The
+ * index signature keeps the bag open for forward-compatible keys without
+ * forcing every consumer through `any`.
+ */
+export interface FieldMeta {
+  /** Explicit SQL type override (e.g. 'UUID') applied during schema generation. */
+  sqlType?: string;
+  /** Storage type for cross-package reference ids ('text' forces TEXT). */
+  idType?: 'uuid' | 'text';
+  /** When true, the column is nullable regardless of `required`. */
+  nullable?: boolean;
+  /** Mirror of the field's required flag captured at registration. */
+  required?: boolean;
+  /** Default value carried in metadata for runtime-registry generation. */
+  default?: unknown;
+  /** Marks the field as the primary key column. */
+  primaryKey?: boolean;
+  /** Marks the column as unique. */
+  unique?: boolean;
+  /** Column description carried into generated schema. */
+  description?: string;
+  /** Opt-in column/JSON-path indexing flag. */
+  indexed?: boolean;
+  /** Foreign-key delete action carried in metadata. */
+  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
+  /** Excludes the field from persistence when true. */
+  transient?: boolean;
+  /** Numeric/length validation bounds and pattern. */
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+  /**
+   * Validation regex. A string source, a `RegExp`, or — when a manifest was
+   * JSON-serialized and a `RegExp` collapsed to `{}` — an opaque object. Read
+   * sites must narrow before accessing `.source`.
+   */
+  pattern?: unknown;
+  /** Tenancy metadata injected for tenant-scoped models. */
+  __tenancy?: {
+    isTenantIdField?: boolean;
+    [key: string]: unknown;
+  };
+  /** Report-aggregate metadata injected by the report normalizer. */
+  __report?: {
+    kind?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
  * Controls how a class is exposed in manifests and across packages
  */
 export type SmrtVisibility =
@@ -32,14 +87,14 @@ export interface FieldDefinition {
     | 'manyToMany'
     | 'meta'; // STI meta fields (_meta_type, _meta_data)
   required?: boolean;
-  default?: any;
+  default?: unknown;
   min?: number;
   max?: number;
   maxLength?: number;
   minLength?: number;
   related?: string; // For foreignKey, crossPackageRef, oneToMany, manyToMany
   description?: string;
-  _meta?: Record<string, any>;
+  _meta?: FieldMeta;
   transient?: boolean; // Field not persisted to database
   /**
    * Sensitive value (API secrets, credentials, tax IDs). Still persisted, but
@@ -68,7 +123,7 @@ export interface MethodDefinition {
     name: string;
     type: string;
     optional: boolean;
-    default?: any;
+    default?: unknown;
   }>;
   returnType: string;
   description?: string;
@@ -88,7 +143,7 @@ export interface ManifestColumnDefinition {
   referenceKind?: 'id' | 'foreignKey' | 'crossPackageRef' | 'tenantId';
   notNull?: boolean;
   unique?: boolean;
-  default?: any;
+  default?: unknown;
 }
 
 /**
@@ -299,7 +354,7 @@ export interface SmartObjectDefinition {
     function: {
       name: string;
       description?: string;
-      parameters?: Record<string, any>;
+      parameters?: Record<string, unknown>;
     };
   }>;
   /**
@@ -326,7 +381,7 @@ export interface SmartObjectDefinition {
    * Static properties captured from the class definition
    * Currently used for `static uiSlots` on Agent subclasses
    */
-  staticProperties?: Record<string, any>;
+  staticProperties?: Record<string, unknown>;
 
   /**
    * Auto-generated agent manifest
