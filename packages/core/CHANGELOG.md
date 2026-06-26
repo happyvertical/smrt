@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.36.5
+
+### Patch Changes
+
+- ### Features
+
+  - add SMRT theme preset (amber instrument-panel look) (#1652) (smrt-ui)
+
+  ### Other Changes
+
+  - refactor: core noExplicitAny Phase 1 — leaf files (#1579) (#1661) (types)
+
+  ### Merged Changes
+
+  - [codex] feat(reports): add materialized aggregate reports
+  - @happyvertical/smrt-config@0.36.5
+  - @happyvertical/smrt-types@0.36.5
+  - @happyvertical/smrt-scanner@0.36.5
+
 ## 0.36.4
 
 ### Patch Changes
