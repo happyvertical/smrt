@@ -568,10 +568,10 @@ async function searchFacts(query = factQuery, page = 1) {
     catalogPage = nextPage;
     catalogHasNextPage = rows.length > FACT_CATALOG_PAGE_SIZE;
     catalogBrowseQuery = query;
-  } catch (err: any) {
+  } catch (err) {
     catalogFacts = [];
     catalogHasNextPage = false;
-    catalogError = err.message || 'Failed to browse facts';
+    catalogError = (err instanceof Error ? err.message : '') || 'Failed to browse facts';
   } finally {
     catalogLoading = false;
   }
@@ -621,8 +621,8 @@ async function syncFactsIfSaved(nextFacts: FactData[]) {
     updateSelectedFacts(response.data.facts || nextFacts);
     await Promise.all([refreshGovernanceState(), refreshTransparency()]);
     workflowNotice = 'Saved fact associations.';
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to sync facts';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to sync facts';
   } finally {
     syncingFacts = false;
   }
@@ -644,8 +644,8 @@ async function repairFactAudit() {
     onFactAuditChange?.(response.data);
     const factsResponse = await client.contents.getFacts(savedContentId);
     updateSelectedFacts(factsResponse.data.facts || []);
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to repair fact audit';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to repair fact audit';
   } finally {
     factAuditBusy = false;
   }
@@ -668,8 +668,8 @@ async function recheckFactClaims(claimIds: string[]) {
     workflowNotice = `Rechecked ${claimIds.length} claim${claimIds.length === 1 ? '' : 's'} against current evidence.`;
     selectedClaimIds = selectedClaimIds.filter((id) => !claimIds.includes(id));
     onFactAuditChange?.(response.data);
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to recheck claim support';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to recheck claim support';
   } finally {
     factAuditBusy = false;
   }
@@ -731,12 +731,12 @@ async function loadDraftGovernance() {
       activeCustomPolicyKey,
       customReviewPolicyKey,
     );
-  } catch (err: any) {
+  } catch (err) {
     governanceState = null;
     governanceDefinitions = null;
     reviewProfiles = [];
     onGovernanceStateChange?.(null);
-    workflowError = err.message || 'Failed to resolve content governance';
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to resolve content governance';
   } finally {
     workflowLoading = false;
   }
@@ -795,8 +795,8 @@ async function loadSavedWorkflow() {
       activeCustomPolicyKey,
       customReviewPolicyKey,
     );
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to load governance workflow state';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to load governance workflow state';
   } finally {
     workflowLoading = false;
   }
@@ -832,7 +832,7 @@ async function runReview(action: ReviewAction) {
   workflowNotice = null;
 
   try {
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       kind: action.kind,
       factIds: selectedFactIds,
     };
@@ -851,8 +851,8 @@ async function runReview(action: ReviewAction) {
     await Promise.all([refreshGovernanceState(), refreshTransparency()]);
     workflowNotice = `${action.label} completed.`;
     await refreshVersions();
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to run content review';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to run content review';
   } finally {
     reviewBusy = null;
   }
@@ -883,8 +883,8 @@ async function issueCorrection() {
 
     workflowNotice = 'Correction issued.';
     await loadSavedWorkflow();
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to issue correction';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to issue correction';
   } finally {
     correctionBusy = false;
   }
@@ -906,8 +906,8 @@ async function createSnapshot() {
     });
     workflowNotice = 'Snapshot created.';
     await Promise.all([refreshVersions(), refreshTransparency()]);
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to create version snapshot';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to create version snapshot';
   } finally {
     versionBusy = false;
   }
@@ -948,8 +948,8 @@ async function restoreVersion(versionNumber: number) {
     );
     workflowNotice = `Restored version ${versionNumber}.`;
     await loadSavedWorkflow();
-  } catch (err: any) {
-    workflowError = err.message || 'Failed to restore version';
+  } catch (err) {
+    workflowError = (err instanceof Error ? err.message : '') || 'Failed to restore version';
   } finally {
     versionBusy = false;
   }

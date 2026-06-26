@@ -67,8 +67,8 @@ async function loadFacts() {
       includeSuperseded,
     });
     facts = response.data;
-  } catch (err: any) {
-    error = err.message || 'Failed to load facts.';
+  } catch (err) {
+    error = (err instanceof Error ? err.message : '') || 'Failed to load facts.';
   } finally {
     loading = false;
     refreshing = false;

@@ -5,10 +5,23 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
+import type { ContentData } from '../../mock-smrt-client.js';
 import { M } from '../i18n.contribution.js';
 import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
+
+interface Props {
+  apiBaseUrl?: string;
+  contents: ContentData[];
+  type?: string;
+  defaultViewMode?: 'grid' | 'detailed' | 'compact';
+  onEdit: (content: ContentData) => void;
+  onDelete: (content: ContentData) => void;
+  onAdd: () => void;
+  controls?: Snippet;
+  getViewHref?: (content: ContentData) => string | null;
+}
 
 let {
   apiBaseUrl = '/api/v1',
@@ -20,17 +33,7 @@ let {
   onAdd,
   controls,
   getViewHref = undefined,
-} = $props<{
-  apiBaseUrl?: string;
-  contents: any[];
-  type?: string;
-  defaultViewMode?: 'grid' | 'detailed' | 'compact';
-  onEdit: (content: any) => void;
-  onDelete: (content: any) => void;
-  onAdd: () => void;
-  controls?: Snippet;
-  getViewHref?: (content: any) => string | null;
-}>();
+}: Props = $props();
 
 let searchTerm = $state('');
 let selectedType = $state('All Types');
@@ -47,15 +50,15 @@ function getTextValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function getDisplayTitle(content: any): string {
+function getDisplayTitle(content: ContentData): string {
   return getTextValue(content.title) || 'Untitled content';
 }
 
-function getDisplayDescription(content: any): string {
+function getDisplayDescription(content: ContentData): string {
   return getTextValue(content.description);
 }
 
-function getDisplayAuthor(content: any): string {
+function getDisplayAuthor(content: ContentData): string {
   return getTextValue(content.author);
 }
 
@@ -64,7 +67,7 @@ function getNormalizedType(value: unknown): string {
 }
 
 const filteredContents = $derived(
-  contents.filter((content: any) => {
+  contents.filter((content: ContentData) => {
     const title = getDisplayTitle(content);
     const description = getDisplayDescription(content);
     const author = getDisplayAuthor(content);
@@ -130,9 +133,9 @@ function getStateBadge(value: unknown) {
   }
 }
 
-let pendingDelete = $state<any | null>(null);
+let pendingDelete = $state<ContentData | null>(null);
 
-function handleDeleteContent(content: any) {
+function handleDeleteContent(content: ContentData) {
   pendingDelete = content;
 }
 

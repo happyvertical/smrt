@@ -6,6 +6,7 @@ import { onMount } from 'svelte';
 import {
   type ContentContributionData,
   type ContentContributionTypeConfigStateData,
+  type ContentContributionTypeData,
   type ContentContributorData,
   createClient,
 } from '../../mock-smrt-client.js';
@@ -122,8 +123,8 @@ async function refreshContributionOperations() {
       loadInbox(),
     ]);
     await loadPortal();
-  } catch (err: any) {
-    error = err.message || 'Failed to load contribution operations.';
+  } catch (err) {
+    error = (err instanceof Error ? err.message : '') || 'Failed to load contribution operations.';
   } finally {
     loading = false;
   }
@@ -135,8 +136,8 @@ async function refreshPortalOnly() {
 
   try {
     await loadPortal();
-  } catch (err: any) {
-    error = err.message || 'Failed to load contributor submissions.';
+  } catch (err) {
+    error = (err instanceof Error ? err.message : '') || 'Failed to load contributor submissions.';
   } finally {
     refreshingPortal = false;
   }
@@ -160,8 +161,8 @@ async function runContributionAction(
     }
     await loadInbox();
     await loadPortal();
-  } catch (err: any) {
-    error = err.message || message;
+  } catch (err) {
+    error = (err instanceof Error ? err.message : '') || message;
   } finally {
     busyMessage = null;
   }
@@ -244,7 +245,7 @@ async function handleReject(
   });
 }
 
-async function handleSaveType(data: Record<string, any>) {
+async function handleSaveType(data: Partial<ContentContributionTypeData>) {
   await runContributionAction(
     'Saving contribution type...',
     async () => {
@@ -259,7 +260,7 @@ async function handleSaveType(data: Record<string, any>) {
   );
 }
 
-async function handleDeleteType(data: Record<string, any>) {
+async function handleDeleteType(data: Partial<ContentContributionTypeData>) {
   await runContributionAction(
     'Deleting contribution type...',
     async () => {
@@ -270,7 +271,7 @@ async function handleDeleteType(data: Record<string, any>) {
   );
 }
 
-async function handleSaveContributor(data: Record<string, any>) {
+async function handleSaveContributor(data: Partial<ContentContributorData>) {
   await runContributionAction(
     'Saving contributor...',
     async () => {
@@ -286,7 +287,7 @@ async function handleSaveContributor(data: Record<string, any>) {
   );
 }
 
-async function handleDeleteContributor(data: Record<string, any>) {
+async function handleDeleteContributor(data: Partial<ContentContributorData>) {
   await runContributionAction(
     'Deleting contributor...',
     async () => {

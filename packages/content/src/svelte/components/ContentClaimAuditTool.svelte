@@ -113,9 +113,9 @@ async function loadFactAudit(contentIdToLoad = savedContentId) {
     if (savedContentId !== contentIdToLoad) return;
     factAudit = response.data;
     onFactAuditChange?.(response.data);
-  } catch (err: any) {
+  } catch (err) {
     if (savedContentId !== contentIdToLoad) return;
-    error = err.message || 'Failed to load claim audit';
+    error = (err instanceof Error ? err.message : '') || 'Failed to load claim audit';
   } finally {
     if (savedContentId === contentIdToLoad) {
       busy = false;
@@ -137,9 +137,9 @@ async function repairFactAudit() {
     factAudit = response.data;
     notice = `Fact audit repaired: ${response.data.counts.total} claim(s) checked.`;
     onFactAuditChange?.(response.data);
-  } catch (err: any) {
+  } catch (err) {
     if (savedContentId !== contentIdToRepair) return;
-    error = err.message || 'Failed to repair fact audit';
+    error = (err instanceof Error ? err.message : '') || 'Failed to repair fact audit';
   } finally {
     if (savedContentId === contentIdToRepair) {
       busy = false;
@@ -167,9 +167,9 @@ async function recheckFactClaims(claimIds: string[]) {
     notice = `Rechecked ${claimIds.length} claim${claimIds.length === 1 ? '' : 's'} against current evidence.`;
     selectedClaimIds = selectedClaimIds.filter((id) => !claimIds.includes(id));
     onFactAuditChange?.(response.data);
-  } catch (err: any) {
+  } catch (err) {
     if (savedContentId !== contentIdToRecheck) return;
-    error = err.message || 'Failed to recheck claim support';
+    error = (err instanceof Error ? err.message : '') || 'Failed to recheck claim support';
   } finally {
     if (savedContentId === contentIdToRecheck) {
       busy = false;

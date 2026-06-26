@@ -89,9 +89,11 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
     transparencyPreview = transparencyPreviewResponse.data;
     publishedTransparency = publishedTransparencyResponse.data;
     onGovernanceStateChange?.(governanceResponse.data);
-  } catch (err: any) {
+  } catch (err) {
     if (savedContentId !== contentIdToLoad) return;
-    error = err.message || 'Failed to load transparency';
+    error =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to load transparency';
   } finally {
     if (savedContentId === contentIdToLoad) {
       busy = false;

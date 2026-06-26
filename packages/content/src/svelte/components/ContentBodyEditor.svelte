@@ -35,7 +35,7 @@ export interface Props {
   onUseImageAsThumbnail?: (assetId: string) => void;
   onResolveImage?: (
     selected: ImageLike | File | string,
-  ) => Promise<any | null> | any | null;
+  ) => Promise<unknown> | unknown;
 }
 
 let {
@@ -667,7 +667,7 @@ function insertImageHtml(html: string) {
   emitChange();
 }
 
-export function insertImageAsset(asset: any) {
+export function insertImageAsset(asset: unknown) {
   insertImageHtml(imageAssetToHtml(asset));
 }
 

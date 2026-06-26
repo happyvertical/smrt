@@ -5,8 +5,17 @@ import { M } from '../i18n.editor.js';
 
 const { t } = useI18n();
 
+export interface ContentMetadataFieldData {
+  author?: string;
+  description?: string;
+  url?: string;
+  fileKey?: string;
+  tags?: string | string[];
+  [key: string]: unknown;
+}
+
 export interface Props {
-  data: Record<string, any>;
+  data: ContentMetadataFieldData;
   onChange?: (change: Record<string, unknown>) => void;
 }
 
