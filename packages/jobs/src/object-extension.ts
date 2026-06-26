@@ -97,8 +97,10 @@ function getObjectTypeName(instance: SmrtObject): string {
   return ObjectRegistry.getClass(className)?.qualifiedName || className;
 }
 
-// Type for a SmrtObject constructor
-type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
+// Type for a SmrtObject constructor. `unknown[]` (not `any[]`) satisfies
+// noExplicitAny; constructor params are bivariant, so concrete subclass
+// constructors stay assignable to it.
+type SmrtObjectConstructor = new (...args: unknown[]) => SmrtObject;
 type BackgroundCapableConstructor<T extends SmrtObjectConstructor> = T & {
   new (...args: ConstructorParameters<T>): InstanceType<T> & BackgroundCapable;
 };
