@@ -1573,11 +1573,13 @@ function shouldIncludeInApi(actionName: string, apiConfig: unknown): boolean {
   if (apiConfig === true || apiConfig === undefined) return true;
 
   if (typeof apiConfig === 'object' && apiConfig !== null) {
-    const config = apiConfig as { include?: string[]; exclude?: string[] };
-    const included = config.include
+    const config = apiConfig as { include?: unknown; exclude?: unknown };
+    // Narrow the scanned decorator config defensively: a non-array
+    // include/exclude is treated as unset rather than throwing on .includes().
+    const included = Array.isArray(config.include)
       ? config.include.includes(actionName)
       : true;
-    const excluded = config.exclude
+    const excluded = Array.isArray(config.exclude)
       ? config.exclude.includes(actionName)
       : false;
     return included && !excluded;
