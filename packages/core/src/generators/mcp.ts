@@ -1006,7 +1006,12 @@ export class MCPGenerator {
           // If options is provided, use it; otherwise use directArgs
           const methodArgs =
             Object.keys(options).length > 0 ? options : directArgs;
-          const result = await (objectMethod as InstanceCallable)(methodArgs);
+          // `.call(object, …)` preserves the receiver binding of the original
+          // member call (`object[action](…)`) — the method relies on `this`.
+          const result = await (objectMethod as InstanceCallable).call(
+            object,
+            methodArgs,
+          );
           return result;
         } else {
           throw new Error(`Method '${action}' not found on object instance`);
@@ -1019,7 +1024,10 @@ export class MCPGenerator {
         if (typeof collectionMethod === 'function') {
           const methodArgs =
             Object.keys(options).length > 0 ? options : directArgs;
-          const result = await (collectionMethod as InstanceCallable)(
+          // `.call(collection, …)` preserves the receiver binding of the
+          // original member call (`collection[action](…)`).
+          const result = await (collectionMethod as InstanceCallable).call(
+            collection,
             methodArgs,
           );
           return result;
