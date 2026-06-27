@@ -38,6 +38,7 @@
 import type { SmrtCollection } from './collection';
 import { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
+import type { SmrtObjectConstructor } from './registry/types';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 /**
@@ -110,7 +111,7 @@ export class SmrtHierarchical extends SmrtObject {
     const tagged = ctor._smrtQualifiedName;
     const registered = tagged
       ? undefined
-      : ObjectRegistry.getClassByConstructor(ctor as any);
+      : ObjectRegistry.getClassByConstructor(ctor as SmrtObjectConstructor);
     const className =
       tagged ?? registered?.qualifiedName ?? registered?.name ?? ctor.name;
 

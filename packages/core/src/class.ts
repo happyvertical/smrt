@@ -25,6 +25,7 @@ import {
 } from './adapters/ai-usage.js';
 import { estimateAiUsageCost } from './adapters/cost-rates.js';
 import type {
+  AIConfig,
   AiUsageConfig,
   GlobalSignalConfig,
   MetricsConfig,
@@ -584,11 +585,14 @@ export class SmrtClass {
             client: unknown;
             url?: string;
           };
+          // `client` is a runtime-only property the postgres adapter reads
+          // but the public `getDatabase` option union does not model, so the
+          // literal is routed through the function's own parameter type.
           this._db = await getDatabase({
             type: dbConfig.type || 'postgres',
             client: dbConfig.client,
             url: dbConfig.url,
-          } as any);
+          } as unknown as Parameters<typeof getDatabase>[0]);
         } else {
           // Format 4: Config object - pass to getDatabase (handles all types uniformly)
           // Preserve connection sharing for file-backed databases while leaving
@@ -596,10 +600,13 @@ export class SmrtClass {
           const dbConfig = this.options.db as { url?: string; type?: string };
           const dbUrl = dbConfig.url || 'memory';
           const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
+          // The loose config-object variant of `DatabaseConfig` carries an
+          // index signature that the closed `getDatabase` option union does
+          // not accept structurally, so route through its parameter type.
           this._db = await getDatabase({
             ...this.options.db,
             ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
-          } as any);
+          } as unknown as Parameters<typeof getDatabase>[0]);
         }
 
         /**
@@ -674,8 +681,10 @@ export class SmrtClass {
             // Merge with instance options (takes priority over global)
             const userConfig = { ...baseConfig, ...this.options.ai };
 
-            // Load environment variables and merge (user options take priority)
-            const aiConfig = loadEnvConfig<any>(userConfig, {
+            // Load environment variables and merge (user options take priority).
+            // `AIConfig` carries an index signature, so provider-specific keys
+            // (`type`, `onUsage`, `defaultModel`, …) read back as `unknown`.
+            const aiConfig = loadEnvConfig<AIConfig>(userConfig, {
               packageName: 'ai',
               prefix: 'SMRT',
               schema: {
@@ -705,8 +714,12 @@ export class SmrtClass {
             // Only initialize if we have a provider configured
             if (aiConfig.provider || aiConfig.type || aiConfig.apiKey) {
               // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
-              // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
-              this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+              // getAI() returns AIInterface, which we narrow to AIClient for
+              // backward compatibility. The index-signature `AIConfig` is routed
+              // through getAI's own parameter type rather than the closed union.
+              this._ai = (await getAI(
+                aiConfig as unknown as Parameters<typeof getAI>[0],
+              )) as unknown as AIClient;
             }
           }
         }
