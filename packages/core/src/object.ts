@@ -968,7 +968,11 @@ export class SmrtObject extends SmrtClass {
    *
    * @returns Object containing field definitions with current values
    */
-  async getFields() {
+  // Explicit `any` return (documented S4 #1579 leaf): subclasses legitimately
+  // OVERRIDE getFields() with domain-specific shapes (e.g. projects'
+  // `Project.getFields(): Promise<ProjectField[]>`), which a precise field-map
+  // return type would reject. The body below stays internally typed.
+  async getFields(): Promise<any> {
     const className = this.getResolvedClassName();
     const cachedFields = await ObjectRegistry.getAllFields(className);
     const fields: Record<
@@ -2706,10 +2710,14 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link getRelated} for a convenience wrapper that auto-detects relationship type
    */
+  // Returns a polymorphic related object whose concrete subclass type only the
+  // CALLER knows (e.g. `metafield.validateValue(...)`). Typed `any` so callers
+  // can use the concrete API without a cast at every site; a generic with a
+  // `SmrtObject` default wouldn't help untyped callers. Documented S4 #1579 leaf.
   public async loadRelated(
     fieldName: string,
     opts?: LoadRelatedOptions,
-  ): Promise<SmrtObject | null> {
+  ): Promise<any> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
@@ -2903,10 +2911,12 @@ export class SmrtObject extends SmrtClass {
    * console.log(`${orders.length} orders found`);
    * ```
    */
+  // Polymorphic related objects; concrete type is caller-known (see loadRelated).
+  // Documented S4 #1579 leaf.
   public async loadRelatedMany(
     fieldName: string,
     opts?: LoadRelatedOptions,
-  ): Promise<SmrtObject[]> {
+  ): Promise<any[]> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
@@ -3154,10 +3164,12 @@ export class SmrtObject extends SmrtClass {
    * const orders = await customer.getRelated('orders');
    * ```
    */
+  // Polymorphic related object(s); concrete type is caller-known (see
+  // loadRelated). Documented S4 #1579 leaf.
   public async getRelated(
     fieldName: string,
     opts?: LoadRelatedOptions,
-  ): Promise<SmrtObject | SmrtObject[] | null> {
+  ): Promise<any> {
     if (this._loadedRelationships.has(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets so an eager `include` load cannot leak
