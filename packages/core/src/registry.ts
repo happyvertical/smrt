@@ -30,15 +30,21 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { applyOneToManyChildAccessors } from './child-accessors';
-import { SmrtCollection } from './collection';
+import {
+  SmrtCollection,
+  type SmrtCollectionItemClass,
+  type SmrtCollectionOptions,
+} from './collection';
 import type { CollectionCacheConfig } from './collection-cache';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
+import type { FieldOptions } from './decorators/index.js';
 import type {
   ClassEmbeddingConfig,
   ProjectEmbeddingConfig,
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
 import { ConfigurationError } from './errors';
+import type { ValidationError } from './errors';
 import { getDefaultCompositeSource } from './manifest/sources/composite.js';
 import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.js';
 import {
@@ -133,7 +139,10 @@ import type {
 } from './registry/types';
 import { compileValidators as _compileValidators } from './registry/validator';
 import type {
+  FieldDefinition,
+  MethodDefinition,
   QualifiedClassName,
+  SmartObjectDefinition,
   SmartObjectManifest,
   SmrtVisibility,
   ValidationRule,
@@ -183,8 +192,98 @@ async function importManifestLoader(): Promise<ManifestLoaderModule> {
   return (await import(getManifestLoaderSpecifier())) as ManifestLoaderModule;
 }
 
+/**
+ * Loose view of a stored field's option bag. Field entries are heterogeneous
+ * (decorator options, manifest-derived shapes, tenancy markers), so the
+ * accessed members are narrowed individually rather than asserting a single
+ * concrete type.
+ */
+interface FieldOptionsView {
+  type?: string;
+  sqlType?: unknown;
+  __tenancy?: { isTenantIdField?: boolean };
+  _meta?: {
+    sqlType?: unknown;
+    __tenancy?: { isTenantIdField?: boolean };
+  };
+}
+
+/**
+ * Decorator-supplied field metadata bag (from `@field()`, `@foreignKey()`,
+ * `@oneToMany()`, `@manyToMany()`, etc.). All concrete decorator option
+ * interfaces extend `FieldOptions`; this adds the relationship/junction members
+ * that the relationship and cross-package decorators store and that downstream
+ * consumers (`SmrtObject` relationship resolution, schema builder) read back.
+ */
+interface FieldDecoratorOptions extends FieldOptions {
+  /** Related class name (foreignKey / crossPackageRef / oneToMany / manyToMany). */
+  related?: string;
+  /** Inverse foreign-key field name for relationship resolution. */
+  foreignKey?: string;
+  /** Join table name for many-to-many relationships. */
+  through?: string;
+  /** Source-side join column override for many-to-many relationships. */
+  sourceKey?: string;
+  /** Target-side join column override for many-to-many relationships. */
+  targetKey?: string;
+}
+
+/**
+ * Runtime field record as stored on a registered class. This is the manifest
+ * `FieldDefinition` plus the extra runtime-only members the framework attaches
+ * during registration (`idType`/`sqlType` overrides and the raw decorator
+ * `options` bag) that downstream consumers read off `getFields()`.
+ */
+interface RegisteredField extends FieldDefinition {
+  idType?: 'uuid' | 'text';
+  sqlType?: string;
+  options?: unknown;
+}
+
+/**
+ * Constructor shape for a registered collection class.
+ *
+ * The `SmrtCollection<any>` type argument is an intentional heterogeneous-
+ * storage leave: the registry maps many different item types onto a single
+ * constructor-map shape and invokes invariant methods (`create()`), so it
+ * cannot be narrowed to `SmrtCollection<SmrtObject>`. The constructor option
+ * bag is opaque to the registry, so it is typed `unknown`.
+ */
+type CollectionConstructor = new (options: unknown) => SmrtCollection<any>;
+
+/**
+ * AI-callable tool descriptor surfaced alongside class metadata. Mirrors the
+ * `tools` shape on {@link RegisteredClass}.
+ */
+interface ObjectMetadataTool {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+}
+
+/**
+ * Aggregated, read-only metadata snapshot for a single registered class.
+ * Returned by `getObjectMetadata` / `getAllObjectMetadata`.
+ */
+interface ObjectMetadata {
+  name: string;
+  constructor: typeof SmrtObject;
+  collectionConstructor?: CollectionConstructor;
+  config: SmartObjectConfig;
+  fields: Map<string, RegisteredField>;
+  methods: Map<string, MethodDefinition>;
+  schema: SchemaDefinition | undefined;
+  validators: ValidatorFunction[];
+  relationships: RelationshipMetadata[];
+  inverseRelationships: RelationshipMetadata[];
+  tools?: ObjectMetadataTool[];
+}
+
 function getReferenceKindFromFieldOptions(
-  fieldOptions: any,
+  fieldOptions: FieldOptionsView | undefined,
 ): ColumnDefinition['referenceKind'] | undefined {
   if (
     fieldOptions?.__tenancy?.isTenantIdField ||
@@ -206,7 +305,7 @@ function getReferenceKindFromFieldOptions(
 
 function applyManifestFieldColumnMetadata(
   columns: Record<string, ColumnDefinition>,
-  fieldEntries: Iterable<[string, any]> | undefined,
+  fieldEntries: Iterable<[string, FieldOptionsView]> | undefined,
 ): void {
   if (!fieldEntries) {
     return;
@@ -393,7 +492,10 @@ export class ObjectRegistry {
    * Maps className → Map<propertyKey, FieldOptions>
    * Used by @field(), @foreignKey(), @oneToMany(), @manyToMany() decorators
    */
-  private static get fieldDecorators(): Map<string, Map<string, any>> {
+  private static get fieldDecorators(): Map<
+    string,
+    Map<string, FieldDecoratorOptions>
+  > {
     return getFieldDecorators();
   }
 
@@ -465,7 +567,7 @@ export class ObjectRegistry {
   static registerFieldDecorator(
     className: string,
     propertyKey: string,
-    options: any,
+    options: FieldDecoratorOptions,
   ): void {
     if (!ObjectRegistry.fieldDecorators.has(className)) {
       ObjectRegistry.fieldDecorators.set(className, new Map());
@@ -502,7 +604,7 @@ export class ObjectRegistry {
   static getFieldDecorator(
     className: string,
     propertyKey: string,
-  ): any | undefined {
+  ): FieldDecoratorOptions | undefined {
     return ObjectRegistry.fieldDecorators.get(className)?.get(propertyKey);
   }
 
@@ -517,7 +619,9 @@ export class ObjectRegistry {
    * // Map { 'name' => { type: 'text', required: true }, ... }
    * ```
    */
-  static getFieldDecorators(className: string): Map<string, any> {
+  static getFieldDecorators(
+    className: string,
+  ): Map<string, FieldDecoratorOptions> {
     return ObjectRegistry.fieldDecorators.get(className) || new Map();
   }
 
@@ -572,13 +676,13 @@ export class ObjectRegistry {
    */
   static registerCollection(
     objectName: string,
-    collectionConstructor: new (options: any) => SmrtCollection<any>,
+    collectionConstructor: CollectionConstructor,
   ): void {
     _registerCollection(objectName, collectionConstructor);
   }
   static registerFromManifest(
     name: string,
-    objectDef: any,
+    objectDef: SmartObjectDefinition,
     packageName?: string,
   ): void {
     _registerFromManifest(name, objectDef, packageName);
@@ -858,9 +962,9 @@ export class ObjectRegistry {
     );
 
     const matches: Array<{
-      manifest: any;
+      manifest: SmartObjectManifest;
       packageName: string;
-      objectDef: any;
+      objectDef: SmartObjectDefinition;
     }> = [];
 
     // Try each package
@@ -886,9 +990,7 @@ export class ObjectRegistry {
       // If not found by direct key lookup, search by className field (Issue #713)
       // This handles manifests with qualified keys while allowing simple name lookups
       if (!objectDef) {
-        for (const [_key, def] of Object.entries(
-          manifest.objects as Record<string, any>,
-        )) {
+        for (const [_key, def] of Object.entries(manifest.objects)) {
           if (
             def.className?.toLowerCase() === lowerClassName ||
             def.className === requestedClassName
@@ -957,9 +1059,7 @@ export class ObjectRegistry {
 
       // Search by className field if not found by key (Issue #713)
       if (!parentDef) {
-        for (const [_key, def] of Object.entries(
-          manifest.objects as Record<string, any>,
-        )) {
+        for (const [_key, def] of Object.entries(manifest.objects)) {
           if (
             def.className?.toLowerCase() === lowerParentName ||
             def.className === parentName
@@ -1245,9 +1345,8 @@ export class ObjectRegistry {
     // bypassed the main entry).
     let objectsRegistered = 0;
     for (const [key, def] of Object.entries(manifest.objects)) {
-      const objectDef = def as any;
-      const className = objectDef.className || key;
-      ObjectRegistry.registerFromManifest(className, objectDef, packageName);
+      const className = def.className || key;
+      ObjectRegistry.registerFromManifest(className, def, packageName);
       objectsRegistered++;
     }
 
@@ -1397,9 +1496,11 @@ export class ObjectRegistry {
     }
 
     if (!registered && collectionConstructor) {
-      const itemClass = (collectionConstructor as any)._itemClass as
-        | SmrtObjectConstructor
-        | undefined;
+      const itemClass = (
+        collectionConstructor as unknown as {
+          _itemClass?: SmrtObjectConstructor;
+        }
+      )._itemClass;
       if (itemClass) {
         registered =
           ObjectRegistry.getClassByConstructor(itemClass) ||
@@ -1463,7 +1564,7 @@ export class ObjectRegistry {
    */
   static async getCollection<T extends SmrtObject>(
     className: string,
-    options: any = {},
+    options: SmrtCollectionOptions = {},
   ): Promise<SmrtCollection<T>> {
     let { canonicalName, registered, collectionConstructor } =
       ObjectRegistry.resolveCollectionRegistration(className);
@@ -1526,22 +1627,39 @@ export class ObjectRegistry {
         './collection'
       );
 
-      // Create a default collection class dynamically
+      // Create a default collection class dynamically. The item class is the
+      // registered object constructor; it is structurally an
+      // `SmrtCollectionItemClass<T>` (a constructor plus the inherited static
+      // `create()` factory) but TypeScript can't see that statically, so the
+      // backing constructor is narrowed through an `unknown` view.
+      const itemConstructor =
+        registered.constructor as unknown as SmrtCollectionItemClass<T>;
       class DefaultCollection extends SmrtCollectionClass<T> {
-        static readonly _itemClass = registered?.constructor as any;
+        static readonly _itemClass = itemConstructor;
       }
 
-      // Register it for future use
-      collectionConstructor = DefaultCollection as any;
-      registered.collectionConstructor = DefaultCollection as any;
-      ObjectRegistry.collections.set(canonicalName, DefaultCollection as any);
+      // Register it for future use. The `collections` map is keyed to the
+      // abstract `typeof SmrtCollection`; the concrete generic subclass differs
+      // only in its invariant `_itemClass` static, so it is stored through a
+      // documented `unknown` view.
+      collectionConstructor = DefaultCollection;
+      registered.collectionConstructor = DefaultCollection;
+      ObjectRegistry.collections.set(
+        canonicalName,
+        DefaultCollection as unknown as typeof SmrtCollection,
+      );
     }
 
-    // Create and initialize new collection instance using static factory method
-    // collectionConstructor is guaranteed to be defined here
-    const collection = (await (collectionConstructor as any).create(
-      options,
-    )) as SmrtCollection<T>;
+    // Create and initialize new collection instance using static factory method.
+    // collectionConstructor is guaranteed to be defined here. The constructor
+    // carries an inherited static `create()` factory that the constructor-map
+    // type does not surface, so it is reached through a documented `unknown`
+    // view rather than `any`.
+    const collection = (await (
+      collectionConstructor as unknown as {
+        create(options: SmrtCollectionOptions): Promise<SmrtCollection<T>>;
+      }
+    ).create(options)) as SmrtCollection<T>;
 
     // Cache the initialized instance
     ObjectRegistry.collectionCache.set(cacheKey, collection);
@@ -1553,7 +1671,7 @@ export class ObjectRegistry {
    * Get field definitions for a registered class.
    * Supports both qualified names and simple class names.
    */
-  static getFields(name: string): Map<string, any> {
+  static getFields(name: string): Map<string, RegisteredField> {
     // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
     const registered = ObjectRegistry.findClass(name);
     return registered ? registered.fields : new Map();
@@ -1579,7 +1697,7 @@ export class ObjectRegistry {
    * }
    * ```
    */
-  static getMethods(name: string): Map<string, any> {
+  static getMethods(name: string): Map<string, MethodDefinition> {
     // Issue #951: Use findClass for multi-strategy lookup (qualified key, classNameMap, case-insensitive)
     const registered = ObjectRegistry.findClass(name);
     if (registered) {
@@ -1591,7 +1709,7 @@ export class ObjectRegistry {
 
   static compileValidators(
     className: string,
-    fields: Map<string, any>,
+    fields: Map<string, RegisteredField>,
   ): ValidatorFunction[] {
     return _compileValidators(className, fields);
   }
@@ -1624,12 +1742,18 @@ export class ObjectRegistry {
     }
 
     if (!registered) {
-      // Detect if running in test environment
+      // Detect if running in test environment. `describe`/`it` are injected by
+      // the test runner onto the global, so they are read through a documented
+      // structural view rather than `any`.
+      const testGlobals = globalThis as unknown as {
+        describe?: unknown;
+        it?: unknown;
+      };
       const isTestEnv =
         process.env.NODE_ENV === 'test' ||
         process.env.VITEST === 'true' ||
-        typeof (globalThis as any).describe !== 'undefined' ||
-        typeof (globalThis as any).it !== 'undefined';
+        typeof testGlobals.describe !== 'undefined' ||
+        typeof testGlobals.it !== 'undefined';
 
       const testHint = isTestEnv
         ? `\n\n⚠️  Are you using 'smrt test'? ` +
@@ -1905,16 +2029,20 @@ export class ObjectRegistry {
    * @see https://github.com/happyvertical/smrt/issues/782
    */
   static async validateWithRules(
-    instance: any,
+    instance: object,
     rules: ValidationRule[],
     className: string,
-  ): Promise<any[]> {
+  ): Promise<ValidationError[]> {
     // Import ValidationError lazily to avoid circular dependency at module load
     const { ValidationError } = await import('./errors');
-    const errors: any[] = [];
+    const errors: ValidationError[] = [];
+    // Field values are read by dynamic key; the instance may be a SmrtObject
+    // (no string index signature) or a plain record, so it is viewed as a
+    // string-keyed record for the lookup.
+    const record = instance as Record<string, unknown>;
 
     for (const rule of rules) {
-      const value = instance[rule.field];
+      const value = record[rule.field];
 
       switch (rule.rule) {
         case 'required':
@@ -1924,15 +2052,17 @@ export class ObjectRegistry {
           break;
 
         case 'min':
+          // Casts mirror the historical loose comparison: the runtime relies on
+          // JS abstract relational comparison, so casting only narrows types.
           if (
             value !== null &&
             value !== undefined &&
-            value < (rule.value as number)
+            (value as number) < (rule.value as number)
           ) {
             errors.push(
               ValidationError.rangeError(
                 rule.field,
-                value,
+                value as number,
                 rule.value as number,
                 undefined,
               ),
@@ -1944,12 +2074,12 @@ export class ObjectRegistry {
           if (
             value !== null &&
             value !== undefined &&
-            value > (rule.value as number)
+            (value as number) > (rule.value as number)
           ) {
             errors.push(
               ValidationError.rangeError(
                 rule.field,
-                value,
+                value as number,
                 undefined,
                 rule.value as number,
               ),
@@ -2206,7 +2336,9 @@ export class ObjectRegistry {
    * @param className - Name of the registered class
    * @returns Map of all fields (including inherited)
    */
-  static async getAllFields(className: string): Promise<Map<string, any>> {
+  static async getAllFields(
+    className: string,
+  ): Promise<Map<string, RegisteredField>> {
     // Delegate to registry/inheritance-resolver (#1378). The inline copy
     // omitted the SmrtHierarchical `parentId` normalization the module applies,
     // so inherited self-FK fields could surface with the wrong shape. Removing
@@ -2230,10 +2362,10 @@ export class ObjectRegistry {
    */
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: reached in by issue #841 field-merge tests via `(ObjectRegistry as any).mergeFieldConfigs`; kept as the registry-side surface delegating to the shared resolver impl.
   private static mergeFieldConfigs(
-    parentField: any,
-    childField: any,
+    parentField: RegisteredField,
+    childField: RegisteredField,
     fieldName: string,
-  ): any {
+  ): RegisteredField {
     return _mergeFieldConfigs(parentField, childField, fieldName);
   }
 
@@ -2257,7 +2389,9 @@ export class ObjectRegistry {
    * // Includes: generateSummary() (from PraecoContent) + analyzeLocal() (from BentleyContent)
    * ```
    */
-  static async getAllMethods(className: string): Promise<Map<string, any>> {
+  static async getAllMethods(
+    className: string,
+  ): Promise<Map<string, MethodDefinition>> {
     // Delegate to registry/inheritance-resolver (#1378) — single source of
     // truth for inheritance-chain method merging.
     return _getAllMethods(className);
@@ -2292,26 +2426,7 @@ export class ObjectRegistry {
    * }
    * ```
    */
-  static getObjectMetadata(className: string): {
-    name: string;
-    constructor: typeof SmrtObject;
-    collectionConstructor?: new (options: any) => SmrtCollection<any>;
-    config: SmartObjectConfig;
-    fields: Map<string, any>;
-    methods: Map<string, any>;
-    schema: SchemaDefinition | undefined;
-    validators: ValidatorFunction[];
-    relationships: RelationshipMetadata[];
-    inverseRelationships: RelationshipMetadata[];
-    tools?: Array<{
-      type: 'function';
-      function: {
-        name: string;
-        description?: string;
-        parameters?: Record<string, any>;
-      };
-    }>;
-  } | null {
+  static getObjectMetadata(className: string): ObjectMetadata | null {
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
       return null;
@@ -2375,27 +2490,8 @@ export class ObjectRegistry {
    * }));
    * ```
    */
-  static getAllObjectMetadata(): Array<{
-    name: string;
-    constructor: typeof SmrtObject;
-    collectionConstructor?: new (options: any) => SmrtCollection<any>;
-    config: SmartObjectConfig;
-    fields: Map<string, any>;
-    methods: Map<string, any>;
-    schema: SchemaDefinition | undefined;
-    validators: ValidatorFunction[];
-    relationships: RelationshipMetadata[];
-    inverseRelationships: RelationshipMetadata[];
-    tools?: Array<{
-      type: 'function';
-      function: {
-        name: string;
-        description?: string;
-        parameters?: Record<string, any>;
-      };
-    }>;
-  }> {
-    const allMetadata: Array<any> = [];
+  static getAllObjectMetadata(): ObjectMetadata[] {
+    const allMetadata: ObjectMetadata[] = [];
 
     // Issue #951: Use simple names (map keys may be qualified)
     for (const [_key, entry] of ObjectRegistry.classes) {
@@ -2806,7 +2902,7 @@ export class ObjectRegistry {
     db: import('@happyvertical/sql').DatabaseInterface,
   ): Promise<void> {
     for (const [className, registered] of ObjectRegistry.classes.entries()) {
-      const fieldsData: any = {};
+      const fieldsData: Record<string, { type: unknown; options: unknown }> = {};
       for (const [key, value] of registered.fields) {
         fieldsData[key] = {
           type: value.type,
@@ -2859,7 +2955,7 @@ export class ObjectRegistry {
    */
   static async loadFromDatabase(
     db: import('@happyvertical/sql').DatabaseInterface,
-  ): Promise<any[]> {
+  ): Promise<Record<string, unknown>[]> {
     const { rows } = await db.query(
       'SELECT * FROM _smrt_registry ORDER BY class_name',
     );
@@ -3065,7 +3161,11 @@ export class ObjectRegistry {
  * @see {@link field} / {@link meta} / {@link foreignKey} for field decorators
  */
 export function smrt(config: SmartObjectConfig = {}) {
-  return <T extends abstract new (...args: any[]) => any>(
+  // The `(...args: any[])` spread is the idiomatic class-decorator constraint
+  // (every class constructor — including ones with specific parameter lists —
+  // must satisfy it), so it is left as-is. Only the instance/return type is
+  // narrowed from `any` to `object`.
+  return <T extends abstract new (...args: any[]) => object>(
     ctor: T,
     decoratorContext?: ClassDecoratorContext<T>,
   ): T => {
@@ -3075,8 +3175,12 @@ export function smrt(config: SmartObjectConfig = {}) {
     const isCollection = ctor.prototype instanceof SmrtCollection;
 
     if (isCollection) {
-      // Handle SmrtCollection registration
-      const itemClass = (ctor as any)._itemClass;
+      // Handle SmrtCollection registration. `_itemClass` is the paired model
+      // constructor declared statically on the collection subclass; it is read
+      // through a documented `unknown` view since the decorator's generic
+      // constructor type does not surface it.
+      const itemClass = (ctor as unknown as { _itemClass?: typeof SmrtObject })
+        ._itemClass;
       if (itemClass) {
         // Register the item class (SmrtObject) with metadata
         // For STI: Check if this class uses STI and get the base class's table name
@@ -3094,9 +3198,7 @@ export function smrt(config: SmartObjectConfig = {}) {
           // route through the registered class's actual `schema.tableName`
           // when present.
           const itemClassName = itemClass.name;
-          const itemReg = ObjectRegistry.getClassByConstructor(
-            itemClass as any,
-          );
+          const itemReg = ObjectRegistry.getClassByConstructor(itemClass);
           const itemQualified = itemReg?.qualifiedName ?? itemClassName;
           const stiBase = ObjectRegistry.getSTIBase(itemQualified);
 
@@ -3122,18 +3224,22 @@ export function smrt(config: SmartObjectConfig = {}) {
         // Register the collection constructor under the item class identity first.
         // This ensures ObjectRegistry.getCollection('ItemClass') uses the explicit
         // collection subclass rather than falling back to a generated default.
-        ObjectRegistry.registerCollection(itemClass.name, ctor as any);
+        // The decorator target is typed as an abstract constructor; coerce it
+        // through `unknown` to the concrete collection-constructor shape the
+        // registry stores.
+        const collectionCtor = ctor as unknown as CollectionConstructor;
+        ObjectRegistry.registerCollection(itemClass.name, collectionCtor);
         if (registeredItemClass?.qualifiedName) {
           ObjectRegistry.registerCollection(
             registeredItemClass.qualifiedName,
-            ctor as any,
+            collectionCtor,
           );
         }
 
         // Also register the collection constructor using tableName.
         // This preserves existing CLI/introspection lookups by table name
         // (e.g., "meetings") and keeps backward compatibility.
-        ObjectRegistry.registerCollection(tableName, ctor as any);
+        ObjectRegistry.registerCollection(tableName, collectionCtor);
 
         // Store collection class name -> tableName mapping for getTableName lookups
         // This enables ObjectRegistry.getTableName('CollectionClassName') to work
@@ -3173,7 +3279,9 @@ export function smrt(config: SmartObjectConfig = {}) {
             // colliding simple name in another package can't yield the
             // wrong STI base. Falls through to simple `proto.name` for
             // unregistered prototypes.
-            const protoReg = ObjectRegistry.getClassByConstructor(proto as any);
+            const protoReg = ObjectRegistry.getClassByConstructor(
+              proto as SmrtObjectConstructor,
+            );
             const protoKey = protoReg?.qualifiedName ?? proto.name;
             if (ObjectRegistry.getTableStrategy(protoKey) === 'sti') {
               stiBaseName = ObjectRegistry.getSTIBase(protoKey);
@@ -3207,7 +3315,9 @@ export function smrt(config: SmartObjectConfig = {}) {
             // colliding simple name in another package can't yield the
             // wrong STI base. Falls through to simple `proto.name` for
             // unregistered prototypes. Mirrors the sibling branch above.
-            const protoReg = ObjectRegistry.getClassByConstructor(proto as any);
+            const protoReg = ObjectRegistry.getClassByConstructor(
+              proto as SmrtObjectConstructor,
+            );
             const protoKey = protoReg?.qualifiedName ?? proto.name;
             if (ObjectRegistry.getTableStrategy(protoKey) === 'sti') {
               // Get the actual STI base (may be higher up the chain)
@@ -3231,14 +3341,22 @@ export function smrt(config: SmartObjectConfig = {}) {
         }
       }
 
-      ObjectRegistry.register(ctor as any, { ...config, tableName });
+      // The decorator target is typed as an abstract constructor; coerce it
+      // through `unknown` to the concrete `SmrtObject` constructor `register`
+      // expects.
+      ObjectRegistry.register(ctor as unknown as typeof SmrtObject, {
+        ...config,
+        tableName,
+      });
 
       // R10: install a consistent `getX()` child accessor for every
       // `@oneToMany` field, delegating to `loadRelatedMany`. Runs after
       // registration so the relationship metadata is populated. Additive —
-      // never overrides a hand-rolled accessor of the same name.
+      // never overrides a hand-rolled accessor of the same name. The decorator
+      // target's abstract constructor type does not surface `.prototype`
+      // structurally, so it is passed through a documented prototype view.
       applyOneToManyChildAccessors(
-        ctor as any,
+        ctor as unknown as { prototype?: unknown },
         ObjectRegistry.getRelationships(ctor.name),
       );
     }
