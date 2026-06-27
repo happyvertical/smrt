@@ -7,7 +7,6 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
-import type { SmrtCollection } from '../collection';
 import { ConfigurationError } from '../errors';
 import {
   discoverManifestSync,
@@ -17,8 +16,19 @@ import {
 } from '../manifest/manifest-loader.js';
 import { cloneManifestSchemaColumns } from '../manifest/store.js';
 import { SmrtObject } from '../object';
-import type { QualifiedClassName, SmrtVisibility } from '../scanner/types.js';
-import type { ColumnDefinition, SchemaDefinition } from '../schema/types.js';
+import type {
+  FieldDefinition,
+  FieldMeta,
+  MethodDefinition,
+  QualifiedClassName,
+  SmartObjectDefinition,
+  SmrtVisibility,
+} from '../scanner/types.js';
+import type {
+  ColumnDefinition,
+  IndexDefinition,
+  SchemaDefinition,
+} from '../schema/types.js';
 import { tableNameFromClass, toSnakeCase } from '../utils';
 import {
   createQualifiedName,
@@ -52,6 +62,7 @@ import {
 } from './shared-state';
 import type {
   RegisteredClass,
+  RegisteredField,
   SmartObjectConfig,
   ValidatorFunction,
 } from './types.js';
@@ -251,7 +262,7 @@ function applyRegisterCollisionPolicy(args: {
  */
 function buildManifestCollisionInputs(args: {
   name: string;
-  objectDef: any;
+  objectDef: SmartObjectDefinition;
   packageName: string | undefined;
   existing: RegisteredClass;
   existingKey: string;
@@ -268,7 +279,7 @@ function buildManifestCollisionInputs(args: {
     matchKind,
   } = args;
   const newClassName = objectDef.className || name;
-  const newExtends = objectDef.extends as string | undefined;
+  const newExtends = objectDef.extends;
 
   // When an incoming manifest's `extends` points at the existing entry,
   // OR the existing entry's `extends` points at the incoming class, we
@@ -297,7 +308,7 @@ function buildManifestCollisionInputs(args: {
       existing.extends.toLowerCase() === newClassName.toLowerCase())
   );
 
-  const newSourceFile = objectDef.filePath as string | undefined;
+  const newSourceFile = objectDef.filePath;
   const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
   const sameSourceFile =
     bothSourceFilesKnown && newSourceFile === existing.sourceFilePath;
@@ -356,7 +367,7 @@ function buildManifestCollisionInputs(args: {
  */
 function applyManifestCollisionPolicy(args: {
   name: string;
-  objectDef: any;
+  objectDef: SmartObjectDefinition;
   packageName: string | undefined;
   existing: RegisteredClass;
   existingKey: string;
@@ -644,8 +655,8 @@ export function register(
   if (!manifestEntry) {
     manifestEntry = discoverManifestSync(name);
   }
-  const fields = new Map<string, any>();
-  const methods = new Map<string, any>();
+  const fields = new Map<string, RegisteredField>();
+  const methods = new Map<string, MethodDefinition>();
   let packageName: string | undefined;
 
   verboseLog(
@@ -664,9 +675,9 @@ export function register(
     // Store field definitions as plain objects with nested options
     for (const [fieldName, fieldDef] of Object.entries(
       manifestEntry.fields,
-    ) as [string, import('../scanner/types.js').FieldDefinition][]) {
+    ) as [string, FieldDefinition][]) {
       // Build options object, only including defined values
-      const options: any = { ...fieldDef._meta };
+      const options: Record<string, unknown> = { ...fieldDef._meta };
       if (fieldDef.required !== undefined) options.required = fieldDef.required;
       if (fieldDef.default !== undefined) options.default = fieldDef.default;
       if (fieldDef.description !== undefined)
@@ -675,7 +686,7 @@ export function register(
         options.transient = fieldDef.transient;
 
       // Store field definition as plain object maintaining Field-like structure
-      const field: any = {
+      const field: RegisteredField = {
         type: fieldDef.type,
       };
 
@@ -697,7 +708,8 @@ export function register(
       if (fieldDef.related !== undefined) {
         field.related = fieldDef.related;
       } else if (options.related !== undefined) {
-        field.related = options.related;
+        // `related` carries the related class name (always a string at runtime).
+        field.related = options.related as string;
         delete field._meta?.related;
       }
 
@@ -733,45 +745,50 @@ export function register(
     );
 
     for (const [fieldName, decoratorOptions] of decorators) {
+      // Typed read-view of the raw `Record<string, unknown>` decorator bag so
+      // the member reads below narrow to the `RegisteredField` member types
+      // they feed (instead of `unknown`). Same runtime object, type-only view.
+      const opts: DecoratorFieldOptions = decoratorOptions;
       const existingField = fields.get(fieldName);
 
       if (existingField) {
         // Merge decorator options with manifest field
         // Decorator type takes priority over AST-scanned type
-        const mergedField: any = {
-          type: decoratorOptions.type || existingField.type,
-          _meta: {
-            ...existingField._meta,
-            ...decoratorOptions,
-          },
+        const mergedMeta: FieldMeta = {
+          ...existingField._meta,
+          ...decoratorOptions,
+        };
+        const mergedField: RegisteredField = {
+          type: opts.type || existingField.type,
+          _meta: mergedMeta,
         };
 
         // Remove 'type' from _meta if it was moved to top level
-        if (mergedField._meta.type) {
-          delete mergedField._meta.type;
+        if (mergedMeta.type) {
+          delete mergedMeta.type;
         }
 
         // Preserve top-level flags (transient, required, etc.)
-        if (decoratorOptions.transient !== undefined) {
-          mergedField.transient = decoratorOptions.transient;
+        if (opts.transient !== undefined) {
+          mergedField.transient = opts.transient;
         } else if (existingField.transient !== undefined) {
           mergedField.transient = existingField.transient;
         }
 
         // Handle required flag: nullable fields should not be required
-        if (decoratorOptions.nullable === true) {
+        if (opts.nullable === true) {
           // Nullable explicitly set to true means field is NOT required
           mergedField.required = false;
-          mergedField._meta.required = false;
-        } else if (decoratorOptions.required !== undefined) {
-          mergedField.required = decoratorOptions.required;
+          mergedMeta.required = false;
+        } else if (opts.required !== undefined) {
+          mergedField.required = opts.required;
         } else if (existingField.required !== undefined) {
           mergedField.required = existingField.required;
         }
 
         // Hoist related to top level for relationship fields
-        if (decoratorOptions.related !== undefined) {
-          mergedField.related = decoratorOptions.related;
+        if (opts.related !== undefined) {
+          mergedField.related = opts.related;
           delete mergedField._meta?.related;
         } else if (existingField.related !== undefined) {
           mergedField.related = existingField.related;
@@ -783,33 +800,34 @@ export function register(
         );
       } else {
         // Decorator for field not in manifest - add it
-        const newField: any = {
-          type: decoratorOptions.type || 'text',
-          _meta: decoratorOptions,
+        const newMeta: FieldMeta = decoratorOptions;
+        const newField: RegisteredField = {
+          type: opts.type || 'text',
+          _meta: newMeta,
         };
 
         // Set top-level flags from decorator options
-        if (decoratorOptions.transient !== undefined) {
-          newField.transient = decoratorOptions.transient;
+        if (opts.transient !== undefined) {
+          newField.transient = opts.transient;
         }
         // Handle required flag: nullable fields should not be required
-        if (decoratorOptions.nullable === true) {
+        if (opts.nullable === true) {
           newField.required = false;
-          newField._meta.required = false;
-        } else if (decoratorOptions.required !== undefined) {
-          newField.required = decoratorOptions.required;
+          newMeta.required = false;
+        } else if (opts.required !== undefined) {
+          newField.required = opts.required;
         }
 
         // Hoist related to top level for relationship fields (Issue #746)
         // This is critical for getRelationshipMap() to detect relationships
-        if (decoratorOptions.related !== undefined) {
-          newField.related = decoratorOptions.related;
+        if (opts.related !== undefined) {
+          newField.related = opts.related;
           delete newField._meta?.related;
         }
 
         fields.set(fieldName, newField);
         verboseLog(
-          `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
+          `[registry]   ✅ Added field ${fieldName} from decorator: type=${opts.type || 'text'}`,
         );
       }
     }
@@ -854,11 +872,16 @@ export function register(
   }
 
   // Also load methods from _manifestMethods in config (from consumer plugin register.js)
-  // This is how external package methods are passed to the registry
-  if ((config as any)._manifestMethods) {
-    for (const [methodName, methodDef] of Object.entries(
-      (config as any)._manifestMethods,
-    )) {
+  // This is how external package methods are passed to the registry.
+  // `_manifestMethods` is an undeclared escape-hatch carried on the config bag
+  // by generated consumer `register.js`, so read it through a narrowed view.
+  const manifestMethods = (
+    config as unknown as {
+      _manifestMethods?: Record<string, MethodDefinition>;
+    }
+  )._manifestMethods;
+  if (manifestMethods) {
+    for (const [methodName, methodDef] of Object.entries(manifestMethods)) {
       methods.set(methodName, methodDef);
     }
     verboseLog(
@@ -913,7 +936,7 @@ export function register(
     schema = {
       ddl: manifestEntry.schema.ddl,
       indexes:
-        manifestEntry.schema.indexes?.map((idx: any) => ({
+        manifestEntry.schema.indexes?.map((idx: IndexDefinition) => ({
           name: idx.name,
           columns: idx.columns || [],
           unique: idx.unique || false,
@@ -1094,14 +1117,27 @@ export function register(
 
 export function registerCollection(
   objectName: string,
-  collectionConstructor: new (options: any) => SmrtCollection<any>,
+  // `new (options: any) => SmrtCollection<any>` is the irreducible
+  // collection-constructor shape (S4 #1579): the public
+  // `ObjectRegistry.registerCollection` wrapper hands a non-generic constructor
+  // of exactly this form, which is not assignable to the generic
+  // `typeof SmrtCollection`. Mirrors `RegisteredClass.collectionConstructor`.
+  collectionConstructor: NonNullable<RegisteredClass['collectionConstructor']>,
 ): void {
   const registered = findClass(objectName);
   if (registered) {
     registered.collectionConstructor = collectionConstructor;
   }
 
-  getCollections().set(objectName, collectionConstructor as any);
+  // The collections map stores `typeof SmrtCollection`; the runtime value is a
+  // SmrtCollection subclass constructor. Bridge the loose constructor shape to
+  // the map's element type without `any`.
+  getCollections().set(
+    objectName,
+    collectionConstructor as unknown as Parameters<
+      ReturnType<typeof getCollections>['set']
+    >[1],
+  );
 }
 
 // resolveManifestCollision was removed in Release C (#1134). Its three-branch
@@ -1110,14 +1146,20 @@ export function registerCollection(
 // `manifest-sti-parent-skip`, `manifest-default-skip` scenarios in
 // packages/core/src/registry/collision-policy.ts.
 
+type TenantScopedOptions = Exclude<
+  SmartObjectConfig['tenantScoped'],
+  boolean | undefined
+>;
+
 function normalizeTenantScopedConfig(
-  tenantScoped: any,
+  tenantScoped: SmartObjectConfig['tenantScoped'],
 ): RegisteredClass['tenantScopedConfig'] | undefined {
   if (!tenantScoped) {
     return undefined;
   }
 
-  const tenantOpts = typeof tenantScoped === 'boolean' ? {} : tenantScoped;
+  const tenantOpts: TenantScopedOptions =
+    typeof tenantScoped === 'boolean' ? {} : tenantScoped;
   return {
     mode: tenantOpts.mode ?? 'required',
     field: tenantOpts.field ?? 'tenantId',
@@ -1128,7 +1170,7 @@ function normalizeTenantScopedConfig(
 }
 
 function ensureTenantScopedField(
-  fields: Map<string, any>,
+  fields: Map<string, RegisteredField>,
   tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined,
 ): void {
   if (!tenantScopedConfig) {
@@ -1172,9 +1214,9 @@ function ensureTenantScopedField(
 }
 
 function mergeIndexDefinitions(
-  existingIndexes: Array<any> | undefined,
-  manifestIndexes: Array<any> | undefined,
-): Array<any> {
+  existingIndexes: IndexDefinition[] | undefined,
+  manifestIndexes: IndexDefinition[] | undefined,
+): IndexDefinition[] {
   const merged = [...(existingIndexes || [])];
   const seen = new Set(merged.map((index) => index?.name).filter(Boolean));
 
@@ -1192,8 +1234,46 @@ function mergeIndexDefinitions(
 // cloneManifestSchemaColumns lives in ../manifest/store.ts — imported above.
 // (Hoisted out of the duplicate definition here and in registry.ts.)
 
+/**
+ * Typed read-view of a raw decorator option bag.
+ *
+ * `getFieldDecorators()` stores decorator options as
+ * `Map<string, Record<string, unknown>>`, so the individual reads come back as
+ * `unknown` and won't narrow to the typed `RegisteredField` members they feed.
+ * This interface re-types only the members the decorator-merge loop reads, with
+ * exactly the target member types, and keeps the open index signature so a raw
+ * `Record<string, unknown>` bag is assignable to it without `any`. (The bag's
+ * runtime values are field-helper options; this view mirrors that contract.)
+ */
+interface DecoratorFieldOptions {
+  type?: FieldDefinition['type'];
+  required?: boolean;
+  nullable?: boolean;
+  transient?: boolean;
+  related?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Read-only field shape consumed by the SQL-type override helpers.
+ *
+ * `applySqlTypeOverrides` runs over two sources: the canonical
+ * `Map<string, RegisteredField>` AND the raw decorator bag
+ * (`Map<string, Record<string, unknown>>` from `getFieldDecorators()`). Both
+ * satisfy this shape — every member is optional and the open index signature
+ * matches both `RegisteredField`'s index signature and `Record<string, unknown>`
+ * — so the helpers read the same overrides off either source without `any`.
+ */
+interface SqlTypeOverrideField {
+  type?: unknown;
+  sqlType?: unknown;
+  __tenancy?: FieldMeta['__tenancy'];
+  _meta?: FieldMeta;
+  [key: string]: unknown;
+}
+
 function getReferenceKindFromFieldOptions(
-  fieldOptions: any,
+  fieldOptions: SqlTypeOverrideField,
 ): ColumnDefinition['referenceKind'] | undefined {
   if (
     fieldOptions?.__tenancy?.isTenantIdField ||
@@ -1215,7 +1295,7 @@ function getReferenceKindFromFieldOptions(
 
 function applySqlTypeOverrides(
   columns: Record<string, ColumnDefinition>,
-  fieldEntries: Iterable<[string, any]> | undefined,
+  fieldEntries: Iterable<[string, SqlTypeOverrideField]> | undefined,
 ): void {
   if (!fieldEntries) {
     return;
@@ -1317,7 +1397,7 @@ export function invalidateInheritanceEntries(
 
 function mergeManifestIntoExistingRegistration(
   existing: RegisteredClass,
-  objectDef: any,
+  objectDef: SmartObjectDefinition,
   packageName?: string,
 ): void {
   const manifestConfig = objectDef.decoratorConfig || {};
@@ -1335,10 +1415,7 @@ function mergeManifestIntoExistingRegistration(
   };
 
   if (objectDef.fields) {
-    for (const [fieldName, fieldDef] of Object.entries(
-      objectDef.fields as Record<string, any>,
-    )) {
-      const fd = fieldDef as any;
+    for (const [fieldName, fd] of Object.entries(objectDef.fields)) {
       if (!existing.fields.has(fieldName)) {
         existing.fields.set(fieldName, createFieldFromManifest(fd));
         continue;
@@ -1362,9 +1439,7 @@ function mergeManifestIntoExistingRegistration(
   }
 
   if (objectDef.methods) {
-    for (const [methodName, methodDef] of Object.entries(
-      objectDef.methods as Record<string, any>,
-    )) {
+    for (const [methodName, methodDef] of Object.entries(objectDef.methods)) {
       existing.methods.set(methodName, methodDef);
     }
   }
@@ -1373,7 +1448,7 @@ function mergeManifestIntoExistingRegistration(
     const manifestSchema: SchemaDefinition = {
       ddl: objectDef.schema.ddl || '',
       indexes:
-        objectDef.schema.indexes?.map((idx: any) => ({
+        objectDef.schema.indexes?.map((idx: IndexDefinition) => ({
           name: idx.name,
           columns: idx.columns || [],
           unique: idx.unique || false,
@@ -1458,7 +1533,7 @@ function mergeManifestIntoExistingRegistration(
 
 export function registerFromManifest(
   name: string,
-  objectDef: any,
+  objectDef: SmartObjectDefinition,
   packageName?: string,
 ): void {
   // Issue #951: Compute simple class name and registration key early
@@ -1467,7 +1542,7 @@ export function registerFromManifest(
   const simpleClassName = objectDef.className || name;
   const qualifiedNameEarly = packageName
     ? createQualifiedName(packageName, simpleClassName)
-    : (objectDef.qualifiedName as QualifiedClassName | undefined);
+    : objectDef.qualifiedName;
   const registrationKey = (qualifiedNameEarly || name) as string;
 
   // Release C (#1134): collision resolution routes through
@@ -1542,19 +1617,16 @@ export function registerFromManifest(
   Object.defineProperty(stubConstructor, 'name', { value: simpleClassName });
 
   // Convert manifest field definitions to Field objects
-  const fields = new Map<string, any>();
+  const fields = new Map<string, RegisteredField>();
   const decorators = getFieldDecorators().get(simpleClassName);
   if (objectDef.fields) {
-    for (const [fieldName, fieldDef] of Object.entries(
-      objectDef.fields as any,
-    )) {
-      const fd = fieldDef as any;
+    for (const [fieldName, fd] of Object.entries(objectDef.fields)) {
       fields.set(fieldName, createFieldFromManifest(fd));
     }
   }
 
   // Load method definitions
-  const methods = new Map<string, any>();
+  const methods = new Map<string, MethodDefinition>();
   if (objectDef.methods) {
     for (const [methodName, methodDef] of Object.entries(objectDef.methods)) {
       methods.set(methodName, methodDef);
@@ -1574,7 +1646,7 @@ export function registerFromManifest(
     schema = {
       ddl: objectDef.schema.ddl,
       indexes:
-        objectDef.schema.indexes?.map((idx: any) => ({
+        objectDef.schema.indexes?.map((idx: IndexDefinition) => ({
           name: idx.name,
           columns: idx.columns || [],
           unique: idx.unique || false,

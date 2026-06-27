@@ -15,16 +15,22 @@ import {
   getSmrtModuleConfig,
   type SmrtGlobalConfig,
 } from '../config/global-config.js';
+import type { SmrtObject } from '../object';
 import { LRUCache } from '../utils/lru-cache';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
 // Re-export the globalThis augmentation so it's visible everywhere
 declare global {
   // eslint-disable-next-line no-var
-  var __smrtRegistryClasses: Map<string, any> | undefined;
+  var __smrtRegistryClasses: Map<string, RegisteredClass> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollections: Map<string, typeof SmrtCollection> | undefined;
   // eslint-disable-next-line no-var
+  // Heterogeneous cache: stores collections of many different item types keyed
+  // by class name. `SmrtCollection` is invariant in its item type (it has
+  // `create(options: SmrtCreateInput<ModelType>)`), so this cannot be narrowed
+  // to `SmrtCollection<SmrtObject>` — the type argument stays `any` (read sites
+  // cast back to the concrete collection type).
   var __smrtRegistryCollectionCache:
     | LRUCache<string, SmrtCollection<any>>
     | undefined;
@@ -37,7 +43,9 @@ declare global {
     | LRUCache<string, string[]>
     | undefined;
   // eslint-disable-next-line no-var
-  var __smrtRegistryFieldDecorators: Map<string, Map<string, any>> | undefined;
+  var __smrtRegistryFieldDecorators:
+    | Map<string, Map<string, Record<string, unknown>>>
+    | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
   // eslint-disable-next-line no-var
@@ -203,11 +211,14 @@ export function setNextDbId(value: number): void {
   globalThis.__smrtRegistryNextDbId = value;
 }
 
-export function getFieldDecorators(): Map<string, Map<string, any>> {
+export function getFieldDecorators(): Map<
+  string,
+  Map<string, Record<string, unknown>>
+> {
   if (!globalThis.__smrtRegistryFieldDecorators) {
     globalThis.__smrtRegistryFieldDecorators = new Map<
       string,
-      Map<string, any>
+      Map<string, Record<string, unknown>>
     >();
   }
   return globalThis.__smrtRegistryFieldDecorators;

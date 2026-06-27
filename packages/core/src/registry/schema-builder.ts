@@ -89,7 +89,9 @@ function mergeRuntimeFieldColumns(
         continue;
       }
 
-      const sqlType = fieldDef._meta?.sqlType || (fieldDef as any).sqlType;
+      const sqlType =
+        fieldDef._meta?.sqlType ||
+        (fieldDef as unknown as { sqlType?: string }).sqlType;
       const referenceKind = getReferenceKind(fieldDef);
       columnsToUse[columnName] = {
         ...existing,
@@ -109,7 +111,11 @@ function getReferenceKind(
   fieldDef: FieldDefinition,
 ): ColumnDefinition['referenceKind'] | undefined {
   if (
-    (fieldDef as any).__tenancy?.isTenantIdField ||
+    (
+      fieldDef as unknown as {
+        __tenancy?: { isTenantIdField?: boolean };
+      }
+    ).__tenancy?.isTenantIdField ||
     fieldDef._meta?.__tenancy?.isTenantIdField
   ) {
     return 'tenantId';
@@ -271,7 +277,7 @@ export function getAllSchemas(): Record<
       // simple names don't resolve to the wrong package's class.
       // `getTableStrategy` / `getSTIBase` both accept qualified names
       // via `findClass`'s multi-strategy lookup.
-      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const qualifiedName = registered.qualifiedName ?? simpleName;
       const lookupKey = qualifiedName;
       const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
@@ -305,7 +311,7 @@ export function getAllSchemas(): Record<
       // (Issue #693: STI subclasses with separate tableName still serialize to parent table)
       let tableName = registered.schema.tableName;
       // R5-canon: same qualified-key strategy as the block above.
-      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const qualifiedName = registered.qualifiedName ?? simpleName;
       const lookupKey = qualifiedName;
       const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
@@ -479,7 +485,7 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       // simple names don't resolve to the wrong package's class.
       // `getTableStrategy` / `getSTIBase` both accept qualified names
       // via `findClass`'s multi-strategy lookup.
-      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const qualifiedName = registered.qualifiedName ?? simpleName;
       const lookupKey = qualifiedName;
       const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
@@ -511,7 +517,7 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       // another package can't yield the wrong tableStrategy / STI base
       // and move this class's columns under that other package's table.
       let tableName = registered.schema.tableName;
-      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const qualifiedName = registered.qualifiedName ?? simpleName;
       const lookupKey = qualifiedName;
       const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
@@ -689,7 +695,7 @@ export function generateDDLFromColumns(
  * @param type - Column SQL type
  * @returns Formatted SQL default value
  */
-export function formatDefaultValue(value: any, type: string): string {
+export function formatDefaultValue(value: unknown, type: string): string {
   return formatDefaultValueShared(value, type);
 }
 
@@ -740,7 +746,8 @@ export function fieldsToColumns(
     const sqlType =
       fieldDef._meta?.sqlType ||
       (fieldDef.type === 'crossPackageRef' &&
-      (fieldDef._meta?.idType === 'text' || (fieldDef as any).idType === 'text')
+      (fieldDef._meta?.idType === 'text' ||
+        (fieldDef as unknown as { idType?: string }).idType === 'text')
         ? 'TEXT'
         : mapFieldTypeToSQL(fieldDef.type));
     const normalizedSqlType = String(sqlType).toUpperCase() as SQLDataType;

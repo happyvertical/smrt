@@ -8,6 +8,7 @@ import { createLogger } from '@happyvertical/logger';
 import { ConfigurationError } from '../errors';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
+import type { MethodDefinition } from '../scanner/types.js';
 import { prependSmrtSystemFields } from '../system-fields';
 import { findClass, findClassStrict } from './name-resolver';
 import {
@@ -15,8 +16,21 @@ import {
   getInheritanceConfig,
   verboseLog,
 } from './shared-state';
+import type { RegisteredClass, RegisteredField } from './types';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * Runtime field shape merged across an inheritance chain.
+ *
+ * This is the canonical {@link RegisteredField} shape (a `FieldDefinition`
+ * superset that carries the root-level `__tenancy` marker mirrored from the
+ * `@tenantId` decorator alongside the canonical `_meta.__tenancy`, a runtime
+ * `value`, and an open index signature for forward-compatible keys). Aliasing
+ * it keeps merged fields assignable back into the
+ * `Map<string, RegisteredField>` on each registered class.
+ */
+type InheritedFieldDefinition = RegisteredField;
 
 /**
  * Build inheritance chain by walking prototype chain
@@ -27,7 +41,7 @@ const logger = createLogger({ level: 'info' });
 export function buildInheritanceChain(ctor: typeof SmrtObject): string[] {
   const chain: string[] = [];
   const visited = new Set<Function>();
-  let current: any = ctor;
+  let current: Function | null = ctor;
 
   // Walk up the prototype chain
   while (current?.name) {
@@ -77,8 +91,8 @@ export function getInheritanceChain(className: string): string[] {
   // that only extend SmrtObject, not their actual parent class.
   // The `extends` field IS stored correctly during registerFromManifest().
   const chain: string[] = [];
-  const visited = new Set<any>(); // Cycle detection using object identity
-  let current: any = registered;
+  const visited = new Set<RegisteredClass>(); // Cycle detection using object identity
+  let current: RegisteredClass | undefined = registered;
   let circularDetected = false;
   while (current) {
     // Cycle detection: use object identity to handle cases where distinct
@@ -151,7 +165,7 @@ export function getInheritanceChain(className: string): string[] {
 
 export async function getAllFields(
   className: string,
-): Promise<Map<string, any>> {
+): Promise<Map<string, RegisteredField>> {
   let registered = findClass(className);
   if (!registered) {
     const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
@@ -178,7 +192,7 @@ export async function getAllFields(
   const { onMissingAncestor } = getInheritanceConfig();
 
   // For local classes (not from manifests), merge fields from inheritance chain
-  const allFields = new Map<string, any>();
+  const allFields = new Map<string, InheritedFieldDefinition>();
   const chain = getInheritanceChain(className);
 
   // Walk chain from base to child (parent fields first)
@@ -248,15 +262,15 @@ export async function getAllFields(
 
   registered.inheritedFields = new Map(allFields);
 
-  return prependSmrtSystemFields(allFields);
+  return prependSmrtSystemFields(new Map<string, RegisteredField>(allFields));
 }
 
 function normalizeFrameworkInheritedField(
   ancestorName: string,
   fieldName: string,
-  field: any,
+  field: InheritedFieldDefinition,
   childClassName: string,
-): any {
+): InheritedFieldDefinition {
   const simpleAncestorName = ancestorName.includes(':')
     ? ancestorName.split(':').pop()
     : ancestorName;
@@ -278,12 +292,12 @@ function normalizeFrameworkInheritedField(
 }
 
 export function mergeFieldConfigs(
-  parentField: any,
-  childField: any,
+  parentField: InheritedFieldDefinition,
+  childField: InheritedFieldDefinition,
   fieldName: string,
-): any {
+): InheritedFieldDefinition {
   // Start with parent field as base
-  const merged = { ...parentField };
+  const merged: InheritedFieldDefinition = { ...parentField };
 
   // Type: Child wins (warn if different)
   if (childField.type && childField.type !== parentField.type) {
@@ -326,9 +340,12 @@ export function mergeFieldConfigs(
 
     // Validators: Combine (both must pass)
     if (parentField._meta?.validate && childField._meta?.validate) {
-      const parentValidator = parentField._meta.validate;
-      const childValidator = childField._meta.validate;
-      merged._meta.validate = async (value: any) => {
+      // `_meta.validate` is carried through the open `FieldMeta` index
+      // signature as `unknown`; both sides are field-validator callbacks.
+      type FieldValidator = (value: unknown) => boolean | Promise<boolean>;
+      const parentValidator = parentField._meta.validate as FieldValidator;
+      const childValidator = childField._meta.validate as FieldValidator;
+      merged._meta.validate = async (value: unknown) => {
         const parentResult = await parentValidator(value);
         const childResult = await childValidator(value);
         return parentResult && childResult;
@@ -362,7 +379,7 @@ export function mergeFieldConfigs(
 
 export async function getAllMethods(
   className: string,
-): Promise<Map<string, any>> {
+): Promise<Map<string, MethodDefinition>> {
   const registered = findClass(className);
   if (!registered) {
     return new Map();
@@ -374,7 +391,7 @@ export async function getAllMethods(
   }
 
   // Build merged methods from inheritance chain
-  const allMethods = new Map<string, any>();
+  const allMethods = new Map<string, MethodDefinition>();
   const chain = getInheritanceChain(className);
 
   // Walk chain from base to child (parent methods first)

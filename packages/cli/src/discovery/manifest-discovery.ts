@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createLogger } from '@happyvertical/logger';
+import type { SmartObjectDefinition } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import glob from 'fast-glob';
 
@@ -312,7 +313,13 @@ export async function loadManifest(manifestPath: string): Promise<void> {
   // Register each object from the manifest so ObjectRegistry knows their
   // fields, table names, and inheritance for schema generation.
   for (const [name, objectDef] of Object.entries(manifest.objects)) {
-    ObjectRegistry.registerFromManifest(name, objectDef, manifest.packageName);
+    // Manifest entries are loaded from JSON as `unknown`; at this boundary they
+    // are the runtime SmartObjectDefinition shape the registry expects.
+    ObjectRegistry.registerFromManifest(
+      name,
+      objectDef as SmartObjectDefinition,
+      manifest.packageName,
+    );
   }
 }
 
