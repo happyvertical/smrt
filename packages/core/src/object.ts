@@ -1,6 +1,4 @@
-// import type { AIMessageOptions } from '@happyvertical/ai';
-
-import type { AITool } from '@happyvertical/ai';
+import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
@@ -24,6 +22,10 @@ import {
 } from './errors';
 import { createInterceptorContext, GlobalInterceptors } from './interceptors';
 import { ObjectRegistry } from './registry';
+import type {
+  RegisteredField,
+  SmrtObjectConstructor,
+} from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   executeToolCall as executeToolCallInternal,
@@ -193,7 +195,7 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
   /**
    * Allow arbitrary field values to be passed
    */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**
@@ -212,6 +214,28 @@ export interface LoadRelatedOptions {
    * @default false
    */
   allowCrossTenant?: boolean;
+}
+
+/**
+ * Options accepted by the AI operations {@link SmrtObject.is},
+ * {@link SmrtObject.do}, and {@link SmrtObject.describe}.
+ *
+ * Extends the underlying AI client's {@link AITextCompletionOptions} (model,
+ * temperature, maxTokens, …) with two non-standard control keys that are
+ * consumed by these methods and NOT forwarded to `ai.message()`.
+ */
+export interface AiOperationOptions extends AITextCompletionOptions {
+  /**
+   * Set to `false` to omit the injected object "content body" — for callers
+   * that already curate the relevant fields into the instruction/criteria
+   * string. Any other value (including `undefined`) injects it.
+   */
+  includeData?: boolean;
+
+  /**
+   * Override the injected object-data truncation budget, in characters.
+   */
+  maxDataLength?: number;
 }
 
 /**
@@ -255,7 +279,7 @@ export class SmrtObject extends SmrtClass {
    * Cache for loaded relationships to avoid repeated database queries
    * Maps fieldName to loaded object(s)
    */
-  private _loadedRelationships: Map<string, any> = new Map();
+  private _loadedRelationships: Map<string, unknown> = new Map();
 
   /**
    * Whether this object is backed by an existing database row.
@@ -326,7 +350,7 @@ export class SmrtObject extends SmrtClass {
       !ObjectRegistry.getClassByConstructor(
         this.constructor as typeof SmrtObject,
       ) &&
-      !(options as any)?._skipRegistration
+      !options?._skipRegistration
     ) {
       ObjectRegistry.register(this.constructor as typeof SmrtObject, {});
     }
@@ -350,7 +374,9 @@ export class SmrtObject extends SmrtClass {
   }
 
   private getCurrentMetaType(): string | undefined {
-    const metaType = (this as any)._meta_type;
+    // `_meta_type` is the STI discriminator stamped on at runtime, not a
+    // declared member — read it through an indexable view of `this`.
+    const metaType = (this as unknown as Record<string, unknown>)._meta_type;
     return typeof metaType === 'string' ? metaType : undefined;
   }
 
@@ -372,7 +398,7 @@ export class SmrtObject extends SmrtClass {
   private async planPersistenceWrite(
     className: string,
     tableStrategy: string,
-    data: Record<string, any>,
+    data: Record<string, unknown>,
     conflictColumns: string[],
   ): Promise<PersistenceWritePlan> {
     const upsertPlan: PersistenceWritePlan = {
@@ -396,7 +422,7 @@ export class SmrtObject extends SmrtClass {
       return upsertPlan;
     }
     const qualifiedMetaType = String(nextMetaType);
-    const conflictIdentity: Record<string, any> = {};
+    const conflictIdentity: Record<string, unknown> = {};
     for (const column of conflictColumns.filter(
       (conflictColumn) => conflictColumn !== '_meta_type',
     )) {
@@ -508,7 +534,9 @@ export class SmrtObject extends SmrtClass {
    * @internal
    */
   protected setMetaType(metaType: string): void {
-    (this as any)._meta_type = metaType;
+    // `_meta_type` is the STI discriminator stamped on at runtime, not a
+    // declared member — write it through an indexable view of `this`.
+    (this as unknown as Record<string, unknown>)._meta_type = metaType;
   }
 
   /**
@@ -526,7 +554,7 @@ export class SmrtObject extends SmrtClass {
    * @returns Cloned value or original if no cloning needed
    * @private
    */
-  private cloneValue(value: any): any {
+  private cloneValue(value: unknown): unknown {
     // Primitives and null/undefined - no clone needed
     if (value === null || value === undefined) return value;
     if (typeof value !== 'object') return value;
@@ -561,16 +589,19 @@ export class SmrtObject extends SmrtClass {
     if (options.updated_at !== undefined) this.updated_at = options.updated_at;
 
     // Set STI discriminator if present
-    if (options._meta_type !== undefined) {
+    if (typeof options._meta_type === 'string') {
       this.setMetaType(options._meta_type);
     }
 
     // Get all fields (both Field instances and plain properties)
     const fields = await fieldsFromClass(
-      this.constructor as new (
-        ...args: any[]
-      ) => any,
+      this.constructor as SmrtObjectConstructor,
     );
+
+    // Dynamic field writes below go through an indexable view of `this`
+    // rather than `as any`: option keys come from the field manifest, not
+    // the static type, so there is no static member to key into.
+    const writable = this as unknown as Record<string, unknown>;
 
     // Apply option values to all fields
     for (const [key, field] of Object.entries(fields)) {
@@ -593,7 +624,7 @@ export class SmrtObject extends SmrtClass {
         // Skip readonly properties (e.g., tableName getter without setter)
         if (!descriptor || descriptor.set || descriptor.writable === true) {
           // Set the property value
-          this[key as keyof this] = clonedValue;
+          writable[key] = clonedValue;
         }
       }
     }
@@ -699,9 +730,9 @@ export class SmrtObject extends SmrtClass {
     // backing table. That keeps construction lightweight without hiding schema
     // mutation inside normal runtime flows.
 
-    if (this._id && !(this.options as any)._skipLoad) {
+    if (this._id && !this.options._skipLoad) {
       await this.loadFromId();
-    } else if (this._slug && !(this.options as any)._skipLoad) {
+    } else if (this._slug && !this.options._skipLoad) {
       await this.loadFromSlug();
     }
 
@@ -745,7 +776,7 @@ export class SmrtObject extends SmrtClass {
    * @param data - Database row data (with snake_case column names)
    * @throws Error if STI validation fails
    */
-  async loadDataFromDb(data: any) {
+  async loadDataFromDb(data: Record<string, unknown>) {
     const className = this.getResolvedClassName();
 
     if (process.env.DEBUG_STI) {
@@ -789,8 +820,10 @@ export class SmrtObject extends SmrtClass {
 
     // STI: Fail-fast validation for _meta_type discriminator
     if (isSTI) {
+      const metaType = formattedData._meta_type;
+
       // Validation 1: _meta_type must be present in database row
-      if (!formattedData._meta_type) {
+      if (!metaType) {
         throw new Error(
           `STI validation failed: Missing _meta_type discriminator in database row for ${className}. ` +
             `Ensure the row was saved with STI support enabled.`,
@@ -799,16 +832,17 @@ export class SmrtObject extends SmrtClass {
 
       // Validation 2: _meta_type must match the class being instantiated
       // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-      if (!isValidMetaType(formattedData._meta_type, className)) {
+      if (!isValidMetaType(metaType, className)) {
         throw new Error(
           `STI validation failed: Type mismatch when loading ${className}. ` +
-            `Database row has _meta_type='${formattedData._meta_type}' but expected '${getExpectedMetaType(className)}'. ` +
+            `Database row has _meta_type='${metaType}' but expected '${getExpectedMetaType(className)}'. ` +
             `This usually means you're trying to load a row with the wrong class.`,
         );
       }
 
-      // Set _meta_type on the object
-      this.setMetaType(formattedData._meta_type);
+      // Set _meta_type on the object. isValidMetaType() only returns true for a
+      // string discriminator, so this narrows safely.
+      this.setMetaType(metaType as string);
     }
 
     // STI: Meta fields are already merged by formatDataJs
@@ -823,6 +857,10 @@ export class SmrtObject extends SmrtClass {
 
     let hydratedCount = 0;
     let skippedCount = 0;
+
+    // Field names come from the manifest, not the static type, so writes go
+    // through an indexable view of `this` rather than a typed member.
+    const writable = this as unknown as Record<string, unknown>;
 
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
@@ -851,7 +889,7 @@ export class SmrtObject extends SmrtClass {
             });
           }
 
-          this[field as keyof this] = value;
+          writable[field] = value;
           hydratedCount++;
         } else {
           skippedCount++;
@@ -926,10 +964,13 @@ export class SmrtObject extends SmrtClass {
   async getFields() {
     const className = this.getResolvedClassName();
     const cachedFields = await ObjectRegistry.getAllFields(className);
-    const fields: Record<string, any> = {};
+    const fields: Record<
+      string,
+      { name: string; type: string; _meta: Record<string, unknown>; value?: unknown }
+    > = {};
 
     for (const [key, field] of cachedFields.entries()) {
-      const meta = { ...(field._meta || {}) };
+      const meta: Record<string, unknown> = { ...(field._meta || {}) };
       delete meta.__smrtSystemField;
 
       fields[key] = {
@@ -970,7 +1011,9 @@ export class SmrtObject extends SmrtClass {
    * class Article extends SmrtObject {
    *   body: string = '';
    *
-   *   protected transformJSON(data: any): any {
+   *   protected transformJSON(
+   *     data: Record<string, unknown>,
+   *   ): Record<string, unknown> {
    *     return {
    *       ...data,
    *       wordCount: this.body.split(/\s+/).length,
@@ -982,7 +1025,9 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link toJSON} for the framework implementation (do not override)
    */
-  protected transformJSON(data: any): any {
+  protected transformJSON(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
     return data; // Default: no transformation
   }
 
@@ -1005,13 +1050,17 @@ export class SmrtObject extends SmrtClass {
    */
   toJSON() {
     const className = this.getResolvedClassName();
-    const data: any = {
+    const data: Record<string, unknown> = {
       id: this.id,
       slug: this.slug,
       context: this.context,
       created_at: this.created_at,
       updated_at: this.updated_at,
     };
+
+    // Indexable view of `this` for reading runtime fields whose names come
+    // from the manifest rather than the static type.
+    const self = this as unknown as Record<string, unknown>;
 
     // Check if this class uses STI (Single Table Inheritance)
     // R5-canon: qualified-key lookup so a colliding simple name in
@@ -1021,13 +1070,18 @@ export class SmrtObject extends SmrtClass {
     );
     const isSTI = tableStrategy === 'sti';
 
+    // STI meta fields are collected into this bag and written to `data` under
+    // `_meta_data`. Holding a typed reference avoids re-indexing `data` (which
+    // is `unknown`-valued) on every meta-field write below.
+    const metaData: Record<string, unknown> = {};
+
     // If STI, add discriminator and prepare meta_data container
     if (isSTI) {
       // Use qualified name for STI discriminator (namespace isolation)
       // The qualified name uses the child class's own package, not the parent's
       // This supports multi-package inheritance hierarchies (Issue #713)
       data._meta_type = this.getResolvedQualifiedName();
-      data._meta_data = {};
+      data._meta_data = metaData;
     }
 
     // Get registered field definitions (synchronous access to already-loaded metadata)
@@ -1077,7 +1131,7 @@ export class SmrtObject extends SmrtClass {
         key === 'created_at' ||
         key === 'updated_at' ||
         key === 'options' || // Skip options object (not a database column)
-        typeof (this as any)[key] === 'function'
+        typeof self[key] === 'function'
       ) {
         continue;
       }
@@ -1102,7 +1156,7 @@ export class SmrtObject extends SmrtClass {
         continue;
       }
 
-      const prop = (this as any)[key];
+      const prop = self[key];
       const value = this.getPropertyValue(key);
 
       // Handle undefined values (Issue #205, #391)
@@ -1120,25 +1174,29 @@ export class SmrtObject extends SmrtClass {
           // Check both the property instance and field definition for __tenancy marker.
           // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
           // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
+          // `prop` may be a Field-helper instance carrying a `__tenancy`
+          // marker; read it through a narrow indexable view after the
+          // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
+          const propTenancy =
+            prop && typeof prop === 'object' && '__tenancy' in prop
+              ? (prop as { __tenancy?: { isTenantIdField?: boolean } }).__tenancy
+              : undefined;
           const hasTenancyMarker =
-            (prop &&
-              typeof prop === 'object' &&
-              '__tenancy' in prop &&
-              (prop as any).__tenancy?.isTenantIdField) ||
-            (fieldDef as any)?.__tenancy?.isTenantIdField ||
-            (fieldDef as any)?._meta?.__tenancy?.isTenantIdField;
+            propTenancy?.isTenantIdField ||
+            fieldDef?.__tenancy?.isTenantIdField ||
+            fieldDef?._meta?.__tenancy?.isTenantIdField;
 
           if (hasTenancyMarker) {
             // Leave tenant field as null so interceptor can auto-populate
             if (isSTI && fieldDef?.type === 'meta') {
-              data._meta_data[key] = null;
+              metaData[key] = null;
             } else {
               data[key] = null;
             }
           } else {
             // For regular TEXT fields, convert undefined to an empty string.
             if (isSTI && fieldDef?.type === 'meta') {
-              data._meta_data[key] = '';
+              metaData[key] = '';
             } else {
               data[key] = '';
             }
@@ -1150,7 +1208,7 @@ export class SmrtObject extends SmrtClass {
           const defaultValue = fieldDef?.default ?? null;
 
           if (isSTI && fieldDef?.type === 'meta') {
-            data._meta_data[key] = defaultValue;
+            metaData[key] = defaultValue;
           } else {
             data[key] = defaultValue;
           }
@@ -1165,7 +1223,7 @@ export class SmrtObject extends SmrtClass {
       // STI: Separate meta fields from regular fields
       if (isSTI && fieldDef && fieldDef.type === 'meta') {
         // Meta fields go into _meta_data JSONB column
-        data._meta_data[key] = value;
+        metaData[key] = value;
       } else {
         // Regular fields become table columns
         data[key] = value;
@@ -1213,7 +1271,7 @@ export class SmrtObject extends SmrtClass {
   private getSensitiveFieldNames(): Set<string> {
     const className = this.getResolvedClassName();
     const registered = ObjectRegistry.getClass(className);
-    const fieldMaps: Map<string, any>[] = [
+    const fieldMaps: Map<string, RegisteredField>[] = [
       registered?.inheritedFields || ObjectRegistry.getFields(className),
     ];
 
@@ -1391,15 +1449,18 @@ export class SmrtObject extends SmrtClass {
    */
   async getSlug() {
     if (!this.slug) {
-      // Try multiple fallback fields in order: name, title, label, id
-      let sourceField = null;
+      // Try multiple fallback fields in order: name, title, label, id.
+      // These are subclass-declared fields, not members of the base type, so
+      // read them through an indexable view of `this`.
+      const self = this as unknown as Record<string, unknown>;
+      let sourceField: string | null = null;
 
-      if ((this as any).name) {
-        sourceField = String((this as any).name);
-      } else if ((this as any).title) {
-        sourceField = String((this as any).title);
-      } else if ((this as any).label) {
-        sourceField = String((this as any).label);
+      if (self.name) {
+        sourceField = String(self.name);
+      } else if (self.title) {
+        sourceField = String(self.title);
+      } else if (self.label) {
+        sourceField = String(self.label);
       } else if (this.id) {
         // Final fallback: use ID
         sourceField = String(this.id);
@@ -1553,7 +1614,7 @@ export class SmrtObject extends SmrtClass {
    */
   private async coerceEmptyUuidValuesToNull(
     className: string,
-    data: Record<string, any>,
+    data: Record<string, unknown>,
   ): Promise<void> {
     const uuidColumns = await this.resolveUuidColumnNames(className);
     if (uuidColumns.size === 0) return;
@@ -1695,7 +1756,7 @@ export class SmrtObject extends SmrtClass {
 
       // Convert camelCase keys to snake_case for database columns
       // Preserve leading underscore for special fields like _meta_type, _meta_data
-      const data: Record<string, any> = {};
+      const data: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(jsonData)) {
         if (key.startsWith('_')) {
           // Preserve leading underscore for special fields
@@ -1920,11 +1981,15 @@ export class SmrtObject extends SmrtClass {
 
     // Priority 3: Fallback to old validation logic if no cached validators
     // (for classes not registered with ObjectRegistry)
-    const fields = await fieldsFromClass(this.constructor as any);
+    const fields = await fieldsFromClass(
+      this.constructor as SmrtObjectConstructor,
+    );
 
     for (const [fieldName, field] of Object.entries(fields)) {
       // With decorators, field definitions are plain objects with nested options
-      if ((field as any).options?.required) {
+      const options = (field as { options?: { required?: boolean } } | null)
+        ?.options;
+      if (options?.required) {
         const value = this.getFieldValue(fieldName);
         if (value === null || value === undefined || value === '') {
           throw ValidationError.requiredField(fieldName, className);
@@ -2012,8 +2077,10 @@ export class SmrtObject extends SmrtClass {
   /**
    * Gets the value of a field on this object
    */
-  protected getFieldValue(fieldName: string): any {
-    return (this as any)[fieldName];
+  protected getFieldValue(fieldName: string): unknown {
+    // Field names are resolved dynamically from the manifest, so read through
+    // an indexable view of `this` rather than a typed member.
+    return (this as unknown as Record<string, unknown>)[fieldName];
   }
 
   /**
@@ -2022,8 +2089,10 @@ export class SmrtObject extends SmrtClass {
    * @param key - Property name to get value from
    * @returns The property value
    */
-  protected getPropertyValue(key: string): any {
-    return (this as any)[key];
+  protected getPropertyValue(key: string): unknown {
+    // Property names are resolved dynamically, so read through an indexable
+    // view of `this` rather than a typed member.
+    return (this as unknown as Record<string, unknown>)[key];
   }
 
   /**
@@ -2311,7 +2380,7 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link do} for open-ended instructions instead of boolean checks
    */
-  public async is(criteria: string, options: any = {}) {
+  public async is(criteria: string, options: AiOperationOptions = {}) {
     const ai = await this.getAiClient();
     const { maxDataLength, includeData, ...aiOptions } = options ?? {};
     const contentSection = this.buildAiContentSection(
@@ -2324,7 +2393,7 @@ export class SmrtObject extends SmrtClass {
     const tools = this.getAvailableTools();
 
     const message = await ai.message(prompt, {
-      ...(aiOptions as any),
+      ...aiOptions,
       responseFormat: { type: 'json_object' },
       tools: tools.length > 0 ? tools : undefined,
     });
@@ -2371,7 +2440,7 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link is} for boolean criteria checks
    */
-  public async do(instructions: string, options: any = {}) {
+  public async do(instructions: string, options: AiOperationOptions = {}) {
     const ai = await this.getAiClient();
     const { maxDataLength, includeData, ...aiOptions } = options ?? {};
     const contentSection = this.buildAiContentSection(
@@ -2419,7 +2488,7 @@ export class SmrtObject extends SmrtClass {
    * // "Premium widget, steel construction"
    * ```
    */
-  public async describe(options: any = {}) {
+  public async describe(options: AiOperationOptions = {}) {
     const ai = await this.getAiClient();
     const { maxDataLength, includeData, ...aiOptions } = options ?? {};
     const contentSection = this.buildAiContentSection(
@@ -2454,10 +2523,11 @@ export class SmrtObject extends SmrtClass {
     }
 
     if (typeof hook === 'string') {
-      // Hook is a method name to call on this instance
-      const method = (this as any)[hook];
+      // Hook is a method name to call on this instance. The hook name is
+      // resolved at runtime, so read it through an indexable view of `this`.
+      const method = (this as unknown as Record<string, unknown>)[hook];
       if (typeof method === 'function') {
-        await method.call(this);
+        await (method as (this: SmrtObject) => unknown).call(this);
       } else {
         logger.warn(
           `Hook method '${hook}' not found on ${this.constructor.name}`,
@@ -2632,7 +2702,7 @@ export class SmrtObject extends SmrtClass {
   public async loadRelated(
     fieldName: string,
     opts?: LoadRelatedOptions,
-  ): Promise<any> {
+  ): Promise<SmrtObject | null> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
@@ -2640,7 +2710,9 @@ export class SmrtObject extends SmrtClass {
       // load (or a prior allowCrossTenant load) must not leak cross-tenant data
       // through a later guarded call (Issue #1321).
       this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
-      return cached;
+      // The single-target cache is only ever populated below with a SmrtObject
+      // or null, so this reasserts the value's known shape at the boundary.
+      return cached as SmrtObject | null;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -2827,7 +2899,7 @@ export class SmrtObject extends SmrtClass {
   public async loadRelatedMany(
     fieldName: string,
     opts?: LoadRelatedOptions,
-  ): Promise<any[]> {
+  ): Promise<SmrtObject[]> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
@@ -2835,7 +2907,9 @@ export class SmrtObject extends SmrtClass {
       // load (or a prior allowCrossTenant load) must not leak cross-tenant data
       // through a later guarded call (Issue #1321).
       this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
-      return cached;
+      // The many-cache is only ever populated below with a SmrtObject[], so
+      // this reasserts the value's known shape at the boundary.
+      return cached as SmrtObject[];
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -2947,9 +3021,10 @@ export class SmrtObject extends SmrtClass {
       );
 
       const targetIds = junctionRows.rows
-        .map((row: any) => row[targetColumn])
+        .map((row: Record<string, unknown>) => row[targetColumn])
         .filter(
-          (id: any): id is string => typeof id === 'string' && id.length > 0,
+          (id: unknown): id is string =>
+            typeof id === 'string' && id.length > 0,
         );
 
       if (targetIds.length === 0) {
@@ -2994,7 +3069,7 @@ export class SmrtObject extends SmrtClass {
     relationship: {
       sourceClass: string;
       targetClass: string;
-      options?: any;
+      options?: Record<string, unknown>;
     },
   ): Promise<{
     through: string;
@@ -3006,9 +3081,15 @@ export class SmrtObject extends SmrtClass {
       relationship.sourceClass,
       fieldName,
     );
-    const opts = relationship.options || {};
+    const opts: Record<string, unknown> = relationship.options || {};
+    // `_meta` is an open metadata bag whose junction keys are read positionally
+    // through `??` fallbacks; narrow it to an indexable view once here.
+    const optsMeta =
+      opts._meta && typeof opts._meta === 'object'
+        ? (opts._meta as Record<string, unknown>)
+        : undefined;
 
-    const through = decorator?.through ?? opts.through ?? opts._meta?.through;
+    const through = decorator?.through ?? opts.through ?? optsMeta?.through;
     if (!through) {
       throw RuntimeError.invalidState(
         `manyToMany field ${fieldName} on ${relationship.sourceClass} is missing the 'through' join table name`,
@@ -3027,18 +3108,18 @@ export class SmrtObject extends SmrtClass {
     const sourceColumn =
       decorator?.sourceKey ??
       opts.sourceKey ??
-      opts._meta?.sourceKey ??
+      optsMeta?.sourceKey ??
       `${toSnakeCase(sourceSimpleName)}_id`;
     const targetColumn =
       decorator?.targetKey ??
       opts.targetKey ??
-      opts._meta?.targetKey ??
+      optsMeta?.targetKey ??
       `${toSnakeCase(targetSimpleName)}_id`;
 
     return {
       through: String(through),
-      sourceColumn,
-      targetColumn,
+      sourceColumn: String(sourceColumn),
+      targetColumn: String(targetColumn),
       targetClassName: relationship.targetClass,
     };
   }
@@ -3069,13 +3150,15 @@ export class SmrtObject extends SmrtClass {
   public async getRelated(
     fieldName: string,
     opts?: LoadRelatedOptions,
-  ): Promise<any> {
+  ): Promise<SmrtObject | SmrtObject[] | null> {
     if (this._loadedRelationships.has(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets so an eager `include` load cannot leak
       // cross-tenant data through this convenience accessor (Issue #1321).
       this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
-      return cached;
+      // The cache holds what loadRelated()/loadRelatedMany() stored for this
+      // field; reassert that known shape at the boundary.
+      return cached as SmrtObject | SmrtObject[] | null;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -3192,8 +3275,8 @@ export class SmrtObject extends SmrtClass {
     id?: string;
     scope: string;
     key: string;
-    value: any;
-    metadata?: any;
+    value: unknown;
+    metadata?: unknown;
     confidence?: number;
     version?: number;
     expiresAt?: Date;
@@ -3267,13 +3350,13 @@ export class SmrtObject extends SmrtClass {
     key: string;
     includeAncestors?: boolean;
     minConfidence?: number;
-  }): Promise<any | null> {
+  }): Promise<unknown> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
     // Use single() with template literals for custom SQL query
-    let result: Record<string, any> | null;
+    let result: Record<string, unknown> | null;
     if (options.minConfidence !== undefined) {
       result = await this.systemDb.single`
         SELECT value, confidence
@@ -3304,7 +3387,7 @@ export class SmrtObject extends SmrtClass {
       // must not throw an uncaught SyntaxError out of recall(). Treat it as a
       // miss and continue to the ancestor fallback (#1378).
       try {
-        return JSON.parse(result.value);
+        return JSON.parse(String(result.value));
       } catch (error) {
         logger.warn('Skipping corrupted _smrt_contexts value in recall()', {
           ownerClass: this._className,
@@ -3369,15 +3452,15 @@ export class SmrtObject extends SmrtClass {
       includeDescendants?: boolean;
       minConfidence?: number;
     } = {},
-  ): Promise<Map<string, any>> {
+  ): Promise<Map<string, unknown>> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
-    const results = new Map<string, any>();
+    const results = new Map<string, unknown>();
 
     // Build where clause for db.list()
-    const where: Record<string, any> = {
+    const where: Record<string, unknown> = {
       owner_class: this._className,
       owner_id: this.id,
     };
@@ -3481,7 +3564,7 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Build where clause for db.delete()
-    const where: Record<string, any> = {
+    const where: Record<string, unknown> = {
       owner_class: this._className,
       owner_id: this.id,
     };
