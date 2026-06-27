@@ -193,9 +193,16 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
   _skipAutoEmbeddings?: boolean;
 
   /**
-   * Allow arbitrary field values to be passed
+   * Allow arbitrary field values to be passed.
+   *
+   * This index signature is intentionally `any` (not `unknown`): subclass
+   * option interfaces across every package (e.g. `FeatureDefinitionOptions`)
+   * are plain interfaces with no index signature, and TS does not consider
+   * such an interface assignable to `[key: string]: unknown` — only to
+   * `[key: string]: any`. Narrowing it would break `super(options)` in every
+   * downstream model. Documented irreducible leaf (S4 #1579).
    */
-  [key: string]: unknown;
+  [key: string]: any;
 }
 
 /**
