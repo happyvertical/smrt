@@ -132,6 +132,7 @@ import {
 } from './registry/shared-state';
 import type {
   RegisteredClass,
+  RegisteredField,
   RelationshipMetadata,
   SmartObjectConfig,
   SmrtObjectConstructor,
@@ -139,7 +140,6 @@ import type {
 } from './registry/types';
 import { compileValidators as _compileValidators } from './registry/validator';
 import type {
-  FieldDefinition,
   MethodDefinition,
   QualifiedClassName,
   SmartObjectDefinition,
@@ -226,18 +226,6 @@ interface FieldDecoratorOptions extends FieldOptions {
   sourceKey?: string;
   /** Target-side join column override for many-to-many relationships. */
   targetKey?: string;
-}
-
-/**
- * Runtime field record as stored on a registered class. This is the manifest
- * `FieldDefinition` plus the extra runtime-only members the framework attaches
- * during registration (`idType`/`sqlType` overrides and the raw decorator
- * `options` bag) that downstream consumers read off `getFields()`.
- */
-interface RegisteredField extends FieldDefinition {
-  idType?: 'uuid' | 'text';
-  sqlType?: string;
-  options?: unknown;
 }
 
 /**

@@ -716,6 +716,15 @@ export interface RelationshipMetadata {
  *   field or its `_meta` bag (`object.ts` `validateCrossPackageRefs`).
  * - `__report`: report-aggregate marker mirrored at the top level for the
  *   report conflict-column derivation (`registry.ts`).
+ * - `idType`: synthetic-id storage override mirrored at the top level
+ *   (decorator bags; also read off `_meta.idType` in `schema-builder.ts`).
+ * - `value`: runtime field value carried through the inheritance-chain merge
+ *   (`inheritance-resolver.ts` `mergeFieldConfigs`).
+ *
+ * This is the single canonical runtime-field shape: the manifest-merge helpers
+ * (`manifest-field-merge.ts`) and the inheritance-chain merge
+ * (`inheritance-resolver.ts`) both alias this type, so registered fields flow
+ * through one definition instead of drifting per-module supersets.
  *
  * The index signature keeps the bag open for forward-compatible runtime keys
  * without forcing consumers back through `any`.
@@ -731,6 +740,10 @@ export interface RegisteredField extends FieldDefinition {
   __tenancy?: FieldMeta['__tenancy'];
   /** Explicit SQL type override mirrored at the top level (decorator bags). */
   sqlType?: string;
+  /** Synthetic-id storage override mirrored at the top level (decorator bags). */
+  idType?: 'uuid' | 'text';
+  /** Runtime field value carried through the inheritance-chain merge. */
+  value?: unknown;
   [key: string]: unknown;
 }
 

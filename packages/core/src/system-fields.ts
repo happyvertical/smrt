@@ -52,13 +52,19 @@ export function cloneSmrtSystemFields(): Record<string, FieldDefinition> {
   return fields;
 }
 
-export function prependSmrtSystemFields(
-  fields: Map<string, FieldDefinition>,
-): Map<string, FieldDefinition> {
-  const merged = new Map<string, FieldDefinition>();
+export function prependSmrtSystemFields<T extends FieldDefinition>(
+  fields: Map<string, T>,
+): Map<string, T> {
+  const merged = new Map<string, T>();
 
+  // The cloned system fields are plain `FieldDefinition`s. `T` is a
+  // `FieldDefinition` superset that only adds optional members (e.g. the
+  // registry's `RegisteredField`), so a freshly-cloned system field is a
+  // structurally-valid `T` at runtime; the downcast records that. Keeping the
+  // signature generic preserves the caller's richer element type instead of
+  // widening every returned field back to the base `FieldDefinition`.
   for (const [fieldName, fieldDef] of Object.entries(cloneSmrtSystemFields())) {
-    merged.set(fieldName, fieldDef);
+    merged.set(fieldName, fieldDef as T);
   }
 
   for (const [fieldName, fieldDef] of fields.entries()) {

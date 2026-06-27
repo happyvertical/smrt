@@ -745,6 +745,10 @@ export function register(
     );
 
     for (const [fieldName, decoratorOptions] of decorators) {
+      // Typed read-view of the raw `Record<string, unknown>` decorator bag so
+      // the member reads below narrow to the `RegisteredField` member types
+      // they feed (instead of `unknown`). Same runtime object, type-only view.
+      const opts: DecoratorFieldOptions = decoratorOptions;
       const existingField = fields.get(fieldName);
 
       if (existingField) {
@@ -755,7 +759,7 @@ export function register(
           ...decoratorOptions,
         };
         const mergedField: RegisteredField = {
-          type: decoratorOptions.type || existingField.type,
+          type: opts.type || existingField.type,
           _meta: mergedMeta,
         };
 
@@ -765,26 +769,26 @@ export function register(
         }
 
         // Preserve top-level flags (transient, required, etc.)
-        if (decoratorOptions.transient !== undefined) {
-          mergedField.transient = decoratorOptions.transient;
+        if (opts.transient !== undefined) {
+          mergedField.transient = opts.transient;
         } else if (existingField.transient !== undefined) {
           mergedField.transient = existingField.transient;
         }
 
         // Handle required flag: nullable fields should not be required
-        if (decoratorOptions.nullable === true) {
+        if (opts.nullable === true) {
           // Nullable explicitly set to true means field is NOT required
           mergedField.required = false;
           mergedMeta.required = false;
-        } else if (decoratorOptions.required !== undefined) {
-          mergedField.required = decoratorOptions.required;
+        } else if (opts.required !== undefined) {
+          mergedField.required = opts.required;
         } else if (existingField.required !== undefined) {
           mergedField.required = existingField.required;
         }
 
         // Hoist related to top level for relationship fields
-        if (decoratorOptions.related !== undefined) {
-          mergedField.related = decoratorOptions.related;
+        if (opts.related !== undefined) {
+          mergedField.related = opts.related;
           delete mergedField._meta?.related;
         } else if (existingField.related !== undefined) {
           mergedField.related = existingField.related;
@@ -798,32 +802,32 @@ export function register(
         // Decorator for field not in manifest - add it
         const newMeta: FieldMeta = decoratorOptions;
         const newField: RegisteredField = {
-          type: decoratorOptions.type || 'text',
+          type: opts.type || 'text',
           _meta: newMeta,
         };
 
         // Set top-level flags from decorator options
-        if (decoratorOptions.transient !== undefined) {
-          newField.transient = decoratorOptions.transient;
+        if (opts.transient !== undefined) {
+          newField.transient = opts.transient;
         }
         // Handle required flag: nullable fields should not be required
-        if (decoratorOptions.nullable === true) {
+        if (opts.nullable === true) {
           newField.required = false;
           newMeta.required = false;
-        } else if (decoratorOptions.required !== undefined) {
-          newField.required = decoratorOptions.required;
+        } else if (opts.required !== undefined) {
+          newField.required = opts.required;
         }
 
         // Hoist related to top level for relationship fields (Issue #746)
         // This is critical for getRelationshipMap() to detect relationships
-        if (decoratorOptions.related !== undefined) {
-          newField.related = decoratorOptions.related;
+        if (opts.related !== undefined) {
+          newField.related = opts.related;
           delete newField._meta?.related;
         }
 
         fields.set(fieldName, newField);
         verboseLog(
-          `[registry]   ✅ Added field ${fieldName} from decorator: type=${decoratorOptions.type || 'text'}`,
+          `[registry]   ✅ Added field ${fieldName} from decorator: type=${opts.type || 'text'}`,
         );
       }
     }
@@ -1230,8 +1234,46 @@ function mergeIndexDefinitions(
 // cloneManifestSchemaColumns lives in ../manifest/store.ts — imported above.
 // (Hoisted out of the duplicate definition here and in registry.ts.)
 
+/**
+ * Typed read-view of a raw decorator option bag.
+ *
+ * `getFieldDecorators()` stores decorator options as
+ * `Map<string, Record<string, unknown>>`, so the individual reads come back as
+ * `unknown` and won't narrow to the typed `RegisteredField` members they feed.
+ * This interface re-types only the members the decorator-merge loop reads, with
+ * exactly the target member types, and keeps the open index signature so a raw
+ * `Record<string, unknown>` bag is assignable to it without `any`. (The bag's
+ * runtime values are field-helper options; this view mirrors that contract.)
+ */
+interface DecoratorFieldOptions {
+  type?: FieldDefinition['type'];
+  required?: boolean;
+  nullable?: boolean;
+  transient?: boolean;
+  related?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Read-only field shape consumed by the SQL-type override helpers.
+ *
+ * `applySqlTypeOverrides` runs over two sources: the canonical
+ * `Map<string, RegisteredField>` AND the raw decorator bag
+ * (`Map<string, Record<string, unknown>>` from `getFieldDecorators()`). Both
+ * satisfy this shape — every member is optional and the open index signature
+ * matches both `RegisteredField`'s index signature and `Record<string, unknown>`
+ * — so the helpers read the same overrides off either source without `any`.
+ */
+interface SqlTypeOverrideField {
+  type?: unknown;
+  sqlType?: unknown;
+  __tenancy?: FieldMeta['__tenancy'];
+  _meta?: FieldMeta;
+  [key: string]: unknown;
+}
+
 function getReferenceKindFromFieldOptions(
-  fieldOptions: RegisteredField,
+  fieldOptions: SqlTypeOverrideField,
 ): ColumnDefinition['referenceKind'] | undefined {
   if (
     fieldOptions?.__tenancy?.isTenantIdField ||
@@ -1253,7 +1295,7 @@ function getReferenceKindFromFieldOptions(
 
 function applySqlTypeOverrides(
   columns: Record<string, ColumnDefinition>,
-  fieldEntries: Iterable<[string, RegisteredField]> | undefined,
+  fieldEntries: Iterable<[string, SqlTypeOverrideField]> | undefined,
 ): void {
   if (!fieldEntries) {
     return;

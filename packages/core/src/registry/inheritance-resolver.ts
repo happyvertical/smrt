@@ -8,11 +8,7 @@ import { createLogger } from '@happyvertical/logger';
 import { ConfigurationError } from '../errors';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
-import type {
-  FieldDefinition,
-  FieldMeta,
-  MethodDefinition,
-} from '../scanner/types.js';
+import type { MethodDefinition } from '../scanner/types.js';
 import { prependSmrtSystemFields } from '../system-fields';
 import { findClass, findClassStrict } from './name-resolver';
 import {
@@ -20,23 +16,21 @@ import {
   getInheritanceConfig,
   verboseLog,
 } from './shared-state';
-import type { RegisteredClass } from './types';
+import type { RegisteredClass, RegisteredField } from './types';
 
 const logger = createLogger({ level: 'info' });
 
 /**
  * Runtime field shape merged across an inheritance chain.
  *
- * Registered fields are `FieldDefinition`-shaped but may also carry a
- * root-level `__tenancy` marker (mirrored from the `@tenantId` decorator
- * alongside the canonical `_meta.__tenancy`) and a runtime `value`. The open
- * index signature keeps forward-compatible keys accessible without `any`.
+ * This is the canonical {@link RegisteredField} shape (a `FieldDefinition`
+ * superset that carries the root-level `__tenancy` marker mirrored from the
+ * `@tenantId` decorator alongside the canonical `_meta.__tenancy`, a runtime
+ * `value`, and an open index signature for forward-compatible keys). Aliasing
+ * it keeps merged fields assignable back into the
+ * `Map<string, RegisteredField>` on each registered class.
  */
-type InheritedFieldDefinition = FieldDefinition & {
-  __tenancy?: FieldMeta['__tenancy'];
-  value?: unknown;
-  [key: string]: unknown;
-};
+type InheritedFieldDefinition = RegisteredField;
 
 /**
  * Build inheritance chain by walking prototype chain
@@ -171,7 +165,7 @@ export function getInheritanceChain(className: string): string[] {
 
 export async function getAllFields(
   className: string,
-): Promise<Map<string, FieldDefinition>> {
+): Promise<Map<string, RegisteredField>> {
   let registered = findClass(className);
   if (!registered) {
     const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
@@ -268,7 +262,7 @@ export async function getAllFields(
 
   registered.inheritedFields = new Map(allFields);
 
-  return prependSmrtSystemFields(new Map<string, FieldDefinition>(allFields));
+  return prependSmrtSystemFields(new Map<string, RegisteredField>(allFields));
 }
 
 function normalizeFrameworkInheritedField(

@@ -1,16 +1,17 @@
 import type { FieldDefinition, FieldMeta } from '../scanner/types.js';
+import type { RegisteredField } from './types';
 
 /**
- * Runtime field shape handled by the manifest merge helpers.
+ * Manifest-sourced field input handled by the merge helpers.
  *
- * Both manifest-sourced fields and already-registered runtime fields are
- * `FieldDefinition`-shaped, but registered fields may also carry a root-level
- * `__tenancy` marker (mirrored from the decorator) alongside the canonical
- * `_meta.__tenancy`.
+ * Manifest fields are plain {@link FieldDefinition}s. Already-registered
+ * runtime fields are the canonical {@link RegisteredField} superset, which
+ * extends `FieldDefinition`, so a `FieldDefinition` parameter accepts both
+ * shapes as the incoming `fieldDef`. The helpers return the canonical
+ * {@link RegisteredField} so merged fields stay assignable back into the
+ * `Map<string, RegisteredField>` they came from.
  */
-type ManifestFieldLike = FieldDefinition & {
-  __tenancy?: FieldMeta['__tenancy'];
-};
+type ManifestFieldInput = FieldDefinition;
 
 function hasOwnDefinedValue(source: object | undefined, key: string): boolean {
   return (
@@ -21,7 +22,7 @@ function hasOwnDefinedValue(source: object | undefined, key: string): boolean {
 }
 
 function readExistingFieldMeta(
-  existingField: ManifestFieldLike,
+  existingField: RegisteredField,
   key: 'required' | 'default' | 'description',
 ) {
   if (hasOwnDefinedValue(existingField, key)) {
@@ -36,7 +37,7 @@ function readExistingFieldMeta(
 }
 
 function readManifestFieldMeta(
-  fieldDef: ManifestFieldLike,
+  fieldDef: ManifestFieldInput,
   key: 'required' | 'default' | 'description',
 ) {
   if (hasOwnDefinedValue(fieldDef, key)) {
@@ -66,8 +67,8 @@ function assignDefinedMeta(
 }
 
 export function createFieldFromManifest(
-  fieldDef: ManifestFieldLike,
-): ManifestFieldLike {
+  fieldDef: ManifestFieldInput,
+): RegisteredField {
   const meta: FieldMeta = {};
 
   assignDefinedMeta(meta, fieldDef?._meta);
@@ -85,7 +86,7 @@ export function createFieldFromManifest(
 
   // Preserve top-level `related` for relationship-graph lookups
   // (foreignKey / crossPackageRef / oneToMany / manyToMany all rely on it).
-  const out: ManifestFieldLike = {
+  const out: RegisteredField = {
     type: fieldDef.type,
     _meta: meta,
   };
@@ -96,9 +97,9 @@ export function createFieldFromManifest(
 }
 
 export function mergeManifestField(
-  existingField: ManifestFieldLike,
-  fieldDef: ManifestFieldLike,
-): ManifestFieldLike {
+  existingField: RegisteredField,
+  fieldDef: ManifestFieldInput,
+): RegisteredField {
   const hasTenancyMarker =
     existingField.__tenancy?.isTenantIdField ||
     existingField._meta?.__tenancy?.isTenantIdField;
@@ -134,8 +135,8 @@ export function mergeManifestField(
 }
 
 export function manifestFieldDiffers(
-  existingField: ManifestFieldLike,
-  fieldDef: ManifestFieldLike,
+  existingField: RegisteredField,
+  fieldDef: ManifestFieldInput,
 ): boolean {
   const mergedField = mergeManifestField(existingField, fieldDef);
 

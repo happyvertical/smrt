@@ -7,8 +7,24 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import type { SmrtObject } from '../object';
 import type { FieldDefinition, FieldMeta } from '../scanner/types.js';
 import type { ValidatorFunction } from './types';
+
+/**
+ * Read a runtime field value off a SmrtObject instance by dynamic field name.
+ *
+ * Compiled validators index the instance by `fieldName` (a manifest-driven
+ * string), but `SmrtObject` has no string index signature, so a direct
+ * `instance[fieldName]` is an implicit-`any` access (TS7053). This single
+ * documented view casts through `unknown` to a `Record<string, unknown>` so the
+ * dynamic read is typed `unknown` (not `any`) while preserving exact runtime
+ * behavior. Routing every validator's field read through here keeps the cast in
+ * one place instead of scattering it across each closure.
+ */
+function readInstanceField(instance: SmrtObject, fieldName: string): unknown {
+  return (instance as unknown as Record<string, unknown>)[fieldName];
+}
 
 /**
  * Compile validation functions from field definitions.
@@ -37,7 +53,7 @@ export function compileValidators(
     // Required field validator
     if (options.required) {
       validators.push(async (instance) => {
-        const value = instance[fieldName];
+        const value = readInstanceField(instance, fieldName);
         if (value === null || value === undefined || value === '') {
           const ValidationError = await import('../errors').then(
             (m) => m.ValidationError,
@@ -60,7 +76,10 @@ export function compileValidators(
       const { min, max } = options;
       if (min !== undefined) {
         validators.push(async (instance) => {
-          const value = instance[fieldName];
+          // Numeric-field branch: the runtime value is treated as a number for
+          // the range comparison (JS coercion semantics preserved — the cast is
+          // erased, so the runtime read/compare is unchanged).
+          const value = readInstanceField(instance, fieldName) as number;
           if (value !== null && value !== undefined && value < min) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
@@ -73,7 +92,9 @@ export function compileValidators(
 
       if (max !== undefined) {
         validators.push(async (instance) => {
-          const value = instance[fieldName];
+          // See the `min` branch: numeric-field value typed as `number` for the
+          // range comparison; runtime behavior is unchanged.
+          const value = readInstanceField(instance, fieldName) as number;
           if (value !== null && value !== undefined && value > max) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
@@ -90,7 +111,7 @@ export function compileValidators(
       const { minLength, maxLength, pattern } = options;
       if (minLength !== undefined) {
         validators.push(async (instance) => {
-          const value = instance[fieldName];
+          const value = readInstanceField(instance, fieldName);
           if (value && typeof value === 'string' && value.length < minLength) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
@@ -107,7 +128,7 @@ export function compileValidators(
 
       if (maxLength !== undefined) {
         validators.push(async (instance) => {
-          const value = instance[fieldName];
+          const value = readInstanceField(instance, fieldName);
           if (value && typeof value === 'string' && value.length > maxLength) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
@@ -128,7 +149,7 @@ export function compileValidators(
       if (typeof pattern === 'string' || pattern instanceof RegExp) {
         const regex = new RegExp(pattern);
         validators.push(async (instance) => {
-          const value = instance[fieldName];
+          const value = readInstanceField(instance, fieldName);
           if (value && typeof value === 'string' && !regex.test(value)) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
@@ -157,7 +178,7 @@ export function compileValidators(
           ? options.customMessage
           : undefined;
       validators.push(async (instance) => {
-        const value = instance[fieldName];
+        const value = readInstanceField(instance, fieldName);
         try {
           const isValid = await validateFn(value);
           if (!isValid) {
