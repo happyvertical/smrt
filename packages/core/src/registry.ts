@@ -43,8 +43,8 @@ import type {
   ProjectEmbeddingConfig,
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
-import { ConfigurationError } from './errors';
 import type { ValidationError } from './errors';
+import { ConfigurationError } from './errors';
 import { getDefaultCompositeSource } from './manifest/sources/composite.js';
 import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.js';
 import {
@@ -226,6 +226,10 @@ interface FieldDecoratorOptions extends FieldOptions {
   sourceKey?: string;
   /** Target-side join column override for many-to-many relationships. */
   targetKey?: string;
+  /** Tenancy metadata injected by `@TenantScoped` (mirrors `FieldMeta['__tenancy']`). */
+  __tenancy?: { isTenantIdField?: boolean; [key: string]: unknown };
+  /** Report-aggregate metadata injected by `@report` (mirrors `FieldMeta['__report']`). */
+  __report?: { kind?: string; [key: string]: unknown };
 }
 
 /**
@@ -2890,7 +2894,8 @@ export class ObjectRegistry {
     db: import('@happyvertical/sql').DatabaseInterface,
   ): Promise<void> {
     for (const [className, registered] of ObjectRegistry.classes.entries()) {
-      const fieldsData: Record<string, { type: unknown; options: unknown }> = {};
+      const fieldsData: Record<string, { type: unknown; options: unknown }> =
+        {};
       for (const [key, value] of registered.fields) {
         fieldsData[key] = {
           type: value.type,
