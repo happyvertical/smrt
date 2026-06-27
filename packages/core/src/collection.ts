@@ -1399,13 +1399,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (foreignKeyValue && typeof foreignKeyValue === 'string') {
         const relatedObject = relatedMap.get(foreignKeyValue);
         if (relatedObject) {
-          // Set in the relationship cache. `_loadedRelationships` is a private
-          // SmrtObject member; view as the runtime relationship-cache shape.
-          (
-            instance as unknown as {
-              _loadedRelationships: Map<string, unknown>;
-            }
-          )._loadedRelationships.set(fieldName, relatedObject);
+          // Prime the lazy-load cache through SmrtObject's sanctioned internal
+          // setter rather than reaching into the private field directly.
+          instance._setLoadedRelationship(fieldName, relatedObject);
         }
       }
     }
@@ -1515,11 +1511,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Assign loaded objects to instances
     for (const instance of instances) {
       const relatedArray = relatedMap.get(instance.id as string) || [];
-      // `_loadedRelationships` is a private SmrtObject member; view as the
-      // runtime relationship-cache shape.
-      (
-        instance as unknown as { _loadedRelationships: Map<string, unknown> }
-      )._loadedRelationships.set(fieldName, relatedArray);
+      // Prime the lazy-load cache through SmrtObject's sanctioned internal
+      // setter rather than reaching into the private field directly.
+      instance._setLoadedRelationship(fieldName, relatedArray);
     }
   }
 
@@ -1581,12 +1575,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     // Default empty arrays for every instance so callers always see an array.
-    // `_loadedRelationships` is a private SmrtObject member; view as the runtime
-    // relationship-cache shape.
+    // Seed through SmrtObject's sanctioned internal setter rather than reaching
+    // into the private relationship-cache field directly.
     for (const instance of instances) {
-      (
-        instance as unknown as { _loadedRelationships: Map<string, unknown> }
-      )._loadedRelationships.set(fieldName, []);
+      instance._setLoadedRelationship(fieldName, []);
     }
 
     // Pull junction rows in chunks. SQLite's default SQLITE_MAX_VARIABLE_NUMBER
@@ -1656,11 +1648,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const objects = targetIds
         .map((id) => targetById.get(id))
         .filter((o) => o !== undefined);
-      // `_loadedRelationships` is a private SmrtObject member; view as the
-      // runtime relationship-cache shape.
-      (
-        instance as unknown as { _loadedRelationships: Map<string, unknown> }
-      )._loadedRelationships.set(fieldName, objects);
+      // Seed through SmrtObject's sanctioned internal setter rather than reaching
+      // into the private relationship-cache field directly.
+      instance._setLoadedRelationship(fieldName, objects);
     }
   }
 

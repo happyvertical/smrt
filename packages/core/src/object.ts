@@ -2674,6 +2674,27 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Internal: seed the lazy-load relationship cache from an external batch
+   * loader.
+   *
+   * `SmrtCollection`'s eager `include:` and `getOrUpsert` paths resolve
+   * relationships in bulk and need to prime each instance's cache so a later
+   * {@link loadRelated}/{@link loadRelatedMany} call returns the already-fetched
+   * value instead of re-querying. This method is the sanctioned write path into
+   * the otherwise-private `_loadedRelationships` map, so collaborators never have
+   * to structurally cast into the private field (which the no-private-reach-ins
+   * convention forbids). The leading underscore keeps it out of the generated
+   * REST/CLI/MCP surface, like other framework-internal members.
+   *
+   * @param fieldName - Relationship field whose value is being cached
+   * @param value - The loaded relationship (a `SmrtObject`, an array of them, or
+   *   `null`), stored verbatim
+   */
+  public _setLoadedRelationship(fieldName: string, value: unknown): void {
+    this._loadedRelationships.set(fieldName, value);
+  }
+
+  /**
    * Lazy-loads a `foreignKey` or `crossPackageRef` relationship and caches the
    * result.
    *
