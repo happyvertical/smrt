@@ -173,8 +173,10 @@ export interface SmrtCollectionOptions extends SmrtClassOptions {}
 // `unknown` rejects those assignments. Mirrors the `SmrtObjectConstructor`
 // escape hatch in registry/types.
 export type SmrtCollectionItemClass<ModelType extends SmrtObject> = (new (
+  // biome-ignore lint/suspicious/noExplicitAny: contravariant constructor option bag — narrowing to `SmrtCreateInput<ModelType>`/`unknown` rejects every concrete `static _itemClass = Product` assignment. Mirrors `SmrtObjectConstructor`. S4 #1579.
   options: any,
 ) => ModelType) & {
+  // biome-ignore lint/suspicious/noExplicitAny: contravariant `create()` option bag — same variance constraint as the constructor above. S4 #1579.
   create(options: any): ModelType | Promise<ModelType>;
 };
 
@@ -590,6 +592,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * `SmrtObjectConstructor` / `SmrtCollectionItemClass<SmrtObject>` type rejects
    * the heterogeneous concrete assignments. Mirrors the registry escape hatch.
    */
+  // biome-ignore lint/suspicious/noExplicitAny: subclasses assign a concrete `static _itemClass = Product`; `SmrtCollection` is invariant in `ModelType`, so a narrower constructor type rejects the heterogeneous assignments. S4 #1579.
   static readonly _itemClass: any;
 
   /**
@@ -691,6 +694,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   // so a concrete `Products extends SmrtCollection<Product>` does not satisfy
   // `T extends SmrtCollection<SmrtObject>`. The `any` bound is the only constraint
   // every subclass collection satisfies.
+  // biome-ignore lint/suspicious/noExplicitAny: `SmrtCollection` is invariant in `ModelType`, so concrete `Products extends SmrtCollection<Product>` fails `T extends SmrtCollection<SmrtObject>`; the `any` bound is the only one every subclass satisfies. S4 #1579.
   static async create<T extends SmrtCollection<any>>(
     this: new (
       options?: SmrtCollectionOptions,

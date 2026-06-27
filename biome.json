@@ -247,6 +247,9 @@
     },
     {
       "includes": [
+        "packages/core/src/**/*.ts",
+        "packages/core/src/**/*.tsx",
+        "packages/core/src/**/*.svelte",
         "packages/chat/src/**/*.ts",
         "packages/chat/src/**/*.tsx",
         "packages/chat/src/**/*.svelte",

@@ -247,6 +247,7 @@ interface FieldDecoratorOptions extends FieldOptions {
  * contravariant — `unknown` would reject those, `any` (like `SmrtObjectConstructor`)
  * stays assignable from any concrete options shape.
  */
+// biome-ignore lint/suspicious/noExplicitAny: registers CONCRETE collection constructors whose contravariant `options` reject `unknown`, and `SmrtCollection` is invariant in `ModelType` so the type arg cannot narrow to `SmrtObject`. Mirrors `SmrtObjectConstructor`. S4 #1579.
 type CollectionConstructor = new (options: any) => SmrtCollection<any>;
 
 /**
@@ -438,6 +439,7 @@ export class ObjectRegistry {
   /**
    * Get the collection cache from globalThis, initializing if needed
    */
+  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous cache of concrete collections; `SmrtCollection` is invariant in `ModelType`, so the type arg cannot narrow to `SmrtObject` (read sites cast back). S4 #1579.
   private static get collectionCache(): LRUCache<string, SmrtCollection<any>> {
     return getCollectionCache();
   }
@@ -462,6 +464,7 @@ export class ObjectRegistry {
     }
     globalThis.__smrtRegistryCollectionCache = new LRUCache<
       string,
+      // biome-ignore lint/suspicious/noExplicitAny: heterogeneous cache of concrete collections; `SmrtCollection` is invariant in `ModelType` so the type arg cannot narrow to `SmrtObject`. S4 #1579.
       SmrtCollection<any>
     >(maxSize);
   }
@@ -1490,6 +1493,7 @@ export class ObjectRegistry {
   private static resolveCollectionRegistration(className: string): {
     canonicalName: string;
     registered?: RegisteredClass;
+    // biome-ignore lint/suspicious/noExplicitAny: concrete collection constructor with contravariant `options` and invariant `ModelType`; mirrors `CollectionConstructor`. S4 #1579.
     collectionConstructor?: new (options: any) => SmrtCollection<any>;
   } {
     let registered = ObjectRegistry.findClass(className);
@@ -3170,6 +3174,7 @@ export function smrt(config: SmartObjectConfig = {}) {
   // (every class constructor — including ones with specific parameter lists —
   // must satisfy it), so it is left as-is. Only the instance/return type is
   // narrowed from `any` to `object`.
+  // biome-ignore lint/suspicious/noExplicitAny: `(...args: any[])` is the idiomatic class-decorator constraint — every class constructor (incl. specific param lists) must satisfy it; `unknown[]`/`never[]` would reject concrete ctors. S4 #1579.
   return <T extends abstract new (...args: any[]) => object>(
     ctor: T,
     decoratorContext?: ClassDecoratorContext<T>,
