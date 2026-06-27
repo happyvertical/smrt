@@ -202,6 +202,7 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
    * `[key: string]: any`. Narrowing it would break `super(options)` in every
    * downstream model. Documented irreducible leaf (S4 #1579).
    */
+  // biome-ignore lint/suspicious/noExplicitAny: subclass option interfaces (plain, no index signature) are assignable to `[key:string]:any` but NOT to `:unknown`; narrowing breaks `super(options)` in every downstream model. S4 #1579.
   [key: string]: any;
 }
 
@@ -972,6 +973,7 @@ export class SmrtObject extends SmrtClass {
   // OVERRIDE getFields() with domain-specific shapes (e.g. projects'
   // `Project.getFields(): Promise<ProjectField[]>`), which a precise field-map
   // return type would reject. The body below stays internally typed.
+  // biome-ignore lint/suspicious/noExplicitAny: subclasses OVERRIDE getFields() with domain shapes (e.g. `Project.getFields(): Promise<ProjectField[]>`); a precise base return type would reject those overrides. S4 #1579.
   async getFields(): Promise<any> {
     const className = this.getResolvedClassName();
     const cachedFields = await ObjectRegistry.getAllFields(className);
@@ -2738,6 +2740,7 @@ export class SmrtObject extends SmrtClass {
   public async loadRelated(
     fieldName: string,
     opts?: LoadRelatedOptions,
+    // biome-ignore lint/suspicious/noExplicitAny: returns a polymorphic related object whose concrete subclass only the CALLER knows (e.g. `metafield.validateValue(...)`); `any` lets callers use the concrete API without a cast. S4 #1579.
   ): Promise<any> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
@@ -2937,6 +2940,7 @@ export class SmrtObject extends SmrtClass {
   public async loadRelatedMany(
     fieldName: string,
     opts?: LoadRelatedOptions,
+    // biome-ignore lint/suspicious/noExplicitAny: polymorphic related objects whose concrete type is caller-known (see loadRelated). S4 #1579.
   ): Promise<any[]> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
@@ -3190,6 +3194,7 @@ export class SmrtObject extends SmrtClass {
   public async getRelated(
     fieldName: string,
     opts?: LoadRelatedOptions,
+    // biome-ignore lint/suspicious/noExplicitAny: polymorphic related object(s) whose concrete type is caller-known (see loadRelated). S4 #1579.
   ): Promise<any> {
     if (this._loadedRelationships.has(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);

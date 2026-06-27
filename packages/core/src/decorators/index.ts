@@ -65,7 +65,7 @@ export interface FieldOptions {
   /** Whether the field is required */
   required?: boolean;
   /** Default value for the field */
-  default?: any;
+  default?: unknown;
   /** Whether the field is unique */
   unique?: boolean;
   /**
@@ -220,7 +220,7 @@ export function field(
 ) {
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
     registerCompatibleFieldDecorator(
       targetOrValue,
@@ -267,12 +267,12 @@ export function field(
  * @see SmrtObject.loadRelated for lazy-loading the related object at runtime
  */
 export function foreignKey(
-  relatedClass: string | Function | any,
+  relatedClass: string | Function,
   options: Omit<RelationshipFieldOptions, 'related'> = {},
 ) {
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
     const relatedClassName =
       typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
@@ -337,7 +337,7 @@ export function crossPackageRef(
 ) {
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
     registerCompatibleFieldDecorator(
       targetOrValue,
@@ -413,12 +413,12 @@ export function crossPackageRef(
  * @see SmrtObject.loadRelatedMany for lazy-loading at runtime
  */
 export function oneToMany(
-  relatedClass: string | Function | any,
+  relatedClass: string | Function,
   options: Omit<RelationshipFieldOptions, 'related'> = {},
 ) {
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
     const relatedClassName =
       typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
@@ -465,12 +465,12 @@ export function oneToMany(
  * @see {@link oneToMany} for one-to-many relationships
  */
 export function manyToMany(
-  relatedClass: string | Function | any,
+  relatedClass: string | Function,
   options: Omit<RelationshipFieldOptions, 'related'> = {},
 ) {
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
     const relatedClassName =
       typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
@@ -527,7 +527,7 @@ export function manyToMany(
 export function meta(options: FieldOptions = {}) {
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
     registerCompatibleFieldDecorator(
       targetOrValue,

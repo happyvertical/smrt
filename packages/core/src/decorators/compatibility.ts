@@ -23,7 +23,7 @@ export type CompatiblePropertyDecoratorContext<This, Value> =
   | symbol
   | ClassFieldDecoratorContext<This, Value>;
 
-export interface CompatiblePropertyDecorator<This = any, Value = any> {
+export interface CompatiblePropertyDecorator<This = unknown, Value = unknown> {
   (target: object, propertyKey: string | symbol): void;
   (value: undefined, context: ClassFieldDecoratorContext<This, Value>): void;
 }
@@ -62,7 +62,7 @@ function markStandardDecoratorRegistration(
 
 function getDecoratorMetadata(
   contextOrMetadata:
-    | ClassFieldDecoratorContext<any, any>
+    | ClassFieldDecoratorContext<unknown, unknown>
     | ClassDecoratorContext
     | DecoratorMetadataStore
     | undefined,

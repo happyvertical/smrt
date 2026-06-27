@@ -32,6 +32,7 @@ declare global {
   // to `SmrtCollection<SmrtObject>` — the type argument stays `any` (read sites
   // cast back to the concrete collection type).
   var __smrtRegistryCollectionCache:
+    // biome-ignore lint/suspicious/noExplicitAny: heterogeneous cache keyed by class name; `SmrtCollection` is invariant in `ModelType` so the type arg cannot narrow to `SmrtObject` (read sites cast back). S4 #1579.
     | LRUCache<string, SmrtCollection<any>>
     | undefined;
   // eslint-disable-next-line no-var
@@ -183,10 +184,12 @@ export function getCollectionTableNames(): Map<string, string> {
   return globalThis.__smrtRegistryCollectionTableNames;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous cache; `SmrtCollection` is invariant in `ModelType` so the type arg cannot narrow to `SmrtObject` (read sites cast back). S4 #1579.
 export function getCollectionCache(): LRUCache<string, SmrtCollection<any>> {
   if (!globalThis.__smrtRegistryCollectionCache) {
     globalThis.__smrtRegistryCollectionCache = new LRUCache<
       string,
+      // biome-ignore lint/suspicious/noExplicitAny: same heterogeneous-cache invariance as the return type above. S4 #1579.
       SmrtCollection<any>
     >(100);
   }

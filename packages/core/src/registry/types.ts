@@ -27,6 +27,7 @@ import type { SchemaDefinition } from '../schema/types.js';
  * Type for any constructor function that extends SmrtObject.
  * Used for WeakMap keys where we need to accept any subclass constructor.
  */
+// biome-ignore lint/suspicious/noExplicitAny: must accept every concrete SmrtObject subclass constructor; `(...args: any[])` is bottom-compatible where `unknown[]`/`never[]` reject typed constructors (e.g. `new (options?: SmrtObjectOptions)`). S4 #1579.
 export type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
 
 export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -780,9 +781,8 @@ export interface RegisteredClass {
    * `typeof SmrtCollection`. This mirrors the `SmrtObjectConstructor` escape
    * hatch above.
    */
-  collectionConstructor?: new (
-    options: any,
-  ) => SmrtCollection<any>;
+  // biome-ignore lint/suspicious/noExplicitAny: assigned from `typeof SmrtCollection` (contravariant `options?`, invariant `ModelType`) and called by generators passing a loosely-typed `{ ai, db }` context; precise types break those sites. Mirrors `SmrtObjectConstructor`. S4 #1579.
+  collectionConstructor?: new (options: any) => SmrtCollection<any>;
   config: SmartObjectConfig;
   fields: Map<string, RegisteredField>;
   /** Method definitions from manifest (for custom CLI/API/MCP generation) */
