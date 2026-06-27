@@ -65,11 +65,13 @@ export function childAccessorName(fieldName: string): string {
  *   `ObjectRegistry.getRelationships`)
  */
 export function applyOneToManyChildAccessors(
-  ctor: { prototype?: any } | undefined,
+  ctor: { prototype?: unknown } | undefined,
   relationships: RelationshipMetadata[] | undefined,
 ): void {
   const prototype = ctor?.prototype;
-  if (!prototype || !relationships) {
+  // Narrow the `unknown` prototype view to an object before augmenting it; a
+  // registered constructor always carries an object prototype when present.
+  if (!prototype || typeof prototype !== 'object' || !relationships) {
     return;
   }
 
@@ -94,8 +96,8 @@ export function applyOneToManyChildAccessors(
 
     Object.defineProperty(prototype, accessorName, {
       value: function generatedChildAccessor(this: {
-        loadRelatedMany(field: string): Promise<any[]>;
-      }): Promise<any[]> {
+        loadRelatedMany(field: string): Promise<unknown[]>;
+      }): Promise<unknown[]> {
         return this.loadRelatedMany(fieldName);
       },
       writable: true,

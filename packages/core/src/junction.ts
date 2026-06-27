@@ -23,7 +23,7 @@
  * @typeParam TItem - The junction row class (extends `SmrtObject`)
  */
 
-import { SmrtCollection } from './collection';
+import { SmrtCollection, type SmrtCreateInput } from './collection';
 import type { SmrtObject } from './object';
 
 /**
@@ -152,7 +152,7 @@ export abstract class SmrtJunction<
       ...opts,
       [this.leftField]: leftId,
       [this.rightField]: rightId,
-    } as any)) as TItem;
+    } as SmrtCreateInput<TItem>)) as TItem;
   }
 
   /**
