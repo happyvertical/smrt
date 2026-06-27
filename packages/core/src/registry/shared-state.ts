@@ -26,8 +26,13 @@ declare global {
   // eslint-disable-next-line no-var
   var __smrtRegistryCollections: Map<string, typeof SmrtCollection> | undefined;
   // eslint-disable-next-line no-var
+  // Heterogeneous cache: stores collections of many different item types keyed
+  // by class name. `SmrtCollection` is invariant in its item type (it has
+  // `create(options: SmrtCreateInput<ModelType>)`), so this cannot be narrowed
+  // to `SmrtCollection<SmrtObject>` — the type argument stays `any` (read sites
+  // cast back to the concrete collection type).
   var __smrtRegistryCollectionCache:
-    | LRUCache<string, SmrtCollection<SmrtObject>>
+    | LRUCache<string, SmrtCollection<any>>
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryDbInstanceIds: WeakMap<object, number> | undefined;
@@ -178,14 +183,11 @@ export function getCollectionTableNames(): Map<string, string> {
   return globalThis.__smrtRegistryCollectionTableNames;
 }
 
-export function getCollectionCache(): LRUCache<
-  string,
-  SmrtCollection<SmrtObject>
-> {
+export function getCollectionCache(): LRUCache<string, SmrtCollection<any>> {
   if (!globalThis.__smrtRegistryCollectionCache) {
     globalThis.__smrtRegistryCollectionCache = new LRUCache<
       string,
-      SmrtCollection<SmrtObject>
+      SmrtCollection<any>
     >(100);
   }
   return globalThis.__smrtRegistryCollectionCache;

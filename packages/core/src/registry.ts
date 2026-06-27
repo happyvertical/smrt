@@ -494,7 +494,13 @@ export class ObjectRegistry {
     string,
     Map<string, FieldDecoratorOptions>
   > {
-    return getFieldDecorators();
+    // Shared state stores these as the looser `Record<string, unknown>` (it
+    // can't import the registry-local `FieldDecoratorOptions`); this getter
+    // exposes the precise decorator-options view. Documented narrowing cast.
+    return getFieldDecorators() as Map<
+      string,
+      Map<string, FieldDecoratorOptions>
+    >;
   }
 
   /**

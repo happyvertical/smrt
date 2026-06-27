@@ -50,8 +50,10 @@ export function compileValidators(
       continue;
     }
 
-    // Required field validator
-    if (options.required) {
+    // Required field validator. Check both the `_meta` bag and the top-level
+    // `field.required` (some registration paths, e.g. tenantScoped injection,
+    // set the top-level flag) — mirrors the `transient` check above.
+    if (options.required || field.required) {
       validators.push(async (instance) => {
         const value = readInstanceField(instance, fieldName);
         if (value === null || value === undefined || value === '') {
