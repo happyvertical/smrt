@@ -22,6 +22,7 @@ import {
 } from './interceptors';
 import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
+import type { SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   classnameToTablename,
@@ -117,7 +118,9 @@ type SmrtInternalKeys =
 export type SmrtCreateInput<T extends SmrtObject> = Partial<
   Omit<
     {
-      [K in keyof T as T[K] extends (...args: any[]) => any ? never : K]: T[K];
+      [K in keyof T as T[K] extends (...args: never[]) => unknown
+        ? never
+        : K]: T[K];
     },
     SmrtInternalKeys
   >
@@ -143,10 +146,32 @@ export type SmrtCreateInput<T extends SmrtObject> = Partial<
 export type SmrtWhereClause<T extends SmrtObject> = Record<string, unknown>;
 
 /**
+ * Minimal runtime shape of a field definition as consumed by the collection's
+ * query/hydration helpers (`getFieldsSync()`, `convertWhereKeys()`,
+ * `formatDataJs()`). These come from `fieldsFromClass()` /
+ * `ObjectRegistry.getFields()` and only a few members are read here: `type`
+ * (for `formatDataJs` value coercion) and the `sensitive` markers (for the
+ * `@field({ sensitive: true })` WHERE guard, #1540). The index signature keeps
+ * the bag open for the other registry-attached members without forcing `any`.
+ */
+interface CollectionFieldDefinition {
+  type?: string;
+  sensitive?: boolean;
+  _meta?: { sensitive?: boolean } & Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
  * Configuration options for SmrtCollection
  */
 export interface SmrtCollectionOptions extends SmrtClassOptions {}
 
+// S4 #1579: the constructor `options` and static `create(options)` params are
+// left as `any` deliberately. This type is satisfied by every concrete model
+// class (`static readonly _itemClass = Product`), whose constructor/`create`
+// option bag is contravariant — narrowing to `SmrtCreateInput<ModelType>` or
+// `unknown` rejects those assignments. Mirrors the `SmrtObjectConstructor`
+// escape hatch in registry/types.
 export type SmrtCollectionItemClass<ModelType extends SmrtObject> = (new (
   options: any,
 ) => ModelType) & {
@@ -195,12 +220,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Populated during create() to avoid async getFields() calls on every query.
    * @private
    */
-  private _cachedFields: Record<string, any> | null = null;
+  private _cachedFields: Record<string, CollectionFieldDefinition> | null =
+    null;
 
   private getRegisteredItemClass() {
     return (
-      ObjectRegistry.getClassByConstructor(this._itemClass as any) ||
-      ObjectRegistry.getClass(this._itemClass.name)
+      ObjectRegistry.getClassByConstructor(
+        this._itemClass as unknown as SmrtObjectConstructor,
+      ) || ObjectRegistry.getClass(this._itemClass.name)
     );
   }
 
@@ -231,7 +258,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * // Output: { 'type_id': 'foo', 'category_id >': 100 }
    * ```
    */
-  private convertWhereKeys(where: Record<string, any>): Record<string, any> {
+  private convertWhereKeys(
+    where: Record<string, unknown>,
+  ): Record<string, unknown> {
     // Whitelist of allowed SQL operators
     const VALID_OPERATORS = [
       '=',
@@ -259,11 +288,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // character at a time even though it's excluded from serialization.
     const sensitiveFieldNames = new Set<string>();
     const collectSensitive = (
-      fieldMap: Record<string, any> | Map<string, any>,
+      fieldMap: Record<string, unknown> | Map<string, unknown>,
     ) => {
       const entries =
         fieldMap instanceof Map ? fieldMap.entries() : Object.entries(fieldMap);
-      for (const [fieldName, def] of entries) {
+      for (const [fieldName, rawDef] of entries) {
+        const def = rawDef as
+          | { sensitive?: boolean; _meta?: { sensitive?: boolean } }
+          | null
+          | undefined;
         if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
           // Store both the snake_case column form and the raw property name so
           // STI `@meta` fields probed via `_meta_data.<prop>` JSON paths (which
@@ -340,7 +373,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const hasRegisteredFields = Object.keys(fields).length > 0;
     const skipFieldValidation = !hasRegisteredFields;
 
-    const converted: Record<string, any> = {};
+    const converted: Record<string, unknown> = {};
 
     // Check for prototype pollution attempts using own properties only
     // __proto__ is a special property that doesn't show up in Object.entries()
@@ -549,7 +582,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Static reference to the item class constructor
+   * Static reference to the item class constructor.
+   *
+   * S4 #1579: kept as `any`. Subclasses assign a concrete model constructor
+   * (`static readonly _itemClass = Product`) here; the base declares the slot
+   * generically and `SmrtCollection` is invariant in `ModelType`, so a narrower
+   * `SmrtObjectConstructor` / `SmrtCollectionItemClass<SmrtObject>` type rejects
+   * the heterogeneous concrete assignments. Mirrors the registry escape hatch.
    */
   static readonly _itemClass: any;
 
@@ -604,15 +643,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   constructor(options: SmrtCollectionOptions = {}) {
     super(options);
 
-    // Auto-register the collection if it's not the base SmrtCollection and has an _itemClass
-    if (
-      this.constructor !== SmrtCollection &&
-      (this.constructor as any)._itemClass
-    ) {
-      const itemClass = (this.constructor as any)._itemClass;
+    // Auto-register the collection if it's not the base SmrtCollection and has an _itemClass.
+    // `this.constructor` is typed as the structureless `Function`; view it as the
+    // collection-class shape (static `_itemClass` constructor + the new-able ctor
+    // that `registerCollection` stores) so the static slot can be read and the
+    // class registered without `any`.
+    const collectionCtor = this.constructor as unknown as {
+      _itemClass?: SmrtObjectConstructor;
+    } & (new (
+      options: SmrtCollectionOptions,
+    ) => SmrtCollection<SmrtObject>);
+    if (this.constructor !== SmrtCollection && collectionCtor._itemClass) {
+      const itemClass = collectionCtor._itemClass;
       const itemClassName =
         ObjectRegistry.getClassByConstructor(itemClass)?.name || itemClass.name;
-      ObjectRegistry.registerCollection(itemClassName, this.constructor as any);
+      ObjectRegistry.registerCollection(itemClassName, collectionCtor);
     }
   }
 
@@ -641,6 +686,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * });
    * ```
    */
+  // S4 #1579: `SmrtCollection<any>` bound is irreducible. `SmrtCollection` is
+  // invariant in `ModelType` (it has `create(options: SmrtCreateInput<ModelType>)`),
+  // so a concrete `Products extends SmrtCollection<Product>` does not satisfy
+  // `T extends SmrtCollection<SmrtObject>`. The `any` bound is the only constraint
+  // every subclass collection satisfies.
   static async create<T extends SmrtCollection<any>>(
     this: new (
       options?: SmrtCollectionOptions,
@@ -688,8 +738,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // We check the ITEM class registration (not the collection class) —
     // collection constructors are stored separately via
     // registerCollection(itemClassName, ctor), not in the classes map.
-    if ((this as any)._isJunctionBase === true) {
-      const itemCtor = (this as any)._itemClass;
+    // View the static `this` as the junction-aware collection-class shape so the
+    // junction sentinel and item constructor can be read without `any`.
+    const staticSelf = this as unknown as {
+      name: string;
+      _isJunctionBase?: boolean;
+      _itemClass?: SmrtObjectConstructor;
+    };
+    if (staticSelf._isJunctionBase === true) {
+      const itemCtor = staticSelf._itemClass;
       const itemRegistered =
         itemCtor && ObjectRegistry.getClassByConstructor(itemCtor);
       if (!itemRegistered) {
@@ -770,7 +827,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * ```
    */
   public async findOne(options: {
-    where: Record<string, any>;
+    where: SmrtWhereClause<ModelType>;
   }): Promise<ModelType | null> {
     return await this.get(options.where);
   }
@@ -868,7 +925,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     sql: string,
     params: unknown[],
     cacheConfig: CollectionCacheConfig | undefined,
-  ): Promise<Record<string, any>[]> {
+  ): Promise<Record<string, unknown>[]> {
     if (!cacheConfig) {
       const result = await this.db.query(sql, ...params);
       return result.rows;
@@ -946,7 +1003,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link findById} / {@link findOne} for convenience aliases
    */
   public async get(
-    filter: string | Record<string, any>,
+    filter: string | SmrtWhereClause<ModelType>,
     options: { cache?: CollectionCacheConfig | false } = {},
   ): Promise<ModelType | null> {
     await this.ensureStorageReady();
@@ -1208,7 +1265,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // STI: Hydrate instances polymorphically based on _meta_type
     // Reuse tableStrategy and isSTI from earlier in the function
     const instances = await Promise.all(
-      rows.map((item: any) => this.hydrateResultRow(item, fields, isSTI)),
+      rows.map((item) => this.hydrateResultRow(item, fields, isSTI)),
     );
 
     // Eager load specified relationships
@@ -1307,7 +1364,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (foreignKeyValues.size === 0) return;
 
     // Get or create cached collection instance
-    let targetCollection: SmrtCollection<any> | undefined;
+    let targetCollection: SmrtCollection<SmrtObject> | undefined;
     try {
       targetCollection = await ObjectRegistry.getCollection(
         relationship.targetClass,
@@ -1322,7 +1379,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Load all related objects, chunked to stay under SQLITE_MAX_VARIABLE_NUMBER (999).
     const fkValueList = Array.from(foreignKeyValues);
-    const relatedObjects: any[] = [];
+    const relatedObjects: SmrtObject[] = [];
     for (const idChunk of chunkArray(fkValueList, IN_LIST_CHUNK_SIZE)) {
       const batch = await targetCollection.list({
         where: { 'id in': idChunk },
@@ -1331,9 +1388,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     // Build a map of ID to object for quick lookup
-    const relatedMap = new Map();
+    const relatedMap = new Map<string, SmrtObject>();
     for (const obj of relatedObjects) {
-      relatedMap.set(obj.id, obj);
+      if (obj.id) relatedMap.set(obj.id, obj);
     }
 
     // Assign loaded objects to instances
@@ -1342,8 +1399,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (foreignKeyValue && typeof foreignKeyValue === 'string') {
         const relatedObject = relatedMap.get(foreignKeyValue);
         if (relatedObject) {
-          // Set in the relationship cache
-          (instance as any)._loadedRelationships.set(fieldName, relatedObject);
+          // Set in the relationship cache. `_loadedRelationships` is a private
+          // SmrtObject member; view as the runtime relationship-cache shape.
+          (
+            instance as unknown as {
+              _loadedRelationships: Map<string, unknown>;
+            }
+          )._loadedRelationships.set(fieldName, relatedObject);
         }
       }
     }
@@ -1413,7 +1475,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (instanceIds.length === 0) return;
 
     // Get or create cached collection instance
-    let targetCollection: SmrtCollection<any> | undefined;
+    let targetCollection: SmrtCollection<SmrtObject> | undefined;
     try {
       targetCollection = await ObjectRegistry.getCollection(
         relationship.targetClass,
@@ -1427,7 +1489,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     // Load all related objects, chunked to stay under SQLITE_MAX_VARIABLE_NUMBER (999).
-    const relatedObjects: any[] = [];
+    const relatedObjects: SmrtObject[] = [];
     for (const idChunk of chunkArray(instanceIds, IN_LIST_CHUNK_SIZE)) {
       const batch = await targetCollection.list({
         where: { [`${inverseForeignKey.fieldName} in`]: idChunk },
@@ -1435,11 +1497,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       relatedObjects.push(...batch);
     }
 
-    // Group related objects by the foreign key value
-    const relatedMap = new Map<string, any[]>();
+    // Group related objects by the foreign key value. The key type is `unknown`
+    // (not `string`) to preserve the prior behavior exactly: a non-string FK
+    // value still creates its own bucket rather than being skipped.
+    const relatedMap = new Map<unknown, SmrtObject[]>();
     for (const obj of relatedObjects) {
       // Access dynamic property safely - obj is a SmrtObject with dynamic fields
-      const foreignKeyValue = (obj as Record<string, any>)[
+      const foreignKeyValue = (obj as unknown as Record<string, unknown>)[
         inverseForeignKey.fieldName
       ];
       if (!relatedMap.has(foreignKeyValue)) {
@@ -1451,7 +1515,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Assign loaded objects to instances
     for (const instance of instances) {
       const relatedArray = relatedMap.get(instance.id as string) || [];
-      (instance as any)._loadedRelationships.set(fieldName, relatedArray);
+      // `_loadedRelationships` is a private SmrtObject member; view as the
+      // runtime relationship-cache shape.
+      (
+        instance as unknown as { _loadedRelationships: Map<string, unknown> }
+      )._loadedRelationships.set(fieldName, relatedArray);
     }
   }
 
@@ -1484,7 +1552,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     let targetColumn: string;
     let targetClassName: string;
     try {
-      const sample: any = instances[0];
+      // `resolveManyToManyJoin` is a protected SmrtObject method; view the
+      // sample instance as the shape exposing it. The call keeps `this` bound
+      // (method invoked on the receiver), so registry metadata resolves on the
+      // sample as intended.
+      const sample = instances[0] as unknown as {
+        resolveManyToManyJoin(
+          fieldName: string,
+          relationship: import('./registry').RelationshipMetadata,
+        ): Promise<{
+          through: string;
+          sourceColumn: string;
+          targetColumn: string;
+          targetClassName: string;
+        }>;
+      };
       const join = await sample.resolveManyToManyJoin(fieldName, relationship);
       through = join.through;
       sourceColumn = join.sourceColumn;
@@ -1498,9 +1580,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return;
     }
 
-    // Default empty arrays for every instance so callers always see an array
+    // Default empty arrays for every instance so callers always see an array.
+    // `_loadedRelationships` is a private SmrtObject member; view as the runtime
+    // relationship-cache shape.
     for (const instance of instances) {
-      (instance as any)._loadedRelationships.set(fieldName, []);
+      (
+        instance as unknown as { _loadedRelationships: Map<string, unknown> }
+      )._loadedRelationships.set(fieldName, []);
     }
 
     // Pull junction rows in chunks. SQLite's default SQLITE_MAX_VARIABLE_NUMBER
@@ -1523,7 +1609,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // sourceId -> [targetIds...]
     const sourceToTargets = new Map<string, string[]>();
     const allTargetIds = new Set<string>();
-    for (const row of junctionRowsAll as any[]) {
+    for (const row of junctionRowsAll) {
       const sId = row[sourceColumn];
       const tId = row[targetColumn];
       if (typeof sId !== 'string' || typeof tId !== 'string') continue;
@@ -1537,7 +1623,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Hydrate all target objects. Also chunked so we don't blow the
     // placeholder limit on a wide manyToMany.
-    let targetCollection: SmrtCollection<any>;
+    let targetCollection: SmrtCollection<SmrtObject>;
     try {
       targetCollection = await ObjectRegistry.getCollection(
         targetClassName,
@@ -1551,7 +1637,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return;
     }
     const targetIdList = Array.from(allTargetIds);
-    const targetObjects: any[] = [];
+    const targetObjects: SmrtObject[] = [];
     for (const idChunk of chunkArray(targetIdList, IN_LIST_CHUNK_SIZE)) {
       const batch = await targetCollection.list({
         where: { 'id in': idChunk },
@@ -1559,7 +1645,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       targetObjects.push(...batch);
     }
 
-    const targetById = new Map<string, any>();
+    const targetById = new Map<string, SmrtObject>();
     for (const obj of targetObjects) {
       if (obj.id) targetById.set(obj.id, obj);
     }
@@ -1570,7 +1656,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const objects = targetIds
         .map((id) => targetById.get(id))
         .filter((o) => o !== undefined);
-      (instance as any)._loadedRelationships.set(fieldName, objects);
+      // `_loadedRelationships` is a private SmrtObject member; view as the
+      // runtime relationship-cache shape.
+      (
+        instance as unknown as { _loadedRelationships: Map<string, unknown> }
+      )._loadedRelationships.set(fieldName, objects);
     }
   }
 
@@ -1626,9 +1716,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         options._meta_type,
         options,
       );
-      // Generate ID if not provided, then save
+      // Generate ID if not provided, then save. `_id` is a private SmrtObject
+      // backing field; view as a writable bag for the runtime assignment.
       if (!instance.id) {
-        (instance as any)._id = crypto.randomUUID();
+        (instance as unknown as { _id?: string })._id = crypto.randomUUID();
       }
       await instance.save();
       return instance;
@@ -1657,11 +1748,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // When classes are registered with qualified names as keys (e.g., from consumer plugin),
     // name-based lookup fails. Constructor lookup uses a WeakMap index for O(1) lookups.
     if (tableStrategy === 'sti') {
-      (instance as any)._meta_type = itemQualifiedName;
+      // `_meta_type` is a runtime-only STI field; view as a writable bag.
+      (instance as unknown as { _meta_type?: string })._meta_type =
+        itemQualifiedName;
     }
-    // Generate ID if not provided, then save
+    // Generate ID if not provided, then save. `_id` is a private SmrtObject
+    // backing field; view as a writable bag for the runtime assignment.
     if (!instance.id) {
-      (instance as any)._id = crypto.randomUUID();
+      (instance as unknown as { _id?: string })._id = crypto.randomUUID();
     }
     await instance.save();
     return instance;
@@ -1677,7 +1771,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   private async createPolymorphic(
     className: string | null | undefined,
-    options: any,
+    options: Record<string, unknown>,
     hydrationOptions: { hydrateOnly?: boolean } = {},
   ): Promise<ModelType> {
     // Schema already initialized in Collection.create() static factory
@@ -1687,7 +1781,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const { DatabaseError } = await import('./errors.js');
       throw DatabaseError.missingDiscriminator(
         this._itemClass.name,
-        options?.id,
+        typeof options?.id === 'string' ? options.id : undefined,
       );
     }
 
@@ -1733,8 +1827,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Ensure _meta_type is set on the instance (fix for issue #442)
     // Use qualified name if available, otherwise keep the input className
-    // (which may already be qualified for new data or simple for legacy data)
-    (instance as any)._meta_type = registeredClass?.qualifiedName || className;
+    // (which may already be qualified for new data or simple for legacy data).
+    // `_meta_type` is a runtime-only STI field; view as a writable bag.
+    (instance as unknown as { _meta_type?: string })._meta_type =
+      registeredClass?.qualifiedName || className;
 
     return instance as ModelType;
   }
@@ -1770,10 +1866,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link create} for always-insert semantics
    * @see {@link get} for read-only lookup
    */
-  public async getOrUpsert(data: any, defaults: any = {}) {
+  public async getOrUpsert(
+    data: Record<string, unknown>,
+    defaults: Record<string, unknown> = {},
+  ) {
     const logicalData = this.normalizeLogicalData(data);
     const logicalDefaults = this.normalizeLogicalData(defaults);
-    let where: any = {};
+    let where: Record<string, unknown> = {};
     const diffData = { ...logicalData };
     if (logicalData.id) {
       where = { id: logicalData.id };
@@ -1814,16 +1913,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Object containing only the changed fields
    */
   async getDiff(
-    existing: Record<string, any>,
-    data: Record<string, any>,
-  ): Promise<Record<string, any> | null> {
+    existing: SmrtObject | Record<string, unknown>,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
     return this.getDiffSync(existing, data);
   }
 
   private getDiffSync(
-    existing: Record<string, any>,
-    data: Record<string, any>,
-  ): Record<string, any> | null {
+    existing: SmrtObject | Record<string, unknown>,
+    data: Record<string, unknown>,
+  ): Record<string, unknown> | null {
     const fields = this.getFieldsSync();
     const validKeys = new Set([
       ...Object.keys(fields),
@@ -1831,17 +1930,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       'slug',
       'context',
     ]);
+    // `existing` may be a SmrtObject instance (no index signature); read its
+    // dynamic fields through a record view.
+    const existingRecord = existing as unknown as Record<string, unknown>;
     const diff = Object.keys(data).reduce(
       (acc, key) => {
         if (
           validKeys.has(key) &&
-          !this.areEquivalentValues(existing[key], data[key])
+          !this.areEquivalentValues(existingRecord[key], data[key])
         ) {
           acc[key] = data[key];
         }
         return acc;
       },
-      {} as Record<string, any>,
+      {} as Record<string, unknown>,
     );
 
     return Object.keys(diff).length > 0 ? diff : null;
@@ -1852,8 +1954,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @returns Object containing field definitions
    */
-  async getFields() {
-    return await fieldsFromClass(this._itemClass);
+  async getFields(): Promise<Record<string, CollectionFieldDefinition>> {
+    // `fieldsFromClass` returns the open `Record<string, unknown>` field bag;
+    // its entries structurally match `CollectionFieldDefinition` (`name`,
+    // `type`, `_meta`). View through `unknown` at this boundary.
+    return (await fieldsFromClass(this._itemClass)) as unknown as Record<
+      string,
+      CollectionFieldDefinition
+    >;
   }
 
   /**
@@ -1861,9 +1969,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * Accepts both camelCase and snake_case keys while preserving framework meta fields.
    */
-  private normalizeLogicalData(data: Record<string, any>): Record<string, any> {
+  private normalizeLogicalData(
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
     const fields = this.getFieldsSync();
-    const normalized: Record<string, any> = {};
+    const normalized: Record<string, unknown> = {};
 
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) {
@@ -1892,8 +2002,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Preserve persisted core timestamp fields during lightweight hydration.
    */
   private withHydratedCoreFields(
-    data: Record<string, any>,
-  ): Record<string, any> {
+    data: Record<string, unknown>,
+  ): Record<string, unknown> {
     const hydratedData = { ...data };
 
     if (
@@ -1960,7 +2070,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Map containing field definitions
    * @private
    */
-  getFieldsSync(): Record<string, any> {
+  getFieldsSync(): Record<string, CollectionFieldDefinition> {
     if (this._cachedFields) {
       return this._cachedFields;
     }
@@ -1968,8 +2078,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // This handles edge cases where collection wasn't created via static create()
     const className = this.getResolvedItemClassName();
     const fields = ObjectRegistry.getFields(className);
-    // Convert Map to Record for consistency with getFields() return type
-    return Object.fromEntries(fields);
+    // Convert Map to Record for consistency with getFields() return type.
+    // Registry `RegisteredField`s are a structural superset of the members the
+    // collection reads (`type`, `sensitive`, `_meta`); view through `unknown`.
+    return Object.fromEntries(fields) as unknown as Record<
+      string,
+      CollectionFieldDefinition
+    >;
   }
 
   /**
@@ -1999,8 +2114,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const qualifiedName = this.getResolvedItemQualifiedName();
       const tableStrategy = ObjectRegistry.getTableStrategy(qualifiedName);
       const fallbackTableName =
-        (this._itemClass as any).SMRT_TABLE_NAME ||
-        classnameToTablename(className);
+        (this._itemClass as unknown as { SMRT_TABLE_NAME?: string })
+          .SMRT_TABLE_NAME || classnameToTablename(className);
 
       if (tableStrategy === 'sti') {
         const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
@@ -2115,7 +2230,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @see {@link list} for retrieving the actual records
    */
-  public async count(options: { where?: Record<string, any> } = {}) {
+  public async count(options: { where?: SmrtWhereClause<ModelType> } = {}) {
     await this.ensureStorageReady();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
     const itemClassName = this.getResolvedItemClassName();
@@ -2237,7 +2352,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async query(
     sql: string,
-    params: any[] = [],
+    params: unknown[] = [],
     options: { allowRawOnTenantScoped?: boolean } = {},
   ): Promise<ModelType[]> {
     await this.ensureStorageReady();
@@ -2285,7 +2400,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const isSTI = tableStrategy === 'sti';
 
     const instances = await Promise.all(
-      result.rows.map((row: any) => this.hydrateResultRow(row, fields, isSTI)),
+      result.rows.map((row) => this.hydrateResultRow(row, fields, isSTI)),
     );
 
     // Execute afterQuery interceptors
@@ -2297,17 +2412,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   private async hydrateResultRow(
-    row: Record<string, any>,
-    fields: Record<string, any>,
+    row: Record<string, unknown>,
+    fields: Record<string, CollectionFieldDefinition>,
     isSTI: boolean,
   ): Promise<ModelType> {
     const formattedData = this.withHydratedCoreFields(
       formatDataJs(row, fields),
     );
 
-    if (isSTI && formattedData._meta_type) {
+    const metaType = formattedData._meta_type;
+    if (isSTI && metaType) {
       const polymorphicInstance = await this.createPolymorphic(
-        formattedData._meta_type,
+        typeof metaType === 'string' ? metaType : String(metaType),
         formattedData,
         { hydrateOnly: true },
       );
@@ -2331,7 +2447,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     if (isSTI) {
       const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
-      (instance as any)._meta_type =
+      // Dynamic STI discriminator write — `_meta_type` is a runtime-only field
+      // not in the static SmrtObject shape; view as a writable bag.
+      (instance as unknown as { _meta_type?: string })._meta_type =
         registeredClass?.qualifiedName || this._itemClass.name;
     }
 
@@ -2373,8 +2491,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     id?: string;
     scope: string;
     key: string;
-    value: any;
-    metadata?: any;
+    value: unknown;
+    metadata?: unknown;
     confidence?: number;
     version?: number;
     expiresAt?: Date;
@@ -2435,13 +2553,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     key: string;
     includeAncestors?: boolean;
     minConfidence?: number;
-  }): Promise<any | null> {
+  }): Promise<unknown> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
-    // Use single() with template literals for custom SQL query
-    let result: Record<string, any> | null;
+    // Use single() with template literals for custom SQL query.
+    // The query projects `value` (a JSON string) and `confidence`.
+    let result: Record<string, unknown> | null;
     if (options.minConfidence !== undefined) {
       result = await this.systemDb.single`
         SELECT value, confidence
@@ -2470,9 +2589,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (result) {
       // Guard against a corrupted _smrt_contexts row: a single malformed value
       // must not throw an uncaught SyntaxError out of recall(). Treat it as a
-      // miss and continue to the ancestor fallback (#1378).
+      // miss and continue to the ancestor fallback (#1378). `value` is the
+      // queried JSON text column; the try/catch covers a non-string/corrupt row.
       try {
-        return JSON.parse(result.value);
+        return JSON.parse(result.value as string);
       } catch (error) {
         logger.warn('Skipping corrupted _smrt_contexts value in recall()', {
           ownerClass: this._itemClass.name,
@@ -2525,19 +2645,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       includeDescendants?: boolean;
       minConfidence?: number;
     } = {},
-  ): Promise<Map<string, any>> {
+  ): Promise<Map<string, unknown>> {
     if (!this.systemDb) {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
-    const results = new Map<string, any>();
+    const results = new Map<string, unknown>();
 
     let query = `
       SELECT key, value, confidence
       FROM _smrt_contexts
       WHERE owner_class = ? AND owner_id = ?
     `;
-    const params: any[] = [this._itemClass.name, '__collection__'];
+    const params: unknown[] = [this._itemClass.name, '__collection__'];
 
     if (options.scope) {
       if (options.includeDescendants) {
@@ -2634,7 +2754,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       DELETE FROM _smrt_contexts
       WHERE owner_class = ? AND owner_id = ?
     `;
-    const params: any[] = [this._itemClass.name, '__collection__'];
+    const params: unknown[] = [this._itemClass.name, '__collection__'];
 
     if (options.includeDescendants) {
       query += ` AND (scope = ? OR scope LIKE ?)`;
@@ -2684,7 +2804,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       field?: string;
       limit?: number;
       minSimilarity?: number;
-      where?: Record<string, any>;
+      where?: SmrtWhereClause<ModelType>;
     } = {},
   ): Promise<Array<ModelType & { _similarity: number }>> {
     const { field, limit = 10, minSimilarity = 0, where } = options;
@@ -2859,7 +2979,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       field?: string;
       limit?: number;
       minSimilarity?: number;
-      where?: Record<string, any>;
+      where?: SmrtWhereClause<ModelType>;
     } = {},
   ): Promise<Array<ModelType & { _similarity: number }>> {
     const { field, limit = 10, minSimilarity = 0, where } = options;
@@ -2929,10 +3049,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       where: whereClause as SmrtWhereClause<ModelType>,
     });
 
-    // Add similarity scores to objects and sort by similarity
-    // We directly assign _similarity to avoid losing class properties when spreading
+    // Add similarity scores to objects and sort by similarity.
+    // We directly assign _similarity to avoid losing class properties when
+    // spreading; view as a writable bag for the computed transient field.
     const results = objects.map((obj) => {
-      (obj as any)._similarity = similarityMap.get(obj.id as string) || 0;
+      (obj as unknown as { _similarity: number })._similarity =
+        similarityMap.get(obj.id as string) || 0;
       return obj as ModelType & { _similarity: number };
     });
 
@@ -2996,10 +3118,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       for (const obj of batch) {
         try {
-          // Check if embeddings are stale
-          const hasStale = await (obj as any).hasStaleEmbeddings();
+          // Check if embeddings are stale. `hasStaleEmbeddings` /
+          // `generateEmbeddings` are runtime SmrtObject embedding methods not in
+          // the static shape; view as such and call on the receiver (keeps
+          // `this` bound).
+          const embeddable = obj as unknown as {
+            hasStaleEmbeddings(): Promise<boolean>;
+            generateEmbeddings(): Promise<unknown>;
+          };
+          const hasStale = await embeddable.hasStaleEmbeddings();
           if (hasStale) {
-            await (obj as any).generateEmbeddings();
+            await embeddable.generateEmbeddings();
             generated++;
           } else {
             skipped++;
