@@ -10,6 +10,7 @@
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import type { SmrtCollection } from '../collection';
 import type { CollectionCacheConfig } from '../collection-cache';
+import type { FieldOptions } from '../decorators/index.js';
 import type { SmrtObject } from '../object';
 import type {
   FieldDefinition,
@@ -730,8 +731,9 @@ export interface RelationshipMetadata {
  * without forcing consumers back through `any`.
  */
 export interface RegisteredField extends FieldDefinition {
-  /** Legacy decorator option bag mirrored at the top level. */
-  options?: Record<string, unknown>;
+  /** Decorator option bag mirrored at the top level (carries `description`,
+   *  `required`, relationship keys, etc. that consumers like the CLI read). */
+  options?: FieldOptions;
   /** Cross-package-ref validation hint (also looked up under `_meta`). */
   validate?: unknown;
   /** Report-aggregate marker mirrored from `_meta.__report`. */

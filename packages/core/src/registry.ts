@@ -226,10 +226,13 @@ interface FieldDecoratorOptions extends FieldOptions {
   sourceKey?: string;
   /** Target-side join column override for many-to-many relationships. */
   targetKey?: string;
-  /** Tenancy metadata injected by `@TenantScoped` (mirrors `FieldMeta['__tenancy']`). */
-  __tenancy?: { isTenantIdField?: boolean; [key: string]: unknown };
-  /** Report-aggregate metadata injected by `@report` (mirrors `FieldMeta['__report']`). */
-  __report?: { kind?: string; [key: string]: unknown };
+  // Opaque framework marker bags set by cross-package decorators
+  // (`@TenantScoped` → __tenancy, `@report` → __report). Their concrete
+  // shapes live in the downstream packages (e.g. reports' ReportFieldMetadata),
+  // so the registry-input type stays `unknown` — core never reads these off the
+  // decorator-options bag, it only stores/forwards them.
+  __tenancy?: unknown;
+  __report?: unknown;
 }
 
 /**
@@ -238,10 +241,13 @@ interface FieldDecoratorOptions extends FieldOptions {
  * The `SmrtCollection<any>` type argument is an intentional heterogeneous-
  * storage leave: the registry maps many different item types onto a single
  * constructor-map shape and invokes invariant methods (`create()`), so it
- * cannot be narrowed to `SmrtCollection<SmrtObject>`. The constructor option
- * bag is opaque to the registry, so it is typed `unknown`.
+ * cannot be narrowed to `SmrtCollection<SmrtObject>`. The `options` param is
+ * `any` (not `unknown`): consumers register CONCRETE collection constructors
+ * (`new (options: ChatRoomCollectionOptions) => …`), and constructor params are
+ * contravariant — `unknown` would reject those, `any` (like `SmrtObjectConstructor`)
+ * stays assignable from any concrete options shape.
  */
-type CollectionConstructor = new (options: unknown) => SmrtCollection<any>;
+type CollectionConstructor = new (options: any) => SmrtCollection<any>;
 
 /**
  * AI-callable tool descriptor surfaced alongside class metadata. Mirrors the
