@@ -7,6 +7,7 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import type { FieldDefinition, FieldMeta } from '../scanner/types.js';
 import type { ValidatorFunction } from './types';
 
 /**
@@ -21,12 +22,12 @@ import type { ValidatorFunction } from './types';
  */
 export function compileValidators(
   className: string,
-  fields: Map<string, any>,
+  fields: Map<string, FieldDefinition>,
 ): ValidatorFunction[] {
   const validators: ValidatorFunction[] = [];
 
   for (const [fieldName, field] of fields) {
-    const options = field._meta || {};
+    const options: FieldMeta = field._meta ?? {};
 
     // Skip transient fields (they're not persisted, so no validation needed)
     if (options.transient || field.transient) {
@@ -35,7 +36,7 @@ export function compileValidators(
 
     // Required field validator
     if (options.required) {
-      validators.push(async (instance: any) => {
+      validators.push(async (instance) => {
         const value = instance[fieldName];
         if (value === null || value === undefined || value === '') {
           const ValidationError = await import('../errors').then(
@@ -47,43 +48,37 @@ export function compileValidators(
       });
     }
 
-    // Numeric range validators
+    // Numeric range validators. The scanner's `FieldDefinition['type']` union
+    // does not list `'number'`, but external/legacy manifests can still carry
+    // it, so widen the comparison to a string check rather than dropping it.
+    const fieldType: string = field.type;
     if (
-      field.type === 'integer' ||
-      field.type === 'decimal' ||
-      field.type === 'number'
+      fieldType === 'integer' ||
+      fieldType === 'decimal' ||
+      fieldType === 'number'
     ) {
-      if (options.min !== undefined) {
-        validators.push(async (instance: any) => {
+      const { min, max } = options;
+      if (min !== undefined) {
+        validators.push(async (instance) => {
           const value = instance[fieldName];
-          if (value !== null && value !== undefined && value < options.min) {
+          if (value !== null && value !== undefined && value < min) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
             );
-            return ValidationError.rangeError(
-              fieldName,
-              value,
-              options.min,
-              options.max,
-            );
+            return ValidationError.rangeError(fieldName, value, min, max);
           }
           return null;
         });
       }
 
-      if (options.max !== undefined) {
-        validators.push(async (instance: any) => {
+      if (max !== undefined) {
+        validators.push(async (instance) => {
           const value = instance[fieldName];
-          if (value !== null && value !== undefined && value > options.max) {
+          if (value !== null && value !== undefined && value > max) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
             );
-            return ValidationError.rangeError(
-              fieldName,
-              value,
-              options.min,
-              options.max,
-            );
+            return ValidationError.rangeError(fieldName, value, min, max);
           }
           return null;
         });
@@ -91,53 +86,48 @@ export function compileValidators(
     }
 
     // String length validators
-    if (field.type === 'text') {
-      if (options.minLength !== undefined) {
-        validators.push(async (instance: any) => {
+    if (fieldType === 'text') {
+      const { minLength, maxLength, pattern } = options;
+      if (minLength !== undefined) {
+        validators.push(async (instance) => {
           const value = instance[fieldName];
-          if (
-            value &&
-            typeof value === 'string' &&
-            value.length < options.minLength
-          ) {
+          if (value && typeof value === 'string' && value.length < minLength) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
             );
             return ValidationError.invalidValue(
               fieldName,
               value,
-              `string with minimum length ${options.minLength}`,
+              `string with minimum length ${minLength}`,
             );
           }
           return null;
         });
       }
 
-      if (options.maxLength !== undefined) {
-        validators.push(async (instance: any) => {
+      if (maxLength !== undefined) {
+        validators.push(async (instance) => {
           const value = instance[fieldName];
-          if (
-            value &&
-            typeof value === 'string' &&
-            value.length > options.maxLength
-          ) {
+          if (value && typeof value === 'string' && value.length > maxLength) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
             );
             return ValidationError.invalidValue(
               fieldName,
               value,
-              `string with maximum length ${options.maxLength}`,
+              `string with maximum length ${maxLength}`,
             );
           }
           return null;
         });
       }
 
-      // Pattern validator (regex)
-      if (options.pattern) {
-        const regex = new RegExp(options.pattern);
-        validators.push(async (instance: any) => {
+      // Pattern validator (regex). `FieldMeta.pattern` is `unknown` (a string
+      // source, a `RegExp`, or an opaque `{}` from a JSON-collapsed manifest);
+      // only string/RegExp sources can build a usable regex.
+      if (typeof pattern === 'string' || pattern instanceof RegExp) {
+        const regex = new RegExp(pattern);
+        validators.push(async (instance) => {
           const value = instance[fieldName];
           if (value && typeof value === 'string' && !regex.test(value)) {
             const ValidationError = await import('../errors').then(
@@ -146,7 +136,7 @@ export function compileValidators(
             return ValidationError.invalidValue(
               fieldName,
               value,
-              `string matching pattern ${options.pattern}`,
+              `string matching pattern ${String(pattern)}`,
             );
           }
           return null;
@@ -154,19 +144,28 @@ export function compileValidators(
       }
     }
 
-    // Custom validator function
-    if (options.validate && typeof options.validate === 'function') {
-      validators.push(async (instance: any) => {
+    // Custom validator function. `validate`/`customMessage` arrive through the
+    // open `FieldMeta` index signature as `unknown`; narrow to the callable and
+    // string shapes the validator relies on.
+    const customValidate = options.validate;
+    if (typeof customValidate === 'function') {
+      const validateFn = customValidate as (
+        value: unknown,
+      ) => boolean | Promise<boolean>;
+      const customMessage =
+        typeof options.customMessage === 'string'
+          ? options.customMessage
+          : undefined;
+      validators.push(async (instance) => {
         const value = instance[fieldName];
         try {
-          const isValid = await options.validate(value);
+          const isValid = await validateFn(value);
           if (!isValid) {
             const ValidationError = await import('../errors').then(
               (m) => m.ValidationError,
             );
             const message =
-              options.customMessage ||
-              `Field ${fieldName} failed custom validation`;
+              customMessage || `Field ${fieldName} failed custom validation`;
             return ValidationError.invalidValue(fieldName, value, message);
           }
         } catch (error) {

@@ -15,18 +15,19 @@ import {
   getSmrtModuleConfig,
   type SmrtGlobalConfig,
 } from '../config/global-config.js';
+import type { SmrtObject } from '../object';
 import { LRUCache } from '../utils/lru-cache';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
 // Re-export the globalThis augmentation so it's visible everywhere
 declare global {
   // eslint-disable-next-line no-var
-  var __smrtRegistryClasses: Map<string, any> | undefined;
+  var __smrtRegistryClasses: Map<string, RegisteredClass> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollections: Map<string, typeof SmrtCollection> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollectionCache:
-    | LRUCache<string, SmrtCollection<any>>
+    | LRUCache<string, SmrtCollection<SmrtObject>>
     | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryDbInstanceIds: WeakMap<object, number> | undefined;
@@ -37,7 +38,9 @@ declare global {
     | LRUCache<string, string[]>
     | undefined;
   // eslint-disable-next-line no-var
-  var __smrtRegistryFieldDecorators: Map<string, Map<string, any>> | undefined;
+  var __smrtRegistryFieldDecorators:
+    | Map<string, Map<string, Record<string, unknown>>>
+    | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
   // eslint-disable-next-line no-var
@@ -175,11 +178,14 @@ export function getCollectionTableNames(): Map<string, string> {
   return globalThis.__smrtRegistryCollectionTableNames;
 }
 
-export function getCollectionCache(): LRUCache<string, SmrtCollection<any>> {
+export function getCollectionCache(): LRUCache<
+  string,
+  SmrtCollection<SmrtObject>
+> {
   if (!globalThis.__smrtRegistryCollectionCache) {
     globalThis.__smrtRegistryCollectionCache = new LRUCache<
       string,
-      SmrtCollection<any>
+      SmrtCollection<SmrtObject>
     >(100);
   }
   return globalThis.__smrtRegistryCollectionCache;
@@ -203,11 +209,14 @@ export function setNextDbId(value: number): void {
   globalThis.__smrtRegistryNextDbId = value;
 }
 
-export function getFieldDecorators(): Map<string, Map<string, any>> {
+export function getFieldDecorators(): Map<
+  string,
+  Map<string, Record<string, unknown>>
+> {
   if (!globalThis.__smrtRegistryFieldDecorators) {
     globalThis.__smrtRegistryFieldDecorators = new Map<
       string,
-      Map<string, any>
+      Map<string, Record<string, unknown>>
     >();
   }
   return globalThis.__smrtRegistryFieldDecorators;

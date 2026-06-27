@@ -1,12 +1,27 @@
-function hasOwnDefinedValue(
-  source: Record<string, any> | undefined,
-  key: string,
-) {
-  return !!source && Object.hasOwn(source, key) && source[key] !== undefined;
+import type { FieldDefinition, FieldMeta } from '../scanner/types.js';
+
+/**
+ * Runtime field shape handled by the manifest merge helpers.
+ *
+ * Both manifest-sourced fields and already-registered runtime fields are
+ * `FieldDefinition`-shaped, but registered fields may also carry a root-level
+ * `__tenancy` marker (mirrored from the decorator) alongside the canonical
+ * `_meta.__tenancy`.
+ */
+type ManifestFieldLike = FieldDefinition & {
+  __tenancy?: FieldMeta['__tenancy'];
+};
+
+function hasOwnDefinedValue(source: object | undefined, key: string): boolean {
+  return (
+    !!source &&
+    Object.hasOwn(source, key) &&
+    (source as Record<string, unknown>)[key] !== undefined
+  );
 }
 
 function readExistingFieldMeta(
-  existingField: any,
+  existingField: ManifestFieldLike,
   key: 'required' | 'default' | 'description',
 ) {
   if (hasOwnDefinedValue(existingField, key)) {
@@ -14,14 +29,14 @@ function readExistingFieldMeta(
   }
 
   if (hasOwnDefinedValue(existingField?._meta, key)) {
-    return existingField._meta[key];
+    return existingField._meta?.[key];
   }
 
   return undefined;
 }
 
 function readManifestFieldMeta(
-  fieldDef: any,
+  fieldDef: ManifestFieldLike,
   key: 'required' | 'default' | 'description',
 ) {
   if (hasOwnDefinedValue(fieldDef, key)) {
@@ -29,15 +44,15 @@ function readManifestFieldMeta(
   }
 
   if (hasOwnDefinedValue(fieldDef?._meta, key)) {
-    return fieldDef._meta[key];
+    return fieldDef._meta?.[key];
   }
 
   return undefined;
 }
 
 function assignDefinedMeta(
-  target: Record<string, any>,
-  source: Record<string, any> | undefined,
+  target: Record<string, unknown>,
+  source: Record<string, unknown> | undefined,
 ) {
   if (!source) {
     return;
@@ -50,21 +65,27 @@ function assignDefinedMeta(
   }
 }
 
-export function createFieldFromManifest(fieldDef: any): any {
-  const meta: Record<string, any> = {};
+export function createFieldFromManifest(
+  fieldDef: ManifestFieldLike,
+): ManifestFieldLike {
+  const meta: FieldMeta = {};
 
   assignDefinedMeta(meta, fieldDef?._meta);
 
+  // Write through the open `FieldMeta` index signature: assigning the same
+  // loop value to a union of named keys (`default` is `unknown`, the others
+  // narrower) collapses the write target to `undefined`, so route by string.
+  const metaRecord = meta as Record<string, unknown>;
   for (const key of ['required', 'default', 'description'] as const) {
     const value = readManifestFieldMeta(fieldDef, key);
     if (value !== undefined) {
-      meta[key] = value;
+      metaRecord[key] = value;
     }
   }
 
   // Preserve top-level `related` for relationship-graph lookups
   // (foreignKey / crossPackageRef / oneToMany / manyToMany all rely on it).
-  const out: Record<string, any> = {
+  const out: ManifestFieldLike = {
     type: fieldDef.type,
     _meta: meta,
   };
@@ -74,27 +95,33 @@ export function createFieldFromManifest(fieldDef: any): any {
   return out;
 }
 
-export function mergeManifestField(existingField: any, fieldDef: any): any {
+export function mergeManifestField(
+  existingField: ManifestFieldLike,
+  fieldDef: ManifestFieldLike,
+): ManifestFieldLike {
   const hasTenancyMarker =
     existingField.__tenancy?.isTenantIdField ||
     existingField._meta?.__tenancy?.isTenantIdField;
 
-  const nextMeta: Record<string, any> = {
+  const nextMeta: FieldMeta = {
     ...(existingField._meta || {}),
   };
 
   assignDefinedMeta(nextMeta, fieldDef?._meta);
 
+  // See createFieldFromManifest: route writes through the index signature so a
+  // shared loop value isn't narrowed to the `undefined`-only union write target.
+  const nextMetaRecord = nextMeta as Record<string, unknown>;
   for (const key of ['required', 'default', 'description'] as const) {
     const manifestValue = readManifestFieldMeta(fieldDef, key);
     if (manifestValue !== undefined) {
-      nextMeta[key] = manifestValue;
+      nextMetaRecord[key] = manifestValue;
       continue;
     }
 
     const existingValue = readExistingFieldMeta(existingField, key);
-    if (existingValue !== undefined && nextMeta[key] === undefined) {
-      nextMeta[key] = existingValue;
+    if (existingValue !== undefined && nextMetaRecord[key] === undefined) {
+      nextMetaRecord[key] = existingValue;
     }
   }
 
@@ -107,8 +134,8 @@ export function mergeManifestField(existingField: any, fieldDef: any): any {
 }
 
 export function manifestFieldDiffers(
-  existingField: any,
-  fieldDef: any,
+  existingField: ManifestFieldLike,
+  fieldDef: ManifestFieldLike,
 ): boolean {
   const mergedField = mergeManifestField(existingField, fieldDef);
 
