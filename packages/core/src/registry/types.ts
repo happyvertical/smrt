@@ -12,6 +12,9 @@ import type { SmrtCollection } from '../collection';
 import type { CollectionCacheConfig } from '../collection-cache';
 import type { SmrtObject } from '../object';
 import type {
+  FieldDefinition,
+  FieldMeta,
+  MethodDefinition,
   QualifiedClassName,
   SmartObjectManifest,
   SmrtVisibility,
@@ -116,12 +119,15 @@ export interface ApiConfig {
   /**
    * Custom middleware for this object's endpoints
    */
-  middleware?: any[];
+  middleware?: unknown[];
 
   /**
    * Custom endpoint handlers (supports both standard CRUD actions and custom methods)
    */
-  customize?: Record<string, (req: any, collection: any) => Promise<any>>;
+  customize?: Record<
+    string,
+    (req: unknown, collection: SmrtCollection<SmrtObject>) => Promise<unknown>
+  >;
 
   /**
    * Route metadata for custom API methods.
@@ -407,14 +413,14 @@ export interface SmartObjectConfig {
    * Lifecycle hooks
    */
   hooks?: {
-    beforeSave?: string | ((instance: any) => Promise<void>);
-    afterSave?: string | ((instance: any) => Promise<void>);
-    beforeCreate?: string | ((instance: any) => Promise<void>);
-    afterCreate?: string | ((instance: any) => Promise<void>);
-    beforeUpdate?: string | ((instance: any) => Promise<void>);
-    afterUpdate?: string | ((instance: any) => Promise<void>);
-    beforeDelete?: string | ((instance: any) => Promise<void>);
-    afterDelete?: string | ((instance: any) => Promise<void>);
+    beforeSave?: string | ((instance: SmrtObject) => Promise<void>);
+    afterSave?: string | ((instance: SmrtObject) => Promise<void>);
+    beforeCreate?: string | ((instance: SmrtObject) => Promise<void>);
+    afterCreate?: string | ((instance: SmrtObject) => Promise<void>);
+    beforeUpdate?: string | ((instance: SmrtObject) => Promise<void>);
+    afterUpdate?: string | ((instance: SmrtObject) => Promise<void>);
+    beforeDelete?: string | ((instance: SmrtObject) => Promise<void>);
+    afterDelete?: string | ((instance: SmrtObject) => Promise<void>);
   };
 
   /**
@@ -667,7 +673,7 @@ export interface SmartObjectConfig {
  * a ValidationError if validation fails, or null if validation passes
  */
 export type ValidatorFunction = (
-  instance: any,
+  instance: SmrtObject,
 ) => Promise<import('../errors').ValidationError | null>;
 
 /**
@@ -691,8 +697,41 @@ export interface RelationshipMetadata {
   targetClass: string;
   /** Type of relationship */
   type: RelationshipType;
-  /** Options for the relationship (onDelete, etc.) */
-  options: any;
+  /** Options for the relationship (onDelete, etc.) — sourced from `field._meta`. */
+  options: FieldMeta | undefined;
+}
+
+/**
+ * Runtime shape of a field stored in a {@link RegisteredClass} `fields` /
+ * `inheritedFields` map.
+ *
+ * This is a {@link FieldDefinition} superset: registration
+ * (`class-registration.ts`) and the manifest-field merge helpers build these
+ * objects by folding decorator options into the AST-scanned field, which
+ * attaches a few extra runtime-only members beyond the scanner contract:
+ *
+ * - `options`: legacy mirror of the decorator option bag, persisted into the
+ *   `_smrt_registry` snapshot row (see `registry.ts` `saveRegistry`).
+ * - `validate`: optional cross-package-ref validation hint read off either the
+ *   field or its `_meta` bag (`object.ts` `validateCrossPackageRefs`).
+ * - `__report`: report-aggregate marker mirrored at the top level for the
+ *   report conflict-column derivation (`registry.ts`).
+ *
+ * The index signature keeps the bag open for forward-compatible runtime keys
+ * without forcing consumers back through `any`.
+ */
+export interface RegisteredField extends FieldDefinition {
+  /** Legacy decorator option bag mirrored at the top level. */
+  options?: Record<string, unknown>;
+  /** Cross-package-ref validation hint (also looked up under `_meta`). */
+  validate?: unknown;
+  /** Report-aggregate marker mirrored from `_meta.__report`. */
+  __report?: FieldMeta['__report'];
+  /** Tenancy marker mirrored at the top level on decorator option bags. */
+  __tenancy?: FieldMeta['__tenancy'];
+  /** Explicit SQL type override mirrored at the top level (decorator bags). */
+  sqlType?: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -714,11 +753,25 @@ export interface RegisteredClass {
   qualifiedName?: QualifiedClassName;
 
   constructor: typeof SmrtObject;
-  collectionConstructor?: new (options: any) => SmrtCollection<any>;
+  /**
+   * Collection constructor for this class.
+   *
+   * The `options` param and `SmrtCollection<any>` element type are left as
+   * `any` deliberately (S4 #1579): this slot is assigned from `typeof
+   * SmrtCollection` (a generic constructor whose `options?` is contravariant)
+   * AND instantiated by generators that pass a loosely-typed context bag
+   * (`{ ai, db }` where `context.ai` is `unknown`). A precise `options` type
+   * breaks the call sites; a precise element type breaks the assignment from
+   * `typeof SmrtCollection`. This mirrors the `SmrtObjectConstructor` escape
+   * hatch above.
+   */
+  collectionConstructor?: new (
+    options: any,
+  ) => SmrtCollection<any>;
   config: SmartObjectConfig;
-  fields: Map<string, any>;
+  fields: Map<string, RegisteredField>;
   /** Method definitions from manifest (for custom CLI/API/MCP generation) */
-  methods: Map<string, any>;
+  methods: Map<string, MethodDefinition>;
   /** Cached schema definition generated during registration */
   schema?: SchemaDefinition;
   /** Compiled validation functions for efficient runtime validation */
@@ -735,7 +788,7 @@ export interface RegisteredClass {
     function: {
       name: string;
       description?: string;
-      parameters?: Record<string, any>;
+      parameters?: Record<string, unknown>;
     };
   }>;
   /** Package name from manifest (for external package classes) */
@@ -759,9 +812,9 @@ export interface RegisteredClass {
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */
-  inheritedFields?: Map<string, any>;
+  inheritedFields?: Map<string, RegisteredField>;
   /** Merged methods from entire inheritance chain (cached, includes parent methods) */
-  inheritedMethods?: Map<string, any>;
+  inheritedMethods?: Map<string, MethodDefinition>;
   /** Normalized tenant scoping configuration (Issue #688) */
   tenantScopedConfig?: {
     mode: 'required' | 'optional';
