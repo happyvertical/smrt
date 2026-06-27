@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.36.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - bump linkify-it to 5.0.1 to clear ReDoS advisory (GHSA-22p9-wv53-3rq4) (#1675) (deps)
+
+  ### Other Changes
+
+  - refactor: core noExplicitAny Phase 4 — runtime (#1579) (#1674) (types)
+  - @happyvertical/smrt-config@0.36.8
+  - @happyvertical/smrt-types@0.36.8
+  - @happyvertical/smrt-scanner@0.36.8
+
 ## 0.36.7
 
 ### Patch Changes
