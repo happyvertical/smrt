@@ -15,7 +15,10 @@ export interface SmrtServerOptions {
       };
   auth?: {
     type: 'bearer' | 'basic' | 'custom';
-    verify?: (token: string) => Promise<boolean | any>;
+    // App-provided verifier: may resolve a literal boolean OR a truthy
+    // decoded user/session object. `authenticate()` consumes it for
+    // truthiness only, so the public return stays permissive (not `boolean`).
+    verify?: (token: string) => Promise<unknown>;
   };
 }
 
@@ -33,35 +36,35 @@ export interface SmrtClientOptions {
 
 export interface SmrtRequest {
   params: Record<string, string>;
-  query: Record<string, any>;
-  body?: any;
+  query: Record<string, string>;
+  body?: unknown;
   headers: Record<string, string>;
   method: string;
   url: string;
-  json(): Promise<any>;
+  json(): Promise<unknown>;
 }
 
 export interface SmrtResponse {
-  json(data: any, init?: ResponseInit): Response;
+  json(data: unknown, init?: ResponseInit): Response;
   status(code: number): SmrtResponse;
-  send(data?: any): Response;
+  send(data?: unknown): Response;
 }
 
 export interface CollectionInterface {
   list(options?: {
-    where?: Record<string, any>;
+    where?: Record<string, unknown>;
     orderBy?: string | string[];
     limit?: number;
     offset?: number;
-  }): Promise<any[]>;
+  }): Promise<unknown[]>;
 
-  get(id: string): Promise<any | null>;
+  get(id: string): Promise<unknown | null>;
 
-  create(data: any): Promise<any>;
+  create(data: unknown): Promise<unknown>;
 
-  update(id: string, data: any): Promise<any | null>;
+  update(id: string, data: unknown): Promise<unknown | null>;
 
   delete(id: string): Promise<boolean>;
 
-  count(options?: { where?: Record<string, any> }): Promise<number>;
+  count(options?: { where?: Record<string, unknown> }): Promise<number>;
 }

@@ -6,17 +6,27 @@ import { createLogger } from '@happyvertical/logger';
 
 const logger = createLogger({ level: 'info' });
 
+/**
+ * Handler invoked when an MCP tool is executed. `params` arrives from the MCP
+ * protocol as untyped JSON; each handler narrows the shape it expects. The
+ * resolved value is serialized back to the MCP client as the tool result.
+ */
+export type MCPToolHandler = (
+  params: Record<string, unknown>,
+) => Promise<unknown>;
+
 export interface MCPTool {
   name: string;
   description: string;
-  inputSchema: any;
+  /** JSON Schema describing the tool's accepted parameters. */
+  inputSchema: Record<string, unknown>;
 }
 
 export interface MCPServerOptions {
   name?: string;
   version?: string;
   tools?: MCPTool[];
-  handlers?: Record<string, (params: any) => Promise<any>>;
+  handlers?: Record<string, MCPToolHandler>;
 }
 
 export class SmrtMCPServer {
@@ -35,7 +45,7 @@ export class SmrtMCPServer {
   /**
    * Add a tool to the server
    */
-  addTool(tool: MCPTool, handler: (params: any) => Promise<any>): void {
+  addTool(tool: MCPTool, handler: MCPToolHandler): void {
     this.options.tools.push(tool);
     this.options.handlers[tool.name] = handler;
   }
@@ -50,7 +60,10 @@ export class SmrtMCPServer {
   /**
    * Execute a tool
    */
-  async executeTool(name: string, params: any): Promise<any> {
+  async executeTool(
+    name: string,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
     const handler = this.options.handlers[name];
     if (!handler) {
       throw new Error(`Tool '${name}' not found`);
