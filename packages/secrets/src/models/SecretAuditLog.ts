@@ -217,7 +217,7 @@ export function createAuditEntry(params: {
   secretId?: string | null;
   secretName: string;
   tenantId?: string | null;
-  userId: string;
+  userId?: string | null;
   action: SecretAuditAction;
   result: SecretAuditResult;
   ipAddress?: string;
@@ -229,11 +229,16 @@ export function createAuditEntry(params: {
       ? null
       : params.tenantId;
 
-  // The `userId` column is a native `uuid` on Postgres. The actor sentinel
-  // `'system'` (and an empty id) are not valid UUIDs, so normalize them to
-  // null — a system-initiated operation has no authenticated user (#1444).
+  // The `userId` column is a native `uuid` on Postgres. A missing actor and the
+  // `'system'`/empty sentinels are not valid UUIDs, so normalize them all to
+  // null — a system-initiated operation has no authenticated user. Callers may
+  // pass `null`/`undefined` directly to express that (#1444).
   const userId =
-    params.userId === 'system' || params.userId === '' ? null : params.userId;
+    params.userId == null ||
+    params.userId === 'system' ||
+    params.userId === ''
+      ? null
+      : params.userId;
 
   const entry: SmrtCreateInput<SecretAuditLog> = {
     secretId: params.secretId ?? null,

@@ -449,6 +449,23 @@ describe('SecretService', () => {
       });
       expect(entry.userId).toBe(realId);
     });
+
+    it('treats an omitted or null actor id as null (no authenticated user)', () => {
+      const omitted = createAuditEntry({
+        secretName: 'api-key',
+        action: 'read',
+        result: 'success',
+      });
+      expect(omitted.userId).toBeNull();
+
+      const explicitNull = createAuditEntry({
+        secretName: 'api-key',
+        userId: null,
+        action: 'read',
+        result: 'success',
+      });
+      expect(explicitNull.userId).toBeNull();
+    });
   });
 
   describe('SecretAuditLogCollection compliance-helper tenant scoping (issue #1503)', () => {
