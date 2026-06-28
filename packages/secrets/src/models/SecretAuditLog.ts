@@ -40,7 +40,7 @@ export interface SecretAuditLogOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   secretId?: string | null;
   secretName?: string;
-  userId?: string;
+  userId?: string | null;
   action?: SecretAuditAction;
   result?: SecretAuditResult;
   ipAddress?: string;
@@ -119,10 +119,13 @@ export class SecretAuditLog extends SmrtObject {
   secretName: string = '';
 
   /**
-   * ID of the user who performed the action
+   * ID of the user who performed the action, or `null` for system-initiated
+   * operations with no authenticated user. Stored as a native `uuid` column on
+   * Postgres, so a non-UUID actor sentinel must never reach it —
+   * {@link createAuditEntry} normalizes the `'system'` sentinel to null (#1444).
    */
   @crossPackageRef('@happyvertical/smrt-users:User')
-  userId: string = '';
+  userId: string | null = null;
 
   /**
    * The action that was performed
@@ -226,10 +229,16 @@ export function createAuditEntry(params: {
       ? null
       : params.tenantId;
 
+  // The `userId` column is a native `uuid` on Postgres. The actor sentinel
+  // `'system'` (and an empty id) are not valid UUIDs, so normalize them to
+  // null — a system-initiated operation has no authenticated user (#1444).
+  const userId =
+    params.userId === 'system' || params.userId === '' ? null : params.userId;
+
   const entry: SmrtCreateInput<SecretAuditLog> = {
     secretId: params.secretId ?? null,
     secretName: params.secretName,
-    userId: params.userId,
+    userId,
     action: params.action,
     result: params.result,
     ipAddress: params.ipAddress ?? '',

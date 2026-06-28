@@ -29,6 +29,7 @@ vi.mock('@happyvertical/logger', async (importOriginal) => ({
   createLogger: () => mockLogger,
 }));
 
+import { SecretAuditLogCollection } from '../collections/SecretAuditLogCollection.js';
 import { SecretCollection } from '../collections/SecretCollection.js';
 import { TenantKeyCollection } from '../collections/TenantKeyCollection.js';
 import { createAuditEntry } from '../models/SecretAuditLog.js';
@@ -411,6 +412,101 @@ describe('SecretService', () => {
         expect(secrets.length).toBe(1);
         expect(secrets[0].name).toBe('tenant-1-secret');
       });
+    });
+  });
+
+  describe('createAuditEntry actor normalization (issue #1444)', () => {
+    it("normalizes the 'system' actor sentinel to null (uuid column safety)", () => {
+      // userId is a native `uuid` column on Postgres; the 'system' sentinel
+      // (from getCurrentUserId() when there is no authenticated principal) is
+      // not a valid UUID and would raise `invalid input syntax for type uuid`.
+      const entry = createAuditEntry({
+        secretName: 'api-key',
+        userId: 'system',
+        action: 'read',
+        result: 'success',
+      });
+      expect(entry.userId).toBeNull();
+    });
+
+    it('normalizes an empty actor id to null', () => {
+      const entry = createAuditEntry({
+        secretName: 'api-key',
+        userId: '',
+        action: 'read',
+        result: 'success',
+      });
+      expect(entry.userId).toBeNull();
+    });
+
+    it('passes a real (UUID) actor id through unchanged', () => {
+      const realId = 'a3f1c2d4-0000-4000-8000-000000000001';
+      const entry = createAuditEntry({
+        secretName: 'api-key',
+        userId: realId,
+        action: 'read',
+        result: 'success',
+      });
+      expect(entry.userId).toBe(realId);
+    });
+  });
+
+  describe('SecretAuditLogCollection compliance-helper tenant scoping (issue #1503)', () => {
+    beforeEach(() => {
+      // Prove the helpers scope by their own explicit tenantId argument, not by
+      // an ambient tenancy interceptor.
+      disableTenancy();
+    });
+
+    async function seedTwoTenantFailures(): Promise<SecretAuditLogCollection> {
+      const logs = await SecretAuditLogCollection.create({ db });
+      await logs.create(
+        createAuditEntry({
+          tenantId: 'tenant-a',
+          secretName: 'a-secret',
+          userId: '',
+          action: 'read',
+          result: 'failure',
+        }),
+      );
+      await logs.create(
+        createAuditEntry({
+          tenantId: 'tenant-b',
+          secretName: 'b-secret',
+          userId: '',
+          action: 'read',
+          result: 'failure',
+        }),
+      );
+      return logs;
+    }
+
+    it('getRecentFailures scopes to the supplied tenant', async () => {
+      const logs = await seedTwoTenantFailures();
+      const scoped = await logs.getRecentFailures('tenant-a');
+      expect(scoped).toHaveLength(1);
+      expect(scoped[0].tenantId).toBe('tenant-a');
+    });
+
+    it('getRecentFailures(null) returns cross-tenant rows (super-admin compliance path)', async () => {
+      const logs = await seedTwoTenantFailures();
+      const all = await logs.getRecentFailures(null);
+      expect(new Set(all.map((l) => l.tenantId))).toEqual(
+        new Set(['tenant-a', 'tenant-b']),
+      );
+    });
+
+    it('getSecretHistory scopes to the supplied tenant', async () => {
+      const logs = await seedTwoTenantFailures();
+      const history = await logs.getSecretHistory('tenant-a', 'a-secret');
+      expect(history).toHaveLength(1);
+      expect(history[0].tenantId).toBe('tenant-a');
+    });
+
+    it('countByResult scopes to the supplied tenant', async () => {
+      const logs = await seedTwoTenantFailures();
+      const counts = await logs.countByResult('tenant-a');
+      expect(counts.failure).toBe(1);
     });
   });
 
