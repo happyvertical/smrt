@@ -3,6 +3,7 @@
  * Consolidates manifest generation logic for both build and test manifests
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import fg from 'fast-glob';
@@ -15,6 +16,11 @@ import {
   resolveManifestPath,
 } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
+
+// Build-time manifest-generation diagnostics route through the shared logger
+// (S14 / dim-9, #1579) so consumers can control verbosity instead of receiving
+// unconditional stdout writes.
+const logger = createLogger({ level: 'info' });
 
 async function importScanner() {
   return importWorkspaceModule<ScannerModule>({
@@ -120,11 +126,11 @@ export class ManifestBuilder {
     const files = this.discoverFiles(options);
 
     if (files.length === 0) {
-      console.log('[smrt] No source files found');
+      logger.info('[smrt] No source files found');
       return this.createEmptyManifest(options);
     }
 
-    console.log(`[smrt] Scanning ${files.length} source file(s)...`);
+    logger.info(`[smrt] Scanning ${files.length} source file(s)...`);
 
     // 2. Configure scanner (baseClasses, external packages, vite config)
     const scannerConfig = await this.configureScanner(options);
@@ -211,7 +217,7 @@ export class ManifestBuilder {
       const viteBaseClasses = await this.loadViteConfigBaseClasses();
       if (viteBaseClasses && viteBaseClasses.length > 0) {
         baseClasses = viteBaseClasses;
-        console.log(
+        logger.info(
           `[smrt] Using baseClasses from vite.config.ts: ${baseClasses.join(', ')}`,
         );
       }
@@ -220,9 +226,9 @@ export class ManifestBuilder {
     // Discover external SMRT packages
     let smrtDependencies: string[] = [];
     if (options.discoverExternalPackages) {
-      console.log('[smrt] Discovering external SMRT packages...');
+      logger.info('[smrt] Discovering external SMRT packages...');
       smrtDependencies = discoverSmrtPackages();
-      console.log(
+      logger.info(
         `[smrt] Found ${smrtDependencies.length} SMRT package(s): ${smrtDependencies.join(', ')}`,
       );
 
@@ -232,10 +238,10 @@ export class ManifestBuilder {
           await this.loadExternalBaseClasses(smrtDependencies);
         if (externalClasses.length > 0) {
           baseClasses = [...baseClasses, ...externalClasses];
-          console.log(
+          logger.info(
             `[smrt] Added ${externalClasses.length} external base class(es) to scanner`,
           );
-          console.log(`[smrt] Total baseClasses: ${baseClasses.length}`);
+          logger.info(`[smrt] Total baseClasses: ${baseClasses.length}`);
         }
       }
     }
@@ -341,9 +347,9 @@ export class ManifestBuilder {
       const packageInfo = this.readPackageJson();
       if (packageInfo.name) {
         manifest.packageName = packageInfo.name;
-        console.log(`[smrt] Injected package name: ${packageInfo.name}`);
+        logger.info(`[smrt] Injected package name: ${packageInfo.name}`);
       } else {
-        console.warn(
+        logger.warn(
           '[smrt] Warning: Could not read package.json, packageName will be undefined',
         );
       }
@@ -392,8 +398,8 @@ export class ManifestBuilder {
     }
 
     const objectCount = Object.keys(manifest.objects).length;
-    console.log(`[smrt] ✅ Generated manifest with ${objectCount} object(s)`);
-    console.log(`[smrt]    Unified: ${unifiedPath}`);
+    logger.info(`[smrt] ✅ Generated manifest with ${objectCount} object(s)`);
+    logger.info(`[smrt]    Unified: ${unifiedPath}`);
   }
 
   /**
@@ -445,11 +451,11 @@ export default ${exportName};
     try {
       const viteConfigPath = resolve(process.cwd(), 'vite.config.ts');
       if (!existsSync(viteConfigPath)) {
-        console.log('[smrt] vite.config.ts not found');
+        logger.info('[smrt] vite.config.ts not found');
         return null;
       }
 
-      console.log('[smrt] Found vite.config.ts, attempting to load...');
+      logger.info('[smrt] Found vite.config.ts, attempting to load...');
 
       // Use vite to load config which handles TypeScript
       const { loadConfigFromFile } = await import('vite');
@@ -459,7 +465,7 @@ export default ${exportName};
       );
 
       if (!loaded?.config?.plugins) {
-        console.log('[smrt] No plugins found in vite config');
+        logger.info('[smrt] No plugins found in vite config');
         return null;
       }
 
@@ -468,22 +474,21 @@ export default ${exportName};
       // them structurally and narrow defensively instead of using `any`.
       const plugins = loaded.config.plugins as readonly VitePluginProbe[];
 
-      console.log(
-        '[smrt] Vite config loaded, plugins:',
-        plugins.map((p) => p?.name),
-      );
+      logger.info('[smrt] Vite config loaded', {
+        plugins: plugins.map((p) => p?.name),
+      });
 
       // Find smrtPlugin in plugins array
       const smrtPlugin = plugins.find((p) => p?.name === 'smrt-auto-service');
 
       if (!smrtPlugin) {
-        console.log(
+        logger.info(
           '[smrt] smrt-auto-service plugin not found in plugins array',
         );
         return null;
       }
 
-      console.log('[smrt] Found smrt-auto-service plugin');
+      logger.info('[smrt] Found smrt-auto-service plugin');
 
       // Try different ways to access options
       const api = smrtPlugin.api;
@@ -496,29 +501,25 @@ export default ${exportName};
         try {
           opts = api().options;
         } catch (e) {
-          console.log('[smrt] Could not call plugin.api()');
+          logger.info('[smrt] Could not call plugin.api()');
         }
       }
 
       if (opts?.baseClasses) {
-        console.log(
-          '[smrt] Plugin options:',
-          JSON.stringify({
-            baseClasses: opts.baseClasses,
-            followImports: opts.followImports,
-          }),
-        );
+        logger.info('[smrt] Plugin options', {
+          baseClasses: opts.baseClasses,
+          followImports: opts.followImports,
+        });
         return opts.baseClasses;
       }
 
-      console.log('[smrt] Could not access plugin options');
+      logger.info('[smrt] Could not access plugin options');
       return null;
     } catch (error) {
-      console.log(
-        '[smrt] Error loading vite.config.ts:',
-        error instanceof Error ? error.message : String(error),
-      );
-      console.log('[smrt] Using default baseClasses');
+      logger.warn('[smrt] Error loading vite.config.ts', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      logger.info('[smrt] Using default baseClasses');
       return null;
     }
   }
@@ -535,7 +536,7 @@ export default ${exportName};
       // still contribute base classes (#1378).
       const manifestPath = resolveManifestPath(pkgName, process.cwd());
       if (!manifestPath) {
-        console.log(`[smrt]   ${pkgName}: no SMRT manifest resolved`);
+        logger.info(`[smrt]   ${pkgName}: no SMRT manifest resolved`);
         continue;
       }
 
@@ -553,11 +554,11 @@ export default ${exportName};
           }
         }
 
-        console.log(
+        logger.info(
           `[smrt]   ${pkgName}: found ${foundClassNames.length} class(es) - ${foundClassNames.join(', ')}`,
         );
       } catch (error) {
-        console.log(
+        logger.info(
           `[smrt]   ${pkgName}: manifest not found or invalid - ${error instanceof Error ? error.message : String(error)}`,
         );
       }
