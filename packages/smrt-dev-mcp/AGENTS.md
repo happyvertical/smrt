@@ -50,7 +50,7 @@ launcher or a small wrapper script with an absolute Node path.
 
 - **Tier 1** (Runtime): auto-generated from `@smrt()` objects — live data operations
 - **Tier 2** (Development): this package — code generation and project analysis
-- **Tier 3** (Docs): `smrt-docs-mcp` — framework documentation access
+- **Tier 3** (Docs): framework documentation access; `smrt-docs-mcp` is no longer launched from this monorepo unless an external package/repo is installed and configured explicitly
 
 ## Key Files
 

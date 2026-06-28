@@ -1,17 +1,5 @@
 {
   "mcpServers": {
-    "smrt-docs-mcp": {
-      "type": "stdio",
-      "command": "pnpm",
-      "args": [
-        "exec",
-        "tsx",
-        "packages/smrt-docs-mcp/src/index.ts"
-      ],
-      "env": {
-        "DEBUG": "false"
-      }
-    },
     "smrt-dev-mcp": {
       "type": "stdio",
       "command": "pnpm",
