@@ -2,6 +2,7 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import {
@@ -75,6 +76,10 @@ type SchemaGeneratorLike = {
 
 // Create require function for synchronous module loading in ESM context
 const require = createRequire(import.meta.url);
+
+// Build-time schema/manifest-generation diagnostics route through the shared
+// logger (S14 / dim-9, #1579) instead of unconditional stdout writes.
+const logger = createLogger({ level: 'info' });
 
 /**
  * Framework abstract base classes whose declared fields must be merged
@@ -349,7 +354,7 @@ export class ManifestGenerator {
       },
     };
 
-    console.log(
+    logger.info(
       `[manifest-generator] Injected ${fieldName} field for ${objectDef.className} (tenantScoped: ${JSON.stringify(tenantConfig)})`,
     );
   }
@@ -632,7 +637,7 @@ export class ManifestGenerator {
         if (processedSTIBases.has(name)) continue;
         processedSTIBases.add(name);
 
-        console.log(
+        logger.info(
           `[manifest-generator] Generating STI schema for ${name} (table: ${tableName})`,
         );
 
@@ -652,14 +657,14 @@ export class ManifestGenerator {
 
         if (baseIsLocal) {
           // STI base is in this manifest - skip (schema is on base class)
-          console.log(
+          logger.info(
             `[manifest-generator] Skipping schema for STI child ${name} (base ${stiBase?.className} is local)`,
           );
         } else {
           // STI base is EXTERNAL - generate STI schema for this child
           // CRITICAL: Use the external base's table name, not the child's!
           const baseTableName = stiBase?.tableName || tableName;
-          console.log(
+          logger.info(
             `[manifest-generator] Generating STI schema for ${name} (external base: ${stiBase?.className}, table: ${baseTableName})`,
           );
 
@@ -677,7 +682,7 @@ export class ManifestGenerator {
         }
       } else {
         // CTI class - generate individual table schema
-        console.log(
+        logger.info(
           `[manifest-generator] Generating CTI schema for ${name} (table: ${tableName})`,
         );
 
@@ -1030,7 +1035,7 @@ export class ManifestGenerator {
             }
           }
 
-          console.log(
+          logger.info(
             `[manifest-generator] Aggregated ${Object.keys(externalManifest.objects).length} objects from ${packageName}`,
           );
         }
@@ -1313,7 +1318,7 @@ export class ManifestGenerator {
         continue; // Plain CTI through a user-defined base — skip.
       }
 
-      console.log(
+      logger.info(
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
       );
 
@@ -1324,7 +1329,7 @@ export class ManifestGenerator {
 
       while (currentClass) {
         if (visited.has(currentClass)) {
-          console.warn(
+          logger.warn(
             `[manifest-generator] Circular inheritance detected for ${obj.className}`,
           );
           break;
@@ -1359,7 +1364,7 @@ export class ManifestGenerator {
         currentClass = parentObj.extends;
       }
 
-      console.log(
+      logger.info(
         `[manifest-generator] Inheritance chain for ${obj.className}: ${inheritanceChain.join(' -> ')}`,
       );
 
@@ -1437,7 +1442,7 @@ export class ManifestGenerator {
         // Inherit tableName from STI base
         obj.decoratorConfig = obj.decoratorConfig || {};
         obj.decoratorConfig.tableName = baseTableName;
-        console.log(
+        logger.info(
           `[manifest-generator] ${obj.className} inherits tableName: '${baseTableName}' from ${stiBase.className}`,
         );
 
@@ -1445,21 +1450,21 @@ export class ManifestGenerator {
         if (stiBase.decoratorConfig?.tableStrategy) {
           obj.decoratorConfig.tableStrategy =
             stiBase.decoratorConfig.tableStrategy;
-          console.log(
+          logger.info(
             `[manifest-generator] ${obj.className} inherits tableStrategy: '${stiBase.decoratorConfig.tableStrategy}' from ${stiBase.className}`,
           );
         }
 
         // Inherit collection name from STI base (all STI classes share one table)
         if (stiBase.collection !== obj.collection) {
-          console.log(
+          logger.info(
             `[manifest-generator] ${obj.className} inherits collection: '${stiBase.collection}' from ${stiBase.className}`,
           );
           obj.collection = stiBase.collection;
         }
       }
 
-      console.log(
+      logger.info(
         `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
       );
     }
@@ -1477,7 +1482,7 @@ export class ManifestGenerator {
         const itemClass = this.findItemClass(obj, manifest, objectsByName);
 
         if (itemClass) {
-          console.log(
+          logger.info(
             `[manifest-generator] ${obj.className} is a collection class for ${itemClass.className}`,
           );
 
@@ -1485,14 +1490,14 @@ export class ManifestGenerator {
           if (itemClass.decoratorConfig?.tableName) {
             obj.decoratorConfig = obj.decoratorConfig || {};
             obj.decoratorConfig.tableName = itemClass.decoratorConfig.tableName;
-            console.log(
+            logger.info(
               `[manifest-generator] ${obj.className} inherits tableName: '${itemClass.decoratorConfig.tableName}' from item class ${itemClass.className}`,
             );
           }
 
           // Inherit collection name from item class
           if (itemClass.collection !== obj.collection) {
-            console.log(
+            logger.info(
               `[manifest-generator] ${obj.className} inherits collection: '${itemClass.collection}' from item class ${itemClass.className} (was '${obj.collection}')`,
             );
             obj.collection = itemClass.collection;
@@ -1556,14 +1561,14 @@ export class ManifestGenerator {
     // This is the most reliable method: SmrtCollection<Meeting> -> "Meeting"
     if (collectionObj.extendsTypeArg) {
       const itemClassName = collectionObj.extendsTypeArg;
-      console.log(
+      logger.info(
         `[manifest-generator] ${collectionObj.className} has extendsTypeArg: ${itemClassName}`,
       );
 
       // Try to find the item class by name in local manifest
       const itemClass = objectsByName.get(itemClassName);
       if (itemClass) {
-        console.log(
+        logger.info(
           `[manifest-generator] Found item class ${itemClassName} in local manifest`,
         );
         return itemClass;
@@ -1577,7 +1582,7 @@ export class ManifestGenerator {
           objectsByName,
         );
         if (externalItemClass) {
-          console.log(
+          logger.info(
             `[manifest-generator] Found item class ${itemClassName} in external package`,
           );
           return externalItemClass;
@@ -2522,7 +2527,7 @@ ${fields}
 
       obj.agent = agentManifest;
 
-      console.log(
+      logger.info(
         `[manifest-generator] Generated agent manifest for ${obj.className}: ` +
           `${permissions.length} permissions, ${features.length} features, ` +
           `${menuItems.length} menu items, ${components.length} components`,
