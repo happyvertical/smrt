@@ -91,46 +91,84 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
   }
 
   /**
-   * Get audit logs for a specific secret
+   * Get audit logs for a specific secret.
+   *
+   * @param tenantId - Scope to this tenant's audit trail, or `null` for a
+   *   cross-tenant compliance query (which must run under
+   *   `withSuperAdminBypass()` from `@happyvertical/smrt-tenancy`). Audit rows
+   *   reference secret names and must not leak across tenants (#1503).
    */
   async getSecretHistory(
+    tenantId: string | null,
     secretName: string,
     limit: number = 50,
   ): Promise<SecretAuditLog[]> {
-    return this.listLogs({ secretName, limit });
+    return this.listLogs({ tenantId: tenantId ?? undefined, secretName, limit });
   }
 
   /**
-   * Get audit logs for a specific user
+   * Get audit logs for a specific user.
+   *
+   * @param tenantId - Scope to this tenant's audit trail, or `null` for a
+   *   cross-tenant compliance query under `withSuperAdminBypass()` (#1503).
    */
   async getUserActivity(
+    tenantId: string | null,
     userId: string,
     limit: number = 50,
   ): Promise<SecretAuditLog[]> {
-    return this.listLogs({ userId, limit });
+    return this.listLogs({ tenantId: tenantId ?? undefined, userId, limit });
   }
 
   /**
-   * Get recent failures
+   * Get recent failures.
+   *
+   * @param tenantId - Scope to this tenant's audit trail, or `null` for a
+   *   cross-tenant compliance query under `withSuperAdminBypass()` (#1503).
    */
-  async getRecentFailures(limit: number = 20): Promise<SecretAuditLog[]> {
-    return this.listLogs({ result: 'failure', limit });
+  async getRecentFailures(
+    tenantId: string | null,
+    limit: number = 20,
+  ): Promise<SecretAuditLog[]> {
+    return this.listLogs({
+      tenantId: tenantId ?? undefined,
+      result: 'failure',
+      limit,
+    });
   }
 
   /**
-   * Get recent denied access attempts
+   * Get recent denied access attempts.
+   *
+   * @param tenantId - Scope to this tenant's audit trail, or `null` for a
+   *   cross-tenant compliance query under `withSuperAdminBypass()` (#1503).
    */
-  async getRecentDenials(limit: number = 20): Promise<SecretAuditLog[]> {
-    return this.listLogs({ result: 'denied', limit });
+  async getRecentDenials(
+    tenantId: string | null,
+    limit: number = 20,
+  ): Promise<SecretAuditLog[]> {
+    return this.listLogs({
+      tenantId: tenantId ?? undefined,
+      result: 'denied',
+      limit,
+    });
   }
 
   /**
-   * Count operations by action type
+   * Count operations by action type.
+   *
+   * @param tenantId - Scope to this tenant's audit trail, or `null` for a
+   *   cross-tenant compliance count under `withSuperAdminBypass()` (#1503).
    */
   async countByAction(
+    tenantId: string | null,
     since?: Date,
   ): Promise<Record<SecretAuditAction, number>> {
-    const logs = await this.listLogs({ since, limit: 10000 });
+    const logs = await this.listLogs({
+      tenantId: tenantId ?? undefined,
+      since,
+      limit: 10000,
+    });
 
     const counts: Record<SecretAuditAction, number> = {
       create: 0,
@@ -151,12 +189,20 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
   }
 
   /**
-   * Count operations by result
+   * Count operations by result.
+   *
+   * @param tenantId - Scope to this tenant's audit trail, or `null` for a
+   *   cross-tenant compliance count under `withSuperAdminBypass()` (#1503).
    */
   async countByResult(
+    tenantId: string | null,
     since?: Date,
   ): Promise<Record<SecretAuditResult, number>> {
-    const logs = await this.listLogs({ since, limit: 10000 });
+    const logs = await this.listLogs({
+      tenantId: tenantId ?? undefined,
+      since,
+      limit: 10000,
+    });
 
     const counts: Record<SecretAuditResult, number> = {
       success: 0,
