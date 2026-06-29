@@ -14,9 +14,9 @@
  *
  * This guard fails if any *runtime* (value) relative import in the raw tree
  * points at a file the build never emitted — catching i18n and any other
- * shared module that drifts out of the packaged set. It is a no-op when the
- * package has not been built (the turbo `test` task depends on `build`, so it
- * always runs against a fresh `dist/` in CI).
+ * shared module that drifts out of the packaged set. The suite skips
+ * explicitly when the package has not been built (the turbo `test` task
+ * depends on `build`, so it always runs against a fresh `dist/` in CI).
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -54,38 +54,42 @@ function resolvesAsRuntime(fromDir: string, spec: string): boolean {
 const STATEMENT =
   /(import|export)(\s+type\b)?[^;]*?from\s*["'](\.[^"']+)["']|import\s*["'](\.[^"']+)["']/g;
 
-describe('products raw dist/lib/lib packaging', () => {
-  it('emits the i18n catalog so packaged components can resolve it', () => {
-    if (!existsSync(rawTreeDir)) return; // not built; see file header
-    const catalog = join(rawTreeDir, 'i18n.js');
-    expect(existsSync(catalog), 'dist/lib/lib/i18n.js missing').toBe(true);
-    expect(readFileSync(catalog, 'utf8')).toContain('defineMessages');
-  });
+// Skips explicitly (not a silent pass) when the package has not been built;
+// the turbo `test` task depends on `build`, so CI always runs against fresh
+// `dist/`. Running bare `vitest` without a prior build shows this as skipped.
+describe.skipIf(!existsSync(rawTreeDir))(
+  'products raw dist/lib/lib packaging',
+  () => {
+    it('emits the i18n catalog so packaged components can resolve it', () => {
+      const catalog = join(rawTreeDir, 'i18n.js');
+      expect(existsSync(catalog), 'dist/lib/lib/i18n.js missing').toBe(true);
+      expect(readFileSync(catalog, 'utf8')).toContain('defineMessages');
+    });
 
-  it('resolves every runtime relative import in the raw tree', () => {
-    if (!existsSync(rawTreeDir)) return; // not built; see file header
-    const files = walk(rawTreeDir).filter(
-      (f) => f.endsWith('.js') || f.endsWith('.svelte'),
-    );
-    const unresolved: string[] = [];
-    for (const file of files) {
-      const src = readFileSync(file, 'utf8');
-      const fromDir = dirname(file);
-      STATEMENT.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
-      while ((match = STATEMENT.exec(src))) {
-        const isTypeOnly = Boolean(match[2]);
-        if (isTypeOnly) continue;
-        const spec = match[3] ?? match[4];
-        if (spec && !resolvesAsRuntime(fromDir, spec)) {
-          unresolved.push(`${relative(rawTreeDir, file)} -> ${spec}`);
+    it('resolves every runtime relative import in the raw tree', () => {
+      const files = walk(rawTreeDir).filter(
+        (f) => f.endsWith('.js') || f.endsWith('.svelte'),
+      );
+      const unresolved: string[] = [];
+      for (const file of files) {
+        const src = readFileSync(file, 'utf8');
+        const fromDir = dirname(file);
+        STATEMENT.lastIndex = 0;
+        let match: RegExpExecArray | null;
+        // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop
+        while ((match = STATEMENT.exec(src))) {
+          const isTypeOnly = Boolean(match[2]);
+          if (isTypeOnly) continue;
+          const spec = match[3] ?? match[4];
+          if (spec && !resolvesAsRuntime(fromDir, spec)) {
+            unresolved.push(`${relative(rawTreeDir, file)} -> ${spec}`);
+          }
         }
       }
-    }
-    expect(
-      unresolved,
-      `unresolved runtime imports in dist/lib/lib:\n${unresolved.join('\n')}`,
-    ).toEqual([]);
-  });
-});
+      expect(
+        unresolved,
+        `unresolved runtime imports in dist/lib/lib:\n${unresolved.join('\n')}`,
+      ).toEqual([]);
+    });
+  },
+);
