@@ -175,6 +175,9 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check MCP config
+        run: pnpm run check:mcp-config
+
       # Sweep S5 (#1376): blocking gate. Fails on stale agent docs, dangling
       # references, missing package docs, or drifted domain-knowledge artifacts.
       - name: Check SMRT knowledge freshness
