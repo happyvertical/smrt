@@ -10,11 +10,19 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-chat', '../chat/src/index.ts'],
   ['@happyvertical/smrt-chat/svelte', '../chat/src/svelte/index.ts'],
   ['@happyvertical/smrt-config', '../config/src/index.ts'],
-  ['@happyvertical/smrt-core/scanner', '../core/src/scanner/index.ts'],
-  ['@happyvertical/smrt-core/schema/utils', '../core/src/schema/utils.ts'],
-  ['@happyvertical/smrt-core/vite-plugin', '../core/src/vite-plugin.ts'],
-  ['@happyvertical/smrt-core/consumer-plugin', '../core/src/consumer-plugin.ts'],
-  ['@happyvertical/smrt-core', '../core/src/index.ts'],
+  // Point the WHOLE @happyvertical/smrt-core package at source via a single
+  // directory alias. svelte-kit/vite expand a directory alias into a
+  // `@happyvertical/smrt-core/*` wildcard, so every subpath (/runtime,
+  // /testing, /generators/*, /scanner/types, /manifest, …) resolves to
+  // core/src. Enumerating only a handful of subpaths (the previous state) left
+  // the rest resolving to core/dist, so svelte-check pulled core into the
+  // program under TWO identities (src via these aliases + dist via a
+  // non-aliased subpath). core's `declare global` manifest-cache augmentations
+  // (#543) are typed with core's own SmartObjectManifest, so the two identities
+  // collided ("Subsequent variable declarations must have the same type") and
+  // failed the typecheck gate. A directory alias keeps resolution single-identity
+  // and is robust to new core subpaths. See #1536.
+  ['@happyvertical/smrt-core', '../core/src'],
   ['@happyvertical/smrt-facts', '../facts/src/index.ts'],
   ['@happyvertical/smrt-images', '../images/src/index.ts'],
   ['@happyvertical/smrt-images/svelte', '../images/src/svelte/index.ts'],
