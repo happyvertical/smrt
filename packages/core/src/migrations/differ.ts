@@ -99,6 +99,97 @@ function resolveDatabaseUrl(db: DatabaseInterface): string {
 }
 
 /**
+ * Normalize a partial-index `WHERE` predicate so semantically-identical
+ * clauses from different sources compare equal (issue #1692).
+ *
+ * The manifest stores predicates roughly as written (`_meta_type = 'Article'`),
+ * SQLite/DuckDB echo the original CREATE INDEX text verbatim, and PostgreSQL
+ * re-renders them with type casts and extra parentheses
+ * (`((_meta_type)::text = 'Article'::text)`). Normalization:
+ *
+ * - strips a leading `WHERE` keyword,
+ * - removes PostgreSQL `::type` casts (single-word type names — the only kind
+ *   SMRT-generated partial predicates produce, e.g. `_meta_type::text`),
+ * - removes parentheses (SMRT only emits simple `col = 'literal'` predicates,
+ *   so grouping carries no meaning here),
+ * - lowercases everything OUTSIDE single-quoted string literals (SQL keywords
+ *   and identifiers are case-insensitive; literals such as STI discriminator
+ *   class names are case-sensitive, so they are preserved verbatim),
+ * - collapses whitespace and tightens spacing around comparison operators.
+ *
+ * Returns '' for an absent/empty predicate (i.e. a non-partial index).
+ */
+export function normalizeIndexPredicate(where?: string | null): string {
+  if (!where) return '';
+  const stripped = where.trim().replace(/^WHERE\s+/i, '');
+  if (!stripped) return '';
+
+  let out = '';
+  let i = 0;
+  while (i < stripped.length) {
+    if (stripped[i] === "'") {
+      // Consume a single-quoted string literal verbatim, honoring the SQL
+      // `''` escape for an embedded quote.
+      let literal = "'";
+      i++;
+      while (i < stripped.length) {
+        if (stripped[i] === "'") {
+          if (stripped[i + 1] === "'") {
+            literal += "''";
+            i += 2;
+            continue;
+          }
+          literal += "'";
+          i++;
+          break;
+        }
+        literal += stripped[i];
+        i++;
+      }
+      out += literal;
+    } else {
+      let run = '';
+      while (i < stripped.length && stripped[i] !== "'") {
+        run += stripped[i];
+        i++;
+      }
+      out += normalizeNonLiteralPredicateRun(run);
+    }
+  }
+  return out;
+}
+
+/**
+ * Normalize the non-literal portion of a predicate (everything outside a
+ * single-quoted string literal). Type casts and parentheses are dropped,
+ * keywords/identifiers are lowercased, and whitespace is canonicalized.
+ */
+function normalizeNonLiteralPredicateRun(run: string): string {
+  return run
+    .replace(/::[A-Za-z_]\w*/g, '') // drop single-word PostgreSQL type casts
+    .replace(/[()]/g, '') // drop parentheses
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([=<>!]+)\s*/g, '$1') // tighten comparison operators
+    .trim();
+}
+
+/**
+ * Extract the normalized partial-index predicate from a `CREATE INDEX`
+ * statement — the `WHERE` tail that follows the column-list close paren.
+ * Works for both SQLite/DuckDB `sqlite_master.sql` text and PostgreSQL
+ * `pg_indexes.indexdef`. Returns '' for a non-partial index.
+ */
+export function extractIndexPredicate(createIndexSql: string): string {
+  // The predicate is the tail after the column-list ')': `... (cols) WHERE x`.
+  // Anchoring on `) WHERE` (rather than a bare `WHERE`) avoids matching a
+  // column literally named "where" inside the indexed column list.
+  const match = createIndexSql.match(/\)\s*WHERE\s+([\s\S]+?)\s*;?\s*$/i);
+  if (!match) return '';
+  return normalizeIndexPredicate(match[1]);
+}
+
+/**
  * SchemaComparer class for comparing manifest schemas to database
  */
 export class SchemaComparer {
@@ -198,8 +289,21 @@ export class SchemaComparer {
     const columnChanges = this.compareColumns(tableName, manifest, dbSchema);
     changes.push(...columnChanges);
 
+    // Partial-index predicates are not surfaced by `getTableSchema()` (the
+    // @happyvertical/sql introspection returns only name/columns/unique), so
+    // introspect them separately. Without this, two indexes on the same
+    // column(s) that differ only by their WHERE clause — e.g. distinct STI
+    // child partial indexes — would compare equal and the differ would miss
+    // adds/drops/changes of the predicate (issue #1692).
+    const dbIndexPredicates = await this.getDbIndexPredicates(tableName);
+
     // Compare indexes
-    const indexChanges = this.compareIndexes(tableName, manifest, dbSchema);
+    const indexChanges = this.compareIndexes(
+      tableName,
+      manifest,
+      dbSchema,
+      dbIndexPredicates,
+    );
     changes.push(...indexChanges);
 
     return changes;
@@ -380,7 +484,7 @@ export class SchemaComparer {
   /**
    * Compare indexes between manifest and database
    *
-   * Three classes of drift the differ now detects:
+   * Four classes of drift the differ now detects:
    *
    * 1. **Missing index** — manifest has an index neither the DB has by name
    *    nor any equivalent-by-signature. Emit `add_index`. (Issue #741: the
@@ -388,11 +492,13 @@ export class SchemaComparer {
    *    classes register indexes with different name prefixes.)
    *
    * 2. **Same-name shape drift** — DB has an index with the manifest's name,
-   *    but its columns or uniqueness flag differ. This is the failure mode
-   *    in issue #1165: `tenants_slug_context_meta_type_idx` exists but is
-   *    non-unique, while the manifest declares it unique. Emit
-   *    `drop_index` + `add_index` so the next migrate cycle recreates it
-   *    with the correct shape.
+   *    but its columns, uniqueness flag, or partial-index `WHERE` predicate
+   *    differ. This covers the uniqueness flip in issue #1165
+   *    (`tenants_slug_context_meta_type_idx` materialized non-unique while
+   *    the manifest declares it unique) and the predicate drift in issue
+   *    #1692 (a partial index whose `WHERE` clause was added, removed, or
+   *    altered). Emit `drop_index` + `add_index` so the next migrate cycle
+   *    recreates it with the correct shape.
    *
    * 3. **Orphan in DB** — DB has an index with no manifest counterpart by
    *    name and no signature equivalent. Emit `drop_index` *only* when the
@@ -400,13 +506,36 @@ export class SchemaComparer {
    *    PostgreSQL implicit indexes (`*_pkey`, `*_key`) — those are owned by
    *    table-level constraints and need a separate `DROP CONSTRAINT` path
    *    that the differ does not emit yet.
+   *
+   * 4. **Partial-index predicate drift / collision** — two indexes on the
+   *    same column(s) and uniqueness that differ only by their `WHERE`
+   *    predicate (e.g. distinct STI child partial indexes) are no longer
+   *    collapsed to one signature, so the signature-equivalence path (b)
+   *    won't claim one for the other.
+   *
+   * @param dbIndexPredicates - Normalized `WHERE` predicate per DB index
+   *   name from {@link getDbIndexPredicates}. `null` means predicate
+   *   introspection was unavailable for this engine/adapter, in which case
+   *   the comparison falls back to predicate-unaware signatures (the prior
+   *   behavior) so existing partial indexes are never flagged as false drift.
    */
   private compareIndexes(
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
+    dbIndexPredicates: Map<string, string> | null = null,
   ): SchemaChange[] {
     const changes: SchemaChange[] = [];
+
+    // Only fold predicates into signatures when we actually read them back
+    // from the live DB. If introspection was unavailable both sides use the
+    // empty predicate, which reproduces the prior column+unique-only behavior
+    // and cannot manufacture false positives on existing partial indexes.
+    const predicateAware = dbIndexPredicates !== null;
+    const dbPredicateFor = (name: string): string =>
+      predicateAware ? (dbIndexPredicates?.get(name) ?? '') : '';
+    const manifestPredicateFor = (idx: IndexDefinition): string =>
+      predicateAware ? normalizeIndexPredicate(idx.where) : '';
 
     // Index DB indexes by name and by signature for fast lookup.
     // dbIndexSignatures groups *all* DB index names sharing a signature so
@@ -421,7 +550,11 @@ export class SchemaComparer {
     for (const idx of dbSchema.indexes) {
       const unique = idx.unique ?? false;
       dbIndexesByName.set(idx.name, { columns: idx.columns, unique });
-      const signature = this.getIndexSignature(idx.columns, unique);
+      const signature = this.getIndexSignature(
+        idx.columns,
+        unique,
+        dbPredicateFor(idx.name),
+      );
       let bucket = dbIndexSignatures.get(signature);
       if (!bucket) {
         bucket = new Set();
@@ -435,7 +568,9 @@ export class SchemaComparer {
     // entry "claimed" them by name.
     const manifestSignatureSet = new Set<string>();
     for (const idx of manifest.indexes) {
-      manifestSignatureSet.add(this.getIndexSignature(idx));
+      manifestSignatureSet.add(
+        this.getIndexSignature(idx, undefined, manifestPredicateFor(idx)),
+      );
     }
 
     // Track which DB indexes a manifest entry has claimed, so the orphan
@@ -443,7 +578,11 @@ export class SchemaComparer {
     const claimedDbIndexes = new Set<string>();
 
     for (const idx of manifest.indexes) {
-      const manifestSignature = this.getIndexSignature(idx);
+      const manifestSignature = this.getIndexSignature(
+        idx,
+        undefined,
+        manifestPredicateFor(idx),
+      );
 
       // (a) Same name in DB — verify shape matches.
       const dbByName = dbIndexesByName.get(idx.name);
@@ -464,6 +603,7 @@ export class SchemaComparer {
         const dbSignature = this.getIndexSignature(
           dbByName.columns,
           dbByName.unique,
+          dbPredicateFor(idx.name),
         );
         if (dbSignature === manifestSignature) {
           continue; // Same name, same shape — nothing to do.
@@ -534,6 +674,7 @@ export class SchemaComparer {
         const idxSignature = this.getIndexSignature(
           idx.columns,
           idx.unique ?? false,
+          dbPredicateFor(idx.name),
         );
         if (manifestSignatureSet.has(idxSignature)) continue;
 
@@ -550,17 +691,21 @@ export class SchemaComparer {
   }
 
   /**
-   * Generate a signature for an index based on its columns and uniqueness.
-   * Used for functional equivalence checking (Issue #741).
+   * Generate a signature for an index based on its columns, uniqueness, and
+   * (normalized) partial-index predicate. Used for functional equivalence
+   * checking (Issue #741) and predicate-drift detection (Issue #1692).
    *
    * Note: Column order is preserved because it is semantically significant for
    * composite indexes. An index on (a, b) is NOT equivalent to (b, a) - they
    * have different query performance characteristics.
    *
-   * Limitation: Partial indexes (with WHERE clauses) are not fully supported.
-   * The database introspection layer doesn't provide WHERE clause information,
-   * so two partial indexes with the same columns but different WHERE clauses
-   * cannot be distinguished and may be incorrectly treated as equivalent.
+   * The trailing predicate component distinguishes partial indexes that share
+   * columns and uniqueness but differ by their `WHERE` clause (e.g. distinct
+   * STI child partial indexes). Callers pass the already-normalized predicate
+   * so both the manifest (desired) and introspected (DB) sides compare equal
+   * for semantically-identical clauses. An empty string means "no predicate"
+   * (a non-partial index) and is also used on both sides when predicate
+   * introspection is unavailable, preserving the prior behavior.
    *
    * For JSON-path indexes (`@meta({ indexed: true })`) the signature is
    * derived from the JSON path instead of an empty column list, so the
@@ -568,20 +713,109 @@ export class SchemaComparer {
    *
    * @param idxOrColumns - Either an IndexDefinition or a column array (legacy)
    * @param uniqueArg - Unique flag (used when first arg is a column array)
+   * @param predicateArg - Normalized partial-index predicate (default '')
    * @returns Signature string
    */
   private getIndexSignature(
     idxOrColumns: IndexDefinition | string[],
     uniqueArg?: boolean,
+    predicateArg = '',
   ): string {
     if (Array.isArray(idxOrColumns)) {
-      return `${idxOrColumns.join(',')}:${Boolean(uniqueArg)}`;
+      return `${idxOrColumns.join(',')}:${Boolean(uniqueArg)}:${predicateArg}`;
     }
     const idx = idxOrColumns;
     if (isJsonPathIndex(idx) && idx.jsonPath) {
-      return `json:${idx.jsonPath.column}.${idx.jsonPath.path}:${Boolean(idx.unique)}`;
+      return `json:${idx.jsonPath.column}.${idx.jsonPath.path}:${Boolean(idx.unique)}:${predicateArg}`;
     }
-    return `${(idx.columns ?? []).join(',')}:${Boolean(idx.unique)}`;
+    return `${(idx.columns ?? []).join(',')}:${Boolean(idx.unique)}:${predicateArg}`;
+  }
+
+  /**
+   * Whether the active engine supports partial indexes (`CREATE INDEX … WHERE`).
+   *
+   * SQLite and PostgreSQL do. DuckDB rejects them outright, and the JSON
+   * adapter is DuckDB-backed, so on those engines a "partial" index can only
+   * ever exist as a full index. Treating the predicate as significant there
+   * would (a) flag existing full indexes as false drift and (b) emit
+   * `CREATE INDEX … WHERE` DDL the engine rejects, breaking the migration.
+   * Gating on this keeps both the comparison and the generated DDL aligned
+   * with what the engine actually accepts (a partial index degrades to a
+   * full index), matching the pre-#1692 behavior on those engines.
+   */
+  private supportsPartialIndexes(): boolean {
+    return this.engine === 'sqlite' || this.engine === 'postgres';
+  }
+
+  /**
+   * Introspect partial-index predicates for a table, keyed by index name.
+   *
+   * `getTableSchema()` (the @happyvertical/sql introspection) returns only
+   * name/columns/unique, so the `WHERE` predicate is read directly here:
+   *
+   * - PostgreSQL: `pg_indexes.indexdef` carries the full CREATE INDEX text.
+   * - SQLite: the `sqlite_master.sql` column carries the original CREATE INDEX
+   *   text.
+   *
+   * Engines that don't support partial indexes (DuckDB / the DuckDB-backed
+   * JSON adapter) short-circuit to `null` so the comparison stays
+   * predicate-unaware there — see {@link supportsPartialIndexes}.
+   *
+   * Non-partial indexes are omitted from the map (callers treat a missing
+   * entry as the empty predicate). Returns `null` when the catalog query
+   * fails — e.g. an adapter exposing neither catalog — so the index
+   * comparison can fall back to predicate-unaware behavior rather than
+   * flagging every existing partial index as false drift.
+   */
+  private async getDbIndexPredicates(
+    tableName: string,
+  ): Promise<Map<string, string> | null> {
+    if (!this.supportsPartialIndexes()) {
+      return null;
+    }
+    const predicates = new Map<string, string>();
+    try {
+      if (this.engine === 'postgres') {
+        const result = await this.db.query(
+          `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = ${this.quoteLiteral(
+            tableName,
+          )}`,
+        );
+        for (const row of result.rows as {
+          indexname?: string;
+          indexdef?: string;
+        }[]) {
+          if (!row.indexname || !row.indexdef) continue;
+          const predicate = extractIndexPredicate(row.indexdef);
+          if (predicate) predicates.set(row.indexname, predicate);
+        }
+        return predicates;
+      }
+
+      // SQLite exposes the `sqlite_master` catalog whose `sql` column preserves
+      // the original CREATE INDEX text. Implicit indexes carry a NULL `sql` and
+      // are skipped. (DuckDB / JSON already short-circuited above.)
+      const result = await this.db.query(
+        `SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ${this.quoteLiteral(
+          tableName,
+        )} AND name NOT LIKE 'sqlite_%'`,
+      );
+      for (const row of result.rows as {
+        name?: string;
+        sql?: string | null;
+      }[]) {
+        if (!row.name || !row.sql) continue;
+        const predicate = extractIndexPredicate(row.sql);
+        if (predicate) predicates.set(row.name, predicate);
+      }
+      return predicates;
+    } catch (err) {
+      logger.debug(
+        `[SchemaComparer] Partial-index predicate introspection unavailable for ${tableName}; falling back to predicate-unaware index comparison`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+      return null;
+    }
   }
 
   /**
@@ -957,12 +1191,26 @@ export class SchemaComparer {
   }
 
   /**
-   * Generate SQL for adding an index
+   * Generate SQL for adding an index.
+   *
+   * On engines that support partial indexes (SQLite/PostgreSQL) this mirrors
+   * the canonical CREATE INDEX path in the DDL strategies: a partial index
+   * appends its `WHERE` predicate so a detected predicate add/alter (issue
+   * #1692) recreates the index with the correct partial condition rather than
+   * silently widening it to a full index. On DuckDB / the JSON adapter — which
+   * reject partial indexes — the predicate is dropped so the emitted DDL stays
+   * executable (a partial index degrades to a full index there). The predicate
+   * is trimmed and a redundant leading `WHERE` stripped for robustness.
    */
   private generateAddIndexSQL(tableName: string, idx: IndexDefinition): string {
     const uniqueStr = idx.unique ? 'UNIQUE ' : '';
     const target = renderIndexTarget(idx, this.engine);
-    return `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
+    let sql = `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
+    const where = idx.where?.trim().replace(/^WHERE\s+/i, '');
+    if (this.supportsPartialIndexes() && where) {
+      sql += ` WHERE ${where}`;
+    }
+    return sql;
   }
 
   /**
