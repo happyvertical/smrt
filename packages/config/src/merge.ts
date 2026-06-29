@@ -25,9 +25,17 @@ function deepMerge<T extends Record<string, unknown>>(
   target: T,
   source: Partial<T>,
 ): T {
-  // Typed as Record<string, unknown> (not the generic T) so the own-key writes
-  // below are well-typed — indexing a generic T for *write* is a TS2862 error.
-  const result: Record<string, unknown> = { ...target };
+  // Deep-clone the carried-over target values (defaults / prior runtime store)
+  // so the merged result never aliases the caller's `target`. Combined with the
+  // clone of leaf source values below, the output owns all of its data: mutating
+  // an input array/object can't leak into the result or the global runtime store
+  // (via setConfig), and vice versa (#1579). Config is pure data, so
+  // structuredClone is safe. Typed as Record<string, unknown> (not the generic
+  // T) so the own-key writes below are well-typed — indexing a generic T for
+  // *write* is a TS2862 error.
+  const result: Record<string, unknown> = structuredClone(
+    target,
+  ) as Record<string, unknown>;
   const src = source as Record<string, unknown>;
 
   for (const key of Object.keys(src)) {
@@ -52,7 +60,8 @@ function deepMerge<T extends Record<string, unknown>>(
         sourceValue as Record<string, unknown>,
       );
     } else if (sourceValue !== undefined && sourceValue !== null) {
-      result[key] = sourceValue;
+      // Clone leaf arrays/objects so the result doesn't alias `source` (#1579).
+      result[key] = structuredClone(sourceValue);
     }
   }
 

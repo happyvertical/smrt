@@ -9,7 +9,11 @@ import {
   loadConfig,
   setConfig,
 } from './index.js';
-import { mergeConfigs } from './merge.js';
+import {
+  clearRuntimeConfig,
+  getRuntimeConfig,
+  mergeConfigs,
+} from './merge.js';
 
 describe('mergeConfigs', () => {
   it('should not merge null values', () => {
@@ -41,6 +45,35 @@ describe('mergeConfigs', () => {
     expect(result.enabled).toBe(false);
     expect(result.count).toBe(0);
     expect(result.name).toBe('');
+  });
+
+  it('does not alias input arrays/objects into the merged result (#1579)', () => {
+    const defaults = { features: { list: ['a'] }, kept: { tags: ['k'] } };
+    const fileConfig = { extra: { items: ['x'] } };
+    const merged = mergeConfigs(defaults, fileConfig, {});
+
+    // Mutating either input after the merge must not change the result.
+    defaults.features.list.push('b');
+    defaults.kept.tags.push('z');
+    fileConfig.extra.items.push('y');
+    expect(merged.features.list).toEqual(['a']);
+    expect(merged.kept.tags).toEqual(['k']);
+    expect(merged.extra.items).toEqual(['x']);
+
+    // ...and mutating the result must not leak back into the inputs.
+    (merged.features.list as string[]).push('c');
+    expect(defaults.features.list).toEqual(['a', 'b']);
+  });
+
+  it('setConfig does not alias the caller input into the runtime store (#1579)', () => {
+    clearRuntimeConfig();
+    const input = { modules: { demo: { allow: ['one'] } } };
+    setConfig(input as Parameters<typeof setConfig>[0]);
+    // Mutating the original input must not change the stored runtime config.
+    input.modules.demo.allow.push('two');
+    const store = getRuntimeConfig() as typeof input;
+    expect(store.modules.demo.allow).toEqual(['one']);
+    clearRuntimeConfig();
   });
 });
 
@@ -101,6 +134,17 @@ describe('@smrt/config', () => {
       });
 
       expect(config).toEqual({});
+    });
+
+    it('throws when a config file exists but fails to parse (#1579)', async () => {
+      // Unterminated object literal — a syntax error, not a missing file. The
+      // loader must surface this rather than silently falling back to {}.
+      const badPath = join(testDir, 'broken.config.mjs');
+      writeFileSync(badPath, 'export default { smrt: { logLevel:', 'utf-8');
+
+      await expect(
+        loadConfig({ configPath: badPath, cache: false }),
+      ).rejects.toThrow(/Failed to load smrt config/);
     });
   });
 
