@@ -8,14 +8,62 @@ declare global {
 // Runtime config overrides
 globalThis.__smrtRuntimeConfig ??= {};
 
+// Keys that must never be written when merging untrusted / DB-exported config,
+// to avoid prototype pollution.
+const UNSAFE_KEYS = new Set<string>(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * True only for plain config maps (prototype is `Object.prototype` or `null`),
+ * not arrays, `Date`/`RegExp`, or class instances.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === null || proto === Object.prototype;
+}
+
+/**
+ * Recursively clone arrays and plain objects so the result shares no mutable
+ * container with its input (#1579). Non-plain leaves — primitives, and crucially
+ * **functions / class instances** — are passed through by reference: config
+ * sections are typed `Record<string, unknown>` and may legitimately hold
+ * callbacks, which are neither structured-cloneable nor the mutable containers
+ * the aliasing guarantee targets.
+ */
+function deepClone<V>(value: V): V {
+  if (Array.isArray(value)) {
+    return value.map((item) => deepClone(item)) as V;
+  }
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value)) {
+      if (UNSAFE_KEYS.has(key)) {
+        continue;
+      }
+      out[key] = deepClone(value[key]);
+    }
+    return out as V;
+  }
+  return value;
+}
+
 /**
  * Deep-merge two plain objects, with `source` values taking precedence over
  * `target` values at each key level.
  *
  * Rules:
- * - Both values are non-array objects → recurse.
+ * - Both values are plain objects → recurse.
  * - `source` value is `null` or `undefined` → keep the `target` value.
  * - Otherwise → `source` value replaces `target` value (including `false`, `0`, `''`).
+ *
+ * The returned object owns all of its data: arrays and plain objects from both
+ * inputs are deep-cloned, so mutating an input later can't leak into the result
+ * (or the global runtime store via {@link setConfig}) and vice versa (#1579).
+ * Each value is cloned exactly once — carried-over target keys and overriding
+ * source leaves are cloned here, and shared object keys are produced by the
+ * recursive call rather than re-cloned.
  *
  * @param target - Base object (lower priority).
  * @param source - Override object (higher priority).
@@ -27,32 +75,34 @@ function deepMerge<T extends Record<string, unknown>>(
 ): T {
   // Typed as Record<string, unknown> (not the generic T) so the own-key writes
   // below are well-typed — indexing a generic T for *write* is a TS2862 error.
-  const result: Record<string, unknown> = { ...target };
+  const result: Record<string, unknown> = {};
+  const tgt = target as Record<string, unknown>;
   const src = source as Record<string, unknown>;
 
+  // Carry over target-only keys, cloned so the result never aliases `target`.
+  for (const key of Object.keys(tgt)) {
+    if (UNSAFE_KEYS.has(key) || key in src) {
+      continue;
+    }
+    result[key] = deepClone(tgt[key]);
+  }
+
   for (const key of Object.keys(src)) {
-    // Guard against prototype pollution when merging untrusted/DB-exported
-    // input: never write to __proto__/constructor/prototype keys.
-    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+    if (UNSAFE_KEYS.has(key)) {
       continue;
     }
     const sourceValue = src[key];
-    const targetValue = result[key];
+    const targetValue = tgt[key];
 
-    if (
-      sourceValue &&
-      typeof sourceValue === 'object' &&
-      !Array.isArray(sourceValue) &&
-      targetValue &&
-      typeof targetValue === 'object' &&
-      !Array.isArray(targetValue)
-    ) {
-      result[key] = deepMerge(
-        targetValue as Record<string, unknown>,
-        sourceValue as Record<string, unknown>,
-      );
+    if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
+      // Recurse — the child call returns a fully-owned object (no re-clone).
+      result[key] = deepMerge(targetValue, sourceValue);
     } else if (sourceValue !== undefined && sourceValue !== null) {
-      result[key] = sourceValue;
+      // `source` wins — clone its (possibly nested) value so we don't alias it.
+      result[key] = deepClone(sourceValue);
+    } else if (targetValue !== undefined) {
+      // `source` is null/undefined — keep the (cloned) target value.
+      result[key] = deepClone(targetValue);
     }
   }
 

@@ -39,6 +39,26 @@ function setExplorer(exp: ReturnType<typeof cosmiconfig> | null): void {
 }
 
 /**
+ * Distinguish "config file does not exist" (a benign, expected condition that
+ * falls back to empty config) from "config file exists but failed to load/parse"
+ * (a real error that should surface). cosmiconfig reads via Node `fs`, so a
+ * missing explicit path raises an `ENOENT` error.
+ */
+function isFileNotFound(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  if ((error as { code?: unknown }).code === 'ENOENT') {
+    return true;
+  }
+  const message = (error as { message?: unknown }).message;
+  return (
+    typeof message === 'string' &&
+    (message.includes('ENOENT') || message.includes('no such file'))
+  );
+}
+
+/**
  * Load and parse configuration from the project root using cosmiconfig.
  *
  * Searches for `smrt.config.{js,mjs,cjs,json}` starting from `cwd`, walking
@@ -46,11 +66,14 @@ function setExplorer(exp: ReturnType<typeof cosmiconfig> | null): void {
  * cached in `globalThis.__smrtLoaderCachedConfig` so that all modules sharing
  * the same runtime (including pnpm workspace symlinks) see the same config.
  *
- * Returns an empty object (`{}`) when no config file is found or when the
- * file fails to parse — callers should always treat every field as optional.
+ * Returns an empty object (`{}`) when no config file is found, so callers
+ * should always treat every field as optional. A config file that **exists but
+ * fails to load/parse** (syntax error, bad import, invalid JSON) throws instead
+ * of being silently ignored (#1579).
  *
  * @param options - Search and caching options.
- * @returns The parsed {@link SmrtConfig}, or `{}` if no file is found.
+ * @returns The parsed {@link SmrtConfig}, or `{}` if no config file is found.
+ * @throws If a config file exists but cannot be loaded or parsed.
  *
  * @example
  * ```ts
@@ -104,9 +127,24 @@ export async function loadConfig(
     } else {
       result = await explorer.search();
     }
-  } catch (_error) {
-    // Return empty config on error
-    return {};
+  } catch (error) {
+    // A genuinely-absent config file is not an error: an explicit `configPath`
+    // that doesn't exist (ENOENT) legitimately falls back to empty config, and
+    // `search()` returns null (never throws) when no file is found.
+    if (isFileNotFound(error)) {
+      return {};
+    }
+    // A config file that EXISTS but fails to load/parse — syntax error, bad
+    // import, invalid JSON — is a real problem. Surface it loudly instead of
+    // silently returning {} and falling back to defaults, which masks broken
+    // config and leaves the developer thinking their settings applied (#1579).
+    const where = configPath ? ` "${configPath}"` : '';
+    throw new Error(
+      `Failed to load smrt config${where}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
   }
 
   const config: SmrtConfig = result?.config || {};
