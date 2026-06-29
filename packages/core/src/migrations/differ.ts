@@ -592,7 +592,11 @@ export class SchemaComparer {
     if (this.engine === 'postgres') {
       query = `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`;
     } else {
-      // SQLite and DuckDB
+      // SQLite and DuckDB both expose the SQLite-compatible `sqlite_master`
+      // catalog — DuckDB ships it as a built-in compatibility view, so a single
+      // introspection query covers both engines. Verified against a live DuckDB
+      // v1.4.3 (json mode): `SELECT name FROM sqlite_master WHERE type='table'`
+      // returns user tables with the expected `name` column (#1579).
       query = `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`;
     }
 
