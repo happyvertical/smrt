@@ -11,7 +11,7 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-chat/svelte', '../chat/src/svelte/index.ts'],
   ['@happyvertical/smrt-config', '../config/src/index.ts'],
   // Point the WHOLE @happyvertical/smrt-core package at source via a single
-  // directory alias. svelte-kit/vite expand a directory alias into a
+  // directory alias. svelte-kit and vite both expand a directory alias into a
   // `@happyvertical/smrt-core/*` wildcard, so every subpath (/runtime,
   // /testing, /generators/*, /scanner/types, /manifest, …) resolves to
   // core/src. Enumerating only a handful of subpaths (the previous state) left
