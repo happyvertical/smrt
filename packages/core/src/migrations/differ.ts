@@ -732,17 +732,34 @@ export class SchemaComparer {
   }
 
   /**
+   * Whether the active engine supports partial indexes (`CREATE INDEX … WHERE`).
+   *
+   * SQLite and PostgreSQL do. DuckDB rejects them outright, and the JSON
+   * adapter is DuckDB-backed, so on those engines a "partial" index can only
+   * ever exist as a full index. Treating the predicate as significant there
+   * would (a) flag existing full indexes as false drift and (b) emit
+   * `CREATE INDEX … WHERE` DDL the engine rejects, breaking the migration.
+   * Gating on this keeps both the comparison and the generated DDL aligned
+   * with what the engine actually accepts (a partial index degrades to a
+   * full index), matching the pre-#1692 behavior on those engines.
+   */
+  private supportsPartialIndexes(): boolean {
+    return this.engine === 'sqlite' || this.engine === 'postgres';
+  }
+
+  /**
    * Introspect partial-index predicates for a table, keyed by index name.
    *
    * `getTableSchema()` (the @happyvertical/sql introspection) returns only
    * name/columns/unique, so the `WHERE` predicate is read directly here:
    *
    * - PostgreSQL: `pg_indexes.indexdef` carries the full CREATE INDEX text.
-   * - SQLite / DuckDB / JSON adapter: the `sqlite_master.sql` column carries
-   *   the original CREATE INDEX text. DuckDB ships a `sqlite_master`
-   *   compatibility view and the JSON adapter is DuckDB-backed, so the same
-   *   query covers all three. (DuckDB rejects partial indexes outright, so
-   *   in practice only non-partial — empty-predicate — rows come back there.)
+   * - SQLite: the `sqlite_master.sql` column carries the original CREATE INDEX
+   *   text.
+   *
+   * Engines that don't support partial indexes (DuckDB / the DuckDB-backed
+   * JSON adapter) short-circuit to `null` so the comparison stays
+   * predicate-unaware there — see {@link supportsPartialIndexes}.
    *
    * Non-partial indexes are omitted from the map (callers treat a missing
    * entry as the empty predicate). Returns `null` when the catalog query
@@ -753,6 +770,9 @@ export class SchemaComparer {
   private async getDbIndexPredicates(
     tableName: string,
   ): Promise<Map<string, string> | null> {
+    if (!this.supportsPartialIndexes()) {
+      return null;
+    }
     const predicates = new Map<string, string>();
     try {
       if (this.engine === 'postgres') {
@@ -772,9 +792,9 @@ export class SchemaComparer {
         return predicates;
       }
 
-      // SQLite, DuckDB, and the JSON adapter all expose the SQLite-compatible
-      // `sqlite_master` catalog whose `sql` column preserves the original
-      // CREATE INDEX text. Implicit indexes carry a NULL `sql` and are skipped.
+      // SQLite exposes the `sqlite_master` catalog whose `sql` column preserves
+      // the original CREATE INDEX text. Implicit indexes carry a NULL `sql` and
+      // are skipped. (DuckDB / JSON already short-circuited above.)
       const result = await this.db.query(
         `SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ${this.quoteLiteral(
           tableName,
@@ -1173,17 +1193,22 @@ export class SchemaComparer {
   /**
    * Generate SQL for adding an index.
    *
-   * Mirrors the canonical CREATE INDEX path in the DDL strategies: a partial
-   * index appends its `WHERE` predicate so a detected predicate add/alter
-   * (issue #1692) recreates the index with the correct partial condition
-   * rather than silently widening it to a full index.
+   * On engines that support partial indexes (SQLite/PostgreSQL) this mirrors
+   * the canonical CREATE INDEX path in the DDL strategies: a partial index
+   * appends its `WHERE` predicate so a detected predicate add/alter (issue
+   * #1692) recreates the index with the correct partial condition rather than
+   * silently widening it to a full index. On DuckDB / the JSON adapter — which
+   * reject partial indexes — the predicate is dropped so the emitted DDL stays
+   * executable (a partial index degrades to a full index there). The predicate
+   * is trimmed and a redundant leading `WHERE` stripped for robustness.
    */
   private generateAddIndexSQL(tableName: string, idx: IndexDefinition): string {
     const uniqueStr = idx.unique ? 'UNIQUE ' : '';
     const target = renderIndexTarget(idx, this.engine);
     let sql = `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
-    if (idx.where) {
-      sql += ` WHERE ${idx.where}`;
+    const where = idx.where?.trim().replace(/^WHERE\s+/i, '');
+    if (this.supportsPartialIndexes() && where) {
+      sql += ` WHERE ${where}`;
     }
     return sql;
   }

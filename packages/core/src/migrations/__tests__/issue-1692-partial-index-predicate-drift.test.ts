@@ -220,6 +220,80 @@ describe('SchemaComparer partial-index predicate drift (issue #1692)', () => {
     });
   });
 
+  describe('engines without partial-index support (DuckDB / JSON)', () => {
+    // DuckDB — and the DuckDB-backed JSON adapter — reject `CREATE INDEX … WHERE`.
+    // The differ must therefore treat a manifest partial index as a full index
+    // there: never flag an existing full index as predicate drift, and never
+    // emit partial DDL the engine would reject. We force the engine via
+    // `engineHint` so the assertion targets the gating logic itself (the live
+    // DB is in-memory SQLite, which the compare path only reads from).
+    it('does not flag drift for a manifest partial index vs a full DB index', async () => {
+      await db.query('CREATE INDEX idx_tenants_owner ON tenants(owner_id);');
+
+      const comparer = new SchemaComparer(db, { engineHint: 'duckdb' });
+      const diff = await comparer.compare({
+        tenants: tableSchema({
+          indexes: [
+            {
+              name: 'idx_tenants_owner',
+              columns: ['owner_id'],
+              where: "_meta_type = 'ClassA'",
+            },
+          ],
+        }),
+      });
+
+      expect(
+        diff.changes.filter(
+          (c) => c.type === 'add_index' || c.type === 'drop_index',
+        ),
+      ).toHaveLength(0);
+    });
+
+    it('emits full-index DDL (no WHERE) when adding a partial index', async () => {
+      const comparer = new SchemaComparer(db, { engineHint: 'duckdb' });
+      const diff = await comparer.compare({
+        tenants: tableSchema({
+          indexes: [
+            {
+              name: 'idx_tenants_owner',
+              columns: ['owner_id'],
+              where: "_meta_type = 'ClassA'",
+            },
+          ],
+        }),
+      });
+
+      const add = diff.changes.find((c) => c.type === 'add_index');
+      expect(add?.name).toBe('idx_tenants_owner');
+      expect(add?.sql).not.toContain('WHERE');
+    });
+  });
+
+  describe('generated add-index SQL hardening', () => {
+    it('appends exactly one WHERE even if the manifest predicate is messy', async () => {
+      // A predicate that already carries a leading `WHERE` and stray
+      // whitespace must not produce `WHERE WHERE` or a dangling `WHERE`.
+      const comparer = new SchemaComparer(db);
+      const diff = await comparer.compare({
+        tenants: tableSchema({
+          indexes: [
+            {
+              name: 'idx_tenants_owner',
+              columns: ['owner_id'],
+              where: "  WHERE _meta_type = 'ClassA'  ",
+            },
+          ],
+        }),
+      });
+
+      const add = diff.changes.find((c) => c.type === 'add_index');
+      expect(add?.sql).toBe(
+        `CREATE INDEX "idx_tenants_owner" ON "tenants" ("owner_id") WHERE _meta_type = 'ClassA'`,
+      );
+    });
+  });
+
   describe('no false drift on matching predicates', () => {
     it('does not flag an identical partial index as drifted', async () => {
       await db.query(
