@@ -66,11 +66,14 @@ function isFileNotFound(error: unknown): boolean {
  * cached in `globalThis.__smrtLoaderCachedConfig` so that all modules sharing
  * the same runtime (including pnpm workspace symlinks) see the same config.
  *
- * Returns an empty object (`{}`) when no config file is found or when the
- * file fails to parse — callers should always treat every field as optional.
+ * Returns an empty object (`{}`) when no config file is found, so callers
+ * should always treat every field as optional. A config file that **exists but
+ * fails to load/parse** (syntax error, bad import, invalid JSON) throws instead
+ * of being silently ignored (#1579).
  *
  * @param options - Search and caching options.
- * @returns The parsed {@link SmrtConfig}, or `{}` if no file is found.
+ * @returns The parsed {@link SmrtConfig}, or `{}` if no config file is found.
+ * @throws If a config file exists but cannot be loaded or parsed.
  *
  * @example
  * ```ts

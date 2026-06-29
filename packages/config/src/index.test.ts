@@ -75,6 +75,22 @@ describe('mergeConfigs', () => {
     expect(store.modules.demo.allow).toEqual(['one']);
     clearRuntimeConfig();
   });
+
+  it('preserves function-valued config by reference, not DataCloneError (#1579)', () => {
+    // `modules`/`packages` are `Record<string, unknown>`, so a JS smrt.config
+    // may hold callbacks. structuredClone would throw DataCloneError on these;
+    // the custom deep clone passes non-plain leaves through by reference.
+    const factory = () => 'built';
+    const merged = mergeConfigs(
+      { modules: {} as Record<string, unknown> },
+      { modules: { demo: { factory } } },
+      {},
+    );
+    const demo = (merged.modules as Record<string, { factory: () => string }>)
+      .demo;
+    expect(demo.factory).toBe(factory);
+    expect(demo.factory()).toBe('built');
+  });
 });
 
 describe('@smrt/config', () => {
