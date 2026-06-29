@@ -96,7 +96,18 @@ const libEntries = {
 	generated: resolve(packageDir, 'src/generated.ts'),
 	utils: resolve(packageDir, 'src/utils.ts'),
 	collections: resolve(packageDir, 'src/collections.ts'),
+	// These `lib/*` entries are NOT public subpaths (they have no
+	// `package.json#exports` mapping). They emit standalone modules into
+	// `dist/lib/lib/` so the raw `.svelte` files produced by the
+	// `svelte-package` passes below (over `src/lib/{components,features,stores}`)
+	// can resolve their shared-module imports. `svelte-package` only emits
+	// files under its `-i` input dir, so shared modules that live directly
+	// under `src/lib` (and are imported as `../mock-smrt-client` /
+	// `../i18n.js`) must be emitted here instead. `lib/i18n` closes the gap
+	// reported in #1536 — without it the packaged components keep an
+	// `import { M } from '../i18n.js'` that never resolves.
 	'lib/mock-smrt-client': resolve(packageDir, 'src/lib/mock-smrt-client.ts'),
+	'lib/i18n': resolve(packageDir, 'src/lib/i18n.ts'),
 } as const;
 
 /**
