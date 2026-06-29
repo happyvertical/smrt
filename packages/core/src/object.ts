@@ -3663,7 +3663,16 @@ export class SmrtObject extends SmrtClass {
       throw new Error('Object must have an ID before generating embeddings.');
     }
 
-    // Get embedding configuration for this class
+    // Get embedding configuration for this class.
+    // Known limitation (#1579, won't-fix): keyed by the *simple* runtime class
+    // name (`this.constructor.name`), so two classes with the same simple name
+    // in different packages but different embeddings config could collide
+    // (R5-canon). This mirrors the deliberate simple-name keying elsewhere
+    // (relationship graph, `loadRelated`'s `this.constructor.name` lookups —
+    // the tested #951 contract). Accepted as low-risk: duplicate simple class
+    // names carrying *different* embeddings config is rare, and switching to
+    // qualified names would need consistent instance→qualified-name resolution
+    // across STI and non-STI, a coordinated change beyond this config lookup.
     const config = ObjectRegistry.resolveEmbeddingConfig(this.constructor.name);
     if (!config) {
       throw new Error(

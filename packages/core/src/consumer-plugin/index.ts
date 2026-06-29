@@ -187,7 +187,15 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 }
 
 /**
- * Discover SMRT packages in node_modules
+ * Discover SMRT packages from a consumer app's dependencies.
+ *
+ * Intentional split (#1579): this **consumer-plugin** path is async and
+ * resolves SMRT packages from the downstream app's `package.json` dependency
+ * names (`@have/`/`smrt` heuristic + `hasSmrtManifest` probe) inside the Vite
+ * consumer plugin. It is deliberately separate from the build-time
+ * `discoverSmrtPackages()` in `src/manifest/discover-smrt-packages.ts` — a
+ * synchronous, lockfile-cached `node_modules` manifest scan used for manifest
+ * generation. Different inputs, contexts, and lifecycles, not duplicated logic.
  */
 async function discoverSmrtPackages(projectRoot: string): Promise<string[]> {
   const packages: string[] = [];
