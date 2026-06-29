@@ -470,6 +470,16 @@ export interface DiscoveryOptions {
  * - Automatically invalidates when any manifest.json changes (packages rebuilt)
  *
  * Disable with SMRT_DISABLE_DISCOVERY_CACHE=true for debugging
+ *
+ * Intentional split (#1579): this is the **build-time** discovery path —
+ * synchronous, scans `node_modules` for `manifest.json` files with
+ * `moduleType: "smrt"`, and caches by lockfile/manifest hash for fast manifest
+ * generation. It is deliberately distinct from the consumer-plugin's
+ * `discoverSmrtPackages(projectRoot)` (`src/consumer-plugin/index.ts`), which is
+ * **async**, reads a downstream app's `package.json` dependency names with a
+ * lightweight `@have/`/`smrt` heuristic, and runs inside the Vite consumer
+ * plugin. Different inputs, contexts, and lifecycles — not duplicated logic to
+ * consolidate.
  */
 export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
   const startTime = options.timing ? performance.now() : 0;

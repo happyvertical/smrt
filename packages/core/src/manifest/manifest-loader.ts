@@ -1409,6 +1409,16 @@ export function getLoadedManifests(): Array<[string, Manifest]> {
  *
  * @param collection - The collection/table name to find siblings for
  * @returns Array of manifest entries that share the same collection
+ *
+ * Known limitation (#1579, won't-fix): the per-collection result is cached on
+ * `globalThis.__smrtSTISiblingCache` after the first call and is not invalidated
+ * when a manifest is registered *afterwards* and isn't reachable via
+ * `smrtDependencies` (the Release-A self-register path). A sibling registered
+ * after first discovery for a given collection can therefore be missed until the
+ * cache is cleared. Accepted as low-risk: STI manifests are registered at
+ * startup before query traffic, and the few self-register flows that could hit
+ * it can reset the cache. Fixing it properly means a registration→cache
+ * invalidation hook, which is disproportionate to the exposure.
  */
 export function discoverSTISiblingsSync(
   collection: string,
