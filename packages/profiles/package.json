@@ -41,7 +41,7 @@
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "@noble/curves": "^1.8.1",
+    "@noble/curves": "^2.2.0",
     "bech32": "^2.0.0"
   },
   "devDependencies": {
