@@ -582,6 +582,36 @@ describe('AccessRequest', () => {
       ).rejects.toMatchObject({ code: 'TENANT_NOT_FOUND' });
     });
 
+    it('rejects an invalid role without leaving an orphan tenant or user', async () => {
+      // codex review #1713: a bad role slug used to create the tenant first, then
+      // throw ROLE_NOT_FOUND — orphaning the tenant (and the just-created user).
+      // Tenant option is now validated before any write.
+      const request = await service.createAccessRequest({
+        email: 'badrole@example.com',
+      });
+      await service.approveAccessRequest(request.id as string);
+
+      const tenantsBefore = (await tenants.findActive()).length;
+      const usersBefore = await users.findByEmail('badrole@example.com');
+
+      await expect(
+        service.graduateAccessRequest(request.id as string, {
+          tenant: {
+            create: { name: 'Should Not Persist' },
+            role: 'nonexistent',
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'ROLE_NOT_FOUND' });
+
+      // No orphan tenant, no orphan user, and the request is still ungraduated.
+      expect((await tenants.findActive()).length).toBe(tenantsBefore);
+      expect(await tenants.findBySlug('should-not-persist')).toBeNull();
+      expect(usersBefore).toBeNull();
+      expect(await users.findByEmail('badrole@example.com')).toBeNull();
+      const reloaded = await service.getAccessRequest(request.id as string);
+      expect(reloaded?.status).toBe(AccessRequestStatus.APPROVED);
+    });
+
     it('exposes AccessRequestError for instanceof checks', async () => {
       const error = await service
         .approveAccessRequest('missing')

@@ -407,6 +407,18 @@ export class AccessRequestService {
    * supplied context/name/source/hint into it and returns it instead of
    * creating a duplicate (no second `created` event).
    *
+   * @remarks
+   * De-duplication is **best-effort, not atomic**: it is a read-then-write
+   * (`findOpenByEmail` → `create`) with no DB-level partial-unique constraint
+   * (the table is append-style, keyed on `id`, because the same email may
+   * accumulate many requests over its lifetime). Two requests for the same
+   * email racing concurrently can therefore both create an open row. This is by
+   * design — the spec makes dedup configurable and pushes abuse control to the
+   * app (rate-limiting on the public endpoint). Operators triaging two open rows
+   * for one email is benign; apps needing a hard single-open-request guarantee
+   * should add a partial unique index (`UNIQUE(email) WHERE status='requested'`)
+   * in their migration.
+   *
    * @throws {@link AccessRequestError} (`INVALID_EMAIL`) when the email is invalid.
    */
   async createAccessRequest(
@@ -687,6 +699,14 @@ export class AccessRequestService {
       }
     }
 
+    // Validate the tenant option BEFORE any write (user / tenant / membership):
+    // an invalid role slug or missing tenant must fail fast so graduation never
+    // leaves an orphan user or tenant behind (codex review #1713).
+    if (tenantOption !== 'none') {
+      await this.#ensureRolesSeeded();
+      await this.#validateTenantOption(tenantOption);
+    }
+
     // Create-or-link the user by normalized email. A brand-new user defaults to
     // ACTIVE (or `options.activate`). An existing linked user keeps its current
     // status unless the operator *explicitly* passes `activate` — so graduation
@@ -800,6 +820,46 @@ export class AccessRequestService {
         `AccessRequest event handler threw for "${event.type}" (request ${event.accessRequest.id})`,
         { error },
       );
+    }
+  }
+
+  /**
+   * Throw `ROLE_NOT_FOUND` if no role with `roleSlug` is resolvable (tenant-
+   * specific first, then system). Roles must already be seeded.
+   */
+  async #assertRoleExists(roleSlug: string, tenantId?: string): Promise<void> {
+    if (!(await this.#roles.findBySlug(roleSlug, tenantId))) {
+      throw new AccessRequestError(
+        `Role "${roleSlug}" not found — seed system roles or pass a valid role slug.`,
+        'ROLE_NOT_FOUND',
+      );
+    }
+  }
+
+  /**
+   * Validate a graduation tenant option with NO side effects: the target tenant
+   * must exist (existing-tenant variant) and the role slug must resolve. Run
+   * before any persistence so a bad option can't leave orphan rows.
+   */
+  async #validateTenantOption(
+    option: GraduateNewTenantOption | GraduateExistingTenantOption,
+  ): Promise<void> {
+    if ('tenantId' in option) {
+      const tenant = await this.#tenants.get(option.tenantId);
+      if (!tenant) {
+        throw new AccessRequestError(
+          `Target tenant "${option.tenantId}" not found.`,
+          'TENANT_NOT_FOUND',
+        );
+      }
+      await this.#assertRoleExists(
+        option.role ?? DEFAULT_ROLE_SLUGS.MEMBER,
+        option.tenantId,
+      );
+    } else {
+      // A brand-new tenant has no tenant-specific roles yet, so the role must
+      // resolve as a system role.
+      await this.#assertRoleExists(option.role ?? DEFAULT_ROLE_SLUGS.OWNER);
     }
   }
 
