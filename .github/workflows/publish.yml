@@ -181,7 +181,7 @@ jobs:
         run: |
           {
             printf '%s\n' package.json
-            find packages -type f \( -name 'package.json' -o -name 'CHANGELOG.md' -o -path '*/dist/*' \) -print
+            find packages -type f \( -name 'package.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -path '*/dist/*' \) -print
           } | sort -u > publish-release-workspace-files
           tar -cf publish-release-workspace.tar -T publish-release-workspace-files
 

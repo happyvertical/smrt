@@ -39,7 +39,7 @@ const versionArg = args.find((a) => !a.startsWith('--'));
 
 /** Resolve the release version: explicit arg, else packages/core/package.json. */
 function resolveVersion() {
-  if (versionArg) return versionArg.replace(/^\^|^v/, '');
+  if (versionArg) return versionArg.replace(/^[\^v]+/, '');
   const corePkg = JSON.parse(
     readFileSync(join(packagesDir, 'core', 'package.json'), 'utf8'),
   );
