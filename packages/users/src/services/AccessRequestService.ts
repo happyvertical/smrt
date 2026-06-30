@@ -366,18 +366,14 @@ export class AccessRequestService {
    * Initialize the backing collections (creates/verifies their tables).
    */
   async initialize(): Promise<void> {
-    // SmrtClassOptions carries `authorize`/`onEvent` too; the collections ignore
-    // unknown keys, so passing the whole options bag is harmless and keeps the
-    // db/ai config in one place.
-    this.#requests = await (AccessRequestCollection as any).create(
-      this.#options,
-    );
-    this.#users = await (UserCollection as any).create(this.#options);
-    this.#tenants = await (TenantCollection as any).create(this.#options);
-    this.#memberships = await (MembershipCollection as any).create(
-      this.#options,
-    );
-    this.#roles = await (RoleCollection as any).create(this.#options);
+    // SmrtClassOptions carries `authorize`/`onEvent` too; the collection factory
+    // only reads the db/ai keys and ignores the rest, so passing the whole
+    // options bag is harmless and keeps the db config in one place.
+    this.#requests = await AccessRequestCollection.create(this.#options);
+    this.#users = await UserCollection.create(this.#options);
+    this.#tenants = await TenantCollection.create(this.#options);
+    this.#memberships = await MembershipCollection.create(this.#options);
+    this.#roles = await RoleCollection.create(this.#options);
   }
 
   /**

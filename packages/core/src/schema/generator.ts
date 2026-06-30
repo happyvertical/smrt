@@ -1409,8 +1409,9 @@ export class SchemaGenerator {
 
       // Opt-in plain column index. FK columns and unique columns get their own
       // indexes, so skip those here.
+      const indexedField: RegistryField = field;
       const isIndexed =
-        (field as any).indexed === true || field._meta?.indexed === true;
+        indexedField.indexed === true || field._meta?.indexed === true;
       if (isIndexed && field.type !== 'foreignKey' && !columnDef.unique) {
         indexedColumns.add(columnName);
       }
