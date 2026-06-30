@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "fast-glob": "3.3.3",
-    "minimatch": "10.1.1",
+    "minimatch": "10.2.5",
     "oxc-parser": "^0.108.0",
     "oxc-resolver": "^11.16.3"
   },

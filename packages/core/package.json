@@ -151,7 +151,7 @@
     "@modelcontextprotocol/sdk": "^1.25.2",
     "cheerio": "^1.1.2",
     "fast-glob": "3.3.3",
-    "minimatch": "10.1.1",
+    "minimatch": "10.2.5",
     "pluralize": "^8.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
