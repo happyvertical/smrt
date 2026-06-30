@@ -9,5 +9,14 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "exclude": ["dist", "node_modules", "**/*.test.ts", "**/*.spec.ts"]
+  "exclude": [
+    "dist",
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "*.config.ts",
+    "*.config.js",
+    "svelte.config.js",
+    "workspace-aliases.js"
+  ]
 }

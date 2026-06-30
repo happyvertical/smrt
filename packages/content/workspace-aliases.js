@@ -10,19 +10,18 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-chat', '../chat/src/index.ts'],
   ['@happyvertical/smrt-chat/svelte', '../chat/src/svelte/index.ts'],
   ['@happyvertical/smrt-config', '../config/src/index.ts'],
-  // Point the WHOLE @happyvertical/smrt-core package at source via a single
-  // directory alias. svelte-kit and vite both expand a directory alias into a
-  // `@happyvertical/smrt-core/*` wildcard, so every subpath (/runtime,
-  // /testing, /generators/*, /scanner/types, /manifest, …) resolves to
-  // core/src. Enumerating only a handful of subpaths (the previous state) left
-  // the rest resolving to core/dist, so svelte-check pulled core into the
-  // program under TWO identities (src via these aliases + dist via a
-  // non-aliased subpath). core's `declare global` manifest-cache augmentations
-  // (#543) are typed with core's own SmartObjectManifest, so the two identities
-  // collided ("Subsequent variable declarations must have the same type") and
-  // failed the typecheck gate. A directory alias keeps resolution single-identity
-  // and is robust to new core subpaths. See #1536.
-  ['@happyvertical/smrt-core', '../core/src'],
+  // @happyvertical/smrt-core is deliberately NOT aliased to source. If it were,
+  // svelte-check would pull core/src into the program while transitive
+  // node_modules `.d.ts` (e.g. @happyvertical/smrt-prompts) still resolve core
+  // to core/dist — two module identities at once. core's `declare global`
+  // manifest-cache augmentations (#543) are typed with core's own
+  // SmartObjectManifest, so the src + dist `declare global` blocks collide
+  // ("Subsequent variable declarations must have the same type") and fail the
+  // typecheck gate. Letting core resolve to its published dist types uniformly
+  // — exactly what the `tsc -p tsconfig.typecheck.json` step already does and
+  // passes — keeps it single-identity; skipLibCheck then covers core's .d.ts.
+  // See #1536. (core is always built before content typechecks: turbo
+  // `typecheck` dependsOn `^build`.)
   ['@happyvertical/smrt-facts', '../facts/src/index.ts'],
   ['@happyvertical/smrt-images', '../images/src/index.ts'],
   ['@happyvertical/smrt-images/svelte', '../images/src/svelte/index.ts'],
