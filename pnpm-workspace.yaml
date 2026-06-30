@@ -22,7 +22,7 @@ catalog:
   '@happyvertical/projects': ^0.74.10
   '@happyvertical/repos': ^0.74.10
   '@happyvertical/secrets': ^0.74.10
-  '@happyvertical/spider': ^1.1.5
+  '@happyvertical/spider': ^1.1.6
   '@happyvertical/sql': ^0.74.10
   '@happyvertical/utils': ^0.74.10
   '@sentry/node': ^10.51.0
