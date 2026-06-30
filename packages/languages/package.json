@@ -53,7 +53,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.10.9",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
+    "vite": "^7.3.6",
     "vitest": "^4.0.17"
   },
   "keywords": [

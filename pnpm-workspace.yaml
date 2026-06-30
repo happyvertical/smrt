@@ -17,12 +17,12 @@ catalog:
   '@happyvertical/json': ^0.74.10
   '@happyvertical/logger': ^0.74.10
   '@happyvertical/messages': ^0.74.10
-  '@happyvertical/ocr': ^0.60.48
-  '@happyvertical/pdf': ^0.65.0
+  '@happyvertical/ocr': ^0.60.55
+  '@happyvertical/pdf': ^0.65.3
   '@happyvertical/projects': ^0.74.10
   '@happyvertical/repos': ^0.74.10
   '@happyvertical/secrets': ^0.74.10
-  '@happyvertical/spider': ^1.1.5
+  '@happyvertical/spider': ^1.1.10
   '@happyvertical/sql': ^0.74.10
   '@happyvertical/utils': ^0.74.10
   '@sentry/node': ^10.51.0
