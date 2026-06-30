@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.37.1
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: consolidate renovate updates + bump @happyvertical SDK to latest (#1696) (deps)
+  - @happyvertical/smrt-config@0.37.1
+  - @happyvertical/smrt-types@0.37.1
+  - @happyvertical/smrt-scanner@0.37.1
+
 ## 1.0.0
 
 ### Minor Changes
