@@ -61,6 +61,7 @@ import './__smrt-register__.js';
 
 // Collections
 export {
+  AccessRequestCollection,
   CliAuthRequestCollection,
   type CreateChildTenantOptions,
   type CreateSessionOptions,
@@ -87,6 +88,8 @@ export {
 } from './collections/index.js';
 // Models
 export {
+  AccessRequest,
+  type AccessRequestOptions,
   CliAuthRequest,
   type CliAuthRequestStatus,
   DEFAULT_SESSION_TTL,
@@ -112,22 +115,43 @@ export {
 
 // Services
 export {
+  ACCESS_REQUEST_CAPABILITIES,
+  type AccessRequestAuthorizationContext,
+  type AccessRequestAuthorizer,
+  type AccessRequestCapability,
+  AccessRequestError,
+  type AccessRequestErrorCode,
+  type AccessRequestEvent,
+  type AccessRequestEventHandler,
+  type AccessRequestEventType,
+  AccessRequestService,
+  type AccessRequestServiceOptions,
+  type ApproveAccessRequestOptions,
   type ApproveCliAuthRequestInput,
   applyPostgresPermissionPolicies,
+  type CancelAccessRequestOptions,
   type CliAuthStartResult,
   type CliAuthTokenResult,
+  type CreateAccessRequestInput,
   type CreateAuthorizationUrlOptions,
   DEFAULT_CLI_AUTH_POLL_INTERVAL_SECONDS,
   DEFAULT_CLI_AUTH_REQUEST_TTL_SECONDS,
   DEFAULT_CLI_SESSION_TTL_SECONDS,
+  type DeclineAccessRequestOptions,
   decodeOidcTransaction,
   type EnsureTenantResult,
   encodeOidcTransaction,
   type GeneratePostgresPermissionSqlResult,
+  type GraduateAccessRequestOptions,
+  type GraduateAccessRequestResult,
+  type GraduateExistingTenantOption,
+  type GraduateNewTenantOption,
+  type GraduateTenantOption,
   generatePostgresPermissionSql,
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
   getUsersOidcConfig,
+  type ListAccessRequestsFilter,
   MagicLinkError,
   type MagicLinkResult,
   MagicLinkService,
@@ -182,6 +206,7 @@ export {
 
 // Types
 export {
+  AccessRequestStatus,
   DEFAULT_ROLE_SLUGS,
   DEFAULT_ROLES,
   DEFAULT_TENANT_POLICY,

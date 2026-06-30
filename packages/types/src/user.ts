@@ -83,6 +83,46 @@ export enum MembershipStatus {
   PENDING = 'pending',
 }
 
+// ============= Access Request Status =============
+
+/**
+ * Lifecycle status of an {@link AccessRequest} — the "request access / join the
+ * waitlist" identity primitive that captures a prospective user from a public
+ * form before they become a real `User`.
+ *
+ * Operators triage `REQUESTED` records, then either decline them or approve and
+ * **graduate** them into a `User` (optionally attached to a tenant).
+ *
+ * State machine:
+ * ```
+ * REQUESTED ──approve──> APPROVED ──graduate──> GRADUATED
+ *     │                      │
+ *     ├──decline──> DECLINED ┘ (decline also valid from APPROVED)
+ *     └──cancel───> CANCELED
+ * ```
+ *
+ * @example
+ * ```typescript
+ * if (request.status === AccessRequestStatus.APPROVED) {
+ *   await service.graduateAccessRequest(request.id, { by: operatorId });
+ * }
+ * ```
+ *
+ * @see {@link UserStatus} for the account-level status set when a request graduates
+ */
+export enum AccessRequestStatus {
+  /** Open request awaiting operator triage (the default on creation) */
+  REQUESTED = 'requested',
+  /** Operator approved the request; ready to graduate into a User */
+  APPROVED = 'approved',
+  /** Operator declined the request */
+  DECLINED = 'declined',
+  /** Request was graduated into a real User (terminal) */
+  GRADUATED = 'graduated',
+  /** Request was canceled before a decision (terminal) */
+  CANCELED = 'canceled',
+}
+
 // ============= Session Status =============
 
 /**
