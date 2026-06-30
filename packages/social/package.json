@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-social",
-  "version": "0.36.8",
+  "version": "0.37.0",
   "type": "module",
   "smrtRawPrimitives": "strict",
   "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",

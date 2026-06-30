@@ -1,5 +1,37 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - tenant-scope audit-log helpers + normalize system actor id (#1444, #1503) (#1686) (secrets)
+
+  ### Bug Fixes
+
+  - resolve core to dist in svelte-check (kill src/dist dual-identity) (#1695) (content)
+  - emit i18n catalog into raw svelte-package tree (#1536) (#1693) (products)
+  - validate MCP config paths (#1685)
+  - detect partial-index WHERE-clause drift in schema differ (#1692) (#1694) (core)
+  - deep-clone merged config + fail loud on malformed config files (#1579) (#1689) (config)
+  - widen createAuditEntry actor id to optional/nullable (#1444) (#1688) (secrets)
+
+  ### Other Changes
+
+  - docs: document discoverSmrtPackages split + STI-cache/embeddings limits (#1579) (#1691) (core)
+  - docs: record that sqlite_master works on DuckDB for differ introspection (#1579) (#1690) (core)
+  - refactor: route manifest-generator diagnostics through the logger (#1579) (#1687) (core)
+  - refactor: core noExplicitAny Phase 7 — decorators + graduate core (#1579) (#1678) (types)
+  - refactor: core noExplicitAny Phase 6 — ORM (object/collection) (#1579) (#1677) (types)
+  - refactor: core noExplicitAny Phase 5 — registry (#1579) (#1676) (types)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.36.8
 
 ### Patch Changes
