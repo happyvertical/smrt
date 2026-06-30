@@ -10,11 +10,18 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-chat', '../chat/src/index.ts'],
   ['@happyvertical/smrt-chat/svelte', '../chat/src/svelte/index.ts'],
   ['@happyvertical/smrt-config', '../config/src/index.ts'],
-  ['@happyvertical/smrt-core/scanner', '../core/src/scanner/index.ts'],
-  ['@happyvertical/smrt-core/schema/utils', '../core/src/schema/utils.ts'],
-  ['@happyvertical/smrt-core/vite-plugin', '../core/src/vite-plugin.ts'],
-  ['@happyvertical/smrt-core/consumer-plugin', '../core/src/consumer-plugin.ts'],
-  ['@happyvertical/smrt-core', '../core/src/index.ts'],
+  // @happyvertical/smrt-core is deliberately NOT aliased to source. If it were,
+  // svelte-check would pull core/src into the program while transitive
+  // node_modules `.d.ts` (e.g. @happyvertical/smrt-prompts) still resolve core
+  // to core/dist — two module identities at once. core's `declare global`
+  // manifest-cache augmentations (#543) are typed with core's own
+  // SmartObjectManifest, so the src + dist `declare global` blocks collide
+  // ("Subsequent variable declarations must have the same type") and fail the
+  // typecheck gate. Letting core resolve to its published dist types uniformly
+  // — exactly what the `tsc -p tsconfig.typecheck.json` step already does and
+  // passes — keeps it single-identity; skipLibCheck then covers core's .d.ts.
+  // See #1536. (core is always built before content typechecks: turbo
+  // `typecheck` dependsOn `^build`.)
   ['@happyvertical/smrt-facts', '../facts/src/index.ts'],
   ['@happyvertical/smrt-images', '../images/src/index.ts'],
   ['@happyvertical/smrt-images/svelte', '../images/src/svelte/index.ts'],
