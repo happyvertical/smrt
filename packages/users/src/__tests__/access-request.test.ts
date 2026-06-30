@@ -128,6 +128,28 @@ describe('AccessRequest', () => {
       expect(eventTypes()).toEqual(['access-request.created']);
     });
 
+    it('keeps separate rows for different emails that share a display name', async () => {
+      // Regression: slug derives from `name`, so without an id-based conflict key
+      // two "Jane Doe" submissions would upsert over each other.
+      const a = await service.createAccessRequest({
+        email: 'jane1@example.com',
+        name: 'Jane Doe',
+      });
+      const b = await service.createAccessRequest({
+        email: 'jane2@example.com',
+        name: 'Jane Doe',
+      });
+
+      expect(b.id).not.toBe(a.id);
+      const all = await service.listAccessRequests({});
+      const janes = all.filter((r) => r.name === 'Jane Doe');
+      expect(janes).toHaveLength(2);
+      expect(janes.map((r) => r.email).sort()).toEqual([
+        'jane1@example.com',
+        'jane2@example.com',
+      ]);
+    });
+
     it('does not dedup against a non-open (decided) request', async () => {
       const first = await service.createAccessRequest({
         email: 'reopen@example.com',

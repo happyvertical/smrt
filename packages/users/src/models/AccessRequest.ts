@@ -64,6 +64,13 @@ export interface AccessRequestOptions {
  */
 @smrt({
   tableName: 'access_requests',
+  // Append-style: the natural key is the surrogate id, so a new request never
+  // upserts over an existing row. Without this, SMRT defaults to upserting on
+  // `slug`/`context`, and `slug` is derived from `name` — two public submissions
+  // sharing a display name (e.g. two "Jane Doe"s with different emails) would
+  // collide and overwrite each other. Open-request dedup is handled explicitly
+  // by AccessRequestService.createAccessRequest, not by the storage conflict key.
+  conflictColumns: ['id'],
   // CLOSED generated surface — all access flows through AccessRequestService.
   api: { include: [] },
   mcp: { include: [] },
