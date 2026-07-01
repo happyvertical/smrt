@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.37.4
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: KMP mobile foundation ADR + phased extraction plan (#1736) (adr)
+  - @happyvertical/smrt-config@0.37.4
+  - @happyvertical/smrt-types@0.37.4
+  - @happyvertical/smrt-scanner@0.37.4
+
 ## 0.37.3
 
 ### Patch Changes
