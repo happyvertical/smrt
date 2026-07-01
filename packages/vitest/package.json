@@ -79,7 +79,7 @@
     }
   },
   "devDependencies": {
-    "@types/node": "25.0.9",
+    "@types/node": "25.9.4",
     "svelte": "^5.18.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"

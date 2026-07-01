@@ -36,7 +36,7 @@
     "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@types/node": "25.0.9",
+    "@types/node": "25.9.4",
     "fast-glob": "3.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
