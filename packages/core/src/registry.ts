@@ -1234,8 +1234,16 @@ export class ObjectRegistry {
    * populates manifests through a different path, and this fallback is expected
    * to miss in those contexts.
    *
-   * @param manifestUrl - File URL (or string) pointing to the package's
-   *   manifest.json. Typical call site:
+   * Also accepts the manifest *object itself*. The smrtPlugin library build
+   * inlines the scanned manifest into the compiled `__smrt-register__` module
+   * (issues #1506/#1507): resolving `./manifest.json` relative to
+   * `import.meta.url` breaks once a downstream bundler (e.g. a SvelteKit
+   * server build) relocates the module into its own chunk directory, silently
+   * dropping every plain field from INSERTs and WHERE validation. An inline
+   * object needs no filesystem access, so bundling cannot break it.
+   *
+   * @param manifestOrUrl - File URL (or string) pointing to the package's
+   *   manifest.json, or the manifest object itself. Typical call site:
    *   `new URL('./manifest.json', import.meta.url)`
    * @returns Summary with loaded status, package name, and object count
    *
@@ -1249,12 +1257,37 @@ export class ObjectRegistry {
    * ```
    *
    * @see https://github.com/happyvertical/smrt/issues/1132
+   * @see https://github.com/happyvertical/smrt/issues/1507
    */
-  static registerPackageManifest(manifestUrl: string | URL): {
+  static registerPackageManifest(
+    manifestOrUrl: string | URL | SmartObjectManifest,
+  ): {
     loaded: boolean;
     packageName?: string;
     objectsRegistered: number;
   } {
+    // Inline manifest object: no filesystem access, works in any runtime and
+    // survives any bundler layout (#1506/#1507).
+    if (typeof manifestOrUrl === 'object' && !(manifestOrUrl instanceof URL)) {
+      if (
+        !manifestOrUrl?.objects ||
+        typeof manifestOrUrl.objects !== 'object'
+      ) {
+        recordRegistryDiagnostic(
+          'warn',
+          'PACKAGE_MANIFEST_INVALID_SHAPE',
+          'registerPackageManifest: inline manifest is missing an "objects" record',
+          { manifestUrl: '[inline manifest object]' },
+        );
+        return { loaded: false, objectsRegistered: 0 };
+      }
+      return ObjectRegistry.seedAndRegisterManifest(
+        manifestOrUrl,
+        '[inline manifest object]',
+      );
+    }
+
+    const manifestUrl = manifestOrUrl;
     const builtins = getNodeBuiltins();
     if (!builtins) {
       return { loaded: false, objectsRegistered: 0 };
@@ -1333,6 +1366,24 @@ export class ObjectRegistry {
       return { loaded: false, objectsRegistered: 0 };
     }
 
+    return ObjectRegistry.seedAndRegisterManifest(
+      manifest,
+      String(manifestUrl),
+    );
+  }
+
+  /**
+   * Shared tail of {@link registerPackageManifest}: seed the global manifest
+   * cache and merge the manifest's field definitions into the registry.
+   *
+   * @param manifest - Validated manifest (has an `objects` record)
+   * @param sourceLabel - Human-readable origin for cache keys and logs when
+   *   the manifest has no `packageName`
+   */
+  private static seedAndRegisterManifest(
+    manifest: SmartObjectManifest,
+    sourceLabel: string,
+  ): { loaded: boolean; packageName?: string; objectsRegistered: number } {
     const packageName = manifest.packageName;
 
     // Seed the manifest cache so discoverManifestSync() finds entries when
@@ -1343,7 +1394,7 @@ export class ObjectRegistry {
     if (!manifestGlobals.__smrtManifestCache) {
       manifestGlobals.__smrtManifestCache = new Map();
     }
-    const cacheKey = packageName || String(manifestUrl);
+    const cacheKey = packageName || sourceLabel;
     manifestGlobals.__smrtManifestCache.set(cacheKey, manifest);
 
     // Merge manifest fields into any already-registered classes. This covers
@@ -1358,7 +1409,7 @@ export class ObjectRegistry {
     }
 
     verboseLog(
-      `[ObjectRegistry] registerPackageManifest: loaded ${objectsRegistered} objects from ${packageName || String(manifestUrl)}`,
+      `[ObjectRegistry] registerPackageManifest: loaded ${objectsRegistered} objects from ${packageName || sourceLabel}`,
     );
 
     return { loaded: true, packageName, objectsRegistered };

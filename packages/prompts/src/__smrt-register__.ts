@@ -17,10 +17,11 @@
  */
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
-// `new URL('./manifest.json', import.meta.url)` resolves at runtime to the
-// manifest sitting next to this module's compiled output. Vite warns at build
-// time that it cannot pre-resolve the URL; that is the intended behavior —
-// the URL must resolve to dist/manifest.json at runtime, not be inlined.
+// During library builds, smrtPlugin replaces this entire module with generated
+// code that embeds the scanned manifest inline (#1506/#1507) — published dists
+// never resolve this URL, so downstream bundlers cannot break registration by
+// relocating the compiled module away from dist/manifest.json. The runtime
+// lookup below is the fallback for source-mode runs without that transform.
 ObjectRegistry.registerPackageManifest(
   new URL('./manifest.json', import.meta.url),
 );
