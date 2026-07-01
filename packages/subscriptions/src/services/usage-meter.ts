@@ -87,26 +87,30 @@ export class TenantUsageMeter {
     const summaries = new Map<string, UsageSummary>();
     let fallbackAiMetricKeys: string[] = [];
     if (aiMetricKeys.length > 0) {
-      try {
-        const aiSummary = await this.summarizeAiUsage({
-          tenantId: options.tenantId,
-          window: options.window,
-        });
-        const quantityByMetric = aiQuantityByMetric(aiSummary);
-        for (const metricKey of aiMetricKeys) {
-          summaries.set(metricKey, {
-            tenantId: options.tenantId,
-            metricKey,
-            quantity: quantityByMetric[metricKey] ?? 0,
-            windowStart: options.window.start,
-            windowEnd: options.window.end,
-          });
-        }
-      } catch (error) {
-        if (!isMissingAiUsageTableError(error)) {
-          throw error;
-        }
+      if (!(await this.hasAiUsageTable())) {
         fallbackAiMetricKeys = aiMetricKeys;
+      } else {
+        try {
+          const aiSummary = await this.summarizeAiUsage({
+            tenantId: options.tenantId,
+            window: options.window,
+          });
+          const quantityByMetric = aiQuantityByMetric(aiSummary);
+          for (const metricKey of aiMetricKeys) {
+            summaries.set(metricKey, {
+              tenantId: options.tenantId,
+              metricKey,
+              quantity: quantityByMetric[metricKey] ?? 0,
+              windowStart: options.window.start,
+              windowEnd: options.window.end,
+            });
+          }
+        } catch (error) {
+          if (!isMissingAiUsageTableError(error)) {
+            throw error;
+          }
+          fallbackAiMetricKeys = aiMetricKeys;
+        }
       }
     }
 
@@ -148,6 +152,9 @@ export class TenantUsageMeter {
     if (kind !== 'tenant') {
       return null;
     }
+    if (!(await this.hasAiUsageTable())) {
+      return null;
+    }
 
     let summary: AiUsageSummary;
     try {
@@ -174,6 +181,10 @@ export class TenantUsageMeter {
       windowEnd: options.window.end,
     };
   }
+
+  private async hasAiUsageTable(): Promise<boolean> {
+    return this.metrics.db.tableExists('_smrt_ai_usage');
+  }
 }
 
 function aiQuantityByMetric(summary: AiUsageSummary): Record<string, number> {
@@ -186,7 +197,21 @@ function aiQuantityByMetric(summary: AiUsageSummary): Record<string, number> {
   };
 }
 
-function isMissingAiUsageTableError(error: unknown): boolean {
+function isMissingAiUsageTableError(
+  error: unknown,
+  seen = new Set<unknown>(),
+): boolean {
+  if (!error) {
+    return false;
+  }
+  if (typeof error !== 'object') {
+    return isMissingAiUsageTableMessage(String(error));
+  }
+  if (seen.has(error)) {
+    return false;
+  }
+  seen.add(error);
+
   const err = error as {
     code?: unknown;
     message?: unknown;
@@ -208,22 +233,26 @@ function isMissingAiUsageTableError(error: unknown): boolean {
     if (
       candidate &&
       typeof candidate === 'object' &&
-      isMissingAiUsageTableError(candidate)
+      isMissingAiUsageTableError(candidate, seen)
     ) {
       return true;
     }
-    const message = String(candidate ?? '').toLowerCase();
-    if (
-      message.includes('_smrt_ai_usage') &&
-      (message.includes('no such table') ||
-        message.includes('does not exist') ||
-        message.includes('undefined table'))
-    ) {
+    if (isMissingAiUsageTableMessage(String(candidate ?? ''))) {
       return true;
     }
   }
 
-  return err?.cause ? isMissingAiUsageTableError(err.cause) : false;
+  return err?.cause ? isMissingAiUsageTableError(err.cause, seen) : false;
+}
+
+function isMissingAiUsageTableMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('_smrt_ai_usage') &&
+    (normalized.includes('no such table') ||
+      normalized.includes('does not exist') ||
+      normalized.includes('undefined table'))
+  );
 }
 
 function emptyUsageSummary(

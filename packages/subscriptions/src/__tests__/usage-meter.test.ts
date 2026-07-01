@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import { TenantUsageMeter } from '../services/usage-meter.js';
 
@@ -213,6 +213,7 @@ describe('TenantUsageMeter AI usage summaries', () => {
     await metrics.db.query('DROP TABLE _smrt_ai_usage');
 
     const meter = new TenantUsageMeter(metrics);
+    const summarizeTenantAiUsage = vi.spyOn(metrics, 'summarizeTenantAiUsage');
     const window = {
       start: new Date('2026-06-01T00:00:00.000Z'),
       end: new Date('2026-07-01T00:00:00.000Z'),
@@ -233,12 +234,14 @@ describe('TenantUsageMeter AI usage summaries', () => {
     });
 
     expect(summary.quantity).toBe(55);
+    expect(summarizeTenantAiUsage).not.toHaveBeenCalled();
   });
 
   it('keeps batch summaries working when the AI usage table is absent', async () => {
     await metrics.db.query('DROP TABLE _smrt_ai_usage');
 
     const meter = new TenantUsageMeter(metrics);
+    const summarizeTenantAiUsage = vi.spyOn(metrics, 'summarizeTenantAiUsage');
     const window = {
       start: new Date('2026-06-01T00:00:00.000Z'),
       end: new Date('2026-07-01T00:00:00.000Z'),
@@ -271,6 +274,83 @@ describe('TenantUsageMeter AI usage summaries', () => {
     expect(quantityByMetric.get('ai.tokens.total')).toBe(55);
     expect(quantityByMetric.get('ai.requests')).toBe(0);
     expect(quantityByMetric.get('storage.bytes')).toBe(1024);
+    expect(summarizeTenantAiUsage).not.toHaveBeenCalled();
+  });
+
+  it('handles cyclic missing-table error shapes while falling back', async () => {
+    type CyclicError = {
+      message: string;
+      context?: Record<string, unknown>;
+      cause?: unknown;
+    };
+    const cyclic: CyclicError = { message: 'wrapped database error' };
+    const nested: CyclicError = {
+      message: 'relation "_smrt_ai_usage" does not exist',
+    };
+    cyclic.context = { originalError: cyclic };
+    cyclic.cause = nested;
+    nested.cause = cyclic;
+
+    const window = {
+      start: new Date('2026-06-01T00:00:00.000Z'),
+      end: new Date('2026-07-01T00:00:00.000Z'),
+    };
+    const summarizeUsage = vi.fn(async () => ({
+      tenantId: 'tenant-1',
+      metricKey: 'ai.tokens.total',
+      quantity: 7,
+      windowStart: window.start,
+      windowEnd: window.end,
+    }));
+    const meter = new TenantUsageMeter({
+      db: {
+        async tableExists() {
+          return true;
+        },
+      },
+      async summarizeTenantAiUsage() {
+        throw cyclic;
+      },
+      summarizeUsage,
+    } as unknown as TenantUsageMetricCollection);
+
+    const summary = await meter.summarize({
+      tenantId: 'tenant-1',
+      metricKey: 'ai.tokens.total',
+      window,
+    });
+
+    expect(summary.quantity).toBe(7);
+    expect(summarizeUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows cyclic non-missing AI errors without overflowing', async () => {
+    type CyclicError = { message: string; cause?: unknown };
+    const cyclic: CyclicError = { message: 'permission denied' };
+    cyclic.cause = cyclic;
+
+    const window = {
+      start: new Date('2026-06-01T00:00:00.000Z'),
+      end: new Date('2026-07-01T00:00:00.000Z'),
+    };
+    const meter = new TenantUsageMeter({
+      db: {
+        async tableExists() {
+          return true;
+        },
+      },
+      async summarizeTenantAiUsage() {
+        throw cyclic;
+      },
+    } as unknown as TenantUsageMetricCollection);
+
+    await expect(
+      meter.summarize({
+        tenantId: 'tenant-1',
+        metricKey: 'ai.tokens.total',
+        window,
+      }),
+    ).rejects.toBe(cyclic);
   });
 
   it('returns zeroed totals when no usage matches', async () => {
