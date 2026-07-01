@@ -48,6 +48,23 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Decisions (ADRs)',
+      collapsed: true,
+      items: [
+        {
+          type: 'doc',
+          id: 'adr/0001-kmp-mobile-foundation',
+          label: 'ADR 0001: KMP Mobile Foundation',
+        },
+        {
+          type: 'doc',
+          id: 'adr/0001-kmp-mobile-foundation-extraction-plan',
+          label: 'ADR 0001: Extraction Plan',
+        },
+      ],
+    },
+    {
+      type: 'category',
       label: 'Architecture',
       collapsed: true,
       items: [
