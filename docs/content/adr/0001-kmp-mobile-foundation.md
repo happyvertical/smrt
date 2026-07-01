@@ -7,9 +7,9 @@
 - **Supersedes / Superseded by**: —
 
 > This is the first **ADR** in the SMRT docs. It sits alongside the heavier
-> [`rfcs/`](../rfcs) specs (which design a whole package surface) and the
-> [`architecture/`](../architecture) explainers (which document a shipped
-> design). ADRs are deliberately lighter: one decision, the forces behind it,
+> `rfcs/` specs (which design a whole package surface) and the `architecture/`
+> explainers (which document a shipped design). ADRs are deliberately lighter:
+> one decision, the forces behind it,
 > the alternatives rejected, and the consequences. See
 > [Alternatives](#alternatives-considered) for why an ADR — not a full RFC — is
 > the right weight for this decision.
@@ -352,7 +352,7 @@ Recorded for provenance; each was verified against source before writing.
 
 ## References — verifiable source paths
 
-**amaru** (`/Users/will/Work/happyvertical/repos/amaru.ca/`):
+**amaru** (repo `amaru.ca`; paths below are relative to the repo root):
 - `apps/mobile/shared/` — KMP module (`ca.amaru.mobile.shared`, 40 files)
 - `apps/mobile/shared/src/commonMain/kotlin/packs/OfflinePackStore.kt` — `InMemoryOfflinePackStore`
 - `apps/mobile/shared/src/commonMain/kotlin/sync/FieldSyncQueue.kt` — in-memory queue
@@ -370,7 +370,7 @@ Recorded for provenance; each was verified against source before writing.
 - `packages/amaru-mobile-contract/` — codegen (`generate-kotlin.ts`, `mobile-object-allowlist.json`, `generated/mobile-contract.json`)
 - `scripts/generate-mobile-contract.mjs`, `scripts/validate-mobile-shell.mjs`
 
-**anytown reporter** (`/Users/will/Work/_trees/anytown.ai/hopeful-goodall-2d0c74/`, branch `claude/anytown-reporter-mobile-shell`):
+**anytown reporter** (repo `anytown.ai`, branch `claude/anytown-reporter-mobile-shell`; paths below are relative to the repo root):
 - `apps/reporter-mobile/iosApp/AnytownReporter/AnytownReporterApp.swift` — `ContributionStore` durable queue, PKCE, multipart, single-tap capture (`enum ContributionSyncState`, `contributionMaxAttempts = 5`)
 - `apps/reporter-mobile/androidApp/src/main/kotlin/ai/anytown/reporter/MainActivity.kt` — Android mirror (queue at `filesDir/reporter-captures/queue.json`, `/api/mobile/auth/*`, `postMultipart`, tile grid + Undo)
 - `apps/reporter-mobile/shared/src/commonMain/kotlin/ai/anytown/reporter/` — `ReporterClient.kt`, `DeviceCapabilities.kt`, `generated/Contract.kt`
