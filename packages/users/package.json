@@ -60,7 +60,7 @@
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
-    "jose": "^6.1.3"
+    "jose": "^6.2.3"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",

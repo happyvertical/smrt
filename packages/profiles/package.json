@@ -41,11 +41,11 @@
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "@noble/curves": "^1.8.1",
+    "@noble/curves": "^1.9.7",
     "bech32": "^2.0.0"
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.2.0",
+    "@faker-js/faker": "^10.5.0",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",

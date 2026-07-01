@@ -32,8 +32,8 @@
   "dependencies": {
     "fast-glob": "3.3.3",
     "minimatch": "10.2.5",
-    "oxc-parser": "^0.108.0",
-    "oxc-resolver": "^11.16.3"
+    "oxc-parser": "^0.138.0",
+    "oxc-resolver": "^11.22.0"
   },
   "devDependencies": {
     "@types/node": "25.0.9",

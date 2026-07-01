@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-types": "workspace:*",
-    "cosmiconfig": "^9.0.0"
+    "cosmiconfig": "^9.0.2"
   },
   "devDependencies": {
     "@types/node": "25.0.9",
