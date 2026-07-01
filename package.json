@@ -70,7 +70,7 @@
     "livereload": "^0.10.3",
     "playwright-core": "^1.57.0",
     "tsx": "^4.21.0",
-    "turbo": "~2.7.4",
+    "turbo": "~2.10.2",
     "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.12.0",
     "typescript": "^5.9.3",
