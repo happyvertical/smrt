@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.37.2
+
+### Patch Changes
+
+- ### Features
+
+  - AccessRequest primitive (request-access / waitlist) with graduation to User (#1713) (smrt-users)
+
+  ### Other Changes
+
+  - chore: sync starter-template smrt pins to release + stop renovate self-bumping (#1698-#1700) (#1702) (release)
+  - chore: sync sdk packages to v0.74.11 (#1712) (deps)
+  - @happyvertical/smrt-config@0.37.2
+  - @happyvertical/smrt-types@0.37.2
+  - @happyvertical/smrt-scanner@0.37.2
+
 ## 0.37.1
 
 ### Patch Changes
