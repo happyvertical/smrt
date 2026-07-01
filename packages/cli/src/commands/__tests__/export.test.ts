@@ -30,6 +30,11 @@ vi.mock('@happyvertical/smrt-core', () => ({
         baseFields.set('meetingId', { type: 'foreignKey' });
       }
 
+      if (typeName === 'Article') {
+        baseFields.set('thumbnailAssetId', { type: 'foreignKey' });
+        baseFields.set('generationRole', { type: 'string' });
+      }
+
       if (typeName === 'SparseMeetingRecap') {
         baseFields.set('meetingId', { type: 'foreignKey' });
       }
@@ -55,6 +60,7 @@ vi.mock('@happyvertical/smrt-core', () => ({
     ),
     getSTIBase: vi.fn((typeName: string) => {
       if (typeName === 'SparseMeetingRecap') return 'Content';
+      if (typeName === 'Article') return 'Content';
       if (typeName === 'MeetingRecap' || typeName === 'MeetingAnnouncement')
         return 'Content';
       return typeName === 'Council' ? null : typeName;
@@ -93,6 +99,12 @@ vi.mock('@happyvertical/smrt-core', () => ({
             slug: { type: 'TEXT' },
             _meta_type: { type: 'TEXT' },
             _meta_data: { type: 'JSON' },
+            title: { type: 'TEXT' },
+            body: { type: 'TEXT' },
+            status: { type: 'TEXT' },
+            publish_date: { type: 'DATE' },
+            thumbnail_asset_id: { type: 'TEXT' },
+            meeting_id: { type: 'TEXT' },
           },
         };
       }
@@ -141,7 +153,7 @@ describe('export command helpers', () => {
     );
   });
 
-  it('uses inherited registry fields when computing shared export columns', async () => {
+  it('uses inherited registry fields when computing export columns', async () => {
     const fields = await getCommonFields(
       ['MeetingRecap', 'MeetingAnnouncement'],
       { types: ['MeetingRecap', 'MeetingAnnouncement'] },
@@ -161,6 +173,24 @@ describe('export command helpers', () => {
     expect(fields).not.toContain('context');
     expect(fields).not.toContain('created_at');
     expect(fields).not.toContain('updated_at');
+  });
+
+  it('keeps type-specific fields for mixed STI content exports', async () => {
+    const fields = await getCommonFields(
+      ['Article', 'MeetingRecap'],
+      { types: ['Article', 'MeetingRecap'] },
+      true,
+    );
+
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        'title',
+        'thumbnailAssetId',
+        'meetingId',
+        '_meta_type',
+      ]),
+    );
+    expect(fields).not.toContain('generationRole');
   });
 
   it('keeps shared STI standard fields for sparse subclass schemas', async () => {

@@ -119,6 +119,21 @@ async function getProjectionCapabilities(
   };
 }
 
+function isProjectableField(
+  fieldName: string,
+  projection: ExportProjectionCapabilities,
+): boolean {
+  if (fieldName === '_meta_type') {
+    return projection.includeMetaType;
+  }
+
+  if (fieldName === '_meta_data') {
+    return projection.includeMetaData;
+  }
+
+  return projection.schemaColumns.has(toColumnName(fieldName));
+}
+
 /**
  * Get fields that should be exported for a given type
  */
@@ -141,11 +156,12 @@ async function getExportableFields(
   if (fileConfig.include && fileConfig.include.length > 0) {
     return fileConfig.include.filter(
       (f) =>
-        fields.has(f) ||
-        (f === '_meta_type' && projection.includeMetaType) ||
-        (f === '_meta_data' && projection.includeMetaData) ||
-        (f === 'id' && projection.schemaColumns.has('id')) ||
-        (f === 'slug' && projection.schemaColumns.has('slug')),
+        isProjectableField(f, projection) &&
+        (fields.has(f) ||
+          f === '_meta_type' ||
+          f === '_meta_data' ||
+          f === 'id' ||
+          f === 'slug'),
     );
   }
 
@@ -180,7 +196,9 @@ async function getExportableFields(
 
   // Apply exclude blacklist
   const excluded = new Set(fileConfig.exclude || []);
-  const result = exportableFields.filter((f) => !excluded.has(f));
+  const result = exportableFields.filter(
+    (f) => !excluded.has(f) && isProjectableField(f, projection),
+  );
 
   if (projection.includeMetaType && !result.includes('_meta_type')) {
     result.push('_meta_type');
@@ -428,32 +446,35 @@ async function resolveTableName(types: string[]): Promise<string> {
 }
 
 /**
- * Get common fields across all types for an export file
+ * Get export fields across all types for an export file.
+ *
+ * STI tables may contain sibling content types with different media or
+ * relationship fields. Exporting only the intersection silently drops useful
+ * columns such as article thumbnails from mixed content exports.
  */
 export async function getCommonFields(
   types: string[],
   fileConfig: ExportFileConfig,
   fieldExportDefault: boolean,
 ): Promise<string[]> {
-  const fieldSets: Set<string>[] = [];
+  const seen = new Set<string>();
+  const fields: string[] = [];
 
   for (const typeName of types) {
-    const fields = await getExportableFields(
+    const typeFields = await getExportableFields(
       typeName,
       fileConfig,
       fieldExportDefault,
     );
-    fieldSets.push(new Set(fields));
+    for (const field of typeFields) {
+      if (!seen.has(field)) {
+        seen.add(field);
+        fields.push(field);
+      }
+    }
   }
 
-  if (fieldSets.length === 0) return [];
-
-  // Find intersection of all field sets
-  const commonFields = [...fieldSets[0]].filter((field) =>
-    fieldSets.every((set) => set.has(field)),
-  );
-
-  return commonFields;
+  return fields;
 }
 
 export const exportCommand: CLICommand = {
@@ -670,9 +691,7 @@ export const exportCommand: CLICommand = {
         if (!options['dry-run']) {
           let content: string;
           if (format === 'ndjson') {
-            content = formattedRecords
-              .map((r) => JSON.stringify(r))
-              .join('\n');
+            content = formattedRecords.map((r) => JSON.stringify(r)).join('\n');
           } else if (format === 'csv') {
             // Simple CSV (headers + rows)
             if (formattedRecords.length > 0) {
