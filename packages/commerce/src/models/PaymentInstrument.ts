@@ -40,6 +40,12 @@ import {
 @smrt({
   api: {
     include: ['list', 'get', 'create', 'update'],
+    // `isDefault` is deliberately EXCLUDED from the generated write surface:
+    // the single-default-per-customer invariant is enforced by
+    // {@link PaymentInstrumentCollection.setDefaultForCustomer}, which clears
+    // the flag on the customer's other instruments. Letting a generated
+    // create/update route set `isDefault` directly would let a client mark
+    // several instruments default (or flip one without clearing the others).
     writable: [
       'customerId',
       'backendId',
@@ -50,7 +56,6 @@ import {
       'last4',
       'expMonth',
       'expYear',
-      'isDefault',
       'status',
     ],
   },

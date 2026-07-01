@@ -106,6 +106,32 @@ describe('PaymentInstrument', () => {
     expect(reloadedA?.isDefault).toBe(false);
   });
 
+  it('setDefaultForCustomer fails fast when the instrument is not the customer’s', async () => {
+    const a = await saveInstrument({
+      providerPaymentMethodId: 'pm_a',
+      isDefault: true,
+    });
+
+    await expect(
+      instruments.setDefaultForCustomer('cust-1', 'not-a-real-id'),
+    ).rejects.toThrow(/not found for customer/);
+
+    // The existing default must be left untouched, not cleared.
+    const reloadedA = await instruments.get({ id: a.id });
+    expect(reloadedA?.isDefault).toBe(true);
+  });
+
+  it('findDefaultForCustomer ignores an instrument left marked default after removal', async () => {
+    // Simulate a row incorrectly left `isDefault` while removed.
+    await saveInstrument({
+      providerPaymentMethodId: 'pm_stale',
+      isDefault: true,
+      status: PaymentInstrumentStatus.REMOVED,
+    });
+
+    expect(await instruments.findDefaultForCustomer('cust-1')).toBeNull();
+  });
+
   it('findActiveByCustomer excludes removed instruments', async () => {
     const a = await saveInstrument({ providerPaymentMethodId: 'pm_a' });
     await saveInstrument({ providerPaymentMethodId: 'pm_b' });

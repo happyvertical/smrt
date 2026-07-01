@@ -48,9 +48,11 @@ export class PaymentInstrumentCollection extends SmrtCollection<PaymentInstrumen
   ): Promise<PaymentInstrument | null> {
     const results = await this.list({
       where: { customerId, isDefault: true },
-      limit: 1,
+      orderBy: 'created_at DESC',
     });
-    return results[0] || null;
+    // Skip any instrument left flagged default after removal, and pick
+    // deterministically (newest) if more than one row is somehow marked.
+    return results.find((instrument) => !instrument.isRemoved()) ?? null;
   }
 
   /**
@@ -83,6 +85,21 @@ export class PaymentInstrumentCollection extends SmrtCollection<PaymentInstrumen
     instrumentId: string,
   ): Promise<void> {
     const instruments = await this.findByCustomer(customerId);
+    const target = instruments.find(
+      (instrument) => instrument.id === instrumentId,
+    );
+    // Fail fast rather than clearing every default — leaving the customer with
+    // none — when the target isn't one of this customer's instruments.
+    if (!target) {
+      throw new Error(
+        `PaymentInstrument ${instrumentId} not found for customer ${customerId}`,
+      );
+    }
+    if (target.isRemoved()) {
+      throw new Error(
+        `PaymentInstrument ${instrumentId} is removed and cannot be made default`,
+      );
+    }
     for (const instrument of instruments) {
       const shouldBeDefault = instrument.id === instrumentId;
       if (instrument.isDefault !== shouldBeDefault) {
