@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.37.3
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - Fix TenantUsageMeter AI table fallback
+  - [codex] chore(deps): consolidate renovate updates
+  - @happyvertical/smrt-config@0.37.3
+  - @happyvertical/smrt-types@0.37.3
+  - @happyvertical/smrt-scanner@0.37.3
+
 ## 0.37.2
 
 ### Patch Changes
