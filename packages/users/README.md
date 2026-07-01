@@ -228,6 +228,64 @@ Optional-tenancy and global tables are skipped and returned in
 `result.skipped` instead of generating unsafe policies. Custom permissions can
 participate in RLS by adding explicit Postgres bindings as shown above.
 
+### Access requests (request access / waitlist)
+
+Capture a prospective user from a public form *before* they are a real `User`,
+let an operator triage, and **graduate** an approved request into a `User`
+(optionally attached to a tenant). `createAccessRequest` is **public-safe** (no
+auth) — expose it from your own rate-limited endpoint. Operator methods are gated
+by an optional `authorize` hook (capabilities `access-requests:read` /
+`access-requests:manage`). Lifecycle events let apps send invites/notifications;
+this package never owns email delivery.
+
+```typescript
+import { AccessRequestService } from '@happyvertical/smrt-users';
+
+const accessRequests = await AccessRequestService.create({
+  db: { type: 'postgres', url: process.env.DATABASE_URL },
+
+  // Optional: gate operator methods against your permission system.
+  // (createAccessRequest is always public-safe and never calls this.)
+  authorize: async ({ capability, by }) => {
+    if (!by || !(await isPlatformOperator(by, capability))) {
+      throw new Error(`Missing capability: ${capability}`);
+    }
+  },
+
+  // Optional: react to lifecycle changes (send a magic link on graduate, etc.).
+  onEvent: async (event) => {
+    if (event.type === 'access-request.graduated' && event.user) {
+      await sendWelcomeEmail(event.user.email);
+    }
+  },
+});
+
+// 1) Public form handler (app adds rate-limiting) — no auth required.
+const request = await accessRequests.createAccessRequest({
+  email: 'jane@example.com',
+  name: 'Jane Doe',
+  source: 'www',
+  context: { company: 'Acme', intendedUse: 'evaluation' },
+});
+
+// 2) Operator triages the queue.
+const open = await accessRequests.listAccessRequests({
+  status: AccessRequestStatus.REQUESTED,
+  by: operatorId,
+});
+await accessRequests.approveAccessRequest(request.id, { by: operatorId });
+
+// 3) Graduate into a User — operator picks new-vs-existing tenant per request:
+//    a) brand-new tenant, requester as owner
+const { user, tenant, membership } = await accessRequests.graduateAccessRequest(
+  request.id,
+  { by: operatorId, tenant: { create: { name: 'Acme Inc' } } },
+);
+//    b) existing tenant:  { tenant: { tenantId, role: 'member' } }
+//    c) user only:        { tenant: 'none' }
+// Graduation is idempotent and reuses the existing User/Membership paths.
+```
+
 ### SvelteKit hooks
 
 ```typescript
@@ -399,6 +457,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `MembershipOverride` | Per-user permission grant/deny on a membership. |
 | `TenantPermissionOverride` | Tenant-level permission override (INHERIT/GRANT/DENY). |
 | `GroupMember`, `GroupRole`, `RolePermission` | Junction tables for groups and role-permission assignments. |
+| `AccessRequest` | "Request access / waitlist" record captured before a `User` exists. Closed generated surface — all access via `AccessRequestService`. |
 
 ### Collections
 
@@ -409,6 +468,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `MembershipCollection` | Membership CRUD, `findByUserAndTenant()` |
 | `MembershipOverrideCollection`, `TenantPermissionOverrideCollection` | Override management at membership and tenant levels |
 | `GroupCollection`, `GroupMemberCollection`, `GroupRoleCollection`, `RolePermissionCollection` | Group and role-permission junction management |
+| `AccessRequestCollection` | AccessRequest queries: `findByEmail()`, `findOpenByEmail()`, `findByStatus()`, `findOpen()` |
 
 ### Services
 
@@ -423,6 +483,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `withSessionPermissionContext()` | Loads a session, optionally enters tenancy context, and exposes a request-scoped database/permission context. |
 | `getCurrentSessionPermissionContext()`, `getRequestScopedDatabase()` | Read the active request/session context inside app code. |
 | `TenantService` | Policy-driven tenant lifecycle. `ensureTenantForUser()`, `createTenantWithOwnership()`. |
+| `AccessRequestService` | Request-access/waitlist lifecycle + graduation. `createAccessRequest()` (public-safe), `list`/`get`/`approve`/`decline`/`cancel`, `graduateAccessRequest()` (new/existing/no tenant). Capability + event hooks. |
 
 ### SvelteKit (`@happyvertical/smrt-users/sveltekit`)
 
@@ -441,7 +502,9 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | Export | Description |
 |--------|-------------|
 | `UserStatus`, `TenantStatus`, `SessionStatus`, `MembershipStatus` | Status enums |
+| `AccessRequestStatus` | Access-request lifecycle enum (`REQUESTED`/`APPROVED`/`DECLINED`/`GRADUATED`/`CANCELED`) |
 | `OverrideEffect`, `TenantPermissionEffect` | Override effect enums |
+| `ACCESS_REQUEST_CAPABILITIES`, `AccessRequestError` | Operator capability slugs; typed domain error (`error.code`) |
 | `DEFAULT_ROLE_SLUGS`, `DEFAULT_ROLES`, `DEFAULT_TENANT_POLICY` | System role slugs, role configs, default tenant policy |
 | `DEFAULT_SESSION_TTL`, `MAX_TENANT_HIERARCHY_DEPTH` | 604800 (7 days in seconds), 10 |
 | `TenantHierarchyError` | Thrown when hierarchy depth limit is exceeded |

@@ -6,6 +6,7 @@
 // Re-export status enums from smrt-types for backwards compatibility
 // These are defined in smrt-types to allow browser-safe packages to import them
 export {
+  AccessRequestStatus,
   MembershipStatus,
   OverrideEffect,
   SessionStatus,

@@ -3,6 +3,8 @@
  * @packageDocumentation
  */
 
+// Access requests (request access / waitlist)
+export { AccessRequest, type AccessRequestOptions } from './AccessRequest.js';
 // CLI / terminal auth (device code grant)
 export {
   CliAuthRequest,

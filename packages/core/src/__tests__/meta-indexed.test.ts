@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field, meta, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry';
 import { SQLiteStrategy } from '../schema/ddl/sqlite-strategy.js';
+import { SchemaGenerator } from '../schema/generator.js';
 import { getTestDatabase } from '../testing/database';
 
 // STI base
@@ -123,6 +124,36 @@ describe('@meta({ indexed: true }) (R9)', () => {
       (row: any) => row.name?.includes('notes') && !row.name?.includes('id'),
     );
     expect(notesIdx).toBeUndefined();
+  });
+
+  it('generateCTISchemaFromManifest emits plain column indexes for indexed fields', () => {
+    // The build-time manifest path (used by db:migrate / the schema differ) must
+    // honor `@field({ indexed: true })` the same way the runtime path and the STI
+    // manifest path do — otherwise the declared index is silently dropped.
+    const generator = new SchemaGenerator();
+    const schema = generator.generateCTISchemaFromManifest(
+      'IdxCustomer',
+      'idx_customers',
+      {
+        name: { type: 'text' },
+        externalRef: { type: 'text', _meta: { indexed: true } },
+        notes: { type: 'text' },
+      } as any,
+    );
+
+    // `schema.indexes` is the source of truth the schema differ / db:migrate
+    // compares against (the manifest `ddl` string carries only CREATE TABLE).
+    const refIdx = schema.indexes.find(
+      (i) => i.name === 'idx_customers_external_ref_idx',
+    );
+    expect(refIdx).toBeDefined();
+    expect(refIdx?.columns).toEqual(['external_ref']);
+    expect(refIdx?.unique).toBeFalsy();
+
+    // Unindexed columns get no index.
+    expect(
+      schema.indexes.find((i) => i.columns?.includes('notes')),
+    ).toBeUndefined();
   });
 
   it('actually creates the index in the live SQLite database', async () => {

@@ -52,6 +52,7 @@ export type { Signal, SignalAdapter, SignalType } from './signals.js';
 
 // User status enums (browser-safe, no server dependencies)
 export {
+  AccessRequestStatus,
   MembershipStatus,
   OverrideEffect,
   SessionStatus,

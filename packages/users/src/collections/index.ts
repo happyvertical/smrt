@@ -3,6 +3,8 @@
  * @packageDocumentation
  */
 
+// Access requests (request access / waitlist)
+export { AccessRequestCollection } from './AccessRequestCollection.js';
 // CLI / terminal auth
 export {
   CliAuthRequestCollection,

@@ -1323,6 +1323,11 @@ export class SchemaGenerator {
   ): ManifestSchema {
     const columns: Record<string, ManifestColumnDefinition> = {};
 
+    // Track regular columns opted into a plain index via `@field({ indexed: true })`.
+    // Mirrors the STI path (generateSTISchemaFromManifest) so CTI tables honor
+    // the documented `FieldOptions.indexed` flag too.
+    const indexedColumns = new Set<string>();
+
     // Add default SMRT fields
     columns.id = {
       type: this.getIdColumnType(config),
@@ -1402,6 +1407,15 @@ export class SchemaGenerator {
         columnDef.default = field.default;
       }
 
+      // Opt-in plain column index. FK columns and unique columns get their own
+      // indexes, so skip those here.
+      const indexedField: RegistryField = field;
+      const isIndexed =
+        indexedField.indexed === true || field._meta?.indexed === true;
+      if (isIndexed && field.type !== 'foreignKey' && !columnDef.unique) {
+        indexedColumns.add(columnName);
+      }
+
       columns[columnName] = columnDef;
     }
 
@@ -1425,6 +1439,14 @@ export class SchemaGenerator {
       columns: conflictColumns,
       unique: true,
     });
+
+    // Plain column indexes for regular columns opted in via `indexed: true`.
+    for (const colName of indexedColumns) {
+      indexes.push({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
+      });
+    }
 
     // Generate DDL
     const schemaDefinition: SchemaDefinition = {

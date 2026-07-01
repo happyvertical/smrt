@@ -4,6 +4,29 @@
  */
 
 export {
+  ACCESS_REQUEST_CAPABILITIES,
+  type AccessRequestAuthorizationContext,
+  type AccessRequestAuthorizer,
+  type AccessRequestCapability,
+  AccessRequestError,
+  type AccessRequestErrorCode,
+  type AccessRequestEvent,
+  type AccessRequestEventHandler,
+  type AccessRequestEventType,
+  AccessRequestService,
+  type AccessRequestServiceOptions,
+  type ApproveAccessRequestOptions,
+  type CancelAccessRequestOptions,
+  type CreateAccessRequestInput,
+  type DeclineAccessRequestOptions,
+  type GraduateAccessRequestOptions,
+  type GraduateAccessRequestResult,
+  type GraduateExistingTenantOption,
+  type GraduateNewTenantOption,
+  type GraduateTenantOption,
+  type ListAccessRequestsFilter,
+} from './AccessRequestService.js';
+export {
   MagicLinkError,
   type MagicLinkResult,
   MagicLinkService,
