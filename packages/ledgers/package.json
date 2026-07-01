@@ -54,6 +54,6 @@
     "fast-glob": "^3.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
-    "vitest": "^4.0.17"
+    "vitest": "^4.1.9"
   }
 }

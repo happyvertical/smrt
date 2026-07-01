@@ -71,7 +71,7 @@
   },
   "peerDependencies": {
     "svelte": ">=5.18.2",
-    "vitest": ">=2.0.0"
+    "vitest": ">=2.1.9"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -82,7 +82,7 @@
     "@types/node": "25.0.9",
     "svelte": "^5.18.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.17"
+    "vitest": "^4.1.9"
   },
   "author": "HappyVertical"
 }
