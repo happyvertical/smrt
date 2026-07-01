@@ -6,7 +6,6 @@ import { serializeContent as serializeItemResponse } from '$lib/server/content-a
 import { getCollection } from '$lib/server/smrt';
 import type { Content } from '../../../../content';
 import type { RequestHandler } from './$types';
-
 // Note: @happyvertical/smrt-content:Content is auto-registered by the Vite plugin scanner
 
 // Fail-closed authorization (#1540): generated routes require an authenticated
@@ -78,16 +77,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;

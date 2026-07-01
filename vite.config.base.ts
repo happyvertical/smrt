@@ -212,6 +212,9 @@ export function createPackageConfig(
       });
       smrtPlugin = plugin;
     }
+    const sveltePlugin = options.svelte
+      ? (await import('@sveltejs/vite-plugin-svelte')).svelte
+      : null;
 
     // Build entry points map
     const entryPoints: Record<string, string> = {
@@ -366,6 +369,8 @@ export function createPackageConfig(
         reportCompressedSize: false, // Speed up build
       },
       plugins: [
+        // Add Svelte config for packages that ship Svelte components.
+        ...(sveltePlugin ? [sveltePlugin()] : []),
         // Add smrtPlugin for packages with SMRT objects
         ...(shouldUseSmrtPlugin && smrtPlugin
           ? [

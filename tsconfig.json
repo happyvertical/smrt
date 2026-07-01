@@ -50,7 +50,6 @@
     { "path": "./packages/scanner" },
 
     // Domain modules
-    { "path": "./packages/accounts" },
     { "path": "./packages/agents" },
     { "path": "./packages/assets" },
     { "path": "./packages/content" },

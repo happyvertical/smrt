@@ -51,10 +51,10 @@
   "devDependencies": {
     "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@types/node": "24.13.2",
+    "@types/node": "25.9.4",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6",
-    "vitest": "^4.0.17"
+    "vite": "^8.1.2",
+    "vitest": "^4.1.9"
   },
   "keywords": [
     "smrt",

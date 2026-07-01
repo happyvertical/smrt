@@ -37,13 +37,13 @@
     "@docusaurus/module-type-aliases": "^3.10.1",
     "@docusaurus/tsconfig": "^3.10.1",
     "@docusaurus/types": "^3.10.1",
-    "@types/node": "24.13.2",
+    "@types/node": "25.9.4",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "docusaurus-plugin-typedoc": "^1.4.2",
     "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.12.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.9.3"
   },
   "browserslist": {
     "production": [

@@ -75,16 +75,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -133,11 +132,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
     '@happyvertical/smrt-content:ContentGovernanceAssignment',
   );
   const item = await collection.get(params.id);
-  if (!item)
-    throw error(
-      404,
-      '@happyvertical/smrt-content:ContentGovernanceAssignment not found',
-    );
+  if (!item) throw error(404, '@happyvertical/smrt-content:ContentGovernanceAssignment not found');
 
   return json(item.toPublicJSON());
 };
@@ -150,11 +145,7 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
     '@happyvertical/smrt-content:ContentGovernanceAssignment',
   );
   const item = await collection.get(params.id);
-  if (!item)
-    throw error(
-      404,
-      '@happyvertical/smrt-content:ContentGovernanceAssignment not found',
-    );
+  if (!item) throw error(404, '@happyvertical/smrt-content:ContentGovernanceAssignment not found');
 
   const body: unknown = await request.json();
   const data = applyWritablePolicy(body);
@@ -172,11 +163,7 @@ export const DELETE: RequestHandler = async ({ locals, params }) => {
     '@happyvertical/smrt-content:ContentGovernanceAssignment',
   );
   const item = await collection.get(params.id);
-  if (!item)
-    throw error(
-      404,
-      '@happyvertical/smrt-content:ContentGovernanceAssignment not found',
-    );
+  if (!item) throw error(404, '@happyvertical/smrt-content:ContentGovernanceAssignment not found');
 
   await item.delete();
   return json({ success: true });

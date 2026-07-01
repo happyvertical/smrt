@@ -117,9 +117,18 @@ runs:
         NODE_OPTIONS: --disable-warning=DEP0169
         NPM_TOKEN: ${{ inputs.auth-token }}
       run: |
+        REQUIRED=$(node -e "const pm = require('./package.json').packageManager || ''; const match = pm.match(/^pnpm@(.+)$/); process.stdout.write(match ? match[1] : '');")
+        echo "required-version=$REQUIRED" >> $GITHUB_OUTPUT
+
         if command -v pnpm &> /dev/null; then
-          echo "skip=true" >> $GITHUB_OUTPUT
-          echo "✓ pnpm $(pnpm -v) already installed, skipping setup"
+          CURRENT=$(pnpm -v)
+          if [ -n "$REQUIRED" ] && [ "$CURRENT" != "$REQUIRED" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "pnpm $CURRENT installed, need $REQUIRED"
+          else
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "✓ pnpm $CURRENT already installed, skipping setup"
+          fi
         else
           echo "skip=false" >> $GITHUB_OUTPUT
           echo "pnpm not found, will install"
@@ -129,6 +138,7 @@ runs:
       if: steps.pnpm-check.outputs.skip != 'true'
       uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
+        version: ${{ steps.pnpm-check.outputs.required-version }}
         run_install: false
 
     - name: Determine pnpm store strategy

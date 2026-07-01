@@ -75,16 +75,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -106,19 +105,12 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
     '@happyvertical/smrt-content:ContentContribution',
   );
   const item = await collection.get(params.id);
-  if (!item)
-    throw error(
-      404,
-      '@happyvertical/smrt-content:ContentContribution not found',
-    );
+  if (!item) throw error(404, '@happyvertical/smrt-content:ContentContribution not found');
 
-  type ActionArgs = Parameters<ContentContribution['requestChangesAction']>;
+  type ActionArgs = Parameters<ContentContribution["requestChangesAction"]>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await item.requestChangesAction(options);
 
-  return json({
-    action: 'requestChangesAction',
-    result: toPublicResult(result),
-  });
+  return json({ action: 'requestChangesAction', result: toPublicResult(result) });
 };

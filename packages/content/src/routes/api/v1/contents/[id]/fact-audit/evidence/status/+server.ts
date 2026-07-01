@@ -75,16 +75,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -108,13 +107,10 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  type ActionArgs = Parameters<Content['updateFactEvidenceStatusAction']>;
+  type ActionArgs = Parameters<Content["updateFactEvidenceStatusAction"]>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await item.updateFactEvidenceStatusAction(options);
 
-  return json({
-    action: 'updateFactEvidenceStatusAction',
-    result: toPublicResult(result),
-  });
+  return json({ action: 'updateFactEvidenceStatusAction', result: toPublicResult(result) });
 };

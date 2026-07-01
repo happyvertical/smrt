@@ -10,7 +10,6 @@
   "include": [
     "../packages/types/src/**/*",
     "../packages/core/src/**/*",
-    "../packages/accounts/src/**/*",
     "../packages/agents/src/**/*",
     "../packages/assets/src/**/*",
     "../packages/content/src/**/*",

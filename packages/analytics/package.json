@@ -54,7 +54,7 @@
     "@happyvertical/smrt-ui": "workspace:*"
   },
   "peerDependencies": {
-    "svelte": "^5.18.0"
+    "svelte": "^5.56.4"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -64,14 +64,14 @@
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/package": "^2.5.8",
     "@types/node": "25.9.4",
     "fast-glob": "3.3.3",
-    "svelte-check": "^4.3.5",
-    "svelte": "^5.18.0",
+    "svelte-check": "^4.7.1",
+    "svelte": "^5.56.4",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6",
-    "vitest": "^4.0.17"
+    "vite": "^8.1.2",
+    "vitest": "^4.1.9"
   },
   "keywords": [
     "ai",

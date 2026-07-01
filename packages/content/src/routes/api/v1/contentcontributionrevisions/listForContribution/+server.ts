@@ -76,16 +76,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -106,28 +105,21 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const collection = await getCollection<ContentContributionRevision>(
     '@happyvertical/smrt-content:ContentContributionRevision',
   );
-  const typedCollection =
-    collection as unknown as ContentContributionRevisionCollection;
+  const typedCollection = collection as unknown as ContentContributionRevisionCollection;
   if (!collection)
     throw error(
       500,
       '@happyvertical/smrt-content:ContentContributionRevision collection is not registered',
     );
 
-  type ActionArgs = Parameters<
-    ContentContributionRevisionCollection['listForContribution']
-  >;
+
+  type ActionArgs = Parameters<ContentContributionRevisionCollection["listForContribution"]>;
   type ActionOptions = {
     contributionId: ActionArgs[0];
   };
   const body: unknown = await request.json();
   const options = readJsonRecord(body) as ActionOptions;
-  const result = await typedCollection.listForContribution(
-    options.contributionId,
-  );
+  const result = await typedCollection.listForContribution(options.contributionId);
 
-  return json({
-    action: 'listForContribution',
-    result: toPublicResult(result),
-  });
+  return json({ action: 'listForContribution', result: toPublicResult(result) });
 };

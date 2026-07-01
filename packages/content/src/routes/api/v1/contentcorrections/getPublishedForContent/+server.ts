@@ -76,16 +76,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -113,20 +112,14 @@ export const POST: RequestHandler = async ({ locals, request }) => {
       '@happyvertical/smrt-content:ContentCorrection collection is not registered',
     );
 
-  type ActionArgs = Parameters<
-    ContentCorrectionCollection['getPublishedForContent']
-  >;
+
+  type ActionArgs = Parameters<ContentCorrectionCollection["getPublishedForContent"]>;
   type ActionOptions = {
     contentId: ActionArgs[0];
   };
   const body: unknown = await request.json();
   const options = readJsonRecord(body) as ActionOptions;
-  const result = await typedCollection.getPublishedForContent(
-    options.contentId,
-  );
+  const result = await typedCollection.getPublishedForContent(options.contentId);
 
-  return json({
-    action: 'getPublishedForContent',
-    result: toPublicResult(result),
-  });
+  return json({ action: 'getPublishedForContent', result: toPublicResult(result) });
 };
