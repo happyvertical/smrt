@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
+import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
 import { TenantSubscription } from '../models/TenantSubscription.js';
 import { SubscriptionResolver } from '../services/subscription-resolver.js';
@@ -296,6 +297,67 @@ describe('smrt-subscriptions', () => {
     expect(
       resolution.thresholdEvaluations.map((evaluation) => evaluation.state),
     ).toEqual(['warn', 'ok', 'ok']);
+  });
+
+  it('resolves AI thresholds when the optional AI usage table is absent', async () => {
+    const metrics = await TenantUsageMetricCollection.create({
+      db: { type: 'sqlite', url: ':memory:' },
+    });
+    const usage = new TenantUsageMeter(metrics);
+    try {
+      const plan = new SubscriptionPlan({
+        planKey: 'ai-safe',
+        name: 'AI Safe',
+        status: 'active',
+      });
+      Object.assign(plan, { id: 'plan-ai-safe' });
+      plan.setThresholds([
+        {
+          metricKey: 'ai.tokens.total',
+          limit: 100,
+          window: 'month',
+          enforcement: 'block',
+        },
+      ]);
+
+      const subscription = new TenantSubscription({
+        tenantId: 'tenant-1',
+        planId: 'plan-ai-safe',
+        status: 'active',
+        currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+      });
+      Object.assign(subscription, { id: 'sub-ai-safe' });
+
+      const resolver = new SubscriptionResolver({
+        plans: {
+          async get() {
+            return plan;
+          },
+        },
+        subscriptions: {
+          async findCurrentForTenant() {
+            return subscription;
+          },
+        },
+        usage,
+      });
+
+      const resolution = await resolver.resolveTenantEntitlements('tenant-1', {
+        now: new Date('2026-06-15T00:00:00Z'),
+      });
+
+      expect(resolution.allowed).toBe(true);
+      expect(resolution.thresholdEvaluations[0]).toMatchObject({
+        state: 'ok',
+        allowed: true,
+        usage: {
+          metricKey: 'ai.tokens.total',
+          quantity: 0,
+        },
+      });
+    } finally {
+      await metrics.db.close?.();
+    }
   });
 
   it('loads entitlement context once and reuses it across resolution', async () => {
