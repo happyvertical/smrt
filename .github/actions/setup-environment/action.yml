@@ -6,7 +6,7 @@ inputs:
   node-version:
     description: 'Node.js version to use'
     required: false
-    default: '24'
+    default: '24.18.0'
 
   install-deps:
     description: 'Whether to install project dependencies'
@@ -55,10 +55,28 @@ runs:
       shell: bash
       run: |
         REQUIRED="${{ inputs.node-version }}"
-        CURRENT=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
+        CURRENT=$(node -v 2>/dev/null | sed 's/^v//')
         if [ -z "$CURRENT" ]; then
           echo "skip=false" >> $GITHUB_OUTPUT
           echo "Node.js not found, will install $REQUIRED"
+        elif [[ "$REQUIRED" =~ ^[0-9]+$ ]] && [ "${CURRENT%%.*}" = "$REQUIRED" ]; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "✓ Node.js $CURRENT satisfies major $REQUIRED, skipping setup"
+        elif node - "$CURRENT" "$REQUIRED" <<'NODE'
+        const current = process.argv[2].split('.').map(Number);
+        const required = process.argv[3].split('.').map(Number);
+        if (current.length !== 3 || required.length !== 3 || current.some(Number.isNaN) || required.some(Number.isNaN)) {
+          process.exit(1);
+        }
+        const satisfies =
+          current[0] === required[0] &&
+          (current[1] > required[1] ||
+            (current[1] === required[1] && current[2] >= required[2]));
+        process.exit(satisfies ? 0 : 1);
+        NODE
+        then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "✓ Node.js $CURRENT satisfies $REQUIRED, skipping setup"
         elif [ "$CURRENT" = "$REQUIRED" ]; then
           echo "skip=true" >> $GITHUB_OUTPUT
           echo "✓ Node.js $CURRENT already installed, skipping setup"
@@ -69,7 +87,7 @@ runs:
 
     - name: Setup Node.js
       if: steps.node-check.outputs.skip != 'true'
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: ${{ inputs.node-version }}
         registry-url: ${{ inputs.registry-url || 'https://registry.npmjs.org' }}
@@ -117,9 +135,18 @@ runs:
         NODE_OPTIONS: --disable-warning=DEP0169
         NPM_TOKEN: ${{ inputs.auth-token }}
       run: |
+        REQUIRED=$(node -e "const pm = require('./package.json').packageManager || ''; const match = pm.match(/^pnpm@(.+)$/); process.stdout.write(match ? match[1] : '');")
+        echo "required-version=$REQUIRED" >> $GITHUB_OUTPUT
+
         if command -v pnpm &> /dev/null; then
-          echo "skip=true" >> $GITHUB_OUTPUT
-          echo "✓ pnpm $(pnpm -v) already installed, skipping setup"
+          CURRENT=$(pnpm -v)
+          if [ -n "$REQUIRED" ] && [ "$CURRENT" != "$REQUIRED" ]; then
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "pnpm $CURRENT installed, need $REQUIRED"
+          else
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "✓ pnpm $CURRENT already installed, skipping setup"
+          fi
         else
           echo "skip=false" >> $GITHUB_OUTPUT
           echo "pnpm not found, will install"
@@ -127,8 +154,9 @@ runs:
 
     - name: Setup pnpm
       if: steps.pnpm-check.outputs.skip != 'true'
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
+        version: ${{ steps.pnpm-check.outputs.required-version }}
         run_install: false
 
     - name: Determine pnpm store strategy
@@ -169,7 +197,7 @@ runs:
     - name: Setup pnpm cache
       id: pnpm-cache
       if: steps.pnpm-store-strategy.outputs.use-actions-cache == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -191,7 +219,7 @@ runs:
 
     - name: Restore Turbo cache
       id: turbo-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: .turbo/cache
         key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
@@ -201,7 +229,7 @@ runs:
 
     - name: Cache Playwright browsers
       if: inputs.setup-playwright == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       id: playwright-cache
       with:
         path: ~/.cache/ms-playwright

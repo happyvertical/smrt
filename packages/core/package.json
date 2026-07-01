@@ -5,7 +5,7 @@
   "author": "HappyVertical",
   "type": "module",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=24.18.0"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -149,13 +149,14 @@
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "@oxc-project/runtime": "^0.138.0",
     "cheerio": "^1.2.0",
     "fast-glob": "3.3.3",
     "minimatch": "10.2.5",
     "pluralize": "^8.0.0",
-    "tsx": "^4.21.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3",
-    "yaml": "^2.8.2"
+    "yaml": "^2.9.0"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.typecheck.json",
@@ -177,7 +178,7 @@
   },
   "peerDependencies": {
     "@huggingface/transformers": ">=3.0.0 <4.0.0",
-    "@xenova/transformers": "^2.17.0"
+    "@xenova/transformers": "^2.17.2"
   },
   "peerDependenciesMeta": {
     "@huggingface/transformers": {
@@ -188,14 +189,14 @@
     }
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.2.0",
+    "@faker-js/faker": "^10.5.0",
     "@huggingface/transformers": "^3.8.1",
-    "@types/node": "25.0.9",
+    "@types/node": "24.13.2",
     "@types/pluralize": "^0.0.33",
     "@xenova/transformers": "^2.17.2",
-    "vite": "7.3.6",
+    "vite": "8.1.2",
     "vite-plugin-dts": "4.5.4",
-    "vitest": "^4.0.17"
+    "vitest": "^4.1.9"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

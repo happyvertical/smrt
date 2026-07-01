@@ -1012,6 +1012,18 @@ export function smrtVitestPlugin(
       const alias = normalizeAliasEntries(resolveConfig?.alias);
 
       return {
+        oxc: {
+          decorator: {
+            legacy: true,
+            emitDecoratorMetadata: true,
+          },
+          tsconfig: {
+            compilerOptions: {
+              experimentalDecorators: true,
+              emitDecoratorMetadata: true,
+            },
+          },
+        },
         resolve: {
           alias: [...workspaceAliases, ...alias],
         },

@@ -29,9 +29,9 @@
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@types/node": "25.0.9",
+    "@types/node": "24.13.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.17"
+    "vitest": "^4.1.9"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

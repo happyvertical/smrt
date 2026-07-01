@@ -75,16 +75,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -110,8 +109,5 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 
   const result = await item.getPublishedTransparencyAction();
 
-  return json({
-    action: 'getPublishedTransparencyAction',
-    result: toPublicResult(result),
-  });
+  return json({ action: 'getPublishedTransparencyAction', result: toPublicResult(result) });
 };

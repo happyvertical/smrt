@@ -616,7 +616,7 @@ function buildPathParamsObjectLiteral(pathParamNames: string[]): string {
 ${pathParamNames
   .map(
     (paramName) =>
-      `    ${JSON.stringify(paramName)}: params[${JSON.stringify(paramName)}],`,
+      `    ${buildObjectTypeProperty(paramName)}: ${buildRouteParamAccess(paramName)},`,
   )
   .join('\n')}
   }`;
@@ -648,6 +648,18 @@ function buildObjectTypeProperty(propertyName: string): string {
   return JSON.stringify(propertyName);
 }
 
+function buildSingleQuotedStringLiteral(value: string): string {
+  return `'${value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`;
+}
+
+function buildRouteParamAccess(paramName: string): string {
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(paramName)) {
+    return `params.${paramName}`;
+  }
+
+  return `params[${buildSingleQuotedStringLiteral(paramName)}]`;
+}
+
 function buildActionTargetTypeExpression(
   targetTypeName: string,
   isStatic: boolean,
@@ -664,7 +676,7 @@ function buildActionArgsTypeAlias(
     targetTypeName,
     isStatic,
   );
-  return `  type ActionArgs = Parameters<${targetTypeExpression}[${JSON.stringify(actionName)}]>;`;
+  return `  type ActionArgs = Parameters<${targetTypeExpression}[${buildSingleQuotedStringLiteral(actionName)}]>;`;
 }
 
 function buildActionOptionsTypeAlias(actionDef: MethodDefinition): string {

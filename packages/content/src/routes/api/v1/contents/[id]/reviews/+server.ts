@@ -75,16 +75,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -108,7 +107,7 @@ export const GET: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  type ActionArgs = Parameters<Content['listReviews']>;
+  type ActionArgs = Parameters<Content["listReviews"]>;
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   ) as ActionArgs[0];
@@ -127,7 +126,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  type ActionArgs = Parameters<Content['runReviewAction']>;
+  type ActionArgs = Parameters<Content["runReviewAction"]>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await item.runReviewAction(options);

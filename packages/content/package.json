@@ -74,11 +74,11 @@
     "@happyvertical/spider": "catalog:",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "fast-xml-parser": "^5.7.2",
-    "yaml": "^2.8.2"
+    "fast-xml-parser": "^5.9.3",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "svelte": "^5.18.0"
+    "svelte": "^5.56.4"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -86,18 +86,18 @@
     }
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.2.0",
+    "@faker-js/faker": "^10.5.0",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@sveltejs/kit": "^2.0.0",
-    "@sveltejs/package": "^2.5.7",
-    "@sveltejs/vite-plugin-svelte": "^6.2.4",
-    "@types/node": "25.0.9",
-    "svelte": "^5.46.4",
-    "svelte-check": "^4.3.5",
+    "@sveltejs/kit": "^2.68.0",
+    "@sveltejs/package": "^2.5.8",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@types/node": "24.13.2",
+    "svelte": "^5.56.4",
+    "svelte-check": "^4.7.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6",
-    "vitest": "^4.0.17"
+    "vite": "^8.1.2",
+    "vitest": "^4.1.9"
   },
   "keywords": [
     "ai",

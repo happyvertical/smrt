@@ -76,16 +76,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -106,15 +105,15 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const collection = await getCollection<ContentGovernanceProfile>(
     '@happyvertical/smrt-content:ContentGovernanceProfile',
   );
-  const typedCollection =
-    collection as unknown as ContentGovernanceProfileCollection;
+  const typedCollection = collection as unknown as ContentGovernanceProfileCollection;
   if (!collection)
     throw error(
       500,
       '@happyvertical/smrt-content:ContentGovernanceProfile collection is not registered',
     );
 
-  type ActionArgs = Parameters<ContentGovernanceProfileCollection['getByKey']>;
+
+  type ActionArgs = Parameters<ContentGovernanceProfileCollection["getByKey"]>;
   type ActionOptions = {
     key: ActionArgs[0];
   };

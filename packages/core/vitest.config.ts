@@ -10,6 +10,18 @@ import { defineConfig } from 'vitest/config';
  * Based on SDK vitest.config.ts which resolved similar issues.
  */
 export default defineConfig({
+  oxc: {
+    decorator: {
+      legacy: true,
+      emitDecoratorMetadata: true,
+    },
+    tsconfig: {
+      compilerOptions: {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+      },
+    },
+  },
   test: {
     // Include all test file types
     include: ['src/**/*.{test,spec}.{ts,mts}'],

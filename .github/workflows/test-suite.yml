@@ -14,14 +14,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0  # Needed for changeset version preview
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -43,7 +43,7 @@ jobs:
       # Only the build job saves the turbo cache (setup-environment restores only),
       # under the same per-SHA key, computed from the still-committed package.json.
       - name: Save Turbo cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .turbo/cache
           key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
@@ -90,12 +90,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -123,12 +123,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -155,12 +155,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -195,14 +195,14 @@ jobs:
       # fetch-depth: 0 so the gate can diff against the PR base to find the
       # packages this PR touches.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -236,12 +236,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -261,7 +261,7 @@ jobs:
 
       - name: Upload core test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-results-core-${{ strategy.job-index }}
           path: |
@@ -277,12 +277,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -315,12 +315,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
@@ -342,7 +342,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-results-${{ strategy.job-index }}
           path: |

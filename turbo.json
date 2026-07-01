@@ -157,6 +157,7 @@
     "typecheck": {
       "dependsOn": [
         "^build",
+        "build",
         "generate:test"
       ],
       "inputs": [

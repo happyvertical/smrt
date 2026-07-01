@@ -45,17 +45,17 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "acorn": "^8.15.0",
+    "acorn": "^8.17.0",
     "fast-glob": "3.3.3",
-    "tar": "^7.5.2"
+    "tar": "^7.5.19"
   },
   "devDependencies": {
-    "@types/node": "25.0.9",
-    "tsx": "^4.21.0",
+    "@types/node": "24.13.2",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3",
-    "vite": "^7.3.6",
+    "vite": "^8.1.2",
     "vite-plugin-dts": "4.5.4",
-    "vitest": "^4.0.17"
+    "vitest": "^4.1.9"
   },
   "keywords": [
     "smrt",

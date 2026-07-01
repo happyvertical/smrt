@@ -3,8 +3,8 @@
 
 import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
-import type { ContentGovernancePolicyCollection } from '../../../../../content-governance-policies';
 import type { ContentGovernancePolicy } from '../../../../../content-governance-policy';
+import type { ContentGovernancePolicyCollection } from '../../../../../content-governance-policies';
 import type { RequestHandler } from './$types';
 
 // Fail-closed authorization (#1540): generated routes require an authenticated
@@ -76,16 +76,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -106,15 +105,15 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const collection = await getCollection<ContentGovernancePolicy>(
     '@happyvertical/smrt-content:ContentGovernancePolicy',
   );
-  const typedCollection =
-    collection as unknown as ContentGovernancePolicyCollection;
+  const typedCollection = collection as unknown as ContentGovernancePolicyCollection;
   if (!collection)
     throw error(
       500,
       '@happyvertical/smrt-content:ContentGovernancePolicy collection is not registered',
     );
 
-  type ActionArgs = Parameters<ContentGovernancePolicyCollection['getByKey']>;
+
+  type ActionArgs = Parameters<ContentGovernancePolicyCollection["getByKey"]>;
   type ActionOptions = {
     key: ActionArgs[0];
   };

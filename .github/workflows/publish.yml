@@ -39,13 +39,13 @@ jobs:
     steps:
       - name: Generate token from GitHub App
         id: generate_token
-        uses: tibdex/github-app-token@v2
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
           app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
           private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
@@ -62,7 +62,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -187,7 +187,7 @@ jobs:
 
       - name: Upload release version patch
         if: steps.prepare.outputs.should_publish == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: publish-release-version-patch
           retention-days: 1
@@ -196,7 +196,7 @@ jobs:
 
       - name: Upload versioned workspace and build outputs
         if: steps.prepare.outputs.should_publish == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: publish-release-workspace
           retention-days: 1
@@ -225,12 +225,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Restore versioned workspace and build outputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: publish-release-workspace
           path: release-artifacts
@@ -241,7 +241,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -271,19 +271,19 @@ jobs:
     steps:
       - name: Generate token from GitHub App
         id: generate_token
-        uses: tibdex/github-app-token@v2
+        uses: tibdex/github-app-token@3beb63f4bd073e61482598c45c71c1019b59b73a # v2
         with:
           app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
           private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
 
       - name: Download release version patch
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: publish-release-version-patch
           path: release-artifacts
@@ -292,7 +292,7 @@ jobs:
         run: git apply --binary release-artifacts/release-version.patch
 
       - name: Restore versioned workspace and build outputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: publish-release-workspace
           path: release-artifacts
@@ -312,7 +312,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -462,12 +462,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -479,13 +479,13 @@ jobs:
         run: pnpm --dir docs build
 
       - name: Setup Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@1f0c5cde4bc74cd7e1254d0cb4de8d49e9068c7d # v4
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: './docs/build'
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

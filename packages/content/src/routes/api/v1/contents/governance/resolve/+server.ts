@@ -76,16 +76,15 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, entry] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import {
-  enterTenantContext,
-  hasTenantContext,
-} from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -113,14 +112,12 @@ export const GET: RequestHandler = async ({ locals, request }) => {
       '@happyvertical/smrt-content:Content collection is not registered',
     );
 
-  type ActionArgs = Parameters<Contents['resolveGovernanceAction']>;
+
+  type ActionArgs = Parameters<Contents["resolveGovernanceAction"]>;
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   ) as ActionArgs[0];
   const result = await typedCollection.resolveGovernanceAction(options);
 
-  return json({
-    action: 'resolveGovernanceAction',
-    result: toPublicResult(result),
-  });
+  return json({ action: 'resolveGovernanceAction', result: toPublicResult(result) });
 };
