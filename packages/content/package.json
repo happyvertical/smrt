@@ -74,8 +74,8 @@
     "@happyvertical/spider": "catalog:",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "fast-xml-parser": "^5.7.2",
-    "yaml": "^2.8.2"
+    "fast-xml-parser": "^5.9.3",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "svelte": "^5.18.0"
@@ -86,7 +86,7 @@
     }
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.2.0",
+    "@faker-js/faker": "^10.5.0",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "^2.0.0",

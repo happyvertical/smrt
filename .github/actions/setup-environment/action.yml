@@ -69,7 +69,7 @@ runs:
 
     - name: Setup Node.js
       if: steps.node-check.outputs.skip != 'true'
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: ${{ inputs.node-version }}
         registry-url: ${{ inputs.registry-url || 'https://registry.npmjs.org' }}
@@ -127,7 +127,7 @@ runs:
 
     - name: Setup pnpm
       if: steps.pnpm-check.outputs.skip != 'true'
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       with:
         run_install: false
 
@@ -169,7 +169,7 @@ runs:
     - name: Setup pnpm cache
       id: pnpm-cache
       if: steps.pnpm-store-strategy.outputs.use-actions-cache == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -191,7 +191,7 @@ runs:
 
     - name: Restore Turbo cache
       id: turbo-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: .turbo/cache
         key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
@@ -201,7 +201,7 @@ runs:
 
     - name: Cache Playwright browsers
       if: inputs.setup-playwright == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       id: playwright-cache
       with:
         path: ~/.cache/ms-playwright

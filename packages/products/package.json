@@ -58,7 +58,7 @@
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "express": "^5.2.1"
   },
   "peerDependencies": {
@@ -74,10 +74,10 @@
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/cors": "2.8.19",
-    "@types/express": "^5.0.0",
+    "@types/express": "^5.0.6",
     "@types/node": "25.0.9",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "concurrently": "^9.2.1",
+    "concurrently": "^9.2.3",
     "svelte": "^5.46.4",
     "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
