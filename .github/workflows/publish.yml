@@ -157,6 +157,14 @@ jobs:
           echo "should_publish=true" >> "$GITHUB_OUTPUT"
           echo "version=$AFTER_VERSION" >> "$GITHUB_OUTPUT"
 
+          # Sync the starter templates' @happyvertical/smrt-* pins to this
+          # release so downstream-scaffolded projects reference the matching
+          # version. Renovate is configured to skip these files (renovate.json),
+          # so this is their only update path. Runs after the final (corrected)
+          # version is settled so it never captures a 1.0.0 overshoot.
+          echo "📝 Syncing starter-template versions to $AFTER_VERSION"
+          node scripts/sync-template-versions.mjs "$AFTER_VERSION"
+
           # Preserve the exact versioned tree so later jobs can publish
           # what they validated without rerunning changeset versioning.
           git diff --binary > release-version.patch
@@ -173,7 +181,7 @@ jobs:
         run: |
           {
             printf '%s\n' package.json
-            find packages -type f \( -name 'package.json' -o -name 'CHANGELOG.md' -o -path '*/dist/*' \) -print
+            find packages -type f \( -name 'package.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' -o -path '*/dist/*' \) -print
           } | sort -u > publish-release-workspace-files
           tar -cf publish-release-workspace.tar -T publish-release-workspace-files
 
@@ -380,7 +388,7 @@ jobs:
           }
           NODE
 
-          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'CHANGELOG.md' \) -print | sort)
+          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' \) -print | sort)
           git add package.json
           git add -A .changeset
           if [ "${#release_files[@]}" -gt 0 ]; then
