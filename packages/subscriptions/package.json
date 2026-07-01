@@ -44,7 +44,7 @@
     "@happyvertical/sql": "catalog:"
   },
   "peerDependencies": {
-    "svelte": "^5.18.0"
+    "svelte": "^5.56.4"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -53,10 +53,10 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/package": "^2.5.8",
     "@types/node": "24.10.9",
-    "svelte": "^5.18.0",
-    "svelte-check": "^4.3.5",
+    "svelte": "^5.56.4",
+    "svelte-check": "^4.7.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.0.17"

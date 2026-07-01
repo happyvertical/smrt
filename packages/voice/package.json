@@ -16,7 +16,7 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "peerDependencies": {
-    "svelte": "^5.0.0"
+    "svelte": "^5.56.4"
   },
   "peerDependenciesMeta": {
     "svelte": {

@@ -70,7 +70,7 @@
     "tsx": "^4.21.0"
   },
   "peerDependencies": {
-    "svelte": ">=5.18.2",
+    "svelte": ">=5.56.4",
     "vitest": ">=2.0.0"
   },
   "peerDependenciesMeta": {
@@ -80,7 +80,7 @@
   },
   "devDependencies": {
     "@types/node": "25.0.9",
-    "svelte": "^5.18.2",
+    "svelte": "^5.56.4",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },

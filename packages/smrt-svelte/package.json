@@ -97,7 +97,7 @@
     "@remotion/whisper-web": ">=4.0.0",
     "@xenova/transformers": "^2.17.2",
     "chrono-node": "^2.9.0",
-    "svelte": "^5.18.2"
+    "svelte": "^5.56.4"
   },
   "peerDependenciesMeta": {
     "@huggingface/transformers": {
@@ -117,15 +117,15 @@
     }
   },
   "devDependencies": {
-    "@sveltejs/package": "^2.5.7",
+    "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.3.1",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "25.0.9",
     "axe-core": "^4.12.1",
-    "svelte": "^5.46.4",
-    "svelte-check": "^4.3.5",
+    "svelte": "^5.56.4",
+    "svelte-check": "^4.7.1",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.0.17"
