@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-users": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.25.2"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
