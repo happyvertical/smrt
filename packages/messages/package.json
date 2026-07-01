@@ -75,7 +75,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "25.9.4",
+    "@types/node": "24.13.2",
     "svelte": "^5.56.4",
     "svelte-check": "^4.7.1",
     "typescript": "^5.9.3",

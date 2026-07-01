@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
-import type { UserConfig, UserConfigFnPromise } from 'vite';
+import { transform } from 'esbuild';
+import type { Plugin, UserConfig, UserConfigFnPromise } from 'vite';
 import dts from 'vite-plugin-dts';
 
 interface PackageConfigOptions {
@@ -157,6 +158,43 @@ function rewriteWorkspaceDeclarationImports(
       (_match, prefix: string, specifier: string, suffix: string) =>
         `${prefix}${rewriteSpecifier(specifier)}${suffix}`,
     );
+}
+
+function createLegacyDecoratorTransformPlugin(packageDir: string): Plugin {
+  return {
+    name: 'smrt-legacy-decorator-transform',
+    enforce: 'pre',
+    async transform(code, id) {
+      const [filePath] = id.split('?');
+      if (
+        !filePath ||
+        filePath.endsWith('.d.ts') ||
+        filePath.includes('/node_modules/') ||
+        !/\.[cm]?tsx?$/.test(filePath) ||
+        !isPathInside(packageDir, filePath)
+      ) {
+        return null;
+      }
+
+      const result = await transform(code, {
+        loader: filePath.endsWith('x') ? 'tsx' : 'ts',
+        sourcefile: filePath,
+        sourcemap: true,
+        target: 'es2022',
+        tsconfigRaw: {
+          compilerOptions: {
+            experimentalDecorators: true,
+            emitDecoratorMetadata: false,
+          },
+        },
+      });
+
+      return {
+        code: result.code,
+        map: result.map ? JSON.parse(result.map) : null,
+      };
+    },
+  };
 }
 
 /**
@@ -369,6 +407,7 @@ export function createPackageConfig(
         reportCompressedSize: false, // Speed up build
       },
       plugins: [
+        createLegacyDecoratorTransformPlugin(packageDir),
         // Add Svelte config for packages that ship Svelte components.
         ...(sveltePlugin ? [sveltePlugin()] : []),
         // Add smrtPlugin for packages with SMRT objects

@@ -75,7 +75,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/cors": "2.8.19",
     "@types/express": "^5.0.6",
-    "@types/node": "25.9.4",
+    "@types/node": "24.13.2",
     "@happyvertical/smrt-vitest": "workspace:*",
     "concurrently": "^9.2.3",
     "svelte": "^5.56.4",

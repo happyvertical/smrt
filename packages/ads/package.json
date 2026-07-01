@@ -35,7 +35,7 @@
     "@happyvertical/smrt-commerce": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@types/node": "25.9.4",
+    "@types/node": "24.13.2",
     "fast-glob": "3.3.3",
     "typescript": "^5.9.3",
     "vite": "^8.1.2",

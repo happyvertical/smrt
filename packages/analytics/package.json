@@ -65,7 +65,7 @@
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.8",
-    "@types/node": "25.9.4",
+    "@types/node": "24.13.2",
     "fast-glob": "3.3.3",
     "svelte-check": "^4.7.1",
     "svelte": "^5.56.4",

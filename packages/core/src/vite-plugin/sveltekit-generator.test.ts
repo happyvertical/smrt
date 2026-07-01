@@ -727,8 +727,11 @@ describe('SvelteKit Route Generator', () => {
       );
       // Fail-closed auth guard (#1540): reads do not require auth as a mutation.
       expect(content).toContain('requireRouteAuth(locals, false);');
+      expect(content).toContain(
+        "type ActionArgs = Parameters<Document['evaluateReviewProfileAction']>;",
+      );
       expect(content).toContain('const pathParams = {');
-      expect(content).toContain('"profileKey": params["profileKey"],');
+      expect(content).toContain('profileKey: params.profileKey,');
       expect(content).toContain(
         '...Object.fromEntries(new URL(request.url).searchParams.entries()),',
       );

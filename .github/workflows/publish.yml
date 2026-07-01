@@ -62,7 +62,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -241,7 +241,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -312,7 +312,7 @@ jobs:
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
@@ -467,7 +467,7 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup-environment
         with:
-          node-version: '24'
+          node-version: '24.18.0'
           install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'

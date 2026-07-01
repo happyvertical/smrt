@@ -66,6 +66,7 @@
     "chokidar": "^5.0.0",
     "concurrently": "9.2.3",
     "dependency-cruiser": "^17.4.3",
+    "esbuild": "0.28.1",
     "express": "^5.2.1",
     "lefthook": "^2.1.9",
     "livereload": "^0.10.3",
@@ -80,7 +81,7 @@
     "vitest": "4.1.9"
   },
   "resolutions": {
-    "@types/node": "25.9.4"
+    "@types/node": "24.13.2"
   },
   "engines": {
     "node": ">=24.18.0",

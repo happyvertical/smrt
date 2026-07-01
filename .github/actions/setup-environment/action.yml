@@ -6,7 +6,7 @@ inputs:
   node-version:
     description: 'Node.js version to use'
     required: false
-    default: '24'
+    default: '24.18.0'
 
   install-deps:
     description: 'Whether to install project dependencies'
@@ -55,10 +55,28 @@ runs:
       shell: bash
       run: |
         REQUIRED="${{ inputs.node-version }}"
-        CURRENT=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
+        CURRENT=$(node -v 2>/dev/null | sed 's/^v//')
         if [ -z "$CURRENT" ]; then
           echo "skip=false" >> $GITHUB_OUTPUT
           echo "Node.js not found, will install $REQUIRED"
+        elif [[ "$REQUIRED" =~ ^[0-9]+$ ]] && [ "${CURRENT%%.*}" = "$REQUIRED" ]; then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "✓ Node.js $CURRENT satisfies major $REQUIRED, skipping setup"
+        elif node - "$CURRENT" "$REQUIRED" <<'NODE'
+        const current = process.argv[2].split('.').map(Number);
+        const required = process.argv[3].split('.').map(Number);
+        if (current.length !== 3 || required.length !== 3 || current.some(Number.isNaN) || required.some(Number.isNaN)) {
+          process.exit(1);
+        }
+        const satisfies =
+          current[0] === required[0] &&
+          (current[1] > required[1] ||
+            (current[1] === required[1] && current[2] >= required[2]));
+        process.exit(satisfies ? 0 : 1);
+        NODE
+        then
+          echo "skip=true" >> $GITHUB_OUTPUT
+          echo "✓ Node.js $CURRENT satisfies $REQUIRED, skipping setup"
         elif [ "$CURRENT" = "$REQUIRED" ]; then
           echo "skip=true" >> $GITHUB_OUTPUT
           echo "✓ Node.js $CURRENT already installed, skipping setup"

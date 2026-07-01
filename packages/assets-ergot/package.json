@@ -29,7 +29,7 @@
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@types/node": "25.9.4",
+    "@types/node": "24.13.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9"
   },
