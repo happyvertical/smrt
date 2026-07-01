@@ -36,7 +36,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "vitest": "^4.0.17"
+    "vitest": "^4.1.9"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
