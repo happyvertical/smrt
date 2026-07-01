@@ -23,7 +23,7 @@
     "dev": "npm run build:watch & npm run test:watch"
   },
   "devDependencies": {
-    "@types/node": "25.0.9",
+    "@types/node": "25.9.4",
     "typescript": "^5.9.3",
     "vite": "7.3.6",
     "vitest": "^4.0.17"

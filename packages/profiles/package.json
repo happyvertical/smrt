@@ -47,7 +47,7 @@
   "devDependencies": {
     "@faker-js/faker": "^10.5.0",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@types/node": "25.0.9",
+    "@types/node": "25.9.4",
     "fast-glob": "3.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
