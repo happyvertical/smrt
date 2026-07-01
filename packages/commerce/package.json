@@ -77,7 +77,7 @@
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.7",
-    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "25.0.9",
     "fast-glob": "^3.3.3",
     "svelte": "^5.46.4",
