@@ -169,7 +169,7 @@ runs:
     - name: Setup pnpm cache
       id: pnpm-cache
       if: steps.pnpm-store-strategy.outputs.use-actions-cache == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -191,7 +191,7 @@ runs:
 
     - name: Restore Turbo cache
       id: turbo-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: .turbo/cache
         key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
@@ -201,7 +201,7 @@ runs:
 
     - name: Cache Playwright browsers
       if: inputs.setup-playwright == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       id: playwright-cache
       with:
         path: ~/.cache/ms-playwright

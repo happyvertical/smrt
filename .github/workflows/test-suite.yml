@@ -43,7 +43,7 @@ jobs:
       # Only the build job saves the turbo cache (setup-environment restores only),
       # under the same per-SHA key, computed from the still-committed package.json.
       - name: Save Turbo cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: .turbo/cache
           key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
