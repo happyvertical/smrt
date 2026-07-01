@@ -67,7 +67,7 @@
     "@testing-library/user-event": "^14.6.1",
     "axe-core": "^4.12.1",
     "jsdom": "^26.1.0",
-    "tsx": "^4.21.0"
+    "tsx": "^4.22.4"
   },
   "peerDependencies": {
     "svelte": ">=5.18.2",
