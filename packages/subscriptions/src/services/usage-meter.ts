@@ -85,26 +85,34 @@ export class TenantUsageMeter {
       : metricKeys;
 
     const summaries = new Map<string, UsageSummary>();
+    let fallbackAiMetricKeys: string[] = [];
     if (aiMetricKeys.length > 0) {
-      const aiSummary = await this.summarizeAiUsage({
-        tenantId: options.tenantId,
-        window: options.window,
-      });
-      const quantityByMetric = aiQuantityByMetric(aiSummary);
-      for (const metricKey of aiMetricKeys) {
-        summaries.set(metricKey, {
+      try {
+        const aiSummary = await this.summarizeAiUsage({
           tenantId: options.tenantId,
-          metricKey,
-          quantity: quantityByMetric[metricKey] ?? 0,
-          windowStart: options.window.start,
-          windowEnd: options.window.end,
+          window: options.window,
         });
+        const quantityByMetric = aiQuantityByMetric(aiSummary);
+        for (const metricKey of aiMetricKeys) {
+          summaries.set(metricKey, {
+            tenantId: options.tenantId,
+            metricKey,
+            quantity: quantityByMetric[metricKey] ?? 0,
+            windowStart: options.window.start,
+            windowEnd: options.window.end,
+          });
+        }
+      } catch (error) {
+        if (!isMissingAiUsageTableError(error)) {
+          throw error;
+        }
+        fallbackAiMetricKeys = aiMetricKeys;
       }
     }
 
     const persistedSummaries = await this.metrics.summarizeUsageBatch({
       ...options,
-      metricKeys: persistedMetricKeys,
+      metricKeys: [...persistedMetricKeys, ...fallbackAiMetricKeys],
     });
     for (const summary of persistedSummaries) {
       summaries.set(summary.metricKey, summary);
@@ -141,10 +149,18 @@ export class TenantUsageMeter {
       return null;
     }
 
-    const summary = await this.summarizeAiUsage({
-      tenantId: options.tenantId,
-      window: options.window,
-    });
+    let summary: AiUsageSummary;
+    try {
+      summary = await this.summarizeAiUsage({
+        tenantId: options.tenantId,
+        window: options.window,
+      });
+    } catch (error) {
+      if (isMissingAiUsageTableError(error)) {
+        return null;
+      }
+      throw error;
+    }
 
     const quantityByMetric: Record<string, number> = {
       ...aiQuantityByMetric(summary),
@@ -168,6 +184,46 @@ function aiQuantityByMetric(summary: AiUsageSummary): Record<string, number> {
     'ai.cost.estimated': summary.estimatedCost,
     'ai.requests': summary.requestCount,
   };
+}
+
+function isMissingAiUsageTableError(error: unknown): boolean {
+  const err = error as {
+    code?: unknown;
+    message?: unknown;
+    cause?: unknown;
+    context?: Record<string, unknown>;
+  };
+  const codes = [err?.code, err?.context?.code, err?.context?.errorCode];
+  if (codes.some((code) => code === '42P01')) {
+    return true;
+  }
+
+  const messages = [
+    err?.message,
+    err?.context?.originalError,
+    err?.context?.error,
+    err?.context?.details,
+  ];
+  for (const candidate of messages) {
+    if (
+      candidate &&
+      typeof candidate === 'object' &&
+      isMissingAiUsageTableError(candidate)
+    ) {
+      return true;
+    }
+    const message = String(candidate ?? '').toLowerCase();
+    if (
+      message.includes('_smrt_ai_usage') &&
+      (message.includes('no such table') ||
+        message.includes('does not exist') ||
+        message.includes('undefined table'))
+    ) {
+      return true;
+    }
+  }
+
+  return err?.cause ? isMissingAiUsageTableError(err.cause) : false;
 }
 
 function emptyUsageSummary(

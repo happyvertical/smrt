@@ -209,6 +209,70 @@ describe('TenantUsageMeter AI usage summaries', () => {
     expect(quantityByMetric.get('storage.bytes')).toBe(3072);
   });
 
+  it('falls back to persisted ai.* metrics when the AI usage table is absent', async () => {
+    await metrics.db.query('DROP TABLE _smrt_ai_usage');
+
+    const meter = new TenantUsageMeter(metrics);
+    const window = {
+      start: new Date('2026-06-01T00:00:00.000Z'),
+      end: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    await meter.record({
+      tenantId: 'tenant-1',
+      metricKey: 'ai.tokens.total',
+      quantity: 55,
+      windowStart: new Date('2026-06-12T00:00:00.000Z'),
+      windowEnd: new Date('2026-06-12T01:00:00.000Z'),
+    });
+
+    const summary = await meter.summarize({
+      tenantId: 'tenant-1',
+      metricKey: 'ai.tokens.total',
+      window,
+    });
+
+    expect(summary.quantity).toBe(55);
+  });
+
+  it('keeps batch summaries working when the AI usage table is absent', async () => {
+    await metrics.db.query('DROP TABLE _smrt_ai_usage');
+
+    const meter = new TenantUsageMeter(metrics);
+    const window = {
+      start: new Date('2026-06-01T00:00:00.000Z'),
+      end: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    await meter.record({
+      tenantId: 'tenant-1',
+      metricKey: 'ai.tokens.total',
+      quantity: 55,
+      windowStart: new Date('2026-06-12T00:00:00.000Z'),
+      windowEnd: new Date('2026-06-12T01:00:00.000Z'),
+    });
+    await meter.record({
+      tenantId: 'tenant-1',
+      metricKey: 'storage.bytes',
+      quantity: 1024,
+      windowStart: new Date('2026-06-12T00:00:00.000Z'),
+      windowEnd: new Date('2026-06-12T01:00:00.000Z'),
+    });
+
+    const summaries = await meter.summarizeBatch({
+      tenantId: 'tenant-1',
+      metricKeys: ['ai.tokens.total', 'ai.requests', 'storage.bytes'],
+      window,
+    });
+    const quantityByMetric = new Map(
+      summaries.map((summary) => [summary.metricKey, summary.quantity]),
+    );
+
+    expect(quantityByMetric.get('ai.tokens.total')).toBe(55);
+    expect(quantityByMetric.get('ai.requests')).toBe(0);
+    expect(quantityByMetric.get('storage.bytes')).toBe(1024);
+  });
+
   it('returns zeroed totals when no usage matches', async () => {
     const meter = new TenantUsageMeter(metrics);
     const summary = await meter.summarizeAiUsage({
