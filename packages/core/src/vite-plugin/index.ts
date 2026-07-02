@@ -113,6 +113,7 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-schema': 'smrt:schema',
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
   '@happyvertical/smrt-virt-cli': 'smrt:cli',
+  '@happyvertical/smrt-virt-web': 'smrt:web',
 };
 
 async function importScanner() {
@@ -815,6 +816,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           // CLI module for command-line interface generation
           return await generateCLIModule(manifest);
 
+        case 'smrt:web':
+          // Web collection definitions for client data runtimes (spike #1756)
+          return generateWebModule(manifest);
+
         default:
           return null;
       }
@@ -1276,6 +1281,121 @@ export { createClient as default };
 }
 
 /**
+ * Structural check for collection classes in the manifest, mirroring
+ * sveltekit-generator's private isCollectionClass: a class that extends
+ * SmrtCollection directly, or carries a collection type argument (deeper
+ * SmrtCollection subclasses like `MaterialCollection extends
+ * ProductCollection` resolve `extendsTypeArg` during scanning).
+ */
+function isWebCollectionClass(
+  obj: SmartObjectManifest['objects'][string],
+): boolean {
+  return obj.extends === 'SmrtCollection' || obj.extendsTypeArg !== undefined;
+}
+
+/**
+ * Generate the virtual web-collection definition module (spike #1756).
+ *
+ * Emits typed per-collection metadata — REST collection name, endpoint path,
+ * id field, exposed CRUD actions, and persisted field definitions — for every
+ * API-exposed model in the manifest. This is the codegen contract consumed by
+ * `@happyvertical/smrt-web` to construct TanStack DB collections over the
+ * generated REST surface. Deliberately data-only: no fetch code is emitted
+ * here, so the runtime wrapper owns all HTTP/error semantics in one place.
+ *
+ * Selection rules:
+ * - collection classes are skipped (they describe access, not row shapes)
+ * - objects must expose `list` via their api config (read surface required)
+ * - one definition per REST collection: STI children sharing a base table
+ *   (e.g. Material extends Product on `products`) fold into the first
+ *   definition — the REST endpoint is table-scoped, not subclass-scoped.
+ */
+/**
+ * Select the manifest entries that become web collection definitions. Shared
+ * by the runtime module generator and the .d.ts generator so the emitted
+ * values and their declared types cannot drift apart.
+ */
+function selectWebCollectionEntries(
+  manifest: SmartObjectManifest,
+): Array<{
+  collection: string;
+  obj: SmartObjectManifest['objects'][string];
+  actions: string[];
+}> {
+  const seen = new Set<string>();
+  const entries: Array<{
+    collection: string;
+    obj: SmartObjectManifest['objects'][string];
+    actions: string[];
+  }> = [];
+
+  for (const obj of Object.values(manifest.objects)) {
+    if (isWebCollectionClass(obj)) continue;
+
+    const exposedActions = resolveApiActionSet(obj);
+    if (!exposedActions.has('list')) continue;
+    if (seen.has(obj.collection)) continue; // STI: first model wins
+    seen.add(obj.collection);
+
+    entries.push({
+      collection: obj.collection,
+      obj,
+      actions: [...exposedActions].sort(),
+    });
+  }
+
+  return entries;
+}
+
+function generateWebModule(manifest: SmartObjectManifest): string {
+  const relationshipFieldTypes = new Set(['oneToMany', 'manyToMany']);
+  const definitions: Record<string, unknown> = {};
+
+  for (const { collection, obj, actions } of selectWebCollectionEntries(
+    manifest,
+  )) {
+    const fields: Record<string, unknown> = {};
+    for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
+      // Relationship pseudo-fields are not columns in the public DTO.
+      if (relationshipFieldTypes.has(field.type)) continue;
+      fields[fieldName] = {
+        type: field.type,
+        ...(field.required !== undefined ? { required: field.required } : {}),
+        ...(field.default !== undefined ? { default: field.default } : {}),
+      };
+    }
+
+    definitions[collection] = {
+      name: collection,
+      className: obj.className,
+      endpoint: `/${collection}`,
+      idField: 'id',
+      actions,
+      fields,
+    };
+  }
+
+  return `
+// Auto-generated web collection definitions from SMRT objects (spike #1756)
+// This file is generated automatically - do not edit
+
+export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
+
+export function getCollectionDefinition(name) {
+  const definition = collectionDefinitions[name];
+  if (!definition) {
+    throw new Error(
+      \`[smrt] Unknown web collection definition: \${name}. Known: \${Object.keys(collectionDefinitions).join(', ')}\`,
+    );
+  }
+  return definition;
+}
+
+export { collectionDefinitions as default };
+`;
+}
+
+/**
  * Generate virtual MCP module
  */
 async function generateMCPModule(
@@ -1552,6 +1672,16 @@ ${fields}
       })
       .join('\n');
 
+    // Typed web collection definitions (spike #1756): one entry per REST
+    // collection, with the row type threaded through a phantom `_row` carrier
+    // so downstream factories (e.g. @happyvertical/smrt-web) can infer it.
+    const webCollectionInterface = selectWebCollectionEntries(manifest)
+      .map(
+        ({ collection, obj }) =>
+          `    ${collection}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${obj.className}Data>;`,
+      )
+      .join('\n');
+
     // Generate MCP tool interfaces based on discovered methods
     const _mcpTools = Object.entries(manifest.objects).flatMap(([_name, obj]) =>
       Object.entries(obj.methods).map(([methodName, method]) => ({
@@ -1687,6 +1817,47 @@ declare module '@happyvertical/smrt-virt-types' {
 ${objectInterfaces}
 
   export default types;
+}
+
+// Web module - Typed collection definitions for client data runtimes (spike #1756)
+declare module '@happyvertical/smrt-virt-web' {
+  export type SmrtWebFieldType =
+    | 'text'
+    | 'decimal'
+    | 'boolean'
+    | 'integer'
+    | 'datetime'
+    | 'json'
+    | 'foreignKey'
+    | 'crossPackageRef'
+    | 'meta';
+
+  export interface SmrtWebFieldDefinition {
+    type: SmrtWebFieldType;
+    required?: boolean;
+    default?: unknown;
+  }
+
+  export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
+    name: string;
+    className: string;
+    endpoint: string;
+    idField: string;
+    actions: string[];
+    fields: Record<string, SmrtWebFieldDefinition>;
+    /** Phantom row-type carrier for inference — never present at runtime. */
+    _row?: TData;
+  }
+
+  export interface SmrtWebCollectionDefinitions {
+${webCollectionInterface}
+  }
+
+  export const collectionDefinitions: SmrtWebCollectionDefinitions;
+  export function getCollectionDefinition<
+    K extends keyof SmrtWebCollectionDefinitions,
+  >(name: K): SmrtWebCollectionDefinitions[K];
+  export default collectionDefinitions;
 }
 
 // CLI module - Auto-generated command-line interface

@@ -202,6 +202,73 @@ ${apiClientInterface}
   export default createClient;
 }`;
 
+  // Generate web collection-definition module declaration (spike #1756).
+  // Selection mirrors the vite-plugin's generateWebModule: skip collection
+  // classes, require `list` on the api surface (omitted api config means the
+  // full CRUD surface is exposed, so it qualifies), one entry per REST
+  // collection (STI children folding into their base table's definition).
+  const isCollectionClassDef = (obj: {
+    extends?: string;
+    extendsTypeArg?: string;
+  }): boolean =>
+    obj.extends === 'SmrtCollection' || obj.extendsTypeArg !== undefined;
+
+  const exposesList = (obj: { decoratorConfig?: unknown }): boolean => {
+    const api = (obj.decoratorConfig as { api?: unknown } | undefined)?.api;
+    if (api === false) return false;
+    if (api && typeof api === 'object') {
+      const include = (api as { include?: unknown }).include;
+      if (Array.isArray(include)) return include.includes('list');
+      const exclude = (api as { exclude?: unknown }).exclude;
+      if (Array.isArray(exclude)) return !exclude.includes('list');
+    }
+    return true;
+  };
+
+  const seenWebCollections = new Set<string>();
+  const webCollectionEntries: string[] = [];
+  for (const obj of Object.values(manifest.objects)) {
+    if (isCollectionClassDef(obj)) continue;
+    if (!exposesList(obj)) continue;
+    if (seenWebCollections.has(obj.collection)) continue;
+    seenWebCollections.add(obj.collection);
+    webCollectionEntries.push(
+      `    ${obj.collection}: SmrtWebCollectionDefinition<import('./smrt-objects').${obj.className}Data>;`,
+    );
+  }
+
+  const webDeclaration = `/**
+ * Auto-generated web collection-definition module declaration (spike #1756)
+ */
+declare module '@smrt/web' {
+  export interface SmrtWebFieldDefinition {
+    type: string;
+    required?: boolean;
+    default?: unknown;
+  }
+
+  export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
+    name: string;
+    className: string;
+    endpoint: string;
+    idField: string;
+    actions: string[];
+    fields: Record<string, SmrtWebFieldDefinition>;
+    /** Phantom row-type carrier for inference — never present at runtime. */
+    _row?: TData;
+  }
+
+  export interface SmrtWebCollectionDefinitions {
+${webCollectionEntries.join('\n')}
+  }
+
+  export const collectionDefinitions: SmrtWebCollectionDefinitions;
+  export function getCollectionDefinition<
+    K extends keyof SmrtWebCollectionDefinitions,
+  >(name: K): SmrtWebCollectionDefinitions[K];
+  export default collectionDefinitions;
+}`;
+
   // Generate routes module declaration
   const routesDeclaration = `/**
  * Auto-generated routes module declaration
@@ -277,6 +344,7 @@ ${objectImports}
   fs.writeFileSync(path.join(outDir, 'smrt-routes.d.ts'), routesDeclaration);
   fs.writeFileSync(path.join(outDir, 'smrt-mcp.d.ts'), mcpDeclaration);
   fs.writeFileSync(path.join(outDir, 'smrt-types.d.ts'), typesDeclaration);
+  fs.writeFileSync(path.join(outDir, 'smrt-web.d.ts'), webDeclaration);
 }
 
 /**
