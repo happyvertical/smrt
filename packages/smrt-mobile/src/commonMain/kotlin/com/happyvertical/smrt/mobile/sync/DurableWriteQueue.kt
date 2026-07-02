@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 
@@ -24,6 +25,9 @@ import kotlinx.datetime.Clock
  *   coalesce into the running flush — the overlapped call returns
  *   `alreadyRunning` after latching a rerun, and the running flush loops
  *   until no rerun is requested, so a trigger is never silently dropped.
+ *   Rerun passes skip entries already retried in this call: a failed send
+ *   waits for the next real trigger instead of hot-looping its attempt
+ *   budget away during an outage.
  * - **Attempt cap** (default 5): the claim step charges one attempt before
  *   each send; a retryable failure at the cap parks the entry as `failed`.
  *   A 401 abort refunds the charged attempt — an auth outage must not spend
@@ -123,6 +127,10 @@ class DurableWriteQueue(
     private val queries = database.queueEntryQueries
     private val flushLock = Mutex()
 
+    init {
+        require(maxAttempts >= 1) { "maxAttempts must be >= 1 (was $maxAttempts)" }
+    }
+
     @Volatile
     private var rerunRequested = false
 
@@ -189,9 +197,14 @@ class DurableWriteQueue(
     /**
      * Resets interrupted `uploading` rows to `pending`. Runs automatically at
      * the start of every flush pass; call eagerly at app start when recovered
-     * rows must show as pending before the first flush.
+     * rows must show as pending before the first flush. Serialized with
+     * [flush], so it can never reset a row this instance has in flight.
      */
-    suspend fun recoverInterrupted(): Unit = withContext(context) {
+    suspend fun recoverInterrupted() {
+        flushLock.withLock { sweepInterrupted() }
+    }
+
+    private suspend fun sweepInterrupted(): Unit = withContext(context) {
         queries.recoverInterrupted(
             pending = QueueEntryState.PENDING,
             now = nowMs(),
@@ -213,117 +226,143 @@ class DurableWriteQueue(
         var rejected = 0
         var retried = 0
         var failedTerminally = 0
+        var unauthorizedAbort = false
         val rejectedReasons = mutableListOf<String>()
+        // Entries already retried in THIS call: rerun passes skip them so a
+        // latched trigger drains new work without hot-looping failed sends.
+        val deferredIds = mutableSetOf<String>()
 
-        fun summary(unauthorized: Boolean = false) = FlushSummary(
+        fun summary() = FlushSummary(
             sent = sent,
             rejected = rejected,
             retried = retried,
             failedTerminally = failedTerminally,
-            unauthorized = unauthorized,
+            unauthorized = unauthorizedAbort,
             rejectedReasons = rejectedReasons.toList(),
         )
 
-        try {
-            do {
-                rerunRequested = false
-                recoverInterrupted()
-                for (entry in pending()) {
-                    // Claim (guarded): charges the attempt. Re-read so the cap
-                    // check and the sender both see exactly the claimed row.
-                    withContext(context) {
-                        queries.markUploading(
-                            uploading = QueueEntryState.UPLOADING,
-                            now = nowMs(),
-                            id = entry.id,
-                            pending = QueueEntryState.PENDING,
-                        )
-                    }
-                    val claimed = get(entry.id)
-                    if (claimed == null || claimed.state != QueueEntryState.UPLOADING) {
-                        // Replaced or removed after the snapshot — not ours.
-                        continue
-                    }
-
-                    val outcome = try {
-                        sender.send(claimed)
-                    } catch (cancellation: CancellationException) {
-                        // Cancelled mid-send: put the row back for the next
-                        // flush. The charged attempt stays spent — the send
-                        // may have reached the server.
-                        withContext(NonCancellable) {
-                            queries.setStateIfUploading(
-                                state = QueueEntryState.PENDING,
-                                lastError = "cancelled",
-                                now = nowMs(),
-                                id = claimed.id,
+        while (true) {
+            try {
+                passes@ do {
+                    rerunRequested = false
+                    sweepInterrupted()
+                    for (entry in pending()) {
+                        if (entry.id in deferredIds) continue
+                        // Claim (guarded): charges the attempt. Re-read so the
+                        // cap check and the sender both see the claimed row.
+                        withContext(context) {
+                            queries.markUploading(
                                 uploading = QueueEntryState.UPLOADING,
+                                now = nowMs(),
+                                id = entry.id,
+                                pending = QueueEntryState.PENDING,
                             )
                         }
-                        throw cancellation
-                    } catch (failure: Exception) {
-                        SendOutcome.Retryable(failure.message ?: "send failed")
-                    }
+                        val claimed = get(entry.id)
+                        if (claimed == null || claimed.state != QueueEntryState.UPLOADING) {
+                            // Replaced or removed after the snapshot — not ours.
+                            continue
+                        }
 
-                    when (outcome) {
-                        is SendOutcome.Success -> {
-                            withContext(context) {
-                                queries.deleteIfUploading(
-                                    id = claimed.id,
-                                    uploading = QueueEntryState.UPLOADING,
-                                )
-                            }
-                            sent++
-                        }
-                        is SendOutcome.Rejected -> {
-                            withContext(context) {
-                                queries.deleteIfUploading(
-                                    id = claimed.id,
-                                    uploading = QueueEntryState.UPLOADING,
-                                )
-                            }
-                            rejected++
-                            if (outcome.reason.isNotBlank()) {
-                                rejectedReasons.add(outcome.reason)
-                            }
-                        }
-                        is SendOutcome.Retryable -> {
-                            val terminal = claimed.attemptCount >= maxAttempts
-                            val applied = withContext(context) {
+                        val outcome = try {
+                            sender.send(claimed)
+                        } catch (cancellation: CancellationException) {
+                            // Cancelled mid-send: put the row back for the
+                            // next flush. The charged attempt stays spent —
+                            // the send may have reached the server.
+                            // NonCancellable rides on the db context so the
+                            // write stays off the caller's dispatcher.
+                            withContext(context + NonCancellable) {
                                 queries.setStateIfUploading(
-                                    state = if (terminal) {
-                                        QueueEntryState.FAILED
-                                    } else {
-                                        QueueEntryState.PENDING
-                                    },
-                                    lastError = outcome.reason,
-                                    now = nowMs(),
-                                    id = claimed.id,
-                                    uploading = QueueEntryState.UPLOADING,
-                                ).value > 0
-                            }
-                            if (applied) {
-                                if (terminal) failedTerminally++ else retried++
-                            }
-                        }
-                        is SendOutcome.Unauthorized -> {
-                            withContext(context) {
-                                queries.restoreAfterUnauthorized(
-                                    pending = QueueEntryState.PENDING,
-                                    lastError = "unauthorized",
+                                    state = QueueEntryState.PENDING,
+                                    lastError = "cancelled",
                                     now = nowMs(),
                                     id = claimed.id,
                                     uploading = QueueEntryState.UPLOADING,
                                 )
                             }
-                            return summary(unauthorized = true)
+                            throw cancellation
+                        } catch (failure: Exception) {
+                            SendOutcome.Retryable(failure.message ?: "send failed")
+                        }
+
+                        when (outcome) {
+                            is SendOutcome.Success -> {
+                                withContext(context) {
+                                    queries.deleteIfUploading(
+                                        id = claimed.id,
+                                        uploading = QueueEntryState.UPLOADING,
+                                    )
+                                }
+                                sent++
+                            }
+                            is SendOutcome.Rejected -> {
+                                withContext(context) {
+                                    queries.deleteIfUploading(
+                                        id = claimed.id,
+                                        uploading = QueueEntryState.UPLOADING,
+                                    )
+                                }
+                                rejected++
+                                if (outcome.reason.isNotBlank()) {
+                                    rejectedReasons.add(outcome.reason)
+                                }
+                            }
+                            is SendOutcome.Retryable -> {
+                                val terminal = claimed.attemptCount >= maxAttempts
+                                val applied = withContext(context) {
+                                    queries.setStateIfUploading(
+                                        state = if (terminal) {
+                                            QueueEntryState.FAILED
+                                        } else {
+                                            QueueEntryState.PENDING
+                                        },
+                                        lastError = outcome.reason,
+                                        now = nowMs(),
+                                        id = claimed.id,
+                                        uploading = QueueEntryState.UPLOADING,
+                                    ).value > 0
+                                }
+                                if (applied) {
+                                    if (terminal) {
+                                        failedTerminally++
+                                    } else {
+                                        retried++
+                                        deferredIds.add(claimed.id)
+                                    }
+                                }
+                            }
+                            is SendOutcome.Unauthorized -> {
+                                withContext(context) {
+                                    queries.restoreAfterUnauthorized(
+                                        pending = QueueEntryState.PENDING,
+                                        lastError = "unauthorized",
+                                        now = nowMs(),
+                                        id = claimed.id,
+                                        uploading = QueueEntryState.UPLOADING,
+                                    )
+                                }
+                                // A latched rerun is deliberately dropped on
+                                // 401 — it would 401 too. Re-auth flows
+                                // trigger a fresh flush; the stale latch is
+                                // cleared at that flush's first pass.
+                                unauthorizedAbort = true
+                                break@passes
+                            }
                         }
                     }
-                }
-            } while (rerunRequested)
-            return summary()
-        } finally {
+                } while (rerunRequested)
+            } catch (failure: Throwable) {
+                flushLock.unlock()
+                throw failure
+            }
+
+            // The latch can be set between the do-while check and this
+            // unlock; re-acquire and loop so that trigger is not dropped.
             flushLock.unlock()
+            if (unauthorizedAbort || !rerunRequested || !flushLock.tryLock()) {
+                return summary()
+            }
         }
     }
 

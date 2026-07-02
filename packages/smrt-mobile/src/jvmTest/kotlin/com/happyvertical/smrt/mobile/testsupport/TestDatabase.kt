@@ -8,18 +8,25 @@ import kotlinx.datetime.Instant
 /**
  * Shared jvmTest bootstrap for the SQLDelight database: in-memory by default,
  * file-backed (pass a `jdbc:sqlite:<path>` url with `createSchema = false` on
- * reopen) for process-death simulations.
+ * reopen) for process-death simulations. Use [newTestDriver] directly when
+ * the test must close the connection (restart simulations) — close the first
+ * driver before reopening the file.
  */
-fun newTestDatabase(
+fun newTestDriver(
     url: String = JdbcSqliteDriver.IN_MEMORY,
     createSchema: Boolean = true,
-): SmrtMobileDatabase {
+): JdbcSqliteDriver {
     val driver = JdbcSqliteDriver(url)
     if (createSchema) {
         SmrtMobileDatabase.Schema.create(driver)
     }
-    return SmrtMobileDatabase(driver)
+    return driver
 }
+
+fun newTestDatabase(
+    url: String = JdbcSqliteDriver.IN_MEMORY,
+    createSchema: Boolean = true,
+): SmrtMobileDatabase = SmrtMobileDatabase(newTestDriver(url, createSchema))
 
 /** Deterministic clock advancing one millisecond per read. */
 class SteppingClock(private var nowMs: Long = 1_000) : Clock {

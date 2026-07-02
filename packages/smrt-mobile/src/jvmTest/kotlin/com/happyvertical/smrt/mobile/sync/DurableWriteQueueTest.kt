@@ -1,7 +1,10 @@
 package com.happyvertical.smrt.mobile.sync
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.happyvertical.smrt.mobile.db.SmrtMobileDatabase
 import com.happyvertical.smrt.mobile.testsupport.FixedClock
 import com.happyvertical.smrt.mobile.testsupport.newTestDatabase
+import com.happyvertical.smrt.mobile.testsupport.newTestDriver
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
@@ -141,6 +144,31 @@ class DurableWriteQueueTest {
     }
 
     @Test
+    fun rerunPassSkipsEntriesAlreadyRetriedThisCall() = runBlocking {
+        val queue = DurableWriteQueue(newTestDatabase())
+        queue.enqueue(entry("e1"))
+        val gate = CompletableDeferred<Unit>()
+
+        val slowFlush = launch(Dispatchers.Default) {
+            queue.flush {
+                if (!gate.isCompleted) gate.await()
+                SendOutcome.Retryable("http 503")
+            }
+        }
+        queue.awaitUploading()
+        // Latch a rerun while e1's send is in flight…
+        assertTrue(queue.flush { SendOutcome.Retryable("http 503") }.alreadyRunning)
+        gate.complete(Unit)
+        slowFlush.join()
+
+        // …the rerun pass must not immediately re-send e1: retries wait for
+        // the next real trigger, so exactly one attempt is spent.
+        val after = assertNotNull(queue.get("e1"))
+        assertEquals(1, after.attemptCount)
+        assertEquals(QueueEntryState.PENDING, after.state)
+    }
+
+    @Test
     fun reEnqueueDuringInFlightSendSurvivesStaleSuccess() = runBlocking {
         val queue = DurableWriteQueue(newTestDatabase())
         queue.enqueue(entry("e1", payload = """{"v":"a"}"""))
@@ -219,9 +247,10 @@ class DurableWriteQueueTest {
     @Test
     fun interruptedUploadRecoversAfterRestart() = runBlocking {
         val dbFile = createTempFile("smrt-mobile-queue", ".db")
+        val firstProcess = newTestDriver("jdbc:sqlite:${dbFile.toAbsolutePath()}")
+        var secondProcess: JdbcSqliteDriver? = null
         try {
-            val url = "jdbc:sqlite:${dbFile.toAbsolutePath()}"
-            val database = newTestDatabase(url)
+            val database = SmrtMobileDatabase(firstProcess)
             DurableWriteQueue(database).enqueue(entry("e1"))
             // Simulate process death mid-upload: the row is left `uploading`
             // and this "process" never completes the send.
@@ -231,8 +260,13 @@ class DurableWriteQueueTest {
                 id = "e1",
                 pending = QueueEntryState.PENDING,
             )
+            firstProcess.close()
 
-            val restarted = DurableWriteQueue(newTestDatabase(url, createSchema = false))
+            secondProcess = newTestDriver(
+                "jdbc:sqlite:${dbFile.toAbsolutePath()}",
+                createSchema = false,
+            )
+            val restarted = DurableWriteQueue(SmrtMobileDatabase(secondProcess))
             assertEquals(1, restarted.stats().uploading)
 
             // Eager recovery surfaces the row before any flush…
@@ -244,6 +278,7 @@ class DurableWriteQueueTest {
             // …and a flush re-sends it.
             assertEquals(1, restarted.flush { SendOutcome.Success }.sent)
         } finally {
+            secondProcess?.close()
             dbFile.deleteIfExists()
         }
     }
