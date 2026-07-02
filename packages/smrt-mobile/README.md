@@ -80,9 +80,9 @@ in Phase 6, #1743).
 
 ## Roadmap (epic #1745)
 
-- Phase 2 (#1739): durable offline write-queue + evidence store (SQLDelight),
-  carrying reporter's `pending → uploading → synced → failed` semantics,
-  single-flight coalesced flush, attempt cap, crash recovery, idempotency keys.
+- Phase 2 (#1739) — **landed**: durable offline write-queue + pack store
+  (SQLDelight), carrying reporter's semantics: single-flight coalesced flush,
+  attempt cap, `uploading → pending` crash recovery, idempotency keys.
 - Phase 3 (#1740): PKCE/OIDC session module + platform browser/deep-link seams.
 - Phase 3.5 (#1748): `/api/mobile` server handlers in `smrt-users`.
 - Phase 4 (#1741): shared Ktor client (bearer + multipart + retry).

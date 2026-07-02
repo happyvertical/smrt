@@ -1,0 +1,53 @@
+-- Durable offline write-queue (ADR 0001 Phase 2). Semantics seeded from
+-- anytown reporter's ContributionStore: pending → uploading → (deleted on
+-- sync) / failed; `synced` never persists — a successful send deletes the row.
+
+CREATE TABLE queue_entry (
+  id TEXT NOT NULL PRIMARY KEY,
+  kind TEXT NOT NULL,
+  tenant_id TEXT NOT NULL DEFAULT '',
+  payload TEXT NOT NULL,
+  state TEXT NOT NULL,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at_epoch_ms INTEGER NOT NULL,
+  updated_at_epoch_ms INTEGER NOT NULL
+);
+
+CREATE INDEX queue_entry_state ON queue_entry(state, created_at_epoch_ms);
+
+insertOrReplace:
+INSERT OR REPLACE INTO queue_entry(
+  id, kind, tenant_id, payload, state, attempt_count, last_error,
+  created_at_epoch_ms, updated_at_epoch_ms
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectById:
+SELECT * FROM queue_entry WHERE id = ?;
+
+selectByState:
+SELECT * FROM queue_entry WHERE state = ? ORDER BY created_at_epoch_ms ASC, id ASC;
+
+selectAll:
+SELECT * FROM queue_entry ORDER BY created_at_epoch_ms ASC, id ASC;
+
+markUploading:
+UPDATE queue_entry
+SET state = 'uploading', attempt_count = attempt_count + 1, updated_at_epoch_ms = ?
+WHERE id = ?;
+
+setState:
+UPDATE queue_entry SET state = ?, last_error = ?, updated_at_epoch_ms = ? WHERE id = ?;
+
+recoverInterrupted:
+UPDATE queue_entry SET state = 'pending', updated_at_epoch_ms = ? WHERE state = 'uploading';
+
+deleteById:
+DELETE FROM queue_entry WHERE id = ?;
+
+deleteByState:
+DELETE FROM queue_entry WHERE state = ?;
+
+countByState:
+SELECT COUNT(*) FROM queue_entry WHERE state = ?;
