@@ -330,7 +330,12 @@ export class APIGenerator {
         case 'GET':
           return objectId
             ? await this.handleGet(collection, objectId, req, objectName)
-            : await this.handleList(collection, url.searchParams, req, objectName);
+            : await this.handleList(
+                collection,
+                url.searchParams,
+                req,
+                objectName,
+              );
 
         case 'POST':
           return await this.handleCreate(collection, req, objectName);

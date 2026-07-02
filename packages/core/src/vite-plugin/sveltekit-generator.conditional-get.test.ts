@@ -106,9 +106,13 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     );
 
     // Mutation handlers stay as-is (plain json responses, no conditional).
-    expect(collectionRoute).toContain('return json(item.toPublicJSON(), { status: 201 });');
+    expect(collectionRoute).toContain(
+      'return json(item.toPublicJSON(), { status: 201 });',
+    );
     expect(itemRoute).toContain('export const PUT: RequestHandler');
-    expect(itemRoute).toMatch(/PUT[\s\S]*return json\(item\.toPublicJSON\(\)\);/);
+    expect(itemRoute).toMatch(
+      /PUT[\s\S]*return json\(item\.toPublicJSON\(\)\);/,
+    );
   });
 
   it('bakes the private default policy into routes for non-public models', async () => {

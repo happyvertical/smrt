@@ -139,9 +139,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
     });
 
     it('list responses carry a strong ETag and the private default policy', async () => {
-      const res = await handler(
-        new Request('http://local/api/v1/publicplain'),
-      );
+      const res = await handler(new Request('http://local/api/v1/publicplain'));
       expect(res.status).toBe(200);
       expect(res.headers.get('etag')).toMatch(/^"[A-Za-z0-9_-]+"$/);
       expect(res.headers.get('cache-control')).toBe('private, no-cache');
@@ -268,9 +266,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
     });
 
     it('public without a cache opt-in stays private', async () => {
-      const res = await handler(
-        new Request('http://local/api/v1/publicplain'),
-      );
+      const res = await handler(new Request('http://local/api/v1/publicplain'));
       expect(res.headers.get('cache-control')).toBe('private, no-cache');
     });
 
@@ -280,9 +276,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
       const id = ((await created.json()) as any).id;
 
       for (const path of ['privatecached', `privatecached/${id}`]) {
-        const res = await handler(
-          new Request(`http://local/api/v1/${path}`),
-        );
+        const res = await handler(new Request(`http://local/api/v1/${path}`));
         expect(res.status).toBe(200);
         const cacheControl = res.headers.get('cache-control') as string;
         expect(cacheControl).toBe('private, no-cache');

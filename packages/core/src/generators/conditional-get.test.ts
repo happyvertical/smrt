@@ -67,9 +67,7 @@ describe('ifNoneMatchSatisfied (#1757)', () => {
 
 describe('resolveReadCacheControl policy matrix (#1757)', () => {
   it('defaults to private, no-cache for missing/boolean/invalid config', () => {
-    expect(resolveReadCacheControl(undefined)).toBe(
-      PRIVATE_READ_CACHE_CONTROL,
-    );
+    expect(resolveReadCacheControl(undefined)).toBe(PRIVATE_READ_CACHE_CONTROL);
     expect(resolveReadCacheControl(true)).toBe(PRIVATE_READ_CACHE_CONTROL);
     expect(resolveReadCacheControl(false)).toBe(PRIVATE_READ_CACHE_CONTROL);
     expect(resolveReadCacheControl('nope')).toBe(PRIVATE_READ_CACHE_CONTROL);
@@ -111,7 +109,13 @@ describe('resolveReadCacheControl policy matrix (#1757)', () => {
   });
 
   it('ignores non-positive or non-numeric sMaxage values', () => {
-    for (const sMaxage of [0, -5, Number.NaN, Number.POSITIVE_INFINITY, '300']) {
+    for (const sMaxage of [
+      0,
+      -5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      '300',
+    ]) {
       expect(
         resolveReadCacheControl({ public: true, cache: { sMaxage } }),
       ).toBe(PRIVATE_READ_CACHE_CONTROL);
@@ -204,9 +208,7 @@ describe('generated SvelteKit route helper snippet (#1757)', () => {
       payload,
     );
     expect(first.status).toBe(200);
-    expect(first.headers.get('cache-control')).toBe(
-      PRIVATE_READ_CACHE_CONTROL,
-    );
+    expect(first.headers.get('cache-control')).toBe(PRIVATE_READ_CACHE_CONTROL);
     const etag = first.headers.get('etag');
     expect(etag).toMatch(/^"[A-Za-z0-9_-]+"$/);
     expect(await first.json()).toEqual(payload);
