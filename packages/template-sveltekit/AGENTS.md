@@ -12,7 +12,8 @@ Base SvelteKit project template used by `smrt init`. Scaffolds a full-stack, mul
 
 - `template/src/hooks.server.ts` — pre-wires `enableTenancy()`, `createSessionHandler({ enterTenantContext: true })`, and a subdomain → tenantId handle, sequenced in that order
 - `template/src/lib/server/tenancy.ts` — pluggable tenant resolver (`subdomainStrategy`, `pathPrefixStrategy`, `headerStrategy`, `createTenantResolver`)
-- `template/src/lib/server/smrt.ts` — centralized SmrtClassOptions / collection factory
+- `template/src/lib/server/smrt.ts` — centralized SmrtClassOptions / collection factory; imports the plugin-generated `smrt-register.js` (guarded — the file is gitignored and regenerated on every dev/build run) and seeds `.smrt/manifest.json` so server runtimes get package-qualified registrations + scanned field metadata (without them, writes silently drop domain columns)
+- `template/vite.config.ts` — smrtPlugin() + smrtConsumer(), plus explicit `oxc: { decorator: { legacy: true } }` (Vite 8's oxc transform does not reliably honor `experimentalDecorators` through the SvelteKit tsconfig `extends` chain)
 - `template/src/lib/objects/Item.ts` — example `@smrt()` object
 - `template/src/routes/+page.server.ts` + `+page.svelte` — reference SSR data loading: server load queries collections directly (opt-in read cache via `cache: { ttl }`), declares `depends('smrt:items')`, and a form action + `invalidate('smrt:items')` demonstrates post-mutation refresh
 - `template/src/app.d.ts` — `App.Locals` extends `SessionLocals` from `@happyvertical/smrt-users/sveltekit`

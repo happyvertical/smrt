@@ -4,6 +4,18 @@ import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // Lower `@smrt()` legacy (experimentalDecorators) decorators explicitly.
+  // tsconfig.json sets experimentalDecorators, but Vite's oxc transform does
+  // not reliably honor it through the SvelteKit `extends
+  // "./.svelte-kit/tsconfig.json"` chain — raw `@decorator class` syntax then
+  // reaches the SSR runtime and throws `SyntaxError: Invalid or unexpected
+  // token` on the first request.
+  oxc: {
+    decorator: {
+      legacy: true,
+      emitDecoratorMetadata: true,
+    },
+  },
   plugins: [
     sveltekit(),
     smrtPlugin({
