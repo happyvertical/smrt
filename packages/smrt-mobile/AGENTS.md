@@ -5,12 +5,14 @@ non-TypeScript package in the monorepo. Design: **ADR 0001**
 (`docs/content/adr/0001-kmp-mobile-foundation.md`) + extraction plan; epic
 #1745. Decision record: `README.md` here and issue #1737.
 
-**Status: Phase 2.** Present: framework contract types, pack i18n resolver,
+**Status: Phase 3.** Present: framework contract types, pack i18n resolver,
 pack integrity/snapshot model, evidence-capture model, shell state, platform
-seams, and the **durable SQLDelight-backed offline write-queue + pack store**
-(Phase 2, #1739). NOT here yet (later phases — do not add ad hoc):
-auth/session (Phase 3, #1740), Ktor networking (Phase 4, #1741).
-**Productionize, don't lift** governs all porting from the seed apps.
+seams, the **durable SQLDelight-backed offline write-queue + pack store**
+(Phase 2, #1739), and the **PKCE auth/session module** (Phase 3, #1740).
+NOT here yet (later phases — do not add ad hoc): Ktor networking (Phase 4,
+#1741 — `AuthTransport`/`QueueSender` are its seams), platform adapters
+(Phases 5–6). **Productionize, don't lift** governs all porting from the
+seed apps.
 
 ## Layout
 
@@ -25,6 +27,15 @@ consumers use Gradle `includeBuild`).
   DTOs). Owner: `@happyvertical/smrt-mobile-contract`. Regenerate:
   `pnpm --filter @happyvertical/smrt-mobile-contract generate:framework`.
   Never edit by hand; the contract package's build verifies freshness.
+- `src/commonMain/kotlin/.../auth/` — `MobileSessionManager`: server-brokered
+  PKCE (begin → platform launcher opens the authorization URL → deep-link
+  redirect → `state` validation → code exchange → persisted session). The
+  pending handshake persists so the browser hand-off survives process death.
+  Seams: `AuthStorage` (Keystore/Keychain in Phases 5–6 — the reporter's
+  SharedPreferences/UserDefaults is explicitly the thing to upgrade),
+  `AuthTransport` (Phase 4 Ktor), `ExternalAuthLauncher` (custom tab /
+  ASWebAuthenticationSession). `onUnauthorized()` is the networking client's
+  401 hook: clears the session; the write-queue keeps its entries.
 - `src/commonMain/kotlin/.../i18n/` — `PackTextResolver`: requested →
   fallback → source locale chain with review-state/safety-critical
   provenance.
@@ -81,13 +92,14 @@ pnpm test:gradle        # ./gradlew allTests
 
 CI: every PR runs `validate:shell` via turbo build; `.github/workflows/mobile.yml`
 runs the real Gradle build+tests when `packages/smrt-mobile/**` changes
-(ubuntu), and iOS-target compilation nightly/on-demand (macOS). Gradle
-wrapper (8.14.4) is checked in — always invoke via `./gradlew`.
+(ubuntu), and iOS-target compilation nightly/on-demand (macOS). The Gradle
+wrapper is checked in — always invoke via `./gradlew`.
 
 ## Conventions
 
-- Kotlin 2.2.21 / AGP 8.13.1 / compileSdk 36 / minSdk 26 / JVM toolchain 21 /
-  iOS deployment 17.0 — reporter-proven set; bump deliberately in
+- Kotlin 2.4.0 / AGP 9.2.1 (androidKmpLibrary DSL) / Gradle 9.6.1 /
+  compileSdk 36 / minSdk 26 / JVM toolchain 21 / iOS deployment 17.0 —
+  renovate keeps these current; bump deliberately in
   `gradle/libs.versions.toml`.
 - commonMain dependencies stay minimal (kotlinx-serialization,
   kotlinx-datetime, kotlinx-coroutines, SQLDelight runtime). Ktor arrives in
