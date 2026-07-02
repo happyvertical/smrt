@@ -86,6 +86,12 @@ if (releasePackageNames.size === 0) {
   fail('No fixed release package names found in .changeset/config.json');
 }
 
+// Private workspace members may sit in the fixed release group so their
+// version rides the release train without ever publishing to npm (e.g.
+// @happyvertical/smrt-mobile — Kotlin/Gradle, ADR 0001). Changesets versions
+// them; the publish set below excludes them.
+const privateWorkspacePackageNames = new Set();
+
 const publishablePackages = readdirSync(packagesDir, { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => {
@@ -101,10 +107,12 @@ const publishablePackages = readdirSync(packagesDir, { withFileTypes: true })
     const isReleasePackage = releasePackageNames.has(packageName);
     const isExplicitlyPublishable = Boolean(packageJson.publishConfig);
 
-    if (
-      packageJson.private === true ||
-      (!isReleasePackage && !isExplicitlyPublishable)
-    ) {
+    if (packageJson.private === true) {
+      privateWorkspacePackageNames.add(packageName);
+      return null;
+    }
+
+    if (!isReleasePackage && !isExplicitlyPublishable) {
       return null;
     }
 
@@ -120,7 +128,9 @@ const discoveredPackageNames = new Set(
   publishablePackages.map((pkg) => pkg.name),
 );
 const missingReleasePackages = [...releasePackageNames].filter(
-  (packageName) => !discoveredPackageNames.has(packageName),
+  (packageName) =>
+    !discoveredPackageNames.has(packageName) &&
+    !privateWorkspacePackageNames.has(packageName),
 );
 
 if (missingReleasePackages.length > 0) {

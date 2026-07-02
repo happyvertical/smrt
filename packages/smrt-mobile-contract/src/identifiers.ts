@@ -135,7 +135,13 @@ export function kotlinStringLiteral(value: string): string {
         break;
       default: {
         const code = char.codePointAt(0) ?? 0;
-        out += code < 0x20 ? `\\u${code.toString(16).padStart(4, '0')}` : char;
+        // Control chars and lone surrogates must be \u-escaped: a raw lone
+        // surrogate would be written to disk as U+FFFD, silently corrupting
+        // the literal.
+        out +=
+          code < 0x20 || (code >= 0xd800 && code <= 0xdfff)
+            ? `\\u${code.toString(16).padStart(4, '0')}`
+            : char;
       }
     }
   }

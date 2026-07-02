@@ -53,33 +53,45 @@ describe('frameworkSwiftFiles', () => {
 
   it('stays field-for-field in sync with the Kotlin framework contract', () => {
     // Both templates are generated text with fixed shapes, so parsing them
-    // is reliable: every Swift struct must have a Kotlin data class twin
-    // with the identical ordered field-name list. Catches the hand-edited
-    // Kotlin / stale Swift drift (and vice versa) that byte-freshness alone
-    // cannot see.
+    // is reliable. Bidirectional: the Swift struct set must be exactly the
+    // Kotlin data-class set minus the deliberately Kotlin-only pack
+    // localization types, and each twin must carry the identical ordered
+    // field-name list — catching drift in either direction that
+    // byte-freshness alone cannot see.
+    const KOTLIN_ONLY_TYPES = new Set([
+      'PackLanguage',
+      'PackTextSourceRef',
+      'PackLanguageBundle',
+    ]);
+
     const kotlin = [...frameworkKotlinFiles().values()].join('\n');
     const swift = frameworkSwiftFiles().get('MobileContract.swift') ?? '';
 
     const kotlinTypes = new Map<string, string[]>();
-    for (const match of kotlin.matchAll(
-      /data class (\w+)\(\n([\s\S]*?)\n\)/g,
-    )) {
+    for (const match of kotlin.matchAll(/data class (\w+)\(([\s\S]*?)\n\)/g)) {
       kotlinTypes.set(
         match[1],
         [...match[2].matchAll(/^ {4}val (\w+):/gm)].map((field) => field[1]),
       );
     }
 
-    const swiftStructs = [
-      ...swift.matchAll(/struct (\w+) \{\n([\s\S]*?)\n\}/g),
-    ];
-    expect(swiftStructs.length).toBeGreaterThanOrEqual(12);
-
-    for (const [, name, body] of swiftStructs) {
-      const swiftFields = [...body.matchAll(/^ {2}let `?(\w+)`?:/gm)].map(
-        (field) => field[1],
+    const swiftTypes = new Map<string, string[]>();
+    for (const match of swift.matchAll(/struct (\w+) \{([\s\S]*?)\n\}/g)) {
+      swiftTypes.set(
+        match[1],
+        [...match[2].matchAll(/^ {2}let `?(\w+)`?:/gm)].map(
+          (field) => field[1],
+        ),
       );
-      expect(kotlinTypes.get(name), `Kotlin twin for struct ${name}`).toEqual(
+    }
+
+    const expectedSwiftNames = [...kotlinTypes.keys()]
+      .filter((name) => !KOTLIN_ONLY_TYPES.has(name))
+      .sort();
+    expect([...swiftTypes.keys()].sort()).toEqual(expectedSwiftNames);
+
+    for (const [name, swiftFields] of swiftTypes) {
+      expect(kotlinTypes.get(name), `field list for ${name}`).toEqual(
         swiftFields,
       );
     }

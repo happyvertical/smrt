@@ -41,8 +41,9 @@ const RELATION_FIELD_TYPES = new Set(['oneToMany', 'manyToMany', 'hasMany']);
 
 const SWIFT_TYPE_BY_KOTLIN_TYPE: Record<string, string> = {
   String: 'String',
-  // Swift Int is 64-bit on all Apple targets.
-  Long: 'Int',
+  // Explicit Int64: Swift Int is 32-bit on watchOS arm64_32/armv7k, and the
+  // whole point of Long is byte-size/epoch values that overflow 32 bits.
+  Long: 'Int64',
   Boolean: 'Bool',
   'Instant?': 'String?',
   'DecimalString?': 'String?',
@@ -83,7 +84,9 @@ export function buildMobileContract(
   const { manifests, allowlist, kotlinPackage, sourceLabel = '' } = options;
   const candidates = manifests.flatMap(listObjects);
 
-  const objects = allowlist.map((entry) => {
+  const objects: MobileContractObject[] = [];
+  const seenQualifiedNames = new Set<string>();
+  for (const entry of allowlist) {
     const matches = candidates.filter(
       (object) => object.name === entry || object.qualifiedName === entry,
     );
@@ -98,8 +101,15 @@ export function buildMobileContract(
         `mobile allowlist entry "${entry}" is ambiguous (${found}) — use the qualified name`,
       );
     }
-    return toMobileObject(matches[0]);
-  });
+    const qualifiedName = matches[0].qualifiedName ?? matches[0].name;
+    if (seenQualifiedNames.has(qualifiedName)) {
+      // The same object listed under two spellings (short + qualified) is
+      // redundant, not a collision — project it once.
+      continue;
+    }
+    seenQualifiedNames.add(qualifiedName);
+    objects.push(toMobileObject(matches[0]));
+  }
 
   const dtoNameOwners = new Map<string, string>();
   for (const object of objects) {

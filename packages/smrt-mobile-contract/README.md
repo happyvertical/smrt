@@ -64,7 +64,7 @@ writeFileSync(
 | Manifest `type` | Kotlin | Swift |
 |---|---|---|
 | `text` / `status` / `foreignKey` / `crossPackageRef` | `String` | `String` |
-| `integer` | `Long` (64-bit — byte sizes/epochs overflow `Int`) | `Int` |
+| `integer` | `Long` (64-bit — byte sizes/epochs overflow `Int`) | `Int64` |
 | `decimal` | `DecimalString?` (string-encoded, no float precision loss) | `String?` |
 | `boolean` | `Boolean` | `Bool` |
 | `datetime` | `Instant?` | `String?` |

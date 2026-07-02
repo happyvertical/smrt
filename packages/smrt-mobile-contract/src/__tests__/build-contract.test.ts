@@ -82,8 +82,21 @@ describe('buildMobileContract', () => {
     expect(fields.get('created_at')?.swiftType).toBe('String?');
     expect(fields.get('confidence')?.swiftType).toBe('String?');
     expect(fields.get('approved')?.swiftType).toBe('Bool');
-    expect(fields.get('revision')?.swiftType).toBe('Int');
+    // Int64, not Int — Swift Int is 32-bit on watchOS arm64_32.
+    expect(fields.get('revision')?.swiftType).toBe('Int64');
     expect(fields.get('metadataJson')?.swiftType).toBe('String');
+  });
+
+  it('projects a redundantly-spelled allowlist entry once', () => {
+    const contract = buildMobileContract({
+      ...baseOptions,
+      allowlist: ['Attachment', '@happyvertical/fixture-objects:Attachment'],
+    });
+
+    expect(contract.objectCount).toBe(1);
+    expect(contract.objects.map((object) => object.name)).toEqual([
+      'Attachment',
+    ]);
   });
 
   it('escapes Kotlin-special characters in string defaults', () => {
