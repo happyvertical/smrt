@@ -16,6 +16,15 @@ tools, and agent/developer knowledge artifacts.
 
 ## Package Guidance
 
+- Load page data in `+page.server.ts` server loads that query collections
+  directly (see `src/routes/+page.server.ts`); never fetch `/api/*` from
+  `$effect`/`onMount` for initial page data.
+- Declare `depends('smrt:<collection>')` in loads (route segment naming:
+  `/api/items` → `smrt:items`) and call `invalidate('smrt:<collection>')`
+  after mutations to refresh in place.
+- Opt read-heavy SSR reads into the collection cache with
+  `list({ cache: { ttl } })`; skip it for per-user data and admin editors
+  (see README "Data loading").
 - Keep SMRT object relationship metadata close to the `@smrt()` decorator.
 - Use `knowledge: false` only for objects that should stay out of authored
   agent context while remaining in the runtime manifest.

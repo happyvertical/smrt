@@ -7,6 +7,7 @@ SvelteKit project template with SMRT framework integration. Scaffolds a full-sta
 - SvelteKit 2.x with Svelte 5 and TypeScript
 - `smrtPlugin()` Vite integration for automatic REST API route generation
 - Example `@smrt()` object (`Item.ts`) with barrel export
+- Reference SSR data loading: `+page.server.ts` server load with the `depends('smrt:<collection>')` / `invalidate('smrt:<collection>')` refresh convention and opt-in collection read caching
 - Server-side SMRT initialization (`src/lib/server/smrt.ts`)
 - `smrt.config.ts` with SQLite database and optional AI provider
 - `.env.example` with starter environment variables
@@ -84,6 +85,7 @@ template/
     │       ├── smrt.ts     # Server-side SMRT initialization
     │       └── tenancy.ts  # Pluggable tenant resolver
     └── routes/
+        ├── +page.server.ts # Home page server load + demo mutation (reference pattern)
         └── +page.svelte    # Home page
 ```
 

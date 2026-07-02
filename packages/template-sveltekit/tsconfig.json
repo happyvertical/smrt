@@ -12,5 +12,10 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "include": ["__tests__/**/*.ts", "template/src/lib/server/tenancy.ts"]
+  // `template/src` must stay included: vitest's vite:oxc transform resolves
+  // each imported template file's tsconfig by matching these include
+  // patterns, and fails with "Tsconfig not found" for template sources it
+  // can't match (the template's own tsconfig.json extends the `.svelte-kit/`
+  // stub and is not what gets discovered for files imported from tests).
+  "include": ["__tests__/**/*.ts", "template/src/**/*.ts"]
 }

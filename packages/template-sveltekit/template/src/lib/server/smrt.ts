@@ -5,7 +5,11 @@
  * Import this file in your routes to get properly configured collections.
  */
 
-import { ObjectRegistry, type SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtClassOptions,
+  type SmrtObject,
+} from '@happyvertical/smrt-core';
 
 // Import all SMRT objects to register them
 import '../objects/index.js';
@@ -67,7 +71,7 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
  *   const products = await getCollection<Product>('Product');
  *   const items = await products.list();
  */
-export async function getCollection<T>(className: string) {
+export async function getCollection<T extends SmrtObject>(className: string) {
   const config = getSmrtConfig(className);
   const objectOverride = objectOverrides[className];
   const requestScopedDb = objectOverride?.db
