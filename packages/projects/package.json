@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-projects",
-  "version": "0.37.4",
+  "version": "0.37.5",
   "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
   "type": "module",
   "smrtRawPrimitives": "strict",

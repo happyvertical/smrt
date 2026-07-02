@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.37.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - inline package manifest into **smrt-register** at build time (#1747) (core)
+  - @happyvertical/smrt-config@0.37.5
+  - @happyvertical/smrt-types@0.37.5
+  - @happyvertical/smrt-scanner@0.37.5
+
 ## 0.37.4
 
 ### Patch Changes
