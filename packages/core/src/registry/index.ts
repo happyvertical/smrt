@@ -59,6 +59,7 @@ export {
 // Types
 export type {
   ApiConfig,
+  ApiHttpCacheConfig,
   RegisteredClass,
   RelationshipMetadata,
   RelationshipType,

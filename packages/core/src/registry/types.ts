@@ -168,6 +168,35 @@ export interface ApiConfig {
    * fields are always stripped to prevent mass-assignment.
    */
   writable?: string[];
+
+  /**
+   * HTTP cache policy for generated read (`list`/`get`) responses (#1757).
+   *
+   * Generated reads always carry a strong body-hash ETag and honor
+   * `If-None-Match` with `304 Not Modified`. By default they are served
+   * `Cache-Control: private, no-cache` — browsers may store them but must
+   * revalidate, and shared caches never store them.
+   *
+   * Distinct from the top-level `@smrt({ cache })` knob, which configures the
+   * server-side collection read-through cache (#1499).
+   */
+  cache?: ApiHttpCacheConfig;
+}
+
+/**
+ * HTTP caching knob for generated read routes (#1757).
+ */
+export interface ApiHttpCacheConfig {
+  /**
+   * Opt-in shared-cache TTL, in seconds, for generated read responses:
+   * emits `Cache-Control: public, max-age=0, s-maxage=<n>` so CDNs/shared
+   * caches may serve reads for `n` seconds while browsers still revalidate.
+   *
+   * Only honored when the model's reads are public (`public: true` or
+   * `public: 'read'`); non-public models never emit shared-cache headers.
+   * Values that are not positive finite numbers are ignored.
+   */
+  sMaxage?: number;
 }
 
 export interface ReportConfig {

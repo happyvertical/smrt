@@ -1774,8 +1774,9 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'items.map((item) => serializeItemResponse(item))',
       );
+      // List reads respond via the conditional-GET helper (#1757).
       expect(collectionContent).toContain(
-        'return json({ items: serializedItems, count, limit, offset });',
+        'return conditionalJson(request, { items: serializedItems, count, limit, offset });',
       );
       expect(collectionContent).toContain(
         'const serializedItem = await serializeItemResponse(item);',

@@ -5,6 +5,14 @@
 export type { CLIConfig, CLIContext } from './cli';
 // CLI Generator
 export { CLIGenerator, getCLIHandler, setupCLI } from './cli';
+// Conditional GET for generated read routes (#1757)
+export {
+  computeBodyEtag,
+  conditionalJsonResponse,
+  ifNoneMatchSatisfied,
+  PRIVATE_READ_CACHE_CONTROL,
+  resolveReadCacheControl,
+} from './conditional-get';
 export type {
   MCPConfig,
   MCPContext,

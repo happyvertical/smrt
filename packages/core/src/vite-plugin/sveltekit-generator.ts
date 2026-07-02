@@ -13,6 +13,7 @@ import {
 } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
+import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -1839,18 +1840,18 @@ function generateCollectionRouteTemplate(
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
-import { error, json } from '@sveltejs/kit';
+import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
 ${
   serializerImports ? `${serializerImports}\n` : ''
 }import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}`;
+${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api) : ''}`;
 
   const getHandler = hasGet
     ? `
 // List all ${className.toLowerCase()}s
-export const GET: RequestHandler = async ({ locals, url }) => {
+export const GET: RequestHandler = async ({ locals, url, request }) => {
 ${routeGuardPreamble(objectDef, false)}
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
@@ -1865,10 +1866,10 @@ ${
     items.map((item) => ${serializers.listItemSerializerName}(item)),
   );
 
-  return json({ items: serializedItems, count, limit, offset });`
+  return conditionalJson(request, { items: serializedItems, count, limit, offset });`
     : `
   const items_public = items.map((item) => item.toPublicJSON());
-  return json({ items: items_public, count, limit, offset });`
+  return conditionalJson(request, { items: items_public, count, limit, offset });`
 }
 };
 `
@@ -1980,15 +1981,15 @@ function generateItemRouteTemplate(
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
-import { error, json } from '@sveltejs/kit';
+import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}`;
+${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api) : ''}`;
 
   const getHandler = hasGet
     ? `
 // Get single ${simpleClassName.toLowerCase()}
-export const GET: RequestHandler = async ({ locals, params }) => {
+export const GET: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, false)}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
@@ -1998,9 +1999,9 @@ ${
     ? `
   const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(serializedItem);`
+  return conditionalJson(request, serializedItem);`
     : `
-  return json(item.toPublicJSON());`
+  return conditionalJson(request, item.toPublicJSON());`
 }
 };
 `
