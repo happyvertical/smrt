@@ -1,3 +1,4 @@
+import { swiftIdentifier } from './identifiers.js';
 import type { MobileContract, MobileContractField } from './types.js';
 
 /**
@@ -20,7 +21,7 @@ export function generateSwiftDtoFile(contract: MobileContract): string {
   for (const object of contract.objects) {
     lines.push(`struct ${object.dtoName} {`);
     for (const field of object.fields) {
-      lines.push(`  let ${field.name}: ${swiftType(field)}`);
+      lines.push(`  let ${swiftIdentifier(field.name)}: ${swiftType(field)}`);
     }
     lines.push('}', '');
   }

@@ -51,7 +51,8 @@ describe('buildMobileContract', () => {
     expect(fields.get('created_at')?.kotlinType).toBe('Instant?');
     expect(fields.get('projectId')?.kotlinType).toBe('String');
     expect(fields.get('ownerRef')?.kotlinType).toBe('String');
-    expect(fields.get('revision')?.kotlinType).toBe('Int');
+    // 64-bit: SMRT integer columns can exceed Int range (byte sizes, epochs).
+    expect(fields.get('revision')?.kotlinType).toBe('Long');
     expect(fields.get('revision')?.kotlinDefault).toBe('1');
     expect(fields.get('confidence')?.kotlinType).toBe('DecimalString?');
     expect(fields.get('confidence')?.kotlinDefault).toBe('null');
@@ -81,7 +82,59 @@ describe('buildMobileContract', () => {
     expect(fields.get('created_at')?.swiftType).toBe('String?');
     expect(fields.get('confidence')?.swiftType).toBe('String?');
     expect(fields.get('approved')?.swiftType).toBe('Bool');
+    expect(fields.get('revision')?.swiftType).toBe('Int');
     expect(fields.get('metadataJson')?.swiftType).toBe('String');
+  });
+
+  it('escapes Kotlin-special characters in string defaults', () => {
+    const contract = buildMobileContract({
+      ...baseOptions,
+      manifests: [
+        {
+          objects: {
+            Doc: {
+              name: 'Doc',
+              qualifiedName: 'fixture:Doc',
+              fields: {
+                label: {
+                  type: 'text',
+                  default: 'Total: $amount "quoted" \\slash',
+                },
+              },
+            },
+          },
+        },
+      ],
+      allowlist: ['Doc'],
+    });
+    const label = contract.objects[0].fields.find(
+      (field) => field.name === 'label',
+    );
+
+    expect(label?.kotlinDefault).toBe(
+      '"Total: \\$amount \\"quoted\\" \\\\slash"',
+    );
+  });
+
+  it('rejects allowlists that produce duplicate DTO names', () => {
+    const twin = (pkg: string): SmrtManifest => ({
+      packageName: pkg,
+      objects: {
+        [`${pkg}:Note`]: {
+          name: 'Note',
+          qualifiedName: `${pkg}:Note`,
+          fields: {},
+        },
+      },
+    });
+
+    expect(() =>
+      buildMobileContract({
+        ...baseOptions,
+        manifests: [twin('@a/pkg'), twin('@b/pkg')],
+        allowlist: ['@a/pkg:Note', '@b/pkg:Note'],
+      }),
+    ).toThrow(/duplicate DTO name "NoteDto"/);
   });
 
   it('records table name and tenant scoping', () => {

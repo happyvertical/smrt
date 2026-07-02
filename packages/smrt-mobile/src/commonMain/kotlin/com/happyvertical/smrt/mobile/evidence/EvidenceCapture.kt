@@ -67,24 +67,6 @@ data class EvidenceAssetRef(
     }
 }
 
-/** Durable manifest entry for an offline-stored evidence asset. */
-@Serializable
-data class EvidenceOfflineAssetManifestEntry(
-    val assetId: String,
-    val localUri: String,
-    val fileName: String,
-    val contentType: String,
-    val sizeBytes: Long,
-    val sha256: String,
-    val captureSource: String,
-    val originalUri: String = "",
-    val storageRoot: String = "app_private",
-    val relativePath: String,
-    val storageState: String = EvidenceAssetStorageState.STORED_OFFLINE,
-    val offlineSafe: Boolean = true,
-    val persistedAt: Instant,
-)
-
 /**
  * Geo sidecar for a capture. Geo is persisted as explicit fields, never
  * embedded EXIF — recompression strips EXIF on both platforms.

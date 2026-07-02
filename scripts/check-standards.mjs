@@ -23,6 +23,12 @@ import { resolve, join } from 'node:path';
 const ROOT = resolve(import.meta.dirname, '..');
 const PKGS = join(ROOT, 'packages');
 
+// Non-TypeScript packages (Kotlin Multiplatform/Gradle — ADR 0001, see
+// docs/content/standards.md §1 "Non-TypeScript packages"). Exempt from every
+// TS-shape check: vitest config, typecheck script, dist in files. Phases 5-6
+// add smrt-android / smrt-ios here.
+const NON_TYPESCRIPT_PACKAGES = new Set(['smrt-mobile']);
+
 // Exemption tables — packages that have a documented reason to skip a check.
 // Keep narrow; expand only when adding the comment to docs/content/standards.md
 // describing the exemption.
@@ -31,13 +37,10 @@ const EXEMPTIONS = {
   //   - vitest provides the plugin to others, builds with tsc
   //   - templates ship a scaffold; their test surface is the scaffolded
   //     output, not in-repo tests (e2e via Playwright tracked separately)
-  //   - smrt-mobile is Kotlin Multiplatform (ADR 0001); its tests are
-  //     Gradle/kotlin.test (mobile.yml CI lane), not vitest
   noVitestConfig: new Set([
     'vitest',
     'template-sveltekit',
     'template-site-static-json',
-    'smrt-mobile',
   ]),
   // Templates and stub packages may legitimately ship without tests.
   passWithNoTestsAllowed: new Set([
@@ -62,25 +65,19 @@ const EXEMPTIONS = {
   //     dist/federation) so a bare "dist" would over-publish.
   //   - templates ship a `template/` directory of scaffolding files instead
   //     of compiled output.
-  //   - smrt-mobile publishes nothing to npm (private Kotlin/Gradle package;
-  //     Maven publishing deferred per ADR 0001 Phase 0) — there is no dist.
   noDistInFiles: new Set([
     'products',
     'template-sveltekit',
     'template-site-static-json',
-    'smrt-mobile',
   ]),
   // Packages that legitimately ship without a `typecheck` script. Templates
   // are plain-JS scaffolding wrappers (`./index.js`) with no buildable
   // TypeScript source at the package root; their typecheck obligation lives in
   // the scaffolded `template/package.json` (which ships the svelte-kit sync +
   // tsc + svelte-check form per docs/content/standards.md §10).
-  // smrt-mobile has no TypeScript at all — the Kotlin compiler is its
-  // typechecker (`./gradlew build`, mobile.yml CI lane).
   noTypecheckScript: new Set([
     'template-sveltekit',
     'template-site-static-json',
-    'smrt-mobile',
   ]),
 };
 
@@ -212,7 +209,8 @@ function checkPackage(name) {
     } else {
       if (
         !json.files.includes('dist') &&
-        !EXEMPTIONS.noDistInFiles.has(name)
+        !EXEMPTIONS.noDistInFiles.has(name) &&
+        !NON_TYPESCRIPT_PACKAGES.has(name)
       ) {
         violations.push('files allowlist missing "dist"');
       }
@@ -262,7 +260,7 @@ function checkPackage(name) {
   }
 
   // 6. vitest.config.ts presence + smrtVitestPlugin usage
-  if (!EXEMPTIONS.noVitestConfig.has(name)) {
+  if (!EXEMPTIONS.noVitestConfig.has(name) && !NON_TYPESCRIPT_PACKAGES.has(name)) {
     const vitestConfig = join(PKGS, name, 'vitest.config.ts');
     if (!existsSync(vitestConfig)) {
       violations.push('missing vitest.config.ts');
@@ -295,8 +293,9 @@ function checkPackage(name) {
 
   // 8. typecheck script presence. Every package must ship a `typecheck`
   //    script so `turbo typecheck` is a meaningful, repo-wide gate. See
-  //    EXEMPTIONS.noTypecheckScript for documented carve-outs (templates).
-  if (!EXEMPTIONS.noTypecheckScript.has(name)) {
+  //    EXEMPTIONS.noTypecheckScript for documented carve-outs (templates);
+  //    non-TypeScript packages typecheck via the Kotlin compiler instead.
+  if (!EXEMPTIONS.noTypecheckScript.has(name) && !NON_TYPESCRIPT_PACKAGES.has(name)) {
     if (!json.scripts || typeof json.scripts.typecheck !== 'string') {
       violations.push(
         'scripts.typecheck is missing — add "tsc --noEmit -p tsconfig.json" ' +

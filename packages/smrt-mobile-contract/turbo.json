@@ -13,6 +13,19 @@
         "../smrt-mobile/src/commonMain/kotlin/com/happyvertical/smrt/mobile/contract/**"
       ],
       "outputs": ["dist/**", "tsconfig.*.tsbuildinfo"]
+    },
+    "test": {
+      "dependsOn": ["^build", "build", "generate:test"],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "package.json",
+        "vitest.config.ts",
+        "../smrt-mobile/src/commonMain/kotlin/com/happyvertical/smrt/mobile/contract/**"
+      ],
+      "outputs": ["coverage/**"]
     }
   }
 }

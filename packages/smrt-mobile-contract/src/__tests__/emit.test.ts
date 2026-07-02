@@ -44,11 +44,44 @@ import kotlinx.serialization.Serializable
 data class AttachmentDto(
     val id: String,
     val fileName: String = "",
-    val sizeBytes: Int = 0,
+    val sizeBytes: Long = 0,
     val checksum: String = "",
 )
 `,
     );
+  });
+
+  it('backtick-escapes keyword field names in both languages', () => {
+    const keywordContract = buildMobileContract({
+      manifests: [
+        {
+          objects: {
+            Odd: {
+              name: 'Odd',
+              qualifiedName: 'fixture:Odd',
+              fields: {
+                object: { type: 'text' },
+                when: { type: 'text' },
+                default: { type: 'text' },
+              },
+            },
+          },
+        },
+      ],
+      allowlist: ['Odd'],
+      kotlinPackage: 'com.example.generated',
+    });
+
+    const kotlin =
+      generateKotlinDtoFiles(keywordContract).get('OddDto.kt') ?? '';
+    expect(kotlin).toContain('val `object`: String = "",');
+    expect(kotlin).toContain('val `when`: String = "",');
+    // `default` is not a Kotlin hard keyword — no escaping needed there.
+    expect(kotlin).toContain('val default: String = "",');
+
+    const swift = generateSwiftDtoFile(keywordContract);
+    expect(swift).toContain('let `default`: String');
+    expect(swift).toContain('let object: String');
   });
 
   it('imports framework and kotlinx types only when used', () => {

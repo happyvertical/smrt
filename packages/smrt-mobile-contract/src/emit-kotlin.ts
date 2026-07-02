@@ -1,3 +1,4 @@
+import { kotlinIdentifier } from './identifiers.js';
 import type {
   MobileContract,
   MobileContractField,
@@ -81,5 +82,5 @@ function dtoFile(
 function kotlinProperty(field: MobileContractField): string {
   const defaultValue =
     field.kotlinDefault === null ? '' : ` = ${field.kotlinDefault}`;
-  return `    val ${field.name}: ${field.kotlinType}${defaultValue},`;
+  return `    val ${kotlinIdentifier(field.name)}: ${field.kotlinType}${defaultValue},`;
 }

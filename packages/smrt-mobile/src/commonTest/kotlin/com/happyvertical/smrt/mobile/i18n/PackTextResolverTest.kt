@@ -121,6 +121,26 @@ class PackTextResolverTest {
     }
 
     @Test
+    fun blankReviewStatesDefaultToApprovedEvenWithSourceRef() {
+        val resolver = PackTextResolver(
+            language = PackLanguage(defaultLocale = "en-US"),
+            bundles = listOf(
+                PackLanguageBundle(
+                    locale = "en-US",
+                    reviewState = "",
+                    strings = buildJsonObject { put("doc-1.title", "Guide") },
+                    sourceRefs = mapOf("doc-1.title" to PackTextSourceRef(reviewState = "")),
+                ),
+            ),
+            requestedLocale = "en-US",
+        )
+
+        // The sourceRef path and the no-sourceRef path must agree: a fully
+        // blank review state resolves to the "approved" default either way.
+        assertEquals("approved", resolver.resolve("doc-1.title").reviewState)
+    }
+
+    @Test
     fun blankRequestedLocaleDefaultsSanely() {
         val resolver = PackTextResolver(
             language = PackLanguage(defaultLocale = "", fallbackLocale = ""),

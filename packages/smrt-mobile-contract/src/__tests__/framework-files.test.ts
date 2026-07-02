@@ -50,6 +50,40 @@ describe('frameworkSwiftFiles', () => {
     expect(swift).toContain('struct MobileDeviceCapabilities {');
     expect(swift).toContain('let SmrtMobileContractVersion = "2026-07-01.v1"');
   });
+
+  it('stays field-for-field in sync with the Kotlin framework contract', () => {
+    // Both templates are generated text with fixed shapes, so parsing them
+    // is reliable: every Swift struct must have a Kotlin data class twin
+    // with the identical ordered field-name list. Catches the hand-edited
+    // Kotlin / stale Swift drift (and vice versa) that byte-freshness alone
+    // cannot see.
+    const kotlin = [...frameworkKotlinFiles().values()].join('\n');
+    const swift = frameworkSwiftFiles().get('MobileContract.swift') ?? '';
+
+    const kotlinTypes = new Map<string, string[]>();
+    for (const match of kotlin.matchAll(
+      /data class (\w+)\(\n([\s\S]*?)\n\)/g,
+    )) {
+      kotlinTypes.set(
+        match[1],
+        [...match[2].matchAll(/^ {4}val (\w+):/gm)].map((field) => field[1]),
+      );
+    }
+
+    const swiftStructs = [
+      ...swift.matchAll(/struct (\w+) \{\n([\s\S]*?)\n\}/g),
+    ];
+    expect(swiftStructs.length).toBeGreaterThanOrEqual(12);
+
+    for (const [, name, body] of swiftStructs) {
+      const swiftFields = [...body.matchAll(/^ {2}let `?(\w+)`?:/gm)].map(
+        (field) => field[1],
+      );
+      expect(kotlinTypes.get(name), `Kotlin twin for struct ${name}`).toEqual(
+        swiftFields,
+      );
+    }
+  });
 });
 
 describe('writeFileSet / verifyFileSet', () => {

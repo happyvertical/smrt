@@ -3,6 +3,7 @@ import {
   SMRT_MOBILE_CONTRACT_SCHEMA_VERSION,
   SMRT_MOBILE_CONTRACT_VERSION,
 } from './contract-version.js';
+import { kotlinStringLiteral } from './identifiers.js';
 import type {
   MobileContract,
   MobileContractField,
@@ -23,7 +24,9 @@ const KOTLIN_TYPE_BY_MANIFEST_TYPE: Record<string, string> = {
   status: 'String',
   foreignKey: 'String',
   crossPackageRef: 'String',
-  integer: 'Int',
+  // 64-bit: SMRT INTEGER columns hold values like byte sizes and epoch
+  // millis that overflow a 32-bit Int at decode time.
+  integer: 'Long',
   decimal: 'DecimalString?',
   boolean: 'Boolean',
   datetime: 'Instant?',
@@ -38,7 +41,8 @@ const RELATION_FIELD_TYPES = new Set(['oneToMany', 'manyToMany', 'hasMany']);
 
 const SWIFT_TYPE_BY_KOTLIN_TYPE: Record<string, string> = {
   String: 'String',
-  Int: 'Int',
+  // Swift Int is 64-bit on all Apple targets.
+  Long: 'Int',
   Boolean: 'Bool',
   'Instant?': 'String?',
   'DecimalString?': 'String?',
@@ -97,6 +101,19 @@ export function buildMobileContract(
     return toMobileObject(matches[0]);
   });
 
+  const dtoNameOwners = new Map<string, string>();
+  for (const object of objects) {
+    const prior = dtoNameOwners.get(object.dtoName);
+    if (prior) {
+      throw new Error(
+        `mobile allowlist produces duplicate DTO name "${object.dtoName}" ` +
+          `(${prior} and ${object.qualifiedName}) — generated files would ` +
+          'overwrite each other; allowlisted objects need unique short names',
+      );
+    }
+    dtoNameOwners.set(object.dtoName, object.qualifiedName);
+  }
+
   const sourceHash = createHash('sha256')
     .update(JSON.stringify({ allowlist, objects }))
     .digest('hex');
@@ -128,7 +145,6 @@ function toMobileObject(object: SmrtManifestObject): MobileContractObject {
 
   if (!fieldEntries.some(([name]) => name === 'id')) {
     fields.push({
-      sourceName: 'id',
       name: 'id',
       kotlinType: 'String',
       swiftType: 'String',
@@ -157,7 +173,6 @@ function toMobileObject(object: SmrtManifestObject): MobileContractObject {
 function mapField(name: string, meta: SmrtManifestField): MobileContractField {
   const kotlinType = kotlinTypeFor(name, meta);
   return {
-    sourceName: name,
     name,
     kotlinType,
     swiftType: SWIFT_TYPE_BY_KOTLIN_TYPE[kotlinType] ?? 'String',
@@ -176,7 +191,7 @@ function kotlinTypeFor(name: string, meta: SmrtManifestField): string {
   if (STRING_LIST_FIELD_NAMES.has(name)) return 'List<String>';
   if (name.endsWith('Json')) return 'JsonObject';
   if (BOOLEAN_FIELD_NAMES.has(name)) return 'Boolean';
-  if (INTEGER_FIELD_NAMES.has(name)) return 'Int';
+  if (INTEGER_FIELD_NAMES.has(name)) return 'Long';
   if (name.endsWith('At') || name.endsWith('On') || name.endsWith('_at'))
     return 'Instant?';
   return 'String';
@@ -194,7 +209,7 @@ function kotlinDefaultFor(kotlinType: string, meta: SmrtManifestField): string {
       return 'emptyList()';
     case 'Boolean':
       return declared === true || declared === 'true' ? 'true' : 'false';
-    case 'Int':
+    case 'Long':
       return integerDefault(declared);
     case 'Instant?':
     case 'DecimalString?':
@@ -227,7 +242,7 @@ function stringDefault(defaultValue: unknown): string {
   if (text.length > 1 && text.startsWith('"') && text.endsWith('"')) {
     try {
       const parsed: unknown = JSON.parse(text);
-      return typeof parsed === 'string' ? JSON.stringify(parsed) : '""';
+      return typeof parsed === 'string' ? kotlinStringLiteral(parsed) : '""';
     } catch {
       return '""';
     }
@@ -235,9 +250,9 @@ function stringDefault(defaultValue: unknown): string {
 
   const singleQuoted = text.match(/^'([^']*)'$/);
   if (singleQuoted) {
-    return JSON.stringify(singleQuoted[1]);
+    return kotlinStringLiteral(singleQuoted[1]);
   }
 
   // A raw (unquoted) string value — the shape current SMRT manifests emit.
-  return JSON.stringify(text);
+  return kotlinStringLiteral(text);
 }

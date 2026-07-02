@@ -33,7 +33,7 @@ export interface SmrtManifest {
 }
 
 export interface MobileContractField {
-  sourceName: string;
+  /** Manifest-faithful wire name (also the generated property name). */
   name: string;
   kotlinType: string;
   swiftType: string;

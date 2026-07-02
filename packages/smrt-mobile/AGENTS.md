@@ -73,7 +73,14 @@ wrapper (8.14.4) is checked in — always invoke via `./gradlew`.
 
 ## Standards exemptions (documented per scripts/check-standards.mjs)
 
-- `noVitestConfig` + `noTypecheckScript` + `noDistInFiles`: this package has
-  no TypeScript and no npm dist — tests are Kotlin (`./gradlew allTests`),
-  typechecking is the Kotlin compiler, and nothing is published to npm
-  (`private: true`; Maven publishing deferred per Phase 0 decision).
+This package is in the `NON_TYPESCRIPT_PACKAGES` set (see
+`docs/content/standards.md` §1 "Non-TypeScript packages"), which exempts it
+from the TS-shape requirements: no `vitest.config.ts` and no vitest
+`test`/`test:watch`/`dev` scripts (tests are Kotlin — `./gradlew allTests`,
+run by the mobile.yml CI lane), no `typecheck` script (the Kotlin compiler
+typechecks), and no `dist` in `files` (nothing publishes to npm:
+`private: true`; Maven publishing deferred per the Phase 0 decision). It DOES
+stay in the changesets fixed group so its version rides the release train
+with every other smrt-* package. A package-level `turbo.json` widens the
+`build` (= `validate:shell`) inputs to the Gradle files, scripts, and docs
+the validator reads — without it, turbo replays stale validation passes.

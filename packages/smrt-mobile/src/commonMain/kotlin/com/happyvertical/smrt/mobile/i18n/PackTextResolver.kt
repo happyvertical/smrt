@@ -111,9 +111,10 @@ class PackTextResolver(
         sourceText: String,
         usedFallback: Boolean,
     ): ResolvedPackText {
-        val reviewState = sourceRef?.reviewState
-            ?.ifBlank { bundle.reviewState }
-            ?: bundle.reviewState.ifBlank { "approved" }
+        val reviewState = (
+            sourceRef?.reviewState?.ifBlank { bundle.reviewState }
+                ?: bundle.reviewState
+            ).ifBlank { "approved" }
         val fallbackReason = sourceRef?.fallbackReason ?: ""
         val usesSourceFallback = reviewState == "source_fallback" || fallbackReason.isNotBlank()
 

@@ -3,6 +3,7 @@
   "version": "0.37.3",
   "description": "SMRT mobile contract codegen: manifest + allowlist → mobile-contract.json → Kotlin/Swift DTOs, plus the generated framework contract for @happyvertical/smrt-mobile",
   "author": "HappyVertical",
+  "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,6 +21,7 @@
   "scripts": {
     "build": "vite build && node scripts/generate-framework.mjs --verify",
     "build:watch": "vite build --watch",
+    "dev": "npm run build:watch & npm run test:watch",
     "generate:framework": "vite build && node scripts/generate-framework.mjs --write",
     "verify:generated": "node scripts/generate-framework.mjs --verify",
     "test": "vitest run",

@@ -13,10 +13,11 @@ bug, not a shortcut.
 (Compose), `@happyvertical/smrt-ios` (SwiftUI/SPM), `@happyvertical/smrt-mobile-contract`
 (TS codegen). Final npm/Maven/SPM coordinates are a Phase 1 deliverable.
 
-**No package scaffolding has been created yet.** This branch is ADR + plan only.
-Adding a live package to the pnpm/turbo workspace pulls in workspace resolution,
-knowledge-check freshness, DAG guardrails, and coverage gates — not trivial and
-out of scope for a docs PR. Phase 1 creates the first real package.
+**Phase 1 landed the first packages** (PR #1749): `packages/smrt-mobile` and
+`packages/smrt-mobile-contract` are live workspace members. Adding further
+packages (`smrt-android`, `smrt-ios` in Phases 5–6) still pulls in workspace
+resolution, knowledge-check freshness, DAG guardrails, standards checks, and
+coverage gates — budget for those; the Phase 1 PR is the template.
 
 ---
 
