@@ -95,6 +95,18 @@ const SPEC = [
     ],
   },
   {
+    path: `${KOTLIN_ROOT}/network/MobileApiClient.kt`,
+    mustContain: [
+      'class MobileApiClient(',
+      'suspend fun submitMultipart(',
+      'Idempotency-Key',
+    ],
+  },
+  {
+    path: `${KOTLIN_ROOT}/network/HttpQueueSender.kt`,
+    mustContain: ['class HttpQueueSender(', 'SendOutcome.Unauthorized'],
+  },
+  {
     path: `${KOTLIN_ROOT}/i18n/PackTextResolver.kt`,
     mustContain: ['class PackTextResolver(', 'fun resolve(key: String'],
   },
@@ -141,12 +153,14 @@ const SPEC = [
   // schema-evolution guardrail (see AGENTS.md § Schema changes).
   { path: 'src/commonMain/sqldelight/databases/1.db' },
   { path: `${TEST_ROOT}/auth/MobileSessionManagerTest.kt` },
+  { path: `${TEST_ROOT}/network/MobileApiClientTest.kt` },
   { path: `${TEST_ROOT}/i18n/PackTextResolverTest.kt` },
   { path: `${TEST_ROOT}/packs/PackIntegrityCheckTest.kt` },
   { path: `${TEST_ROOT}/shell/MobileShellStateTest.kt` },
   { path: `${TEST_ROOT}/evidence/EvidenceCaptureTest.kt` },
   { path: `${JVM_TEST_ROOT}/sync/DurableWriteQueueTest.kt` },
   { path: `${JVM_TEST_ROOT}/packs/DurableOfflinePackStoreTest.kt` },
+  { path: `${JVM_TEST_ROOT}/network/QueueFlushIntegrationTest.kt` },
 ];
 
 const failures = [];
