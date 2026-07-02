@@ -74,6 +74,7 @@ const sidebars: SidebarsConfig = {
         { type: 'doc', id: 'architecture/tenancy-auto-populate', label: 'Tenancy Auto-Populate' },
         { type: 'doc', id: 'architecture/messages-secrets-migration', label: 'Messages Secrets Migration' },
         { type: 'doc', id: 'architecture/products-as-template', label: 'Products as Template' },
+        { type: 'doc', id: 'architecture/sync-apply-contract', label: 'Sync-Apply Write Contract' },
         { type: 'doc', id: 'architecture/issue-215-dynamic-class-loading', label: 'Dynamic Class Loading (#215)' },
       ],
     },
