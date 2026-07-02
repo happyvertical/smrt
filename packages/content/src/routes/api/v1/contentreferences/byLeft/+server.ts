@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentReferences["byLeft"]>;
+  type ActionArgs = Parameters<ContentReferences['byLeft']>;
   type ActionOptions = {
     leftId: ActionArgs[0];
     opts: ActionArgs[1];

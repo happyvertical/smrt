@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentFeedSourceCollection["findActive"]>;
+  type ActionArgs = Parameters<ContentFeedSourceCollection['findActive']>;
   type ActionOptions = {
     tenantId: ActionArgs[0];
   };

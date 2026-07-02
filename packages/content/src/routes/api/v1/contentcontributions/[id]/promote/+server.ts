@@ -107,7 +107,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:ContentContribution not found');
 
-  type ActionArgs = Parameters<ContentContribution["promoteAction"]>;
+  type ActionArgs = Parameters<ContentContribution['promoteAction']>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await item.promoteAction(options);

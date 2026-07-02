@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentVersionCollection["createSnapshot"]>;
+  type ActionArgs = Parameters<ContentVersionCollection['createSnapshot']>;
   type ActionOptions = {
     content: ActionArgs[0];
     options: ActionArgs[1];

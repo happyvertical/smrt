@@ -107,7 +107,7 @@ export const POST: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  type ActionArgs = Parameters<Content["recheckFactClaimsAction"]>;
+  type ActionArgs = Parameters<Content['recheckFactClaimsAction']>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await item.recheckFactClaimsAction(options);

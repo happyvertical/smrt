@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentReviewCollection["listForContentByPolicyKey"]>;
+  type ActionArgs = Parameters<ContentReviewCollection['listForContentByPolicyKey']>;
   type ActionOptions = {
     contentId: ActionArgs[0];
     policyKey: ActionArgs[1];

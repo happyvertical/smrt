@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentFeedSourceCollection["findByStatus"]>;
+  type ActionArgs = Parameters<ContentFeedSourceCollection['findByStatus']>;
   type ActionOptions = {
     status: ActionArgs[0];
     tenantId: ActionArgs[1];

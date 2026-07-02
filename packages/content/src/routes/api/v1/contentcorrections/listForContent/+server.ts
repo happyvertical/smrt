@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentCorrectionCollection["listForContent"]>;
+  type ActionArgs = Parameters<ContentCorrectionCollection['listForContent']>;
   type ActionOptions = {
     contentId: ActionArgs[0];
   };

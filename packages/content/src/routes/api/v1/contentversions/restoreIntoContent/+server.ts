@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentVersionCollection["restoreIntoContent"]>;
+  type ActionArgs = Parameters<ContentVersionCollection['restoreIntoContent']>;
   type ActionOptions = {
     content: ActionArgs[0];
     versionNumber: ActionArgs[1];

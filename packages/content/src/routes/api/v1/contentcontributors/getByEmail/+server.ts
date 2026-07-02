@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentContributorCollection["getByEmail"]>;
+  type ActionArgs = Parameters<ContentContributorCollection['getByEmail']>;
   type ActionOptions = {
     email: ActionArgs[0];
   };

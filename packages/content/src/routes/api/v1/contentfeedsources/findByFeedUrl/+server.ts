@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentFeedSourceCollection["findByFeedUrl"]>;
+  type ActionArgs = Parameters<ContentFeedSourceCollection['findByFeedUrl']>;
   type ActionOptions = {
     feedUrl: ActionArgs[0];
     tenantId: ActionArgs[1];

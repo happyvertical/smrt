@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentReferences["setLinks"]>;
+  type ActionArgs = Parameters<ContentReferences['setLinks']>;
   type ActionOptions = {
     leftId: ActionArgs[0];
     rightIds: ActionArgs[1];

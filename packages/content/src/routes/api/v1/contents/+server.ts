@@ -126,8 +126,48 @@ function applyWritablePolicy(data: unknown): Record<string, unknown> {
   return result;
 }
 
+// Conditional GET (#1757): strong body-hash ETag + If-None-Match → 304 with an
+// empty body. Reads stay private unless the model is public AND opts into
+// shared caching via @smrt({ api: { cache: { sMaxage } } }).
+import { createHash } from 'node:crypto';
+
+const READ_CACHE_CONTROL = 'private, no-cache';
+
+function bodyEtag(body: string): string {
+  return `"${createHash('sha256').update(body).digest('base64url')}"`;
+}
+
+function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  if (header.trim() === '*') return true;
+  return header.split(',').some((candidate) => {
+    const tag = candidate.trim();
+    const opaque = tag.startsWith('W/') ? tag.slice(2) : tag;
+    return opaque === etag;
+  });
+}
+
+function conditionalJson(request: Request, payload: unknown): Response {
+  const body = JSON.stringify(payload);
+  const etag = bodyEtag(body);
+  if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
+    return new Response(null, {
+      status: 304,
+      headers: { 'cache-control': READ_CACHE_CONTROL, etag },
+    });
+  }
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'cache-control': READ_CACHE_CONTROL,
+      'content-type': 'application/json',
+      etag,
+    },
+  });
+}
+
 // List all @happyvertical/smrt-content:contents
-export const GET: RequestHandler = async ({ locals, url }) => {
+export const GET: RequestHandler = async ({ locals, url, request }) => {
   requireRouteAuth(locals, false);
   establishTenantContext(locals);
   const limit = Number(url.searchParams.get('limit')) || 50;
@@ -143,7 +183,7 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     items.map((item) => serializeItemResponse(item)),
   );
 
-  return json({ items: serializedItems, count, limit, offset });
+  return conditionalJson(request, { items: serializedItems, count, limit, offset });
 };
 
 // Create new @happyvertical/smrt-content:content

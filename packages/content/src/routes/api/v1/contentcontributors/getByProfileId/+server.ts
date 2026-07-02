@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentContributorCollection["getByProfileId"]>;
+  type ActionArgs = Parameters<ContentContributorCollection['getByProfileId']>;
   type ActionOptions = {
     profileId: ActionArgs[0];
   };

@@ -113,7 +113,7 @@ export const GET: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<Contents["browseFacts"]>;
+  type ActionArgs = Parameters<Contents['browseFacts']>;
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   ) as ActionArgs[0];

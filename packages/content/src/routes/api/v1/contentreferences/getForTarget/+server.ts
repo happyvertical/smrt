@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentReferences["getForTarget"]>;
+  type ActionArgs = Parameters<ContentReferences['getForTarget']>;
   type ActionOptions = {
     targetId: ActionArgs[0];
   };
