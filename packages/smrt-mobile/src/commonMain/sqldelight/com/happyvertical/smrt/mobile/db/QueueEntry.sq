@@ -1,6 +1,12 @@
 -- Durable offline write-queue (ADR 0001 Phase 2). Semantics seeded from
 -- anytown reporter's ContributionStore: pending → uploading → (deleted on
 -- sync) / failed; `synced` never persists — a successful send deletes the row.
+--
+-- Queue order is insertion order (rowid). State transitions are GUARDED
+-- (`WHERE ... AND state = ...`) so a row replaced or removed while its old
+-- version is mid-send is never clobbered by the stale outcome. State values
+-- always arrive as bind parameters from QueueEntryState — Kotlin is the
+-- single source of truth for the state strings.
 
 CREATE TABLE queue_entry (
   id TEXT NOT NULL PRIMARY KEY,
@@ -14,7 +20,7 @@ CREATE TABLE queue_entry (
   updated_at_epoch_ms INTEGER NOT NULL
 );
 
-CREATE INDEX queue_entry_state ON queue_entry(state, created_at_epoch_ms);
+CREATE INDEX queue_entry_state ON queue_entry(state);
 
 insertOrReplace:
 INSERT OR REPLACE INTO queue_entry(
@@ -27,27 +33,41 @@ selectById:
 SELECT * FROM queue_entry WHERE id = ?;
 
 selectByState:
-SELECT * FROM queue_entry WHERE state = ? ORDER BY created_at_epoch_ms ASC, id ASC;
+SELECT * FROM queue_entry WHERE state = ? ORDER BY rowid ASC;
 
 selectAll:
-SELECT * FROM queue_entry ORDER BY created_at_epoch_ms ASC, id ASC;
+SELECT * FROM queue_entry ORDER BY rowid ASC;
 
+-- Claims a pending row for upload (charging one attempt). The guard makes
+-- this a no-op when the row was replaced or deleted after the flush snapshot.
 markUploading:
 UPDATE queue_entry
-SET state = 'uploading', attempt_count = attempt_count + 1, updated_at_epoch_ms = ?
-WHERE id = ?;
+SET state = :uploading, attempt_count = attempt_count + 1, updated_at_epoch_ms = :now
+WHERE id = :id AND state = :pending;
 
-setState:
-UPDATE queue_entry SET state = ?, last_error = ?, updated_at_epoch_ms = ? WHERE id = ?;
+deleteIfUploading:
+DELETE FROM queue_entry WHERE id = :id AND state = :uploading;
+
+setStateIfUploading:
+UPDATE queue_entry
+SET state = :state, last_error = :lastError, updated_at_epoch_ms = :now
+WHERE id = :id AND state = :uploading;
+
+-- A 401 abort must not spend retry budget: the attempt markUploading charged
+-- is refunded as the entry goes back to pending.
+restoreAfterUnauthorized:
+UPDATE queue_entry
+SET state = :pending, attempt_count = attempt_count - 1,
+    last_error = :lastError, updated_at_epoch_ms = :now
+WHERE id = :id AND state = :uploading;
 
 recoverInterrupted:
-UPDATE queue_entry SET state = 'pending', updated_at_epoch_ms = ? WHERE state = 'uploading';
-
-deleteById:
-DELETE FROM queue_entry WHERE id = ?;
+UPDATE queue_entry
+SET state = :pending, updated_at_epoch_ms = :now
+WHERE state = :uploading;
 
 deleteByState:
 DELETE FROM queue_entry WHERE state = ?;
 
-countByState:
-SELECT COUNT(*) FROM queue_entry WHERE state = ?;
+countsByState:
+SELECT state, COUNT(*) AS n FROM queue_entry GROUP BY state;

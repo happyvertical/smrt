@@ -60,6 +60,13 @@ sqldelight {
     databases {
         create("SmrtMobileDatabase") {
             packageName.set("com.happyvertical.smrt.mobile.db")
+            // Schema-evolution guardrail: the checked-in snapshot under
+            // src/commonMain/sqldelight/databases pins the current schema
+            // version; once devices hold durable data, any schema change
+            // needs a .sqm migration and must keep verifyMigrations green.
+            // Protocol: packages/smrt-mobile/AGENTS.md § Schema changes.
+            schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
+            verifyMigrations.set(true)
         }
     }
 }

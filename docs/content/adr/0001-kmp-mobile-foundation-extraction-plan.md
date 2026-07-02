@@ -133,6 +133,12 @@ integrity. **Replace** amaru's `InMemoryOfflinePackStore` / `FieldSyncQueue`.
 `uploading` reset to `pending`); attempt-cap and coalescing covered by tests;
 no in-memory-only store remains.
 
+**Dependency note (per the smrt-mobile "no new commonMain deps without an ADR
+note" rule):** Phase 2 adds `app.cash.sqldelight:runtime` (the Phase 0 store
+decision) and `kotlinx-coroutines-core` — the queue's single-flight mutex,
+suspend seams (`QueueSender`), and main-safe dispatch (`withContext`) are
+coroutine-shaped by design, and Ktor (Phase 4) requires coroutines anyway.
+
 ## Phase 3 — Auth / session
 
 **Goal:** provider-agnostic PKCE/OIDC session in `commonMain` + thin platform

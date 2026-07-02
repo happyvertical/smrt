@@ -120,6 +120,9 @@ const SPEC = [
     path: `${SQL_ROOT}/PackRecord.sq`,
     mustContain: ['CREATE TABLE pack_record'],
   },
+  // Schema snapshot backing verifyMigrations — deleting it disables the
+  // schema-evolution guardrail (see AGENTS.md § Schema changes).
+  { path: 'src/commonMain/sqldelight/databases/1.db' },
   { path: `${TEST_ROOT}/i18n/PackTextResolverTest.kt` },
   { path: `${TEST_ROOT}/packs/PackIntegrityCheckTest.kt` },
   { path: `${TEST_ROOT}/shell/MobileShellStateTest.kt` },

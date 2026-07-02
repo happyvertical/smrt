@@ -33,15 +33,18 @@ consumers use Gradle `includeBuild`).
   records (framework identity columns + the app's serialized manifest
   payload). Hashing itself is a platform seam.
 - `src/commonMain/kotlin/.../sync/` — `DurableWriteQueue`: the reporter-seeded
-  crash-safe write-queue on SQLDelight. `pending → uploading → (deleted on
-  success) / failed`; single-flight coalesced flush; attempt cap (default 5);
-  `uploading → pending` recovery at construction; entry id = idempotency key;
-  401 aborts the flush leaving the queue intact. Transport is the
-  `QueueSender` seam until Phase 4; flush *triggers* (foreground,
-  connectivity, manual) are platform callbacks that just call `flush()`.
+  crash-safe write-queue on SQLDelight. The full contract (state machine,
+  trigger-preserving single-flight flush, attempt cap with 401 refund,
+  crash/cancel recovery, guarded transitions, insertion ordering) is
+  canonical in the class KDoc — read it there, don't trust prose copies.
+  **One queue instance per database**; transport is the `QueueSender` seam
+  until Phase 4; flush *triggers* (foreground, connectivity, manual) are
+  platform callbacks that just call `flush()`.
 - `src/commonMain/sqldelight/.../db/` — `.sq` schema (SmrtMobileDatabase).
-  Queue/store tests live in `src/jvmTest/` against real SQLite (JVM driver —
-  fast and Android-SDK-free on CI); platform driver factories arrive with
+  All DB work runs on the injectable `context` (default
+  `Dispatchers.Default`) so queue/store calls are main-safe. Queue/store
+  tests live in `src/jvmTest/` against real SQLite (JVM driver — fast and
+  Android-SDK-free on CI); platform driver factories arrive with
   smrt-android / smrt-ios (Phases 5–6).
 - `src/commonMain/kotlin/.../evidence/` — evidence asset refs (SHA-256
   pins), geo **sidecar** metadata (never EXIF — recompression strips it),
@@ -84,6 +87,17 @@ wrapper (8.14.4) is checked in — always invoke via `./gradlew`.
   `expect`/`actual`.
 - Wire DTO fields default-initialize (safe partial deserialization); decimals
   cross the wire as `DecimalString`.
+
+## Schema changes (SQLDelight)
+
+`src/commonMain/sqldelight/databases/1.db` is the checked-in snapshot of
+schema version 1 and `verifyMigrations` is on: once devices hold durable
+data, editing a `.sq` file in place is NOT enough. The protocol for any
+schema change: bump the schema by adding a numbered `.sqm` migration next to
+the `.sq` files, regenerate the snapshot
+(`./gradlew generateCommonMainSmrtMobileDatabaseSchema`), and keep
+`./gradlew verifySqlDelightMigration` green — it runs as part of `build`.
+Fresh installs run the CREATE statements; existing devices run migrations.
 
 ## Standards exemptions (documented per scripts/check-standards.mjs)
 

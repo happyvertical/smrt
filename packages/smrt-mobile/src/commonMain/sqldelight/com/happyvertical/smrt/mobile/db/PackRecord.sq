@@ -18,7 +18,7 @@ selectById:
 SELECT * FROM pack_record WHERE pack_id = ?;
 
 selectAll:
-SELECT * FROM pack_record ORDER BY stored_at_epoch_ms DESC, pack_id ASC;
+SELECT * FROM pack_record ORDER BY stored_at_epoch_ms DESC, rowid DESC;
 
 deleteById:
 DELETE FROM pack_record WHERE pack_id = ?;
