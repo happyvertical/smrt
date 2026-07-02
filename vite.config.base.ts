@@ -229,6 +229,7 @@ export function createPackageConfig(
     'scanner',
     'vitest',
     'smrt-playground',
+    'smrt-web',
   ];
 
   return async () => {
@@ -387,6 +388,9 @@ export function createPackageConfig(
 
             // External SDK packages
             /^@have\//,
+
+            // TanStack client-data runtime (smrt-web) - consumers install it
+            /^@tanstack\//,
 
             // Virtual modules from SMRT framework
             '@smrt/routes',

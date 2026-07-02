@@ -1,0 +1,5 @@
+import { createPackageConfig } from '../../vite.config.base.js';
+
+export default createPackageConfig('smrt-web', {
+  entries: ['svelte'],
+});
