@@ -70,7 +70,7 @@
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/adapter-auto": "^7.0.1",
-    "@sveltejs/kit": "^2.68.0",
+    "@sveltejs/kit": "^2.69.1",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "24.13.2",

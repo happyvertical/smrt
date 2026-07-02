@@ -89,7 +89,7 @@
     "@faker-js/faker": "^10.5.0",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@sveltejs/kit": "^2.68.0",
+    "@sveltejs/kit": "^2.69.1",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "24.13.2",
