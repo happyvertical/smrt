@@ -7,8 +7,8 @@ import {
  * The generated *framework* contract: the stable files checked into
  * `@happyvertical/smrt-mobile` under
  * `src/commonMain/kotlin/com/happyvertical/smrt/mobile/contract/`.
- * This module is their single source of truth — `pnpm generate` rewrites
- * them; the package build verifies freshness.
+ * This module is their single source of truth — `pnpm generate:framework`
+ * rewrites them; the package build verifies freshness.
  */
 
 const HEADER = [

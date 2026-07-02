@@ -22,12 +22,19 @@ const KOTLIN_TYPE_BY_MANIFEST_TYPE: Record<string, string> = {
   text: 'String',
   status: 'String',
   foreignKey: 'String',
+  crossPackageRef: 'String',
   integer: 'Int',
   decimal: 'DecimalString?',
   boolean: 'Boolean',
   datetime: 'Instant?',
   json: 'JsonObject',
 };
+
+/**
+ * Relationship declarations, not scalar columns — an object row's wire
+ * payload does not carry them, so they are excluded from DTO projection.
+ */
+const RELATION_FIELD_TYPES = new Set(['oneToMany', 'manyToMany', 'hasMany']);
 
 const SWIFT_TYPE_BY_KOTLIN_TYPE: Record<string, string> = {
   String: 'String',
@@ -131,6 +138,9 @@ function toMobileObject(object: SmrtManifestObject): MobileContractObject {
   }
 
   for (const [name, meta] of fieldEntries) {
+    if (meta.type && RELATION_FIELD_TYPES.has(meta.type)) {
+      continue;
+    }
     fields.push(mapField(name, meta));
   }
 
@@ -173,22 +183,24 @@ function kotlinTypeFor(name: string, meta: SmrtManifestField): string {
 }
 
 function kotlinDefaultFor(kotlinType: string, meta: SmrtManifestField): string {
+  // Current SMRT manifests carry the typed value in `default`; amaru-era
+  // manifests carried a (possibly quoted) string in `defaultValue`.
+  const declared =
+    meta.default !== undefined ? meta.default : meta.defaultValue;
   switch (kotlinType) {
     case 'JsonObject':
       return 'JsonObject(emptyMap())';
     case 'List<String>':
       return 'emptyList()';
     case 'Boolean':
-      return meta.defaultValue === true || meta.defaultValue === 'true'
-        ? 'true'
-        : 'false';
+      return declared === true || declared === 'true' ? 'true' : 'false';
     case 'Int':
-      return integerDefault(meta.defaultValue);
+      return integerDefault(declared);
     case 'Instant?':
     case 'DecimalString?':
       return 'null';
     default:
-      return stringDefault(meta.defaultValue);
+      return stringDefault(declared);
   }
 }
 
@@ -209,7 +221,10 @@ function stringDefault(defaultValue: unknown): string {
   }
 
   const text = String(defaultValue).trim();
-  if (text.startsWith('"') && text.endsWith('"')) {
+  if (text === '') {
+    return '""';
+  }
+  if (text.length > 1 && text.startsWith('"') && text.endsWith('"')) {
     try {
       const parsed: unknown = JSON.parse(text);
       return typeof parsed === 'string' ? JSON.stringify(parsed) : '""';
@@ -223,5 +238,6 @@ function stringDefault(defaultValue: unknown): string {
     return JSON.stringify(singleQuoted[1]);
   }
 
-  return '""';
+  // A raw (unquoted) string value — the shape current SMRT manifests emit.
+  return JSON.stringify(text);
 }

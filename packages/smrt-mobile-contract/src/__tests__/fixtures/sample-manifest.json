@@ -15,11 +15,17 @@
         "updated_at": { "type": "datetime", "required": false },
         "tenantId": { "type": "text", "required": false },
         "projectId": { "type": "foreignKey", "required": false, "related": "Project" },
-        "title": { "type": "text", "required": false, "defaultValue": "'Untitled'" },
-        "status": { "type": "text", "required": false },
-        "revision": { "type": "integer", "required": false, "defaultValue": 1 },
+        "ownerRef": {
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-profiles:Profile"
+        },
+        "assignees": { "type": "oneToMany", "required": false, "related": "Profile" },
+        "title": { "type": "text", "required": false, "default": "Untitled" },
+        "status": { "type": "text", "required": false, "defaultValue": "'draft'" },
+        "revision": { "type": "integer", "required": false, "default": 1 },
         "confidence": { "type": "decimal", "required": false },
-        "approved": { "type": "boolean", "required": false, "defaultValue": true },
+        "approved": { "type": "boolean", "required": false, "default": true },
         "metadataJson": { "required": false },
         "publishedAt": { "type": "datetime", "required": false },
         "notes": { "type": "text", "required": false }

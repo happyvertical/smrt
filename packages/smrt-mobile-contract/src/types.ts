@@ -8,6 +8,8 @@ export interface SmrtManifestField {
   type?: string;
   required?: boolean;
   related?: string;
+  /** Current SMRT manifests emit `default`; amaru-era manifests used `defaultValue`. */
+  default?: unknown;
   defaultValue?: unknown;
   _meta?: Record<string, unknown>;
 }

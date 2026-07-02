@@ -25,10 +25,13 @@ directly, so it stays out of the smrt package DAG.
    package; they get `@Serializable` Kotlin DTOs (defaults on every field for
    safe partial deserialization) and plain Swift structs. Type mapping is
    driven by manifest field `type` metadata (`text`/`integer`/`decimal`/
-   `boolean`/`datetime`/`foreignKey`/`json`), with amaru's name heuristics
-   only as a fallback for typeless fields. Decimals emit as `DecimalString`
-   (string-encoded — no float precision loss); field names stay
-   manifest-faithful (wire-format names, including `created_at`).
+   `boolean`/`datetime`/`foreignKey`/`crossPackageRef`/`json`), with amaru's
+   name heuristics only as a fallback for typeless fields. Relationship
+   declarations (`oneToMany`/`manyToMany`/`hasMany`) are excluded — they are
+   not scalar columns. Field defaults come from `default` (current manifests)
+   with `defaultValue` (amaru-era) as fallback. Decimals emit as
+   `DecimalString` (string-encoded — no float precision loss); field names
+   stay manifest-faithful (wire-format names, including `created_at`).
 
 ## Conventions
 

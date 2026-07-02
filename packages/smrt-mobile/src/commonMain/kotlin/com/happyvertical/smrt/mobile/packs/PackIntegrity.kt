@@ -52,6 +52,14 @@ class PackIntegrityCheck {
         expectedHash: String,
     ): PackIntegrityResult {
         val actualHash = integrity.hash
+        if (!integrity.hashAlgorithm.equals("sha256", ignoreCase = true)) {
+            return PackIntegrityResult(
+                valid = false,
+                expectedHash = expectedHash,
+                actualHash = actualHash,
+                message = "Unsupported pack hash algorithm: ${integrity.hashAlgorithm}",
+            )
+        }
         val valid = actualHash.isNotBlank() && actualHash == expectedHash
 
         return PackIntegrityResult(

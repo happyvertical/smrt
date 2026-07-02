@@ -32,6 +32,17 @@ class PackIntegrityCheckTest {
     }
 
     @Test
+    fun rejectsUnsupportedHashAlgorithm() {
+        val result = check.verifyManifestHash(
+            integrity = PackIntegrity(hashAlgorithm = "md5", hash = "abc123"),
+            expectedHash = "abc123",
+        )
+
+        assertFalse(result.valid)
+        assertEquals("Unsupported pack hash algorithm: md5", result.message)
+    }
+
+    @Test
     fun rejectsBlankActualHashEvenWhenExpectedBlank() {
         val result = check.verifyManifestHash(
             integrity = PackIntegrity(hash = ""),

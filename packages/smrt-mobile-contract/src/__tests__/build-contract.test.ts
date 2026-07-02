@@ -50,15 +50,26 @@ describe('buildMobileContract', () => {
 
     expect(fields.get('created_at')?.kotlinType).toBe('Instant?');
     expect(fields.get('projectId')?.kotlinType).toBe('String');
+    expect(fields.get('ownerRef')?.kotlinType).toBe('String');
     expect(fields.get('revision')?.kotlinType).toBe('Int');
     expect(fields.get('revision')?.kotlinDefault).toBe('1');
     expect(fields.get('confidence')?.kotlinType).toBe('DecimalString?');
     expect(fields.get('confidence')?.kotlinDefault).toBe('null');
     expect(fields.get('approved')?.kotlinType).toBe('Boolean');
     expect(fields.get('approved')?.kotlinDefault).toBe('true');
+    // Raw `default` (current manifests) and quoted `defaultValue` (amaru-era).
     expect(fields.get('title')?.kotlinDefault).toBe('"Untitled"');
+    expect(fields.get('status')?.kotlinDefault).toBe('"draft"');
     // Typeless field falls back to the *Json name heuristic.
     expect(fields.get('metadataJson')?.kotlinType).toBe('JsonObject');
+  });
+
+  it('excludes relationship declarations from DTO projection', () => {
+    const contract = buildMobileContract(baseOptions);
+    const names = contract.objects[0].fields.map((field) => field.name);
+
+    expect(names).not.toContain('assignees');
+    expect(names).toContain('ownerRef');
   });
 
   it('maps Kotlin types to Swift types', () => {
