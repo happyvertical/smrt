@@ -1,5 +1,17 @@
 # @happyvertical/smrt-languages
 
+## 0.37.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.37.6
+  - @happyvertical/smrt-features@0.37.6
+  - @happyvertical/smrt-jobs@0.37.6
+  - @happyvertical/smrt-prompts@0.37.6
+  - @happyvertical/smrt-tenancy@0.37.6
+  - @happyvertical/smrt-config@0.37.6
+
 ## 0.37.5
 
 ### Patch Changes

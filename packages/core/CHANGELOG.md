@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.37.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - correct ADR sidebar doc ids (numeric prefix is stripped) (#1750) (docs)
+  - @happyvertical/smrt-config@0.37.6
+  - @happyvertical/smrt-types@0.37.6
+  - @happyvertical/smrt-scanner@0.37.6
+
 ## 0.37.5
 
 ### Patch Changes
