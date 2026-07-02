@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
   computeBodyEtag,
   conditionalJsonResponse,
@@ -19,6 +19,7 @@ import {
   ifNoneMatchSatisfied,
   PRIVATE_READ_CACHE_CONTROL,
   resolveReadCacheControl,
+  warnIfSharedCacheNeutralized,
 } from './conditional-get';
 
 describe('computeBodyEtag (#1757)', () => {
@@ -127,6 +128,65 @@ describe('resolveReadCacheControl policy matrix (#1757)', () => {
       resolveReadCacheControl({ public: true, cache: { sMaxage: 12.9 } }),
     ).toBe('public, max-age=0, s-maxage=12');
   });
+
+  // Cross-tenant cache-leak guard (#1757 review): a tenant-scoped model's
+  // body varies with the session-cookie tenant context, which URL-keyed
+  // shared caches cannot see. If someone re-enables this combination without
+  // a deliberate cache-keying design, these MUST fail.
+  it('tenant-scoped models NEVER emit shared-cache headers, even public + sMaxage', () => {
+    for (const config of [
+      { public: true, cache: { sMaxage: 300 } },
+      { public: 'read', cache: { sMaxage: 300 } },
+      { public: true },
+      { cache: { sMaxage: 300 } },
+    ]) {
+      const value = resolveReadCacheControl(config, { tenantScoped: true });
+      expect(value).toBe(PRIVATE_READ_CACHE_CONTROL);
+      expect(value).not.toContain('s-maxage');
+      expect(value).not.toContain('public');
+    }
+  });
+
+  it('tenantScoped: false preserves the shared-cache opt-in', () => {
+    expect(
+      resolveReadCacheControl(
+        { public: true, cache: { sMaxage: 300 } },
+        { tenantScoped: false },
+      ),
+    ).toBe('public, max-age=0, s-maxage=300');
+  });
+});
+
+describe('warnIfSharedCacheNeutralized (#1757)', () => {
+  const neutralizedConfig = { public: 'read', cache: { sMaxage: 120 } };
+
+  it('warns once per model when a tenant-scoped model configures sMaxage', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      warnIfSharedCacheNeutralized('WarnOnceModel', neutralizedConfig, true);
+      warnIfSharedCacheNeutralized('WarnOnceModel', neutralizedConfig, true);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('WarnOnceModel');
+      expect(warn.mock.calls[0][0]).toContain('sMaxage');
+      expect(warn.mock.calls[0][0]).toContain('private, no-cache');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('stays silent for safe configurations', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // Not tenant-scoped: the knob is honored, nothing to warn about.
+      warnIfSharedCacheNeutralized('SilentModelA', neutralizedConfig, false);
+      // Tenant-scoped but no shared-cache opt-in: nothing was neutralized.
+      warnIfSharedCacheNeutralized('SilentModelB', { public: true }, true);
+      warnIfSharedCacheNeutralized('SilentModelC', undefined, true);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });
 
 describe('conditionalJsonResponse (#1757)', () => {
@@ -187,13 +247,16 @@ describe('generated SvelteKit route helper snippet (#1757)', () => {
    * code that ships inside generated `+server.ts` files is executed for real
    * (mirroring the sveltekit-generator.runtime.test.ts precedent).
    */
-  async function importSnippet(apiConfig: unknown) {
+  async function importSnippet(
+    apiConfig: unknown,
+    options: { tenantScoped?: boolean } = {},
+  ) {
     const dir = mkdtempSync(join(tmpdir(), 'smrt-conditional-get-'));
     tempDirs.push(dir);
     const modulePath = join(dir, 'conditional-get-helper.ts');
     writeFileSync(
       modulePath,
-      `${generateConditionalGetRouteHelper(apiConfig)}\nexport { conditionalJson, READ_CACHE_CONTROL };\n`,
+      `${generateConditionalGetRouteHelper(apiConfig, options)}\nexport { conditionalJson, READ_CACHE_CONTROL };\n`,
     );
     return await import(pathToFileURL(modulePath).href);
   }
@@ -249,6 +312,22 @@ describe('generated SvelteKit route helper snippet (#1757)', () => {
     expect(res.headers.get('cache-control')).toBe(
       'public, max-age=0, s-maxage=120',
     );
+  });
+
+  it('bakes the private policy for tenant-scoped models even with public + sMaxage', async () => {
+    const helper = await importSnippet(
+      { public: 'read', cache: { sMaxage: 600 } },
+      { tenantScoped: true },
+    );
+    expect(helper.READ_CACHE_CONTROL).toBe(PRIVATE_READ_CACHE_CONTROL);
+
+    const res: Response = helper.conditionalJson(
+      new Request('http://local/api/widgets'),
+      { ok: true },
+    );
+    const cacheControl = res.headers.get('cache-control') as string;
+    expect(cacheControl).toBe(PRIVATE_READ_CACHE_CONTROL);
+    expect(cacheControl).not.toContain('s-maxage');
   });
 
   it('parity: the snippet ETag equals the runtime computeBodyEtag', async () => {

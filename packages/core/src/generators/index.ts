@@ -11,7 +11,9 @@ export {
   conditionalJsonResponse,
   ifNoneMatchSatisfied,
   PRIVATE_READ_CACHE_CONTROL,
+  type ReadCacheControlOptions,
   resolveReadCacheControl,
+  warnIfSharedCacheNeutralized,
 } from './conditional-get';
 export type {
   MCPConfig,

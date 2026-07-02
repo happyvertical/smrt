@@ -155,6 +155,57 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     }
   });
 
+  it('NEVER bakes shared-cache headers for tenant-scoped models (any form), even public + sMaxage (#1757 review)', async () => {
+    // Both representations: @smrt({ tenantScoped: true }) and the
+    // @TenantScoped({ mode: 'optional' }) decorator (scanner merges it into
+    // decoratorConfig.tenantScoped as an object). 'optional' mode is still
+    // unsafe: cookie'd vs anonymous requests get different bodies at one URL.
+    for (const tenantScoped of [true, { mode: 'optional' }]) {
+      vi.clearAllMocks();
+      vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(readFileSync).mockReturnValue('');
+      vi.mocked(readdirSync).mockReturnValue([]);
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Product: {
+            className: 'Product',
+            collection: 'products',
+            fields: {},
+            methods: {},
+            decoratorConfig: {
+              tenantScoped,
+              api: { public: 'read', cache: { sMaxage: 900 } },
+            },
+          },
+        },
+      } as unknown as SmartObjectManifest;
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const calls = vi.mocked(writeFileSync).mock.calls;
+      const collectionRoute = calls.find((call) =>
+        call[0].toString().endsWith('products/+server.ts'),
+      )?.[1] as string;
+      const itemRoute = calls.find((call) =>
+        call[0].toString().includes('products/[id]/+server.ts'),
+      )?.[1] as string;
+
+      for (const content of [collectionRoute, itemRoute]) {
+        expect(content).toBeDefined();
+        expect(content).toContain(
+          "const READ_CACHE_CONTROL = 'private, no-cache';",
+        );
+        expect(content).not.toContain('s-maxage');
+        expect(content).not.toContain("READ_CACHE_CONTROL = 'public");
+      }
+    }
+  });
+
   it('keeps public-without-opt-in models on the private policy', async () => {
     const { collectionRoute } = await generateAndRead({ public: true });
     expect(collectionRoute).toContain(

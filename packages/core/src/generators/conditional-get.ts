@@ -16,6 +16,10 @@
  *   response for `n` seconds while browsers still revalidate (cheap 304s).
  *   Models without the public flag NEVER emit shared-cache headers, even when
  *   `cache.sMaxage` is configured.
+ * - Tenant-scoped models (`@smrt({ tenantScoped })` / `@TenantScoped()`, any
+ *   mode) NEVER emit shared-cache headers: their bodies vary with the tenant
+ *   context, which URL-keyed shared caches cannot see. `sMaxage` is ignored
+ *   with a one-time warning.
  *
  * Consumed by both the runtime REST generator (`./rest.ts`) and — as an
  * emitted code snippet — the SvelteKit route generator
@@ -63,19 +67,28 @@ interface ApiCacheShape {
   public?: unknown;
 }
 
+/** Model-level context that constrains the cache policy beyond `api` config. */
+export interface ReadCacheControlOptions {
+  /**
+   * Whether the model is tenant-scoped (`@smrt({ tenantScoped })` or the
+   * `@TenantScoped()` decorator, ANY mode including `'optional'`). Tenant
+   * scoping keys the response body on request identity (session cookie), which
+   * shared caches cannot see — they key on the URL alone — so honoring
+   * `sMaxage` would serve one tenant's rows to other tenants or to anonymous
+   * visitors. Fail-closed: tenant-scoped models NEVER emit shared-cache
+   * headers (#1757 review finding).
+   */
+  tenantScoped?: boolean;
+}
+
 /**
- * Resolve the Cache-Control header for a generated read response from a
- * model's `@smrt({ api })` config (defensively typed — the config arrives as
- * `unknown` from the registry at runtime and from the manifest at build time).
- *
- * Only models that opted out of auth via `public: true` (or `'read'`, which
- * makes reads public) may emit shared-cache headers, and only when they also
- * configure a positive `cache.sMaxage`. Everything else — including a
- * non-public model that configures `sMaxage` — stays `private, no-cache`.
+ * The shared Cache-Control string the `api` config asks for, or null when the
+ * config does not (validly) opt into shared caching. Config-only — the
+ * tenant-scoped restriction is applied by `resolveReadCacheControl`.
  */
-export function resolveReadCacheControl(apiConfig: unknown): string {
+function requestedSharedCacheControl(apiConfig: unknown): string | null {
   if (!apiConfig || typeof apiConfig !== 'object') {
-    return PRIVATE_READ_CACHE_CONTROL;
+    return null;
   }
 
   const config = apiConfig as ApiCacheShape;
@@ -93,7 +106,60 @@ export function resolveReadCacheControl(apiConfig: unknown): string {
     return `public, max-age=0, s-maxage=${Math.floor(sMaxage)}`;
   }
 
-  return PRIVATE_READ_CACHE_CONTROL;
+  return null;
+}
+
+/**
+ * Resolve the Cache-Control header for a generated read response from a
+ * model's `@smrt({ api })` config (defensively typed — the config arrives as
+ * `unknown` from the registry at runtime and from the manifest at build time).
+ *
+ * Only models that opted out of auth via `public: true` (or `'read'`, which
+ * makes reads public) may emit shared-cache headers, and only when they also
+ * configure a positive `cache.sMaxage`. Everything else — including a
+ * non-public model that configures `sMaxage` — stays `private, no-cache`.
+ *
+ * Tenant-scoped models are ALWAYS `private, no-cache` regardless of config:
+ * their response bodies vary with the tenant context (resolved from session
+ * cookies, invisible to URL-keyed shared caches), so shared caching would
+ * leak one tenant's rows to other tenants or anonymous visitors.
+ */
+export function resolveReadCacheControl(
+  apiConfig: unknown,
+  options: ReadCacheControlOptions = {},
+): string {
+  if (options.tenantScoped) {
+    return PRIVATE_READ_CACHE_CONTROL;
+  }
+
+  return requestedSharedCacheControl(apiConfig) ?? PRIVATE_READ_CACHE_CONTROL;
+}
+
+// One warning per model — both transports resolve the same model repeatedly
+// (per route template at generation time, per request at runtime).
+const sharedCacheNeutralizedWarned = new Set<string>();
+
+/**
+ * Warn (once per model) when a tenant-scoped model configures
+ * `api.cache.sMaxage`: the knob is deliberately neutralized to private
+ * caching, and silently ignoring it would leave developers wondering why no
+ * CDN caching happens. Called from both the REST runtime and the SvelteKit
+ * route generator so the message surfaces wherever the model is served.
+ */
+export function warnIfSharedCacheNeutralized(
+  modelName: string,
+  apiConfig: unknown,
+  tenantScoped: boolean,
+): void {
+  if (!tenantScoped) return;
+  if (requestedSharedCacheControl(apiConfig) === null) return;
+  if (sharedCacheNeutralizedWarned.has(modelName)) return;
+  sharedCacheNeutralizedWarned.add(modelName);
+  console.warn(
+    `[smrt] api.cache.sMaxage ignored for tenant-scoped model ${modelName}: ` +
+      'shared caches cannot key on tenant context — serving ' +
+      `'${PRIVATE_READ_CACHE_CONTROL}' instead (#1757).`,
+  );
 }
 
 /**
@@ -132,21 +198,38 @@ export function conditionalJsonResponse(
   });
 }
 
+/** Generation-time context for the emitted SvelteKit route helper. */
+export interface ConditionalGetRouteHelperOptions
+  extends ReadCacheControlOptions {
+  /** Model name used for the one-time sMaxage-neutralized warning. */
+  modelName?: string;
+}
+
 /**
  * Emit the conditional-GET helper inlined into generated SvelteKit route
  * files, following the generator's existing inline-helper convention
  * (auth guard, tenant context, writable policy). The Cache-Control policy is
- * resolved at generation time from the object's `@smrt({ api })` config and
- * baked in as a constant.
+ * resolved at generation time from the object's `@smrt({ api })` config plus
+ * the model's tenant scoping, and baked in as a constant.
  *
  * Kept textually in lockstep with the runtime helpers above — the `.spec`
  * suite drives both through the same HTTP semantics.
  */
-export function generateConditionalGetRouteHelper(apiConfig: unknown): string {
-  // Both branches of resolveReadCacheControl return fixed framework-owned
+export function generateConditionalGetRouteHelper(
+  apiConfig: unknown,
+  options: ConditionalGetRouteHelperOptions = {},
+): string {
+  // All branches of resolveReadCacheControl return fixed framework-owned
   // strings (no user text), so interpolating into a single-quoted literal is
   // safe and matches the generated-code quoting style.
-  const cacheControl = resolveReadCacheControl(apiConfig);
+  const cacheControl = resolveReadCacheControl(apiConfig, options);
+  if (options.modelName) {
+    warnIfSharedCacheNeutralized(
+      options.modelName,
+      apiConfig,
+      options.tenantScoped === true,
+    );
+  }
 
   return `
 // Conditional GET (#1757): strong body-hash ETag + If-None-Match → 304 with an

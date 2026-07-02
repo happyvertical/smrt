@@ -66,6 +66,27 @@ class CondGetPrivateCachedCollection extends SmrtCollection<CondGetPrivateCached
   static readonly _itemClass = CondGetPrivateCached;
 }
 
+// Tenant-scoped model that (mis)configures public reads + sMaxage — the
+// cross-tenant cache-leak guard (#1757 review): its body varies with the
+// session-cookie tenant context, so shared caches must NEVER store it.
+@smrt({
+  tenantScoped: true,
+  api: { public: 'read', cache: { sMaxage: 600 } },
+})
+class CondGetTenantScoped extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name !== undefined) this.name = options.name;
+  }
+}
+
+class CondGetTenantScopedCollection extends SmrtCollection<CondGetTenantScoped> {
+  static readonly _itemClass = CondGetTenantScoped;
+}
+
 describe('REST conditional GET + cache-control policy (#1757)', () => {
   ObjectRegistry.registerCollection(
     'CondGetPublicCached',
@@ -79,6 +100,10 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
     'CondGetPrivateCached',
     CondGetPrivateCachedCollection,
   );
+  ObjectRegistry.registerCollection(
+    'CondGetTenantScoped',
+    CondGetTenantScopedCollection,
+  );
 
   let db: any;
   let handler: (req: Request) => Promise<Response>;
@@ -91,6 +116,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
         'CondGetPublicCached',
         'CondGetPublicPlain',
         'CondGetPrivateCached',
+        'CondGetTenantScoped',
       ],
     });
 
@@ -112,6 +138,10 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
     api.registerCollection(
       'privatecached',
       await CondGetPrivateCachedCollection.create({ db }),
+    );
+    api.registerCollection(
+      'tenantscoped',
+      await CondGetTenantScopedCollection.create({ db }),
     );
     handler = api.generateHandler();
   });
@@ -283,6 +313,40 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
         expect(cacheControl).not.toContain('s-maxage');
         expect(cacheControl).not.toContain('public');
       }
+    });
+
+    it('tenant-scoped models NEVER emit shared-cache headers, even public + sMaxage (#1757 review)', async () => {
+      const created = await create('tenantscoped', { name: 'tenant-a-row' });
+      expect(created.status).toBe(201);
+      const id = ((await created.json()) as any).id;
+
+      for (const path of ['tenantscoped', `tenantscoped/${id}`]) {
+        const res = await handler(new Request(`http://local/api/v1/${path}`));
+        expect(res.status).toBe(200);
+        const cacheControl = res.headers.get('cache-control') as string;
+        expect(cacheControl).toBe('private, no-cache');
+        expect(cacheControl).not.toContain('s-maxage');
+        expect(cacheControl).not.toContain('public');
+      }
+    });
+
+    it('tenant-scoped reads still support conditional revalidation (304)', async () => {
+      const first = await handler(
+        new Request('http://local/api/v1/tenantscoped'),
+      );
+      const etag = first.headers.get('etag') as string;
+      expect(etag).toMatch(/^"/);
+
+      const revalidated = await handler(
+        new Request('http://local/api/v1/tenantscoped', {
+          headers: { 'if-none-match': etag },
+        }),
+      );
+      expect(revalidated.status).toBe(304);
+      expect(await revalidated.text()).toBe('');
+      expect(revalidated.headers.get('cache-control')).toBe(
+        'private, no-cache',
+      );
     });
 
     it('conditional revalidation still works on shared-cacheable reads', async () => {

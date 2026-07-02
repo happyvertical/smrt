@@ -12,6 +12,7 @@ import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
 import {
   conditionalJsonResponse,
   resolveReadCacheControl,
+  warnIfSharedCacheNeutralized,
 } from './conditional-get';
 
 export interface APIConfig {
@@ -720,20 +721,31 @@ export class APIGenerator {
    * body-hash ETag, `If-None-Match` → 304 with an empty body, and the
    * Cache-Control policy resolved from the object's `@smrt({ api })` config
    * (private + revalidatable by default; shared `s-maxage` only for public
-   * models that opt in).
+   * models that opt in). Tenant-scoped models are always private: their bodies
+   * vary with tenant context, which URL-keyed shared caches cannot see.
    */
   private createReadResponse(
     req: Request,
     objectName: string | undefined,
     payload: unknown,
   ): Response {
-    const apiConfig = objectName
-      ? ObjectRegistry.getConfig(objectName)?.api
+    const config = objectName
+      ? ObjectRegistry.getConfig(objectName)
       : undefined;
+    const apiConfig = config?.api;
+    // Canonical accessor covers both `@smrt({ tenantScoped })` and the
+    // manifest-merged `@TenantScoped()` decorator form; the raw config flag is
+    // a belt-and-braces fallback for registrations not yet normalized.
+    const tenantScoped = objectName
+      ? ObjectRegistry.isTenantScoped(objectName) || !!config?.tenantScoped
+      : false;
+    if (objectName) {
+      warnIfSharedCacheNeutralized(objectName, apiConfig, tenantScoped);
+    }
     return conditionalJsonResponse(
       req,
       payload,
-      resolveReadCacheControl(apiConfig),
+      resolveReadCacheControl(apiConfig, { tenantScoped }),
     );
   }
 

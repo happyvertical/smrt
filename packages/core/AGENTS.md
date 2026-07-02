@@ -89,7 +89,7 @@ admin auth.
 | CLI | `src/generators/cli.ts` | `objectname:action` admin commands — writable allowlist, exhaustive-include, `--from-file`, fail-closed tenant context |
 | MCP Server | `src/generators/mcp.ts` | Model Context Protocol tools |
 
-Generated reads (`list`/`get`) on the REST and SvelteKit generators support conditional GET (#1757, helpers in `src/generators/conditional-get.ts`): strong body-hash ETag, `If-None-Match` → 304 with an empty body, `private, no-cache` by default. Public models may opt into shared caching via `@smrt({ api: { public: true | 'read', cache: { sMaxage } } })` → `public, max-age=0, s-maxage=<n>`; non-public models never emit shared-cache headers.
+Generated reads (`list`/`get`) on the REST and SvelteKit generators support conditional GET (#1757, helpers in `src/generators/conditional-get.ts`): strong body-hash ETag, `If-None-Match` → 304 with an empty body, `private, no-cache` by default. Public models may opt into shared caching via `@smrt({ api: { public: true | 'read', cache: { sMaxage } } })` → `public, max-age=0, s-maxage=<n>`; non-public models never emit shared-cache headers. Tenant-scoped models (any mode) never emit them either — bodies vary with session-cookie tenant context that URL-keyed shared caches cannot see; `sMaxage` is neutralized to `private, no-cache` with a one-time warning.
 
 ## Child Accessors (R10)
 
