@@ -45,14 +45,19 @@ one tier; the dimension table states what each tier must satisfy.
 | **T3 Light domain** | Real but thin domain/tooling packages. Full bar minus the coverage stretch. | 50% |
 | **T4 Stub / scaffold** | Intentionally incomplete or generative. Must be honest about it. | none |
 
-### Tier assignments (all 48 packages)
+### Tier assignments (all 50 packages)
 
 - **T1 (7):** `cli` · `config` · `core` · `scanner` · `tenancy` · `types`† · `vitest`
 - **T2 (12):** `agents` · `assets` · `chat` · `commerce` · `content` · `jobs` · `ledgers`‡ · `messages` · `profiles` · `secrets`‡ · `smrt-svelte` · `users`
-- **T3 (24):** `ads` · `affiliates` · `analytics` · `app-cli` · `assets-ergot` · `assets-local` · `events` · `facts` · `features` · `images` · `inventory` · `languages` · `manufacturing` · `places` · `products` · `projects` · `prompts` · `properties` · `sites` · `smrt-dev-mcp` · `social` · `tags` · `video` · `voice`
+- **T3 (25):** `ads` · `affiliates` · `analytics` · `app-cli` · `assets-ergot` · `assets-local` · `events` · `facts` · `features` · `images` · `inventory` · `languages` · `manufacturing` · `places` · `products` · `projects` · `prompts` · `properties` · `sites` · `smrt-dev-mcp` · `smrt-mobile-contract` · `social` · `tags` · `video` · `voice`
 - **T4 (5):** `gnode` · `smrt-app-mcp` · `smrt-playground` · `template-site-static-json` · `template-sveltekit`
+- **Non-vitest (1):** `smrt-mobile`§
 
 > † `types` is zero-runtime (pure types/enums) → coverage is **waived**; all other dimensions apply.
+> § `smrt-mobile` is Kotlin Multiplatform (ADR 0001): its unit tests run in the
+> Gradle CI lane (`.github/workflows/mobile.yml`), outside the vitest coverage
+> gate — untiered in `scripts/check-coverage.mjs`; see
+> `docs/content/standards.md` §1 "Non-TypeScript packages".
 > ‡ `ledgers` (double-entry, balance enforcement) and `secrets` (envelope encryption) are thin by size but held to the **T2** bar because a defect there has outsized blast radius.
 >
 > A T4 package MUST be explicitly labeled a stub/scaffold in its docs — "not done"

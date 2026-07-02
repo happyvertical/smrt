@@ -13,14 +13,17 @@ bug, not a shortcut.
 (Compose), `@happyvertical/smrt-ios` (SwiftUI/SPM), `@happyvertical/smrt-mobile-contract`
 (TS codegen). Final npm/Maven/SPM coordinates are a Phase 1 deliverable.
 
-**No package scaffolding has been created yet.** This branch is ADR + plan only.
-Adding a live package to the pnpm/turbo workspace pulls in workspace resolution,
-knowledge-check freshness, DAG guardrails, and coverage gates — not trivial and
-out of scope for a docs PR. Phase 1 creates the first real package.
+**Phase 1 landed the first packages** (PR #1749): `packages/smrt-mobile` and
+`packages/smrt-mobile-contract` are live workspace members. Adding further
+packages (`smrt-android`, `smrt-ios` in Phases 5–6) still pulls in workspace
+resolution, knowledge-check freshness, DAG guardrails, standards checks, and
+coverage gates — budget for those; the Phase 1 PR is the template.
 
 ---
 
 ## Phase 0 — Decisions to lock before writing code
+
+**Resolved — see the [decision record](#phase-0-decision-record-locked-2026-07-01) below.**
 
 These block Phase 1 and are genuine forks, not defaults:
 
@@ -42,6 +45,34 @@ These block Phase 1 and are genuine forks, not defaults:
 
 **Exit:** placement, distribution, store, and CI posture written into Phase 1's
 package README; server-contract owner identified.
+
+### Phase 0 decision record (locked 2026-07-01)
+
+Locked with the framework owner (issue #1737 has the full record):
+
+1. **Placement** — `packages/smrt-mobile` + `packages/smrt-mobile-contract`
+   with `package.json` wrappers (amaru precedent; every monorepo gate
+   verified).
+2. **Distribution** — deferred; consumers are local-fs (Gradle
+   `includeBuild`, local-path `Package.swift`). Coordinates locked: Maven
+   group `com.happyvertical.smrt`, namespace `com.happyvertical.smrt.mobile`.
+   Recorded constraint: remote git-source SPM cannot target a monorepo
+   subdirectory — remote iOS distribution later means XCFramework releases or
+   a mirror repo.
+3. **Durable store** — SQLDelight confirmed (JVM driver keeps Phase 2 queue
+   tests fast and SDK-free).
+4. **CI posture** — three lanes: (a) `validate:shell` on every PR (turbo
+   build), (b) path-filtered real Gradle build + KMP unit tests
+   (`.github/workflows/mobile.yml`, ubuntu), (c) nightly/on-demand macOS lane
+   for iOS targets. Gradle wrapper checked in — amaru CI never compiled
+   Kotlin (its `build` is a file validator); the foundation intentionally
+   exceeds that precedent.
+5. **Server contract** — `/api/mobile/*` exists in anytown's dashboard
+   (server-brokered PKCE on smrt-users OIDC/session infra; verified). Owner
+   decision: **SMRT ships the server side in this epic** — Phase 3.5
+   (#1748), reusable handlers in `smrt-users`.
+6. **Toolchain** — Kotlin 2.2.21 / AGP 8.13.1 / compileSdk 36 / minSdk 26 /
+   JVM 21 / iOS 17.0 (reporter-proven set, amaru catalog structure).
 
 ## Phase 1 — `smrt-mobile` skeleton
 
@@ -122,6 +153,27 @@ browser/deep-link seams. **Net-new for amaru.**
 **Acceptance:** full PKCE round-trip against a test IdP; token persists across
 launch; a forced 401 drives re-auth.
 
+## Phase 3.5 — Server-side `/api/mobile/*` handlers in smrt-users (#1748)
+
+Added by the Phase 0 owner decision: SMRT ships the server side of the
+mobile contract, not just its documentation.
+
+**Goal:** reusable SvelteKit handlers in `@happyvertical/smrt-users` for
+`POST /api/mobile/auth/start`, `POST /api/mobile/auth/complete`,
+`GET|DELETE /api/mobile/session`, bearer-auth middleware with the 401
+semantics the client re-auth flow expects, and a documented generic
+multipart-upload contract (`clientCaptureId` / `Idempotency-Key` dedup).
+Domain ingestion (anytown's contributions/plays/…) stays app-side.
+
+**Seed:** anytown dashboard routes
+(`apps/dashboard/src/routes/api/mobile/{auth/start,auth/complete,session}/+server.ts`,
+branch `claude/anytown-reporter-mobile-shell`), built on smrt-users
+`OidcLoginService` (PKCE) + sessions.
+
+**Sequencing:** after Phase 3 fixes the contract DTO shapes; parallel with
+Phase 4, whose acceptance (PKCE round-trip, multipart upload) should target
+these handlers. Phase 7 migrates anytown's dashboard onto them.
+
 ## Phase 4 — Networking (KMP Ktor client)
 
 **Goal:** one shared HTTP client, replacing both apps' raw
@@ -200,14 +252,14 @@ Two consumers from different trades = trade-neutrality demonstrated.
 ## Dependency order
 
 ```
-Phase 0 (decisions)
+Phase 0 (decisions — locked 2026-07-01)
       │
 Phase 1 (smrt-mobile skeleton + contract)
       │
       ├── Phase 2 (durable queue) ─┐
-      ├── Phase 3 (auth) ──────────┤
-      └── Phase 4 (networking) ────┘   (2→4 and 3→4: networking depends on both)
-                     │
+      ├── Phase 3 (auth) ──────────┤   Phase 3.5 (#1748 server handlers)
+      └── Phase 4 (networking) ────┘   runs parallel with Phase 4, after
+                     │                 Phase 3 fixes the contract shapes
       ┌──────────────┴──────────────┐
 Phase 5 (smrt-android)      Phase 6 (smrt-ios)   (parallel once 1–4 land)
       └──────────────┬──────────────┘

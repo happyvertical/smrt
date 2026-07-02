@@ -31,6 +31,8 @@
       "@happyvertical/smrt-ledgers",
       "@happyvertical/smrt-manufacturing",
       "@happyvertical/smrt-messages",
+      "@happyvertical/smrt-mobile",
+      "@happyvertical/smrt-mobile-contract",
       "@happyvertical/smrt-places",
       "@happyvertical/smrt-playground",
       "@happyvertical/smrt-products",

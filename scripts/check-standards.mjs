@@ -23,6 +23,12 @@ import { resolve, join } from 'node:path';
 const ROOT = resolve(import.meta.dirname, '..');
 const PKGS = join(ROOT, 'packages');
 
+// Non-TypeScript packages (Kotlin Multiplatform/Gradle — ADR 0001, see
+// docs/content/standards.md §1 "Non-TypeScript packages"). Exempt from every
+// TS-shape check: vitest config, typecheck script, dist in files. Phases 5-6
+// add smrt-android / smrt-ios here.
+const NON_TYPESCRIPT_PACKAGES = new Set(['smrt-mobile']);
+
 // Exemption tables — packages that have a documented reason to skip a check.
 // Keep narrow; expand only when adding the comment to docs/content/standards.md
 // describing the exemption.
@@ -203,7 +209,8 @@ function checkPackage(name) {
     } else {
       if (
         !json.files.includes('dist') &&
-        !EXEMPTIONS.noDistInFiles.has(name)
+        !EXEMPTIONS.noDistInFiles.has(name) &&
+        !NON_TYPESCRIPT_PACKAGES.has(name)
       ) {
         violations.push('files allowlist missing "dist"');
       }
@@ -253,7 +260,7 @@ function checkPackage(name) {
   }
 
   // 6. vitest.config.ts presence + smrtVitestPlugin usage
-  if (!EXEMPTIONS.noVitestConfig.has(name)) {
+  if (!EXEMPTIONS.noVitestConfig.has(name) && !NON_TYPESCRIPT_PACKAGES.has(name)) {
     const vitestConfig = join(PKGS, name, 'vitest.config.ts');
     if (!existsSync(vitestConfig)) {
       violations.push('missing vitest.config.ts');
@@ -286,8 +293,9 @@ function checkPackage(name) {
 
   // 8. typecheck script presence. Every package must ship a `typecheck`
   //    script so `turbo typecheck` is a meaningful, repo-wide gate. See
-  //    EXEMPTIONS.noTypecheckScript for documented carve-outs (templates).
-  if (!EXEMPTIONS.noTypecheckScript.has(name)) {
+  //    EXEMPTIONS.noTypecheckScript for documented carve-outs (templates);
+  //    non-TypeScript packages typecheck via the Kotlin compiler instead.
+  if (!EXEMPTIONS.noTypecheckScript.has(name) && !NON_TYPESCRIPT_PACKAGES.has(name)) {
     if (!json.scripts || typeof json.scripts.typecheck !== 'string') {
       violations.push(
         'scripts.typecheck is missing — add "tsc --noEmit -p tsconfig.json" ' +

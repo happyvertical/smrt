@@ -1,0 +1,50 @@
+{
+  "name": "@happyvertical/smrt-mobile-contract",
+  "version": "0.37.3",
+  "description": "SMRT mobile contract codegen: manifest + allowlist → mobile-contract.json → Kotlin/Swift DTOs, plus the generated framework contract for @happyvertical/smrt-mobile",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "CLAUDE.md",
+    "dist",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build && node scripts/generate-framework.mjs --verify",
+    "build:watch": "vite build --watch",
+    "dev": "npm run build:watch & npm run test:watch",
+    "generate:framework": "vite build && node scripts/generate-framework.mjs --write",
+    "verify:generated": "node scripts/generate-framework.mjs --verify",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "build:fresh": "npm run clean && npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.2",
+    "typescript": "^5.9.3",
+    "vite": "8.1.2",
+    "vitest": "^4.1.9"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-mobile-contract"
+  }
+}
