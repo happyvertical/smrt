@@ -86,7 +86,9 @@ in Phase 6, #1743).
 - Phase 3 (#1740) — **landed**: PKCE/OIDC session module (`MobileSessionManager`)
   with platform browser/deep-link/secure-storage seams.
 - Phase 3.5 (#1748): `/api/mobile` server handlers in `smrt-users`.
-- Phase 4 (#1741): shared Ktor client (bearer + multipart + retry).
+- Phase 4 (#1741) — **landed**: shared Ktor client (`MobileApiClient` +
+  `HttpQueueSender`): bearer everywhere, multipart with idempotency keys,
+  401 hook, queue flush end-to-end.
 - Phases 5–6 (#1742/#1743): `smrt-android` (Compose) and `smrt-ios` (SwiftUI +
   real KMP framework wiring).
 - Phase 7 (#1744): rebuild amaru FieldOps and anytown reporter on the

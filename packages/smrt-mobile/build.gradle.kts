@@ -42,11 +42,15 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.datetime)
             implementation(libs.kotlinx.serialization.json)
+            // Engine-agnostic on purpose: apps supply their platform engine
+            // (okhttp on Android, darwin on iOS); tests use MockEngine.
+            api(libs.ktor.client.core)
             implementation(libs.sqldelight.runtime)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
+            implementation(libs.ktor.client.mock)
         }
         jvmTest.dependencies {
             // Queue/store tests run against real SQLite on the JVM target —
