@@ -53,12 +53,12 @@ const sidebars: SidebarsConfig = {
       items: [
         {
           type: 'doc',
-          id: 'adr/0001-kmp-mobile-foundation',
+          id: 'adr/kmp-mobile-foundation',
           label: 'ADR 0001: KMP Mobile Foundation',
         },
         {
           type: 'doc',
-          id: 'adr/0001-kmp-mobile-foundation-extraction-plan',
+          id: 'adr/kmp-mobile-foundation-extraction-plan',
           label: 'ADR 0001: Extraction Plan',
         },
       ],
