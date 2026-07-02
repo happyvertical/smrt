@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "timestamp": "2026-07-01T00:00:00.000Z",
+  "packageName": "@happyvertical/fixture-objects",
+  "packageVersion": "0.0.1",
+  "objects": {
+    "@happyvertical/fixture-objects:FieldReport": {
+      "name": "FieldReport",
+      "className": "FieldReport",
+      "qualifiedName": "@happyvertical/fixture-objects:FieldReport",
+      "collection": "field_reports",
+      "packageName": "@happyvertical/fixture-objects",
+      "fields": {
+        "created_at": { "type": "datetime", "required": false },
+        "updated_at": { "type": "datetime", "required": false },
+        "tenantId": { "type": "text", "required": false },
+        "projectId": { "type": "foreignKey", "required": false, "related": "Project" },
+        "title": { "type": "text", "required": false, "defaultValue": "'Untitled'" },
+        "status": { "type": "text", "required": false },
+        "revision": { "type": "integer", "required": false, "defaultValue": 1 },
+        "confidence": { "type": "decimal", "required": false },
+        "approved": { "type": "boolean", "required": false, "defaultValue": true },
+        "metadataJson": { "required": false },
+        "publishedAt": { "type": "datetime", "required": false },
+        "notes": { "type": "text", "required": false }
+      },
+      "schema": { "tableName": "field_reports" }
+    },
+    "@happyvertical/fixture-objects:FieldReportCollection": {
+      "name": "FieldReportCollection",
+      "className": "FieldReportCollection",
+      "qualifiedName": "@happyvertical/fixture-objects:FieldReportCollection",
+      "collection": null,
+      "packageName": "@happyvertical/fixture-objects",
+      "fields": {},
+      "schema": null
+    },
+    "@happyvertical/fixture-objects:Attachment": {
+      "name": "Attachment",
+      "className": "Attachment",
+      "qualifiedName": "@happyvertical/fixture-objects:Attachment",
+      "collection": "attachments",
+      "packageName": "@happyvertical/fixture-objects",
+      "fields": {
+        "fileName": { "type": "text", "required": false },
+        "sizeBytes": { "type": "integer", "required": false },
+        "checksum": { "type": "text", "required": false }
+      },
+      "schema": { "tableName": "attachments" }
+    }
+  },
+  "moduleType": "esm",
+  "smrtDependencies": []
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@happyvertical/smrt-mobile",
+  "version": "0.37.3",
+  "description": "Kotlin Multiplatform shared mobile foundation for SMRT apps: offline pack model, evidence capture model, pack i18n resolver, shell state, and platform adapter contracts (durable queue, auth, and networking land in later phases)",
+  "author": "HappyVertical",
+  "type": "module",
+  "private": true,
+  "files": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "scripts": {
+    "build": "node scripts/validate-shell.mjs",
+    "validate:shell": "node scripts/validate-shell.mjs",
+    "build:gradle": "./gradlew build",
+    "test:gradle": "./gradlew allTests",
+    "clean": "rm -rf build .gradle .kotlin"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-mobile"
+  }
+}

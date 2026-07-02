@@ -1,0 +1,18 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build", "generate"],
+      "inputs": [
+        "src/**",
+        "scripts/**",
+        "package.json",
+        "tsconfig*.json",
+        "vite.config.ts",
+        "../smrt-mobile/src/commonMain/kotlin/com/happyvertical/smrt/mobile/contract/**"
+      ],
+      "outputs": ["dist/**", "tsconfig.*.tsbuildinfo"]
+    }
+  }
+}

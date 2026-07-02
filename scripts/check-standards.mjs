@@ -31,10 +31,13 @@ const EXEMPTIONS = {
   //   - vitest provides the plugin to others, builds with tsc
   //   - templates ship a scaffold; their test surface is the scaffolded
   //     output, not in-repo tests (e2e via Playwright tracked separately)
+  //   - smrt-mobile is Kotlin Multiplatform (ADR 0001); its tests are
+  //     Gradle/kotlin.test (mobile.yml CI lane), not vitest
   noVitestConfig: new Set([
     'vitest',
     'template-sveltekit',
     'template-site-static-json',
+    'smrt-mobile',
   ]),
   // Templates and stub packages may legitimately ship without tests.
   passWithNoTestsAllowed: new Set([
@@ -59,19 +62,25 @@ const EXEMPTIONS = {
   //     dist/federation) so a bare "dist" would over-publish.
   //   - templates ship a `template/` directory of scaffolding files instead
   //     of compiled output.
+  //   - smrt-mobile publishes nothing to npm (private Kotlin/Gradle package;
+  //     Maven publishing deferred per ADR 0001 Phase 0) — there is no dist.
   noDistInFiles: new Set([
     'products',
     'template-sveltekit',
     'template-site-static-json',
+    'smrt-mobile',
   ]),
   // Packages that legitimately ship without a `typecheck` script. Templates
   // are plain-JS scaffolding wrappers (`./index.js`) with no buildable
   // TypeScript source at the package root; their typecheck obligation lives in
   // the scaffolded `template/package.json` (which ships the svelte-kit sync +
   // tsc + svelte-check form per docs/content/standards.md §10).
+  // smrt-mobile has no TypeScript at all — the Kotlin compiler is its
+  // typechecker (`./gradlew build`, mobile.yml CI lane).
   noTypecheckScript: new Set([
     'template-sveltekit',
     'template-site-static-json',
+    'smrt-mobile',
   ]),
 };
 

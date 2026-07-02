@@ -1,6 +1,8 @@
 # ADR 0001: A Reusable KMP Mobile Foundation for SMRT
 
-- **Status**: Proposed
+- **Status**: Accepted — Phase 0 decisions locked with the framework owner
+  2026-07-01; see the
+  [decision record](./0001-kmp-mobile-foundation-extraction-plan.md#phase-0-decision-record-locked-2026-07-01)
 - **Date**: 2026-07-01
 - **Deciders**: Will (framework owner)
 - **Related**: [Extraction Plan](./0001-kmp-mobile-foundation-extraction-plan.md), [Products as Template](../architecture/products-as-template.md), [RFC-001 Multi-Tenancy](../rfcs/RFC-001-multi-tenancy.md)
@@ -311,6 +313,11 @@ pick-up-Phase-1 detail live in the companion
    reporter's durability, productionized to SQLDelight. **Highest leverage.**
 3. **Auth/session** ← reporter PKCE/OIDC as a shared module + platform
    browser/deep-link.
+   - **3.5 (added by the Phase 0 owner decision): server-side `/api/mobile/*`
+     handlers in `smrt-users`** (#1748) — SMRT ships the auth + session +
+     upload-contract server surface itself (anytown's dashboard, which
+     already implements it on smrt-users OIDC/session infra, is the
+     reference implementation and migrates in Phase 7).
 4. **Networking** ← KMP Ktor client carrying reporter's auth + multipart + retry.
 5. **`smrt-android`** ← amaru theme + shell + barcode/speech/Talk adapters.
 6. **`smrt-ios`** ← extract amaru's inline theme into a real file, **wire the

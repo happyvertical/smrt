@@ -59,6 +59,19 @@ packages/<name>/
 | `bin/` | Package exposes a CLI binary |
 | `e2e/` and `playwright.config.ts` | Package has Playwright end-to-end tests |
 
+### Non-TypeScript packages
+
+`packages/smrt-mobile` is the monorepo's first non-TypeScript package
+(Kotlin Multiplatform — ADR 0001). It keeps the workspace wrapper surface
+(`package.json`, `AGENTS.md`, `CLAUDE.md` shim, `README.md`) but is exempt —
+via the `EXEMPTIONS` table in `scripts/check-standards.mjs` — from the
+TypeScript-specific requirements: no `vitest.config.ts` (its tests are
+Gradle/kotlin.test, run by the `.github/workflows/mobile.yml` lane), no
+`typecheck` script (the Kotlin compiler typechecks), and no `dist` in
+`files` (nothing publishes to npm: `private: true`, Maven publishing
+deferred per the ADR 0001 Phase 0 decision record). Its always-on structural
+gate is `validate:shell`, wired as the package `build` script.
+
 ### Forbidden at any package root or src
 
 See [§11](#11-forbidden-artifacts) for the full list.

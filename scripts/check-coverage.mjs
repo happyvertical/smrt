@@ -79,6 +79,7 @@ const TIERS = {
   properties: 'T3',
   sites: 'T3',
   'smrt-dev-mcp': 'T3',
+  'smrt-mobile-contract': 'T3',
   social: 'T3',
   tags: 'T3',
   video: 'T3',
