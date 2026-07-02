@@ -16,8 +16,8 @@ import {
   ObjectRegistry,
   SmrtCollection,
   SmrtObject,
-  smrt,
   type SyncApplyBatchResponse,
+  smrt,
 } from '@happyvertical/smrt-core';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
@@ -108,7 +108,7 @@ describe('Sync-apply tenant isolation (#1759)', () => {
     return withTenant({ tenantId: 'tenant-a' }, () => docs.get(VICTIM_UUID));
   }
 
-  it('rejects an update targeting another tenant\'s row without failing the batch', async () => {
+  it("rejects an update targeting another tenant's row without failing the batch", async () => {
     const { results } = await applyAs('tenant-b', [
       {
         itemId: 'cross-update',
@@ -140,7 +140,7 @@ describe('Sync-apply tenant isolation (#1759)', () => {
     expect(victim?.tenantId).toBe('tenant-a');
   });
 
-  it('rejects a create colliding with another tenant\'s row id and never overwrites it', async () => {
+  it("rejects a create colliding with another tenant's row id and never overwrites it", async () => {
     const { results } = await applyAs('tenant-b', [
       {
         itemId: 'cross-create',

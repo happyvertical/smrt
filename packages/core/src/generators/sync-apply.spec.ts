@@ -150,9 +150,7 @@ describe('Sync-apply batch endpoint (#1759)', () => {
   /** Full observable table state (public JSON, includes timestamps). */
   async function noteState(): Promise<unknown> {
     const rows = await notes.list({ orderBy: 'id' });
-    return JSON.parse(
-      JSON.stringify(rows.map((row) => row.toPublicJSON())),
-    );
+    return JSON.parse(JSON.stringify(rows.map((row) => row.toPublicJSON())));
   }
 
   describe('batch envelope', () => {
@@ -275,14 +273,8 @@ describe('Sync-apply batch endpoint (#1759)', () => {
       const run2 = await apply(batch);
       const state2 = await noteState();
 
-      expect(run1.results.map((r) => r.status)).toEqual([
-        'applied',
-        'applied',
-      ]);
-      expect(run2.results.map((r) => r.status)).toEqual([
-        'applied',
-        'applied',
-      ]);
+      expect(run1.results.map((r) => r.status)).toEqual(['applied', 'applied']);
+      expect(run2.results.map((r) => r.status)).toEqual(['applied', 'applied']);
       expect(state2).toEqual(state1);
       expect(await notes.get(UUID_C)).toBeNull();
     });

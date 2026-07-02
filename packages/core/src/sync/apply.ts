@@ -292,7 +292,9 @@ interface InvalidItem {
  * Per-item shape validation. Never throws; malformed items become `rejected`
  * results so one bad item cannot fail the batch.
  */
-export function validateSyncApplyItem(raw: unknown): ValidatedItem | InvalidItem {
+export function validateSyncApplyItem(
+  raw: unknown,
+): ValidatedItem | InvalidItem {
   const record =
     raw && typeof raw === 'object' && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
@@ -450,11 +452,36 @@ function rowUpdatedAtIso(row: SyncApplyRowLike): string | undefined {
   return undefined;
 }
 
+/**
+ * Detect a unique/primary-key constraint failure anywhere in an error's cause
+ * chain. `save()` classifies constraint errors into typed `ValidationError`s
+ * when the driver message reaches it directly, but adapter layers may wrap
+ * the driver error (e.g. "Failed to upsert record into table …" with the
+ * SQLite/PostgreSQL/DuckDB constraint text nested in `cause`), surfacing as a
+ * generic `DatabaseError` instead — so match both, walking the chain. The
+ * message patterns mirror `SmrtObject.classifyConstraintError`.
+ */
 function isUniqueConstraintError(error: unknown): boolean {
-  return (
-    error instanceof ValidationError &&
-    error.code === 'VALIDATION_UNIQUE_CONSTRAINT'
-  );
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    if (
+      current instanceof ValidationError &&
+      current.code === 'VALIDATION_UNIQUE_CONSTRAINT'
+    ) {
+      return true;
+    }
+    if (
+      /UNIQUE constraint failed/i.test(current.message) ||
+      /violates unique constraint/i.test(current.message) ||
+      /violates primary key constraint/i.test(current.message)
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 async function applyValidatedItem(
@@ -477,8 +504,7 @@ async function applyValidatedItem(
   // Payload passes through the host's writable policy; the row UUID comes
   // from the validated envelope `id`, never from the body — the #1540
   // mass-assignment guard stays intact on this path too.
-  const data =
-    item.op === 'delete' ? {} : target.prepare(item.payload ?? {});
+  const data = item.op === 'delete' ? {} : target.prepare(item.payload ?? {});
 
   // Tenant isolation: collection.get runs the interceptor stack, so rows
   // outside the caller's tenant are simply not visible here.
@@ -489,7 +515,11 @@ async function applyValidatedItem(
       if (row) {
         if (payloadMatchesRow(data, row)) {
           // Idempotent replay of an already-applied create.
-          return { ...base, status: 'applied', updatedAt: rowUpdatedAtIso(row) };
+          return {
+            ...base,
+            status: 'applied',
+            updatedAt: rowUpdatedAtIso(row),
+          };
         }
         // The id exists with different content — the server state wins (LWW
         // skip) and the client is told to rebase.

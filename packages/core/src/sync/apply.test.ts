@@ -39,18 +39,22 @@ describe('parseSyncApplyBatch', () => {
     expect('items' in parsed && parsed.items).toHaveLength(1);
   });
 
-  it.each([null, 'nope', 42, [], {}, { items: 'x' }, { items: {} }])(
-    'rejects a malformed batch body: %j',
-    (body) => {
-      const parsed = parseSyncApplyBatch(body);
-      expect('error' in parsed && parsed.error.code).toBe('invalid_batch');
-    },
-  );
+  it.each([
+    null,
+    'nope',
+    42,
+    [],
+    {},
+    { items: 'x' },
+    { items: {} },
+  ])('rejects a malformed batch body: %j', (body) => {
+    const parsed = parseSyncApplyBatch(body);
+    expect('error' in parsed && parsed.error.code).toBe('invalid_batch');
+  });
 
   it('rejects a batch above the size cap', () => {
-    const items = Array.from(
-      { length: MAX_SYNC_APPLY_BATCH_SIZE + 1 },
-      () => validItem(),
+    const items = Array.from({ length: MAX_SYNC_APPLY_BATCH_SIZE + 1 }, () =>
+      validItem(),
     );
     const parsed = parseSyncApplyBatch({ items });
     expect('error' in parsed && parsed.error.code).toBe('batch_too_large');
@@ -94,7 +98,11 @@ describe('validateSyncApplyItem', () => {
 
   it('accepts uppercase UUIDs and deletes without payloads', () => {
     const validated = validateSyncApplyItem(
-      validItem({ op: 'delete', id: VALID_UUID.toUpperCase(), payload: undefined }),
+      validItem({
+        op: 'delete',
+        id: VALID_UUID.toUpperCase(),
+        payload: undefined,
+      }),
     );
     expect(validated.ok).toBe(true);
   });
@@ -183,9 +191,9 @@ describe('payloadMatchesRow (idempotent no-op detection)', () => {
       payloadMatchesRow({ publishedAt: '2026-07-02T10:00:00.000Z' }, row),
     ).toBe(true);
     // Second-precision ISO strings still parse to the same instant.
-    expect(payloadMatchesRow({ publishedAt: '2026-07-02T10:00:00Z' }, row)).toBe(
-      true,
-    );
+    expect(
+      payloadMatchesRow({ publishedAt: '2026-07-02T10:00:00Z' }, row),
+    ).toBe(true);
     expect(
       payloadMatchesRow({ publishedAt: '2026-07-02T10:00:01.000Z' }, row),
     ).toBe(false);
