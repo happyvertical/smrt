@@ -119,7 +119,8 @@ async function loadCorrections(contentIdToLoad = savedContentId) {
     onCorrectionsChange?.(correctionsResponse.data);
   } catch (err) {
     if (savedContentId !== contentIdToLoad) return;
-    error = (err instanceof Error ? err.message : '') || 'Failed to load corrections';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to load corrections';
   } finally {
     if (savedContentId === contentIdToLoad) {
       busy = false;
@@ -151,7 +152,8 @@ async function issueCorrection() {
     await loadCorrections(contentIdToCorrect);
   } catch (err) {
     if (savedContentId !== contentIdToCorrect) return;
-    error = (err instanceof Error ? err.message : '') || 'Failed to issue correction';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to issue correction';
   } finally {
     if (savedContentId === contentIdToCorrect) {
       busy = false;

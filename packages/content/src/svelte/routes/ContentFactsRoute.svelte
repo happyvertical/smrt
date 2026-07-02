@@ -68,7 +68,8 @@ async function loadFacts() {
     });
     facts = response.data;
   } catch (err) {
-    error = (err instanceof Error ? err.message : '') || 'Failed to load facts.';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to load facts.';
   } finally {
     loading = false;
     refreshing = false;

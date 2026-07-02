@@ -307,4 +307,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-export { migrate, type MigrationOptions };
+export { type MigrationOptions, migrate };

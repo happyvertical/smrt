@@ -1075,7 +1075,7 @@ export class CLIGenerator {
     let command = commands.find(
       (cmd) =>
         cmd.name === parsed.command ||
-        (parsed.command && cmd.aliases && cmd.aliases.includes(parsed.command)),
+        (parsed.command && cmd.aliases?.includes(parsed.command)),
     );
 
     // If not found in utility commands, try lazy-loading object commands
@@ -2038,7 +2038,7 @@ export class CLIGenerator {
   ): Promise<void> {
     try {
       const classInfo = ObjectRegistry.getClass(objectName);
-      if (!classInfo || !classInfo.constructor) {
+      if (!classInfo?.constructor) {
         const availableObjects = Array.from(
           ObjectRegistry.getAllClasses().values(),
         ).map((info) => info.name);
@@ -2272,7 +2272,7 @@ export class CLIGenerator {
   ): Promise<SmrtCollection<SmrtObject>> {
     if (!this.collections.has(objectName)) {
       const classInfo = ObjectRegistry.getClass(objectName);
-      if (!classInfo || !classInfo.collectionConstructor) {
+      if (!classInfo?.collectionConstructor) {
         // Enhanced error message with troubleshooting
         const availableObjects = Array.from(
           ObjectRegistry.getAllClasses().values(),

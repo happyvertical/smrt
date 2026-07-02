@@ -35,14 +35,14 @@ import type {
 } from '../scanner/types.js';
 import { parse } from '../utils/json.js';
 import {
-  isDecoratorRuntimeFramePath,
-  isDecoratorRuntimePackageName,
-} from '../utils/stack-frames.js';
-import {
   createQualifiedName,
   isQualifiedName,
   parseQualifiedName,
 } from '../utils/qualified-names.js';
+import {
+  isDecoratorRuntimeFramePath,
+  isDecoratorRuntimePackageName,
+} from '../utils/stack-frames.js';
 import { ManifestManager } from './manager.js';
 import { getDefaultCompositeSource } from './sources/composite.js';
 import {

@@ -1,5 +1,5 @@
-import { Asset } from '@happyvertical/smrt-assets';
-import { Image } from '@happyvertical/smrt-images';
+import type { Asset } from '@happyvertical/smrt-assets';
+import type { Image } from '@happyvertical/smrt-images';
 import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';

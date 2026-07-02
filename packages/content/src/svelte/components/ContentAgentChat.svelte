@@ -5,12 +5,12 @@
  * supporting multiple topics (threads).
  */
 
-import { AgentChat } from '@happyvertical/smrt-chat/svelte';
 import type {
   AgentSessionData,
   ChatMessageData,
   ChatThreadData,
 } from '@happyvertical/smrt-chat/svelte';
+import { AgentChat } from '@happyvertical/smrt-chat/svelte';
 import { Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';

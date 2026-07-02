@@ -318,7 +318,7 @@ async function loadDependencyManifests(
 
   while (queue.length > 0) {
     const next = queue.shift();
-    if (!next || !next.dependency || loaded.has(next.dependency)) {
+    if (!next?.dependency || loaded.has(next.dependency)) {
       continue;
     }
 

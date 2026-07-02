@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.kotlinSerialization)
-    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.androidKmpLibrary)
 }
 
 // Maven coordinates locked by the Phase 0 decision record (ADR 0001):
@@ -13,7 +13,14 @@ version = "0.37.3"
 kotlin {
     jvmToolchain(21)
 
-    androidTarget()
+    android {
+        namespace = "com.happyvertical.smrt.mobile"
+        compileSdk = libs.versions.android.compile.sdk.get().toInt()
+        minSdk = libs.versions.android.min.sdk.get().toInt()
+
+        withJava()
+    }
+
     // Pure-JVM target so common logic tests run anywhere (CI machines and dev
     // hosts without an Android SDK): `./gradlew jvmTest`.
     jvm()
@@ -37,19 +44,5 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
-    }
-}
-
-android {
-    namespace = "com.happyvertical.smrt.mobile"
-    compileSdk = libs.versions.android.compile.sdk.get().toInt()
-
-    defaultConfig {
-        minSdk = libs.versions.android.min.sdk.get().toInt()
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
     }
 }

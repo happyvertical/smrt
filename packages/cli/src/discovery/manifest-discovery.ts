@@ -306,7 +306,7 @@ export async function loadManifestFile(
 export async function loadManifest(manifestPath: string): Promise<void> {
   const manifest = await loadManifestFile(manifestPath);
 
-  if (!manifest || !manifest.objects) {
+  if (!manifest?.objects) {
     return;
   }
 

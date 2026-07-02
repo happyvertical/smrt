@@ -107,7 +107,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
    */
   async findParent(tenantId: string): Promise<Tenant | null> {
     const tenant = await this.get({ id: tenantId });
-    if (!tenant || !tenant.parentTenantId) {
+    if (!tenant?.parentTenantId) {
       return null;
     }
     return await this.get({ id: tenant.parentTenantId });
@@ -159,7 +159,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
    */
   async getDescendants(tenantId: string): Promise<Tenant[]> {
     const tenant = await this.get({ id: tenantId });
-    if (!tenant || !tenant.id) {
+    if (!tenant?.id) {
       return [];
     }
 
@@ -286,7 +286,7 @@ export class TenantCollection extends SmrtCollection<Tenant> {
     newParentId: string | null,
   ): Promise<Tenant> {
     const tenant = await this.get({ id: tenantId });
-    if (!tenant || !tenant.id) {
+    if (!tenant?.id) {
       throw new TenantHierarchyError(
         `Tenant not found: ${tenantId}`,
         'INVALID_OPERATION',

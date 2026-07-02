@@ -508,7 +508,7 @@ export class ChatService {
         params.actorProfileId,
         params.tenantId,
       );
-      if (!actor || !actor.isAdmin()) {
+      if (!actor?.isAdmin()) {
         throw new Error(
           'Only a room owner/admin may remove another participant (authorization denied)',
         );
@@ -1150,7 +1150,7 @@ export class ChatService {
       profileId,
       tenantId,
     );
-    if (!actor || !actor.isAdmin()) {
+    if (!actor?.isAdmin()) {
       throw new Error(
         'Caller must be a room owner/admin (authorization denied)',
       );

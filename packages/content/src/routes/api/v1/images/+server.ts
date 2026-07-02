@@ -1,6 +1,6 @@
 import { createLogger } from '@happyvertical/logger';
-import { Asset } from '@happyvertical/smrt-assets';
-import { Image } from '@happyvertical/smrt-images';
+import type { Asset } from '@happyvertical/smrt-assets';
+import type { Image } from '@happyvertical/smrt-images';
 import { json } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';

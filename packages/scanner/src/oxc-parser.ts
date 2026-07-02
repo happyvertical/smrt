@@ -439,10 +439,7 @@ interface TSTypeLiteral extends BaseNode {
   members: TSTypeElement[];
 }
 
-type TSTypeElement =
-  | TSPropertySignature
-  | TSMethodSignature
-  | TSIndexSignature;
+type TSTypeElement = TSPropertySignature | TSMethodSignature | TSIndexSignature;
 
 interface TSPropertySignature extends BaseNode {
   type: 'TSPropertySignature';

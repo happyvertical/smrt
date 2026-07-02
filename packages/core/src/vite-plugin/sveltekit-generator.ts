@@ -25,9 +25,9 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
-import { generateSyncApplyRoute } from './sync-apply-route.js';
 import { generateChangesRoute } from './changes-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { generateSyncApplyRoute } from './sync-apply-route.js';
 
 export interface SvelteKitOptions {
   enabled: boolean;

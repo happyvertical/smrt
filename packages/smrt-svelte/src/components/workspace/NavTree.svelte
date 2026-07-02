@@ -76,7 +76,7 @@ function checkExpanded(item: NavItem): boolean {
  */
 function checkEffectiveActive(item: NavItem): boolean {
   if (checkActive(item)) return true;
-  if (collapsed && !!item.children?.length && checkParentActive(item))
+  if (collapsed && item.children?.length && checkParentActive(item))
     return true;
   return false;
 }

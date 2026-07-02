@@ -77,7 +77,7 @@ export class LanguageTranslationTask extends SmrtObject {
     skipped?: 'feature_disabled' | 'not_supported' | 'budget' | 'stale';
     template?: string;
   }> {
-    if (!args || !args.key || !args.targetLocale || !args.sourceTemplate) {
+    if (!args?.key || !args.targetLocale || !args.sourceTemplate) {
       throw new Error(
         'LanguageTranslationTask.execute requires a translation payload',
       );

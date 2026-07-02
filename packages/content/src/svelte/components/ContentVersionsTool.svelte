@@ -87,7 +87,8 @@ async function refreshVersions(contentIdToLoad = savedContentId) {
     onVersionsChange?.(response.data);
   } catch (err) {
     if (savedContentId !== contentIdToLoad) return;
-    error = (err instanceof Error ? err.message : '') || 'Failed to load versions';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to load versions';
   } finally {
     if (savedContentId === contentIdToLoad) {
       busy = false;
@@ -113,7 +114,9 @@ async function createSnapshot() {
     await refreshVersions(contentIdToSnapshot);
   } catch (err) {
     if (savedContentId !== contentIdToSnapshot) return;
-    error = (err instanceof Error ? err.message : '') || 'Failed to create version snapshot';
+    error =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to create version snapshot';
   } finally {
     if (savedContentId === contentIdToSnapshot) {
       busy = false;
@@ -155,7 +158,8 @@ async function restoreVersion(versionNumber: number) {
     await refreshVersions(contentIdToRestore);
   } catch (err) {
     if (savedContentId !== contentIdToRestore) return;
-    error = (err instanceof Error ? err.message : '') || 'Failed to restore version';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to restore version';
   } finally {
     if (savedContentId === contentIdToRestore) {
       busy = false;

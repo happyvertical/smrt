@@ -176,8 +176,9 @@ export class TerminalAuthService {
   }
 
   async initialize(): Promise<void> {
-    this.requestCollection =
-      await UsersCliAuthRequestCollection.create(this.options);
+    this.requestCollection = await UsersCliAuthRequestCollection.create(
+      this.options,
+    );
     this.sessionService = await SessionService.create({
       ...this.options,
       autoExtend: this.options.sessionAutoExtend ?? true,

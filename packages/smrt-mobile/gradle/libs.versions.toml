@@ -1,19 +1,20 @@
 # Toolchain set locked by the Phase 0 decision record (ADR 0001): reporter's
-# proven versions (Kotlin 2.2.21 / AGP 8.13.1) with amaru's catalog structure.
+# current versions (Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1) with amaru's
+# catalog structure.
 # compileSdk 36 / minSdk 26 / JVM 21 are shared by both seed apps.
 [versions]
 android-compile-sdk = "36"
 android-min-sdk = "26"
-agp = "8.13.1"
-kotlin = "2.2.21"
-kotlinx-datetime = "0.6.1"
-kotlinx-serialization = "1.7.3"
+agp = "9.2.1"
+kotlin = "2.4.0"
+kotlinx-datetime = "0.8.0-0.6.x-compat"
+kotlinx-serialization = "1.11.0"
 
 [libraries]
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 
 [plugins]
-androidLibrary = { id = "com.android.library", version.ref = "agp" }
+androidKmpLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinSerialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

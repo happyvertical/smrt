@@ -175,7 +175,9 @@ export class SignalSanitizer {
       ...(signal.duration !== undefined && { duration: signal.duration }),
       // `signal.args` is an array, so `sanitizeValue` always returns an array
       // (the `Array.isArray` branch maps element-wise).
-      ...(signal.args && { args: this.sanitizeValue(signal.args) as unknown[] }),
+      ...(signal.args && {
+        args: this.sanitizeValue(signal.args) as unknown[],
+      }),
       ...(signal.result !== undefined
         ? { result: this.sanitizeValue(signal.result) }
         : {}),

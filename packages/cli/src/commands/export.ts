@@ -670,9 +670,7 @@ export const exportCommand: CLICommand = {
         if (!options['dry-run']) {
           let content: string;
           if (format === 'ndjson') {
-            content = formattedRecords
-              .map((r) => JSON.stringify(r))
-              .join('\n');
+            content = formattedRecords.map((r) => JSON.stringify(r)).join('\n');
           } else if (format === 'csv') {
             // Simple CSV (headers + rows)
             if (formattedRecords.length > 0) {

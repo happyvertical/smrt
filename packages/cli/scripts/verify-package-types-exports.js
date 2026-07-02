@@ -426,7 +426,7 @@ function collectMissingTypeImports(packageRoot, typeEntryFiles) {
 
     for (const match of source.matchAll(importPattern)) {
       const specifier = match[1] || match[2];
-      if (!specifier || !specifier.startsWith('.')) {
+      if (!specifier?.startsWith('.')) {
         continue;
       }
 
