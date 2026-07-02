@@ -31,6 +31,11 @@ declare module '@happyvertical/smrt-virt-routes' {
   export * from '@smrt/routes';
 }
 
+declare module '@happyvertical/smrt-virt-web' {
+  export * from '@smrt/web';
+  export { default } from '@smrt/web';
+}
+
 /**
  * Minimal `Bun` global for the standalone Bun demo server (`simple-server.ts`).
  * Declared narrowly here rather than via `@types/bun` so Bun's global overrides

@@ -180,6 +180,13 @@ export default defineConfig(async ({ mode }) => {
 					input: resolve(packageDir, 'index.html'),
 				},
 			},
+			server: {
+				// Dev-mode API for the live demo page (#1756): run
+				// `pnpm demo:live-server` alongside `pnpm dev:standalone`.
+				proxy: {
+					'/api/v1': 'http://127.0.0.1:39456',
+				},
+			},
 			plugins: [svelte(), await loadSmrtConsumer(), smrt],
 		};
 	}

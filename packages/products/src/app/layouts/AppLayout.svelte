@@ -21,6 +21,7 @@ const { t } = useI18n();
       
       <nav class="main-nav">
         <a href="#products" class="nav-link">Products</a>
+        <a href="#live" class="nav-link">Live (TanStack)</a>
         <a href="#categories" class="nav-link">Categories</a>
         <a href="#dashboard" class="nav-link">Dashboard</a>
       </nav>

@@ -3,6 +3,7 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { onMount } from 'svelte';
 import { M } from '../lib/i18n.js';
 import DemoPage from './pages/DemoPage.svelte';
+import LiveProductsPage from './pages/LiveProductsPage.svelte';
 import ProductsPage from './pages/ProductsPage.svelte';
 
 const { t } = useI18n();
@@ -31,6 +32,8 @@ onMount(() => {
     <DemoPage />
   {:else if currentPage === 'products'}
     <ProductsPage />
+  {:else if currentPage === 'live'}
+    <LiveProductsPage />
   {:else if currentPage === 'categories'}
     <div class="placeholder-page">
       <h2>Categories</h2>

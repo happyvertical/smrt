@@ -97,7 +97,10 @@ describe('createSmrtCollection', () => {
     );
 
     await collection.preload();
-    expect(collection.toArray).toEqual([
+    // Note: TanStack DB 0.6 decorates rows with virtual props ($key,
+    // $origin, ...), so assertions match the DTO subset rather than deep
+    // equality.
+    expect(collection.toArray).toMatchObject([
       { id: 'p1', name: 'Widget', price: 9.99 },
     ]);
     expect(scripted.calls.list).toBe(1);
@@ -186,7 +189,8 @@ describe('createSmrtCollection', () => {
 
     // Optimistic state rolled back: the row is gone, server state intact.
     expect(collection.has(localId)).toBe(false);
-    expect(collection.toArray).toEqual([{ id: 'p1', name: 'Widget' }]);
+    expect(collection.toArray).toMatchObject([{ id: 'p1', name: 'Widget' }]);
+    expect(collection.size).toBe(1);
 
     await collection.cleanup();
   });

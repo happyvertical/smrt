@@ -1462,6 +1462,9 @@ importers:
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
+      '@happyvertical/smrt-web':
+        specifier: workspace:*
+        version: link:../smrt-web
       '@happyvertical/sql':
         specifier: ^0.74.11
         version: 0.74.11(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
@@ -1505,6 +1508,9 @@ importers:
       svelte-check:
         specifier: ^4.7.1
         version: 4.7.1(picomatch@4.0.4)(svelte@5.56.4)(typescript@5.9.3)
+      tsx:
+        specifier: ^4.22.4
+        version: 4.22.4
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

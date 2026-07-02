@@ -56,6 +56,7 @@
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-web": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "cors": "^2.8.6",
@@ -80,6 +81,7 @@
     "concurrently": "^9.2.3",
     "svelte": "^5.56.4",
     "svelte-check": "^4.7.1",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3",
     "vite": "^8.1.2",
     "vitest": "^4.1.9"
@@ -98,6 +100,7 @@
     "build:app": "vite build --mode standalone",
     "build:federation": "vite build --mode federation",
     "generate:mcp": "tsx src/mcp.ts",
+    "demo:live-server": "tsx src/demo-live-server.ts",
     "mcp": "node dist/mcp-server.js",
     "start": "npm run start:standalone",
     "start:standalone": "node dist/app/main.js",

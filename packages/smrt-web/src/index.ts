@@ -96,9 +96,22 @@ export type SmrtWebRow<TData extends object> = TData & { id: string };
 export interface CreateSmrtCollectionOptions {
   /**
    * Generated REST client surface for this collection, e.g.
-   * `createClient('/api/v1').products`.
+   * `createClient('/api/v1').products` from the virt-client module. When
+   * omitted, fetchers are derived from the definition's endpoint and
+   * `basePath` with the same URL scheme and payload shapes the generated
+   * client uses.
+   *
+   * (Spike note #1756: in builds that run both smrtPlugin and smrtConsumer
+   * — products standalone/federation — importing the virt-client module
+   * currently loads the consumer plugin's fallback instead, whose generated
+   * code is invalid for qualified manifest keys. Definition-derived
+   * fetchers avoid depending on that resolution path.)
    */
-  fetchers: SmrtCrudFetchers;
+  fetchers?: SmrtCrudFetchers;
+  /** API base path for definition-derived fetchers (default `/api/v1`). */
+  basePath?: string;
+  /** Fetch implementation override (tests, SSR). Defaults to global fetch. */
+  fetchFn?: typeof fetch;
   /**
    * Shared TanStack Query client. Pass one app-wide instance so collections
    * share a cache and deduplicate requests; a private instance is created
@@ -113,6 +126,72 @@ export interface CreateSmrtCollectionOptions {
   staleTimeMs?: number;
   /** Retry failed loads (default false: fail fast, surface errors). */
   retry?: boolean;
+}
+
+/**
+ * Build CRUD fetchers from a generated collection definition — the same URL
+ * scheme and payload handling as the generated REST client
+ * (`basePath + endpoint`), with one improvement: HTTP error statuses reject
+ * with the server's `{ error }` body instead of resolving with it.
+ */
+export function createDefinitionFetchers(
+  definition: SmrtCollectionDefinition<object>,
+  basePath = '/api/v1',
+  fetchFn: typeof fetch = (...args) => globalThis.fetch(...args),
+): SmrtCrudFetchers {
+  const collectionUrl = `${basePath}${definition.endpoint}`;
+  const headers = { 'Content-Type': 'application/json' };
+
+  const parse = async (response: Response): Promise<unknown> => {
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message =
+        payload &&
+        typeof payload === 'object' &&
+        typeof (payload as Record<string, unknown>).error === 'string'
+          ? String((payload as Record<string, unknown>).error)
+          : `HTTP ${response.status}`;
+      throw new SmrtWebRequestError(
+        `[smrt-web] ${definition.name} request failed: ${message}`,
+        payload,
+      );
+    }
+    return payload;
+  };
+
+  return {
+    list: async () => parse(await fetchFn(collectionUrl, { headers })),
+    get: async (id) =>
+      parse(await fetchFn(`${collectionUrl}/${id}`, { headers })),
+    create: async (data) =>
+      parse(
+        await fetchFn(collectionUrl, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(data),
+        }),
+      ),
+    update: async (id, data) =>
+      parse(
+        await fetchFn(`${collectionUrl}/${id}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(data),
+        }),
+      ),
+    delete: async (id) => {
+      const response = await fetchFn(`${collectionUrl}/${id}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!response.ok) {
+        throw new SmrtWebRequestError(
+          `[smrt-web] delete(${definition.name}) failed: HTTP ${response.status}`,
+        );
+      }
+      return true;
+    },
+  };
 }
 
 /**
@@ -224,7 +303,10 @@ export function createSmrtCollection<TData extends object>(
 ): SmrtWebCollection<TData> {
   type Row = SmrtWebRow<TData>;
 
-  const { fetchers, staleTimeMs = 30_000, retry = false } = options;
+  const { staleTimeMs = 30_000, retry = false } = options;
+  const fetchers =
+    options.fetchers ??
+    createDefinitionFetchers(definition, options.basePath, options.fetchFn);
   const queryClient = options.queryClient ?? new QueryClient();
   const idField = definition.idField || 'id';
 
