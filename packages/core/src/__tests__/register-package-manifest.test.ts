@@ -423,4 +423,130 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     expect(result.packageName).toBe(packageName);
     expect(result.objectsRegistered).toBe(1);
   });
+
+  describe('inline manifest object (#1506/#1507)', () => {
+    // The smrtPlugin library build inlines the manifest into the compiled
+    // __smrt-register__ module, because resolving ./manifest.json relative to
+    // import.meta.url silently no-ops once a consumer's bundler (e.g. a
+    // SvelteKit server build) relocates the module into its own chunks
+    // directory — dropping plain fields from INSERTs (#1506) and WHERE
+    // validation (#1507). The object path must register without touching the
+    // filesystem at all.
+
+    function buildManifest(
+      packageName: string,
+      objects: Record<string, Record<string, unknown>>,
+    ) {
+      const qualifiedObjects = Object.fromEntries(
+        Object.entries(objects).map(([className, objectDef]) => [
+          `${packageName}:${className}`,
+          { className, ...objectDef },
+        ]),
+      );
+      return {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        moduleType: 'smrt',
+        packageName,
+        objects: qualifiedObjects,
+      } as any;
+    }
+
+    it('registers fields from an inline manifest object with no manifest.json on disk', () => {
+      const packageName = '@happyvertical/smrt-self-register-fixture-inline';
+      // NOTE: nothing is written to disk — this is the bundled-chunk scenario
+      // where no manifest.json is reachable from the module's location.
+      const manifest = buildManifest(packageName, {
+        FixtureInlineSession: {
+          decoratorConfig: {
+            tableName: 'fixture_inline_sessions',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            // The exact fields production dropped in #1506.
+            expiresAt: { type: 'datetime' },
+            userAgent: { type: 'text' },
+            ipAddress: { type: 'text' },
+          },
+        },
+      });
+
+      ObjectRegistry.clearDiagnostics();
+      const result = ObjectRegistry.registerPackageManifest(manifest);
+
+      expect(result.loaded).toBe(true);
+      expect(result.packageName).toBe(packageName);
+      expect(result.objectsRegistered).toBe(1);
+
+      @smrt({
+        tableName: 'fixture_inline_sessions',
+        api: false,
+        cli: false,
+        mcp: false,
+      })
+      class FixtureInlineSession extends SmrtObject {}
+
+      const registered = ObjectRegistry.findClass('FixtureInlineSession');
+      expect(registered?.fields.has('expiresAt')).toBe(true);
+      expect(registered?.fields.has('userAgent')).toBe(true);
+      expect(registered?.fields.has('ipAddress')).toBe(true);
+      void FixtureInlineSession;
+
+      // No filesystem-lookup diagnostics fired — the object path never
+      // touches disk.
+      const codes = ObjectRegistry.getDiagnostics().map((d) => d.code);
+      expect(codes).not.toContain('PACKAGE_MANIFEST_NOT_FOUND');
+      expect(codes).not.toContain('PACKAGE_MANIFEST_READ_FAILED');
+    });
+
+    it('merges inline manifest fields into classes registered before the shim ran', () => {
+      const packageName =
+        '@happyvertical/smrt-self-register-fixture-inline-late';
+
+      @smrt({
+        tableName: 'fixture_inline_late_widgets',
+        api: false,
+        cli: false,
+        mcp: false,
+      })
+      class FixtureInlineLateWidget extends SmrtObject {}
+      repinPackageIdentity('FixtureInlineLateWidget', packageName);
+
+      const manifest = buildManifest(packageName, {
+        FixtureInlineLateWidget: {
+          decoratorConfig: {
+            tableName: 'fixture_inline_late_widgets',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: { metricKey: { type: 'text' } },
+        },
+      });
+
+      const result = ObjectRegistry.registerPackageManifest(manifest);
+
+      expect(result.loaded).toBe(true);
+      const registered = ObjectRegistry.findClass('FixtureInlineLateWidget');
+      expect(registered?.fields.has('metricKey')).toBe(true);
+      void FixtureInlineLateWidget;
+    });
+
+    it('rejects an inline manifest without an objects record', () => {
+      ObjectRegistry.clearDiagnostics();
+
+      const result = ObjectRegistry.registerPackageManifest({
+        version: '1.0.0',
+      } as any);
+
+      expect(result.loaded).toBe(false);
+      expect(result.objectsRegistered).toBe(0);
+      const invalid = ObjectRegistry.getDiagnostics().find(
+        (d) => d.code === 'PACKAGE_MANIFEST_INVALID_SHAPE',
+      );
+      expect(invalid).toBeDefined();
+    });
+  });
 });
