@@ -205,8 +205,12 @@ export const load: PageServerLoad = async () => {
 
   // initialData seeds the cache from the SSR rows: the first read is served
   // from data.items with NO network request, and revalidates after staleTimeMs.
+  // basePath MUST match this app's generated routes — they are served at
+  // `/api/*` (routesDir: 'src/routes/api'), not the runtime's `/api/v1` default,
+  // so revalidation and live mutations hit `/api/items` instead of 404ing.
   const items = createSmrtCollection(getCollectionDefinition('items'), {
     initialData: data.items,
+    basePath: '/api',
   });
   const view = liveCollection(items);
 </script>

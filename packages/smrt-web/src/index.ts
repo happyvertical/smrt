@@ -562,13 +562,19 @@ export function createSmrtCollection<TData extends object>(
   // first read serves it with no request, and revalidation fires only once
   // `staleTimeMs` elapses (or immediately when it is 0). An explicit empty seed
   // is honored too: it means "the server returned zero rows", a valid fresh
-  // state that likewise suppresses the first fetch. Only seed a key with no
-  // cached data yet, so re-materializing a collection over an already-populated
-  // shared cache never clobbers newer rows with stale SSR data.
+  // state that likewise suppresses the first fetch.
+  //
+  // Seed only when the key is empty, via the ATOMIC updater form: a plain
+  // get-then-set would let two collections sharing this key and materialized in
+  // the same tick both observe `undefined` and have the later seed clobber the
+  // earlier one. `(existing) => existing ?? initialData` keeps the first seed
+  // (or any already-cached rows, which may be newer than this late SSR payload)
+  // in a single cache write.
   if (initialData !== undefined) {
-    if (queryClient.getQueryData(queryKey) === undefined) {
-      queryClient.setQueryData(queryKey, initialData);
-    }
+    queryClient.setQueryData<Row[]>(
+      queryKey,
+      (existing) => existing ?? initialData,
+    );
   }
 
   // Relationship-derived invalidation target set (#1761): the collections
