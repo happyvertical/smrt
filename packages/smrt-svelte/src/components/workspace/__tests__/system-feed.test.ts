@@ -42,6 +42,9 @@ beforeEach(() => {
 afterEach(() => {
   while (disposers.length > 0) disposers.pop()?.();
   vi.useRealTimers();
+  // Restore any spies (e.g. document.hidden / addEventListener) so they cannot
+  // leak into later tests or files.
+  vi.restoreAllMocks();
 });
 
 describe('systemFeed', () => {
@@ -230,7 +233,8 @@ describe('systemFeed', () => {
 
     await advance(0);
     expect(fetch).toHaveBeenCalledTimes(1);
-    // running reflects "armed", but with no timer nothing else fires.
+    // No timer is armed, so `running` stays false (it tracks an armed timer).
+    expect(feed.running).toBe(false);
     await advance(10_000);
     expect(fetch).toHaveBeenCalledTimes(1);
 
@@ -342,5 +346,71 @@ describe('systemFeed', () => {
     resolveFirst?.({ n: 1 });
     await first;
     expect(feed.chips[0]?.value).toBe(2);
+  });
+
+  it('contains a throwing onError callback (no unhandled rejection)', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    const onError = vi.fn(() => {
+      throw new Error('consumer onError blew up');
+    });
+    const fetch = vi.fn().mockRejectedValue(new Error('fetch failed'));
+    const feed = track(
+      systemFeed({
+        fetch,
+        intervalMs: 0,
+        immediate: false,
+        pauseWhenHidden: false,
+        onError,
+        map: () => ({}),
+      }),
+    );
+
+    // The failing fetch invokes the throwing onError; the tick must still
+    // resolve rather than reject.
+    await expect(feed.refresh()).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalled();
+    expect(feed.status).toBe('error');
+
+    // Give any stray rejection a chance to surface, then assert none did.
+    await advance(0);
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh on becoming visible after stop()', async () => {
+    let hidden = false;
+    const listeners: Array<() => void> = [];
+    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+    vi.spyOn(document, 'addEventListener').mockImplementation(
+      (type: string, cb: EventListenerOrEventListenerObject) => {
+        if (type === 'visibilitychange') listeners.push(cb as () => void);
+      },
+    );
+    vi.spyOn(document, 'removeEventListener').mockImplementation(() => {});
+
+    const fetch = vi.fn().mockResolvedValue({ ok: true });
+    const feed = track(
+      systemFeed({
+        fetch,
+        intervalMs: 1000,
+        map: () => ({}),
+      }),
+    );
+
+    await advance(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    // Pause polling (but the visibility listener is still attached — only
+    // dispose() detaches it).
+    feed.stop();
+    expect(feed.running).toBe(false);
+
+    // A hidden -> visible transition must NOT resurrect polling while stopped.
+    hidden = true;
+    hidden = false;
+    for (const cb of listeners) cb();
+    await advance(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

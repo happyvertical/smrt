@@ -112,11 +112,18 @@ export interface SystemFeedController {
   readonly status: SystemFeedStatus;
   /** The most recent caught error, or `null` after any success. */
   readonly error: unknown;
-  /** Whether the poll timer is currently armed. */
+  /**
+   * Whether the poll timer is currently armed. Stays `false` for single-shot
+   * feeds (`intervalMs <= 0`), under SSR (no `document`), and after `stop()` /
+   * `dispose()`.
+   */
   readonly running: boolean;
   /** Fetch + map once, off-schedule. Resolves after state is updated. */
   refresh(): Promise<void>;
-  /** (Re)arm the poll timer. Idempotent. No-op after {@link dispose}. */
+  /**
+   * (Re)arm the poll timer. Idempotent. No-op when already running, after
+   * {@link dispose}, when `intervalMs <= 0`, or under SSR (no `document`).
+   */
   start(): void;
   /** Disarm the poll timer without tearing down listeners. Idempotent. */
   stop(): void;
@@ -191,7 +198,13 @@ export function systemFeed<T>(
       if (isAbortError(caught)) return;
       error = caught;
       status = 'error';
-      onError?.(caught);
+      // Contain a throwing consumer callback: it must not reject the tick and
+      // surface as an unhandled rejection from the interval / visibility path.
+      try {
+        onError?.(caught);
+      } catch {
+        // Swallow — the feed's own error handling already recorded `caught`.
+      }
     } finally {
       if (inFlight === controller) inFlight = null;
     }
@@ -199,10 +212,13 @@ export function systemFeed<T>(
 
   function start(): void {
     if (disposed || running) return;
+    // Arm a timer only in a DOM environment (never spin a server-side interval
+    // during SSR) and only when an interval is requested. `running` reflects an
+    // actually-armed timer, so it stays false for single-shot feeds
+    // (`intervalMs <= 0`) and under SSR.
+    if (!hasDocument || intervalMs <= 0) return;
     running = true;
-    if (intervalMs > 0) {
-      timer = setInterval(() => void tick(), intervalMs);
-    }
+    timer = setInterval(() => void tick(), intervalMs);
   }
 
   function stop(): void {
@@ -214,7 +230,9 @@ export function systemFeed<T>(
   }
 
   function handleVisibility(): void {
-    if (disposed) return;
+    // Only catch up on becoming visible while actively polling — a stopped
+    // (or disposed) feed must stay quiet.
+    if (disposed || !running) return;
     if (!document.hidden) void tick();
   }
 
@@ -232,11 +250,18 @@ export function systemFeed<T>(
     status = 'stopped';
   }
 
-  if (usesVisibility) {
-    document.addEventListener('visibilitychange', handleVisibility);
+  // Everything below activates the feed. Under SSR (no `document`) the feed is
+  // created inert — no listener, no immediate fetch, no timer — so a consumer
+  // can safely construct it in a component script; the client re-runs this and
+  // brings it to life. Callers can also drive an inert feed manually via
+  // `refresh()` / `start()`.
+  if (hasDocument) {
+    if (usesVisibility) {
+      document.addEventListener('visibilitychange', handleVisibility);
+    }
+    if (immediate) void tick();
+    start();
   }
-  if (immediate) void tick();
-  start();
 
   return {
     get panels() {
@@ -262,10 +287,15 @@ export function systemFeed<T>(
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException
-    ? error.name === 'AbortError'
-    : typeof error === 'object' &&
-        error !== null &&
-        'name' in error &&
-        (error as { name?: unknown }).name === 'AbortError';
+  // Guard `DOMException` — it is undefined in some non-DOM runtimes, so a bare
+  // `instanceof` would throw a ReferenceError and defeat the SSR-safe contract.
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'AbortError';
+  }
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'AbortError'
+  );
 }

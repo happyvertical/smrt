@@ -157,5 +157,13 @@ usual (see `SystemScopePanel` / `SystemStatusChips`).
   visible again. In SSR / non-DOM environments this is a no-op.
 - **No overlap / no late writes** — each tick supersedes any in-flight fetch
   (via `AbortSignal`), and a stale response can never clobber a newer one.
+- **SSR-safe construction** — constructed under SSR (no `document`), the feed is
+  inert: no listener, no immediate fetch, no server-side timer. It comes to life
+  when the client re-runs the component script, so you can call `systemFeed`
+  directly in `<script>` (as above) without an `onMount` guard; the first fetch
+  and the poll timer start on the client. `running` is `false` until a timer is
+  actually armed (so it is also `false` for single-shot `intervalMs <= 0`).
+- **`onError` is contained** — a throwing `onError` callback is caught and
+  swallowed; it never rejects the tick or surfaces as an unhandled rejection.
 - **Teardown** — `dispose()` stops the timer, detaches the visibility listener,
   and aborts any in-flight fetch. Always call it from `onDestroy`.
