@@ -16,7 +16,10 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
-import { setDispatchTenantResolver } from '../dispatch';
+import {
+  setDispatchTenantResolver,
+  setTenantScopedClassResolver,
+} from '../dispatch';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -44,24 +47,49 @@ class PublicTenantDocCollection extends SmrtCollection<PublicTenantDoc> {
   static readonly _itemClass = PublicTenantDoc;
 }
 
+// Pattern 1 (#1782 review): tenancy is declared via the standalone
+// `@TenantScoped()` decorator, NOT `@smrt({ tenantScoped })`. Here the `@smrt`
+// config carries NO tenantScoped, so `ObjectRegistry.isTenantScoped` is false —
+// the model is recognized as tenant-scoped ONLY through the tenancy-filled
+// `setTenantScopedClassResolver` hook (what `@TenantScoped()` wires at
+// `enableTenancy()`). The guard must still fail closed for it.
+@smrt({ api: { public: 'read' } })
+class Pattern1TenantDoc extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+
+  @field({ type: 'text', nullable: true })
+  tenantId: string | null = null;
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name !== undefined) this.name = options.name;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+  }
+}
+
+class Pattern1TenantDocCollection extends SmrtCollection<Pattern1TenantDoc> {
+  static readonly _itemClass = Pattern1TenantDoc;
+}
+
 describe('REST tenant-scoped public read fails closed to global rows (#1782)', () => {
   ObjectRegistry.registerCollection(
     'PublicTenantDoc',
     PublicTenantDocCollection,
+  );
+  ObjectRegistry.registerCollection(
+    'Pattern1TenantDoc',
+    Pattern1TenantDocCollection,
   );
 
   let db: any;
   let handler: (req: Request) => Promise<Response>;
   const ids: Record<string, string> = {};
 
-  beforeAll(async () => {
-    db = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      classes: ['PublicTenantDoc'],
-    });
-
-    const collection = await PublicTenantDocCollection.create({ db });
+  const seed = async (
+    collection: SmrtCollection<SmrtObject>,
+    into: Record<string, string>,
+  ) => {
     // Seed one row per tenant plus a global (NULL-tenant) row. Inserted through
     // the collection directly (not REST) so tenantId is set — the REST writable
     // policy strips framework-managed tenantId from create bodies.
@@ -72,11 +100,26 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
     ] as const) {
       const row = await collection.create({ name, tenantId });
       await row.save();
-      ids[name] = (row as unknown as { id: string }).id;
+      into[name] = (row as unknown as { id: string }).id;
     }
+  };
+
+  beforeAll(async () => {
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['PublicTenantDoc', 'Pattern1TenantDoc'],
+    });
+
+    const collection = await PublicTenantDocCollection.create({ db });
+    await seed(collection, ids);
+
+    const pattern1 = await Pattern1TenantDocCollection.create({ db });
+    await seed(pattern1, {});
 
     const api = new APIGenerator({ basePath: '/api/v1' });
     api.registerCollection('publictenantdoc', collection);
+    api.registerCollection('pattern1tenantdoc', pattern1);
     handler = api.generateHandler();
   });
 
@@ -85,8 +128,9 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
   });
 
   afterEach(() => {
-    // Reset the ambient resolver so no test leaks tenant scope into another.
+    // Reset the ambient resolvers so no test leaks tenant scope into another.
     setDispatchTenantResolver(undefined);
+    setTenantScopedClassResolver(undefined);
   });
 
   const list = (query = '') =>
@@ -156,6 +200,46 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
     it('list returns ALL rows — no global-only restriction is imposed', async () => {
       setDispatchTenantResolver(undefined);
       const res = await list();
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { name: string }[];
+      expect(body.map((i) => i.name).sort()).toEqual([
+        'global-row',
+        'tenant-a-row',
+        'tenant-b-row',
+      ]);
+    });
+  });
+
+  // #1782 review (P1): a model tenant-scoped ONLY via the standalone
+  // `@TenantScoped()` decorator has no `@smrt({ tenantScoped })` config, so
+  // `ObjectRegistry.isTenantScoped` is false. It must still fail closed via the
+  // tenancy-filled `setTenantScopedClassResolver` hook.
+  describe('@TenantScoped()-only model recognized via the resolver hook', () => {
+    const p1list = (query = '') =>
+      handler(new Request(`http://local/api/v1/pattern1tenantdoc${query}`));
+
+    it('is NOT ObjectRegistry-tenant-scoped (sanity: only the hook can see it)', () => {
+      expect(ObjectRegistry.isTenantScoped('Pattern1TenantDoc')).toBe(false);
+    });
+
+    it('fails closed to global rows when the resolver marks it tenant-scoped', async () => {
+      setDispatchTenantResolver(() => undefined);
+      setTenantScopedClassResolver((name) => name.includes('Pattern1TenantDoc'));
+
+      const res = await p1list();
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { name: string }[];
+      expect(body.map((i) => i.name).sort()).toEqual(['global-row']);
+    });
+
+    it('would leak WITHOUT the resolver (proves the hook is what closes it)', async () => {
+      // Same ambient no-tenant state, but the resolver is unset → the guard
+      // can't recognize the Pattern-1 model → unfiltered (documents the gap the
+      // hook closes).
+      setDispatchTenantResolver(() => undefined);
+      setTenantScopedClassResolver(undefined);
+
+      const res = await p1list();
       expect(res.status).toBe(200);
       const body = (await res.json()) as { name: string }[];
       expect(body.map((i) => i.name).sort()).toEqual([

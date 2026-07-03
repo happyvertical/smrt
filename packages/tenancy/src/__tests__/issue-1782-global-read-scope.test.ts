@@ -18,9 +18,14 @@
  * core-side REST integration test (`issue-1782-tenant-read-scope.spec.ts`).
  */
 
+import { isTenantScopedClassResolved } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { withTenant } from '../context';
-import { createTenantInterceptor, disableTenancy } from '../interceptor';
+import {
+  createTenantInterceptor,
+  disableTenancy,
+  enableTenancy,
+} from '../interceptor';
 import {
   registerTenantScopedClass,
   unregisterTenantScopedClass,
@@ -70,5 +75,29 @@ describe('#1782: interceptor preserves the injected global read scope', () => {
         (result as { where: Record<string, unknown> })?.where.tenantId,
       ).toBe('tenant-a');
     });
+  });
+});
+
+describe('#1782: enableTenancy wires the core tenant-scoped-class resolver', () => {
+  afterEach(() => {
+    unregisterTenantScopedClass('HookDoc');
+    disableTenancy();
+  });
+
+  it('lets core recognize a @TenantScoped()-only class after enableTenancy', () => {
+    registerTenantScopedClass('HookDoc', { mode: 'optional' });
+
+    // Before enableTenancy the core hook is unset → not resolvable.
+    expect(isTenantScopedClassResolved('HookDoc')).toBe(false);
+
+    enableTenancy();
+    // enableTenancy fills setTenantScopedClassResolver, so core's REST read
+    // guard can now see the @TenantScoped()-registered class (#1782 review).
+    expect(isTenantScopedClassResolved('HookDoc')).toBe(true);
+    expect(isTenantScopedClassResolved('NotScopedDoc')).toBe(false);
+
+    disableTenancy();
+    // Cleared on teardown so the hook doesn't leak across suites.
+    expect(isTenantScopedClassResolved('HookDoc')).toBe(false);
   });
 });

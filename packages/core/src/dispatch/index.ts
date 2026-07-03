@@ -53,9 +53,11 @@ export {
 export {
   type DispatchTenantResolver,
   type DispatchTenantScope,
+  isTenantScopedClassResolved,
   resolveDispatchTenantId,
   resolveDispatchTenantScope,
   setDispatchTenantResolver,
+  setTenantScopedClassResolver,
 } from './tenant-resolver.js';
 
 // Types

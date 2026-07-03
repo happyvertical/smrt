@@ -6,7 +6,10 @@
 
 import http from 'node:http';
 import type { SmrtCollection } from '../collection';
-import { resolveDispatchTenantScope } from '../dispatch';
+import {
+  isTenantScopedClassResolved,
+  resolveDispatchTenantScope,
+} from '../dispatch';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
@@ -491,11 +494,25 @@ export class APIGenerator {
    * in; core cannot import tenancy directly). Returns undefined when a tenant IS
    * active (the interceptor filters by it) or tenancy is disabled (no isolation
    * to enforce).
+   *
+   * Tenant scoping is recognized across BOTH registration forms (#1782): the
+   * `@smrt({ tenantScoped })` config / manifest-merged form via
+   * `ObjectRegistry.isTenantScoped`, and the standalone `@TenantScoped()`
+   * decorator via the tenancy-filled `isTenantScopedClassResolved` hook — so a
+   * `@TenantScoped()`-only public model can't slip past the guard regardless of
+   * manifest timing.
    */
   private resolveTenantReadScope(
     objectName?: string,
   ): { tenantId: null } | undefined {
-    if (!objectName || !ObjectRegistry.isTenantScoped(objectName)) {
+    if (
+      !objectName ||
+      !(
+        ObjectRegistry.isTenantScoped(objectName) ||
+        !!ObjectRegistry.getConfig(objectName)?.tenantScoped ||
+        isTenantScopedClassResolved(objectName)
+      )
+    ) {
       return undefined;
     }
     const scope = resolveDispatchTenantScope();
