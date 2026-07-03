@@ -723,7 +723,8 @@ export default createClient;
     }),
     delete: (id) => __smrtFetchOk(basePath + '/${collection}/' + id, {
       method: 'DELETE'
-    })
+    }),
+    search: (query) => __smrtFetchJson(basePath + '/${collection}/search?q=' + encodeURIComponent(query), { method: 'GET' })
   }`;
     })
     .join(',');

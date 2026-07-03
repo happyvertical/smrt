@@ -215,6 +215,10 @@ export class GenClientProduct extends SmrtObject {
   });
 
   it('#1797: list() returns a BARE array whose items carry snake_case created_at', async () => {
+    // Seed this test's own row so the assertion doesn't depend on test order.
+    const seeded = await collection.create({ name: 'Sprocket', price: 3 });
+    await seeded.save();
+
     stubFetchToServer(handler);
     const client = createClient('/api/v1');
 
@@ -223,7 +227,11 @@ export class GenClientProduct extends SmrtObject {
 
     const rows = result as Array<Record<string, unknown>>;
     expect(rows.length).toBeGreaterThan(0);
-    const row = rows[0];
+    const row = rows.find((r) => r.name === 'Sprocket') as Record<
+      string,
+      unknown
+    >;
+    expect(row).toBeDefined();
     // Wire field naming is snake_case (matches toJSON()/toPublicJSON()).
     expect(row).toHaveProperty('created_at');
     expect(row).not.toHaveProperty('createdAt');

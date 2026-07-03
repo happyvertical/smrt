@@ -219,6 +219,10 @@ describe('smrtConsumer load with a populated manifest', () => {
     // Object keys are quoted (#1795), so a simple name appears as "Widget":.
     expect(client).toContain('"Widget":');
     expect(client).toContain("'/widgets'");
+    // The fallback emits every CRUD verb the declared CrudOperations promises,
+    // including search — otherwise the @smrt/client d.ts would advertise a
+    // method the runtime object lacks (TypeError at call time).
+    expect(client).toContain('search:');
 
     const types = await load.call({}, '\0smrt-consumer:types');
     expect(types).toContain('export interface WidgetData');
@@ -281,8 +285,19 @@ describe('smrtConsumer load with a populated manifest', () => {
     expect(typeof mod.createClient).toBe('function');
     // The client exposes the qualified key as a collection accessor.
     const api = mod.createClient('/api/v1');
-    expect(api['@acme/assets:AssetAssociation']).toBeDefined();
-    expect(typeof api['@acme/assets:AssetAssociation'].list).toBe('function');
+    const accessor = api['@acme/assets:AssetAssociation'];
+    expect(accessor).toBeDefined();
+    // Every CRUD verb the declared CrudOperations promises is present.
+    for (const verb of [
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
+      'search',
+    ]) {
+      expect(typeof accessor[verb]).toBe('function');
+    }
   });
 });
 
