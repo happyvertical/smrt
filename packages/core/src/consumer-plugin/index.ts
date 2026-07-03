@@ -389,7 +389,17 @@ function determineImportPath(packageJson: ConsumerPackageJson): string {
 }
 
 /**
- * Save aggregated manifest to .smrt/manifest.json for CLI discovery
+ * Save aggregated manifest to .smrt/manifest.json for CLI discovery.
+ *
+ * Merge-preserving: `smrtPlugin()` writes the project's own scanned objects
+ * to the same file (`writeLocalManifest`, issue #963), and both writes happen
+ * in parallel `buildStart` hooks — so a plain overwrite here would clobber
+ * the local objects whenever this plugin's write lands last (issue #1760
+ * review). Local field metadata would then silently vanish from CLI schema
+ * commands and from server runtimes that seed `.smrt/manifest.json`, dropping
+ * domain columns on write. This function therefore only ADDS/refreshes the
+ * external-package entries it owns and preserves everything else already in
+ * the file (including the top-level `packageName` the local write sets).
  */
 async function saveAggregatedManifest(
   manifest: ConsumerManifest,
@@ -404,11 +414,37 @@ async function saveAggregatedManifest(
       fs.mkdirSync(smrtDir, { recursive: true });
     }
 
+    // Merge with whatever is on disk: existing entries (typically the local
+    // project's objects written by smrtPlugin) are preserved; aggregated
+    // external entries win for the qualified names this plugin owns.
+    let merged: ConsumerManifest = manifest;
+    if (fs.existsSync(manifestPath)) {
+      try {
+        const existing = JSON.parse(
+          fs.readFileSync(manifestPath, 'utf-8'),
+        ) as Partial<ConsumerManifest>;
+        if (existing && typeof existing.objects === 'object') {
+          merged = {
+            ...existing,
+            ...manifest,
+            // The aggregated manifest carries no packageName; keep the local
+            // project's (used as the manifest cache key at runtime).
+            ...(existing.packageName
+              ? { packageName: existing.packageName }
+              : {}),
+            objects: { ...existing.objects, ...manifest.objects },
+          };
+        }
+      } catch {
+        // Unreadable/corrupt existing file — fall back to a plain write.
+      }
+    }
+
     // Write manifest
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+    fs.writeFileSync(manifestPath, JSON.stringify(merged, null, 2), 'utf-8');
 
     console.log(
-      `[smrt:consumer] Saved aggregated manifest to .smrt/manifest.json (${Object.keys(manifest.objects).length} objects)`,
+      `[smrt:consumer] Saved aggregated manifest to .smrt/manifest.json (${Object.keys(merged.objects).length} objects)`,
     );
   } catch (error) {
     console.warn('[smrt:consumer] Failed to save aggregated manifest:', error);

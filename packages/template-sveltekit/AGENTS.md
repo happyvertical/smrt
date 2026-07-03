@@ -12,8 +12,10 @@ Base SvelteKit project template used by `smrt init`. Scaffolds a full-stack, mul
 
 - `template/src/hooks.server.ts` — pre-wires `enableTenancy()`, `createSessionHandler({ enterTenantContext: true })`, and a subdomain → tenantId handle, sequenced in that order
 - `template/src/lib/server/tenancy.ts` — pluggable tenant resolver (`subdomainStrategy`, `pathPrefixStrategy`, `headerStrategy`, `createTenantResolver`)
-- `template/src/lib/server/smrt.ts` — centralized SmrtClassOptions / collection factory
+- `template/src/lib/server/smrt.ts` — centralized SmrtClassOptions / collection factory; imports the plugin-generated `smrt-register.js` (guarded — the file is gitignored and regenerated on every dev/build run) and seeds `.smrt/manifest.json` so server runtimes get package-qualified registrations + scanned field metadata (without them, writes silently drop domain columns)
+- `template/vite.config.ts` — smrtPlugin() + smrtConsumer(), plus explicit `oxc: { decorator: { legacy: true } }` (Vite 8's oxc transform does not reliably honor `experimentalDecorators` through the SvelteKit tsconfig `extends` chain)
 - `template/src/lib/objects/Item.ts` — example `@smrt()` object
+- `template/src/routes/+page.server.ts` + `+page.svelte` — reference SSR data loading: server load queries collections directly (opt-in read cache via `cache: { ttl }`), declares `depends('smrt:items')`, and a form action + `invalidate('smrt:items')` demonstrates post-mutation refresh
 - `template/src/app.d.ts` — `App.Locals` extends `SessionLocals` from `@happyvertical/smrt-users/sveltekit`
 
 ## Test Infrastructure
@@ -23,6 +25,7 @@ Base SvelteKit project template used by `smrt init`. Scaffolds a full-stack, mul
 
 ## Key Patterns
 
+- **SSR data loading convention**: reference pages load collection data in `+page.server.ts` (serialized into the HTML, hydrated without a duplicate client fetch). Loads declare `depends('smrt:<collection>')` (REST route segment naming: `/api/items` → `smrt:items`); mutations call `invalidate('smrt:<collection>')` to re-run them.
 - **Pluggable tenant resolver**: `tenancy.ts` exports strategy functions + a `createTenantResolver()` factory. Consumers swap strategies by editing one line.
 - **File copying with placeholder substitution**: project name is replaced in template files during generation.
 - **No template-internal test pollution**: `__tests__/` and the `.svelte-kit/` stub are package-level and excluded from `copyTemplate` output.

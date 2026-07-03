@@ -25,7 +25,7 @@
  */
 
 import { sequence } from '@sveltejs/kit/hooks';
-import type { Handle, RequestEvent } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit';
 
 import { createSessionHandler } from '@happyvertical/smrt-users/sveltekit';
 import {
@@ -59,9 +59,10 @@ enableTenancy();
  */
 const tenancyHandle = createSvelteKitHandle({
   resolveTenantId: async (event) => {
-    // The createSvelteKitHandle adapter passes a structural event; our
-    // resolver accepts that same shape.
-    const result = await resolveTenant(event as RequestEvent);
+    // The createSvelteKitHandle adapter passes a structural event that is
+    // directly assignable to the resolver's `TenantResolverEvent` shape
+    // (`url` + `request.headers`), so no cast is needed.
+    const result = await resolveTenant(event);
     return result.tenantId;
   },
 }) as unknown as Handle;
