@@ -236,96 +236,32 @@ await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has n
 - `@happyvertical/logger` (SDK) is a `dependency` — the console logger used for voice/AI error reporting in the form components. Consume it **only** through `src/internal/logger.ts`, never `createLogger()` at module scope: `createLogger()` reads `HAVE_LOGGER_LEVEL` from `process.env`, so a top-level call throws `ReferenceError: process is not defined` in the browser and kills client-side hydration under `vite dev` (prod builds tree-shake/define it away, so this only bites in dev). The `internal/logger` wrapper constructs the logger lazily and falls back to a bare `ConsoleLogger` when `process.env` is absent, keeping this browser-reachable module (imported by `Provider` + the form primitives) safe.
 - Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`, `@xenova/transformers`) and `chrono-node`.
 
-## Workspace shell primitives
+## AdminShell workspace surface
 
-The `./workspace` subpath (`src/components/workspace/`) holds admin-shell primitives:
-`WorkspaceShell`, `NavTree`, `Breadcrumbs`, and `ToolsDock` (plus `defineToolsDock` /
-`useToolsDock`). Shared types live in `workspace/types.ts` and are re-exported via the
-subpath barrel.
+The `./workspace` subpath (`src/components/workspace/`) is the canonical
+AdminShell family for SMRT admin web apps. It exports the four-edge shell
+contract (`AdminShell`, `ShellState`, settings, hotkeys, focus tools,
+activities, tenant nav, app/system panels) from `workspace/admin-shell/`.
 
-**Layering**: primitives first (this folder), opinionated wrapper second (`AdminShell` — deferred),
-domain-specific tools live outside the framework in consumer packages.
+The first-generation workspace family (`WorkspaceShell`, `RoleShell`,
+`NavTree`, `Breadcrumbs`, `ToolsDock`) remains in source as migration reference
+only. Do not re-export it from the public `./workspace` barrel just to preserve
+compatibility.
 
 **Principles**:
-- SvelteKit-agnostic — no `$app/state` or `$app/navigation` imports
-- SSR-safe — guard all `window` / `localStorage` access
+- SvelteKit-agnostic core — no `$app/state` or `$app/navigation` imports
+- SSR-safe public shell import/render path; browser listeners and localStorage
+  activate after mount
 - No token bridges — consume `var(--smrt-color-*)` directly
-- Tool IDs are arbitrary strings (extensible, not an enum)
+- App-owned configuration for hidden edges, push/overlay presentation, and
+  exclusivity groups
+- User-owned preferences persist as sparse `ShellSettingsDelta` values
+- Focus tools may register imperatively through `ShellState` or declaratively
+  through Svelte helpers
+- Shell activities are client-side records; server jobs, polling, WebSockets,
+  and `smrt-web` SSE can feed them through app adapters
 
-**State-mirroring recipes** (issue #1235):
-- Dock events. `'dock:state-changed'` fires on `open()`/`close()`/`toggle()` and
-  on availability-driven `activeTool` clears (payload: `{ isOpen, activeTool }`).
-  `'dock:context-changed'` fires on `setContext()` with a different reference
-  (payload: `{ context }`). Legacy `'dock:change'` (payload: `{ isOpen, activeTool, context }`)
-  still fires on every observable transition (incl. badge-only availability
-  refresh) for back-compat with consumers mirroring `availableTools` — it's
-  `@deprecated`; prefer the granular pair. The `'dock:*'` prefix is reserved
-  for built-ins; consumer events should pick a different namespace.
-- `WorkspaceShell` exposes `bind:mobileNavOpen` so consumers can lift the drawer
-  state. Pair it with `<NavTree onNavigate={() => mobileNavOpen = false} />` to
-  close the drawer on navigation without any DOM querying.
-- `ToolDef.iconComponent?: Component` renders a custom icon (lucide-svelte etc.)
-  inside the rail glyph (and as a leading glyph in topbar layout). Takes
-  precedence over `icon: string`, then `label.charAt(0)` as last resort.
-- `dock.refreshAvailability()` forces a re-run of `fetchAvailability` with the
-  current context. `setContext()` short-circuits on strict-equal references —
-  use refresh when a side-channel event (websocket, button) signals availability
-  or badges changed without a context change.
-- Typed `defineToolsDock<TData, TActions>`. The factory's two generics flow
-  into `fetchAvailability`'s `ctx` param and through `ToolsDockContext<TData, TActions>`
-  for tool components. Inside a tool, type `context` locally:
-  `let { context }: { context: ToolsDockContext<MyData, MyActions> | null } = $props();`.
-  `context?.actions?.foo()` is then fully typed — no per-consumer redeclaration.
-  `ToolDef` itself is no longer generic (stored as a homogeneous `ToolDef[]`);
-  the consumer-side cast at registration is gone, the typed surface lives on
-  the component's `context` prop instead.
-- Layout positioning. `<ToolsDock layout='topbar'>` renders its own
-  `position: fixed` panel — **do not also use `<WorkspaceShell>`'s `inspector`
-  snippet** in that mode (the two panels overlap with no z-index coordination).
-  `'rail'` layout is safe to compose alongside `inspector` — its panel sits
-  inside the dock's own aside.
-
-### RoleShell
-
-Opinionated thin wrapper for multi-role admin shells. Pass a `RoleConfig[]` list
-and the current role id; renders `<WorkspaceShell>` + `<NavTree>` + `<Breadcrumbs>`
-wired together. Role colors flow through as `--smrt-role-color` CSS custom property.
-
-```svelte
-<script lang="ts">
-  import { page } from '$app/state';
-  import { RoleShell } from '@happyvertical/smrt-svelte/workspace';
-  import AccountMenu from '$lib/AccountMenu.svelte';
-  import { ROLE_CONFIGS } from '$lib/roles';
-
-  let { data, children } = $props();
-  let mobileNavOpen = $state(false);
-</script>
-
-<RoleShell
-  roles={ROLE_CONFIGS}
-  currentRole={data.currentRole}
-  currentPath={page.url.pathname}
-  bind:mobileNavOpen
->
-  {#snippet sidebarFooter()}
-    <AccountMenu user={data.user} />
-  {/snippet}
-  {@render children?.()}
-</RoleShell>
-```
-
-The `{@render children?.()}` call is the Svelte 5 idiom for rendering a
-layout's child route content — replace with the equivalent slot/render call
-for your framework if you're not using SvelteKit's `+layout.svelte` flow.
-
-The shell intentionally doesn't know about specific role IDs — consumers pick
-whatever set their app needs. Use this for role-based admin dashboards; use
-`<WorkspaceShell>` directly for non-role apps.
-
-See epic [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226) for context;
-implementations land via #1227 (`WorkspaceShell`), #1228 (`NavTree`/`Breadcrumbs`), and #1229
-(`ToolsDock` + registry).
+See `src/components/workspace/MIGRATION.md` for the old-to-new concept map.
 
 ### Dock availability gates (server-side)
 
