@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-subscriptions",
-  "version": "0.37.11",
+  "version": "0.38.0",
   "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
   "type": "module",
   "smrtRawPrimitives": "strict",

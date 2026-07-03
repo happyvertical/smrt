@@ -1,5 +1,21 @@
 # @happyvertical/smrt-commerce
 
+## 1.0.0
+
+### Minor Changes
+
+- 8df9dcd: Add a `PaymentInstrument` model + `PaymentInstrumentCollection` for saved payment methods ("card on file"). It stores only reusable references (`providerCustomerId`, `providerPaymentMethodId`), the backend id, and non-sensitive display fields (brand / last4 / expiry) — never card data — plus a `PaymentInstrumentStatus` lifecycle (`active`/`expired`/`removed`) and single-default-per-customer support via `setDefaultForCustomer`.
+
+  Named `PaymentInstrument` (not `PaymentMethod`) to avoid clashing with the existing `PaymentMethod` payment-rail enum.
+
+### Patch Changes
+
+- @happyvertical/smrt-core@1.0.0
+- @happyvertical/smrt-ledgers@1.0.0
+- @happyvertical/smrt-tenancy@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-ui@1.0.0
+
 ## 0.37.11
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @happyvertical/smrt-affiliates
 
+## 1.0.0
+
+### Patch Changes
+
+- @happyvertical/smrt-core@1.0.0
+
 ## 0.37.11
 
 ### Patch Changes
