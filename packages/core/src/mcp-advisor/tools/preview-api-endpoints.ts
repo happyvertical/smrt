@@ -10,7 +10,7 @@ import type { ApiEndpoint, PreviewApiEndpointsInput } from '../types.js';
  */
 export async function previewApiEndpoints(
   input: PreviewApiEndpointsInput,
-): Promise<{ endpoints: ApiEndpoint[]; basePath: string }> {
+): Promise<{ endpoints: ApiEndpoint[]; basePath: string; markdown: string }> {
   try {
     const { className, basePath = '/api/v1' } = input;
 
@@ -36,11 +36,19 @@ export async function previewApiEndpoints(
 
     // Get fields for request/response documentation
     const fields = ObjectRegistry.getFields(className);
-    const fieldsList = Array.from(fields.entries()).map(([name, field]) => ({
-      name,
-      type: field.type,
-      required: field._meta?.required || false,
-    }));
+    const fieldsList = Array.from(fields.entries()).map(([name, field]) => {
+      const type = field.type;
+      return {
+        name,
+        type,
+        required: field._meta?.required || false,
+        description:
+          typeof field._meta?.description === 'string'
+            ? field._meta.description
+            : undefined,
+        example: sampleValueForType(type, name),
+      };
+    });
 
     // Generate endpoint definitions
     const endpoints: ApiEndpoint[] = [];
@@ -59,25 +67,33 @@ export async function previewApiEndpoints(
             type: 'integer',
             required: false,
             location: 'query',
+            description: 'Maximum number of objects to return',
+            example: 25,
           },
           {
             name: 'offset',
             type: 'integer',
             required: false,
             location: 'query',
+            description: 'Number of objects to skip',
+            example: 0,
           },
           {
             name: 'orderBy',
             type: 'string',
             required: false,
             location: 'query',
+            description: 'SQL-style ordering expression',
+            example: 'created_at DESC',
           },
-          {
-            name: 'where',
-            type: 'object',
+          ...fieldsList.map((field) => ({
+            name: field.name,
+            type: field.type,
             required: false,
-            location: 'query',
-          },
+            location: 'query' as const,
+            description: `Filter by ${field.name}. Operator suffixes like [gt], [gte], [lt], [lte], [ne], [in], and [like] are also supported.`,
+            example: field.example,
+          })),
         ],
       });
     }
@@ -94,6 +110,8 @@ export async function previewApiEndpoints(
             type: 'string',
             required: true,
             location: 'path',
+            description: `${className} id or slug`,
+            example: 'example-id',
           },
         ],
       });
@@ -110,6 +128,8 @@ export async function previewApiEndpoints(
           type: field.type,
           required: field.required,
           location: 'body',
+          description: field.description,
+          example: field.example,
         })),
       });
     }
@@ -126,12 +146,16 @@ export async function previewApiEndpoints(
             type: 'string',
             required: true,
             location: 'path',
+            description: `${className} id or slug`,
+            example: 'example-id',
           },
           ...fieldsList.map((field) => ({
             name: field.name,
             type: field.type,
             required: false,
             location: 'body' as const,
+            description: field.description,
+            example: field.example,
           })),
         ],
       });
@@ -149,6 +173,8 @@ export async function previewApiEndpoints(
             type: 'string',
             required: true,
             location: 'path',
+            description: `${className} id or slug`,
+            example: 'example-id',
           },
         ],
       });
@@ -172,12 +198,16 @@ export async function previewApiEndpoints(
                 type: 'string',
                 required: true,
                 location: 'path',
+                description: `${className} id or slug`,
+                example: 'example-id',
               },
               {
                 name: 'options',
                 type: 'object',
                 required: false,
                 location: 'body',
+                description: `Options for the ${action} action`,
+                example: {},
               },
             ],
           });
@@ -185,12 +215,15 @@ export async function previewApiEndpoints(
       }
     }
 
-    // Format as markdown table
-    const _markdown = formatEndpointsAsMarkdown(endpoints, className);
+    const endpointsWithExamples = endpoints.map((endpoint) => ({
+      ...endpoint,
+      example: buildCurlExample(endpoint),
+    }));
 
     return {
-      endpoints,
+      endpoints: endpointsWithExamples,
       basePath,
+      markdown: formatEndpointsAsMarkdown(endpointsWithExamples, className),
     };
   } catch (error) {
     throw new Error(
@@ -200,18 +233,156 @@ export async function previewApiEndpoints(
 }
 
 /**
- * Format endpoints as markdown table
+ * Generate a deterministic example value for endpoint documentation.
+ */
+function sampleValueForType(type: string, name: string): unknown {
+  const normalizedType = type.toLowerCase();
+  const normalizedName = name.toLowerCase();
+
+  if (normalizedName === 'id' || normalizedName.endsWith('id')) {
+    return 'example-id';
+  }
+
+  if (
+    normalizedType.includes('integer') ||
+    normalizedType.includes('int') ||
+    normalizedType === 'number'
+  ) {
+    return 1;
+  }
+
+  if (
+    normalizedType.includes('decimal') ||
+    normalizedType.includes('float') ||
+    normalizedType.includes('double')
+  ) {
+    return 9.99;
+  }
+
+  if (normalizedType.includes('boolean')) {
+    return true;
+  }
+
+  if (
+    normalizedType.includes('datetime') ||
+    normalizedType.includes('timestamp') ||
+    normalizedType === 'date'
+  ) {
+    return '2026-01-01T00:00:00.000Z';
+  }
+
+  if (normalizedType.includes('json') || normalizedType.includes('object')) {
+    return {};
+  }
+
+  if (normalizedType.includes('array')) {
+    return [];
+  }
+
+  return `example-${toKebabCase(name)}`;
+}
+
+function toKebabCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function buildCurlExample(endpoint: ApiEndpoint): string {
+  const path = endpoint.path.replaceAll(':id', 'example-id');
+  const url = new URL(`http://localhost:3000${path}`);
+
+  for (const parameter of endpoint.parameters ?? []) {
+    if (parameter.location !== 'query') {
+      continue;
+    }
+    url.searchParams.set(parameter.name, formatQueryValue(parameter));
+  }
+
+  const body = buildBodyExample(endpoint);
+  const parts = [`curl -X ${endpoint.method} "${url.toString()}"`];
+  if (body) {
+    parts.push('-H "Content-Type: application/json"');
+    parts.push(`-d '${JSON.stringify(body)}'`);
+  }
+
+  return parts.join(' ');
+}
+
+function buildBodyExample(
+  endpoint: ApiEndpoint,
+): Record<string, unknown> | null {
+  const bodyParameters =
+    endpoint.parameters?.filter((parameter) => parameter.location === 'body') ??
+    [];
+  if (bodyParameters.length === 0) {
+    return null;
+  }
+
+  const body: Record<string, unknown> = {};
+  for (const parameter of bodyParameters) {
+    body[parameter.name] =
+      parameter.example ?? sampleValueForType(parameter.type, parameter.name);
+  }
+
+  return body;
+}
+
+function formatExampleValue(value: unknown): string {
+  if (value === undefined) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return JSON.stringify(value) ?? '';
+}
+
+function formatQueryValue(
+  parameter: NonNullable<ApiEndpoint['parameters']>[number],
+): string {
+  return formatExampleValue(
+    parameter.example ?? sampleValueForType(parameter.type, parameter.name),
+  );
+}
+
+function escapeMarkdownCell(value: string): string {
+  return value.replaceAll('|', '\\|').replaceAll('\n', '<br />');
+}
+
+/**
+ * Format endpoints as copyable markdown sections.
  */
 function formatEndpointsAsMarkdown(
   endpoints: ApiEndpoint[],
   className: string,
 ): string {
   let markdown = `# API Endpoints for ${className}\n\n`;
-  markdown += `| Method | Path | Description |\n`;
-  markdown += `|--------|------|-------------|\n`;
 
   for (const endpoint of endpoints) {
-    markdown += `| ${endpoint.method} | ${endpoint.path} | ${endpoint.description} |\n`;
+    markdown += `## ${endpoint.method} ${endpoint.path}\n\n`;
+    markdown += `${endpoint.description}\n\n`;
+    markdown += `| Parameter | Location | Type | Required | Example | Description |\n`;
+    markdown += `|-----------|----------|------|----------|---------|-------------|\n`;
+
+    if (endpoint.parameters?.length) {
+      for (const parameter of endpoint.parameters) {
+        markdown +=
+          `| ${escapeMarkdownCell(parameter.name)}` +
+          ` | ${parameter.location}` +
+          ` | ${escapeMarkdownCell(parameter.type)}` +
+          ` | ${parameter.required ? 'yes' : 'no'}` +
+          ` | ${escapeMarkdownCell(formatExampleValue(parameter.example))}` +
+          ` | ${escapeMarkdownCell(parameter.description ?? '')} |\n`;
+      }
+    } else {
+      markdown += `| _none_ | | | | | |\n`;
+    }
+
+    markdown += `\nExample:\n\n`;
+    markdown += `\`\`\`bash\n${endpoint.example}\n\`\`\`\n\n`;
   }
 
   return markdown;
