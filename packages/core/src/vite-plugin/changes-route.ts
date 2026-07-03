@@ -54,7 +54,9 @@ function isCollectionDefinition(objectDef: SmartObjectDefinition): boolean {
  * when two loaded packages declare the same simple name (mirrors the #1778
  * verbatim-key fix and the sync-apply route's `registryKey`).
  */
-function resolveAnchorClassName(manifest: SmartObjectManifest): string | null {
+export function resolveAnchorClassName(
+  manifest: SmartObjectManifest,
+): string | null {
   const sortedNames = Object.keys(manifest.objects).sort();
   for (const name of sortedNames) {
     const def = manifest.objects[name];
@@ -65,7 +67,9 @@ function resolveAnchorClassName(manifest: SmartObjectManifest): string | null {
   return null;
 }
 
-function manifestHasTenantScopedObject(manifest: SmartObjectManifest): boolean {
+export function manifestHasTenantScopedObject(
+  manifest: SmartObjectManifest,
+): boolean {
   return Object.values(manifest.objects).some(
     (def) =>
       !isCollectionDefinition(def) && !!def.decoratorConfig?.tenantScoped,

@@ -21,6 +21,16 @@ export {
   versionConditionalResponse,
   warnIfSharedCacheNeutralized,
 } from './conditional-get';
+// Live `_events` SSE route (#1763). The generated SvelteKit route imports
+// `buildChangeEventStream` from the package root, so the stream lifecycle is
+// written and tested once in core. `handleEventsRoute` stays internal (rest.ts
+// only).
+export {
+  buildChangeEventStream,
+  type ChangeEventStreamOptions,
+  DEFAULT_EVENTS_HEARTBEAT_MS,
+  signalVisibleToTenant,
+} from './events-route';
 export type {
   MCPConfig,
   MCPContext,

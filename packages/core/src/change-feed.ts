@@ -88,6 +88,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import { GlobalInterceptors, type InterceptorContext } from './interceptors.js';
@@ -333,7 +334,7 @@ export async function ensureChangeFeedTable(
 export async function appendChange(
   db: DatabaseInterface,
   input: AppendChangeInput,
-): Promise<void> {
+): Promise<number> {
   const table = input.table?.trim();
   if (!table) {
     throw new Error('appendChange requires a non-empty table name');
@@ -348,11 +349,22 @@ export async function appendChange(
   }
 
   const p = placeholders(db);
+  // `RETURNING seq` yields the ACTUAL sequence the INSERT allocated, in the
+  // SAME statement — atomic. This matters for correctness, not just tidiness: a
+  // separate follow-up `SELECT MAX(seq)` is racy under concurrent appends (a
+  // peer can commit a higher seq in between), which would hand two distinct
+  // changes the same SSE `id` (a client that dedupes by id drops one → stale)
+  // and let a client's `Last-Event-ID` overshoot a change it never received.
+  // RETURNING closes that: each caller gets its own row's seq. SQLite (3.35+),
+  // Postgres, and DuckDB all support it, and the sql adapters surface the
+  // returned rows through `getQueryRows`. The allocator stays `MAX+1` under the
+  // unique-PK retry, so committed sequences remain contiguous (the cursor
+  // guarantee — see module docs).
   const sql =
     `INSERT INTO ${CHANGE_FEED_TABLE} ` +
     '(seq, table_name, row_id, operation, tenant_id, created_at) ' +
     `SELECT COALESCE(MAX(seq), 0) + 1, ${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)} ` +
-    `FROM ${CHANGE_FEED_TABLE}`;
+    `FROM ${CHANGE_FEED_TABLE} RETURNING seq`;
   const params = [
     table,
     input.rowId ?? null,
@@ -363,8 +375,8 @@ export async function appendChange(
 
   for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
     try {
-      await db.query(sql, ...params);
-      return;
+      const rows = getQueryRows(await db.query(sql, ...params));
+      return toSeqNumber(rows[0]?.seq);
     } catch (error) {
       if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
         throw error;
@@ -373,6 +385,10 @@ export async function appendChange(
       // recomputes MAX(seq) against the now-committed head.
     }
   }
+
+  // Unreachable: the loop returns a seq or throws on the final attempt. Present
+  // so the function satisfies its `Promise<number>` contract structurally.
+  throw new Error('appendChange exhausted retries without allocating a seq');
 }
 
 /**
@@ -754,6 +770,9 @@ const WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
 /** Databases we already warned about after a failed feed append. */
 const warnedAppendFailures = new Set<string>();
 
+/** Databases we already warned about after a failed signal publish (#1763). */
+const warnedSignalPublishFailures = new Set<string>();
+
 /**
  * Register the change-feed writer with {@link GlobalInterceptors}.
  *
@@ -841,12 +860,33 @@ async function appendForInstance(
   try {
     const id = (instance as { id?: unknown }).id;
     const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
-    await appendChange(db, {
+    const rowId = typeof id === 'string' && id ? id : null;
+    const rowTenantId =
+      typeof tenantId === 'string' && tenantId ? tenantId : null;
+    const seq = await appendChange(db, {
       table,
-      rowId: typeof id === 'string' && id ? id : null,
+      rowId,
       operation,
-      tenantId: typeof tenantId === 'string' && tenantId ? tenantId : null,
+      tenantId: rowTenantId,
     });
+
+    // Publish a coarse live signal for the SSE `_events` route (#1763). This
+    // runs only after the durable feed append SUCCEEDED (same try block, so a
+    // failed append never emits a signal — "no signal without a durable feed
+    // row"). Its own try/catch (distinct dedup key) keeps a signal-publish
+    // problem from failing the user's write or masking the append's own
+    // failure semantics above.
+    try {
+      publishChangeSignal(db, {
+        table,
+        operation,
+        rowId,
+        tenantId: rowTenantId,
+        seq,
+      });
+    } catch (error) {
+      warnSignalPublishFailureOnce(db, table, error);
+    }
   } catch (error) {
     warnAppendFailureOnce(db, table, error);
   }
@@ -873,9 +913,31 @@ function warnAppendFailureOnce(
   }
 }
 
+function warnSignalPublishFailureOnce(
+  db: DatabaseInterface,
+  table: string,
+  error: unknown,
+): void {
+  try {
+    const dbKey = resolveDbCacheKey(db);
+    if (warnedSignalPublishFailures.has(dbKey)) return;
+    warnedSignalPublishFailures.add(dbKey);
+    logger.warn(
+      `Change feed: failed to publish a live change signal for '${table}'. ` +
+        'The write and its durable feed row are unaffected; live SSE ' +
+        'subscribers miss this signal but recover via cursor catch-up ' +
+        '(further failures for this database are suppressed).',
+      { error: error instanceof Error ? error.message : String(error) },
+    );
+  } catch {
+    // Logging must never propagate into the write path.
+  }
+}
+
 /**
- * Reset the append-failure warning dedup (test helper).
+ * Reset the append-failure and signal-publish warning dedups (test helper).
  */
 export function resetChangeFeedWarnings(): void {
   warnedAppendFailures.clear();
+  warnedSignalPublishFailures.clear();
 }

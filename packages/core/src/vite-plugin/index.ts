@@ -104,6 +104,12 @@ export interface SmrtPluginOptions {
      * (the route is auth-guarded fail-closed); `{ enabled: false }` skips it.
      */
     changesRoute?: { enabled?: boolean };
+    /**
+     * Live `_events` SSE route generation (#1763). Enabled by default (the
+     * route is auth-guarded fail-closed, same-origin only); `{ enabled: false }`
+     * skips it.
+     */
+    eventsRoute?: { enabled?: boolean };
   };
   /** Domain-scoped agent/developer knowledge artifact generation. */
   knowledge?: DomainKnowledgeConfig | false;
@@ -542,6 +548,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           configFileName: svelteKit.configFileName || 'smrt.ts',
           kebabRoutes: svelteKit.kebabRoutes ?? false,
           changesRoute: svelteKit.changesRoute,
+          eventsRoute: svelteKit.eventsRoute,
           knowledge: await resolveKnowledgeConfig(
             resolvedConfig.root,
             manifest,
@@ -671,6 +678,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   configFileName: svelteKit.configFileName || 'smrt.ts',
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
                   changesRoute: svelteKit.changesRoute,
+                  eventsRoute: svelteKit.eventsRoute,
                   knowledge: await resolveKnowledgeConfig(
                     server.config.root,
                     manifest,
@@ -716,6 +724,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   configFileName: svelteKit.configFileName || 'smrt.ts',
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
                   changesRoute: svelteKit.changesRoute,
+                  eventsRoute: svelteKit.eventsRoute,
                   knowledge: await resolveKnowledgeConfig(
                     server.config.root,
                     manifest,
@@ -753,6 +762,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   configFileName: svelteKit.configFileName || 'smrt.ts',
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
                   changesRoute: svelteKit.changesRoute,
+                  eventsRoute: svelteKit.eventsRoute,
                   knowledge: await resolveKnowledgeConfig(
                     server.config.root,
                     manifest,

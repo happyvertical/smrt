@@ -37,8 +37,11 @@ const logger = createLogger({ level: 'info' });
 /**
  * Structural copy of `APIConfig['authMiddleware']` (from `rest.ts`) so this
  * module never imports the generator back (keeps the dependency one-way).
+ *
+ * Exported so the sibling `_events` route (#1763) reuses the exact same
+ * fail-closed auth contract without redeclaring it.
  */
-type ChangesAuthMiddleware = (
+export type ChangesAuthMiddleware = (
   objectName: string,
   action: string,
 ) => (req: Request) => Promise<Request | Response>;
@@ -62,7 +65,18 @@ export const CHANGES_ROUTE_OBJECT_NAME = '_changes';
 const resolvedInstanceDbs = new WeakMap<object, Promise<DatabaseInterface>>();
 const resolvedUrlDbs = new Map<string, Promise<DatabaseInterface>>();
 
-function resolveChangesDb(dbOption: unknown): Promise<DatabaseInterface> {
+/**
+ * Resolve the generator's `db` option (instance, config object, or URL string)
+ * to a single shared {@link DatabaseInterface} per distinct option value.
+ *
+ * Exported so the sibling `_events` route (#1763) resolves its database
+ * identically — sharing this WeakMap/Map means both routes read the same
+ * underlying handle for a given option, which matters for `:memory:` databases
+ * where a fresh `getDatabase()` per call would mint a separate database.
+ */
+export function resolveChangesDb(
+  dbOption: unknown,
+): Promise<DatabaseInterface> {
   if (dbOption && typeof dbOption === 'object') {
     if (
       'query' in dbOption &&

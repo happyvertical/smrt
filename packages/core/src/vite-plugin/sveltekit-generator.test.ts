@@ -2302,4 +2302,58 @@ describe('SvelteKit Route Generator', () => {
       ]);
     });
   });
+
+  // Proves the `_events` opt-out (#1763) threads end-to-end: the option reaches
+  // generateEventsRoute through generateSvelteKitRoutes (regression guard — it
+  // was added to the internal options but not forwarded from the public plugin
+  // config, so the documented opt-out was dead).
+  describe('_events route generation (#1763)', () => {
+    const eventsManifest: SmartObjectManifest = {
+      objects: {
+        Widget: {
+          className: 'Widget',
+          collection: 'widgets',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: true },
+        },
+      },
+    };
+
+    const eventsServerPath = join(
+      projectRoot,
+      'src/routes/api',
+      '_events',
+      '+server.ts',
+    );
+
+    it('generates the _events route by default', async () => {
+      await generateSvelteKitRoutes(projectRoot, eventsManifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const eventsWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString() === eventsServerPath);
+      expect(eventsWrite).toBeDefined();
+      // The emitted route delegates to core's stream builder.
+      expect(String(eventsWrite?.[1])).toContain('buildChangeEventStream');
+    });
+
+    it('skips the _events route when eventsRoute.enabled is false', async () => {
+      await generateSvelteKitRoutes(projectRoot, eventsManifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        eventsRoute: { enabled: false },
+      });
+
+      const eventsWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString() === eventsServerPath);
+      expect(eventsWrite).toBeUndefined();
+    });
+  });
 });
