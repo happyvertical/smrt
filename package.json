@@ -64,7 +64,7 @@
     "@vitest/coverage-v8": "4.1.9",
     "acorn": "^8.17.0",
     "chokidar": "^5.0.0",
-    "concurrently": "9.2.3",
+    "concurrently": "10.0.3",
     "dependency-cruiser": "^17.4.3",
     "esbuild": "0.28.1",
     "express": "^5.2.1",

@@ -84,7 +84,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "24.13.2",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "concurrently": "^9.2.3",
+    "concurrently": "^10.0.3",
     "svelte": "^5.56.4",
     "svelte-check": "^4.7.1",
     "typescript": "^5.9.3",
