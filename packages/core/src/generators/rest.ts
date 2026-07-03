@@ -6,6 +6,7 @@
 
 import http from 'node:http';
 import type { SmrtCollection } from '../collection';
+import { resolveDispatchTenantScope } from '../dispatch';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
@@ -13,6 +14,7 @@ import {
   conditionalJsonResponse,
   resolveReadCacheControl,
   warnIfSharedCacheNeutralized,
+  warnIfTenantScopedPublicRead,
 } from './conditional-get';
 import {
   processSyncApplyBatch,
@@ -340,7 +342,7 @@ export class APIGenerator {
 
       // Handle special /count endpoint
       if (objectId === 'count' && req.method === 'GET') {
-        return await this.handleCount(collection, url.searchParams);
+        return await this.handleCount(collection, url.searchParams, objectName);
       }
 
       // Route to appropriate CRUD operation
@@ -477,6 +479,61 @@ export class APIGenerator {
   }
 
   /**
+   * Fail-closed tenant read scope (#1782).
+   *
+   * A `@TenantScoped` model served over a public/anonymous read has no ambient
+   * tenant context, so the tenancy interceptor (optional mode) passes the query
+   * through UNFILTERED and returns every tenant's rows. When tenancy is enabled
+   * but no tenant is active, this returns a `{ tenantId: null }` filter so reads
+   * fail closed to NULL-tenant (global) rows only — mirroring the dispatch
+   * resolver's "enforced, no active tenant → global rows only" convention
+   * (`resolveDispatchTenantScope` is the core-level trust anchor tenancy fills
+   * in; core cannot import tenancy directly). Returns undefined when a tenant IS
+   * active (the interceptor filters by it) or tenancy is disabled (no isolation
+   * to enforce).
+   */
+  private resolveTenantReadScope(
+    objectName?: string,
+  ): { tenantId: null } | undefined {
+    if (!objectName || !ObjectRegistry.isTenantScoped(objectName)) {
+      return undefined;
+    }
+    const scope = resolveDispatchTenantScope();
+    return scope.enforced && scope.tenantId === null
+      ? { tenantId: null }
+      : undefined;
+  }
+
+  /**
+   * Merge the fail-closed tenant read scope (#1782) into a query's WHERE clause.
+   * When the scope is active (global-only), any client-supplied tenant filter is
+   * dropped first so a `?tenantId=...` / `?tenant_id[ne]=...` query param can
+   * never widen the scope, then NULL-tenant is forced. Returns the original
+   * `where` untouched when the scope is inactive.
+   */
+  private applyTenantReadScope(
+    objectName: string | undefined,
+    where: Record<string, string | string[]> | undefined,
+  ): Record<string, unknown> | undefined {
+    const scope = this.resolveTenantReadScope(objectName);
+    if (!scope) {
+      return where;
+    }
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(where ?? {})) {
+      // A key may carry an operator suffix, e.g. "tenant_id !=" — match on the
+      // field portion so no operator variant slips a client tenant filter past.
+      const field = key.split(/\s+/)[0];
+      if (field === 'tenantId' || field === 'tenant_id') {
+        continue;
+      }
+      cleaned[key] = value;
+    }
+    cleaned.tenantId = null;
+    return cleaned;
+  }
+
+  /**
    * Handle GET /objects/:id
    */
   private async handleGet(
@@ -485,7 +542,12 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    const object = await collection.get(id);
+    // #1782: scope a public/anonymous read of a tenant-scoped model to global
+    // (NULL-tenant) rows when no tenant context is active.
+    const scope = this.resolveTenantReadScope(objectName);
+    const object = scope
+      ? await collection.get({ id, ...scope })
+      : await collection.get(id);
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
     }
@@ -535,8 +597,15 @@ export class APIGenerator {
       }
     }
 
+    // #1782: fail closed to global (NULL-tenant) rows for a public/anonymous
+    // read of a tenant-scoped model with no active tenant context.
+    const scopedWhere = this.applyTenantReadScope(objectName, where);
+
     const objects = await collection.list({
-      where: Object.keys(where).length > 0 ? where : undefined,
+      where:
+        scopedWhere && Object.keys(scopedWhere).length > 0
+          ? scopedWhere
+          : undefined,
       limit,
       offset,
       orderBy,
@@ -555,6 +624,7 @@ export class APIGenerator {
   private async handleCount(
     collection: SmrtCollection<SmrtObject>,
     params: URLSearchParams,
+    objectName?: string,
   ): Promise<Response> {
     // Build where clause from query params (same logic as handleList)
     const where: Record<string, string | string[]> = {};
@@ -583,8 +653,15 @@ export class APIGenerator {
       }
     }
 
+    // #1782: a count leaks cross-tenant cardinality just as a list leaks rows,
+    // so apply the same fail-closed global scope for anonymous tenant reads.
+    const scopedWhere = this.applyTenantReadScope(objectName, where);
+
     const count = await collection.count({
-      where: Object.keys(where).length > 0 ? where : undefined,
+      where:
+        scopedWhere && Object.keys(scopedWhere).length > 0
+          ? scopedWhere
+          : undefined,
     });
 
     return this.createJsonResponse({ count });
@@ -854,6 +931,7 @@ export class APIGenerator {
       : false;
     if (objectName) {
       warnIfSharedCacheNeutralized(objectName, apiConfig, tenantScoped);
+      warnIfTenantScopedPublicRead(objectName, apiConfig, tenantScoped);
     }
     return conditionalJsonResponse(
       req,
