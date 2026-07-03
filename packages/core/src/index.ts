@@ -42,6 +42,18 @@ export {
   resetChangeFeedWarnings,
   unregisterChangeFeedWriter,
 } from './change-feed';
+// Live change-signal bus — the push spine for the generated `_events` SSE
+// route (issue #1763). Coarse signals (no row payloads), in-process +
+// cross-replica via the adapter notification capability. Publish/broadcast/
+// ensure stay internal — only the subscribe + lifecycle surface is public.
+export {
+  CHANGE_SIGNAL_CHANNEL,
+  type ChangeSignal,
+  type ChangeSignalListener,
+  resetChangeSignals,
+  stopChangeSignalListeners,
+  subscribeToChangeSignals,
+} from './change-signals';
 // R10: generated child accessors for @oneToMany relationships
 export {
   applyOneToManyChildAccessors,

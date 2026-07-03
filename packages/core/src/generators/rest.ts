@@ -32,6 +32,7 @@ import {
   warnIfSharedCacheNeutralized,
   warnIfTenantScopedPublicRead,
 } from './conditional-get';
+import { handleEventsRoute } from './events-route';
 
 export interface APIConfig {
   basePath?: string;
@@ -190,14 +191,40 @@ export class APIGenerator {
     // Send body
     if (webResponse.body) {
       const reader = webResponse.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
+
+      // Client disconnect handling — essential for the long-lived `_events` SSE
+      // stream (#1763): a never-ending stream is only torn down when its reader
+      // is cancelled, and nothing cancels it unless we detect the socket close.
+      // On `res`/socket 'close' before the response finished, cancel the reader
+      // so the source stream's `cancel()` fires (unsubscribe + clear heartbeat).
+      let clientGone = false;
+      const onClose = () => {
+        if (res.writableFinished) return; // normal completion, not a disconnect
+        clientGone = true;
+        void reader.cancel().catch(() => {});
+      };
+      res.on('close', onClose);
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done || clientGone) break;
+          if (!res.write(value)) {
+            // Respect back-pressure so a slow/absent consumer can't unbounded-
+            // buffer in the Node socket.
+            await new Promise<void>((resolve) => res.once('drain', resolve));
+          }
+        }
+      } catch {
+        // Reader cancelled (client gone) or write failed — stop streaming.
+      } finally {
+        res.off('close', onClose);
       }
     }
 
-    res.end();
+    if (!res.writableEnded) {
+      res.end();
+    }
   }
 
   /**
@@ -236,6 +263,19 @@ export class APIGenerator {
         db: this.resolveContextDb(),
       });
       return this.addCorsHeaders(response, req);
+    }
+
+    // Live change-signal SSE route (#1763): auth-guarded, tenant-scoped
+    // Server-Sent-Events stream of coarse signals (no row payloads). Logic
+    // lives in ./events-route.ts. Deliberately NOT wrapped in addCorsHeaders —
+    // this slice is same-origin only (EventSource cannot set request headers
+    // and credentialed cross-origin SSE needs Allow-Credentials the CORS
+    // helper does not emit); cross-origin SSE is a follow-up.
+    if (url.pathname === `${this.config.basePath}/_events`) {
+      return handleEventsRoute(req, {
+        authMiddleware: this.config.authMiddleware,
+        db: this.resolveContextDb(),
+      });
     }
 
     // Handle object routes

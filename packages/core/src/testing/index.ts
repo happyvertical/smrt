@@ -19,3 +19,8 @@
  */
 
 export { getTestDatabase, type TestDatabaseOptions } from './database.js';
+export {
+  type StubNotification,
+  type StubNotificationsHandle,
+  stubNotifications,
+} from './notifications-stub.js';

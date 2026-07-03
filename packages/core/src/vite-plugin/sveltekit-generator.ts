@@ -26,6 +26,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
+import { generateEventsRoute } from './events-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateSyncApplyRoute } from './sync-apply-route.js';
 
@@ -48,6 +49,12 @@ export interface SvelteKitOptions {
    * (the route is auth-guarded fail-closed); set `enabled: false` to skip.
    */
   changesRoute?: { enabled?: boolean };
+  /**
+   * Live `_events` SSE route generation (#1763). Enabled by default (the route
+   * is auth-guarded fail-closed, same-origin only); set `enabled: false` to
+   * skip.
+   */
+  eventsRoute?: { enabled?: boolean };
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -926,6 +933,8 @@ export async function generateSvelteKitRoutes(
   generateSyncApplyRoute(projectRoot, manifest, options);
   // Change-feed route (#1758) — cleanup rides clearGeneratedRouteFiles above.
   generateChangesRoute(projectRoot, manifest, options);
+  // Live change-signal SSE route (#1763) — cleanup rides the sweep above.
+  generateEventsRoute(projectRoot, manifest, options);
 
   // Update .gitignore to exclude generated routes
   updateGitignore(projectRoot, options);
