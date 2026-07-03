@@ -53,6 +53,23 @@ describe('AdminShell adoption (structural)', () => {
     expect(layout).not.toMatch(/fetch\(/);
   });
 
+  it('layout themes the shell via ThemeProvider + the SMRT font stack', () => {
+    // Standard SMRT theming: ThemeProvider (token variables) wraps AdminShell,
+    // and fonts.css loads the type stack. Order matters — ThemeProvider must
+    // open before AdminShell so the tokens cascade into the shell.
+    expect(layout).toContain(
+      "import { ThemeProvider } from '@happyvertical/smrt-ui/themes'",
+    );
+    expect(layout).toContain(
+      "import '@happyvertical/smrt-ui/themes/styles/fonts.css'",
+    );
+    const providerIndex = layout.indexOf('<ThemeProvider');
+    const shellIndex = layout.indexOf('<AdminShell');
+    expect(providerIndex).toBeGreaterThanOrEqual(0);
+    expect(shellIndex).toBeGreaterThan(providerIndex);
+    expect(layout).toContain('</ThemeProvider>');
+  });
+
   it('layout server load builds nav via tenantNavFromManifest and returns it', () => {
     expect(layoutServer).toContain('tenantNavFromManifest');
     // Reads the same generated manifest the runtime seeds from.

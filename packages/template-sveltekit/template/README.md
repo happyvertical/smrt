@@ -240,9 +240,10 @@ shortcuts). It is wired in the root layout:
 - `src/routes/+layout.server.ts` builds the left "tenant" nav **server-side**
   with `tenantNavFromManifest()` from the SMRT manifest (`.smrt/manifest.json`)
   and returns it as layout data — no client-side nav fetch.
-- `src/routes/+layout.svelte` wraps `{@render children()}` in `<AdminShell>`,
-  feeding that nav to `<TenantNav>`, a brand/app panel on top, and a couple of
-  status chips on the bottom.
+- `src/routes/+layout.svelte` wraps `{@render children()}` in `<AdminShell>`
+  (inside `<ThemeProvider>` — see **Theming** below), feeding that nav to
+  `<TenantNav>`, a brand/app panel on top, and a couple of status chips on the
+  bottom.
 - `src/routes/settings/+page.svelte` drops in `<ShellSettingsPanel>` so users
   can toggle panels and remap the hotkeys; the choices persist in
   `localStorage` under the shell's `storageKey`.
@@ -254,6 +255,44 @@ is SSR-safe: it renders statically on the server and only activates hotkeys /
 the shell is chrome around the page, not a replacement for its data flow. The
 home page's `depends('smrt:items')` / `invalidate('smrt:items')` cycle works
 unchanged.
+
+### Theming
+
+The layout wraps the shell in **`<ThemeProvider>`** from
+`@happyvertical/smrt-ui/themes` — the standard SMRT theming wrapper (the same
+pattern the reference `@happyvertical/smrt-content` app uses):
+
+```svelte
+<script lang="ts">
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  // @font-face rules for the SMRT type stack (Space Grotesk / Inter /
+  // JetBrains Mono woff2). ThemeProvider supplies the token *variables*;
+  // this loads the font *files*. Bundled — no CDN request.
+  import '@happyvertical/smrt-ui/themes/styles/fonts.css';
+</script>
+
+<ThemeProvider colorScheme="system" persist={true}>
+  <!-- AdminShell + every page render themed inside here -->
+</ThemeProvider>
+```
+
+- ThemeProvider injects the **entire `--smrt-*` token set** (colors, typography,
+  spacing, radius, elevation, motion, z-index) as an inline style it computes
+  during render — so the tokens are present in the SSR HTML with **no unstyled
+  flash**, and it re-resolves them on the client. You do **not** need to import
+  `styles/tokens.css` or `themes/styles/*.css` separately; the provider is the
+  runtime source of truth.
+- `colorScheme="system"` follows the OS light/dark preference; `persist` saves a
+  user's explicit switch to `localStorage`. Switch presets/scheme at runtime
+  with `ThemeSwitcher` / `ColorSchemeToggle` (also from `.../themes`), or read
+  the current theme via the theme context.
+- The one thing the provider does not carry is the font **files** — hence the
+  `themes/styles/fonts.css` import above. Drop it and the type stack degrades to
+  `system-ui` / `ui-monospace` automatically.
+
+To pin a specific look instead of following the OS, set
+`colorScheme="light"` (or `"dark"`) and `preset="material"` (or `"glass"` /
+`"studio"` / `"smrt"`).
 
 The status chips ship static (`Local`, `Ready`). To make them (and the focus
 edge) live — job counts, dispatch depth, connection state — feed real values
