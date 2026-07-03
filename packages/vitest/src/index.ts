@@ -489,6 +489,14 @@ export function getWorkspaceViteAliases(
         '@happyvertical/smrt-svelte/i18n/server',
         join(packageRoot, 'src/i18n/server.ts'),
       );
+      // Svelte 5 live-query bindings for smrt-web (#1761). The generic
+      // `${packageName}/svelte` convention above does not cover `/web`, so the
+      // subpath needs its own alias or consumer TESTS resolve to stale dist.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/web',
+        join(packageRoot, 'src/web/index.ts'),
+      );
     }
   }
 

@@ -1986,6 +1986,9 @@ importers:
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
+      '@happyvertical/smrt-web':
+        specifier: workspace:*
+        version: link:../smrt-web
       '@huggingface/transformers':
         specifier: '>=3.8.1'
         version: 3.8.1
@@ -1995,6 +1998,12 @@ importers:
       '@remotion/whisper-web':
         specifier: '>=4.0.484'
         version: 4.0.484
+      '@tanstack/db':
+        specifier: ^0.6.14
+        version: 0.6.14(typescript@5.9.3)
+      '@tanstack/svelte-db':
+        specifier: ^0.1.91
+        version: 0.1.91(svelte@5.56.4)(typescript@5.9.3)
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2
@@ -5606,6 +5615,11 @@ packages:
     peerDependencies:
       '@tanstack/query-core': ^5.0.0
       typescript: '>=4.7'
+
+  '@tanstack/svelte-db@0.1.91':
+    resolution: {integrity: sha512-DcpkOKC7R5XuqgWeFcyXZG/W0MGwNZq3pZrGxVY2k8VsdqyVOHGDUel2Zwb08dafIF1WEe2GXLHtwYbyU5GBHQ==}
+    peerDependencies:
+      svelte: 5.56.4
 
   '@techstark/opencv-js@4.9.0-release.3':
     resolution: {integrity: sha512-y+KoLLlkXVUHWozYlN1vmMD9TQMPJObqml5nPA5vPWgHtOgm8q5O74UtzM23eayidvmeFX6tF5e2gDdyxcpy3Q==}
@@ -13153,6 +13167,13 @@ snapshots:
       '@tanstack/db': 0.6.14(typescript@5.9.3)
       '@tanstack/query-core': 5.101.2
       typescript: 5.9.3
+
+  '@tanstack/svelte-db@0.1.91(svelte@5.56.4)(typescript@5.9.3)':
+    dependencies:
+      '@tanstack/db': 0.6.14(typescript@5.9.3)
+      svelte: 5.56.4
+    transitivePeerDependencies:
+      - typescript
 
   '@techstark/opencv-js@4.9.0-release.3': {}
 

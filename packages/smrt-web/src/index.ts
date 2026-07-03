@@ -459,11 +459,12 @@ export interface CreateSmrtCollectionOptions {
 const engineCollections = new WeakMap<object, unknown>();
 
 /**
- * @internal Retrieve the underlying engine collection backing a handle. For
- * trusted framework bindings only (e.g. smrt-svelte live queries), which must
- * feed the engine collection to the query builder. Returns `unknown` so no
- * engine type crosses the public boundary — callers cast. Throws for a handle
- * not produced by {@link createSmrtCollection}.
+ * Retrieve the underlying engine collection backing a handle — an advanced
+ * bridge for trusted framework bindings (e.g. the smrt-svelte live-query
+ * binding), which must feed the engine collection to the query builder. Returns
+ * `unknown` so no engine type crosses the boundary; callers cast. Throws for a
+ * handle not produced by {@link createSmrtCollection}. Not needed for normal
+ * use.
  */
 export function getEngineCollection<TData extends object>(
   handle: SmrtWebCollection<TData>,
