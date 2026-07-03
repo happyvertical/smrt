@@ -11,6 +11,7 @@ import type {
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
+import { CLIENT_FETCH_RUNTIME } from '../generated-client-runtime.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import type { SmartObjectManifest } from '../scanner/types';
@@ -1220,14 +1221,15 @@ function generateClientModule(
 
       // Generate custom method implementations.
       // Custom methods are instance methods: POST /{collection}/{id}/{urlSegment}.
+      // All fetchers reject on !response.ok (#1796) via __smrtFetchJson.
       const customMethodImpls = customMethods
         .map(([methodName, _method]) => {
           const urlSegment = segmentFor(methodName);
-          return `    ${methodName}: (id, options) => fetch(basePath + '/${collection}/' + id + '/${urlSegment}', {
+          return `    ${methodName}: (id, options) => __smrtFetchJson(basePath + '/${collection}/' + id + '/${urlSegment}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
-    }).then(r => r.json())`;
+    })`;
         })
         .join(',\n');
 
@@ -1236,37 +1238,37 @@ function generateClientModule(
 
       return `
   ${clientKey}: {
-    list: (params) => fetch(basePath + '/${collection}', {
+    list: (params) => __smrtFetchJson(basePath + '/${collection}', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
-    }).then(r => r.json()),
+    }),
 
-    get: (id) => fetch(basePath + '/${collection}/' + id, {
+    get: (id) => __smrtFetchJson(basePath + '/${collection}/' + id, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
-    }).then(r => r.json()),
+    }),
 
-    create: (data) => fetch(basePath + '/${collection}', {
+    create: (data) => __smrtFetchJson(basePath + '/${collection}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
-    }).then(r => r.json()),
+    }),
 
-    update: (id, data) => fetch(basePath + '/${collection}/' + id, {
+    update: (id, data) => __smrtFetchJson(basePath + '/${collection}/' + id, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
-    }).then(r => r.json()),
+    }),
 
-    delete: (id) => fetch(basePath + '/${collection}/' + id, {
+    delete: (id) => __smrtFetchOk(basePath + '/${collection}/' + id, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
-    }).then(r => r.ok),
+    }),
 
-    search: (query) => fetch(basePath + '/${collection}/search?q=' + encodeURIComponent(query), {
+    search: (query) => __smrtFetchJson(basePath + '/${collection}/search?q=' + encodeURIComponent(query), {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
-    }).then(r => r.json())${customMethodsBlock}
+    })${customMethodsBlock}
   }`;
     })
     .join(',');
@@ -1274,6 +1276,8 @@ function generateClientModule(
   return `
 // Auto-generated API client from SMRT objects
 // This file is generated automatically - do not edit
+
+${CLIENT_FETCH_RUNTIME}
 
 export function createClient(basePath = '/api/v1') {
   return {${clientMethods}
@@ -1512,11 +1516,14 @@ async function generateTypeDeclarationFile(
           })
           .join('\n');
 
+        // Timestamps are snake_case on the wire (#1797): the server returns
+        // `created_at`/`updated_at` exactly as SmrtObject.toJSON() emits them,
+        // matching the prebuild + client-mode type paths.
         return `  export interface ${interfaceName} {
     id?: string;
 ${fields}
-    createdAt?: string;
-    updatedAt?: string;
+    created_at?: string;
+    updated_at?: string;
   }`;
       })
       .join('\n\n');
@@ -1643,13 +1650,24 @@ declare module '@happyvertical/smrt-virt-routes' {
   export default setupRoutes;
 }
 
-// Client module - Auto-generated API client  
+// Client module - Auto-generated API client
+// Wire-shape policy (#1797): the server returns BARE JSON — a bare array for
+// list/search, a bare object for get/create/update — with snake_case field
+// names (created_at, updated_at). These declarations match that shape (no
+// envelope, no camelCase). Fetchers reject on non-2xx with a SmrtClientError
+// (#1796). This is byte-identical to the prebuild declaration path.
 declare module '@happyvertical/smrt-virt-client' {
-  export interface ApiResponse<T = any> {
-    id?: string;
-    data?: T;
+  /** Shape of a JSON error body carried by a rejected request (SmrtClientError.body). */
+  export interface ApiError {
     error?: string;
     message?: string;
+  }
+
+  /** Typed error thrown by every fetcher on a non-2xx response (#1796). */
+  export interface SmrtClientError extends Error {
+    name: 'SmrtClientError';
+    status: number;
+    body?: ApiError | string;
   }
 
   export interface CrudOperations<T = any> {

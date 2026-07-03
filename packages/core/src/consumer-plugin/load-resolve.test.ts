@@ -20,6 +20,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { smrtPlugin } from '../vite-plugin/index.js';
 import { smrtConsumer } from './index.js';
 
 let projectRoot: string;
@@ -46,7 +47,7 @@ function getHook(plugin: any, name: 'resolveId' | 'load') {
 }
 
 describe('smrtConsumer resolveId', () => {
-  it('resolves a known virtual module to the \\0 virtual id when no .d.ts exists', () => {
+  it('resolves a known virtual module to the \\0 consumer virtual id when no .d.ts exists', () => {
     const plugin = smrtConsumer({
       packages: [],
       projectRoot,
@@ -55,7 +56,40 @@ describe('smrtConsumer resolveId', () => {
     const resolveId = getHook(plugin, 'resolveId');
 
     const resolved = resolveId.call({}, '@smrt/routes', undefined);
-    expect(resolved).toBe('\0smrt:routes');
+    // Namespaced id (#1795): distinct from smrtPlugin's `\0smrt:routes` so the
+    // two virtual modules never share a rollup id.
+    expect(resolved).toBe('\0smrt-consumer:routes');
+  });
+
+  it('resolves to a DISTINCT virtual id from smrtPlugin so neither shadows the other (#1795)', () => {
+    // Regression guard for #1795: smrtPlugin's `@happyvertical/smrt-virt-client`
+    // and smrtConsumer's `@smrt/client` used to BOTH resolve to `\0smrt:client`.
+    // Sharing that id let the consumer fallback non-deterministically win in
+    // standalone/federation builds and shadow the real generated client. The two
+    // ids must differ.
+    const consumer = smrtConsumer({
+      packages: [],
+      projectRoot,
+      disableScanning: true,
+    });
+    const producer: any = smrtPlugin();
+
+    const consumerResolve = getHook(consumer, 'resolveId');
+    const producerResolveRaw = producer.resolveId;
+    const producerResolve =
+      typeof producerResolveRaw === 'function'
+        ? producerResolveRaw
+        : producerResolveRaw.handler;
+
+    const consumerId = consumerResolve.call({}, '@smrt/client', undefined);
+    const producerId = producerResolve.call(
+      producer,
+      '@happyvertical/smrt-virt-client',
+    );
+
+    expect(consumerId).toBe('\0smrt-consumer:client');
+    expect(producerId).toBe('\0smrt:client');
+    expect(consumerId).not.toBe(producerId);
   });
 
   it('resolves a virtual module to the physical .d.ts file when it exists', () => {
@@ -90,41 +124,41 @@ describe('smrtConsumer load fallback modules', () => {
 
   it('returns a fallback routes module', async () => {
     const load = getHook(makePlugin(), 'load');
-    const code = await load.call({}, '\0smrt:routes');
+    const code = await load.call({}, '\0smrt-consumer:routes');
     expect(code).toContain('export function setupRoutes');
     expect(code).toContain('export default setupRoutes');
   });
 
   it('returns an empty-client fallback when the manifest has no objects', async () => {
     const load = getHook(makePlugin(), 'load');
-    const code = await load.call({}, '\0smrt:client');
+    const code = await load.call({}, '\0smrt-consumer:client');
     expect(code).toContain('export function createClient');
     expect(code).toContain('No API client available');
   });
 
   it('returns a fallback mcp module', async () => {
     const load = getHook(makePlugin(), 'load');
-    const code = await load.call({}, '\0smrt:mcp');
+    const code = await load.call({}, '\0smrt-consumer:mcp');
     expect(code).toContain('export function createMCPServer');
     expect(code).toContain('tools: []');
   });
 
   it('returns a no-types message when the manifest has no objects', async () => {
     const load = getHook(makePlugin(), 'load');
-    const code = await load.call({}, '\0smrt:types');
+    const code = await load.call({}, '\0smrt-consumer:types');
     expect(code).toContain('No types available');
   });
 
   it('returns a manifest module embedding the manifest JSON', async () => {
     const load = getHook(makePlugin(), 'load');
-    const code = await load.call({}, '\0smrt:manifest');
+    const code = await load.call({}, '\0smrt-consumer:manifest');
     expect(code).toContain('export const manifest =');
     expect(code).toContain('export default manifest');
   });
 
   it('returns null for an unknown virtual id', async () => {
     const load = getHook(makePlugin(), 'load');
-    expect(await load.call({}, '\0smrt:nope')).toBeNull();
+    expect(await load.call({}, '\0smrt-consumer:nope')).toBeNull();
   });
 });
 
@@ -181,12 +215,89 @@ describe('smrtConsumer load with a populated manifest', () => {
     const plugin = await pluginWithObjects();
     const load = getHook(plugin, 'load');
 
-    const client = await load.call({}, '\0smrt:client');
-    expect(client).toContain('Widget:');
+    const client = await load.call({}, '\0smrt-consumer:client');
+    // Object keys are quoted (#1795), so a simple name appears as "Widget":.
+    expect(client).toContain('"Widget":');
     expect(client).toContain("'/widgets'");
+    // The fallback emits every CRUD verb the declared CrudOperations promises,
+    // including search — otherwise the @smrt/client d.ts would advertise a
+    // method the runtime object lacks (TypeError at call time).
+    expect(client).toContain('search:');
 
-    const types = await load.call({}, '\0smrt:types');
+    const types = await load.call({}, '\0smrt-consumer:types');
     expect(types).toContain('export interface WidgetData');
+  });
+
+  it('emits SYNTACTICALLY VALID client code for a package-qualified manifest key (#1795)', async () => {
+    // Regression guard for #1795: a qualified STI key like
+    // `@happyvertical/smrt-assets:AssetAssociation` is not a valid bare
+    // object-literal key. The pre-fix emission wrote it unquoted, producing a
+    // build-breaking syntax error. The key must be quoted so the module parses.
+    mkdirSync(join(projectRoot, 'node_modules', '@acme', 'assets', 'dist'), {
+      recursive: true,
+    });
+    writePackageJson(projectRoot, { name: 'consumer-app', version: '1.0.0' });
+    writePackageJson(join(projectRoot, 'node_modules', '@acme', 'assets'), {
+      name: '@acme/assets',
+      version: '1.0.0',
+      exports: { '.': './dist/index.js' },
+    });
+    writeFileSync(
+      join(
+        projectRoot,
+        'node_modules',
+        '@acme',
+        'assets',
+        'dist',
+        'manifest.json',
+      ),
+      JSON.stringify({
+        packageName: '@acme/assets',
+        objects: {
+          '@acme/assets:AssetAssociation': {
+            className: 'AssetAssociation',
+            collection: 'asset_associations',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@acme/assets'],
+      generateTypes: false,
+      projectRoot,
+      disableScanning: true,
+    });
+    await plugin.buildStart?.call({} as any);
+    const load = getHook(plugin, 'load');
+    const client = (await load.call({}, '\0smrt-consumer:client')) as string;
+
+    // The qualified key is present and QUOTED.
+    expect(client).toContain('"@acme/assets:AssetAssociation":');
+
+    // The emitted module must be syntactically valid: import it as a data URI.
+    // A pre-fix unquoted key throws SyntaxError here.
+    const dataUri = `data:text/javascript,${encodeURIComponent(client)}`;
+    const mod = await import(dataUri);
+    expect(typeof mod.createClient).toBe('function');
+    // The client exposes the qualified key as a collection accessor.
+    const api = mod.createClient('/api/v1');
+    const accessor = api['@acme/assets:AssetAssociation'];
+    expect(accessor).toBeDefined();
+    // Every CRUD verb the declared CrudOperations promises is present.
+    for (const verb of [
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
+      'search',
+    ]) {
+      expect(typeof accessor[verb]).toBe('function');
+    }
   });
 });
 

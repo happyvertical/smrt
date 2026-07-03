@@ -304,19 +304,9 @@ export class APIGenerator {
       );
     }
 
-    // Fall back to auto-discovery via ObjectRegistry
-    const registeredClasses = ObjectRegistry.getAllClasses();
-    const pluralName = this.pluralize(objectType);
-
-    let classInfo: RegisteredClass | null = null;
-    for (const [_key, info] of registeredClasses) {
-      // Issue #951: Use simple name (info.name) for URL matching, not the map key
-      // which may be a qualified name like '@happyvertical/smrt-events:Event'
-      if (this.pluralize((info.name || _key).toLowerCase()) === pluralName) {
-        classInfo = info;
-        break;
-      }
-    }
+    // Fall back to auto-discovery via ObjectRegistry, matching the URL segment
+    // against the canonical manifest `collection` value (#1794).
+    const classInfo = this.findClassByCollectionSegment(objectType);
 
     if (!classInfo) {
       return this.createErrorResponse(
@@ -343,7 +333,7 @@ export class APIGenerator {
     }
 
     // Get or create collection
-    const collection = this.getCollection(classInfo);
+    const collection = await this.getCollection(classInfo);
 
     return await this.executeCrudOperation(
       req,
@@ -797,11 +787,11 @@ export class APIGenerator {
    * resolves a CRUD URL segment (registered collections first, then registry
    * auto-discovery), and wrap the generator's per-object machinery.
    */
-  private resolveSyncApplyTarget(
+  private async resolveSyncApplyTarget(
     objectSegment: string,
     req: Request,
     rawBody: string,
-  ): SyncApplyTarget | null {
+  ): Promise<SyncApplyTarget | null> {
     let collection: SmrtCollection<SmrtObject> | null = null;
     let objectName: string | null = null;
 
@@ -810,13 +800,12 @@ export class APIGenerator {
       collection = registered;
       objectName = this.getCollectionObjectName(registered) || objectSegment;
     } else {
-      const pluralName = this.pluralize(objectSegment);
-      for (const [key, info] of ObjectRegistry.getAllClasses()) {
-        if (this.pluralize((info.name || key).toLowerCase()) === pluralName) {
-          collection = this.getCollection(info);
-          objectName = info.name;
-          break;
-        }
+      // Same canonical-`collection` match as the CRUD path so a client and the
+      // batch contract resolve identical segments (#1794).
+      const info = this.findClassByCollectionSegment(objectSegment);
+      if (info) {
+        collection = await this.getCollection(info);
+        objectName = info.name;
       }
     }
 
@@ -864,9 +853,9 @@ export class APIGenerator {
   /**
    * Get or create collection instance
    */
-  private getCollection(
+  private async getCollection(
     classInfo: RegisteredClass,
-  ): SmrtCollection<SmrtObject> {
+  ): Promise<SmrtCollection<SmrtObject>> {
     if (!this.collections.has(classInfo.name)) {
       // `collectionConstructor` is typed optional on RegisteredClass, but the
       // auto-discovery path only reaches here for classes that declare one.
@@ -878,6 +867,14 @@ export class APIGenerator {
         ai: this.context.ai,
         db: this.context.db,
       });
+      // Await initialize() so the auto-discovered collection is actually usable
+      // (its DB is wired). Without this, list()/get() throw "Database accessed
+      // before initialization" — a latent bug that was masked while the
+      // generated client's plural URLs never matched the singular-only
+      // auto-discovery segment (#1794). The explicit-registerCollection() path
+      // receives an already-initialized collection from the caller, so this
+      // only affects the auto-discovery factory.
+      await collection.initialize();
       this.collections.set(classInfo.name, collection);
     }
     const collection = this.collections.get(classInfo.name);
@@ -1059,6 +1056,44 @@ export class APIGenerator {
       statusText: response.statusText,
       headers,
     });
+  }
+
+  /**
+   * Resolve a URL/collection segment to a registered class via auto-discovery.
+   *
+   * The segment IS the canonical `collection` value from the manifest
+   * (`RegisteredClass.collection`, e.g. `products` for `Product`) — the same
+   * value the generated client, the SvelteKit route generator, and the registry
+   * all derive. Match it VERBATIM; do not re-pluralize. The previous
+   * implementation pluralized both the URL segment and the class name and
+   * compared them, turning an already-plural client URL (`/products`) into
+   * `productses`, so the generated client 404'd against auto-discovered routes
+   * (#1794). Shared by the CRUD path and the `sync/apply` batch path so they can
+   * never drift.
+   *
+   * @param segment - The URL/collection path segment (e.g. `products`).
+   * @returns The matching registered class, or null if none matches.
+   */
+  private findClassByCollectionSegment(
+    segment: string,
+  ): RegisteredClass | null {
+    for (const [key, info] of ObjectRegistry.getAllClasses()) {
+      // Primary match: the canonical manifest `collection` segment.
+      if (info.collection === segment) {
+        return info;
+      }
+      // Back-compat fallback for classes registered without a `collection`
+      // (inline/test stubs): derive the plural segment from the simple name and
+      // compare to the raw URL segment. Issue #951: use the simple name
+      // (info.name), not the qualified map key.
+      if (
+        !info.collection &&
+        this.pluralize((info.name || key).toLowerCase()) === segment
+      ) {
+        return info;
+      }
+    }
+    return null;
   }
 
   /**
