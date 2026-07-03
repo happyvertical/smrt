@@ -121,11 +121,15 @@ export async function handleChangesRoute(
   }
 
   // Fail-closed (#1540): the change feed spans every table, so it is never
-  // public — an auth middleware must be configured and must pass.
+  // public — an auth middleware must be configured and must pass. The action
+  // is the lowercased HTTP method, matching the generator's other call sites.
   if (!options.authMiddleware) {
     return errorResponse(401, 'Authentication required');
   }
-  const authCheck = options.authMiddleware(CHANGES_ROUTE_OBJECT_NAME, 'list');
+  const authCheck = options.authMiddleware(
+    CHANGES_ROUTE_OBJECT_NAME,
+    req.method.toLowerCase(),
+  );
   const authResult = await authCheck(req);
   if (authResult instanceof Response) {
     return authResult;
