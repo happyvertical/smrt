@@ -3,7 +3,7 @@ packages:
   - 'packages/smrt-playground/host'
 
 catalog:
-  '@aws-sdk/client-sqs': ^3.1077.0
+  '@aws-sdk/client-sqs': ^3.1079.0
   '@google-cloud/tasks': ^6.2.3
   '@happyvertical/ai': ^0.74.11
   '@happyvertical/cache': ^0.74.11
@@ -25,8 +25,8 @@ catalog:
   '@happyvertical/spider': ^1.1.10
   '@happyvertical/sql': ^0.74.11
   '@happyvertical/utils': ^0.74.11
-  '@sentry/node': ^10.62.0
+  '@sentry/node': ^10.63.0
   bull: ^4.16.5
   bullmq: ^5.79.2
   jimp: ^1.6.1
-  sharp: ^0.35.2
+  sharp: ^0.35.3

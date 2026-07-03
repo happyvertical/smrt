@@ -4,10 +4,10 @@
 [versions]
 android-compile-sdk = "36"
 android-min-sdk = "26"
-agp = "8.13.1"
-kotlin = "2.2.21"
-kotlinx-datetime = "0.6.1"
-kotlinx-serialization = "1.7.3"
+agp = "8.13.2"
+kotlin = "2.4.0"
+kotlinx-datetime = "0.8.0-0.6.x-compat"
+kotlinx-serialization = "1.11.0"
 
 [libraries]
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
