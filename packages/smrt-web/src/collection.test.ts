@@ -315,6 +315,143 @@ describe('createSmrtCollection', () => {
   });
 });
 
+describe('hydration seeding (#1761)', () => {
+  it('serves server-seeded rows on the first read with no first-render fetch', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    // Rows a SvelteKit +page.server.ts load fetched and serialized into the
+    // page; the client hands them to the collection as initialData.
+    const ssrRows = [
+      { id: 'p1', name: 'from-ssr', price: 9.99 },
+      { id: 'p2', name: 'also-ssr', price: 4.5 },
+    ];
+    const collection = createSmrtCollection(
+      productDefinition('products-seed'),
+      {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        initialData: ssrRows,
+      },
+    );
+
+    // The engine collection is lazy: it populates its local store from the
+    // seeded cache on first read (preload), NOT before. What the seed
+    // guarantees is that this first read is served from the seed WITHOUT a
+    // network request — the "no duplicate first-render fetch" acceptance
+    // criterion. (The smrt-svelte `liveCollection` binding preloads on init, so
+    // this completes before the first component render.)
+    await collection.preload();
+    expect(scripted.calls.list).toBe(0);
+
+    // The rows served are exactly the SSR rows (not the divergent server rows
+    // the fetcher would return), so the pre- and post-hydration renders match.
+    expect(collection.toArray).toMatchObject(ssrRows);
+    expect(collection.toArray.map((row) => row.name).sort()).toEqual([
+      'also-ssr',
+      'from-ssr',
+    ]);
+
+    await collection.cleanup();
+  });
+
+  it('revalidates once the seed is stale, replacing it with server rows', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    // staleTimeMs 0: the seed is served on the first read but is stale at once,
+    // so the collection revalidates against the fetcher. This is the SWR half of
+    // hydration seeding — hydrate instantly, then reconcile with fresh rows.
+    const collection = createSmrtCollection(
+      productDefinition('products-seed-stale'),
+      {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 0,
+        initialData: [{ id: 'p1', name: 'from-ssr' }],
+      },
+    );
+
+    // preload() resolves once the read has DATA — that is the seed, served with
+    // one background revalidation already dispatched (list called once), not yet
+    // reconciled into the local store.
+    await collection.preload();
+    expect(collection.get('p1')?.name).toBe('from-ssr');
+    expect(scripted.calls.list).toBe(1);
+
+    // Await the background revalidation landing (change-driven, no arbitrary
+    // sleep): the freshly fetched server row supersedes the stale seed.
+    if (collection.get('p1')?.name !== 'from-server') {
+      await new Promise<void>((resolve) => {
+        const sub = collection.subscribeChanges(() => {
+          if (collection.get('p1')?.name === 'from-server') {
+            sub.unsubscribe();
+            resolve();
+          }
+        });
+      });
+    }
+    expect(collection.get('p1')?.name).toBe('from-server');
+    // Still just the one revalidation — no extra fetch was triggered.
+    expect(scripted.calls.list).toBe(1);
+
+    await collection.cleanup();
+  });
+
+  it('honors an explicit empty seed as a valid fresh state that suppresses the first fetch', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    // The server load returned zero rows: an empty seed is still a fresh cache
+    // entry, so the first read serves it (empty) without a network request.
+    const collection = createSmrtCollection(
+      productDefinition('products-seed-empty'),
+      {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        initialData: [],
+      },
+    );
+
+    await collection.preload();
+    expect(collection.size).toBe(0);
+    expect(scripted.calls.list).toBe(0);
+
+    await collection.cleanup();
+  });
+
+  it('does not clobber an already-populated shared cache with a later stale seed', async () => {
+    const client = createSmrtWebClient();
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+
+    // First materialization seeds fresh SSR rows into the shared cache.
+    const first = createSmrtCollection(
+      productDefinition('products-seed-shared'),
+      {
+        fetchers: scripted.fetchers,
+        client,
+        staleTimeMs: 60_000,
+        initialData: [{ id: 'p1', name: 'seeded-first' }],
+      },
+    );
+    await first.preload();
+    expect(first.get('p1')?.name).toBe('seeded-first');
+    expect(scripted.calls.list).toBe(0);
+
+    // A second materialization over the SAME client with a DIFFERENT seed must
+    // not overwrite the already-cached rows (which may be newer than this late
+    // SSR payload). The existing cache entry wins; still no fetch.
+    const second = createSmrtCollection(
+      productDefinition('products-seed-shared'),
+      {
+        fetchers: scripted.fetchers,
+        client,
+        staleTimeMs: 60_000,
+        initialData: [{ id: 'p1', name: 'seeded-second' }],
+      },
+    );
+    await second.preload();
+    expect(second.get('p1')?.name).toBe('seeded-first');
+    expect(scripted.calls.list).toBe(0);
+
+    await first.cleanup();
+    await second.cleanup();
+  });
+});
+
 describe('getEngineCollection (internal binding bridge)', () => {
   it('returns the engine collection for a real handle and rejects foreign handles', async () => {
     const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);

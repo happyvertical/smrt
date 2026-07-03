@@ -14,7 +14,11 @@ mutations without hand-wiring cache keys or fetch/state.
   generated `@happyvertical/smrt-virt-web` definition. Stale-while-revalidate
   reads (`staleTimeMs`, default 30s); N concurrent identical reads coalesce into
   one request; optimistic inserts persist through the REST surface and roll back
-  automatically on server error.
+  automatically on server error. Pass `initialData` (SMRT-owned
+  `SmrtWebRow<T>[]`) to seed the cache from server-rendered rows so the first
+  client read serves them WITHOUT a duplicate first-render fetch — the SvelteKit
+  `+page.server.ts` → hydrate path (#1761). The seed is fresh for `staleTimeMs`;
+  fold the same `scope` used for reads into it under a shared `client`.
 - `createSmrtWebClient()` — an opaque shared-cache handle. Pass one app-wide
   instance so collections share a cache and deduplicate requests.
 - `createDefinitionFetchers(definition, basePath, fetchFn)` — CRUD fetchers
