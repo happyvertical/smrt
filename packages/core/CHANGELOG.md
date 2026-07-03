@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.37.10
+
+### Patch Changes
+
+- ### Features
+
+  - Svelte 5 live-query bindings for smrt-web (#1761) (#1808) (smrt-svelte)
+  - relationship-derived cache invalidation (#1761) (#1807) (smrt-web)
+  - manifest-generated web collection runtime (#1761) (#1806) (smrt-web)
+  - @happyvertical/smrt-config@0.37.10
+  - @happyvertical/smrt-types@0.37.10
+  - @happyvertical/smrt-scanner@0.37.10
+
 ## 0.37.9
 
 ### Patch Changes
