@@ -442,19 +442,31 @@ describe('REST generator auto-discovery (#1500)', () => {
     await db?.close?.();
   });
 
-  it('resolves a registered class through the registry fallback (no 404)', async () => {
-    // The discovery matcher pluralizes BOTH sides, so the registered simple
-    // name `RestDiscoveryWidget` is matched by its singular URL segment. This
+  it('resolves a registered class through the registry fallback by its plural collection segment (no 404)', async () => {
+    // #1794: the URL segment IS the canonical `collection` value (`RestDiscoveryWidget`
+    // -> `restdiscoverywidgets`) — the SAME segment the generated client emits.
+    // Auto-discovery matches that segment VERBATIM (no re-pluralization). This
     // exercises the whole ObjectRegistry fallback path (class lookup + auth gate
-    // + getCollection factory). The generator builds the auto-discovered
-    // collection but does not call initialize() on it, so list() surfaces a 500
-    // rather than a 200 — the resolution branch is what we assert here (it is
-    // NOT a 404 "object type not found").
+    // + getCollection factory, which now awaits initialize() so the
+    // auto-discovered collection is actually usable). A resolved list() returns
+    // 200 with an array — NOT a 404 "object type not found".
+    const res = await handler(
+      new Request('http://local/api/v1/restdiscoverywidgets'),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+  });
+
+  it('404s the singular class name (only the plural collection segment routes) (#1794)', async () => {
+    // Regression guard for #1794: the pre-fix matcher pluralized BOTH sides and
+    // matched the SINGULAR segment, which is exactly what made the generated
+    // client's plural URL 404. The canonical collection segment is plural; the
+    // singular must NOT resolve.
     const res = await handler(
       new Request('http://local/api/v1/restdiscoverywidget'),
     );
-    expect(res.status).not.toBe(404);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(404);
   });
 
   it('returns 404 through the discovery path for an unknown type', async () => {
@@ -466,18 +478,20 @@ describe('REST generator auto-discovery (#1500)', () => {
 
   it('fail-closes a non-public discovered object with no auth middleware', async () => {
     // public is not set → isRoutePublic returns false → 401 on the discovery
-    // path (no api.registerCollection, no authMiddleware).
+    // path (no api.registerCollection, no authMiddleware). Uses the plural
+    // collection segment (`restdiscoveryprivates`) the client would emit.
     const api = new APIGenerator({ basePath: '/api/v1' }, { db });
     const h = api.generateHandler();
     const res = await h(
-      new Request('http://local/api/v1/restdiscoveryprivate'),
+      new Request('http://local/api/v1/restdiscoveryprivates'),
     );
     expect(res.status).toBe(401);
   });
 
   it('applies auth middleware on the auto-discovery path', async () => {
     // No api.registerCollection → discovery path; the middleware short-circuits
-    // with a Response before any collection work, covering lines 271-285.
+    // with a Response before any collection work. Uses the plural collection
+    // segment the client emits.
     const api = new APIGenerator(
       {
         basePath: '/api/v1',
@@ -488,7 +502,7 @@ describe('REST generator auto-discovery (#1500)', () => {
     );
     const denyHandler = api.generateHandler();
     const res = await denyHandler(
-      new Request('http://local/api/v1/restdiscoverywidget'),
+      new Request('http://local/api/v1/restdiscoverywidgets'),
     );
     expect(res.status).toBe(401);
   });
