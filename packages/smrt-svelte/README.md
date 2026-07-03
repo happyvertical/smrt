@@ -128,6 +128,18 @@ const editorSections = tenantNavFromManifest(manifest, {
 });
 ```
 
+In SvelteKit, build the nav in a `+layout.server.ts` (server-side, no client
+fetch) and mount `AdminShell` in `+layout.svelte`. The `template-sveltekit`
+scaffold adopts AdminShell as its default chrome exactly this way; copy its
+`src/routes/+layout.server.ts` / `+layout.svelte` / `settings/+page.svelte`.
+
+- **Migration guide** (first-generation `WorkspaceShell`/`RoleShell` →
+  `AdminShell`; adoption is additive and non-breaking):
+  [`src/components/workspace/MIGRATION.md`](./src/components/workspace/MIGRATION.md)
+- **Playground demos**: `playground/src/routes/admin-shell` exercises all four
+  scopes, focus tools, and activities; `admin-shell-activity-feed` and
+  `admin-shell-system-feed` show live feeds.
+
 ## Exports
 
 ### Entry Points
