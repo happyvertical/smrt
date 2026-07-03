@@ -136,7 +136,7 @@ From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical
 ## Gotchas
 
 - **Vitest plugin required**: without `smrtVitestPlugin()` in vitest.config.ts → "No field metadata" errors
-- **Vite decorators**: needs `esbuild.tsconfigRaw` with `experimentalDecorators: true, emitDecoratorMetadata: true`
+- **Vite decorators**: under Vite 8 set `oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } }` in `vite.config.ts` (see `packages/template-sveltekit/template/vite.config.ts`) — the oxc transform ignores the pre-Vite-8 `esbuild.tsconfigRaw` / tsconfig `experimentalDecorators` through SvelteKit's `extends` chain, so that recipe throws `SyntaxError: Invalid or unexpected token` on the first SSR request. Consumers pinned on vite<8 still need the legacy `esbuild.tsconfigRaw` form.
 - **Manifest is build-time**: generated once at vitest startup — restart after adding new `@smrt()` classes
 - **ObjectRegistry on globalThis**: singleton via `globalThis.__smrtRegistry*` — survives HMR
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime only verifies and fails clearly

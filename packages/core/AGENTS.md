@@ -103,15 +103,24 @@ When the target declares multiple FKs back to the parent, annotate `@oneToMany(T
 ## Vite Plugin
 
 ```typescript
-// vite.config.ts — required for @smrt() decorators
+// vite.config.ts — required for @smrt() decorators (Vite 8+, oxc transform)
 export default defineConfig({
-  esbuild: {
-    tsconfigRaw: {
-      compilerOptions: { experimentalDecorators: true, emitDecoratorMetadata: true }
-    }
-  }
+  oxc: {
+    decorator: {
+      legacy: true,
+      emitDecoratorMetadata: true,
+    },
+  },
 });
 ```
+
+Under Vite 8 the oxc transform does not honor the pre-Vite-8 `esbuild.tsconfigRaw`
+recipe (or tsconfig `experimentalDecorators` reached through SvelteKit's
+`extends "./.svelte-kit/tsconfig.json"` chain), so that recipe throws
+`SyntaxError: Invalid or unexpected token` on the first SSR request. Configure
+decorators through `oxc.decorator` instead. Consumers still pinned on vite<8 need
+the legacy `esbuild.tsconfigRaw` form with `experimentalDecorators: true,
+emitDecoratorMetadata: true`.
 
 ## Gotchas
 
