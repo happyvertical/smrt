@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.37.11
+
+### Patch Changes
+
+- ### Features
+
+  - smrt-web reference store + code-split proof (#1761) (#1810) (products)
+  - SvelteKit hydration seeding (#1761) (#1809) (smrt-web,smrt-svelte)
+  - @happyvertical/smrt-config@0.37.11
+  - @happyvertical/smrt-types@0.37.11
+  - @happyvertical/smrt-scanner@0.37.11
+
 ## 0.37.10
 
 ### Patch Changes
