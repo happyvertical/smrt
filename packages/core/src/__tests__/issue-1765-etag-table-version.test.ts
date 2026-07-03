@@ -37,6 +37,7 @@ import { SmrtCollection } from '../collection';
 import {
   canonicalReadRepresentation,
   computeTableVersionEtag,
+  ifNoneMatchHasConcreteMatch,
   versionConditionalResponse,
 } from '../generators/conditional-get';
 import { SmrtObject } from '../object';
@@ -264,6 +265,47 @@ describe('canonicalReadRepresentation (#1765)', () => {
     expect(tenantA).not.toBe(base);
     expect(tenantA).not.toBe(tenantB);
   });
+
+  it('keeps different orderings of a REPEATED key distinct (first-value semantics)', () => {
+    // The handlers read searchParams.get('limit') — the FIRST value — so these
+    // two requests run different reads (limit 10 vs 20) and must NOT share an
+    // ETag. Sorting by name only (a stable sort) preserves the repeated-key
+    // order, keeping the representations distinct.
+    const first = canonicalReadRepresentation(
+      new Request('http://local/api/v1/widgets?limit=10&limit=20'),
+    );
+    const second = canonicalReadRepresentation(
+      new Request('http://local/api/v1/widgets?limit=20&limit=10'),
+    );
+    expect(first).not.toBe(second);
+  });
+});
+
+// ============================================================================
+// ifNoneMatchHasConcreteMatch — the wildcard-safe fast-path gate (issue #1765)
+// ============================================================================
+
+describe('ifNoneMatchHasConcreteMatch (#1765)', () => {
+  const etag = computeTableVersionEtag(5, '/api/v1/widgets');
+
+  it('is true for a concrete matching tag (also inside a list, and with W/)', () => {
+    expect(ifNoneMatchHasConcreteMatch(etag, etag)).toBe(true);
+    expect(ifNoneMatchHasConcreteMatch(`"other", ${etag}`, etag)).toBe(true);
+    expect(ifNoneMatchHasConcreteMatch(`W/${etag}`, etag)).toBe(true);
+  });
+
+  it('is FALSE for the wildcard * (which the fast path must not honor without existence)', () => {
+    expect(ifNoneMatchHasConcreteMatch('*', etag)).toBe(false);
+    expect(ifNoneMatchHasConcreteMatch('  *  ', etag)).toBe(false);
+    // A `*` alongside a non-matching tag is still not a concrete match here.
+    expect(ifNoneMatchHasConcreteMatch('"nope", *', etag)).toBe(false);
+  });
+
+  it('is false for an absent header or a non-matching tag', () => {
+    expect(ifNoneMatchHasConcreteMatch(null, etag)).toBe(false);
+    expect(ifNoneMatchHasConcreteMatch(undefined, etag)).toBe(false);
+    expect(ifNoneMatchHasConcreteMatch('"stale"', etag)).toBe(false);
+  });
 });
 
 // ============================================================================
@@ -329,6 +371,48 @@ describe('versionConditionalResponse (#1765)', () => {
     );
 
     expect(res.status).toBe(200);
+    expect(build).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors a wildcard * only AFTER the payload builds (existence confirmed → 304)', async () => {
+    const etag = computeTableVersionEtag(3, '/api/v1/widgets');
+    const build = vi.fn(async () => ({ items: [{ id: '1' }], count: 1 }));
+
+    const res = await versionConditionalResponse(
+      new Request('http://local/api/v1/widgets', {
+        headers: { 'if-none-match': '*' },
+      }),
+      etag,
+      cacheControl,
+      build,
+    );
+
+    // `*` is not a concrete match, so the fast path is skipped and the thunk
+    // runs; a successful build proves a representation exists, so `*` → 304.
+    expect(res.status).toBe(304);
+    expect(await res.text()).toBe('');
+    expect(build).toHaveBeenCalledTimes(1);
+  });
+
+  it('never turns a * into a 304 when the build throws (e.g. a missing item → 404 propagates)', async () => {
+    const etag = computeTableVersionEtag(3, '/api/v1/widgets/gone');
+    const notFound = new Error('404');
+    const build = vi.fn(async () => {
+      throw notFound;
+    });
+
+    // The item does not exist, so the thunk throws before any `*` handling —
+    // the rejection propagates (the caller renders a 404), never a false 304.
+    await expect(
+      versionConditionalResponse(
+        new Request('http://local/api/v1/widgets/gone', {
+          headers: { 'if-none-match': '*' },
+        }),
+        etag,
+        cacheControl,
+        build,
+      ),
+    ).rejects.toBe(notFound);
     expect(build).toHaveBeenCalledTimes(1);
   });
 });

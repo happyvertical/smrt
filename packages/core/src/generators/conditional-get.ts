@@ -286,6 +286,13 @@ export function computeTableVersionEtag(
  * share an ETag and revalidate cheaply); any difference that changes the body —
  * a different path, a different filter/limit/offset, or a different tenant —
  * produces a different string and therefore a different ETag.
+ *
+ * Sorting is by parameter NAME only (a stable sort, so repeated keys keep their
+ * original relative order). Sorting by value too would make `?limit=10&limit=20`
+ * and `?limit=20&limit=10` canonicalize identically, yet the generated handlers
+ * read `searchParams.get('limit')` (the FIRST value) — different reads that must
+ * not share an ETag. Name-only sorting keeps different orderings of the same
+ * keys distinct while still making `?a=1&b=2` and `?b=2&a=1` equivalent.
  */
 export function canonicalReadRepresentation(
   request: Request,
@@ -293,7 +300,7 @@ export function canonicalReadRepresentation(
 ): string {
   const url = new URL(request.url);
   const params = [...url.searchParams.entries()].sort((a, b) =>
-    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0,
+    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0,
   );
   const search = params.map(([key, value]) => `${key}=${value}`).join('&');
   return `${url.pathname}?${search}${extra ? `|${extra}` : ''}`;
@@ -321,15 +328,43 @@ export function resolveTenantEtagDiscriminator(): string | undefined {
 }
 
 /**
- * Build a generated read response from a precomputed version ETag, skipping the
- * query entirely on a conditional hit (#1765).
+ * Whether an `If-None-Match` header carries a CONCRETE ETag match — a specific
+ * quoted tag equal to `etag` — as opposed to the wildcard `*`.
  *
- * When the request's `If-None-Match` matches `etag`, returns `304 Not Modified`
- * with an empty body and **never invokes `buildPayload`** — the collection
- * query does not run, which is the entire point of ETag v2. Otherwise runs
- * `buildPayload`, serializes it, and returns a `200` carrying the same ETag and
- * Cache-Control. Mirrors {@link conditionalJsonResponse}'s response shape and
- * header policy exactly; only the ETag source and the query-skipping differ.
+ * The version fast-path uses this rather than {@link ifNoneMatchSatisfied}
+ * because `*` matches unconditionally: per RFC 9110 `*` is satisfied only when a
+ * current representation EXISTS, which the pre-query fast-path cannot know. A
+ * concrete match, by contrast, can only be held by a client that received it
+ * from a prior `200` — and any delete of that row advances the table version,
+ * so the concrete ETag would no longer match — making a `304` without the query
+ * safe. `*` is deferred until existence is confirmed (see
+ * {@link versionConditionalResponse}).
+ */
+export function ifNoneMatchHasConcreteMatch(
+  header: string | null | undefined,
+  etag: string,
+): boolean {
+  if (!header) return false;
+  return header.split(',').some((candidate) => {
+    const tag = candidate.trim();
+    if (tag === '*') return false;
+    const opaque = tag.startsWith('W/') ? tag.slice(2) : tag;
+    return opaque === etag;
+  });
+}
+
+/**
+ * Build a generated read response from a precomputed version ETag, skipping the
+ * query on a conditional hit (#1765).
+ *
+ * A CONCRETE `If-None-Match` match returns `304 Not Modified` with an empty body
+ * and **never invokes `buildPayload`** — the collection query does not run,
+ * which is the point of ETag v2. Otherwise `buildPayload` runs; if it succeeds
+ * (a current representation therefore exists) a wildcard `If-None-Match: *` is
+ * honored with a `304` — deferring `*` past the build is what stops a
+ * `304` from being returned for a row that no longer exists (a `buildPayload`
+ * that throws, e.g. a `404` for a missing item, propagates and is never a 304).
+ * Mirrors {@link conditionalJsonResponse}'s response shape and header policy.
  */
 export async function versionConditionalResponse(
   request: Request,
@@ -337,17 +372,25 @@ export async function versionConditionalResponse(
   cacheControl: string,
   buildPayload: () => unknown | Promise<unknown>,
 ): Promise<Response> {
-  if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
-    return new Response(null, {
+  const notModified = () =>
+    new Response(null, {
       status: 304,
       headers: {
         'Cache-Control': cacheControl,
         ETag: etag,
       },
     });
+
+  const ifNoneMatch = request.headers.get('if-none-match');
+  if (ifNoneMatchHasConcreteMatch(ifNoneMatch, etag)) {
+    return notModified();
   }
 
   const payload = await buildPayload();
+  // Existence confirmed by a successful build → honor a wildcard `*` now.
+  if (ifNoneMatchSatisfied(ifNoneMatch, etag)) {
+    return notModified();
+  }
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {
@@ -363,28 +406,44 @@ export interface ConditionalGetRouteHelperOptions
   extends ReadCacheControlOptions {
   /** Model name used for the one-time sMaxage-neutralized warning. */
   modelName?: string;
+  /**
+   * Emit the v1 body-hash helper (`conditionalJson`, query-first) instead of the
+   * v2 version-first `conditionalVersionedRead`. Set when the route's GET handler
+   * renders via a CUSTOM serializer whose output can depend on RELATED tables
+   * (e.g. content's `serializeContent` loads assets/references): the per-base-
+   * table version cannot observe those changes, so a version-derived `304` would
+   * serve stale serialized fields. The body hash covers the whole rendered
+   * payload, so it stays correct — at the cost of running the query (a
+   * transfer-saving 304, not zero-query). The default `toPublicJSON` payload IS a
+   * pure function of the base table, so it uses v2.
+   */
+  useBodyHash?: boolean;
 }
 
 /**
- * Emit the conditional-GET helper inlined into generated SvelteKit route files
- * (ETag v2, #1765), following the generator's existing inline-helper convention
- * (auth guard, tenant context, writable policy).
- *
- * The emitted `conditionalVersionedRead(request, db, tableName, buildPayload)`
- * derives the ETag from the table's change-feed version ({@link getTableVersion})
- * keyed by the request representation, so a matching `If-None-Match` returns a
- * `304` and `buildPayload` — the collection query — never runs. The route hands
- * its list/get query as the `buildPayload` thunk. Unlike the v1 body-hash helper
- * this one imports its primitives from `@happyvertical/smrt-core` (mirroring the
- * generated `_changes` route), because the version lookup is dialect-aware SQL
- * that cannot be inlined portably. The Cache-Control policy is still resolved at
+ * Emit the conditional-GET helper inlined into generated SvelteKit route files,
+ * following the generator's existing inline-helper convention (auth guard,
+ * tenant context, writable policy). The Cache-Control policy is resolved at
  * generation time from the object's `@smrt({ api })` config plus tenant scoping
  * and baked in as a constant.
  *
- * For tenant-scoped models the representation folds in the active tenant
+ * Two shapes, chosen per route by `useBodyHash`:
+ * - **v2 (default, #1765)** — `conditionalVersionedRead(request, db, tableName,
+ *   buildPayload)` derives the ETag from the table's change-feed version
+ *   ({@link getTableVersion}) keyed by the request representation, so a concrete
+ *   `If-None-Match` returns a `304` and `buildPayload` — the collection query —
+ *   never runs. Imports its primitives from `@happyvertical/smrt-core` (the
+ *   version lookup is dialect-aware SQL that cannot be inlined portably),
+ *   mirroring the generated `_changes` route. Correct only when the payload is a
+ *   pure function of the base table — the `toPublicJSON` path.
+ * - **v1 (#1757, `useBodyHash`)** — the inlined body-hash `conditionalJson`,
+ *   used where a custom serializer can pull in related tables the base-table
+ *   version can't see (see {@link ConditionalGetRouteHelperOptions.useBodyHash}).
+ *
+ * For tenant-scoped models the v2 representation folds in the active tenant
  * ({@link resolveTenantEtagDiscriminator}) so one tenant's cached validator
  * never satisfies another's read of the same URL — the cross-tenant false-304
- * guard. The runtime behavior is exercised end to end (query observation, 304
+ * guard. The v2 runtime behavior is exercised end to end (query observation, 304
  * without a query, mutation bumps the version) by the REST `conditional-get.spec`
  * over the SAME core primitives this route calls.
  */
@@ -409,6 +468,54 @@ export function generateConditionalGetRouteHelper(
     );
   }
 
+  // Serializer-backed routes: the body can depend on related tables the base-
+  // table version can't see, so keep the v1 body-hash ETag (query-first but
+  // correct). See useBodyHash.
+  if (options.useBodyHash) {
+    return `
+// Conditional GET (#1757 v1): a strong body-hash ETag over the serialized
+// response — used where a custom serializer can render data from related tables
+// that the per-table change-feed version cannot observe, so the ETag must cover
+// the whole rendered body.
+import { createHash } from 'node:crypto';
+
+const READ_CACHE_CONTROL = '${cacheControl}';
+
+function bodyEtag(body: string): string {
+  return \`"\${createHash('sha256').update(body).digest('base64url')}"\`;
+}
+
+function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  if (header.trim() === '*') return true;
+  return header.split(',').some((candidate) => {
+    const tag = candidate.trim();
+    const opaque = tag.startsWith('W/') ? tag.slice(2) : tag;
+    return opaque === etag;
+  });
+}
+
+function conditionalJson(request: Request, payload: unknown): Response {
+  const body = JSON.stringify(payload);
+  const etag = bodyEtag(body);
+  if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
+    return new Response(null, {
+      status: 304,
+      headers: { 'cache-control': READ_CACHE_CONTROL, etag },
+    });
+  }
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'cache-control': READ_CACHE_CONTROL,
+      'content-type': 'application/json',
+      etag,
+    },
+  });
+}
+`;
+  }
+
   // Tenant-scoped models key the ETag on the active tenant; non-tenant models
   // omit the discriminator (their bodies do not vary by tenant), so the import
   // and the representation argument are conditional on tenant scoping.
@@ -417,6 +524,7 @@ export function generateConditionalGetRouteHelper(
     'canonicalReadRepresentation',
     'computeTableVersionEtag',
     'getTableVersion',
+    'ifNoneMatchHasConcreteMatch',
     'ifNoneMatchSatisfied',
     ...(tenantScoped ? ['resolveTenantEtagDiscriminator'] : []),
   ].join(',\n  ');
@@ -426,9 +534,11 @@ export function generateConditionalGetRouteHelper(
 
   return `
 // Conditional GET (#1765): the ETag is the table's change-feed version keyed by
-// the request representation, so a matching If-None-Match returns 304 BEFORE the
-// collection query runs. Reads stay private unless the model is public AND opts
-// into shared caching via @smrt({ api: { cache: { sMaxage } } }).
+// the request representation, so a CONCRETE If-None-Match returns 304 BEFORE the
+// collection query runs. A wildcard \`*\` is honored only after the payload builds
+// (existence confirmed), so a 304 is never returned for a missing row. Reads stay
+// private unless the model is public AND opts into shared caching via
+// @smrt({ api: { cache: { sMaxage } } }).
 import {
   ${coreImports},
 } from '@happyvertical/smrt-core';
@@ -446,13 +556,20 @@ async function conditionalVersionedRead(
     version,
     canonicalReadRepresentation(request, ${representationExtra}),
   );
-  if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
-    return new Response(null, {
+  const ifNoneMatch = request.headers.get('if-none-match');
+  const notModified = () =>
+    new Response(null, {
       status: 304,
       headers: { 'cache-control': READ_CACHE_CONTROL, etag },
     });
+  if (ifNoneMatchHasConcreteMatch(ifNoneMatch, etag)) {
+    return notModified();
   }
   const payload = await buildPayload();
+  // Existence confirmed by a successful build → honor a wildcard \`*\` now.
+  if (ifNoneMatchSatisfied(ifNoneMatch, etag)) {
+    return notModified();
+  }
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {

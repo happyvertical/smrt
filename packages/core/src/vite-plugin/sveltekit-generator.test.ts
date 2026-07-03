@@ -1774,13 +1774,13 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'items.map((item) => serializeItemResponse(item))',
       );
-      // List reads wrap the query in the ETag v2 version-first helper (#1765).
+      // Content uses a custom serializer (serializeContent loads related tables),
+      // so the route keeps the v1 body-hash ETag rather than the v2 per-table
+      // version source, which cannot observe related-table changes (#1765).
       expect(collectionContent).toContain(
-        'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
+        'return conditionalJson(request, { items: serializedItems, count, limit, offset });',
       );
-      expect(collectionContent).toContain(
-        'return { items: serializedItems, count, limit, offset };',
-      );
+      expect(collectionContent).not.toContain('conditionalVersionedRead');
       expect(collectionContent).toContain(
         'const serializedItem = await serializeItemResponse(item);',
       );

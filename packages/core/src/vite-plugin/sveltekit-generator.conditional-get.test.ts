@@ -123,6 +123,34 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     );
   });
 
+  it('keeps the v1 body-hash helper for routes with a custom serializer (#1765)', async () => {
+    // A custom serializer can render data from RELATED tables (e.g. content's
+    // serializeContent loads assets/references), which the per-table change-feed
+    // version cannot observe — so a version-derived 304 would serve stale
+    // serialized fields. Such routes must stay on the v1 body-hash ETag.
+    const { collectionRoute, itemRoute } = await generateAndRead({
+      serializers: {
+        item: { exportName: 'serializeThing', importPath: '$lib/serializers' },
+      },
+    });
+
+    for (const content of [collectionRoute, itemRoute]) {
+      expect(content).toBeDefined();
+      // v1 body-hash helper, NOT the v2 version source.
+      expect(content).toContain("import { createHash } from 'node:crypto';");
+      expect(content).toContain('function conditionalJson(');
+      expect(content).not.toContain('conditionalVersionedRead');
+      expect(content).not.toContain('getTableVersion');
+    }
+    // The serialized payload is hashed by conditionalJson (query-first).
+    expect(collectionRoute).toContain(
+      'return conditionalJson(request, { items: serializedItems, count, limit, offset });',
+    );
+    expect(itemRoute).toContain(
+      'return conditionalJson(request, serializedItem);',
+    );
+  });
+
   it('bakes the private default policy into routes for non-public models', async () => {
     const { collectionRoute, itemRoute } = await generateAndRead({
       include: ['list', 'get', 'update'],

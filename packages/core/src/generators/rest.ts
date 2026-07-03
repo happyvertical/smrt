@@ -24,6 +24,7 @@ import { handleChangesRoute } from './changes-route';
 import {
   canonicalReadRepresentation,
   computeTableVersionEtag,
+  ifNoneMatchHasConcreteMatch,
   ifNoneMatchSatisfied,
   resolveReadCacheControl,
   resolveTenantEtagDiscriminator,
@@ -581,17 +582,22 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    // ETag v2 (#1765): compute the table-version ETag first; a matching
-    // If-None-Match short-circuits into a 304 BEFORE the row is fetched. A
-    // delete of the row advances the table version (tombstone), so a stale
-    // cached representation of a since-deleted row can never falsely match.
+    // ETag v2 (#1765): compute the table-version ETag first. A CONCRETE
+    // If-None-Match short-circuits into a 304 BEFORE the row is fetched — a
+    // delete advances the table version (tombstone), so a stale cached
+    // representation of a since-deleted row can never concretely match. A
+    // wildcard `*` is deferred until AFTER the fetch confirms the row exists,
+    // so a missing row still returns 404 (not a false 304).
     const cacheControl = this.resolveReadCachePolicy(objectName);
     const etag = await this.computeReadEtag(collection, req, objectName);
-    if (ifNoneMatchSatisfied(req.headers.get('if-none-match'), etag)) {
-      return new Response(null, {
+    const ifNoneMatch = req.headers.get('if-none-match');
+    const notModified = (): Response =>
+      new Response(null, {
         status: 304,
         headers: { 'Cache-Control': cacheControl, ETag: etag },
       });
+    if (ifNoneMatchHasConcreteMatch(ifNoneMatch, etag)) {
+      return notModified();
     }
 
     // #1782: scope a public/anonymous read of a tenant-scoped model to global
@@ -602,6 +608,10 @@ export class APIGenerator {
       : await collection.get(id);
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
+    }
+    // Row exists → a wildcard `*` may now be honored as a 304.
+    if (ifNoneMatchSatisfied(ifNoneMatch, etag)) {
+      return notModified();
     }
     return new Response(JSON.stringify(this.toPublicData(object)), {
       status: 200,

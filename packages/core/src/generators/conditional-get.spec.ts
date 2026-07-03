@@ -293,6 +293,27 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
       expect(res.headers.get('etag')).toBeNull();
       expect(res.headers.get('cache-control')).toBeNull();
     });
+
+    it('a wildcard If-None-Match: * returns 304 for an existing item but 404 for a missing one (#1765)', async () => {
+      // `*` matches any current representation → 304 for a row that exists.
+      const existing = await handler(
+        new Request(`http://local/api/v1/publicplain/${itemId}`, {
+          headers: { 'if-none-match': '*' },
+        }),
+      );
+      expect(existing.status).toBe(304);
+      expect(await existing.text()).toBe('');
+
+      // A row that does NOT exist has no current representation, so `*` must NOT
+      // be satisfied — the version fast-path defers `*` until the fetch, keeping
+      // the pre-#1765 404 rather than a false 304.
+      const missing = await handler(
+        new Request('http://local/api/v1/publicplain/does-not-exist', {
+          headers: { 'if-none-match': '*' },
+        }),
+      );
+      expect(missing.status).toBe(404);
+    });
   });
 
   describe('Cache-Control policy per model config', () => {

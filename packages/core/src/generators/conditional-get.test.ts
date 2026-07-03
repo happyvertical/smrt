@@ -251,17 +251,26 @@ describe('emitted SvelteKit route helper: ETag v2 structure (#1765)', () => {
     // query in, not the v1 body-hash conditionalJson.
     expect(snippet).toContain('async function conditionalVersionedRead(');
     expect(snippet).not.toContain('function bodyEtag(');
+    // Imports the concrete-match helper too (the wildcard-safe fast path).
+    expect(snippet).toContain('ifNoneMatchHasConcreteMatch');
   });
 
-  it('checks If-None-Match BEFORE building the payload (the zero-query invariant)', () => {
+  it('takes the fast path only on a CONCRETE match, before building the payload (zero-query invariant)', () => {
     const snippet = generateConditionalGetRouteHelper({ public: false });
-    const guardIndex = snippet.indexOf('ifNoneMatchSatisfied(request.headers');
+    const concreteGuard = snippet.indexOf(
+      'ifNoneMatchHasConcreteMatch(ifNoneMatch',
+    );
     const buildIndex = snippet.indexOf('await buildPayload()');
-    expect(guardIndex).toBeGreaterThanOrEqual(0);
+    const wildcardCheck = snippet.indexOf('ifNoneMatchSatisfied(ifNoneMatch');
+    expect(concreteGuard).toBeGreaterThanOrEqual(0);
     expect(buildIndex).toBeGreaterThanOrEqual(0);
-    // The 304 short-circuit must precede the query thunk, or it would not skip
-    // the query — the whole point of ETag v2.
-    expect(guardIndex).toBeLessThan(buildIndex);
+    expect(wildcardCheck).toBeGreaterThanOrEqual(0);
+    // The concrete-match short-circuit must precede the query thunk (the point
+    // of ETag v2)...
+    expect(concreteGuard).toBeLessThan(buildIndex);
+    // ...and the wildcard `*` check must come AFTER the build, so a `304` is
+    // never returned for a row the build could not produce (a missing item).
+    expect(buildIndex).toBeLessThan(wildcardCheck);
   });
 
   it('bakes the private default policy in as a constant', () => {
@@ -308,5 +317,22 @@ describe('emitted SvelteKit route helper: ETag v2 structure (#1765)', () => {
     const plain = generateConditionalGetRouteHelper({ public: false });
     expect(plain).not.toContain('resolveTenantEtagDiscriminator');
     expect(plain).toContain('canonicalReadRepresentation(request, undefined)');
+  });
+
+  it('emits the v1 body-hash helper (not the version source) when useBodyHash is set', () => {
+    // Serializer-backed routes can render related-table data the per-table
+    // version cannot observe (#1765), so they keep the v1 body-hash ETag.
+    const snippet = generateConditionalGetRouteHelper(
+      { public: false },
+      { useBodyHash: true },
+    );
+    expect(snippet).toContain("import { createHash } from 'node:crypto';");
+    expect(snippet).toContain('function conditionalJson(');
+    expect(snippet).not.toContain('conditionalVersionedRead');
+    expect(snippet).not.toContain('@happyvertical/smrt-core');
+    // The Cache-Control policy is still baked in.
+    expect(snippet).toContain(
+      `const READ_CACHE_CONTROL = '${PRIVATE_READ_CACHE_CONTROL}';`,
+    );
   });
 });

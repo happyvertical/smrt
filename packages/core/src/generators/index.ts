@@ -12,6 +12,7 @@ export {
   computeBodyEtag,
   computeTableVersionEtag,
   conditionalJsonResponse,
+  ifNoneMatchHasConcreteMatch,
   ifNoneMatchSatisfied,
   PRIVATE_READ_CACHE_CONTROL,
   type ReadCacheControlOptions,
