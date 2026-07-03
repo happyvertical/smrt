@@ -165,7 +165,11 @@ export async function loadConfig(
         '.mts': typeScriptLoader,
         '.cts': typeScriptLoader,
       },
-      stopDir: searchParents ? undefined : process.cwd(),
+      // When not searching parents, stop at the actual search root so
+      // `searchParents: false` is honored even if `searchFrom` is outside the
+      // cwd tree (otherwise the upward walk from `searchFrom` never hits cwd and
+      // runs to the filesystem root).
+      stopDir: searchParents ? undefined : (searchFrom ?? process.cwd()),
       cache: cache, // Respect cache option
     });
     setExplorer(explorer);

@@ -226,6 +226,29 @@ describe('@smrt/config', () => {
 
       expect(config.smrt?.logLevel).toBe('warn');
     });
+
+    it('searchParents: false anchors stopDir to searchFrom, not cwd', async () => {
+      // A config exists in the PARENT (testDir) but not in the child searchFrom.
+      // With searchParents: false the upward walk must stop at searchFrom (the
+      // search root) and NOT climb to the parent — even though searchFrom is
+      // outside the cwd tree. Regression for the stopDir=cwd bug.
+      writeFileSync(
+        join(testDir, 'smrt.config.ts'),
+        `export default { smrt: { logLevel: 'error' as const } };`,
+        'utf-8',
+      );
+      const childDir = join(testDir, 'nested', 'child');
+      mkdirSync(childDir, { recursive: true });
+
+      const config = await loadConfig({
+        searchFrom: childDir,
+        searchParents: false,
+        cache: false,
+      });
+
+      // Parent's config must NOT leak in — no config found from childDir.
+      expect(config).toEqual({});
+    });
   });
 
   describe('getModuleConfig', () => {
