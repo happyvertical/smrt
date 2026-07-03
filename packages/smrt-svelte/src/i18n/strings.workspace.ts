@@ -68,4 +68,23 @@ export const M = defineMessages({
   'ui.system_scope_panel.no_running_work': 'No running work',
   'ui.system_status_chips.system_status': 'System status',
   'ui.tenant_nav.tenant_navigation': 'Tenant navigation',
+
+  // components/workspace/live/* (systemFeed demo — issue #1774)
+  'ui.system_feed.title': 'System feed',
+  'ui.system_feed.description':
+    'Polls an app-provided status endpoint and maps it into the system-scope panels and status chips.',
+  'ui.system_feed.pause': 'Pause polling',
+  'ui.system_feed.resume': 'Resume polling',
+  'ui.system_feed.refresh': 'Refresh now',
+  'ui.system_feed.fail_next': 'Fail next fetch',
+  'ui.system_feed.status_label': 'Feed status',
+  'ui.system_feed.tick_label': 'Ticks',
+  'ui.system_feed.error_label': 'Last error',
+  'ui.system_feed.jobs_panel': 'Jobs',
+  'ui.system_feed.schedules_panel': 'Schedules',
+  'ui.system_feed.dispatch_panel': 'Dispatch',
+  'ui.system_feed.chip_workers': 'Workers',
+  'ui.system_feed.chip_running': 'Running',
+  'ui.system_feed.chip_queued': 'Queued',
+  'ui.system_feed.chip_failed': 'Failed',
 });
