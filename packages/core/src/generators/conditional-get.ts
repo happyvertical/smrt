@@ -250,6 +250,29 @@ export function conditionalJsonResponse(
 // short-circuits into a 304 BEFORE the collection query runs. The Cache-Control
 // policy, If-None-Match matching, and 304/200 response shape are all preserved
 // verbatim from v1 — only the ETag SOURCE changes.
+//
+// ## Consistency model (the deliberate cost of zero-query revalidation)
+//
+// Revalidating against a version PROXY instead of the response body — the whole
+// point of "zero database work" — means v2 is weakly, not strongly, consistent.
+// Two bounded windows follow, both acceptable for the sites-track read cache
+// this serves; a route that needs strong consistency keeps the v1 body-hash
+// path (which reads the data), as serializer routes do:
+//
+//   1. Write→feed gap. On the autocommit save()/delete() path the data row
+//      commits and THEN the afterSave/afterDelete interceptor appends the feed
+//      row (a separate statement — see change-feed.ts). A revalidation landing
+//      in that sub-statement window reads the pre-write version and can return a
+//      stale 304; it self-heals on the next revalidation once the feed advances.
+//      (Wrapping save() + append in one transaction would close it, but that is
+//      a change-feed write-path concern, not this consumer's.)
+//   2. Shape change without a table write. The ETag reflects the table version
+//      and request, NOT the serialization shape. A deploy that changes fields /
+//      toPublicJSON / transformJSON / sensitive markings without any table write
+//      leaves ETags unchanged, so clients keep the old shape until the table
+//      next changes. Deploy-time invalidation — salting the ETag with the
+//      manifest/build hash — is version-awareness (#1764) territory; shared-cache
+//      operators should purge on a shape-changing deploy in the meantime.
 // ===========================================================================
 
 /**
