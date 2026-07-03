@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createSmrtCollection,
   createSmrtWebClient,
+  getEngineCollection,
   newLocalId,
   type SmrtCrudFetchers,
   type SmrtWebCollectionDefinition,
@@ -242,6 +243,94 @@ describe('createSmrtCollection', () => {
 
     await collection.preload();
     expect(collection.size).toBe(1);
+
+    await collection.cleanup();
+  });
+
+  it('exposes plain DTO rows with no engine virtual props ($key/$origin/...)', async () => {
+    const scripted = makeScriptedFetchers([
+      { id: 'p1', name: 'Widget', price: 9.99 },
+    ]);
+    const collection = createSmrtCollection(productDefinition('products-dto'), {
+      fetchers: scripted.fetchers,
+      staleTimeMs: 60_000,
+    });
+    await collection.preload();
+
+    const [row] = collection.toArray;
+    // Exact equality (not toMatchObject): the row must be a plain DTO — no
+    // $synced/$origin/$key/$collectionId that would leak through spread/JSON.
+    expect(row).toEqual({ id: 'p1', name: 'Widget', price: 9.99 });
+    expect(Object.keys(row).some((k) => k.startsWith('$'))).toBe(false);
+    expect(JSON.stringify(row)).not.toContain('$');
+    // get() is projected too.
+    expect(collection.get('p1')).toEqual({
+      id: 'p1',
+      name: 'Widget',
+      price: 9.99,
+    });
+
+    await collection.cleanup();
+  });
+
+  it('isolates reads per scope so a shared client never cross-serves backends', async () => {
+    const client = createSmrtWebClient();
+    const backendA = makeScriptedFetchers([{ id: 'p1', name: 'from-A' }]);
+    const backendB = makeScriptedFetchers([{ id: 'p1', name: 'from-B' }]);
+
+    // Same generated collection name, one shared client, different backends —
+    // distinct scopes must keep their caches separate.
+    const collA = createSmrtCollection(productDefinition('products'), {
+      fetchers: backendA.fetchers,
+      client,
+      scope: 'tenant-a',
+      staleTimeMs: 60_000,
+    });
+    const collB = createSmrtCollection(productDefinition('products'), {
+      fetchers: backendB.fetchers,
+      client,
+      scope: 'tenant-b',
+      staleTimeMs: 60_000,
+    });
+
+    await Promise.all([collA.preload(), collB.preload()]);
+
+    expect(collA.get('p1')?.name).toBe('from-A');
+    expect(collB.get('p1')?.name).toBe('from-B');
+    expect(backendA.calls.list).toBe(1);
+    expect(backendB.calls.list).toBe(1);
+
+    await Promise.all([collA.cleanup(), collB.cleanup()]);
+  });
+
+  it('rejects a client handle not produced by createSmrtWebClient', () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
+    expect(() =>
+      createSmrtCollection(productDefinition('products-badclient'), {
+        fetchers: scripted.fetchers,
+        // Foreign object masquerading as a client handle.
+        client: {} as ReturnType<typeof createSmrtWebClient>,
+      }),
+    ).toThrow(SmrtWebRequestError);
+  });
+});
+
+describe('getEngineCollection (internal binding bridge)', () => {
+  it('returns the engine collection for a real handle and rejects foreign handles', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
+    const collection = createSmrtCollection(
+      productDefinition('products-bridge'),
+      { fetchers: scripted.fetchers, staleTimeMs: 60_000 },
+    );
+
+    const engine = getEngineCollection(collection);
+    expect(engine).toBeDefined();
+    // The bridge yields the live engine collection (has its own preload()).
+    expect(typeof (engine as { preload?: unknown }).preload).toBe('function');
+
+    expect(() =>
+      getEngineCollection({} as unknown as typeof collection),
+    ).toThrow(SmrtWebRequestError);
 
     await collection.cleanup();
   });

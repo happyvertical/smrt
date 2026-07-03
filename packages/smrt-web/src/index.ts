@@ -268,8 +268,12 @@ export interface SmrtWebClient {
   readonly __smrtWebClient: 'SmrtWebClient';
 }
 
-/** Engine-side shape of a {@link SmrtWebClient}. Never exported. */
-interface SmrtWebClientEngine {
+/**
+ * Engine-side shape of a {@link SmrtWebClient}. Never exported, so the engine
+ * type never reaches the public surface. Extends the public brand so the value
+ * created here carries the brand at runtime (enabling the validation below).
+ */
+interface SmrtWebClientEngine extends SmrtWebClient {
   readonly queryClient: QueryClient;
 }
 
@@ -279,13 +283,54 @@ interface SmrtWebClientEngine {
  * share a cache and deduplicate requests app-wide.
  */
 export function createSmrtWebClient(): SmrtWebClient {
-  const engine: SmrtWebClientEngine = { queryClient: new QueryClient() };
-  return engine as unknown as SmrtWebClient;
+  const engine: SmrtWebClientEngine = {
+    __smrtWebClient: 'SmrtWebClient',
+    queryClient: new QueryClient(),
+  };
+  return engine;
 }
 
 function resolveQueryClient(client?: SmrtWebClient): QueryClient {
   if (!client) return new QueryClient();
-  return (client as unknown as SmrtWebClientEngine).queryClient;
+  const engine = client as Partial<SmrtWebClientEngine>;
+  if (engine.__smrtWebClient !== 'SmrtWebClient' || !engine.queryClient) {
+    throw new SmrtWebRequestError(
+      '[smrt-web] options.client must be a handle from createSmrtWebClient()',
+    );
+  }
+  return engine.queryClient;
+}
+
+/**
+ * Project an engine row to a plain public DTO. The client-data engine decorates
+ * stored rows with enumerable virtual props (`$synced`/`$origin`/`$key`/
+ * `$collectionId`) that would otherwise cross the SMRT boundary through spread
+ * or JSON serialization. The `$` prefix is reserved for the engine; SMRT
+ * columns never begin with it.
+ */
+function toPlainRow<TData extends object>(row: unknown): SmrtWebRow<TData> {
+  const plain: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row as Record<string, unknown>)) {
+    if (key.charCodeAt(0) !== 36 /* '$' */) plain[key] = value;
+  }
+  return plain as SmrtWebRow<TData>;
+}
+
+/** Project the row values carried by a change notification to plain DTOs. */
+function projectChanges(changes: unknown): unknown {
+  if (!Array.isArray(changes)) return changes;
+  return changes.map((change) => {
+    if (!change || typeof change !== 'object') return change;
+    const record = change as Record<string, unknown>;
+    const projected: Record<string, unknown> = { ...record };
+    if (record.value && typeof record.value === 'object') {
+      projected.value = toPlainRow(record.value);
+    }
+    if (record.previousValue && typeof record.previousValue === 'object') {
+      projected.previousValue = toPlainRow(record.previousValue);
+    }
+    return projected;
+  });
 }
 
 /**
@@ -349,6 +394,15 @@ export interface CreateSmrtCollectionOptions {
    */
   client?: SmrtWebClient;
   /**
+   * Cache namespace for this collection's reads. Fold a backend / tenant /
+   * preview discriminator in here when the SAME generated collection is
+   * materialized against DIFFERENT backends while sharing one {@link client} —
+   * without it those reads share a cache key and could serve one backend's rows
+   * for the other for the whole `staleTimeMs` window. Omit for the common
+   * single-backend case.
+   */
+  scope?: string;
+  /**
    * Stale-while-revalidate window in milliseconds (default 30s): reads within
    * the window are served from the local collection without a network request;
    * the first read after it revalidates in the background.
@@ -356,6 +410,32 @@ export interface CreateSmrtCollectionOptions {
   staleTimeMs?: number;
   /** Retry failed loads (default false: fail fast, surface errors). */
   retry?: boolean;
+}
+
+/**
+ * Registry mapping a public collection handle to its underlying engine
+ * collection. Keyed weakly so a handle and its engine collection are collected
+ * together. Read only through {@link getEngineCollection}.
+ */
+const engineCollections = new WeakMap<object, unknown>();
+
+/**
+ * @internal Retrieve the underlying engine collection backing a handle. For
+ * trusted framework bindings only (e.g. smrt-svelte live queries), which must
+ * feed the engine collection to the query builder. Returns `unknown` so no
+ * engine type crosses the public boundary — callers cast. Throws for a handle
+ * not produced by {@link createSmrtCollection}.
+ */
+export function getEngineCollection<TData extends object>(
+  handle: SmrtWebCollection<TData>,
+): unknown {
+  const engine = engineCollections.get(handle);
+  if (engine === undefined) {
+    throw new SmrtWebRequestError(
+      '[smrt-web] getEngineCollection: not a smrt-web collection handle',
+    );
+  }
+  return engine;
 }
 
 /**
@@ -377,17 +457,26 @@ export function createSmrtCollection<TData extends object>(
 ): SmrtWebCollection<TData> {
   type Row = SmrtWebRow<TData>;
 
-  const { staleTimeMs = 30_000, retry = false } = options;
+  const { staleTimeMs = 30_000, retry = false, scope } = options;
   const fetchers =
     options.fetchers ??
     createDefinitionFetchers(definition, options.basePath, options.fetchFn);
   const queryClient = resolveQueryClient(options.client);
   const idField = definition.idField || 'id';
 
+  // Scope discriminates the cache key so a shared client can materialize the
+  // same collection against different backends without cross-serving reads.
+  const cacheId = scope
+    ? `smrt:${scope}:${definition.name}`
+    : `smrt:${definition.name}`;
+  const queryKey = scope
+    ? ['smrt', scope, definition.name]
+    : ['smrt', definition.name];
+
   const collection = createCollection(
     queryCollectionOptions<Row>({
-      id: `smrt:${definition.name}`,
-      queryKey: ['smrt', definition.name],
+      id: cacheId,
+      queryKey,
       queryClient,
       staleTime: staleTimeMs,
       retry,
@@ -431,7 +520,41 @@ export function createSmrtCollection<TData extends object>(
     }),
   );
 
-  // The engine object satisfies the committed public surface at runtime; the
-  // SMRT-owned type is asserted here so the engine's own types never escape.
-  return collection as unknown as SmrtWebCollection<TData>;
+  // Wrap the engine collection in the SMRT-owned public surface. The wrapper
+  // projects rows to plain DTOs at every read boundary (toArray/get and change
+  // payloads) so the engine's virtual props never escape, and confines the
+  // engine's own types to this module.
+  const handle: SmrtWebCollection<TData> = {
+    get toArray() {
+      return collection.toArray.map((row) => toPlainRow<TData>(row));
+    },
+    get size() {
+      return collection.size;
+    },
+    has(key) {
+      return collection.has(key);
+    },
+    get(key) {
+      const row = collection.get(key);
+      return row === undefined ? undefined : toPlainRow<TData>(row);
+    },
+    preload() {
+      return collection.preload();
+    },
+    cleanup() {
+      return collection.cleanup();
+    },
+    subscribeChanges(callback) {
+      const subscription = collection.subscribeChanges((changes: unknown) =>
+        callback(projectChanges(changes)),
+      );
+      return { unsubscribe: () => subscription.unsubscribe() };
+    },
+    insert(row) {
+      return collection.insert(row) as unknown as SmrtWebTransaction;
+    },
+  };
+
+  engineCollections.set(handle, collection);
+  return handle;
 }
