@@ -32,18 +32,6 @@ import {
 import type { Collection } from '@tanstack/db';
 import { useLiveQuery } from '@tanstack/svelte-db';
 
-// `getEngineCollection` is an `@internal` bridge in smrt-web: it exists at
-// runtime but API-Extractor strips its declaration from the published `.d.ts`
-// (like every `@internal` export in this monorepo). Re-declare its signature
-// here — matching the real source — so this trusted binding can consume the
-// runtime value type-safely without smrt-web having to widen its public
-// surface. It returns `unknown` on purpose (no engine type at the boundary).
-declare module '@happyvertical/smrt-web' {
-  export function getEngineCollection<TData extends object>(
-    handle: SmrtWebCollection<TData>,
-  ): unknown;
-}
-
 // ---------------------------------------------------------------------------
 // SMRT-owned public surface (no @tanstack/* type appears below this line in an
 // exported position — the engine stays swappable behind these interfaces).
@@ -105,10 +93,9 @@ export interface LiveCollectionMutation {
   /** The rollback error if the write failed, else `null`. */
   readonly error: unknown;
   /**
-   * Resolves when the write persists, rejects (after rollback) when it fails.
-   * Mirrors the underlying transaction's settle promise. Rejections are also
-   * reflected reactively on {@link error}; attach a catch (or read `error`) to
-   * avoid an unhandled rejection.
+   * Resolves when the write settles (persisted or rolled back); read
+   * {@link error} (or {@link settled}) for the outcome. Never rejects, so
+   * reactive-only consumers never risk an unhandled rejection.
    */
   readonly done: Promise<void>;
 }
@@ -205,9 +192,13 @@ export function liveCollection<TData extends object>(
   >;
 
   // Kick the first load without forcing consumers to await preload() — the
-  // live query subscribes lazily, so nudge it when requested.
+  // live query subscribes lazily, so nudge it when requested. Swallow the
+  // rejection: a load failure (network error, or an SSR relative-URL
+  // `Failed to parse URL` TypeError) already surfaces reactively via the
+  // live-query status; this fire-and-forget must not become an unhandled
+  // rejection.
   if (preload) {
-    void handle.preload();
+    void handle.preload().catch(() => {});
   }
 
   // The live query over the whole base collection. No `.select()` → `data`
@@ -262,6 +253,10 @@ function createMutation(run: () => Promise<unknown>): LiveCollectionMutation {
   let settled = $state(false);
   let error = $state<unknown>(null);
 
+  // `done` RESOLVES on settle whether the write persisted or rolled back — the
+  // failure is surfaced only reactively via `error`. Re-throwing here would
+  // reject `done`, which a reactive-only consumer (reads `error`/`pending` in
+  // markup, never awaits `done`) would leave as an unhandled rejection.
   const done = run().then(
     () => {
       pending = false;
@@ -271,7 +266,6 @@ function createMutation(run: () => Promise<unknown>): LiveCollectionMutation {
       pending = false;
       settled = true;
       error = cause;
-      throw cause;
     },
   );
 

@@ -219,9 +219,10 @@ describe('liveCollection', () => {
     flushSync();
     expect(view.rows.some((row) => row.name === 'FAIL Gadget')).toBe(true);
 
-    await expect(mutation.done).rejects.toThrow(
-      'Validation failed: name is reserved',
-    );
+    // `done` resolves (never rejects) on settle — the failure is surfaced only
+    // reactively via `error`, so a reactive-only consumer risks no unhandled
+    // rejection.
+    await expect(mutation.done).resolves.toBeUndefined();
     flushSync();
 
     // Optimistic state rolled back reactively; the mutation carries the error.
