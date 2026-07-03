@@ -1330,15 +1330,16 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Collects the property names of fields marked `@field({ sensitive: true })`
-   * for this instance's class (and, under STI, every member of its hierarchy,
-   * since `toJSON()` merges sibling fields into the serialized payload).
+   * Collect public-serialization field policy in one registry traversal.
    *
-   * Reads both the first-class `sensitive` flag and the `_meta.sensitive`
-   * mirror so it works regardless of whether the field metadata came from the
-   * AST manifest or a runtime `@field()` decorator registration.
+   * Sensitive/read-permission flags are read from this instance's class and,
+   * under STI, every member of its hierarchy because `toJSON()` merges sibling
+   * fields into the serialized payload.
    */
-  private getSensitiveFieldNames(): Set<string> {
+  private getPublicFieldPolicies(): {
+    sensitive: Set<string>;
+    readPermissions: Map<string, string>;
+  } {
     const className = this.getResolvedClassName();
     const registered = ObjectRegistry.getClass(className);
     const fieldMaps: Map<string, RegisteredField>[] = [
@@ -1361,45 +1362,12 @@ export class SmrtObject extends SmrtClass {
     }
 
     const sensitive = new Set<string>();
+    const readPermissions = new Map<string, string>();
     for (const fields of fieldMaps) {
       for (const [key, def] of fields) {
         if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
           sensitive.add(key);
         }
-      }
-    }
-    return sensitive;
-  }
-
-  /**
-   * Collect fields that require a resolved permission before public/read
-   * serialization includes them.
-   */
-  private getReadPermissionFieldNames(): Map<string, string> {
-    const className = this.getResolvedClassName();
-    const registered = ObjectRegistry.getClass(className);
-    const fieldMaps: Map<string, RegisteredField>[] = [
-      registered?.inheritedFields || ObjectRegistry.getFields(className),
-    ];
-
-    const tableStrategy = ObjectRegistry.getTableStrategy(
-      this.getResolvedQualifiedName(),
-    );
-    if (tableStrategy === 'sti') {
-      const descendants = getSTIHierarchyMembers(
-        this.getResolvedQualifiedName(),
-      );
-      for (const descendant of descendants) {
-        fieldMaps.push(
-          ObjectRegistry.getClass(descendant)?.inheritedFields ||
-            ObjectRegistry.getFields(descendant),
-        );
-      }
-    }
-
-    const readPermissions = new Map<string, string>();
-    for (const fields of fieldMaps) {
-      for (const [key, def] of fields) {
         const permission =
           typeof def?.readPermission === 'string'
             ? def.readPermission
@@ -1411,7 +1379,7 @@ export class SmrtObject extends SmrtClass {
         }
       }
     }
-    return readPermissions;
+    return { sensitive, readPermissions };
   }
 
   /**
@@ -1454,14 +1422,14 @@ export class SmrtObject extends SmrtClass {
     context: PublicJsonProjectionContext,
   ): Record<string, unknown> {
     const json = this.toJSON() as Record<string, unknown>;
-    const sensitiveFields = this.getSensitiveFieldNames();
+    const { sensitive, readPermissions } = this.getPublicFieldPolicies();
+    const metaData =
+      json._meta_data && typeof json._meta_data === 'object'
+        ? (json._meta_data as Record<string, unknown>)
+        : null;
 
-    if (sensitiveFields.size > 0) {
-      const metaData =
-        json._meta_data && typeof json._meta_data === 'object'
-          ? (json._meta_data as Record<string, unknown>)
-          : null;
-      for (const name of sensitiveFields) {
+    if (sensitive.size > 0) {
+      for (const name of sensitive) {
         delete json[name];
         if (metaData) {
           delete metaData[name];
@@ -1469,13 +1437,8 @@ export class SmrtObject extends SmrtClass {
       }
     }
 
-    const readPermissionFields = this.getReadPermissionFieldNames();
-    if (readPermissionFields.size > 0) {
-      const metaData =
-        json._meta_data && typeof json._meta_data === 'object'
-          ? (json._meta_data as Record<string, unknown>)
-          : null;
-      for (const [name, permission] of readPermissionFields) {
+    if (readPermissions.size > 0) {
+      for (const [name, permission] of readPermissions) {
         if (context.permissions.has(permission)) {
           continue;
         }

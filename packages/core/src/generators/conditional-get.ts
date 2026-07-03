@@ -20,6 +20,10 @@
  *   mode) NEVER emit shared-cache headers: their bodies vary with the tenant
  *   context, which URL-keyed shared caches cannot see. `sMaxage` is ignored
  *   with a one-time warning.
+ * - Field-level read-permission models NEVER emit shared-cache headers: their
+ *   bodies vary with the caller's resolved permission set, which shared caches
+ *   cannot see. These routes use the v1 body-hash ETag so the validator covers
+ *   the redacted payload actually returned to that caller.
  *
  * Consumed by both the runtime REST generator (`./rest.ts`) and — as an
  * emitted code snippet — the SvelteKit route generator
@@ -80,6 +84,12 @@ export interface ReadCacheControlOptions {
    * headers (#1757 review finding).
    */
   tenantScoped?: boolean;
+  /**
+   * Whether the response body varies with caller permissions because at least
+   * one field has `@field({ readPermission })`. Shared caches key on URL, not
+   * user permission sets, so this also fails private regardless of `sMaxage`.
+   */
+  permissionScoped?: boolean;
 }
 
 /**
@@ -120,16 +130,16 @@ function requestedSharedCacheControl(apiConfig: unknown): string | null {
  * configure a positive `cache.sMaxage`. Everything else — including a
  * non-public model that configures `sMaxage` — stays `private, no-cache`.
  *
- * Tenant-scoped models are ALWAYS `private, no-cache` regardless of config:
- * their response bodies vary with the tenant context (resolved from session
- * cookies, invisible to URL-keyed shared caches), so shared caching would
- * leak one tenant's rows to other tenants or anonymous visitors.
+ * Tenant-scoped and permission-scoped models are ALWAYS `private, no-cache`
+ * regardless of config: their response bodies vary with request identity
+ * (tenant or permissions, invisible to URL-keyed shared caches), so shared
+ * caching would leak one caller's representation to another caller.
  */
 export function resolveReadCacheControl(
   apiConfig: unknown,
   options: ReadCacheControlOptions = {},
 ): string {
-  if (options.tenantScoped) {
+  if (options.tenantScoped || options.permissionScoped) {
     return PRIVATE_READ_CACHE_CONTROL;
   }
 
@@ -192,14 +202,29 @@ export function warnIfSharedCacheNeutralized(
   modelName: string,
   apiConfig: unknown,
   tenantScoped: boolean,
+  permissionScoped = false,
 ): void {
-  if (!tenantScoped) return;
+  if (!tenantScoped && !permissionScoped) return;
   if (requestedSharedCacheControl(apiConfig) === null) return;
-  if (sharedCacheNeutralizedWarned.has(modelName)) return;
-  sharedCacheNeutralizedWarned.add(modelName);
+  const reasonKey = `${tenantScoped ? 'tenant' : ''}:${permissionScoped ? 'permission' : ''}`;
+  const warningKey = `${modelName}:${reasonKey}`;
+  if (sharedCacheNeutralizedWarned.has(warningKey)) return;
+  sharedCacheNeutralizedWarned.add(warningKey);
+  const scopeDescription =
+    tenantScoped && permissionScoped
+      ? 'tenant/read-permission context'
+      : tenantScoped
+        ? 'tenant context'
+        : 'caller permissions';
+  const modelDescription =
+    tenantScoped && permissionScoped
+      ? 'tenant-scoped/read-permission model'
+      : tenantScoped
+        ? 'tenant-scoped model'
+        : 'read-permission model';
   console.warn(
-    `[smrt] api.cache.sMaxage ignored for tenant-scoped model ${modelName}: ` +
-      'shared caches cannot key on tenant context — serving ' +
+    `[smrt] api.cache.sMaxage ignored for ${modelDescription} ${modelName}: ` +
+      `shared caches cannot key on ${scopeDescription} — serving ` +
       `'${PRIVATE_READ_CACHE_CONTROL}' instead (#1757).`,
   );
 }
@@ -472,7 +497,8 @@ export interface ConditionalGetRouteHelperOptions
  *   pure function of the base table — the `toPublicJSON` path.
  * - **v1 (#1757, `useBodyHash`)** — the inlined body-hash `conditionalJson`,
  *   used where a custom serializer can pull in related tables the base-table
- *   version can't see (see {@link ConditionalGetRouteHelperOptions.useBodyHash}).
+ *   version can't see, or where `@field({ readPermission })` means the body
+ *   differs by caller permissions.
  *
  * For tenant-scoped models the v2 representation folds in the active tenant
  * ({@link resolveTenantEtagDiscriminator}) so one tenant's cached validator
@@ -494,6 +520,7 @@ export function generateConditionalGetRouteHelper(
       options.modelName,
       apiConfig,
       options.tenantScoped === true,
+      options.permissionScoped === true,
     );
     warnIfTenantScopedPublicRead(
       options.modelName,
@@ -502,10 +529,11 @@ export function generateConditionalGetRouteHelper(
     );
   }
 
-  // Serializer-backed routes: the body can depend on related tables the base-
-  // table version can't see, so keep the v1 body-hash ETag (query-first but
-  // correct). See useBodyHash.
-  if (options.useBodyHash) {
+  // Serializer-backed or permission-scoped routes: the body can depend on data
+  // the base-table version representation cannot see, so keep the v1 body-hash
+  // ETag (query-first but correct). See useBodyHash.
+  const useBodyHash = options.useBodyHash || options.permissionScoped === true;
+  if (useBodyHash) {
     return `
 // Conditional GET (#1757 v1): a strong body-hash ETag over the serialized
 // response — used where a custom serializer can render data from related tables

@@ -80,21 +80,31 @@ describe('Issue #1565: generated route read permissions', () => {
 
     for (const content of [collectionRoute, itemRoute]) {
       expect(content).toContain(
-        'const READ_PERMISSION_FIELDS: Array<[string, string]> = [["wholesalePrice","products.read.internal"]];',
+        'const READ_PERMISSION_FIELDS: Array<[string, string]> = [["wholesalePrice","products.read.internal"],["wholesale_price","products.read.internal"]];',
       );
       expect(content).toContain(
         'const publicJsonOptions = getPublicJsonOptions(locals);',
       );
       expect(content).toContain('l.permissions ?? l.permissionSet');
+      expect(content).toContain(
+        "const READ_CACHE_CONTROL = 'private, no-cache';",
+      );
+      expect(content).toContain('function conditionalJson(');
+      expect(content).not.toContain('conditionalVersionedRead');
     }
 
     expect(collectionRoute).toContain(
       'items.map((item) => item.toPublicJSON(publicJsonOptions))',
     );
     expect(collectionRoute).toContain(
+      'return conditionalJson(request, { items: items_public, count, limit, offset });',
+    );
+    expect(collectionRoute).toContain(
       'return json(item.toPublicJSON(publicJsonOptions), { status: 201 });',
     );
-    expect(itemRoute).toContain('return item.toPublicJSON(publicJsonOptions);');
+    expect(itemRoute).toContain(
+      'return conditionalJson(request, item.toPublicJSON(publicJsonOptions));',
+    );
     expect(itemRoute).toContain(
       'return json(item.toPublicJSON(publicJsonOptions));',
     );
@@ -113,6 +123,10 @@ describe('Issue #1565: generated route read permissions', () => {
 
     for (const content of [collectionRoute, itemRoute]) {
       expect(content).toContain('function applyReadPermissionRedaction(');
+      expect(content).toContain('if (hasPublicJson(value))');
+      expect(content).toContain(
+        'for (const [key, entry] of Object.entries(out))',
+      );
       expect(content).toContain(
         'applyReadPermissionRedaction(serializedItem, publicJsonOptions)',
       );
@@ -120,6 +134,61 @@ describe('Issue #1565: generated route read permissions', () => {
 
     expect(collectionRoute).toContain(
       'applyReadPermissionRedaction(\n        await serializeItemResponse(item),\n        publicJsonOptions,\n      )',
+    );
+  });
+
+  it('collects read-permission fields from STI descendants', async () => {
+    await generateSvelteKitRoutes(
+      projectRoot,
+      {
+        objects: {
+          BaseEvent: {
+            qualifiedName: '@test/smrt:BaseEvent',
+            className: 'BaseEvent',
+            collection: 'events',
+            fields: {
+              title: { type: 'text' },
+            },
+            methods: {},
+            decoratorConfig: {
+              api: { include: ['list', 'get'] },
+              tableStrategy: 'sti',
+            },
+          },
+          SecretEvent: {
+            qualifiedName: '@test/smrt:SecretEvent',
+            className: 'SecretEvent',
+            collection: 'secret_events',
+            fields: {
+              privateBriefing: {
+                type: 'text',
+                readPermission: 'events.read.private',
+              },
+            },
+            methods: {},
+            decoratorConfig: { api: false },
+            extends: 'BaseEvent',
+            extendsQualified: '@test/smrt:BaseEvent',
+          },
+        },
+      } as unknown as SmartObjectManifest,
+      {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      },
+    );
+
+    const calls = vi.mocked(writeFileSync).mock.calls;
+    const collectionRoute = calls.find((call) =>
+      call[0].toString().endsWith('events/+server.ts'),
+    )?.[1] as string;
+
+    expect(collectionRoute).toContain(
+      '["privateBriefing","events.read.private"]',
+    );
+    expect(collectionRoute).toContain(
+      '["private_briefing","events.read.private"]',
     );
   });
 });

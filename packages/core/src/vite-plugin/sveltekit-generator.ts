@@ -358,20 +358,100 @@ function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
   return false;
 }
 
+function toFieldColumnAlias(fieldName: string): string {
+  return fieldName
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z\d])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
+}
+
+function manifestObjectKey(objectDef: SmartObjectDefinition): string {
+  return objectDef.qualifiedName ?? objectDef.className;
+}
+
+function manifestObjectExtends(
+  objectDef: SmartObjectDefinition,
+  parent: SmartObjectDefinition,
+): boolean {
+  const extendsQualified = objectDef.extendsQualified;
+  const extendsName = objectDef.extends;
+  return (
+    (typeof extendsQualified === 'string' &&
+      extendsQualified === parent.qualifiedName) ||
+    (typeof extendsName === 'string' &&
+      (extendsName === parent.className ||
+        extendsName === parent.qualifiedName))
+  );
+}
+
+function findManifestParent(
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): SmartObjectDefinition | undefined {
+  return Object.values(manifest.objects).find((candidate) =>
+    manifestObjectExtends(objectDef, candidate),
+  );
+}
+
+function collectStiHierarchyObjects(
+  objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
+): SmartObjectDefinition[] {
+  if (!manifest) return [objectDef];
+
+  let cursor: SmartObjectDefinition | undefined = objectDef;
+  let stiBase: SmartObjectDefinition | undefined =
+    cursor.decoratorConfig?.tableStrategy === 'sti' ? cursor : undefined;
+  while (cursor) {
+    const parent = findManifestParent(cursor, manifest);
+    if (!parent) break;
+    if (parent.decoratorConfig?.tableStrategy === 'sti') {
+      stiBase = parent;
+    }
+    cursor = parent;
+  }
+
+  if (!stiBase) return [objectDef];
+
+  const members = new Map<string, SmartObjectDefinition>();
+  const visit = (current: SmartObjectDefinition) => {
+    const key = manifestObjectKey(current);
+    if (members.has(key)) return;
+    members.set(key, current);
+    for (const candidate of Object.values(manifest.objects)) {
+      if (candidate === current) continue;
+      if (manifestObjectExtends(candidate, current)) {
+        visit(candidate);
+      }
+    }
+  };
+
+  visit(stiBase);
+  return [...members.values()];
+}
+
 function collectReadPermissionFields(
   objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
 ): Array<[string, string]> {
-  const fields = objectDef.fields ?? {};
   const result: Array<[string, string]> = [];
-  for (const [name, def] of Object.entries(fields)) {
-    const permission =
-      typeof def.readPermission === 'string'
-        ? def.readPermission
-        : typeof def._meta?.readPermission === 'string'
-          ? def._meta.readPermission
-          : undefined;
-    if (permission) {
-      result.push([name, permission]);
+  const seen = new Set<string>();
+  for (const member of collectStiHierarchyObjects(objectDef, manifest)) {
+    for (const [name, def] of Object.entries(member.fields ?? {})) {
+      const permission =
+        typeof def.readPermission === 'string'
+          ? def.readPermission
+          : typeof def._meta?.readPermission === 'string'
+            ? def._meta.readPermission
+            : undefined;
+      if (!permission) continue;
+      for (const fieldName of [name, toFieldColumnAlias(name)]) {
+        const key = `${fieldName}\0${permission}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push([fieldName, permission]);
+      }
     }
   }
   return result;
@@ -384,9 +464,12 @@ function collectReadPermissionFields(
  * authenticated principal. Mirrors the knowledge-route `isKnowledgeAdmin`
  * precedent. Mutating verbs require auth even when reads are public.
  */
-function generateAuthGuardHelper(objectDef: SmartObjectDefinition): string {
+function generateAuthGuardHelper(
+  objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
+): string {
   const publicAccess = getApiPublicAccess(objectDef.decoratorConfig?.api);
-  const readPermissionFields = collectReadPermissionFields(objectDef);
+  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
 
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
@@ -447,14 +530,27 @@ function hasReadPermission(
 function applyReadPermissionRedaction(
   value: unknown,
   options: PublicJsonOptions,
+  seen: WeakSet<object> = new WeakSet(),
 ): unknown {
-  if (READ_PERMISSION_FIELDS.length === 0) return value;
-  if (Array.isArray(value)) {
-    return value.map((entry) => applyReadPermissionRedaction(entry, options));
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return null;
+  if (hasPublicJson(value)) {
+    seen.add(value);
+    return applyReadPermissionRedaction(
+      value.toPublicJSON(options),
+      options,
+      seen,
+    );
   }
-  if (!value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    seen.add(value);
+    return value.map((entry) =>
+      applyReadPermissionRedaction(entry, options, seen),
+    );
+  }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
+  seen.add(value);
   const out = { ...(value as Record<string, unknown>) };
   const metaData =
     out._meta_data && typeof out._meta_data === 'object'
@@ -466,6 +562,9 @@ function applyReadPermissionRedaction(
     if (metaData) delete metaData[fieldName];
   }
   if (metaData) out._meta_data = metaData;
+  for (const [key, entry] of Object.entries(out)) {
+    out[key] = applyReadPermissionRedaction(entry, options, seen);
+  }
   return out;
 }
 
@@ -985,7 +1084,13 @@ export async function generateSvelteKitRoutes(
       }
       continue;
     }
-    await generateRoutesForObject(projectRoot, className, objectDef, options);
+    await generateRoutesForObject(
+      projectRoot,
+      className,
+      objectDef,
+      manifest,
+      options,
+    );
     generatedCount++;
   }
 
@@ -1462,6 +1567,7 @@ async function generateRoutesForObject(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): Promise<void> {
   const collectionName = objectDef.collection;
@@ -1483,6 +1589,7 @@ async function generateRoutesForObject(
       projectRoot,
       className,
       objectDef,
+      manifest,
       includedActions,
       options,
       routeDir,
@@ -1500,6 +1607,7 @@ async function generateRoutesForObject(
       projectRoot,
       className,
       objectDef,
+      manifest,
       includedActions,
       options,
       join(routeDir, '[id]'),
@@ -1559,6 +1667,7 @@ async function generateRoutesForObject(
       actionRouteDir,
       routeSpecs,
       objectDef,
+      manifest,
       options,
     );
     writeRoute(actionRouteDir, '+server.ts', actionRoute);
@@ -1641,6 +1750,7 @@ async function generateCollectionRoutesForObject(
       actionRouteDir,
       routeSpecs,
       objectDef,
+      manifest,
       options,
     );
     writeRoute(actionRouteDir, '+server.ts', actionRoute);
@@ -1918,6 +2028,7 @@ function generateCollectionRouteTemplate(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   includedActions: string[],
   options: SvelteKitOptions,
   routeDir: string,
@@ -1939,6 +2050,9 @@ function generateCollectionRouteTemplate(
   // change-feed version cannot observe (#1765), so such routes keep the v1
   // body-hash ETag; the default toPublicJSON path uses the v2 version source.
   const listUsesSerializer = !!serializers.listItemSerializerName;
+  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
+  const listUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const listUsesBodyHash = listUsesSerializer || listUsesPermissionScopedBody;
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -1949,7 +2063,7 @@ ${
 }import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className, useBodyHash: listUsesSerializer }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -1984,7 +2098,12 @@ ${
     ),
   );
   return conditionalJson(request, { items: serializedItems, count, limit, offset });`
-    : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
+    : listUsesPermissionScopedBody
+      ? `${listAndCount}
+  // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
+  const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
+  return conditionalJson(request, { items: items_public, count, limit, offset });`
+      : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
   // If-None-Match the list query below never runs (zero-query 304).
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${listAndCount}
@@ -2083,6 +2202,7 @@ function generateItemRouteTemplate(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   includedActions: string[],
   options: SvelteKitOptions,
   routeDir: string,
@@ -2106,6 +2226,9 @@ function generateItemRouteTemplate(
   // change-feed version cannot observe (#1765), so such routes keep the v1
   // body-hash ETag; the default toPublicJSON path uses the v2 version source.
   const getUsesSerializer = !!serializers.itemSerializerName;
+  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
+  const getUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const getUsesBodyHash = getUsesSerializer || getUsesPermissionScopedBody;
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -2113,7 +2236,7 @@ function generateItemRouteTemplate(
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className, useBodyHash: getUsesSerializer }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -2143,7 +2266,12 @@ ${generateNotFoundError(className)}
     request,
     applyReadPermissionRedaction(serializedItem, publicJsonOptions),
   );`
-    : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
+    : getUsesPermissionScopedBody
+      ? `${getForRead}
+${generateNotFoundError(className)}
+  // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
+  return conditionalJson(request, item.toPublicJSON(publicJsonOptions));`
+      : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
   // (a delete advances the version, so a since-deleted row can't false-match);
   // a wildcard \`*\` is deferred until the fetch confirms the row exists.
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
@@ -2209,6 +2337,7 @@ function generateActionRouteTemplate(
   routeDir: string,
   routeSpecs: GeneratedActionRouteSpec[],
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): string {
   if (routeSpecs.length === 0) {
@@ -2285,7 +2414,7 @@ function generateActionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-${generateAuthGuardHelper(objectDef)}${tenantScoped ? generateTenantContextHelper() : ''}
+${generateAuthGuardHelper(objectDef, manifest)}${tenantScoped ? generateTenantContextHelper() : ''}
 ${handlers}`;
 }
 
