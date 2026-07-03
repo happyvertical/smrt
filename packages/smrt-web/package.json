@@ -1,0 +1,51 @@
+{
+  "name": "@happyvertical/smrt-web",
+  "version": "0.37.8",
+  "description": "SMRT browser client data runtime: typed collection factory wrapping the client-data engine over generated REST clients",
+  "author": "HappyVertical",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "CLAUDE.md",
+    "dist",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@tanstack/db": "^0.6.14",
+    "@tanstack/query-core": "^5.90.5",
+    "@tanstack/query-db-collection": "^1.0.46"
+  },
+  "scripts": {
+    "build": "vite build --mode library && node ../../scripts/check-smrt-web-engine-boundary.mjs",
+    "build:watch": "vite build --mode library --watch",
+    "dev": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.2",
+    "typescript": "^5.9.3",
+    "vite": "8.1.2",
+    "vitest": "^4.1.9"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-web"
+  }
+}

@@ -229,6 +229,9 @@ export function createPackageConfig(
     'scanner',
     'vitest',
     'smrt-playground',
+    // Framework wrapper library — has no @smrt() classes of its own; it
+    // consumes generated definitions passed in as arguments (#1761).
+    'smrt-web',
   ];
 
   return async () => {
@@ -392,6 +395,11 @@ export function createPackageConfig(
 
             // External SDK packages
             /^@have\//,
+
+            // TanStack client-data engine (smrt-web): externalized so the
+            // consumer resolves a single lockstep-pinned copy, and so the
+            // ~76 kB runtime code-splits cleanly out of public/site bundles.
+            /^@tanstack\//,
 
             // Virtual modules from SMRT framework
             '@smrt/routes',
