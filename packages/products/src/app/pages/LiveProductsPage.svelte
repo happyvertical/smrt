@@ -16,9 +16,13 @@
  * `scripts/check-web-engine-code-split.mjs` assertion proves the split holds.
  */
 
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
+import { M } from '../../lib/i18n.js';
 import AppLayout from '../layouts/AppLayout.svelte';
+
+const { t } = useI18n();
 
 // Lazily-resolved live component. The dynamic import is what code-splits the
 // engine out of the entry bundle — do NOT convert this to a static import.
@@ -39,21 +43,19 @@ onMount(async () => {
   {#snippet children()}
     <div class="live-products-page">
       <div class="page-header">
-        <h1>Live products</h1>
-        <p class="page-description">
-          The <code>@happyvertical/smrt-web</code> browser runtime as the
-          reference store — live rows + optimistic insert, loaded in a
-          code-split chunk so public pages never pay for the engine.
-        </p>
+        <h1>{t(M['products.live_page.title'])}</h1>
+        <p class="page-description">{t(M['products.live_page.description'])}</p>
       </div>
 
       {#if loadError}
-        <p class="page-status" role="alert">Failed to load runtime: {loadError}</p>
+        <p class="page-status" role="alert">
+          {t(M['products.live_page.load_failed'])} {loadError}
+        </p>
       {:else if LiveProductList}
         <LiveProductList />
       {:else}
         <p class="page-status" role="status" aria-live="polite">
-          Loading live runtime…
+          {t(M['products.live_page.loading_runtime'])}
         </p>
       {/if}
     </div>
@@ -84,10 +86,6 @@ onMount(async () => {
     font-size: var(--smrt-typography-body-large-size, 1.125rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     line-height: var(--smrt-typography-body-large-line-height, 1.6);
-  }
-
-  .page-description code {
-    font-size: 0.9em;
   }
 
   .page-status {

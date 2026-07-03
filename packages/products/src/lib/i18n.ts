@@ -107,6 +107,25 @@ export const M = defineMessages({
   'products.category_manager.manage_permissions': 'Manage category permissions',
   'products.category_manager.analytics': 'Category analytics',
 
+  // LiveProductsPage (smrt-web reference surface)
+  'products.live_page.title': 'Live products',
+  'products.live_page.description':
+    'The @happyvertical/smrt-web browser runtime as the reference store — live rows plus optimistic insert, loaded in a code-split chunk so public pages never pay for the engine.',
+  'products.live_page.load_failed': 'Failed to load runtime:',
+  'products.live_page.loading_runtime': 'Loading live runtime…',
+
+  // LiveProductList (smrt-web reference surface)
+  'products.live_list.title': 'Live products',
+  'products.live_list.hint':
+    'Reactive rows from the @happyvertical/smrt-web runtime. Adding a product is optimistic.',
+  'products.live_list.name_placeholder': 'New product name',
+  'products.live_list.add': 'Add product',
+  'products.live_list.adding': 'Adding…',
+  'products.live_list.insert_failed': 'Insert failed:',
+  'products.live_list.load_failed': 'Failed to load:',
+  'products.live_list.empty': 'No products yet.',
+  'products.live_list.loading': 'Loading…',
+
   // ProductCatalog
   'products.product_catalog.title': 'Product Catalog',
   'products.product_catalog.in_stock': 'in stock',

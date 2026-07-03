@@ -18,8 +18,10 @@
  */
 
 import { liveCollection } from '@happyvertical/smrt-svelte/web';
-import { Input } from '@happyvertical/smrt-ui/forms';
+import { Form, Input } from '@happyvertical/smrt-ui/forms';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
+import { M } from '../i18n.js';
 import { createProductCollection } from '../stores/product-collection';
 import type { ProductData } from '../types';
 
@@ -29,6 +31,7 @@ interface Props {
 }
 
 const { basePath = '/api/v1' }: Props = $props();
+const { t } = useI18n();
 
 // Build the reference collection once (from the initial `basePath`), then bind a
 // runes-reactive live view. `liveCollection` installs a `$effect` internally, so
@@ -65,48 +68,49 @@ async function addProduct() {
 }
 </script>
 
-<section class="live-products" aria-label="Live products (smrt-web runtime)">
+<section class="live-products" aria-label={t(M['products.live_list.title'])}>
   <header class="live-products__header">
-    <h2>Live products</h2>
-    <p class="live-products__hint">
-      Reactive rows from the <code>@happyvertical/smrt-web</code> runtime over
-      <code>{basePath}/products</code>. Adding a product is optimistic.
-    </p>
+    <h2>{t(M['products.live_list.title'])}</h2>
+    <p class="live-products__hint">{t(M['products.live_list.hint'])}</p>
   </header>
 
-  <form
-    class="live-products__form"
-    onsubmit={(e) => {
+  <Form
+    onsubmit={(e: Event) => {
       e.preventDefault();
       addProduct();
     }}
+    class="live-products__form"
   >
     <Input
       type="text"
       bind:value={newName}
-      placeholder="New product name"
-      aria-label="New product name"
+      placeholder={t(M['products.live_list.name_placeholder'])}
+      aria-label={t(M['products.live_list.name_placeholder'])}
       disabled={submitting}
       class="live-products__name"
     />
     <Button type="submit" variant="primary" disabled={submitting || !newName.trim()}>
-      {submitting ? 'Adding…' : 'Add product'}
+      {submitting ? t(M['products.live_list.adding']) : t(M['products.live_list.add'])}
     </Button>
-  </form>
+  </Form>
 
   {#if lastError}
-    <p class="live-products__error" role="alert">Insert failed: {lastError}</p>
+    <p class="live-products__error" role="alert">
+      {t(M['products.live_list.insert_failed'])} {lastError}
+    </p>
   {/if}
 
   {#if view.isLoading}
-    <p class="live-products__status" role="status" aria-live="polite">Loading…</p>
+    <p class="live-products__status" role="status" aria-live="polite">
+      {t(M['products.live_list.loading'])}
+    </p>
   {:else if view.isError}
     <p class="live-products__status" role="alert">
-      Failed to load: {String(view.error)}
+      {t(M['products.live_list.load_failed'])} {String(view.error)}
     </p>
   {:else if view.rows.length === 0}
     <p class="live-products__status" role="status" aria-live="polite">
-      No products yet.
+      {t(M['products.live_list.empty'])}
     </p>
   {:else}
     <ul class="live-products__list">
@@ -149,17 +153,16 @@ async function addProduct() {
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
-  .live-products__hint code {
-    font-size: 0.85em;
-  }
-
-  .live-products__form {
+  /* smrt-ui <Form> renders its own inner <form> with the forwarded class, so
+     the scoped selector can't reach it without :global (#1589), same as
+     ProductForm.svelte's `.product-form` handling. */
+  .live-products :global(.live-products__form) {
     display: flex;
     gap: 0.75rem;
     margin-bottom: 1rem;
   }
 
-  .live-products__form :global(.live-products__name) {
+  .live-products :global(.live-products__form) :global(.live-products__name) {
     flex: 1;
   }
 
