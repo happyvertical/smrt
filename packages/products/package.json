@@ -32,6 +32,11 @@
       "types": "./dist/lib/stores.d.ts",
       "default": "./dist/lib/stores.js"
     },
+    "./stores/product-collection": {
+      "types": "./dist/lib/lib/stores/product-collection.d.ts",
+      "svelte": "./dist/lib/stores/product-collection.js",
+      "default": "./dist/lib/stores/product-collection.js"
+    },
     "./generated": {
       "types": "./dist/lib/generated.d.ts",
       "default": "./dist/lib/generated.js"
@@ -54,8 +59,10 @@
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-web": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "cors": "^2.8.6",
@@ -106,6 +113,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:code-split": "node scripts/check-web-engine-code-split.mjs",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
     "clean": "rm -rf dist src/lib/types/smrt-generated",
     "prepare": "test -f ../smrt/dist/vite-plugin/index.js && npm run build:lib || echo 'Skipping products build:lib (smrt vite-plugin not available yet)'"

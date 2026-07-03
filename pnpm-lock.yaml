@@ -1459,12 +1459,18 @@ importers:
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
         version: link:../scanner
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
+      '@happyvertical/smrt-web':
+        specifier: workspace:*
+        version: link:../smrt-web
       '@happyvertical/sql':
         specifier: ^0.74.11
         version: 0.74.11(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)

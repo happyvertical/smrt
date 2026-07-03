@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { Snippet } from 'svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import type { Snippet } from 'svelte';
 import { M } from '../../lib/i18n.js';
 
 interface Props {
@@ -21,6 +21,7 @@ const { t } = useI18n();
       
       <nav class="main-nav">
         <a href="#products" class="nav-link">Products</a>
+        <a href="#live" class="nav-link">Live</a>
         <a href="#categories" class="nav-link">Categories</a>
         <a href="#dashboard" class="nav-link">Dashboard</a>
       </nav>

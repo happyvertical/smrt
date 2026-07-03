@@ -59,6 +59,14 @@ Auto-generated via Vite plugins: `@happyvertical/smrt-client` (TypeScript client
 
 Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). `product-store.svelte.ts` is the main store (backed by the SMRT client); `product-store.client.svelte.ts` is a virtual-module-free variant for federation builds.
 
+## Client-data runtime — reference store (#1761)
+
+Products is the reference consumer of the `@happyvertical/smrt-web` browser client-data runtime.
+
+- **Store** — `src/lib/stores/product-collection.ts` (subpath `@happyvertical/smrt-products/stores/product-collection`). `createProductCollection(definition, options)` builds a cached, reactive `SmrtWebCollection<ProductData>` over the generated `/api/v1/products` REST surface via `createSmrtCollection`. It is plugin-agnostic on purpose: the `products` definition is a PARAMETER (not a top-level import), so importing the store never eagerly resolves `@happyvertical/smrt-virt-web` (which exists only under the SMRT Vite plugin) — a unit test / npm consumer supplies its own definition. `productsCollectionDefinition()` lazily resolves the plugin definition (dynamic `import()`; resolved for `tsc` via the `@smrt/web` ambient alias). Deliberately NOT re-exported from the always-loaded `./stores` barrel — importing it is an explicit opt-in to the engine.
+- **Live surface** — `src/lib/components/LiveProductList.svelte` binds the store with `liveCollection` from `@happyvertical/smrt-svelte/web` (live rows + optimistic insert); it takes the definition as a prop. `src/app/pages/LiveProductsPage.svelte` (route `#live`) resolves the component AND the definition via `import()` and passes the definition down.
+- **Code-split (ratified condition ①)** — the ~76 kB TanStack engine must NEVER load on public / smrt-sites pages. `LiveProductsPage` reaches `LiveProductList` and the store ONLY through dynamic `import()`, so the engine lands in a lazily-loaded chunk; the app entry stays engine-free. NEVER import the store or live component statically from an app-root / public entry. `scripts/check-web-engine-code-split.mjs` (wrapped by `src/web-engine-code-split.spec.ts`, `pnpm test:code-split`) proves this against the REAL app graph: it runs the `--mode standalone` vite build and asserts, over the emitted rollup chunk graph, that the entry's static-import closure has zero `@tanstack/*` and the engine is reached only via `dynamicImports`. If the build hits the pre-existing nested-worktree `Tsconfig not found` failure locally, it falls back to a static-import-graph walk of the real `src/app/main.ts` (CI runs the real build).
+
 ## Schema migrations (Phase 1 release)
 
 This package's schema changed shape between the previous release and the Phase 1 apparel-ERP release. Consumers upgrading need to migrate two tables.
