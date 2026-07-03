@@ -17,6 +17,7 @@ import type {
 } from '../scanner/types.js';
 import {
   buildWebFieldDefinitions,
+  buildWebRelationships,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -230,5 +231,151 @@ describe('buildWebFieldDefinitions', () => {
       }),
     );
     expect(fields).toEqual({ name: { type: 'text' } });
+  });
+});
+
+describe('buildWebRelationships', () => {
+  const field = (f: Partial<FieldDefinition>): FieldDefinition =>
+    ({ type: 'text', ...f }) as FieldDefinition;
+
+  it('emits a foreignKey edge to the related model REST collection (same-package class name)', () => {
+    // `@foreignKey(AdGroup)` stores the SIMPLE class name in `related`; the edge
+    // resolves to that model's REST collection.
+    const variation = obj({
+      className: 'AdVariation',
+      collection: 'ad_variations',
+      fields: {
+        name: field({ type: 'text' }),
+        groupId: field({ type: 'foreignKey', related: 'AdGroup' }),
+      },
+    });
+    const group = obj({ className: 'AdGroup', collection: 'ad_groups' });
+
+    const edges = buildWebRelationships(variation, manifest(variation, group));
+    expect(edges).toEqual([
+      { field: 'groupId', kind: 'foreignKey', relatedCollection: 'ad_groups' },
+    ]);
+  });
+
+  it('emits oneToMany and manyToMany edges to their related REST collections', () => {
+    // A join relationship (`@manyToMany`) and a reverse-FK (`@oneToMany`) both
+    // carry a `related` class name that resolves to a sibling collection.
+    const post = obj({
+      className: 'Post',
+      collection: 'posts',
+      fields: {
+        title: field({ type: 'text' }),
+        comments: field({ type: 'oneToMany', related: 'Comment' }),
+        tags: field({ type: 'manyToMany', related: 'Tag' }),
+      },
+    });
+    const comment = obj({ className: 'Comment', collection: 'comments' });
+    const tag = obj({ className: 'Tag', collection: 'tags' });
+
+    const edges = buildWebRelationships(post, manifest(post, comment, tag));
+    expect(edges).toEqual([
+      { field: 'comments', kind: 'oneToMany', relatedCollection: 'comments' },
+      { field: 'tags', kind: 'manyToMany', relatedCollection: 'tags' },
+    ]);
+  });
+
+  it('resolves a crossPackageRef edge by its qualified name when the target is in the manifest', () => {
+    const ad = obj({
+      className: 'AdVariation',
+      collection: 'ad_variations',
+      fields: {
+        assetId: field({
+          type: 'crossPackageRef',
+          related: '@happyvertical/smrt-assets:Asset',
+        }),
+      },
+    });
+    const asset = obj({
+      className: 'Asset',
+      collection: 'assets',
+      qualifiedName: '@happyvertical/smrt-assets:Asset',
+    });
+
+    const edges = buildWebRelationships(ad, manifest(ad, asset));
+    expect(edges).toEqual([
+      {
+        field: 'assetId',
+        kind: 'crossPackageRef',
+        relatedCollection: 'assets',
+      },
+    ]);
+  });
+
+  it('skips an edge whose related model is not in the manifest (unresolved target)', () => {
+    // A cross-package ref to a model that was never scanned into this manifest
+    // (the common per-package build case) has no collection to invalidate.
+    const ad = obj({
+      className: 'AdVariation',
+      collection: 'ad_variations',
+      fields: {
+        zoneId: field({
+          type: 'crossPackageRef',
+          related: '@happyvertical/smrt-properties:Zone',
+        }),
+      },
+    });
+    const edges = buildWebRelationships(ad, manifest(ad));
+    expect(edges).toEqual([]);
+  });
+
+  it('skips an edge whose related model exists but is not API-exposed', () => {
+    // The related model resolves, but exposes no read surface (api:false), so it
+    // never becomes a web collection — there is no cache to invalidate.
+    const order = obj({
+      className: 'Order',
+      collection: 'orders',
+      fields: {
+        secretId: field({ type: 'foreignKey', related: 'Secret' }),
+      },
+    });
+    const secret = obj({
+      className: 'Secret',
+      collection: 'secrets',
+      decoratorConfig: {
+        api: false,
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+    const edges = buildWebRelationships(order, manifest(order, secret));
+    expect(edges).toEqual([]);
+  });
+
+  it('ignores relationship fields with no related target and non-relationship fields', () => {
+    const model = obj({
+      className: 'Thing',
+      collection: 'things',
+      fields: {
+        name: field({ type: 'text' }),
+        count: field({ type: 'integer' }),
+        // Relationship type but no `related` — cannot resolve an edge.
+        orphan: field({ type: 'foreignKey' }),
+      },
+    });
+    const edges = buildWebRelationships(model, manifest(model));
+    expect(edges).toEqual([]);
+  });
+
+  it('keeps a self-referential edge (a collection related to itself)', () => {
+    // Self edges are harmless: the runtime always invalidates the mutated
+    // collection anyway. Keeping it avoids a special case.
+    const category = obj({
+      className: 'Category',
+      collection: 'categories',
+      fields: {
+        parentId: field({ type: 'foreignKey', related: 'Category' }),
+      },
+    });
+    const edges = buildWebRelationships(category, manifest(category));
+    expect(edges).toEqual([
+      {
+        field: 'parentId',
+        kind: 'foreignKey',
+        relatedCollection: 'categories',
+      },
+    ]);
   });
 });

@@ -21,10 +21,15 @@
  * - concurrent-read dedup (one network request per in-flight collection load)
  * - optimistic create that persists through the generated REST surface and
  *   rolls back automatically when the server errors
+ * - relationship-derived invalidation (#1761): a settled mutation invalidates
+ *   the caches of the collections related to the mutated one, with the edges
+ *   derived from the manifest (`definition.relationships`) — no hand-wired
+ *   cache keys. Cross-collection reach requires a shared client from
+ *   {@link createSmrtWebClient}; with a private client only the mutated
+ *   collection refetches.
  *
- * Deliberately NOT here yet (see PRD #1755): relationship-derived invalidation,
- * SvelteKit hydration seeding, offline outbox, SSE invalidation, persistence,
- * version awareness.
+ * Deliberately NOT here yet (see PRD #1755): SvelteKit hydration seeding,
+ * offline outbox, SSE invalidation, persistence, version awareness.
  */
 
 import { createCollection } from '@tanstack/db';
@@ -43,6 +48,32 @@ export interface SmrtWebFieldDefinition {
   type: string;
   required?: boolean;
   default?: unknown;
+}
+
+/** The relationship kinds a generated web collection edge can describe. */
+export type SmrtWebRelationshipKind =
+  | 'foreignKey'
+  | 'crossPackageRef'
+  | 'oneToMany'
+  | 'manyToMany';
+
+/**
+ * A manifest-derived edge from this collection to a sibling REST collection,
+ * emitted by the `@happyvertical/smrt-virt-web` virtual module. When a mutation
+ * on this collection settles, the caches of the collections named by these
+ * edges are invalidated (relationship-derived invalidation, #1761), so a
+ * dependent view refetches without any hand-wired cache key.
+ *
+ * SMRT-owned data — no client-engine (`@tanstack/*`) type appears here, so it
+ * stays inside the engine-absorption boundary.
+ */
+export interface SmrtWebRelationship {
+  /** The declaring field carrying the relationship (e.g. `groupId`, `items`). */
+  field: string;
+  /** The relationship kind, mirroring the manifest field type. */
+  kind: SmrtWebRelationshipKind;
+  /** REST collection name the edge resolves to (e.g. `ad_groups`). */
+  relatedCollection: string;
 }
 
 /**
@@ -64,6 +95,14 @@ export interface SmrtWebCollectionDefinition<TData extends object = object> {
   actions: string[];
   /** Persisted field metadata keyed by field name. */
   fields: Record<string, SmrtWebFieldDefinition>;
+  /**
+   * Manifest-derived relationship edges to sibling REST collections. Drives
+   * relationship-derived cache invalidation: a settled mutation on this
+   * collection invalidates the caches of the collections these edges name.
+   * Optional so hand-built definitions (older codegen, tests) still satisfy the
+   * type; a missing value means "no derived edges".
+   */
+  relationships?: SmrtWebRelationship[];
   /** Phantom row-type carrier — never present at runtime. */
   _row?: TData;
 }
@@ -450,6 +489,13 @@ export function getEngineCollection<TData extends object>(
  * persists through `fetchers.create()` (the temp id is stripped — the server
  * assigns the real one), then refetches to reconcile. A failed create rejects
  * the transaction and the optimistic row rolls back automatically.
+ *
+ * Relationship-derived invalidation: once a create/update/delete has persisted,
+ * the query caches of this collection AND the collections named by
+ * `definition.relationships` (manifest-derived edges) are invalidated, so
+ * dependent views refetch. Reaching OTHER collections requires them to share
+ * this collection's `client` (see {@link createSmrtWebClient}); with a private
+ * client only this collection refetches.
  */
 export function createSmrtCollection<TData extends object>(
   definition: SmrtWebCollectionDefinition<TData>,
@@ -473,6 +519,45 @@ export function createSmrtCollection<TData extends object>(
     ? ['smrt', scope, definition.name]
     : ['smrt', definition.name];
 
+  // Relationship-derived invalidation target set (#1761): the collections
+  // whose caches a settled mutation on THIS collection must invalidate. Always
+  // includes this collection itself (so its own read revalidates) plus every
+  // manifest-derived related collection. Built once; a settled write matches
+  // any cached query whose collection-name segment (the LAST queryKey element,
+  // mirroring the `['smrt', (scope,) name]` scheme above) is in this set.
+  //
+  // Over-invalidation is safe — a stale query merely refetches. Under-
+  // invalidation is the bug (a dependent view showing stale rows), so the
+  // predicate matches by collection name across ALL scopes rather than an exact
+  // key: a mutation in one scope refreshes the related collection in every
+  // scope sharing the client.
+  const invalidationTargets = new Set<string>([definition.name]);
+  for (const relationship of definition.relationships ?? []) {
+    invalidationTargets.add(relationship.relatedCollection);
+  }
+
+  /**
+   * Invalidate the query caches of this collection and its manifest-derived
+   * related collections. Cross-collection reach requires those collections to
+   * share this collection's `client` (from {@link createSmrtWebClient}); with a
+   * private client only THIS collection's query lives here, so only it
+   * refetches. Fire-and-forget: invalidation schedules a background refetch and
+   * must not delay the mutation's own settle.
+   */
+  const invalidateRelated = (): void => {
+    void queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        if (!Array.isArray(key) || key.length === 0) return false;
+        const collectionSegment = key[key.length - 1];
+        return (
+          typeof collectionSegment === 'string' &&
+          invalidationTargets.has(collectionSegment)
+        );
+      },
+    });
+  };
+
   const collection = createCollection(
     queryCollectionOptions<Row>({
       id: cacheId,
@@ -495,6 +580,10 @@ export function createSmrtCollection<TData extends object>(
             `create(${definition.name})`,
           );
         }
+        // Persisted: refresh this collection and its related collections. Runs
+        // only after every create resolved — a rejected create rolls the
+        // optimistic row back and never reaches here.
+        invalidateRelated();
       },
       onUpdate: fetchers.update
         ? async ({ transaction }) => {
@@ -507,6 +596,7 @@ export function createSmrtCollection<TData extends object>(
                 `update(${definition.name})`,
               );
             }
+            invalidateRelated();
           }
         : undefined,
       onDelete: fetchers.delete
@@ -515,6 +605,7 @@ export function createSmrtCollection<TData extends object>(
               // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
               await fetchers.delete!(String(mutation.key));
             }
+            invalidateRelated();
           }
         : undefined,
     }),

@@ -30,11 +30,47 @@ const RELATIONSHIP_FIELD_TYPES: ReadonlySet<FieldDefinition['type']> = new Set([
   'manyToMany',
 ]);
 
+/**
+ * Field types that describe a relationship to another model. A superset of
+ * {@link RELATIONSHIP_FIELD_TYPES}: `foreignKey`/`crossPackageRef` are persisted
+ * scalar id columns (they DO appear on the wire), while `oneToMany`/`manyToMany`
+ * are pseudo-columns — but all four carry a `related` edge to a sibling model.
+ */
+const RELATIONSHIP_EDGE_TYPES: ReadonlySet<FieldDefinition['type']> = new Set([
+  'foreignKey',
+  'crossPackageRef',
+  'oneToMany',
+  'manyToMany',
+]);
+
 /** Informational per-column metadata carried by a collection definition. */
 export interface WebFieldDefinition {
   type: FieldDefinition['type'];
   required?: boolean;
   default?: unknown;
+}
+
+/** The relationship kinds a web collection edge can describe. */
+export type WebRelationshipKind =
+  | 'foreignKey'
+  | 'crossPackageRef'
+  | 'oneToMany'
+  | 'manyToMany';
+
+/**
+ * One manifest-derived relationship edge from a collection to a sibling REST
+ * collection. Consumed by the browser client-data runtime to invalidate
+ * dependent collection caches when this collection is mutated (#1761) — the
+ * cache-invalidation graph is derived entirely from these edges, never
+ * hand-wired. SMRT-owned data: no client-engine type appears here.
+ */
+export interface WebRelationship {
+  /** The declaring field carrying the relationship (e.g. `groupId`, `items`). */
+  field: string;
+  /** The relationship kind, mirroring the manifest field type. */
+  kind: WebRelationshipKind;
+  /** REST collection name the edge resolves to (e.g. `ad_groups`). */
+  relatedCollection: string;
 }
 
 /** One selected REST collection and the model that owns its definition. */
@@ -173,4 +209,62 @@ export function buildWebFieldDefinitions(
     };
   }
   return fields;
+}
+
+/**
+ * Build the manifest-derived relationship edges for a web collection
+ * definition (#1761): one entry per relationship field (`foreignKey`,
+ * `crossPackageRef`, `oneToMany`, `manyToMany`) whose `related` target resolves
+ * to another API-exposed REST collection.
+ *
+ * These edges drive relationship-derived cache invalidation in the browser
+ * client-data runtime: mutating this collection invalidates the caches of the
+ * collections named here. The invalidation graph is thus derived entirely from
+ * the manifest — no hand-wired cache keys.
+ *
+ * An edge is SKIPPED (not emitted) when:
+ *  - `related` is missing, or
+ *  - `related` cannot be resolved to a manifest object (e.g. a cross-package
+ *    target not present in this package's manifest), or
+ *  - the resolved target is not itself an API-exposed web collection (no read
+ *    surface to invalidate — it never appears in {@link selectWebCollectionEntries}).
+ *
+ * Self-referential edges (a collection related to itself) are kept: the runtime
+ * always invalidates the mutated collection anyway, so a self edge is harmless
+ * and keeping it avoids a special case.
+ */
+export function buildWebRelationships(
+  obj: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): WebRelationship[] {
+  // The set of REST collections that are actually materialized as web
+  // collections. An edge to a model outside this set has no client cache to
+  // invalidate, so it is dropped.
+  const exposedCollections = new Set(
+    selectWebCollectionEntries(manifest).map((entry) => entry.collection),
+  );
+
+  const relationships: WebRelationship[] = [];
+  const seen = new Set<string>();
+  for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
+    if (!RELATIONSHIP_EDGE_TYPES.has(field.type)) continue;
+    if (!field.related) continue;
+
+    const target = findByName(manifest, field.related);
+    if (!target) continue;
+    if (!exposedCollections.has(target.collection)) continue;
+
+    // De-dupe on (field, relatedCollection): a model never declares the same
+    // field twice, but guard anyway so the emitted edge list is stable.
+    const dedupeKey = `${fieldName} ${target.collection}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    relationships.push({
+      field: fieldName,
+      kind: field.type as WebRelationshipKind,
+      relatedCollection: target.collection,
+    });
+  }
+  return relationships;
 }
