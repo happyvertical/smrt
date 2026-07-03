@@ -25,9 +25,9 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
-import { generateSyncApplyRoute } from './sync-apply-route.js';
 import { generateChangesRoute } from './changes-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { generateSyncApplyRoute } from './sync-apply-route.js';
 
 export interface SvelteKitOptions {
   enabled: boolean;
@@ -1895,19 +1895,22 @@ ${routeGuardPreamble(objectDef, false)}
   const offset = Number(url.searchParams.get('offset')) || 0;
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
+  // ETag v2 (#1765): the table-version ETag is checked first; on a matching
+  // If-None-Match the list query below never runs (zero-query 304).
+  return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${listAndCount}
 ${
   serializers.listItemSerializerName
     ? `
-  const serializedItems = await Promise.all(
-    items.map((item) => ${serializers.listItemSerializerName}(item)),
-  );
-
-  return conditionalJson(request, { items: serializedItems, count, limit, offset });`
+    const serializedItems = await Promise.all(
+      items.map((item) => ${serializers.listItemSerializerName}(item)),
+    );
+    return { items: serializedItems, count, limit, offset };`
     : `
-  const items_public = items.map((item) => item.toPublicJSON());
-  return conditionalJson(request, { items: items_public, count, limit, offset });`
+    const items_public = items.map((item) => item.toPublicJSON());
+    return { items: items_public, count, limit, offset };`
 }
+  });
 };
 `
     : '';
@@ -2040,17 +2043,21 @@ ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenan
 export const GET: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, false)}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
+  // ETag v2 (#1765): the table-version ETag is checked first; on a matching
+  // If-None-Match the row fetch below never runs (zero-query 304). A delete
+  // advances the table version, so a since-deleted row can never false-match.
+  return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${getForRead}
 ${generateNotFoundError(className)}
 ${
   serializers.itemSerializerName
     ? `
-  const serializedItem = await ${serializers.itemSerializerName}(item);
-
-  return conditionalJson(request, serializedItem);`
+    const serializedItem = await ${serializers.itemSerializerName}(item);
+    return serializedItem;`
     : `
-  return conditionalJson(request, item.toPublicJSON());`
+    return item.toPublicJSON();`
 }
+  });
 };
 `
     : '';

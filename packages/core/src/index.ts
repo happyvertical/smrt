@@ -34,6 +34,7 @@ export {
   ensureChangeFeedTable,
   type GetChangesOptions,
   getChangesSince,
+  getTableVersion,
   getTenantScopedChangesSince,
   MAX_CHANGES_LIMIT,
   pruneChangeFeed,

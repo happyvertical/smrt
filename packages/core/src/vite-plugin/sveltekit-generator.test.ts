@@ -1774,9 +1774,12 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'items.map((item) => serializeItemResponse(item))',
       );
-      // List reads respond via the conditional-GET helper (#1757).
+      // List reads wrap the query in the ETag v2 version-first helper (#1765).
       expect(collectionContent).toContain(
-        'return conditionalJson(request, { items: serializedItems, count, limit, offset });',
+        'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
+      );
+      expect(collectionContent).toContain(
+        'return { items: serializedItems, count, limit, offset };',
       );
       expect(collectionContent).toContain(
         'const serializedItem = await serializeItemResponse(item);',

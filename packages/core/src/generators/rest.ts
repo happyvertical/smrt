@@ -5,6 +5,7 @@
  */
 
 import http from 'node:http';
+import { getTableVersion } from '../change-feed';
 import type { SmrtCollection } from '../collection';
 import {
   isTenantScopedClassResolved,
@@ -21,8 +22,12 @@ import {
 } from '../sync/apply';
 import { handleChangesRoute } from './changes-route';
 import {
-  conditionalJsonResponse,
+  canonicalReadRepresentation,
+  computeTableVersionEtag,
+  ifNoneMatchSatisfied,
   resolveReadCacheControl,
+  resolveTenantEtagDiscriminator,
+  versionConditionalResponse,
   warnIfSharedCacheNeutralized,
   warnIfTenantScopedPublicRead,
 } from './conditional-get';
@@ -576,6 +581,19 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
+    // ETag v2 (#1765): compute the table-version ETag first; a matching
+    // If-None-Match short-circuits into a 304 BEFORE the row is fetched. A
+    // delete of the row advances the table version (tombstone), so a stale
+    // cached representation of a since-deleted row can never falsely match.
+    const cacheControl = this.resolveReadCachePolicy(objectName);
+    const etag = await this.computeReadEtag(collection, req, objectName);
+    if (ifNoneMatchSatisfied(req.headers.get('if-none-match'), etag)) {
+      return new Response(null, {
+        status: 304,
+        headers: { 'Cache-Control': cacheControl, ETag: etag },
+      });
+    }
+
     // #1782: scope a public/anonymous read of a tenant-scoped model to global
     // (NULL-tenant) rows when no tenant context is active.
     const scope = this.resolveTenantReadScope(objectName);
@@ -585,7 +603,14 @@ export class APIGenerator {
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
     }
-    return this.createReadResponse(req, objectName, this.toPublicData(object));
+    return new Response(JSON.stringify(this.toPublicData(object)), {
+      status: 200,
+      headers: {
+        'Cache-Control': cacheControl,
+        'Content-Type': 'application/json',
+        ETag: etag,
+      },
+    });
   }
 
   /**
@@ -597,59 +622,64 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    const limit = Number.parseInt(params.get('limit') || '50', 10);
-    const offset = Number.parseInt(params.get('offset') || '0', 10);
-    const orderBy = params.get('orderBy') || 'created_at DESC';
+    // ETag v2 (#1765): resolve the policy + table-version ETag first, then
+    // hand the list query to versionConditionalResponse as a thunk. On a
+    // matching If-None-Match it returns a 304 and the thunk — the collection
+    // query — never runs, so an unchanged table revalidates with no table scan.
+    const cacheControl = this.resolveReadCachePolicy(objectName);
+    const etag = await this.computeReadEtag(collection, req, objectName);
 
-    // Build where clause from query params
-    // Convert REST-style operators (price[gt]) to SQL-style (price >)
-    const where: Record<string, string | string[]> = {};
-    for (const [key, value] of params.entries()) {
-      if (!['limit', 'offset', 'orderBy'].includes(key)) {
-        // Parse REST operator format: field[operator]
-        const match = key.match(/^(.+)\[(.+)\]$/);
-        if (match) {
-          const field = match[1];
-          const operator = match[2];
-          // Map REST operators to SQL operators
-          const operatorMap: Record<string, string> = {
-            gt: '>',
-            gte: '>=',
-            lt: '<',
-            lte: '<=',
-            ne: '!=',
-            in: 'in',
-            like: 'like',
-          };
-          const sqlOperator = operatorMap[operator] || operator;
-          const sqlKey = `${field} ${sqlOperator}`;
-          // Handle 'in' operator - convert comma-separated string to array
-          where[sqlKey] = operator === 'in' ? value.split(',') : value;
-        } else {
-          where[key] = value;
+    return versionConditionalResponse(req, etag, cacheControl, async () => {
+      const limit = Number.parseInt(params.get('limit') || '50', 10);
+      const offset = Number.parseInt(params.get('offset') || '0', 10);
+      const orderBy = params.get('orderBy') || 'created_at DESC';
+
+      // Build where clause from query params
+      // Convert REST-style operators (price[gt]) to SQL-style (price >)
+      const where: Record<string, string | string[]> = {};
+      for (const [key, value] of params.entries()) {
+        if (!['limit', 'offset', 'orderBy'].includes(key)) {
+          // Parse REST operator format: field[operator]
+          const match = key.match(/^(.+)\[(.+)\]$/);
+          if (match) {
+            const field = match[1];
+            const operator = match[2];
+            // Map REST operators to SQL operators
+            const operatorMap: Record<string, string> = {
+              gt: '>',
+              gte: '>=',
+              lt: '<',
+              lte: '<=',
+              ne: '!=',
+              in: 'in',
+              like: 'like',
+            };
+            const sqlOperator = operatorMap[operator] || operator;
+            const sqlKey = `${field} ${sqlOperator}`;
+            // Handle 'in' operator - convert comma-separated string to array
+            where[sqlKey] = operator === 'in' ? value.split(',') : value;
+          } else {
+            where[key] = value;
+          }
         }
       }
-    }
 
-    // #1782: fail closed to global (NULL-tenant) rows for a public/anonymous
-    // read of a tenant-scoped model with no active tenant context.
-    const scopedWhere = this.applyTenantReadScope(objectName, where);
+      // #1782: fail closed to global (NULL-tenant) rows for a public/anonymous
+      // read of a tenant-scoped model with no active tenant context.
+      const scopedWhere = this.applyTenantReadScope(objectName, where);
 
-    const objects = await collection.list({
-      where:
-        scopedWhere && Object.keys(scopedWhere).length > 0
-          ? scopedWhere
-          : undefined,
-      limit,
-      offset,
-      orderBy,
+      const objects = await collection.list({
+        where:
+          scopedWhere && Object.keys(scopedWhere).length > 0
+            ? scopedWhere
+            : undefined,
+        limit,
+        offset,
+        orderBy,
+      });
+
+      return objects.map((object: SmrtObject) => this.toPublicData(object));
     });
-
-    return this.createReadResponse(
-      req,
-      objectName,
-      objects.map((object: SmrtObject) => this.toPublicData(object)),
-    );
   }
 
   /**
@@ -948,18 +978,13 @@ export class APIGenerator {
   }
 
   /**
-   * Create a JSON read response with conditional-GET support (#1757): a strong
-   * body-hash ETag, `If-None-Match` → 304 with an empty body, and the
-   * Cache-Control policy resolved from the object's `@smrt({ api })` config
-   * (private + revalidatable by default; shared `s-maxage` only for public
-   * models that opt in). Tenant-scoped models are always private: their bodies
-   * vary with tenant context, which URL-keyed shared caches cannot see.
+   * Resolve the Cache-Control policy for a generated read and fire the
+   * one-time policy warnings (#1757): private + revalidatable by default;
+   * shared `s-maxage` only for public models that opt in; always private for
+   * tenant-scoped models, whose bodies vary with tenant context that URL-keyed
+   * shared caches cannot see.
    */
-  private createReadResponse(
-    req: Request,
-    objectName: string | undefined,
-    payload: unknown,
-  ): Response {
+  private resolveReadCachePolicy(objectName: string | undefined): string {
     const config = objectName
       ? ObjectRegistry.getConfig(objectName)
       : undefined;
@@ -974,11 +999,45 @@ export class APIGenerator {
       warnIfSharedCacheNeutralized(objectName, apiConfig, tenantScoped);
       warnIfTenantScopedPublicRead(objectName, apiConfig, tenantScoped);
     }
-    return conditionalJsonResponse(
+    return resolveReadCacheControl(apiConfig, { tenantScoped });
+  }
+
+  /**
+   * Compute the ETag v2 (#1765) for a generated read: the table's change-feed
+   * version ({@link getTableVersion}) keyed by the request representation, so a
+   * matching `If-None-Match` can short-circuit into a 304 BEFORE the collection
+   * query runs. The representation folds in the active tenant for tenant-scoped
+   * models so one tenant's cached ETag never satisfies another's read.
+   */
+  private async computeReadEtag(
+    collection: SmrtCollection<SmrtObject>,
+    req: Request,
+    objectName: string | undefined,
+  ): Promise<string> {
+    const version = await getTableVersion(collection.db, collection.tableName);
+    const representation = canonicalReadRepresentation(
       req,
-      payload,
-      resolveReadCacheControl(apiConfig, { tenantScoped }),
+      this.readTenantDiscriminator(objectName),
     );
+    return computeTableVersionEtag(version, representation);
+  }
+
+  /**
+   * A per-tenant ETag discriminator for tenant-scoped models: the active tenant
+   * id (or `global`) so tenant A's cached ETag never satisfies tenant B's read
+   * of the same table and params. `undefined` for non-tenant-scoped models,
+   * whose bodies do not vary by tenant.
+   */
+  private readTenantDiscriminator(objectName?: string): string | undefined {
+    if (!objectName) return undefined;
+    const tenantScoped =
+      ObjectRegistry.isTenantScoped(objectName) ||
+      !!ObjectRegistry.getConfig(objectName)?.tenantScoped ||
+      isTenantScopedClassResolved(objectName);
+    if (!tenantScoped) return undefined;
+    // Shared with the generated SvelteKit route so both transports key the ETag
+    // on the active tenant identically (cross-tenant false-304 guard).
+    return resolveTenantEtagDiscriminator();
   }
 
   /**

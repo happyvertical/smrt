@@ -1,15 +1,16 @@
 /**
  * Generator-level coverage for conditional GET on generated SvelteKit routes
- * (#1757): the collection (list) and item (get) templates inline the
- * conditional-GET helper, wrap their GET returns in `conditionalJson`, and
- * bake in the Cache-Control policy resolved from `@smrt({ api })` — private
- * by default, shared `s-maxage` only for public models that opt in, and NEVER
- * for non-public models. Mutation handlers are untouched.
+ * (ETag v2, #1765): the collection (list) and item (get) templates inline the
+ * `conditionalVersionedRead` helper, wrap their GET query in it (so a matching
+ * If-None-Match answers 304 without the query running), and bake in the
+ * Cache-Control policy resolved from `@smrt({ api })` — private by default,
+ * shared `s-maxage` only for public models that opt in, and NEVER for
+ * non-public or tenant-scoped models. Mutation handlers are untouched.
  *
  * Tests the generator's emitted strings (per repo convention — "test
- * generators, not generated output"); the snippet's runtime behavior is
- * covered in `../generators/conditional-get.test.ts`, which imports and
- * executes it.
+ * generators, not generated output"); the version-first runtime behavior is
+ * covered end to end in `../generators/conditional-get.spec.ts` over the same
+ * core primitives the emitted route calls.
  */
 
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -77,24 +78,30 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     vi.clearAllMocks();
   });
 
-  it('inlines the helper and wraps list/get returns in conditionalJson', async () => {
+  it('inlines the v2 helper and wraps list/get queries in conditionalVersionedRead', async () => {
     const { collectionRoute, itemRoute } = await generateAndRead(true);
 
     for (const content of [collectionRoute, itemRoute]) {
       expect(content).toBeDefined();
-      // Helper is inlined with the ETag + If-None-Match machinery.
-      expect(content).toContain("import { createHash } from 'node:crypto';");
-      expect(content).toContain('function conditionalJson(');
+      // v2 helper is inlined, importing its version primitives from smrt-core
+      // and deriving the ETag from the per-table change-feed version.
+      expect(content).toContain("from '@happyvertical/smrt-core'");
+      expect(content).toContain('async function conditionalVersionedRead(');
+      expect(content).toContain('getTableVersion(db, tableName)');
       expect(content).toContain("request.headers.get('if-none-match')");
       expect(content).toContain('status: 304');
     }
 
-    // List handler destructures request and returns conditionally.
+    // List handler wraps its query in the version-first helper (the query
+    // thunk runs only on a cache miss) and returns the payload from the thunk.
     expect(collectionRoute).toContain(
       'export const GET: RequestHandler = async ({ locals, url, request })',
     );
     expect(collectionRoute).toContain(
-      'return conditionalJson(request, { items: items_public, count, limit, offset });',
+      'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
+    );
+    expect(collectionRoute).toContain(
+      'return { items: items_public, count, limit, offset };',
     );
 
     // Item GET handler too.
@@ -102,8 +109,9 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       'export const GET: RequestHandler = async ({ locals, params, request })',
     );
     expect(itemRoute).toContain(
-      'return conditionalJson(request, item.toPublicJSON());',
+      'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
     );
+    expect(itemRoute).toContain('return item.toPublicJSON();');
 
     // Mutation handlers stay as-is (plain json responses, no conditional).
     expect(collectionRoute).toContain(
@@ -218,7 +226,7 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       include: ['list', 'get'],
     });
 
-    // GET-only handlers respond via conditionalJson; `json` would be unused.
+    // GET-only handlers respond via conditionalVersionedRead; `json` unused.
     expect(collectionRoute).toContain("import { error } from '@sveltejs/kit';");
     expect(itemRoute).toContain("import { error } from '@sveltejs/kit';");
 
@@ -271,8 +279,8 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       )?.[1] as string;
 
     expect(actionRoute).toBeDefined();
-    // Custom actions are out of the v1 conditional-GET scope.
-    expect(actionRoute).not.toContain('conditionalJson');
+    // Custom actions are out of the conditional-GET scope.
+    expect(actionRoute).not.toContain('conditionalVersionedRead');
     expect(actionRoute).not.toContain('READ_CACHE_CONTROL');
   });
 });

@@ -558,6 +558,76 @@ export async function getTenantScopedChangesSince(
   return getChangesSince(db, { ...options, tenantId: scope.tenantId });
 }
 
+/**
+ * The per-table change version — the ETag source for zero-query conditional
+ * GETs (#1765).
+ *
+ * Returns `MAX(seq)` over the feed rows for `table`: a monotonic number that
+ * advances on every framework write to that table (create/update/delete, and
+ * writes through the sync-apply endpoint, which all `save()`/`delete()`).
+ * Because sequences are the change feed's globally-monotonic cursor dimension
+ * (allocated `MAX+1` at commit time, never a native identity — see the module
+ * docs), the value is **replica-stable**: two processes reading the same
+ * committed database compute the same version, with no per-process divergence.
+ * That is what lets a generated read route derive an ETag that short-circuits a
+ * matching `If-None-Match` into a `304` before the collection query runs — an
+ * unchanged table costs one indexed `MAX(seq)` lookup (backed by
+ * `idx_smrt_changes_table_seq`) to revalidate, not a table scan.
+ *
+ * ## Why the fallback to the global horizon (and not 0)
+ *
+ * A table with no *retained* feed entry falls back to the global horizon
+ * (`MAX(seq)` across all tables), returning 0 only when the whole feed is
+ * empty. Retention prunes oldest-first and always keeps the newest entry, so a
+ * quiet table can lose all of its own entries while busier tables advance. If
+ * such a table reported 0, a client that cached it while it was empty (version
+ * 0) could, after a change→prune→change→prune cycle returned the lookup to 0,
+ * be wrongly answered `304` against data that has since changed — a false-304.
+ *
+ * The horizon fallback closes that hole: any write to the table appends a new
+ * sequence strictly greater than every previously-observed value (its own or
+ * the horizon), so the version — and therefore the ETag — strictly exceeds any
+ * value a client already holds, forcing a fresh `200`. The only cost is that a
+ * table with no retained entries of its own revalidates whenever the global
+ * horizon moves; a table with a retained entry uses its own stable `MAX(seq)`
+ * and is unaffected by writes to sibling tables. A persistent per-table
+ * high-water mark that survives pruning would remove even that cost; it is a
+ * deliberate follow-up, out of scope for this slice.
+ *
+ * Idempotently ensures the feed table exists first, so it is safe to call from
+ * a read route on a raw handle that has never been written to.
+ */
+export async function getTableVersion(
+  db: DatabaseInterface,
+  table: string,
+): Promise<number> {
+  const name = table?.trim();
+  if (!name) {
+    throw new Error('getTableVersion requires a non-empty table name');
+  }
+  await ensureChangeFeedTable(db);
+
+  const p = placeholders(db);
+  const tableRows = getQueryRows(
+    await db.query(
+      `SELECT MAX(seq) AS version FROM ${CHANGE_FEED_TABLE} WHERE table_name = ${p(1)}`,
+      name,
+    ),
+  );
+  const tableVersion = tableRows[0]?.version;
+  if (tableVersion != null) {
+    return toSeqNumber(tableVersion);
+  }
+
+  // No retained entry for this table — fall back to the global horizon so an
+  // all-pruned (or never-written) table never reports a resettable low value
+  // that could false-304 a stale client. 0 only when the feed is empty.
+  const horizonRows = getQueryRows(
+    await db.query(`SELECT MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`),
+  );
+  return toSeqNumber(horizonRows[0]?.horizon);
+}
+
 function toSeqNumber(value: unknown): number {
   // Postgres adapters may surface BIGINT aggregates as strings.
   const parsed = typeof value === 'number' ? value : Number(value ?? 0);

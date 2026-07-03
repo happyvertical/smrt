@@ -1,15 +1,22 @@
 /**
- * Integration coverage for conditional GET on generated REST read routes
- * (#1757), driven through `APIGenerator.generateHandler()` against a real
- * in-memory SQLite database (per repo testing rules — nothing internal is
- * mocked). Asserts the HTTP semantics end to end: strong ETags on list/get,
+ * Integration coverage for conditional GET on generated REST read routes,
+ * driven through `APIGenerator.generateHandler()` against a real in-memory
+ * SQLite database (per repo testing rules — nothing internal is mocked).
+ * Asserts the HTTP semantics end to end: strong ETags on list/get,
  * `If-None-Match` → 304 with an empty body, ETag change after a mutation, the
  * Cache-Control policy per model config (private by default, shared `s-maxage`
  * only for public models that opt in), and that mutations/non-GET responses
  * are untouched. Mirrors the `rest-routes.spec.ts` setup.
+ *
+ * ETag v2 (#1765): the validator source is now the change feed's per-table
+ * version (#1758) rather than the v1 response-body hash (#1757). All the v1
+ * HTTP semantics above are preserved — this file is their regression guard —
+ * and the final block adds the v2 headline: a matching `If-None-Match` answers
+ * `304` WITHOUT executing the underlying collection query (query observation).
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { registerChangeFeedWriter } from '../change-feed';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
@@ -109,6 +116,10 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
   let handler: (req: Request) => Promise<Response>;
 
   beforeAll(async () => {
+    // ETag v2 (#1765) derives the validator from the change-feed table version,
+    // so a mutation only changes the ETag when it appends a change entry.
+    // Re-register defensively in case another suite cleared GlobalInterceptors.
+    registerChangeFeedWriter();
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -412,6 +423,128 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
       );
       expect(res.status).toBe(200);
       expect(((await res.json()) as any).name).toBe('cond-put-2');
+    });
+  });
+
+  // ETag v2 headline (#1765): the whole point of moving the ETag source to the
+  // per-table change-feed version is that a matching If-None-Match can answer
+  // 304 without the collection query ever running. Prove it by spying on the
+  // collection and asserting it is never touched on the conditional hit.
+  describe('ETag v2: a matching If-None-Match skips the collection query (#1765)', () => {
+    let qdb: any;
+    let collection: CondGetPublicPlainCollection;
+    let qhandler: (req: Request) => Promise<Response>;
+
+    beforeAll(async () => {
+      registerChangeFeedWriter();
+      qdb = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['CondGetPublicPlain'],
+      });
+      collection = await CondGetPublicPlainCollection.create({ db: qdb });
+      const api = new APIGenerator({
+        basePath: '/api/v1',
+        authMiddleware: () => async (req) => req,
+      });
+      api.registerCollection('q1765', collection);
+      qhandler = api.generateHandler();
+
+      const created = await qhandler(
+        new Request('http://local/api/v1/q1765', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: 'seed' }),
+        }),
+      );
+      expect(created.status).toBe(201);
+    });
+
+    afterAll(async () => {
+      await qdb?.close?.();
+    });
+
+    it('list: a 304 revalidation does NOT call collection.list (zero-query)', async () => {
+      const first = await qhandler(new Request('http://local/api/v1/q1765'));
+      expect(first.status).toBe(200);
+      const etag = first.headers.get('etag') as string;
+
+      const listSpy = vi.spyOn(collection, 'list');
+      try {
+        const revalidated = await qhandler(
+          new Request('http://local/api/v1/q1765', {
+            headers: { 'if-none-match': etag },
+          }),
+        );
+        expect(revalidated.status).toBe(304);
+        expect(await revalidated.text()).toBe('');
+        // The headline assertion: the underlying query never ran.
+        expect(listSpy).not.toHaveBeenCalled();
+
+        // Control: a non-conditional read on the same route DOES run the query,
+        // proving the spy would have caught a query if one had happened.
+        const fresh = await qhandler(new Request('http://local/api/v1/q1765'));
+        expect(fresh.status).toBe(200);
+        expect(listSpy).toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+      }
+    });
+
+    it('get: a 304 revalidation does NOT call collection.get (zero-query)', async () => {
+      const listRes = await qhandler(new Request('http://local/api/v1/q1765'));
+      const rows = (await listRes.json()) as Array<{ id: string }>;
+      const id = rows[0].id;
+
+      const first = await qhandler(
+        new Request(`http://local/api/v1/q1765/${id}`),
+      );
+      expect(first.status).toBe(200);
+      const etag = first.headers.get('etag') as string;
+
+      const getSpy = vi.spyOn(collection, 'get');
+      try {
+        const revalidated = await qhandler(
+          new Request(`http://local/api/v1/q1765/${id}`, {
+            headers: { 'if-none-match': etag },
+          }),
+        );
+        expect(revalidated.status).toBe(304);
+        expect(await revalidated.text()).toBe('');
+        expect(getSpy).not.toHaveBeenCalled();
+      } finally {
+        getSpy.mockRestore();
+      }
+    });
+
+    it('a write to the table advances the version, so the stale ETag re-runs the query as 200', async () => {
+      const first = await qhandler(new Request('http://local/api/v1/q1765'));
+      const staleEtag = first.headers.get('etag') as string;
+
+      // Any framework write to the table (here a create) bumps its version.
+      const created = await qhandler(
+        new Request('http://local/api/v1/q1765', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: 'another' }),
+        }),
+      );
+      expect(created.status).toBe(201);
+
+      const listSpy = vi.spyOn(collection, 'list');
+      try {
+        const after = await qhandler(
+          new Request('http://local/api/v1/q1765', {
+            headers: { 'if-none-match': staleEtag },
+          }),
+        );
+        expect(after.status).toBe(200);
+        expect(after.headers.get('etag')).not.toBe(staleEtag);
+        // The version moved, so this is a real read — the query runs.
+        expect(listSpy).toHaveBeenCalled();
+      } finally {
+        listSpy.mockRestore();
+      }
     });
   });
 });
