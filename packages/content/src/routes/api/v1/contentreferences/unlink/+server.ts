@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentReferences["unlink"]>;
+  type ActionArgs = Parameters<ContentReferences['unlink']>;
   type ActionOptions = {
     sourceId: ActionArgs[0];
     targetId: ActionArgs[1];

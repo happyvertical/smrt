@@ -107,7 +107,7 @@ export const GET: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  type ActionArgs = Parameters<Content["getFactsState"]>;
+  type ActionArgs = Parameters<Content['getFactsState']>;
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   ) as ActionArgs[0];
@@ -126,7 +126,7 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  type ActionArgs = Parameters<Content["syncFactsState"]>;
+  type ActionArgs = Parameters<Content['syncFactsState']>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await item.syncFactsState(options);

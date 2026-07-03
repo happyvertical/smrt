@@ -124,8 +124,48 @@ function applyWritablePolicy(data: unknown): Record<string, unknown> {
   return result;
 }
 
+// Conditional GET (#1757): strong body-hash ETag + If-None-Match → 304 with an
+// empty body. Reads stay private unless the model is public AND opts into
+// shared caching via @smrt({ api: { cache: { sMaxage } } }).
+import { createHash } from 'node:crypto';
+
+const READ_CACHE_CONTROL = 'private, no-cache';
+
+function bodyEtag(body: string): string {
+  return `"${createHash('sha256').update(body).digest('base64url')}"`;
+}
+
+function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  if (header.trim() === '*') return true;
+  return header.split(',').some((candidate) => {
+    const tag = candidate.trim();
+    const opaque = tag.startsWith('W/') ? tag.slice(2) : tag;
+    return opaque === etag;
+  });
+}
+
+function conditionalJson(request: Request, payload: unknown): Response {
+  const body = JSON.stringify(payload);
+  const etag = bodyEtag(body);
+  if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
+    return new Response(null, {
+      status: 304,
+      headers: { 'cache-control': READ_CACHE_CONTROL, etag },
+    });
+  }
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'cache-control': READ_CACHE_CONTROL,
+      'content-type': 'application/json',
+      etag,
+    },
+  });
+}
+
 // Get single contentcontributiontype
-export const GET: RequestHandler = async ({ locals, params }) => {
+export const GET: RequestHandler = async ({ locals, params, request }) => {
   requireRouteAuth(locals, false);
   establishTenantContext(locals);
   const collection = await getCollection<ContentContributionType>(
@@ -134,7 +174,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:ContentContributionType not found');
 
-  return json(item.toPublicJSON());
+  return conditionalJson(request, item.toPublicJSON());
 };
 
 // Update contentcontributiontype

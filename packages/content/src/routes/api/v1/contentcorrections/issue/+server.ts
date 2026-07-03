@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentCorrectionCollection["issue"]>;
+  type ActionArgs = Parameters<ContentCorrectionCollection['issue']>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await typedCollection.issue(options);

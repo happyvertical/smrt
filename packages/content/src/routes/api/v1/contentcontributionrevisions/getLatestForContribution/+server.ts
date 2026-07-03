@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentContributionRevisionCollection["getLatestForContribution"]>;
+  type ActionArgs = Parameters<ContentContributionRevisionCollection['getLatestForContribution']>;
   type ActionOptions = {
     contributionId: ActionArgs[0];
   };

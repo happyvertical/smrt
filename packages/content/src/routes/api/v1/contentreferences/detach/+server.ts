@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentReferences["detach"]>;
+  type ActionArgs = Parameters<ContentReferences['detach']>;
   type ActionOptions = {
     leftId: ActionArgs[0];
     rightId: ActionArgs[1];

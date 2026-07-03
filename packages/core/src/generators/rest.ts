@@ -9,6 +9,11 @@ import type { SmrtCollection } from '../collection';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
+import {
+  conditionalJsonResponse,
+  resolveReadCacheControl,
+  warnIfSharedCacheNeutralized,
+} from './conditional-get';
 
 export interface APIConfig {
   basePath?: string;
@@ -325,8 +330,13 @@ export class APIGenerator {
       switch (req.method) {
         case 'GET':
           return objectId
-            ? await this.handleGet(collection, objectId)
-            : await this.handleList(collection, url.searchParams);
+            ? await this.handleGet(collection, objectId, req, objectName)
+            : await this.handleList(
+                collection,
+                url.searchParams,
+                req,
+                objectName,
+              );
 
         case 'POST':
           return await this.handleCreate(collection, req, objectName);
@@ -455,12 +465,14 @@ export class APIGenerator {
   private async handleGet(
     collection: SmrtCollection<SmrtObject>,
     id: string,
+    req: Request,
+    objectName?: string,
   ): Promise<Response> {
     const object = await collection.get(id);
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
     }
-    return this.createJsonResponse(this.toPublicData(object));
+    return this.createReadResponse(req, objectName, this.toPublicData(object));
   }
 
   /**
@@ -469,6 +481,8 @@ export class APIGenerator {
   private async handleList(
     collection: SmrtCollection<SmrtObject>,
     params: URLSearchParams,
+    req: Request,
+    objectName?: string,
   ): Promise<Response> {
     const limit = Number.parseInt(params.get('limit') || '50', 10);
     const offset = Number.parseInt(params.get('offset') || '0', 10);
@@ -511,7 +525,9 @@ export class APIGenerator {
       orderBy,
     });
 
-    return this.createJsonResponse(
+    return this.createReadResponse(
+      req,
+      objectName,
       objects.map((object: SmrtObject) => this.toPublicData(object)),
     );
   }
@@ -698,6 +714,39 @@ export class APIGenerator {
     return typeof serializable?.toPublicJSON === 'function'
       ? serializable.toPublicJSON()
       : object;
+  }
+
+  /**
+   * Create a JSON read response with conditional-GET support (#1757): a strong
+   * body-hash ETag, `If-None-Match` → 304 with an empty body, and the
+   * Cache-Control policy resolved from the object's `@smrt({ api })` config
+   * (private + revalidatable by default; shared `s-maxage` only for public
+   * models that opt in). Tenant-scoped models are always private: their bodies
+   * vary with tenant context, which URL-keyed shared caches cannot see.
+   */
+  private createReadResponse(
+    req: Request,
+    objectName: string | undefined,
+    payload: unknown,
+  ): Response {
+    const config = objectName
+      ? ObjectRegistry.getConfig(objectName)
+      : undefined;
+    const apiConfig = config?.api;
+    // Canonical accessor covers both `@smrt({ tenantScoped })` and the
+    // manifest-merged `@TenantScoped()` decorator form; the raw config flag is
+    // a belt-and-braces fallback for registrations not yet normalized.
+    const tenantScoped = objectName
+      ? ObjectRegistry.isTenantScoped(objectName) || !!config?.tenantScoped
+      : false;
+    if (objectName) {
+      warnIfSharedCacheNeutralized(objectName, apiConfig, tenantScoped);
+    }
+    return conditionalJsonResponse(
+      req,
+      payload,
+      resolveReadCacheControl(apiConfig, { tenantScoped }),
+    );
   }
 
   /**

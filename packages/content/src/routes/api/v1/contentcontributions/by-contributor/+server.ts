@@ -113,7 +113,7 @@ export const GET: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentContributions["listForContributor"]>;
+  type ActionArgs = Parameters<ContentContributions['listForContributor']>;
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   ) as ActionArgs[0];

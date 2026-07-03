@@ -115,7 +115,6 @@ describe('Content API Endpoints', () => {
       smrtAuth: true,
       tenantId: 'test-tenant',
       profileId: 'test-user',
-      smrtAuth: true,
       // We pass the global test db down through a mocked context or expect getSmrtClient to pick up the global test registry
     };
   });
@@ -132,6 +131,7 @@ describe('Content API Endpoints', () => {
   function currentRequest(
     body?: any,
     searchParams: Record<string, string> = {},
+    headers: Record<string, string> = {},
   ) {
     const url = new URL('http://localhost');
     for (const [k, v] of Object.entries(searchParams)) {
@@ -139,6 +139,8 @@ describe('Content API Endpoints', () => {
     }
     return {
       url,
+      // Generated GET handlers read If-None-Match for conditional GET (#1757).
+      headers: new Headers(headers),
       json: async () => body,
     };
   }
@@ -197,6 +199,7 @@ describe('Content API Endpoints', () => {
       // Verify via GET
       const getRes = await getSingle({
         params: { id: data.id },
+        request: currentRequest() as any,
         locals: mockLocals,
       });
       const getData = await unwrapJson(getRes);
@@ -234,6 +237,40 @@ describe('Content API Endpoints', () => {
       );
       expect(data.count).toBe(2);
     });
+
+    it('serves conditional GET: private ETag + 304 on If-None-Match (#1757)', async () => {
+      await currentContents?.create({
+        name: 'Post A',
+        title: 'Post A',
+        tenantId: 'test-tenant',
+      });
+
+      const req = currentRequest();
+      const first = await getList({
+        request: req as any,
+        locals: mockLocals,
+        url: req.url as any,
+      });
+      expect(first.status).toBe(200);
+      // Content declares no api.public → private revalidatable policy.
+      expect(first.headers.get('cache-control')).toBe('private, no-cache');
+      const etag = first.headers.get('etag') as string;
+      expect(etag).toMatch(/^"/);
+
+      const revalidateReq = currentRequest(
+        undefined,
+        {},
+        { 'if-none-match': etag },
+      );
+      const revalidated = await getList({
+        request: revalidateReq as any,
+        locals: mockLocals,
+        url: revalidateReq.url as any,
+      });
+      expect(revalidated.status).toBe(304);
+      expect(await revalidated.text()).toBe('');
+      expect(revalidated.headers.get('etag')).toBe(etag);
+    });
   });
 
   describe('GET /api/v1/contents/[id]', () => {
@@ -252,6 +289,7 @@ describe('Content API Endpoints', () => {
 
       const res = await getSingle({
         params: { id: main.id },
+        request: currentRequest() as any,
         locals: mockLocals,
       });
       const data = await unwrapJson(res);
@@ -269,6 +307,7 @@ describe('Content API Endpoints', () => {
       await expect(
         getSingle({
           params: { id: 'missing' },
+          request: currentRequest() as any,
           locals: mockLocals,
         }),
       ).rejects.toMatchObject({
@@ -334,6 +373,7 @@ describe('Content API Endpoints', () => {
       await expect(
         getSingle({
           params: { id: main.id },
+          request: currentRequest() as any,
           locals: mockLocals,
         }),
       ).rejects.toMatchObject({

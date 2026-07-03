@@ -443,6 +443,37 @@ await generator.generate();
 // Creates: ./api/documents-routes.js with OpenAPI documentation
 ```
 
+### Caching Headers (Conditional GET)
+
+Generated read routes (`list` and `get`) support conditional GET out of the box, on both the REST generator and the generated SvelteKit routes:
+
+- Every 200 read response carries a **strong ETag** — a SHA-256 hash of the serialized JSON body — plus a `Cache-Control` header.
+- A request whose `If-None-Match` matches the current ETag is answered `304 Not Modified` with an **empty body**, saving transfer, parse, and re-render. (v1 still runs the query; a later slice derives the ETag from the change feed for zero-query 304s.)
+- Any mutation that changes the serialized data changes the ETag, so stale validators revalidate to a fresh 200.
+
+The `Cache-Control` policy is resolved from the object's `@smrt({ api })` config:
+
+| Model config | Read `Cache-Control` |
+|--------------|----------------------|
+| Default (any non-public model) | `private, no-cache` — browsers may store but must revalidate; shared caches never store |
+| `api: { public: true }` (no cache opt-in) | `private, no-cache` |
+| `api: { public: true \| 'read', cache: { sMaxage: n } }` | `public, max-age=0, s-maxage=n` — CDNs serve for `n` seconds; browsers still revalidate |
+| Tenant-scoped model (`@smrt({ tenantScoped })` or `@TenantScoped()`, **any** mode) | `private, no-cache` — always; `sMaxage` is ignored with a one-time warning |
+
+```typescript
+// Opt a genuinely public model into CDN caching for 5 minutes:
+@smrt({ api: { public: 'read', cache: { sMaxage: 300 } } })
+export class Article extends SmrtObject { /* ... */ }
+```
+
+Notes:
+
+- `api.cache.sMaxage` is only honored when reads are public (`public: true` or `public: 'read'`). **Non-public models never emit shared-cache headers**, even if `sMaxage` is configured.
+- **Tenant-scoped models never emit shared-cache headers** (any mode, including `'optional'`): the response body varies with the tenant context resolved from the session cookie, which URL-keyed shared caches cannot see — honoring `sMaxage` would serve one tenant's rows to other tenants or anonymous visitors. The knob is neutralized to `private, no-cache` and a one-time warning is logged.
+- `max-age=0` keeps browsers revalidating (cheap 304s), so end users see edits immediately while shared caches absorb anonymous traffic.
+- Reserve the opt-in for responses that are identical for every requester; it is distinct from the top-level `@smrt({ cache })` knob, which configures the server-side collection read-through cache.
+- Mutations (`create`/`update`/`delete`) and custom action routes are unaffected.
+
 ### MCP Server Generation
 
 ```typescript

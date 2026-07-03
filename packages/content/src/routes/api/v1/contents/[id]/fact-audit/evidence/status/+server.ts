@@ -107,7 +107,7 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
-  type ActionArgs = Parameters<Content["updateFactEvidenceStatusAction"]>;
+  type ActionArgs = Parameters<Content['updateFactEvidenceStatusAction']>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await item.updateFactEvidenceStatusAction(options);

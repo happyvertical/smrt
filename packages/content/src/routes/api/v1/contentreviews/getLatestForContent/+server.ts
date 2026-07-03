@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentReviewCollection["getLatestForContent"]>;
+  type ActionArgs = Parameters<ContentReviewCollection['getLatestForContent']>;
   type ActionOptions = {
     contentId: ActionArgs[0];
     kind: ActionArgs[1];

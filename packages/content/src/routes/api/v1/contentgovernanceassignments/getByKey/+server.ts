@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentGovernanceAssignmentCollection["getByKey"]>;
+  type ActionArgs = Parameters<ContentGovernanceAssignmentCollection['getByKey']>;
   type ActionOptions = {
     key: ActionArgs[0];
   };

@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentContributorCollection["findOrCreateByEmail"]>;
+  type ActionArgs = Parameters<ContentContributorCollection['findOrCreateByEmail']>;
   const body: unknown = await request.json();
   const options = body as ActionArgs[0];
   const result = await typedCollection.findOrCreateByEmail(options);

@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentContributionAttachmentCollection["listForContribution"]>;
+  type ActionArgs = Parameters<ContentContributionAttachmentCollection['listForContribution']>;
   type ActionOptions = {
     contributionId: ActionArgs[0];
   };

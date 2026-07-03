@@ -113,7 +113,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     );
 
 
-  type ActionArgs = Parameters<ContentContributionAttachmentCollection["listForRevision"]>;
+  type ActionArgs = Parameters<ContentContributionAttachmentCollection['listForRevision']>;
   type ActionOptions = {
     revisionId: ActionArgs[0];
   };
