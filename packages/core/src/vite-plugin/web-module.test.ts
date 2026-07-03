@@ -31,7 +31,7 @@ function getHook(plugin: Record<string, unknown>, name: string) {
 
 describe('smrtPlugin load (\0smrt:web virtual module)', () => {
   let projectRoot: string;
-  // biome-ignore lint/suspicious/noExplicitAny: duck-typed Vite plugin hooks in tests
+  // biome config exempts tests from noExplicitAny; Vite plugin hooks are duck-typed here
   let plugin: any;
   let load: (id: string) => Promise<string | null>;
 
@@ -40,7 +40,11 @@ describe('smrtPlugin load (\0smrt:web virtual module)', () => {
     mkdirSync(join(projectRoot, 'src'), { recursive: true });
     writeFileSync(
       join(projectRoot, 'package.json'),
-      JSON.stringify({ name: 'mini-web-app', version: '0.0.1', type: 'module' }),
+      JSON.stringify({
+        name: 'mini-web-app',
+        version: '0.0.1',
+        type: 'module',
+      }),
     );
     writeFileSync(
       join(projectRoot, 'src', 'objects.ts'),

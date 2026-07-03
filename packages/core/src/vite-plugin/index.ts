@@ -1394,9 +1394,11 @@ function selectWebCollectionEntries(manifest: SmartObjectManifest): Array<{
     });
   }
 
-  return [...byCollection.values()].map(
-    ({ collection, obj, actions }) => ({ collection, obj, actions }),
-  );
+  return [...byCollection.values()].map(({ collection, obj, actions }) => ({
+    collection,
+    obj,
+    actions,
+  }));
 }
 
 function generateWebModule(manifest: SmartObjectManifest): string {
