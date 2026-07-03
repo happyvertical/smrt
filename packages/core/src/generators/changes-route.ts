@@ -8,9 +8,12 @@
  *
  * Contract (part of the client/mobile sync contract, PRD #1755):
  * - `GET {basePath}/_changes?since=<cursor>&tables=<a,b>&limit=<n>` returns
- *   `{ changes, cursor }` — see `getChangesSince` for the exact cursor
- *   guarantee (strictly monotonic; reads miss no committed changes under
- *   concurrent writers).
+ *   `{ changes, cursor, resyncRequired? }` — see `getChangesSince` for the
+ *   exact cursor guarantee (strictly monotonic; reads miss no committed
+ *   changes under concurrent writers). `resyncRequired: true` — served as
+ *   HTTP 200, it is protocol state rather than an error — means the cursor
+ *   cannot be served incrementally (pruned out of the retained window, or
+ *   foreign/reset) and the client must re-fetch its data in full.
  * - **Auth is fail-closed** (#1540 posture): the route requires the
  *   generator's `authMiddleware`. Without one configured, every request is
  *   refused with 401 — the feed spans all tables, so per-model

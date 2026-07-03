@@ -56,20 +56,31 @@
  * it and shares its fate (a rollback removes the change row with the data
  * row).
  *
- * ## Known gap (documented in the PRD)
+ * ## Known gaps (documented in the PRD)
  *
- * Writes that bypass framework mutation paths (raw SQL) are invisible to
- * the feed — the same accepted gap as the #1499 collection cache.
- * {@link bumpChangeFeed} is the manual escape hatch: out-of-band writers
- * append a synthetic change row for the affected table.
+ * - Writes that bypass framework mutation paths (raw SQL) are invisible to
+ *   the feed — the same accepted gap as the #1499 collection cache.
+ *   {@link bumpChangeFeed} is the manual escape hatch: out-of-band writers
+ *   append a synthetic change row for the affected table.
+ * - **Spurious `update` entries**: `SmrtObject.save()` has no dirty-check,
+ *   so a field-unchanged `.save()` still appends an `update` row. This is
+ *   by design — the writer observes writes, not diffs (it has no old-row
+ *   access), so the feed faithfully mirrors the write path. Diff-aware
+ *   paths (`getOrUpsert()`'s diff guard, the sync-apply endpoint's no-op
+ *   detection) short-circuit before `save()` and append nothing.
+ *   Subscribers must tolerate spurious entries; they are convergent — a
+ *   re-fetch returns identical data.
  *
  * ## Retention
  *
  * The log is append-only and grows with write volume. {@link pruneChangeFeed}
  * bounds it by age (`maxAgeMs`) and/or row count (`maxRows`); call it from a
  * scheduled job sized so the retention window comfortably exceeds the
- * slowest consumer's polling interval. A consumer whose cursor predates the
- * retained window silently misses pruned entries and must full-resync.
+ * slowest consumer's polling interval. Pruning deletes oldest-first and
+ * always retains the newest entry, so retained sequences stay a contiguous
+ * `[floor..horizon]` run — which is how {@link getChangesSince} *detects* a
+ * consumer whose cursor predates the retained window and answers it with
+ * `resyncRequired: true` instead of silently skipping the pruned changes.
  *
  * @see https://github.com/happyvertical/smrt/issues/1758
  * @packageDocumentation
@@ -156,6 +167,23 @@ export interface ChangeFeedPage {
    * as `since` to observe every later change exactly once.
    */
   cursor: number;
+  /**
+   * Present (and `true`) when the supplied cursor cannot be served
+   * incrementally and the consumer must fall back to a full resync:
+   *
+   * - the cursor predates the retained window (entries at or below it were
+   *   pruned away — the changes between it and the retained floor are gone
+   *   for good), or
+   * - the cursor is ahead of the committed horizon / unknown to this
+   *   database (a foreign or reset cursor).
+   *
+   * When set, `changes` is empty and `cursor` echoes `since` unchanged —
+   * the consumer must re-fetch its data in full and restart polling from
+   * the cursor returned by its post-resync read. Detection is computed on
+   * the **unfiltered** log: `tables`/`tenantId` filters legitimately hide
+   * rows and never trigger (or mask) a resync signal.
+   */
+  resyncRequired?: boolean;
 }
 
 /** Input for {@link appendChange} / {@link bumpChangeFeed}. */
@@ -364,13 +392,27 @@ export async function bumpChangeFeed(
  * persist and poll with: committed sequences are contiguous (see module
  * docs), so nothing can commit at or below the observed horizon afterwards —
  * reads miss no committed change under concurrent writers and never return
- * the same change twice. When `since` is already at (or beyond) the
- * horizon, returns an empty page with `cursor: since`.
+ * the same change twice. When `since` is already at the horizon, returns an
+ * empty page with `cursor: since`.
  *
- * Retention caveat: if `since` predates the retained window (entries were
- * pruned), the pruned changes are silently skipped — consumers must treat a
- * cursor older than their deployment's retention window as requiring a full
- * resync.
+ * ## Resync detection (pruned / foreign cursors)
+ *
+ * A cursor that cannot be served incrementally is flagged with
+ * `resyncRequired: true` (empty `changes`, `cursor` echoed unchanged) so
+ * pollers never go silently, permanently stale:
+ *
+ * - **Pruned gap**: retained sequences always form a contiguous run
+ *   `[floor..horizon]` and {@link pruneChangeFeed} deletes oldest-first
+ *   while always retaining the newest entry, so `since < floor - 1` proves
+ *   changes between the cursor and the retained window were pruned away.
+ * - **Foreign/reset cursor**: `since > horizon` (ahead of anything this
+ *   database ever allocated), including any `since > 0` against a feed
+ *   with no entries.
+ *
+ * Detection runs on the **unfiltered** log — `tables`/`tenantId` filters
+ * legitimately hide rows and never trigger (or mask) the signal. A caught-up
+ * consumer (`since === horizon`) is never asked to resync, even when
+ * retention has pruned everything older.
  *
  * Filters (`tables`, `tenantId`) affect which rows are *returned*, never how
  * the cursor advances — an exhausted filtered page still advances to the
@@ -395,12 +437,37 @@ export async function getChangesSince(
 
   // The committed horizon: every seq <= horizon is committed and immutable
   // (append-only + contiguous allocation), so the page below is stable even
-  // though it runs as a separate statement.
-  const horizonRows = getQueryRows(
-    await db.query(`SELECT MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`),
+  // though it runs as a separate statement. The floor bounds the retained
+  // window for pruned-cursor detection; both are computed UNFILTERED so
+  // table/tenant filters can neither trigger nor mask a resync signal.
+  const boundsRows = getQueryRows(
+    await db.query(
+      `SELECT MIN(seq) AS floor, MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`,
+    ),
   );
-  const horizon = toSeqNumber(horizonRows[0]?.horizon);
-  if (horizon <= since) {
+  const floor = toSeqNumber(boundsRows[0]?.floor);
+  const horizon = toSeqNumber(boundsRows[0]?.horizon);
+
+  if (horizon === 0) {
+    // No entries at all. A zero cursor is simply "no changes ever"; any
+    // other cursor came from a different database (or a reset feed) and
+    // cannot be served incrementally.
+    return since === 0
+      ? { changes: [], cursor: 0 }
+      : { changes: [], cursor: since, resyncRequired: true };
+  }
+
+  if (since > horizon) {
+    // Foreign or reset cursor — ahead of anything this database allocated.
+    return { changes: [], cursor: since, resyncRequired: true };
+  }
+
+  if (since < floor - 1) {
+    // Pruned gap — the changes with seq in (since, floor) are gone for good.
+    return { changes: [], cursor: since, resyncRequired: true };
+  }
+
+  if (horizon === since) {
     return { changes: [], cursor: since };
   }
 
@@ -505,12 +572,18 @@ function normalizeTimestamp(value: unknown): string {
  * - `maxRows`: keep only the newest N entries by sequence.
  * - `maxAgeMs`: drop entries older than the cutoff.
  *
- * Pruning never renumbers surviving entries, so cursors within the retained
- * window keep working. A cursor older than the retained window silently
- * skips the pruned range — schedule pruning (e.g. via `@happyvertical/
- * smrt-jobs`) with a retention window comfortably larger than the slowest
- * consumer's polling interval, and treat older client cursors as requiring
- * a full resync.
+ * Pruning deletes oldest-first, never renumbers surviving entries, and
+ * **always retains the newest entry** (a non-empty feed is never emptied,
+ * whatever the bounds say). That invariant anchors pruned-cursor detection:
+ * retained sequences stay a contiguous run `[floor..horizon]`, so
+ * {@link getChangesSince} can prove a cursor predates the retained window
+ * (`resyncRequired`) — and a fully caught-up consumer keeps polling
+ * normally even after everything older was pruned.
+ *
+ * Cursors within the retained window keep working. Schedule pruning (e.g.
+ * via `@happyvertical/smrt-jobs`) with a retention window comfortably
+ * larger than the slowest consumer's polling interval; consumers whose
+ * cursor falls out of it are told to full-resync via `resyncRequired`.
  *
  * @returns The number of entries pruned (approximate under concurrent prunes).
  */
@@ -530,14 +603,21 @@ export async function pruneChangeFeed(
   }
 
   const p = placeholders(db);
+
+  // Snapshot the horizon once: both bounds prune strictly below it so the
+  // newest entry always survives (see resync-detection contract above).
+  const horizonRows = getQueryRows(
+    await db.query(`SELECT MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`),
+  );
+  const horizon = toSeqNumber(horizonRows[0]?.horizon);
+  if (horizon === 0) {
+    return { pruned: 0 };
+  }
+
   let pruned = 0;
 
   if (maxRows != null) {
-    const horizonRows = getQueryRows(
-      await db.query(`SELECT MAX(seq) AS horizon FROM ${CHANGE_FEED_TABLE}`),
-    );
-    const horizon = toSeqNumber(horizonRows[0]?.horizon);
-    const pruneThrough = horizon - Math.floor(maxRows);
+    const pruneThrough = Math.min(horizon - Math.floor(maxRows), horizon - 1);
     if (pruneThrough > 0) {
       pruned += await deleteCounted(db, `seq <= ${p(1)}`, [pruneThrough]);
     }
@@ -545,7 +625,11 @@ export async function pruneChangeFeed(
 
   if (maxAgeMs != null) {
     const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
-    pruned += await deleteCounted(db, `created_at < ${p(1)}`, [cutoff]);
+    pruned += await deleteCounted(
+      db,
+      `created_at < ${p(1)} AND seq < ${p(2)}`,
+      [cutoff, horizon],
+    );
   }
 
   return { pruned };

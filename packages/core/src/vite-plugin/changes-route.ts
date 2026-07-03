@@ -133,7 +133,10 @@ function establishTenantContext(locals: unknown): void {
 // Part of the client/mobile sync contract: poll with the returned cursor to
 // observe every committed framework save/delete (deletes are tombstones)
 // exactly once. Query params: since (cursor, default 0), tables
-// (comma-separated), limit.
+// (comma-separated), limit. A response with resyncRequired: true (still
+// HTTP 200 — protocol state, not an error) means the cursor cannot be
+// served incrementally (pruned or foreign) and the client must re-fetch
+// in full before resuming polling.
 
 import { error, json } from '@sveltejs/kit';
 import { getTenantScopedChangesSince } from '@happyvertical/smrt-core';

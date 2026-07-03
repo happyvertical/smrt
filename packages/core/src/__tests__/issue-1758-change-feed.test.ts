@@ -315,15 +315,20 @@ describe('change feed spine (issue #1758)', () => {
       expect(next.cursor).toBe(3);
     });
 
-    it('a cursor at or beyond the horizon returns an empty page and never regresses', async () => {
+    it('a caught-up cursor idles normally; a cursor beyond the horizon is flagged for resync', async () => {
       const empty = await getChangesSince(db, { since: 0 });
       expect(empty).toEqual({ changes: [], cursor: 0 });
 
       const widgets = await ChangeFeedWidgetCollection.create({ db });
       await widgets.create({ name: 'w' });
 
+      const caughtUp = await getChangesSince(db, { since: 1 });
+      expect(caughtUp).toEqual({ changes: [], cursor: 1 });
+
+      // A foreign/reset cursor can never be served incrementally: cursor is
+      // echoed unchanged (never regresses) and the resync flag is raised.
       const beyond = await getChangesSince(db, { since: 99 });
-      expect(beyond).toEqual({ changes: [], cursor: 99 });
+      expect(beyond).toEqual({ changes: [], cursor: 99, resyncRequired: true });
     });
 
     it('rejects invalid cursors', async () => {
@@ -406,7 +411,8 @@ describe('change feed spine (issue #1758)', () => {
       const { pruned } = await pruneChangeFeed(db, { maxRows: 3 });
       expect(pruned).toBe(7);
 
-      const { changes } = await getChangesSince(db, { since: 0 });
+      // Reading from the retained-window edge serves the survivors.
+      const { changes } = await getChangesSince(db, { since: 7 });
       expect(changes.map((change) => change.seq)).toEqual([8, 9, 10]);
 
       // Appends continue from the retained head — no seq reuse.
@@ -415,28 +421,139 @@ describe('change feed spine (issue #1758)', () => {
       expect(after.changes.map((change) => change.seq)).toEqual([11]);
     });
 
-    it('maxAgeMs prunes old entries', async () => {
+    it('maxAgeMs prunes old entries but always retains the newest', async () => {
       await bumpChangeFeed(db, { table: 'products', rowId: 'old' });
-      await bumpChangeFeed(db, { table: 'products', rowId: 'older' });
+      await bumpChangeFeed(db, { table: 'products', rowId: 'newest' });
 
       // Let the entries age past the cutoff (created_at < now - maxAgeMs is
       // a strict comparison at millisecond precision).
       await new Promise((resolve) => setTimeout(resolve, 15));
+
+      // Both entries are older than the cutoff, but a non-empty feed is
+      // never emptied: the newest entry survives so caught-up consumers
+      // keep polling without a resync (see resync-detection tests).
       const { pruned } = await pruneChangeFeed(db, { maxAgeMs: 5 });
-      expect(pruned).toBe(2);
-      expect(await allChanges(db)).toHaveLength(0);
+      expect(pruned).toBe(1);
+      const survivors = await getChangesSince(db, { since: 1 });
+      expect(survivors.changes.map((change) => change.rowId)).toEqual([
+        'newest',
+      ]);
 
       // A generous window prunes nothing.
-      await bumpChangeFeed(db, { table: 'products', rowId: 'fresh' });
       const second = await pruneChangeFeed(db, { maxAgeMs: 60_000 });
       expect(second.pruned).toBe(0);
-      expect(await allChanges(db)).toHaveLength(1);
+    });
+
+    it('never empties a non-empty feed (maxRows: 0 keeps the newest entry)', async () => {
+      await bumpChangeFeed(db, { table: 'products', rowId: 'a' });
+      await bumpChangeFeed(db, { table: 'products', rowId: 'b' });
+
+      const { pruned } = await pruneChangeFeed(db, { maxRows: 0 });
+      expect(pruned).toBe(1);
+
+      const page = await getChangesSince(db, { since: 1 });
+      expect(page.changes.map((change) => change.seq)).toEqual([2]);
+      expect(page.resyncRequired).toBeUndefined();
     });
 
     it('requires at least one bound', async () => {
       await expect(pruneChangeFeed(db, {})).rejects.toThrow(
         /maxAgeMs and\/or maxRows/,
       );
+    });
+  });
+
+  describe('resync detection (pruned/foreign cursors)', () => {
+    it('an empty feed serves since=0 normally but flags any nonzero cursor', async () => {
+      const fresh = await getChangesSince(db, { since: 0 });
+      expect(fresh).toEqual({ changes: [], cursor: 0 });
+      expect(fresh.resyncRequired).toBeUndefined();
+
+      // No entries were ever recorded here — a nonzero cursor came from a
+      // different database (or a reset feed) and cannot be served.
+      const foreign = await getChangesSince(db, { since: 5 });
+      expect(foreign).toEqual({ changes: [], cursor: 5, resyncRequired: true });
+    });
+
+    it('a cursor below the retained window is flagged; the window edge still serves', async () => {
+      for (let i = 0; i < 10; i++) {
+        await bumpChangeFeed(db, { table: 'products', rowId: `row-${i}` });
+      }
+      await pruneChangeFeed(db, { maxRows: 3 }); // retained run: [8..10]
+
+      // since < floor-1: the changes in (since, floor) are gone for good —
+      // empty page, cursor NOT advanced, resync demanded.
+      const longGone = await getChangesSince(db, { since: 2 });
+      expect(longGone.changes).toHaveLength(0);
+      expect(longGone.cursor).toBe(2);
+      expect(longGone.resyncRequired).toBe(true);
+
+      const justBelow = await getChangesSince(db, { since: 6 });
+      expect(justBelow.resyncRequired).toBe(true);
+
+      // since == floor-1: the next expected row is the floor itself —
+      // incremental reads still work.
+      const edge = await getChangesSince(db, { since: 7 });
+      expect(edge.changes.map((change) => change.seq)).toEqual([8, 9, 10]);
+      expect(edge.resyncRequired).toBeUndefined();
+    });
+
+    it('rows hidden by filters never trigger (or mask) a resync signal', async () => {
+      const gadgets = await ChangeFeedGadgetCollection.create({ db });
+      const docs = await ChangeFeedTenantDocCollection.create({ db });
+      await gadgets.create({ label: 'g1' });
+      await docs.create({ title: 'a1', tenantId: 'tenant-a' });
+
+      // Table filter hides every row: normal empty page, cursor advances.
+      const tableFiltered = await getChangesSince(db, {
+        since: 0,
+        tables: [WIDGETS_TABLE],
+      });
+      expect(tableFiltered.changes).toHaveLength(0);
+      expect(tableFiltered.cursor).toBe(2);
+      expect(tableFiltered.resyncRequired).toBeUndefined();
+
+      // Tenant filter hides the tenant-a row: same story.
+      const tenantFiltered = await getChangesSince(db, {
+        since: 0,
+        tenantId: null,
+      });
+      expect(
+        tenantFiltered.changes.every((change) => change.tenantId === null),
+      ).toBe(true);
+      expect(tenantFiltered.cursor).toBe(2);
+      expect(tenantFiltered.resyncRequired).toBeUndefined();
+    });
+
+    it('a caught-up consumer keeps polling normally after age-pruning wipes the backlog', async () => {
+      await bumpChangeFeed(db, { table: 'products', rowId: 'a' });
+      await bumpChangeFeed(db, { table: 'products', rowId: 'b' });
+      const caughtUp = (await getChangesSince(db, { since: 0 })).cursor;
+      expect(caughtUp).toBe(2);
+
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      await pruneChangeFeed(db, { maxAgeMs: 5 }); // newest entry survives
+
+      const idle = await getChangesSince(db, { since: caughtUp });
+      expect(idle).toEqual({ changes: [], cursor: caughtUp });
+      expect(idle.resyncRequired).toBeUndefined();
+    });
+
+    it('getTenantScopedChangesSince inherits resync detection', async () => {
+      for (let i = 0; i < 5; i++) {
+        await bumpChangeFeed(db, {
+          table: 'products',
+          rowId: `r${i}`,
+          tenantId: 'tenant-a',
+        });
+      }
+      await pruneChangeFeed(db, { maxRows: 1 }); // retained run: [5]
+
+      setDispatchTenantResolver(() => 'tenant-a');
+      const page = await getTenantScopedChangesSince(db, { since: 1 });
+      expect(page.changes).toHaveLength(0);
+      expect(page.cursor).toBe(1);
+      expect(page.resyncRequired).toBe(true);
     });
   });
 
@@ -617,6 +734,22 @@ describe('change feed spine (issue #1758)', () => {
         new Request('http://localhost/api/v1/_changes'),
       );
       expect(response.status).toBe(503);
+    });
+
+    it('surfaces resyncRequired to HTTP clients as protocol state (200, not an error)', async () => {
+      const handler = createHandler({ withAuth: 'pass' });
+      const response = await handler(
+        new Request('http://localhost/api/v1/_changes?since=999'),
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        changes: unknown[];
+        cursor: number;
+        resyncRequired?: boolean;
+      };
+      expect(body.resyncRequired).toBe(true);
+      expect(body.changes).toHaveLength(0);
+      expect(body.cursor).toBe(999);
     });
   });
 });
