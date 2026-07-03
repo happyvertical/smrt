@@ -256,7 +256,7 @@ export function buildWebRelationships(
 
     // De-dupe on (field, relatedCollection): a model never declares the same
     // field twice, but guard anyway so the emitted edge list is stable.
-    const dedupeKey = `${fieldName} ${target.collection}`;
+    const dedupeKey = `${fieldName}:${target.collection}`;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
