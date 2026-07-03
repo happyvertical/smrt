@@ -736,6 +736,44 @@ describe('change feed spine (issue #1758)', () => {
       expect(response.status).toBe(503);
     });
 
+    it('serves the feed via a registered collection when context.db is unset (registerCollection path)', async () => {
+      // The documented `registerCollection()` wiring (see sync-apply.spec.ts)
+      // never sets APIContext.db — the live handle lives on each registered
+      // collection. Without a fallback the feed 503s here even though the
+      // database is reachable; the generator must resolve db from the first
+      // registered collection.
+      const widgets = await ChangeFeedWidgetCollection.create({ db });
+      const widget = await widgets.create({
+        name: 'via-registered-collection',
+      });
+
+      const generator = new APIGenerator(
+        {
+          basePath: '/api/v1',
+          // Passthrough auth so the fail-closed gate is not what we measure.
+          authMiddleware: () => async (req: Request) => req,
+        },
+        // No context: APIContext.db is deliberately unset.
+      );
+      generator.registerCollection('changefeedwidgets', widgets);
+      const handler = generator.generateHandler();
+
+      const response = await handler(
+        new Request('http://localhost/api/v1/_changes?since=0'),
+      );
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        changes: ChangeFeedEntry[];
+        cursor: number;
+      };
+      expect(body.changes).toHaveLength(1);
+      expect(body.changes[0]).toMatchObject({
+        table: WIDGETS_TABLE,
+        rowId: widget.id,
+        operation: 'create',
+      });
+    });
+
     it('surfaces resyncRequired to HTTP clients as protocol state (200, not an error)', async () => {
       const handler = createHandler({ withAuth: 'pass' });
       const response = await handler(

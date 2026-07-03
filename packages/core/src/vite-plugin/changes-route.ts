@@ -46,13 +46,20 @@ function isCollectionDefinition(objectDef: SmartObjectDefinition): boolean {
  * Pick the class the route resolves its database through: the first
  * non-collection object by sorted manifest key, for determinism across
  * builds.
+ *
+ * Returns the manifest **registry key** verbatim (which may be
+ * package-qualified, e.g. `@happyvertical/smrt-ledgers:Account`) — the emitted
+ * route passes it straight to `getCollection()`, exactly as the generated CRUD
+ * routes do. Collapsing it to a simple class name would resolve ambiguously
+ * when two loaded packages declare the same simple name (mirrors the #1778
+ * verbatim-key fix and the sync-apply route's `registryKey`).
  */
 function resolveAnchorClassName(manifest: SmartObjectManifest): string | null {
   const sortedNames = Object.keys(manifest.objects).sort();
   for (const name of sortedNames) {
     const def = manifest.objects[name];
     if (def && !isCollectionDefinition(def)) {
-      return def.className || name;
+      return name;
     }
   }
   return null;

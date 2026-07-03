@@ -64,7 +64,10 @@ const resolvedUrlDbs = new Map<string, Promise<DatabaseInterface>>();
 
 function resolveChangesDb(dbOption: unknown): Promise<DatabaseInterface> {
   if (dbOption && typeof dbOption === 'object') {
-    if ('query' in dbOption) {
+    if (
+      'query' in dbOption &&
+      typeof (dbOption as { query?: unknown }).query === 'function'
+    ) {
       return Promise.resolve(dbOption as DatabaseInterface);
     }
     let resolved = resolvedInstanceDbs.get(dbOption);

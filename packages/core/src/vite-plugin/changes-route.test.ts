@@ -101,6 +101,31 @@ describe('generateChangesRoute (#1758)', () => {
     expect(content).toContain('getTenantScopedChangesSince(collection.db');
     // Anchored on the alphabetically first non-collection class.
     expect(content).toContain("getCollection('Apple')");
+  });
+
+  it('anchors on the verbatim manifest registry key, not the bare className', () => {
+    // The registry key may be package-qualified while className is bare;
+    // getCollection() expects the key exactly as the generated CRUD routes
+    // pass it (#1778). Collapsing to className would resolve ambiguously when
+    // two loaded packages share a simple name.
+    generateChangesRoute(
+      projectRoot,
+      buildManifest({
+        '@happyvertical/smrt-ledgers:Account': {
+          className: 'Account',
+          collection: 'accounts',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: true },
+        },
+      }),
+      baseOptions,
+    );
+    const content = writtenRouteContent();
+    expect(content).toContain(
+      "getCollection('@happyvertical/smrt-ledgers:Account')",
+    );
+    expect(content).not.toContain("getCollection('Account')");
     // GET only — the feed is read-only over HTTP.
     expect(content).toContain('export const GET: RequestHandler');
     expect(content).not.toContain('export const POST');
