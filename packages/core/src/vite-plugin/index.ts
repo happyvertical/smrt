@@ -28,6 +28,7 @@ import {
 } from './sveltekit-generator.js';
 import {
   buildWebFieldDefinitions,
+  buildWebRelationships,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -1325,6 +1326,7 @@ function generateWebModule(manifest: SmartObjectManifest): string {
       idField: 'id',
       actions,
       fields: buildWebFieldDefinitions(obj),
+      relationships: buildWebRelationships(obj, manifest),
     };
   }
 
@@ -1808,6 +1810,23 @@ declare module '@happyvertical/smrt-virt-web' {
     default?: unknown;
   }
 
+  export type SmrtWebRelationshipKind =
+    | 'foreignKey'
+    | 'crossPackageRef'
+    | 'oneToMany'
+    | 'manyToMany';
+
+  /**
+   * A manifest-derived edge to a sibling REST collection. Mutating this
+   * collection invalidates the caches of the collections named by these edges
+   * (#1761 relationship-derived invalidation).
+   */
+  export interface SmrtWebRelationship {
+    field: string;
+    kind: SmrtWebRelationshipKind;
+    relatedCollection: string;
+  }
+
   export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
     name: string;
     className: string;
@@ -1815,6 +1834,8 @@ declare module '@happyvertical/smrt-virt-web' {
     idField: string;
     actions: string[];
     fields: Record<string, SmrtWebFieldDefinition>;
+    /** Manifest-derived relationship edges to sibling REST collections. */
+    relationships: SmrtWebRelationship[];
     /** Phantom row-type carrier for inference — never present at runtime. */
     _row?: TData;
   }

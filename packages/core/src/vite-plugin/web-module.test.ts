@@ -48,7 +48,7 @@ describe('smrtPlugin load (\0smrt:web virtual module)', () => {
     );
     writeFileSync(
       join(projectRoot, 'src', 'objects.ts'),
-      `import { SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
+      `import { SmrtCollection, SmrtObject, foreignKey } from '@happyvertical/smrt-core';
 
 // STI child declared BEFORE its base: the base model must still own the
 // shared table's collection definition (regression: Material extends Product
@@ -63,6 +63,15 @@ export class Widget extends SmrtObject {
   name: string = '';
   price: number = 0.0;
   inStock: boolean = true;
+  // FK to an API-exposed sibling: the runtime module must emit a manifest-
+  // derived relationship edge to that model's REST collection (#1761).
+  @foreignKey('Category')
+  categoryId: string = '';
+}
+
+@smrt({ api: { include: ['list', 'get'] } })
+export class Category extends SmrtObject {
+  label: string = '';
 }
 
 export class WidgetCollection extends SmrtCollection<Widget> {
@@ -114,7 +123,7 @@ export class HiddenGadget extends SmrtObject {
     expect(code).toContain('export function getCollectionDefinition');
 
     const definitions = extractDefinitions(code as string);
-    expect(Object.keys(definitions)).toEqual(['widgets']);
+    expect(Object.keys(definitions).sort()).toEqual(['categories', 'widgets']);
 
     const widgets = definitions.widgets as Record<string, unknown>;
     expect(widgets.className).toBe('Widget');
@@ -126,6 +135,26 @@ export class HiddenGadget extends SmrtObject {
       price: { type: 'decimal' },
       inStock: { type: 'boolean' },
     });
+  });
+
+  it('emits manifest-derived relationship edges to related REST collections (#1761)', async () => {
+    const code = (await load('\0smrt:web')) as string;
+    const definitions = extractDefinitions(code);
+
+    // Widget declares `@foreignKey('Category')`; the edge resolves to the
+    // categories REST collection — no hand-wired cache key.
+    const widgets = definitions.widgets as Record<string, unknown>;
+    expect(widgets.relationships).toEqual([
+      {
+        field: 'categoryId',
+        kind: 'foreignKey',
+        relatedCollection: 'categories',
+      },
+    ]);
+
+    // Category has no relationship fields — an empty edge list, never absent.
+    const categories = definitions.categories as Record<string, unknown>;
+    expect(categories.relationships).toEqual([]);
   });
 
   it('folds STI children into the base model definition even when the child is scanned first', async () => {
