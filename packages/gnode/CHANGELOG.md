@@ -1,5 +1,12 @@
 # @happyvertical/smrt-gnode
 
+## 0.37.9
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.37.9
+
 ## 0.37.8
 
 ### Patch Changes

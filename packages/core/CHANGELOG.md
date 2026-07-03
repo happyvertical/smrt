@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.37.9
+
+### Patch Changes
+
+- ### Features
+
+  - AdminShell standardized WASD workspace shell (#1786) (smrt-svelte)
+
+  ### Bug Fixes
+
+  - generated-client URL/emission/error/type fixes + integration test (#1794-#1797) (#1805) (core)
+  - @happyvertical/smrt-config@0.37.9
+  - @happyvertical/smrt-types@0.37.9
+  - @happyvertical/smrt-scanner@0.37.9
+
 ## 0.37.8
 
 ### Patch Changes
