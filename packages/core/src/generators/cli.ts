@@ -22,7 +22,7 @@
 import type { AIClient, AIClientOptions } from '@happyvertical/ai';
 import type { SmrtCollection } from '../collection';
 import type { DatabaseConfig } from '../database.js';
-import type { SmrtObject } from '../object';
+import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
 import { runWithTenantGate } from './tenant-gate.js';
@@ -32,7 +32,7 @@ import { runWithTenantGate } from './tenant-gate.js';
  * `@field({ sensitive })` values before serialization (#1540).
  */
 interface PublicSerializable {
-  toPublicJSON(): unknown;
+  toPublicJSON(options?: PublicJsonOptions): unknown;
 }
 
 /**
@@ -70,6 +70,8 @@ export interface CLIContext {
     id: string;
     roles?: string[];
   };
+  /** Resolved permission slugs held by the operator. */
+  permissions?: Iterable<string>;
   /**
    * Default tenant for tenant-scoped commands when no `--tenant` flag is given.
    * Hosts that authenticate an operator may set this from the principal.
@@ -562,17 +564,18 @@ export class CLIGenerator {
   private toPublicData(
     value: unknown,
     seen: WeakSet<object> = new WeakSet(),
+    options: PublicJsonOptions = this.getPublicJsonOptions(),
   ): unknown {
     if (value === null || typeof value !== 'object') return value;
     if (
       typeof (value as Partial<PublicSerializable>).toPublicJSON === 'function'
     ) {
-      return (value as PublicSerializable).toPublicJSON();
+      return (value as PublicSerializable).toPublicJSON(options);
     }
     if (Array.isArray(value)) {
       if (seen.has(value)) return value;
       seen.add(value);
-      return value.map((entry) => this.toPublicData(entry, seen));
+      return value.map((entry) => this.toPublicData(entry, seen, options));
     }
     const proto = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) return value;
@@ -580,9 +583,13 @@ export class CLIGenerator {
     seen.add(value);
     const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
-      out[key] = this.toPublicData(entry, seen);
+      out[key] = this.toPublicData(entry, seen, options);
     }
     return out;
+  }
+
+  private getPublicJsonOptions(): PublicJsonOptions {
+    return { permissions: this.context.permissions };
   }
 
   /** List the runnable commands grouped by object, for help output. */

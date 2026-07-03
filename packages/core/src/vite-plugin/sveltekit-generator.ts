@@ -358,6 +358,25 @@ function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
   return false;
 }
 
+function collectReadPermissionFields(
+  objectDef: SmartObjectDefinition,
+): Array<[string, string]> {
+  const fields = objectDef.fields ?? {};
+  const result: Array<[string, string]> = [];
+  for (const [name, def] of Object.entries(fields)) {
+    const permission =
+      typeof def.readPermission === 'string'
+        ? def.readPermission
+        : typeof def._meta?.readPermission === 'string'
+          ? def._meta.readPermission
+          : undefined;
+    if (permission) {
+      result.push([name, permission]);
+    }
+  }
+  return result;
+}
+
 /**
  * Emit the fail-closed authorization guard injected into generated route files
  * (#1540, 2c). Every generated CRUD/action handler calls `requireRouteAuth`,
@@ -367,11 +386,17 @@ function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
  */
 function generateAuthGuardHelper(objectDef: SmartObjectDefinition): string {
   const publicAccess = getApiPublicAccess(objectDef.decoratorConfig?.api);
+  const readPermissionFields = collectReadPermissionFields(objectDef);
 
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
 const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
+const READ_PERMISSION_FIELDS: Array<[string, string]> = ${JSON.stringify(readPermissionFields)};
+
+interface PublicJsonOptions {
+  permissions?: Iterable<string>;
+}
 
 function hasAuthenticatedPrincipal(locals: unknown): boolean {
   if (!locals || typeof locals !== 'object') return false;
@@ -399,13 +424,58 @@ function requireRouteAuth(locals: unknown, mutating: boolean): void {
   }
 }
 
+function getPublicJsonOptions(locals: unknown): PublicJsonOptions {
+  const l = readJsonRecord(locals);
+  const permissions = l.permissions ?? l.permissionSet ?? l.smrtPermissions;
+  if (Array.isArray(permissions) || permissions instanceof Set) {
+    return { permissions };
+  }
+  return {};
+}
+
+function hasReadPermission(
+  options: PublicJsonOptions,
+  permission: string,
+): boolean {
+  if (!options.permissions) return false;
+  for (const granted of options.permissions) {
+    if (granted === permission) return true;
+  }
+  return false;
+}
+
+function applyReadPermissionRedaction(
+  value: unknown,
+  options: PublicJsonOptions,
+): unknown {
+  if (READ_PERMISSION_FIELDS.length === 0) return value;
+  if (Array.isArray(value)) {
+    return value.map((entry) => applyReadPermissionRedaction(entry, options));
+  }
+  if (!value || typeof value !== 'object') return value;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  const out = { ...(value as Record<string, unknown>) };
+  const metaData =
+    out._meta_data && typeof out._meta_data === 'object'
+      ? { ...(out._meta_data as Record<string, unknown>) }
+      : null;
+  for (const [fieldName, permission] of READ_PERMISSION_FIELDS) {
+    if (hasReadPermission(options, permission)) continue;
+    delete out[fieldName];
+    if (metaData) delete metaData[fieldName];
+  }
+  if (metaData) out._meta_data = metaData;
+  return out;
+}
+
 // Sensitive-field-safe serialization for custom-action results (#1540): a
 // custom method may return a SmrtObject (or one nested in an array/plain
 // object), so recurse and route each through toPublicJSON() rather than letting
 // JSON.stringify call toJSON(). Non-plain instances (Date, etc.) and primitives
 // pass through; a cycle guard prevents infinite loops.
 interface PublicJsonSource {
-  toPublicJSON(): unknown;
+  toPublicJSON(options?: PublicJsonOptions): unknown;
 }
 
 function hasPublicJson(value: object): value is PublicJsonSource {
@@ -422,17 +492,18 @@ function readJsonRecord(value: unknown): Record<string, unknown> {
 
 function toPublicResult(
   value: unknown,
+  options: PublicJsonOptions,
   seen: WeakSet<object> = new WeakSet(),
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return null;
   if (hasPublicJson(value)) {
     seen.add(value);
-    return toPublicResult(value.toPublicJSON(), seen);
+    return toPublicResult(value.toPublicJSON(options), options, seen);
   }
   if (Array.isArray(value)) {
     seen.add(value);
-    return value.map((entry) => toPublicResult(entry, seen));
+    return value.map((entry) => toPublicResult(entry, options, seen));
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
@@ -441,7 +512,7 @@ function toPublicResult(
   for (const [key, entry] of Object.entries(
     value as Record<string, unknown>,
   )) {
-    out[key] = toPublicResult(entry, seen);
+    out[key] = toPublicResult(entry, options, seen);
   }
   return out;
 }
@@ -1895,6 +1966,7 @@ ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenan
 // List all ${className.toLowerCase()}s
 export const GET: RequestHandler = async ({ locals, url, request }) => {
 ${routeGuardPreamble(objectDef, false)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
@@ -1904,14 +1976,19 @@ ${
     ? `${listAndCount}
   // Custom serializer may render related-table data → v1 body-hash ETag (#1765).
   const serializedItems = await Promise.all(
-    items.map((item) => ${serializers.listItemSerializerName}(item)),
+    items.map(async (item) =>
+      applyReadPermissionRedaction(
+        await ${serializers.listItemSerializerName}(item),
+        publicJsonOptions,
+      ),
+    ),
   );
   return conditionalJson(request, { items: serializedItems, count, limit, offset });`
     : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
   // If-None-Match the list query below never runs (zero-query 304).
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${listAndCount}
-    const items_public = items.map((item) => item.toPublicJSON());
+    const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
     return { items: items_public, count, limit, offset };
   });`
 }
@@ -1924,6 +2001,7 @@ ${listAndCount}
 // Create new ${className.toLowerCase()}
 export const POST: RequestHandler = async ({ locals, request }) => {
 ${routeGuardPreamble(objectDef, true)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
   const data = applyWritablePolicy(body);
 
@@ -1935,9 +2013,12 @@ ${
     ? `
   const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(serializedItem, { status: 201 });`
+  return json(
+    applyReadPermissionRedaction(serializedItem, publicJsonOptions),
+    { status: 201 },
+  );`
     : `
-  return json(item.toPublicJSON(), { status: 201 });`
+  return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
 }
 };
 `
@@ -2050,6 +2131,7 @@ ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenan
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, false)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${
   getUsesSerializer
@@ -2057,14 +2139,17 @@ ${
 ${generateNotFoundError(className)}
   // Custom serializer may render related-table data → v1 body-hash ETag (#1765).
   const serializedItem = await ${serializers.itemSerializerName}(item);
-  return conditionalJson(request, serializedItem);`
+  return conditionalJson(
+    request,
+    applyReadPermissionRedaction(serializedItem, publicJsonOptions),
+  );`
     : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
   // (a delete advances the version, so a since-deleted row can't false-match);
   // a wildcard \`*\` is deferred until the fetch confirms the row exists.
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${getForRead}
 ${generateNotFoundError(className)}
-    return item.toPublicJSON();
+    return item.toPublicJSON(publicJsonOptions);
   });`
 }
 };
@@ -2076,6 +2161,7 @@ ${generateNotFoundError(className)}
 // Update ${simpleClassName.toLowerCase()}
 export const PUT: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, true)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -2089,9 +2175,9 @@ ${
     ? `
   const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(serializedItem);`
+  return json(applyReadPermissionRedaction(serializedItem, publicJsonOptions));`
     : `
-  return json(item.toPublicJSON());`
+  return json(item.toPublicJSON(publicJsonOptions));`
 }
 };
 `
@@ -2250,6 +2336,7 @@ function generateActionRouteHandler(
     return `// Custom collection method: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
   const typedCollection = collection as unknown as ${hostTypeName};
 ${generateCollectionNotRegisteredError(lookupClassName)}
@@ -2261,7 +2348,10 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
       invocationArgs,
     )};
 
-  return json({ action: '${actionName}', result: toPublicResult(result) });
+  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });
 };
 `;
   }
@@ -2277,6 +2367,7 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
+  const publicJsonOptions = getPublicJsonOptions(locals);
   const registered = ObjectRegistry.getClass('${lookupClassName}');
 ${generateClassNotRegisteredError(lookupClassName)}
 
@@ -2287,7 +2378,10 @@ ${optionsLoad}  const ClassRef = registered.constructor as typeof ${hostTypeName
     invocationArgs,
   )};
 
-  return json({ action: '${actionName}', result: toPublicResult(result) });
+  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });
 };
 `;
   }
@@ -2302,6 +2396,7 @@ ${optionsLoad}  const ClassRef = registered.constructor as typeof ${hostTypeName
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
 ${authGuardLine}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(lookupClassName)}
@@ -2312,7 +2407,10 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
     invocationArgs,
   )};
 
-  return json({ action: '${actionName}', result: toPublicResult(result) });
+  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });
 };
 `;
 }

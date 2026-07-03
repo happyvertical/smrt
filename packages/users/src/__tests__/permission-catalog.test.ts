@@ -2,7 +2,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import {
@@ -22,6 +22,9 @@ import {
 class PermissionCatalogRecord extends SmrtObject {
   tenantId: string = '';
   title: string = '';
+
+  @field({ readPermission: 'permission_catalog_records.read.internal' })
+  internalNote: string = '';
 
   async publish(): Promise<boolean> {
     return true;
@@ -102,6 +105,7 @@ describe('PermissionCatalogService', () => {
       .filter((slug) => slug.startsWith('permission_catalog_records.'));
 
     expect(matchingSlugs).toContain('permission_catalog_records.read');
+    expect(matchingSlugs).toContain('permission_catalog_records.read.internal');
     expect(
       matchingSlugs.filter(
         (slug) => slug === 'permission_catalog_records.read',

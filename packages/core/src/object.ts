@@ -22,10 +22,7 @@ import {
 } from './errors';
 import { createInterceptorContext, GlobalInterceptors } from './interceptors';
 import { ObjectRegistry } from './registry';
-import type {
-  RegisteredField,
-  SmrtObjectConstructor,
-} from './registry/types';
+import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   executeToolCall as executeToolCallInternal,
@@ -204,6 +201,37 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
    */
   // biome-ignore lint/suspicious/noExplicitAny: subclass option interfaces (plain, no index signature) are assignable to `[key:string]:any` but NOT to `:unknown`; narrowing breaks `super(options)` in every downstream model. S4 #1579.
   [key: string]: any;
+}
+
+/**
+ * Caller context for public/read serialization.
+ */
+export interface PublicJsonOptions {
+  /**
+   * Resolved permission slugs held by the caller. Fields declared with
+   * `@field({ readPermission })` are omitted unless this iterable contains the
+   * required slug. Missing permissions fail closed.
+   */
+  permissions?: Iterable<string> | null;
+}
+
+interface PublicJsonProjectionContext {
+  permissions: ReadonlySet<string>;
+}
+
+const EMPTY_PUBLIC_JSON_PERMISSIONS = new Set<string>();
+
+function normalizePublicJsonOptions(
+  options: PublicJsonOptions | undefined,
+): PublicJsonProjectionContext {
+  const rawPermissions = options?.permissions;
+  if (!rawPermissions) {
+    return { permissions: EMPTY_PUBLIC_JSON_PERMISSIONS };
+  }
+  if (rawPermissions instanceof Set) {
+    return { permissions: rawPermissions };
+  }
+  return { permissions: new Set(rawPermissions) };
 }
 
 /**
@@ -1002,7 +1030,12 @@ export class SmrtObject extends SmrtClass {
     const cachedFields = await ObjectRegistry.getAllFields(className);
     const fields: Record<
       string,
-      { name: string; type: string; _meta: Record<string, unknown>; value?: unknown }
+      {
+        name: string;
+        type: string;
+        _meta: Record<string, unknown>;
+        value?: unknown;
+      }
     > = {};
 
     for (const [key, field] of cachedFields.entries()) {
@@ -1215,7 +1248,8 @@ export class SmrtObject extends SmrtClass {
           // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
           const propTenancy =
             prop && typeof prop === 'object' && '__tenancy' in prop
-              ? (prop as { __tenancy?: { isTenantIdField?: boolean } }).__tenancy
+              ? (prop as { __tenancy?: { isTenantIdField?: boolean } })
+                  .__tenancy
               : undefined;
           const hasTenancyMarker =
             propTenancy?.isTenantIdField ||
@@ -1338,6 +1372,49 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Collect fields that require a resolved permission before public/read
+   * serialization includes them.
+   */
+  private getReadPermissionFieldNames(): Map<string, string> {
+    const className = this.getResolvedClassName();
+    const registered = ObjectRegistry.getClass(className);
+    const fieldMaps: Map<string, RegisteredField>[] = [
+      registered?.inheritedFields || ObjectRegistry.getFields(className),
+    ];
+
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedQualifiedName(),
+    );
+    if (tableStrategy === 'sti') {
+      const descendants = getSTIHierarchyMembers(
+        this.getResolvedQualifiedName(),
+      );
+      for (const descendant of descendants) {
+        fieldMaps.push(
+          ObjectRegistry.getClass(descendant)?.inheritedFields ||
+            ObjectRegistry.getFields(descendant),
+        );
+      }
+    }
+
+    const readPermissions = new Map<string, string>();
+    for (const fields of fieldMaps) {
+      for (const [key, def] of fields) {
+        const permission =
+          typeof def?.readPermission === 'string'
+            ? def.readPermission
+            : typeof def?._meta?.readPermission === 'string'
+              ? def._meta.readPermission
+              : undefined;
+        if (permission) {
+          readPermissions.set(key, permission);
+        }
+      }
+    }
+    return readPermissions;
+  }
+
+  /**
    * Public-safe serialization for network surfaces.
    *
    * Returns the same shape as `toJSON()` but with every `sensitive` field
@@ -1348,8 +1425,11 @@ export class SmrtObject extends SmrtClass {
    *
    * @returns A plain object safe to send to API consumers.
    */
-  toPublicJSON(): Record<string, unknown> {
-    return this.projectPublicJSON(new WeakSet<SmrtObject>());
+  toPublicJSON(options?: PublicJsonOptions): Record<string, unknown> {
+    return this.projectPublicJSON(
+      new WeakSet<SmrtObject>(),
+      normalizePublicJsonOptions(options),
+    );
   }
 
   /**
@@ -1371,6 +1451,7 @@ export class SmrtObject extends SmrtClass {
    */
   private projectPublicJSON(
     seen: WeakSet<SmrtObject>,
+    context: PublicJsonProjectionContext,
   ): Record<string, unknown> {
     const json = this.toJSON() as Record<string, unknown>;
     const sensitiveFields = this.getSensitiveFieldNames();
@@ -1388,10 +1469,27 @@ export class SmrtObject extends SmrtClass {
       }
     }
 
+    const readPermissionFields = this.getReadPermissionFieldNames();
+    if (readPermissionFields.size > 0) {
+      const metaData =
+        json._meta_data && typeof json._meta_data === 'object'
+          ? (json._meta_data as Record<string, unknown>)
+          : null;
+      for (const [name, permission] of readPermissionFields) {
+        if (context.permissions.has(permission)) {
+          continue;
+        }
+        delete json[name];
+        if (metaData) {
+          delete metaData[name];
+        }
+      }
+    }
+
     seen.add(this);
     try {
       for (const key of Object.keys(json)) {
-        json[key] = SmrtObject.sanitizePublicValue(json[key], seen);
+        json[key] = SmrtObject.sanitizePublicValue(json[key], seen, context);
       }
     } finally {
       seen.delete(this);
@@ -1408,6 +1506,7 @@ export class SmrtObject extends SmrtClass {
   private static sanitizePublicValue(
     value: unknown,
     seen: WeakSet<SmrtObject>,
+    context: PublicJsonProjectionContext,
   ): unknown {
     if (value instanceof SmrtObject) {
       // Cycle: this instance is already on the current ancestor path.
@@ -1415,10 +1514,12 @@ export class SmrtObject extends SmrtClass {
       if (seen.has(value)) {
         return undefined;
       }
-      return value.projectPublicJSON(seen);
+      return value.projectPublicJSON(seen, context);
     }
     if (Array.isArray(value)) {
-      return value.map((item) => SmrtObject.sanitizePublicValue(item, seen));
+      return value.map((item) =>
+        SmrtObject.sanitizePublicValue(item, seen, context),
+      );
     }
     // Only descend into plain objects (e.g. `_meta_data`, parsed JSON fields).
     // Leave Date / Map / other class instances untouched so we never rewrite
@@ -1430,7 +1531,7 @@ export class SmrtObject extends SmrtClass {
         for (const [key, item] of Object.entries(
           value as Record<string, unknown>,
         )) {
-          out[key] = SmrtObject.sanitizePublicValue(item, seen);
+          out[key] = SmrtObject.sanitizePublicValue(item, seen, context);
         }
         return out;
       }
@@ -3171,10 +3272,10 @@ export class SmrtObject extends SmrtClass {
 
     // For cross-package qualified targets, derive the simple name for column conventions
     const targetSimpleName = relationship.targetClass.includes(':')
-      ? relationship.targetClass.split(':').pop()!
+      ? (relationship.targetClass.split(':').pop() ?? relationship.targetClass)
       : relationship.targetClass;
     const sourceSimpleName = relationship.sourceClass.includes(':')
-      ? relationship.sourceClass.split(':').pop()!
+      ? (relationship.sourceClass.split(':').pop() ?? relationship.sourceClass)
       : relationship.sourceClass;
 
     const sourceColumn =

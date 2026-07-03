@@ -11,7 +11,7 @@ import {
   isTenantScopedClassResolved,
   resolveDispatchTenantScope,
 } from '../dispatch';
-import type { SmrtObject } from '../object';
+import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
 import {
@@ -59,6 +59,8 @@ export interface APIContext {
     username?: string;
     roles?: string[];
   };
+  /** Resolved permission slugs held by the caller. */
+  permissions?: Iterable<string>;
 }
 
 /**
@@ -981,10 +983,16 @@ export class APIGenerator {
    * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
    */
   private toPublicData(object: unknown): unknown {
-    const serializable = object as { toPublicJSON?: () => unknown } | null;
+    const serializable = object as {
+      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
+    } | null;
     return typeof serializable?.toPublicJSON === 'function'
-      ? serializable.toPublicJSON()
+      ? serializable.toPublicJSON(this.getPublicJsonOptions())
       : object;
+  }
+
+  private getPublicJsonOptions(): PublicJsonOptions {
+    return { permissions: this.context.permissions };
   }
 
   /**

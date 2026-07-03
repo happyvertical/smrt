@@ -121,7 +121,7 @@ function deriveCollectionName(className: string): string {
 
 function humanizeResource(resource: string): string {
   return resource
-    .replace(/[_-]+/g, ' ')
+    .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
@@ -135,7 +135,7 @@ function defaultPermissionName(slug: string): string {
     return humanizeResource(slug);
   }
 
-  return `${capitalize(parsed.action)} ${humanizeResource(parsed.resource)}`;
+  return `${humanizeResource(parsed.action)} ${humanizeResource(parsed.resource)}`;
 }
 
 function defaultPermissionDescription(slug: string): string {
@@ -144,7 +144,7 @@ function defaultPermissionDescription(slug: string): string {
     return `Allows ${slug}`;
   }
 
-  return `Allows ${parsed.action} access for ${humanizeResource(parsed.resource).toLowerCase()}`;
+  return `Allows ${humanizeResource(parsed.action).toLowerCase()} access for ${humanizeResource(parsed.resource).toLowerCase()}`;
 }
 
 function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
@@ -159,20 +159,39 @@ interface ManifestMethodCandidate {
   name?: string;
 }
 
+type MethodCandidate =
+  | ManifestMethodCandidate
+  | readonly [string, ManifestMethodCandidate];
+
+function isMethodEntryTuple(
+  method: MethodCandidate,
+): method is readonly [string, ManifestMethodCandidate] {
+  return Array.isArray(method);
+}
+
+function normalizeMethodCandidate(
+  method: MethodCandidate,
+): ManifestMethodCandidate {
+  if (isMethodEntryTuple(method)) {
+    const [name, definition] = method;
+    return { ...definition, name: definition.name ?? name };
+  }
+  return method;
+}
+
 function getPublicCustomMethodNames(
-  methodEntries: ManifestMethodCandidate[],
+  methodEntries: MethodCandidate[],
   standardActions: readonly string[],
 ): string[] {
   return Array.from(
     new Set(
-      methodEntries
-        .filter(
-          (method) =>
-            Boolean(method?.name) &&
-            method?.isPublic === true &&
-            !standardActions.includes(method.name!),
-        )
-        .map((method) => method.name!),
+      methodEntries.flatMap((method) => {
+        const { isPublic, name } = normalizeMethodCandidate(method);
+        if (!name || isPublic !== true || standardActions.includes(name)) {
+          return [];
+        }
+        return [name];
+      }),
     ),
   );
 }
@@ -345,7 +364,7 @@ function normalizeDefinition(
 ): PermissionDefinition {
   if (!definition.slug || !isValidPermissionSlug(definition.slug.trim())) {
     throw new Error(
-      `Invalid permission slug '${definition.slug}'. Expected 'resource.action'.`,
+      `Invalid permission slug '${definition.slug}'. Expected 'resource.action[.scope...]'.`,
     );
   }
 
@@ -546,6 +565,31 @@ export class PermissionCatalogService {
         });
       }
 
+      const fieldEntries = manifestEntry?.fields
+        ? Object.entries(manifestEntry.fields)
+        : Array.from(
+            (registered?.inheritedFields ?? metadata.fields).entries(),
+          );
+      for (const [fieldName, fieldDef] of fieldEntries) {
+        const readPermission =
+          typeof fieldDef.readPermission === 'string'
+            ? fieldDef.readPermission
+            : typeof fieldDef._meta?.readPermission === 'string'
+              ? fieldDef._meta.readPermission
+              : undefined;
+        if (!readPermission || definitions.has(readPermission)) {
+          continue;
+        }
+        definitions.set(readPermission, {
+          className,
+          collection,
+          description: `Allows reading ${fieldName} on ${humanizeResource(collection).toLowerCase()}`,
+          name: `Read ${humanizeResource(fieldName)} on ${humanizeResource(collection)}`,
+          qualifiedName,
+          slug: readPermission,
+        });
+      }
+
       for (const action of ['create', 'update', 'delete'] as const) {
         const exposed =
           isOperationEnabled(objectConfig.api, action) ||
@@ -565,7 +609,7 @@ export class PermissionCatalogService {
 
       const methodEntries = manifestEntry?.methods
         ? Object.values(manifestEntry.methods)
-        : Array.from(metadata.methods.values());
+        : Array.from(metadata.methods.entries());
       const publicCustomMethodNames = getPublicCustomMethodNames(
         methodEntries,
         standardActions,
