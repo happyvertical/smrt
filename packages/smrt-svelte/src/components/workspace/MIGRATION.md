@@ -8,7 +8,7 @@ migration reference while moving apps to `AdminShell`.
 ## Adopting AdminShell is additive
 
 Moving to `AdminShell` is a non-breaking, opt-in change — nothing is removed
-out from under you:
+from under you:
 
 - **Existing consumers keep working.** The first-generation classes still ship
   in this package and still render. Migrate a route or an app at your own pace;

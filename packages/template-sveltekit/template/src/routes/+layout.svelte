@@ -34,7 +34,8 @@
 
   // Minimal, static system chips. Full live wiring (job counts, dispatch
   // depth, connection state) is a documented next step: feed real values
-  // through `systemFeed` / `activityFeed` from `@happyvertical/smrt-svelte/web`
+  // through `systemFeed` (`@happyvertical/smrt-svelte/workspace/live`) or
+  // `activityFeed` (`@happyvertical/smrt-svelte/web`)
   // — see the migration guide and the playground `admin-shell-system-feed`
   // demo. Keeping these static here avoids loading the client engine on every
   // page of the scaffold.

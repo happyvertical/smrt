@@ -296,7 +296,8 @@ To pin a specific look instead of following the OS, set
 
 The status chips ship static (`Local`, `Ready`). To make them (and the focus
 edge) live — job counts, dispatch depth, connection state — feed real values
-through `systemFeed` / `activityFeed` from `@happyvertical/smrt-svelte/web`.
+through `systemFeed` (`@happyvertical/smrt-svelte/workspace/live`) or
+`activityFeed` (`@happyvertical/smrt-svelte/web`).
 
 - **Migration guide** (old `WorkspaceShell`/`RoleShell` → `AdminShell`, and why
   adoption is additive):

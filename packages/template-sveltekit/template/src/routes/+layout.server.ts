@@ -14,10 +14,13 @@
  * stays in sync with your `@smrt()` classes automatically instead of being
  * hand-maintained.
  *
- * A layout load runs on every navigation but is deduplicated by SvelteKit — it
- * only re-runs when a dependency it declared is invalidated. It is independent
- * of each page's own load, so the home page's `depends('smrt:items')` /
- * `invalidate('smrt:items')` refresh flow is untouched by this file.
+ * This load reads no URL/params and declares no `depends()`, so after its
+ * initial SSR run SvelteKit does not re-run it on client navigations — only on
+ * a full reload or `invalidateAll()`. The manifest-derived nav is therefore
+ * effectively static for the session, which is fine (the manifest is fixed at
+ * build time). It is independent of each page's own load, so the home page's
+ * `depends('smrt:items')` / `invalidate('smrt:items')` refresh flow is
+ * untouched by this file.
  */
 
 import { existsSync } from 'node:fs';
