@@ -46,6 +46,12 @@
       "svelte": "./dist/browser-ai/svelte/index.js",
       "import": "./dist/browser-ai/svelte/index.js",
       "default": "./dist/browser-ai/svelte/index.js"
+    },
+    "./web": {
+      "types": "./dist/web/index.d.ts",
+      "svelte": "./dist/web/index.js",
+      "import": "./dist/web/index.js",
+      "default": "./dist/web/index.js"
     }
   },
   "files": [
@@ -89,6 +95,9 @@
     "@happyvertical/smrt-languages": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-web": "workspace:*",
+    "@tanstack/db": "^0.6.14",
+    "@tanstack/svelte-db": "^0.1.91",
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {
