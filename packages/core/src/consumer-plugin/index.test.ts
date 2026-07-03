@@ -127,4 +127,53 @@ describe('smrtConsumer registration generation', () => {
       'ObjectRegistry.register(SpecializedThingCollection',
     );
   });
+
+  it('preserves local project entries already in .smrt/manifest.json (issue #1760 review)', async () => {
+    // smrtPlugin() writes the project's own scanned objects to
+    // .smrt/manifest.json; both plugins write in parallel buildStart hooks,
+    // so the consumer's aggregated write must merge, not clobber — otherwise
+    // local field metadata vanishes and server writes drop domain columns.
+    const smrtDir = join(tmpDir, '.smrt');
+    mkdirSync(smrtDir, { recursive: true });
+    writeFileSync(
+      join(smrtDir, 'manifest.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        timestamp: 1,
+        packageName: 'consumer-app',
+        objects: {
+          'consumer-app:Item': {
+            className: 'Item',
+            qualifiedName: 'consumer-app:Item',
+            packageName: 'consumer-app',
+            collection: 'items',
+            fields: { title: { type: 'text' } },
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await plugin.buildStart?.call({} as any);
+
+    const merged = JSON.parse(
+      readFileSync(join(smrtDir, 'manifest.json'), 'utf-8'),
+    );
+
+    // Local entry survives with its field metadata intact.
+    expect(merged.objects['consumer-app:Item']).toBeDefined();
+    expect(merged.objects['consumer-app:Item'].fields.title.type).toBe('text');
+    // Aggregated external entries are added alongside it.
+    expect(merged.objects.ExternalThing).toBeDefined();
+    // The local project's packageName remains the manifest cache key.
+    expect(merged.packageName).toBe('consumer-app');
+  });
 });
