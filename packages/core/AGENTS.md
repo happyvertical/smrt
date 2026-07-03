@@ -73,6 +73,16 @@ admin auth.
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
 
+## Change Feed (#1758)
+
+Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server half of the client/mobile sync contract (PRD #1755):
+
+- `_smrt_changes` system table: one append per framework save/delete via a GlobalInterceptors writer registered at framework init. Deletes are tombstones (`operation: 'delete'`). `_smrt_*` tables are skipped. Feed-append failures log and never fail the user's write. No dirty-check: a field-unchanged `.save()` appends a spurious `update` entry (diff-aware paths like `getOrUpsert`/sync-apply short-circuit before `save()` and append nothing); subscribers must tolerate spurious entries — they are convergent.
+- Sequences: allocated as `MAX(seq)+1` inside the INSERT with conflict retry — committed rows stay contiguous, so commit order == seq order on SQLite/Postgres/DuckDB (deliberately NOT identity/serial: those allocate before commit and break the cursor guarantee under concurrent writers).
+- `getChangesSince(db, { since, tables?, tenantId?, limit? }) → { changes, cursor, resyncRequired? }`: strictly monotonic cursor; polling with returned cursors misses no committed change and never repeats one. A cursor that cannot be served incrementally — pruned below the retained `[floor..horizon]` run, or foreign/ahead of the horizon — gets `resyncRequired: true` with empty `changes` and an unadvanced cursor; detection runs on the UNFILTERED log so `tables`/`tenantId` filters never trigger or mask it. `getTenantScopedChangesSince()` resolves tenant via the DispatchBus resolver hook (fail-closed: tenancy on + no context → global rows only; tenant `T` sees `T` + global rows, never another tenant).
+- Generated `_changes` routes: REST (`GET {basePath}/_changes`, requires `authMiddleware`, otherwise 401 — per-model `api.public` does NOT apply) and SvelteKit (`{routesDir}/_changes/+server.ts`, requires an authenticated principal on `locals`; opt out via `sveltekit.changesRoute.enabled: false`). Query params: `since`, `tables` (comma-separated), `limit`. Responses stay HTTP 200 in the resync state — `resyncRequired` is protocol state, not an error.
+- Retention: `pruneChangeFeed(db, { maxAgeMs?, maxRows? })` — schedule it. Pruning deletes oldest-first and always retains the newest entry (a non-empty feed is never emptied), which is what makes pruned-cursor detection provable and keeps caught-up consumers polling normally. Raw-SQL writes are invisible to the feed (same documented gap as the #1499 cache); `bumpChangeFeed(db, { table, rowId? })` is the manual escape hatch.
+
 ## Single Table Inheritance (STI)
 
 - Base: `@smrt({ tableStrategy: 'sti' })` — children inherit, share one table

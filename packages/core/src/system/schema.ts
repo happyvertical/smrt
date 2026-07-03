@@ -286,6 +286,48 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_provider_model
 `;
 
 /**
+ * Append-only change feed (issue #1758)
+ *
+ * One row per framework save/delete: monotonic per-database sequence,
+ * table, row id, operation (create/update/delete — deletes are tombstones),
+ * tenant, timestamp. Written by the change-feed interceptor and read
+ * through `getChangesSince()`.
+ *
+ * `seq` is deliberately a plain BIGINT PRIMARY KEY rather than a native
+ * AUTOINCREMENT/identity/serial column: the appender allocates
+ * `COALESCE(MAX(seq), 0) + 1` inside the INSERT (with a conflict retry),
+ * which keeps committed sequences contiguous so commit order equals
+ * sequence order on every engine. Native identity columns allocate before
+ * commit, so under concurrent writers on MVCC engines a reader could
+ * observe seq N+1 while seq N is still uncommitted and advance its cursor
+ * past it — breaking the feed's no-missed-changes cursor guarantee. The
+ * plain column also keeps this DDL portable across SQLite, Postgres and
+ * DuckDB with no per-engine branching. See `change-feed.ts`.
+ *
+ * `row_id` is nullable: manual bumps (`bumpChangeFeed`) may record a
+ * table-level change without a specific row.
+ */
+export const CREATE_SMRT_CHANGES_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_changes (
+  seq BIGINT PRIMARY KEY,
+  table_name TEXT NOT NULL,
+  row_id TEXT,
+  operation TEXT NOT NULL,
+  tenant_id TEXT,
+  created_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_changes_table_seq
+  ON _smrt_changes(table_name, seq);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_changes_tenant_seq
+  ON _smrt_changes(tenant_id, seq);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_changes_created_at
+  ON _smrt_changes(created_at);
+`;
+
+/**
  * Data backfill tracking
  *
  * Distinct from `_smrt_schema_migrations` — backfills are app-specific
@@ -316,9 +358,10 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_DISPATCH_TABLE,
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_AI_USAGE_TABLE,
+  CREATE_SMRT_CHANGES_TABLE,
 ];
 
 /**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.6.1';
+export const SMRT_SCHEMA_VERSION = '1.7.0';

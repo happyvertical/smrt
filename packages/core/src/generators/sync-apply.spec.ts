@@ -20,6 +20,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { getChangesSince, registerChangeFeedWriter } from '../change-feed';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
@@ -152,6 +153,60 @@ describe('Sync-apply batch endpoint (#1759)', () => {
     const rows = await notes.list({ orderBy: 'id' });
     return JSON.parse(JSON.stringify(rows.map((row) => row.toPublicJSON())));
   }
+
+  // Cross-slice invariant (#1758 change-feed × #1759 sync-apply): an idempotent
+  // replay must not re-append change-feed rows, or every offline replay would
+  // re-wake all live-update subscribers. Safe by construction — sync-apply's
+  // no-op detection (payloadMatchesRow) short-circuits before save(), so the
+  // change-feed writer never fires on a replayed create.
+  describe('change-feed interaction (#1758 × #1759)', () => {
+    it('replaying an identical batch appends change-feed rows only once', async () => {
+      // The writer auto-registers at framework init; assert it explicitly
+      // (idempotent) so this test cannot silently pass with a dormant writer.
+      registerChangeFeedWriter();
+      const db = notes.db;
+      const XSLICE_ID = '88888888-8888-4888-8888-888888888888';
+      const batch = [
+        {
+          itemId: 'xslice-1',
+          object: 'syncapplynotes',
+          op: 'create',
+          id: XSLICE_ID,
+          payload: { title: 'xslice', priority: 1 },
+        },
+      ];
+
+      // Snapshot the feed horizon first — the db is shared across this file.
+      const { cursor: start } = await getChangesSince(db, { since: 0 });
+
+      // First application creates the row → exactly one change-feed entry,
+      // proving the writer observed the sync-apply create (guards false-pass).
+      const first = await apply(batch);
+      expect(first.results[0]).toMatchObject({
+        status: 'applied',
+        id: XSLICE_ID,
+      });
+      const afterFirst = await getChangesSince(db, { since: start });
+      const ours = afterFirst.changes.filter((c) => c.rowId === XSLICE_ID);
+      expect(ours).toHaveLength(1);
+      expect(ours[0].operation).toBe('create');
+
+      // Replaying the identical batch is an idempotent no-op (the row already
+      // matches, so sync-apply skips the write before save()) → NO new
+      // change-feed rows, so live-update subscribers are not re-woken.
+      const second = await apply(batch);
+      expect(second.results[0]).toMatchObject({
+        status: 'applied',
+        id: XSLICE_ID,
+      });
+      const afterReplay = await getChangesSince(db, {
+        since: afterFirst.cursor,
+      });
+      expect(
+        afterReplay.changes.filter((c) => c.rowId === XSLICE_ID),
+      ).toHaveLength(0);
+    });
+  });
 
   describe('batch envelope', () => {
     it('rejects a body without an items array (batch-level 400)', async () => {
@@ -680,10 +735,7 @@ describe('Sync-apply batch endpoint (#1759)', () => {
       const body = (await res.json()) as SyncApplyBatchResponse;
 
       // Neither item failed with write_failed from a consumed body…
-      expect(body.results.map((r) => r.status)).toEqual([
-        'applied',
-        'applied',
-      ]);
+      expect(body.results.map((r) => r.status)).toEqual(['applied', 'applied']);
       // …and every middleware invocation could parse the full batch body.
       expect(seenItemCounts).toEqual([2, 2]);
     });

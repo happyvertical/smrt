@@ -24,6 +24,7 @@ import {
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
 import { estimateAiUsageCost } from './adapters/cost-rates.js';
+import { registerChangeFeedWriter } from './change-feed.js';
 import type {
   AIConfig,
   AiUsageConfig,
@@ -536,6 +537,11 @@ export class SmrtClass {
    * repeated system-table checks.
    */
   protected async initializeCoreResources(): Promise<void> {
+    // Framework init hook for the change feed (#1758): make sure the writer
+    // interceptor observes every save/delete before any instance can write.
+    // Idempotent and cheap when already registered.
+    registerChangeFeedWriter();
+
     // Map persistence to db for backward compatibility
     if (this.options.persistence && !this.options.db) {
       this.options.db = this.options.persistence;

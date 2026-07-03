@@ -14,17 +14,18 @@ import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
 import {
-  conditionalJsonResponse,
-  resolveReadCacheControl,
-  warnIfSharedCacheNeutralized,
-  warnIfTenantScopedPublicRead,
-} from './conditional-get';
-import {
   processSyncApplyBatch,
   SYNC_APPLY_ROUTE_SEGMENTS,
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '../sync/apply';
+import { handleChangesRoute } from './changes-route';
+import {
+  conditionalJsonResponse,
+  resolveReadCacheControl,
+  warnIfSharedCacheNeutralized,
+  warnIfTenantScopedPublicRead,
+} from './conditional-get';
 
 export interface APIConfig {
   basePath?: string;
@@ -86,6 +87,22 @@ export class APIGenerator {
     collection: SmrtCollection<SmrtObject>,
   ): void {
     this.collections.set(name, collection);
+  }
+
+  /**
+   * Resolve the database for generator-level routes that are not object-scoped
+   * (currently the `_changes` feed, #1758).
+   *
+   * Prefers the explicit `APIContext.db`, but falls back to the first
+   * registered collection's live handle so the feed works under the documented
+   * `registerCollection()` wiring, where callers configure collections with a
+   * database but never populate `APIContext.db`. Without the fallback the feed
+   * would 503 even though the database is reachable.
+   */
+  private resolveContextDb(): unknown {
+    return (
+      this.context.db ?? this.collections.values().next().value?.db ?? undefined
+    );
   }
 
   /**
@@ -203,6 +220,16 @@ export class APIGenerator {
           return this.addCorsHeaders(response, req);
         }
       }
+    }
+
+    // Change-feed route (#1758): auth-guarded, tenant-scoped cursor read
+    // over the _smrt_changes log. Logic lives in ./changes-route.ts.
+    if (url.pathname === `${this.config.basePath}/_changes`) {
+      const response = await handleChangesRoute(req, {
+        authMiddleware: this.config.authMiddleware,
+        db: this.resolveContextDb(),
+      });
+      return this.addCorsHeaders(response, req);
     }
 
     // Handle object routes
