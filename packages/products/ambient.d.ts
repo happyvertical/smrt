@@ -13,6 +13,11 @@ declare module '@happyvertical/smrt-virt-client' {
   export { default } from '@smrt/client';
 }
 
+declare module '@happyvertical/smrt-virt-web' {
+  export * from '@smrt/web';
+  export { default } from '@smrt/web';
+}
+
 declare module '@happyvertical/smrt-virt-types' {
   export * from '@smrt/types';
 }

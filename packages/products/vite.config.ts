@@ -96,6 +96,15 @@ const libEntries = {
 	generated: resolve(packageDir, 'src/generated.ts'),
 	utils: resolve(packageDir, 'src/utils.ts'),
 	collections: resolve(packageDir, 'src/collections.ts'),
+	// The `@happyvertical/smrt-web` reference store (#1761). A DEDICATED entry /
+	// public subpath, deliberately NOT re-exported from the always-loaded
+	// `./stores` barrel: importing it is an explicit opt-in to the client-data
+	// engine, which `@happyvertical/smrt-web` (externalized here) carries. Keeps
+	// the engine out of any consumer that only wants the mock demo store.
+	'stores/product-collection': resolve(
+		packageDir,
+		'src/lib/stores/product-collection.ts',
+	),
 	// These `lib/*` entries are NOT public subpaths (they have no
 	// `package.json#exports` mapping). They emit standalone modules into
 	// `dist/lib/lib/` so the raw `.svelte` files produced by the

@@ -59,6 +59,14 @@ Auto-generated via Vite plugins: `@happyvertical/smrt-client` (TypeScript client
 
 Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). `product-store.svelte.ts` is the main store (backed by the SMRT client); `product-store.client.svelte.ts` is a virtual-module-free variant for federation builds.
 
+## Client-data runtime — reference store (#1761)
+
+Products is the reference consumer of the `@happyvertical/smrt-web` browser client-data runtime.
+
+- **Store** — `src/lib/stores/product-collection.ts` (`createProductCollection()`, subpath `@happyvertical/smrt-products/stores/product-collection`) builds a cached, reactive `SmrtWebCollection<ProductData>` over the generated `/api/v1/products` REST surface from the manifest-generated `products` definition (`@happyvertical/smrt-virt-web`, resolved for `tsc` via the `@smrt/web` ambient alias) with `createSmrtCollection`. Deliberately NOT re-exported from the always-loaded `./stores` barrel — importing it is an explicit opt-in to the engine.
+- **Live surface** — `src/lib/components/LiveProductList.svelte` binds the store with `liveCollection` from `@happyvertical/smrt-svelte/web` (live rows + optimistic insert). `src/app/pages/LiveProductsPage.svelte` hosts it on the `#live` route.
+- **Code-split (ratified condition ①)** — the ~76 kB TanStack engine must NEVER load on public / smrt-sites pages. `LiveProductsPage` reaches `LiveProductList` (the engine-bearing module) ONLY through a dynamic `import()`, so the engine lands in a lazily-loaded chunk; the app entry stays engine-free. NEVER import the store or live component statically from an app-root / public entry. `scripts/check-web-engine-code-split.mjs` (wrapped by `src/web-engine-code-split.spec.ts`, `pnpm test:code-split`) proves the split deterministically via an esbuild chunk-graph assertion.
+
 ## Schema migrations (Phase 1 release)
 
 This package's schema changed shape between the previous release and the Phase 1 apparel-ERP release. Consumers upgrading need to migrate two tables.
