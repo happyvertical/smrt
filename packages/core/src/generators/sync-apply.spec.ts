@@ -640,6 +640,97 @@ describe('Sync-apply batch endpoint (#1759)', () => {
         reason: 'forbidden',
       });
     });
+
+    it('hands each middleware invocation a readable request body (single-read stream regression)', async () => {
+      // Auth middleware may read the body (body-based authorization, request
+      // signing) — it works on CRUD routes where auth runs before parsing,
+      // and must keep working here even though the batch handler parses
+      // first and invokes the middleware once per item.
+      const seenItemCounts: number[] = [];
+      const guarded = new APIGenerator({
+        basePath: '/api/v1',
+        authMiddleware: () => async (req) => {
+          const parsed = (await req.json()) as { items?: unknown[] };
+          seenItemCounts.push(parsed.items?.length ?? -1);
+          return req;
+        },
+      });
+      guarded.registerCollection('syncapplynotes', notes);
+      const guardedHandler = guarded.generateHandler();
+
+      const res = await guardedHandler(
+        syncRequest([
+          {
+            itemId: 'body-read-1',
+            object: 'syncapplynotes',
+            op: 'update',
+            id: UUID_F,
+            payload: { priority: 7 },
+          },
+          {
+            itemId: 'body-read-2',
+            object: 'syncapplynotes',
+            op: 'update',
+            id: UUID_F,
+            payload: { priority: 7 },
+          },
+        ]),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as SyncApplyBatchResponse;
+
+      // Neither item failed with write_failed from a consumed body…
+      expect(body.results.map((r) => r.status)).toEqual([
+        'applied',
+        'applied',
+      ]);
+      // …and every middleware invocation could parse the full batch body.
+      expect(seenItemCounts).toEqual([2, 2]);
+    });
+  });
+
+  describe('row identity is the envelope UUID only (strict insert)', () => {
+    it('rejects a create whose natural key collides with a different row instead of adopting it', async () => {
+      // Two different client UUIDs whose payloads derive the same slug
+      // (identical titles). Outside the sync path, create() dedup-upserts on
+      // the natural key (#1472) and would rewrite the first row's id; the
+      // sync contract requires a strict insert that rejects instead.
+      const firstId = '13131313-1313-4131-8131-131313131313';
+      const secondId = '14141414-1414-4141-8141-141414141414';
+
+      const first = await apply([
+        {
+          itemId: 'nk-first',
+          object: 'syncapplynotes',
+          op: 'create',
+          id: firstId,
+          payload: { title: 'nk-collision-title', priority: 1 },
+        },
+      ]);
+      expect(first.results[0].status).toBe('applied');
+
+      const second = await apply([
+        {
+          itemId: 'nk-second',
+          object: 'syncapplynotes',
+          op: 'create',
+          id: secondId,
+          payload: { title: 'nk-collision-title', priority: 2 },
+        },
+      ]);
+      expect(second.results[0]).toMatchObject({
+        itemId: 'nk-second',
+        status: 'rejected',
+        reason: 'id_conflict',
+      });
+
+      // The first row is untouched — same id, same content — and the
+      // colliding create landed nowhere.
+      const original = await notes.get(firstId);
+      expect(original).not.toBeNull();
+      expect(original?.priority).toBe(1);
+      expect(await notes.get(secondId)).toBeNull();
+    });
   });
 
   describe('update/delete edge semantics', () => {

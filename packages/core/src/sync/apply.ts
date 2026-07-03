@@ -18,9 +18,11 @@
  *
  * ## Why replay is idempotent
  *
- * - Row identity is the client-generated UUID (validated server-side), and the
- *   ORM upserts on id (#1472), so re-creating an existing row converges on the
- *   same row instead of duplicating it.
+ * - Row identity is the client-generated UUID (validated server-side), and
+ *   ONLY that UUID: creates persist via a strict INSERT
+ *   (`_insertOnly`, never natural-key dedup-upsert), so a create can never
+ *   adopt or overwrite a different row, and a re-delivered create finds its
+ *   own row via the id pre-check instead of duplicating it.
  * - Before writing, each create/update is compared against the current row;
  *   when the row already reflects the item's payload the write is skipped and
  *   reported `applied` (a no-op re-apply). This is what makes N replays of an
@@ -31,13 +33,19 @@
  *
  * ## Conflict policy v1 (server-authoritative LWW, updated-at guard)
  *
- * A write whose `baseUpdatedAt` is older than the server row's `updated_at`
- * is the LOSING write: it is **skipped** (the newer server state wins) and the
- * item is reported `conflict` with the server's current `updatedAt` so the
- * client can rebase. Skipping (rather than clobbering) was chosen because it
- * never destroys newer data, and it is replay-stable: a replayed conflicting
- * item reports `conflict` again against unchanged state. Field-level merge is
- * explicitly out of scope for v1.
+ * The stale guard applies to mutations that would actually change server
+ * state: an update/delete whose `baseUpdatedAt` is older than the server
+ * row's `updated_at` AND whose effect is not already present is the LOSING
+ * write — it is **skipped** (the newer server state wins) and the item is
+ * reported `conflict` with the server's current `updatedAt` so the client can
+ * rebase. Two deliberate precedences soften "stale ⇒ conflict":
+ * no-op detection runs first (a stale update whose payload already matches
+ * the row is an idempotent replay of an applied write → `applied`), and a
+ * delete of a row that is already gone is a no-op → `applied`. Skipping
+ * (rather than clobbering) was chosen because it never destroys newer data,
+ * and it is replay-stable: a replayed conflicting item reports `conflict`
+ * again against unchanged state. Field-level merge is explicitly out of
+ * scope for v1.
  */
 
 import { ValidationError } from '../errors.js';
@@ -160,7 +168,11 @@ export interface SyncApplyRowLike {
   delete(): Promise<unknown>;
 }
 
-/** Minimal structural view of a collection (matches `SmrtCollection`). */
+/**
+ * Minimal structural view of a collection (matches `SmrtCollection`).
+ * `create()` must honor the `_insertOnly` option (strict INSERT — see
+ * `SmrtCreateInput`), which the processor sets on every sync create.
+ */
 export interface SyncApplyCollectionLike {
   get(id: string): Promise<SyncApplyRowLike | null>;
   create(options: Record<string, unknown>): Promise<SyncApplyRowLike>;
@@ -532,9 +544,16 @@ async function applyValidatedItem(
       }
 
       try {
+        // Strict insert (`_insertOnly`): row identity is the envelope UUID
+        // alone. Without it, `create()` saves new objects with natural-key
+        // conflict resolution (slug/context or configured `conflictColumns`,
+        // #1472's ingestion dedup), so a fresh-UUID create whose payload
+        // derives an existing row's natural key would silently adopt and
+        // rewrite that row — violating this contract.
         const created = await target.collection.create({
           ...data,
           id: item.id,
+          _insertOnly: true,
         });
         return {
           ...base,

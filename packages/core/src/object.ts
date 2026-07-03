@@ -302,6 +302,16 @@ export class SmrtObject extends SmrtClass {
   private _persisted = false;
 
   /**
+   * When set (and the object is not yet persisted), `save()` performs a plain
+   * INSERT instead of an upsert, so ANY collision — primary key or natural
+   * key — surfaces as a constraint error rather than adopting/updating an
+   * existing row. Used by write paths where row identity is an explicit
+   * client-supplied id (sync-apply, #1759). Becomes inert once `_persisted`
+   * is true.
+   */
+  private _insertOnly = false;
+
+  /**
    * Override options with SmrtObjectOptions type for proper type narrowing.
    * Initialized by parent constructor via super() call.
    */
@@ -526,6 +536,19 @@ export class SmrtObject extends SmrtClass {
    */
   public markAsPersisted(): void {
     this._persisted = true;
+  }
+
+  /**
+   * Requires the initial `save()` to be a plain INSERT: a collision on the
+   * primary key or any natural-key unique constraint raises a typed error
+   * instead of upsert-adopting an existing row. Set via
+   * `collection.create({ _insertOnly: true })` for write paths where row
+   * identity is an explicit client-supplied id (sync-apply, #1759).
+   * No effect once the object is persisted.
+   * @internal
+   */
+  public requireInsertOnSave(): void {
+    this._insertOnly = true;
   }
 
   protected async verifyStorageReady(): Promise<void> {
@@ -1813,6 +1836,11 @@ export class SmrtObject extends SmrtClass {
               const { id: _id, ...updateData } = data;
               await this.db.update(this.tableName, { id: data.id }, updateData);
               this.setMetaType(writePlan.qualifiedMetaType);
+            } else if (this._insertOnly && !this._persisted) {
+              // Strict-insert mode (#1759): row identity is an explicit
+              // client-supplied id, so never adopt an existing row via
+              // conflict resolution — any PK/unique collision must raise.
+              await this.db.insert(this.tableName, data);
             } else {
               await this.db.upsert(this.tableName, upsertConflictColumns, data);
             }
@@ -1837,7 +1865,9 @@ export class SmrtObject extends SmrtClass {
               const operation =
                 writePlan.type === 'updateById'
                   ? `UPDATE ${this.tableName} (id-targeted)`
-                  : `UPSERT INTO ${this.tableName}`;
+                  : this._insertOnly && !this._persisted
+                    ? `INSERT INTO ${this.tableName}`
+                    : `UPSERT INTO ${this.tableName}`;
               throw DatabaseError.queryFailed(operation, error);
             }
             throw error;

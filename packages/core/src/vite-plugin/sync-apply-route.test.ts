@@ -69,7 +69,7 @@ describe('collectSyncApplyTargets', () => {
     expect(targets).toHaveLength(2);
     const product = targets.find((t) => t.segment === 'products');
     expect(product).toMatchObject({
-      className: 'Product',
+      registryKey: 'Product',
       ops: ['create', 'update', 'delete'],
       readonlyFields: ['sku'],
       writableAllowlist: null,
@@ -78,7 +78,7 @@ describe('collectSyncApplyTargets', () => {
     });
     const report = targets.find((t) => t.segment === 'reports');
     expect(report).toMatchObject({
-      className: 'Report',
+      registryKey: 'Report',
       ops: ['create'],
       writableAllowlist: ['title'],
       publicAccess: true,
@@ -117,13 +117,21 @@ describe('collectSyncApplyTargets', () => {
     expect(targets).toHaveLength(0);
   });
 
-  it('extracts simple class names from qualified manifest keys', () => {
+  it('keeps qualified manifest keys verbatim so getCollection() resolves unambiguously', () => {
+    // Two loaded packages may declare the same simple class name; the
+    // generated route must pass the registry key exactly as the generated
+    // CRUD routes do (qualified keys stay qualified).
     const targets = collectSyncApplyTargets(
       manifestWith({
         '@happyvertical/smrt-products:Product': productDef,
       }),
     );
-    expect(targets[0].className).toBe('Product');
+    expect(targets[0].registryKey).toBe('@happyvertical/smrt-products:Product');
+
+    const content = generateSyncApplyRouteTemplate(targets);
+    expect(content).toContain(
+      'registryKey: "@happyvertical/smrt-products:Product"',
+    );
   });
 });
 
@@ -161,12 +169,13 @@ describe('generateSyncApplyRouteTemplate', () => {
 
   it('embeds one target entry per syncable model with its policy data', () => {
     expect(content).toContain('"products": {');
-    expect(content).toContain('className: "Product"');
+    expect(content).toContain('registryKey: "Product"');
     expect(content).toContain('ops: ["create","update","delete"]');
     expect(content).toContain('readonlyFields: ["sku"]');
     expect(content).toContain('"reports": {');
     expect(content).toContain('ops: ["create"]');
     expect(content).toContain('publicAccess: true');
+    expect(content).toContain('getCollection(target.registryKey)');
   });
 
   it('is fail-closed: requires an authenticated principal unless public', () => {

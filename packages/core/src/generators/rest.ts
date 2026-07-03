@@ -651,16 +651,22 @@ export class APIGenerator {
    * writable policy into a {@link SyncApplyTarget} per item.
    */
   private async handleSyncApply(req: Request): Promise<Response> {
+    // Buffer the body once. Request bodies are single-read streams, and the
+    // per-item auth middleware below must receive a readable body exactly as
+    // it does on CRUD routes (where auth runs before parsing) — so each
+    // middleware invocation gets a fresh Request rebuilt from this buffer.
+    let rawBody: string;
     let body: unknown;
     try {
-      body = await req.json();
+      rawBody = await req.text();
+      body = JSON.parse(rawBody);
     } catch {
       return this.createErrorResponse(400, 'Invalid JSON body');
     }
 
     const outcome = await processSyncApplyBatch(body, {
       resolveTarget: (objectSegment) =>
-        this.resolveSyncApplyTarget(objectSegment, req),
+        this.resolveSyncApplyTarget(objectSegment, req, rawBody),
     });
     return this.createJsonResponse(outcome.body, outcome.status);
   }
@@ -673,6 +679,7 @@ export class APIGenerator {
   private resolveSyncApplyTarget(
     objectSegment: string,
     req: Request,
+    rawBody: string,
   ): SyncApplyTarget | null {
     let collection: SmrtCollection<SmrtObject> | null = null;
     let objectName: string | null = null;
@@ -708,7 +715,16 @@ export class APIGenerator {
           const verb =
             op === 'create' ? 'post' : op === 'update' ? 'put' : 'delete';
           const authCheck = this.config.authMiddleware(resolvedName, verb);
-          const authResult = await authCheck(req);
+          // Fresh Request per invocation: the batch handler already consumed
+          // the original body, and middleware may read it (body-based auth,
+          // request signing) exactly as it can on CRUD routes.
+          const authResult = await authCheck(
+            new Request(req.url, {
+              method: req.method,
+              headers: req.headers,
+              body: rawBody,
+            }),
+          );
           if (authResult instanceof Response) {
             return authResult.status === 401 ? 'auth_required' : 'forbidden';
           }

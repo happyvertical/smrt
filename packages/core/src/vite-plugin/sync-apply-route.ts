@@ -35,7 +35,14 @@ type MutatingAction = (typeof MUTATING_ACTIONS)[number];
 /** Per-model data embedded into the generated route. */
 interface SyncTargetSpec {
   segment: string;
-  className: string;
+  /**
+   * The manifest registry key, passed VERBATIM to `getCollection()` exactly
+   * as the generated CRUD routes do. May be package-qualified
+   * (`@happyvertical/smrt-ledgers:Account`) — collapsing it to a simple class
+   * name would resolve ambiguously when two loaded packages declare the same
+   * simple name.
+   */
+  registryKey: string;
   ops: MutatingAction[];
   readonlyFields: string[];
   writableAllowlist: string[] | null;
@@ -113,13 +120,6 @@ function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
   return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
 }
 
-function extractSimpleClassName(qualifiedName: string): string {
-  const colonIndex = qualifiedName.indexOf(':');
-  return colonIndex === -1
-    ? qualifiedName
-    : qualifiedName.substring(colonIndex + 1);
-}
-
 /**
  * Collect the syncable targets from a manifest: non-collection objects whose
  * API config is enabled and exposes at least one mutating action.
@@ -142,7 +142,7 @@ export function collectSyncApplyTargets(
 
     targets.push({
       segment: objectDef.collection,
-      className: extractSimpleClassName(className),
+      registryKey: className,
       ops,
       readonlyFields: collectReadonlyFieldNames(objectDef),
       writableAllowlist: getApiWritableAllowlist(apiConfig),
@@ -157,7 +157,7 @@ export function collectSyncApplyTargets(
 function serializeTargets(targets: SyncTargetSpec[]): string {
   const entries = targets.map((target) => {
     const fields = [
-      `className: ${JSON.stringify(target.className)}`,
+      `registryKey: ${JSON.stringify(target.registryKey)}`,
       `ops: ${JSON.stringify(target.ops)}`,
       `readonlyFields: ${JSON.stringify(target.readonlyFields)}`,
       `writableAllowlist: ${JSON.stringify(target.writableAllowlist)}`,
@@ -213,7 +213,8 @@ import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 ${tenantHelper}
 interface SyncTargetConfig {
-  className: string;
+  /** Manifest registry key (may be package-qualified), as CRUD routes use. */
+  registryKey: string;
   ops: SyncApplyOp[];
   readonlyFields: string[];
   writableAllowlist: string[] | null;
@@ -255,9 +256,12 @@ ${anyTenantScoped ? '  establishTenantContext(locals);\n' : ''}
     resolveTarget: async (segment: string): Promise<SyncApplyTarget | null> => {
       const target = SYNC_TARGETS[segment];
       if (!target) return null;
-      const collection = await getCollection(target.className);
+      // The verbatim manifest key, exactly as the generated CRUD routes pass
+      // it — package-qualified keys stay qualified so same-simple-name
+      // classes across packages resolve unambiguously.
+      const collection = await getCollection(target.registryKey);
       return {
-        objectName: target.className,
+        objectName: target.registryKey,
         collection,
         isOpAllowed: (op: SyncApplyOp) => target.ops.includes(op),
         authorize: () =>
