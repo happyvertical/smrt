@@ -4,7 +4,7 @@
 [versions]
 android-compile-sdk = "36"
 android-min-sdk = "26"
-agp = "8.13.1"
+agp = "9.2.1"
 kotlin = "2.2.21"
 kotlinx-datetime = "0.6.1"
 kotlinx-serialization = "1.7.3"
