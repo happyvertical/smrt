@@ -27,9 +27,13 @@
  *   cache keys. Cross-collection reach requires a shared client from
  *   {@link createSmrtWebClient}; with a private client only the mutated
  *   collection refetches.
+ * - hydration seeding (#1761): rows fetched server-side (a SvelteKit
+ *   `+page.server.ts` load) seed the shared cache via
+ *   {@link CreateSmrtCollectionOptions.initialData}, so the first client read
+ *   serves them WITHOUT a duplicate first-render fetch.
  *
- * Deliberately NOT here yet (see PRD #1755): SvelteKit hydration seeding,
- * offline outbox, SSE invalidation, persistence, version awareness.
+ * Deliberately NOT here yet (see PRD #1755): offline outbox, SSE invalidation,
+ * persistence, version awareness.
  */
 
 import { createCollection } from '@tanstack/db';
@@ -414,7 +418,13 @@ export interface SmrtWebCollection<TData extends object> {
   insert(row: SmrtWebRow<TData>): SmrtWebTransaction;
 }
 
-export interface CreateSmrtCollectionOptions {
+/**
+ * Options for {@link createSmrtCollection}. Generic in the collection's row
+ * type `TData` so {@link initialData} is checked against the same DTO the
+ * collection stores; every other option is row-type-agnostic, so the parameter
+ * defaults to `object` and can be omitted at call sites that pass no seed.
+ */
+export interface CreateSmrtCollectionOptions<TData extends object = object> {
   /**
    * Generated REST client surface for this collection, e.g.
    * `createClient('/api/v1').products` from the virt-client module. When
@@ -449,6 +459,25 @@ export interface CreateSmrtCollectionOptions {
   staleTimeMs?: number;
   /** Retry failed loads (default false: fail fast, surface errors). */
   retry?: boolean;
+  /**
+   * Rows to seed this collection's cache with, before its first read — the
+   * hydration path for server-rendered data (#1761). Fetch rows in a SvelteKit
+   * `+page.server.ts` load, pass them here on the client, and the first read
+   * serves them from cache WITHOUT a duplicate first-render network request
+   * (SMRT-owned type, so no engine type appears on the option).
+   *
+   * The seed is written to the cache with a fresh timestamp, so it counts as
+   * fresh for `staleTimeMs`: with the default window the first read does not
+   * fetch, and the collection revalidates in the background only once the window
+   * elapses (or immediately if `staleTimeMs` is 0). Seed the SAME rows the
+   * server serialized so the pre- and post-hydration renders match.
+   *
+   * Seeds the SAME cache key the reads use — so with a shared {@link client},
+   * fold the backend / tenant discriminator into {@link scope} to match, exactly
+   * as reads do; otherwise one backend's seed would serve the other for the
+   * `staleTimeMs` window.
+   */
+  initialData?: SmrtWebRow<TData>[];
 }
 
 /**
@@ -497,14 +526,19 @@ export function getEngineCollection<TData extends object>(
  * dependent views refetch. Reaching OTHER collections requires them to share
  * this collection's `client` (see {@link createSmrtWebClient}); with a private
  * client only this collection refetches.
+ *
+ * Hydration seeding: pass rows fetched server-side as
+ * {@link CreateSmrtCollectionOptions.initialData} and the collection's first
+ * read is served from them with NO network request (until `staleTimeMs`
+ * elapses) — the SvelteKit `+page.server.ts` → hydrate path.
  */
 export function createSmrtCollection<TData extends object>(
   definition: SmrtWebCollectionDefinition<TData>,
-  options: CreateSmrtCollectionOptions,
+  options: CreateSmrtCollectionOptions<TData>,
 ): SmrtWebCollection<TData> {
   type Row = SmrtWebRow<TData>;
 
-  const { staleTimeMs = 30_000, retry = false, scope } = options;
+  const { staleTimeMs = 30_000, retry = false, scope, initialData } = options;
   const fetchers =
     options.fetchers ??
     createDefinitionFetchers(definition, options.basePath, options.fetchFn);
@@ -519,6 +553,29 @@ export function createSmrtCollection<TData extends object>(
   const queryKey = scope
     ? ['smrt', scope, definition.name]
     : ['smrt', definition.name];
+
+  // Hydration seeding (#1761): if the caller passed rows fetched server-side,
+  // write them into the query cache BEFORE the collection's engine starts its
+  // sync. On the first read the engine finds cached data and populates from it
+  // instead of fetching (verified: zero list() calls). `setQueryData` stamps a
+  // fresh `dataUpdatedAt`, so the seed counts as fresh for `staleTime` — the
+  // first read serves it with no request, and revalidation fires only once
+  // `staleTimeMs` elapses (or immediately when it is 0). An explicit empty seed
+  // is honored too: it means "the server returned zero rows", a valid fresh
+  // state that likewise suppresses the first fetch.
+  //
+  // Seed only when the key is empty, via the ATOMIC updater form: a plain
+  // get-then-set would let two collections sharing this key and materialized in
+  // the same tick both observe `undefined` and have the later seed clobber the
+  // earlier one. `(existing) => existing ?? initialData` keeps the first seed
+  // (or any already-cached rows, which may be newer than this late SSR payload)
+  // in a single cache write.
+  if (initialData !== undefined) {
+    queryClient.setQueryData<Row[]>(
+      queryKey,
+      (existing) => existing ?? initialData,
+    );
+  }
 
   // Relationship-derived invalidation target set (#1761): the collections
   // whose caches a settled mutation on THIS collection must invalidate. Always

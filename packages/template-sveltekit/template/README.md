@@ -165,6 +165,67 @@ published content, navigation. Do **not** cache:
 Pass `cache: false` on a specific call to bypass a model-level cache where
 freshness matters.
 
+### Client live collections (opt-in)
+
+The server-load pattern above renders a page and refreshes it with
+`invalidate()`. For **interactive surfaces** that mutate rows and want an
+optimistic, reactive local store (an editor, a live dashboard), layer the
+browser client-data runtime on top: `@happyvertical/smrt-web` (the engine
+wrapper) + `@happyvertical/smrt-svelte/web` (the Svelte 5 runes binding). It is
+**opt-in per surface** — the client engine (~76 kB gzip) should never load on
+public or content pages, so import it only in routes that use live collections.
+
+Keep loading the initial rows in a server `load` (SSR + no waterfall), then
+**seed** the client collection from the hydrated `PageData` with `initialData`,
+so the first client render serves the SSR rows with no duplicate fetch and only
+revalidates once they go stale:
+
+```typescript
+// src/routes/live/+page.server.ts — same server-load pattern, plain rows out.
+import { getCollection } from '$lib/server/smrt';
+import type { Item } from '$lib/objects/Item';
+import type { PageServerLoad } from './$types';
+
+export const load: PageServerLoad = async () => {
+  const items = await getCollection<Item>('Item');
+  const rows = await items.list({ orderBy: 'created_at DESC', limit: 50 });
+  return { items: rows.map((i) => ({ id: i.id, title: i.title, status: i.status })) };
+};
+```
+
+```svelte
+<!-- src/routes/live/+page.svelte -->
+<script lang="ts">
+  import { createSmrtCollection } from '@happyvertical/smrt-web';
+  import { liveCollection } from '@happyvertical/smrt-svelte/web';
+  import { getCollectionDefinition } from '@happyvertical/smrt-virt-web';
+  import type { PageProps } from './$types';
+
+  let { data }: PageProps = $props();
+
+  // initialData seeds the cache from the SSR rows: the first read is served
+  // from data.items with NO network request, and revalidates after staleTimeMs.
+  // basePath MUST match this app's generated routes — they are served at
+  // `/api/*` (routesDir: 'src/routes/api'), not the runtime's `/api/v1` default,
+  // so revalidation and live mutations hit `/api/items` instead of 404ing.
+  const items = createSmrtCollection(getCollectionDefinition('items'), {
+    initialData: data.items,
+    basePath: '/api',
+  });
+  const view = liveCollection(items);
+</script>
+
+{#each view.rows as item (item.id)}
+  <p>{item.title}</p>
+{/each}
+```
+
+`getCollectionDefinition('items')` comes from the plugin-generated
+`@happyvertical/smrt-virt-web` virtual module (its `<collection>` key is the
+same REST route segment as `depends`/`invalidate`). Add
+`@happyvertical/smrt-web` and `@happyvertical/smrt-svelte` to the project's
+dependencies before using this pattern.
+
 ## Multi-tenancy
 
 This template ships with multi-tenancy pre-wired. Out of the box you get:

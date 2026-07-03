@@ -153,9 +153,9 @@ function toLiveStatus(
  * <script lang="ts">
  *   import { createSmrtCollection } from '@happyvertical/smrt-web';
  *   import { liveCollection } from '@happyvertical/smrt-svelte/web';
- *   import { productsDefinition } from '@happyvertical/smrt-virt-web';
+ *   import { getCollectionDefinition } from '@happyvertical/smrt-virt-web';
  *
- *   const products = createSmrtCollection(productsDefinition, {});
+ *   const products = createSmrtCollection(getCollectionDefinition('products'), {});
  *   const view = liveCollection(products);
  *
  *   async function add() {
@@ -175,6 +175,46 @@ function toLiveStatus(
  *     {/each}
  *   </ul>
  * {/if}
+ * ```
+ *
+ * @example
+ * SvelteKit hydration seeding (#1761): fetch rows in a server load and pass
+ * them as `initialData` so the first client render serves them with NO
+ * duplicate fetch. The live view starts populated at `ready`.
+ * ```ts
+ * // +page.server.ts — read the collection server-side, return plain rows.
+ * import { getCollection } from '$lib/server/smrt';
+ * import type { PageServerLoad } from './$types';
+ *
+ * export const load: PageServerLoad = async () => {
+ *   const products = await getCollection('Product');
+ *   const rows = await products.list({ limit: 50 });
+ *   return { products: rows.map((p) => ({ id: p.id, name: p.name })) };
+ * };
+ * ```
+ * ```svelte
+ * <!-- +page.svelte — seed the client collection from the hydrated load data. -->
+ * <script lang="ts">
+ *   import { createSmrtCollection } from '@happyvertical/smrt-web';
+ *   import { liveCollection } from '@happyvertical/smrt-svelte/web';
+ *   import { getCollectionDefinition } from '@happyvertical/smrt-virt-web';
+ *   import type { PageProps } from './$types';
+ *
+ *   let { data }: PageProps = $props();
+ *
+ *   // initialData seeds the cache: the first read is served from data.products
+ *   // (no network request) and revalidates only after staleTimeMs.
+ *   const products = createSmrtCollection(getCollectionDefinition('products'), {
+ *     initialData: data.products,
+ *   });
+ *   const view = liveCollection(products);
+ * </script>
+ *
+ * <ul>
+ *   {#each view.rows as row (row.id)}
+ *     <li>{row.name}</li>
+ *   {/each}
+ * </ul>
  * ```
  */
 export function liveCollection<TData extends object>(
