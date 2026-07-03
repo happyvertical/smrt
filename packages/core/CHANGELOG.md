@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.37.7
+
+### Patch Changes
+
+- ### Features
+
+  - idempotent sync-apply batch endpoint (shared web/mobile write contract) (#1778) (core)
+  - server loads + hydration with depends/invalidate conventions (#1781) (template-sveltekit)
+  - conditional GET — body-hash ETag/304 + Cache-Control policy on generated routes (#1793) (core)
+  - Phase 1 KMP foundation — smrt-mobile skeleton + contract codegen (#1749) (mobile)
+  - @happyvertical/smrt-config@0.37.7
+  - @happyvertical/smrt-types@0.37.7
+  - @happyvertical/smrt-scanner@0.37.7
+
 ## 0.37.6
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ui",
-  "version": "0.37.6",
+  "version": "0.37.7",
   "description": "Domain-agnostic Svelte 5 UI runtime for SMRT: primitives, i18n client, theme system, and module UI registry",
   "type": "module",
   "main": "./dist/index.js",
