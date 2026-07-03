@@ -17,6 +17,7 @@ import {
 } from '../config/global-config.js';
 import type { SmrtObject } from '../object';
 import { LRUCache } from '../utils/lru-cache';
+import { isDecoratorRuntimeFramePath } from '../utils/stack-frames';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
 // Re-export the globalThis augmentation so it's visible everywhere
@@ -114,11 +115,19 @@ export function getInheritanceConfig() {
  * This allows the same class to be re-registered when modules are re-evaluated
  * (e.g., during vitest test file collection with isolation enabled).
  *
+ * Frames from decorator-lowering runtime helpers (`@oxc-project/runtime` under
+ * Vite 8, `tslib`/`@swc/helpers`/`@babel/runtime` elsewhere) are skipped too, so
+ * the lowered `@smrt()` application resolves to the consumer module that declares
+ * the class rather than the helper frame the compiler inserted (#1785).
+ *
+ * @param stackOverride - Optional stack string to parse instead of a fresh
+ *   `Error().stack`. Used by tests to simulate a lowered call pattern.
  * @returns The file path where the @smrt() decorator was called, or undefined
  */
-export function getSourceFileFromStack(): string | undefined {
-  const error = new Error();
-  const stack = error.stack || '';
+export function getSourceFileFromStack(
+  stackOverride?: string,
+): string | undefined {
+  const stack = stackOverride ?? new Error().stack ?? '';
   const stackLines = stack.split('\n');
 
   // Look for the first file path that's NOT from smrt-core internal files
@@ -148,7 +157,10 @@ export function getSourceFileFromStack(): string | undefined {
         (lowerPath.includes('/packages/core/src/') &&
           !lowerPath.includes('__tests__')) ||
         // Specific manifest loader internals
-        lowerPath.includes('/manifest/manifest-loader')
+        lowerPath.includes('/manifest/manifest-loader') ||
+        // Decorator-lowering runtime helper (oxc/tslib/swc/babel) — the frame
+        // the compiler inserts between @smrt() and the declaring module (#1785)
+        isDecoratorRuntimeFramePath(normalizedPath)
       ) {
         continue;
       }
