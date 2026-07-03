@@ -154,7 +154,7 @@
     "fast-glob": "3.3.3",
     "minimatch": "10.2.5",
     "pluralize": "^8.0.0",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.0",
     "typescript": "^5.9.3",
     "yaml": "^2.9.0"
   },

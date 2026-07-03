@@ -71,7 +71,7 @@
     "lefthook": "^2.1.9",
     "livereload": "^0.10.3",
     "playwright-core": "^1.61.1",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.0",
     "turbo": "~2.7.4",
     "typedoc": "^0.28.19",
     "typedoc-plugin-markdown": "^4.12.0",
