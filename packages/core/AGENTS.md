@@ -73,6 +73,16 @@ admin auth.
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
 
+## Change Feed (#1758)
+
+Adapter-agnostic change-observation spine (`src/change-feed.ts`) — the server half of the client/mobile sync contract (PRD #1755):
+
+- `_smrt_changes` system table: one append per framework save/delete via a GlobalInterceptors writer registered at framework init. Deletes are tombstones (`operation: 'delete'`). `_smrt_*` tables are skipped. Feed-append failures log and never fail the user's write.
+- Sequences: allocated as `MAX(seq)+1` inside the INSERT with conflict retry — committed rows stay contiguous, so commit order == seq order on SQLite/Postgres/DuckDB (deliberately NOT identity/serial: those allocate before commit and break the cursor guarantee under concurrent writers).
+- `getChangesSince(db, { since, tables?, tenantId?, limit? }) → { changes, cursor }`: strictly monotonic cursor; polling with returned cursors misses no committed change and never repeats one. `getTenantScopedChangesSince()` resolves tenant via the DispatchBus resolver hook (fail-closed: tenancy on + no context → global rows only; tenant `T` sees `T` + global rows, never another tenant).
+- Generated `_changes` routes: REST (`GET {basePath}/_changes`, requires `authMiddleware`, otherwise 401 — per-model `api.public` does NOT apply) and SvelteKit (`{routesDir}/_changes/+server.ts`, requires an authenticated principal on `locals`; opt out via `sveltekit.changesRoute.enabled: false`). Query params: `since`, `tables` (comma-separated), `limit`.
+- Retention: `pruneChangeFeed(db, { maxAgeMs?, maxRows? })` — schedule it; cursors older than the retained window require a client full resync. Raw-SQL writes are invisible to the feed (same documented gap as the #1499 cache); `bumpChangeFeed(db, { table, rowId? })` is the manual escape hatch.
+
 ## Single Table Inheritance (STI)
 
 - Base: `@smrt({ tableStrategy: 'sti' })` — children inherit, share one table

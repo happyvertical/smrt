@@ -24,6 +24,7 @@ import {
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
 import { estimateAiUsageCost } from './adapters/cost-rates.js';
+import { registerChangeFeedWriter } from './change-feed.js';
 import type {
   AIConfig,
   AiUsageConfig,
@@ -33,7 +34,6 @@ import type {
 } from './config.js';
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
-import { registerChangeFeedWriter } from './change-feed.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {

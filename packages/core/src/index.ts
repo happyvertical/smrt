@@ -18,11 +18,6 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
-// R10: generated child accessors for @oneToMany relationships
-export {
-  applyOneToManyChildAccessors,
-  childAccessorName,
-} from './child-accessors';
 // Adapter-agnostic change feed — _smrt_changes log, cursor reads, retention,
 // manual bump escape hatch (issue #1758)
 export {
@@ -46,6 +41,11 @@ export {
   resetChangeFeedWarnings,
   unregisterChangeFeedWriter,
 } from './change-feed';
+// R10: generated child accessors for @oneToMany relationships
+export {
+  applyOneToManyChildAccessors,
+  childAccessorName,
+} from './child-accessors';
 // Core SMRT framework
 export * from './class';
 export * from './collection';

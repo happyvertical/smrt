@@ -58,11 +58,10 @@ function resolveAnchorClassName(manifest: SmartObjectManifest): string | null {
   return null;
 }
 
-function manifestHasTenantScopedObject(
-  manifest: SmartObjectManifest,
-): boolean {
+function manifestHasTenantScopedObject(manifest: SmartObjectManifest): boolean {
   return Object.values(manifest.objects).some(
-    (def) => !isCollectionDefinition(def) && !!def.decoratorConfig?.tenantScoped,
+    (def) =>
+      !isCollectionDefinition(def) && !!def.decoratorConfig?.tenantScoped,
   );
 }
 

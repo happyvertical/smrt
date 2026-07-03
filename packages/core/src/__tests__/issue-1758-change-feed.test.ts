@@ -330,9 +330,9 @@ describe('change feed spine (issue #1758)', () => {
       await expect(getChangesSince(db, { since: -1 })).rejects.toThrow(
         /non-negative/,
       );
-      await expect(
-        getChangesSince(db, { since: Number.NaN }),
-      ).rejects.toThrow(/non-negative/);
+      await expect(getChangesSince(db, { since: Number.NaN })).rejects.toThrow(
+        /non-negative/,
+      );
     });
   });
 
@@ -365,7 +365,10 @@ describe('change feed spine (issue #1758)', () => {
       // Filters never stall the cursor.
       expect(tenantA.cursor).toBe(3);
 
-      const globalOnly = await getChangesSince(db, { since: 0, tenantId: null });
+      const globalOnly = await getChangesSince(db, {
+        since: 0,
+        tenantId: null,
+      });
       expect(globalOnly.changes).toHaveLength(1);
       expect(globalOnly.changes[0].tenantId).toBeNull();
     });
@@ -416,8 +419,10 @@ describe('change feed spine (issue #1758)', () => {
       await bumpChangeFeed(db, { table: 'products', rowId: 'old' });
       await bumpChangeFeed(db, { table: 'products', rowId: 'older' });
 
-      // Everything is older than "0ms ago".
-      const { pruned } = await pruneChangeFeed(db, { maxAgeMs: 0 });
+      // Let the entries age past the cutoff (created_at < now - maxAgeMs is
+      // a strict comparison at millisecond precision).
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      const { pruned } = await pruneChangeFeed(db, { maxAgeMs: 5 });
       expect(pruned).toBe(2);
       expect(await allChanges(db)).toHaveLength(0);
 
@@ -473,9 +478,9 @@ describe('change feed spine (issue #1758)', () => {
     });
 
     it('validates input', async () => {
-      await expect(
-        appendChange(db, { table: '', rowId: 'x' }),
-      ).rejects.toThrow(/non-empty table/);
+      await expect(appendChange(db, { table: '', rowId: 'x' })).rejects.toThrow(
+        /non-empty table/,
+      );
       await expect(
         appendChange(db, {
           table: 'products',
@@ -565,17 +570,13 @@ describe('change feed spine (issue #1758)', () => {
       const handler = createHandler({ withAuth: 'pass' });
 
       const filtered = await handler(
-        new Request(
-          `http://localhost/api/v1/_changes?tables=${GADGETS_TABLE}`,
-        ),
+        new Request(`http://localhost/api/v1/_changes?tables=${GADGETS_TABLE}`),
       );
       const filteredBody = (await filtered.json()) as {
         changes: ChangeFeedEntry[];
         cursor: number;
       };
-      expect(filteredBody.changes.map((c) => c.table)).toEqual([
-        GADGETS_TABLE,
-      ]);
+      expect(filteredBody.changes.map((c) => c.table)).toEqual([GADGETS_TABLE]);
       expect(filteredBody.cursor).toBe(2);
 
       const badSince = await handler(

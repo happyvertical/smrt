@@ -79,10 +79,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
-import {
-  GlobalInterceptors,
-  type InterceptorContext,
-} from './interceptors.js';
+import { GlobalInterceptors, type InterceptorContext } from './interceptors.js';
 import type { SmrtObject } from './object.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { CREATE_SMRT_CHANGES_TABLE } from './system/schema.js';
@@ -239,8 +236,7 @@ function getQueryRows(result: unknown): Record<string, unknown>[] {
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  const message =
-    error instanceof Error ? error.message : String(error ?? '');
+  const message = error instanceof Error ? error.message : String(error ?? '');
   return (
     /unique constraint/i.test(message) ||
     /duplicate key/i.test(message) ||
@@ -420,9 +416,7 @@ export async function getChangesSince(
 
   const tables = options.tables?.filter((table) => table.trim().length > 0);
   if (tables && tables.length > 0) {
-    conditions.push(
-      `table_name IN (${tables.map(() => next()).join(', ')})`,
-    );
+    conditions.push(`table_name IN (${tables.map(() => next()).join(', ')})`);
     params.push(...tables);
   }
 
@@ -545,11 +539,7 @@ export async function pruneChangeFeed(
     const horizon = toSeqNumber(horizonRows[0]?.horizon);
     const pruneThrough = horizon - Math.floor(maxRows);
     if (pruneThrough > 0) {
-      pruned += await deleteCounted(
-        db,
-        `seq <= ${p(1)}`,
-        [pruneThrough],
-      );
+      pruned += await deleteCounted(db, `seq <= ${p(1)}`, [pruneThrough]);
     }
   }
 
@@ -677,8 +667,7 @@ async function appendForInstance(
 
   try {
     const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>)
-      .tenantId;
+    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
     await appendChange(db, {
       table,
       rowId: typeof id === 'string' && id ? id : null,
