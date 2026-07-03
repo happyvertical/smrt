@@ -6,6 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SmartObjectManifest } from '../scanner/types';
+import { selectWebCollectionEntries } from '../vite-plugin/web-collections.js';
 
 export interface PrebuildOptions {
   /** Path to manifest file or manifest object */
@@ -280,6 +281,49 @@ ${objectImports}
   }
 }`;
 
+  // Generate web collection-definition module declaration (#1761). Selection
+  // shares selectWebCollectionEntries with the vite-plugin runtime module and
+  // its virt-web d.ts, so this `tsc`-only consumer declaration cannot drift
+  // from the emitted values.
+  const webCollectionEntries = selectWebCollectionEntries(manifest)
+    .map(
+      ({ collection, obj }) =>
+        `    ${collection}: SmrtWebCollectionDefinition<import('./smrt-objects').${obj.className}Data>;`,
+    )
+    .join('\n');
+
+  const webDeclaration = `/**
+ * Auto-generated web collection-definition module declaration (#1761)
+ */
+declare module '@smrt/web' {
+  export interface SmrtWebFieldDefinition {
+    type: string;
+    required?: boolean;
+    default?: unknown;
+  }
+
+  export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
+    name: string;
+    className: string;
+    endpoint: string;
+    idField: string;
+    actions: string[];
+    fields: Record<string, SmrtWebFieldDefinition>;
+    /** Phantom row-type carrier for inference — never present at runtime. */
+    _row?: TData;
+  }
+
+  export interface SmrtWebCollectionDefinitions {
+${webCollectionEntries}
+  }
+
+  export const collectionDefinitions: SmrtWebCollectionDefinitions;
+  export function getCollectionDefinition<
+    K extends keyof SmrtWebCollectionDefinitions,
+  >(name: K): SmrtWebCollectionDefinitions[K];
+  export default collectionDefinitions;
+}`;
+
   // Write all virtual module declarations
   fs.writeFileSync(
     path.join(outDir, 'smrt-manifest.d.ts'),
@@ -289,6 +333,7 @@ ${objectImports}
   fs.writeFileSync(path.join(outDir, 'smrt-routes.d.ts'), routesDeclaration);
   fs.writeFileSync(path.join(outDir, 'smrt-mcp.d.ts'), mcpDeclaration);
   fs.writeFileSync(path.join(outDir, 'smrt-types.d.ts'), typesDeclaration);
+  fs.writeFileSync(path.join(outDir, 'smrt-web.d.ts'), webDeclaration);
 }
 
 /**

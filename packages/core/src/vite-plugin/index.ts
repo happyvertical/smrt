@@ -26,6 +26,10 @@ import {
   resolveApiActionSet,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
+import {
+  buildWebFieldDefinitions,
+  selectWebCollectionEntries,
+} from './web-collections.js';
 
 export type {
   CliApiCoherenceViolation,
@@ -119,6 +123,7 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-schema': 'smrt:schema',
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
   '@happyvertical/smrt-virt-cli': 'smrt:cli',
+  '@happyvertical/smrt-virt-web': 'smrt:web',
 };
 
 async function importScanner() {
@@ -825,6 +830,11 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           // CLI module for command-line interface generation
           return await generateCLIModule(manifest);
 
+        case 'smrt:web':
+          // Web collection definitions for the browser client data runtime
+          // (@happyvertical/smrt-web, #1761)
+          return generateWebModule(manifest);
+
         default:
           return null;
       }
@@ -1289,6 +1299,56 @@ export { createClient as default };
 }
 
 /**
+ * Generate the virtual web-collection definition module
+ * (`@happyvertical/smrt-virt-web`, #1761).
+ *
+ * Emits typed per-collection metadata — REST collection name, endpoint path,
+ * id field, exposed CRUD actions, and persisted field definitions — for every
+ * API-exposed model in the manifest. This is the codegen contract consumed by
+ * `@happyvertical/smrt-web` to construct client collections over the generated
+ * REST surface. Deliberately data-only: no fetch code is emitted here, so the
+ * runtime wrapper owns all HTTP/error semantics in one place. Selection and
+ * field rules live in {@link selectWebCollectionEntries} /
+ * {@link buildWebFieldDefinitions} so this value emission and the matching
+ * d.ts type emission cannot drift.
+ */
+function generateWebModule(manifest: SmartObjectManifest): string {
+  const definitions: Record<string, unknown> = {};
+
+  for (const { collection, obj, actions } of selectWebCollectionEntries(
+    manifest,
+  )) {
+    definitions[collection] = {
+      name: collection,
+      className: obj.className,
+      endpoint: `/${collection}`,
+      idField: 'id',
+      actions,
+      fields: buildWebFieldDefinitions(obj),
+    };
+  }
+
+  return `
+// Auto-generated web collection definitions from SMRT objects (#1761)
+// This file is generated automatically - do not edit
+
+export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
+
+export function getCollectionDefinition(name) {
+  const definition = collectionDefinitions[name];
+  if (!definition) {
+    throw new Error(
+      \`[smrt] Unknown web collection definition: \${name}. Known: \${Object.keys(collectionDefinitions).join(', ')}\`,
+    );
+  }
+  return definition;
+}
+
+export { collectionDefinitions as default };
+`;
+}
+
+/**
  * Generate virtual MCP module
  */
 async function generateMCPModule(
@@ -1568,6 +1628,18 @@ ${fields}
       })
       .join('\n');
 
+    // Typed web collection definitions (#1761): one entry per REST collection,
+    // with the row type threaded through the phantom `_row` carrier so
+    // downstream factories (`@happyvertical/smrt-web`) can infer it. Selection
+    // shares selectWebCollectionEntries with the runtime module so the declared
+    // types and the emitted values cannot drift.
+    const webCollectionInterface = selectWebCollectionEntries(manifest)
+      .map(
+        ({ collection, obj }) =>
+          `    ${collection}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${obj.className}Data>;`,
+      )
+      .join('\n');
+
     // Generate MCP tool interfaces based on discovered methods
     const _mcpTools = Object.entries(manifest.objects).flatMap(([_name, obj]) =>
       Object.entries(obj.methods).map(([methodName, method]) => ({
@@ -1714,6 +1786,48 @@ declare module '@happyvertical/smrt-virt-types' {
 ${objectInterfaces}
 
   export default types;
+}
+
+// Web module - Typed collection definitions for the browser client data
+// runtime (@happyvertical/smrt-web, #1761)
+declare module '@happyvertical/smrt-virt-web' {
+  export type SmrtWebFieldType =
+    | 'text'
+    | 'decimal'
+    | 'boolean'
+    | 'integer'
+    | 'datetime'
+    | 'json'
+    | 'foreignKey'
+    | 'crossPackageRef'
+    | 'meta';
+
+  export interface SmrtWebFieldDefinition {
+    type: SmrtWebFieldType;
+    required?: boolean;
+    default?: unknown;
+  }
+
+  export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
+    name: string;
+    className: string;
+    endpoint: string;
+    idField: string;
+    actions: string[];
+    fields: Record<string, SmrtWebFieldDefinition>;
+    /** Phantom row-type carrier for inference — never present at runtime. */
+    _row?: TData;
+  }
+
+  export interface SmrtWebCollectionDefinitions {
+${webCollectionInterface}
+  }
+
+  export const collectionDefinitions: SmrtWebCollectionDefinitions;
+  export function getCollectionDefinition<
+    K extends keyof SmrtWebCollectionDefinitions,
+  >(name: K): SmrtWebCollectionDefinitions[K];
+  export default collectionDefinitions;
 }
 
 // CLI module - Auto-generated command-line interface

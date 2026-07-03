@@ -69,6 +69,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Tooling
 | Package | Purpose |
 |---------|---------|
+| smrt-web | Browser client data runtime (web twin of smrt-mobile): manifest-generated collections over the generated REST surface with SWR reads, request dedup, optimistic mutations; wraps the client-data engine (TanStack DB) behind SMRT-owned types so it never leaks |
 | smrt-svelte | Svelte 5: Provider, browser AI (STT/TTS/LLM) with warm cache, theme system |
 | smrt-dev-mcp | Tier 2 dev MCP: code generation, project introspection, deterministic knowledge reflection, review/architecture context bundles, bundled agent skills |
 | gnode | Federation library — stubs only, not implemented |
