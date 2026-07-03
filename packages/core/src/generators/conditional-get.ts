@@ -293,6 +293,12 @@ export function computeTableVersionEtag(
  * read `searchParams.get('limit')` (the FIRST value) — different reads that must
  * not share an ETag. Name-only sorting keeps different orderings of the same
  * keys distinct while still making `?a=1&b=2` and `?b=2&a=1` equivalent.
+ *
+ * Names, values, and the extra discriminator are percent-ENCODED before being
+ * joined — the `searchParams` entries arrive already decoded, so re-joining them
+ * raw with `&`/`=`/`|` would let a value containing those characters collide with
+ * a structurally different request (`?q=a%26b=c` vs `?q=a&b=c` both decode-then-
+ * rejoin to `q=a&b=c`), a false-304 vector. Encoding makes the string injective.
  */
 export function canonicalReadRepresentation(
   request: Request,
@@ -302,8 +308,13 @@ export function canonicalReadRepresentation(
   const params = [...url.searchParams.entries()].sort((a, b) =>
     a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0,
   );
-  const search = params.map(([key, value]) => `${key}=${value}`).join('&');
-  return `${url.pathname}?${search}${extra ? `|${extra}` : ''}`;
+  const search = params
+    .map(
+      ([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+    )
+    .join('&');
+  return `${url.pathname}?${search}${extra ? `|${encodeURIComponent(extra)}` : ''}`;
 }
 
 /**

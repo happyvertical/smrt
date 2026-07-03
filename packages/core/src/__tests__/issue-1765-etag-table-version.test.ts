@@ -279,6 +279,18 @@ describe('canonicalReadRepresentation (#1765)', () => {
     );
     expect(first).not.toBe(second);
   });
+
+  it('encodes values so a separator inside a value cannot collide with a structural one', () => {
+    // `?q=a%26b=c` is a SINGLE param q="a&b=c"; `?q=a&b=c` is TWO params. Without
+    // encoding, both decode-then-rejoin to `q=a&b=c` — a false-304 collision.
+    const single = canonicalReadRepresentation(
+      new Request('http://local/api/v1/widgets?q=a%26b=c'),
+    );
+    const two = canonicalReadRepresentation(
+      new Request('http://local/api/v1/widgets?q=a&b=c'),
+    );
+    expect(single).not.toBe(two);
+  });
 });
 
 // ============================================================================
