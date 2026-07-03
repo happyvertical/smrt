@@ -132,9 +132,16 @@ export interface ChangeFeedEntry {
 /** Options for {@link getChangesSince}. */
 export interface GetChangesOptions {
   /**
-   * Cursor to read after. Pass `0` to read from the start of the retained
-   * log; pass a previously returned {@link ChangeFeedPage.cursor} to poll.
-   * Only rows with `seq` strictly greater than `since` are returned.
+   * Cursor to read after. Only rows with `seq` strictly greater than `since`
+   * are returned; pass a previously returned {@link ChangeFeedPage.cursor} to
+   * poll.
+   *
+   * `0` reads from the start of the log only while it has not been pruned past
+   * the beginning. Once retention has raised the retained floor above the
+   * start, `since: 0` (like any cursor older than the retained window) can no
+   * longer be served incrementally — the read returns
+   * {@link ChangeFeedPage.resyncRequired} and the caller must do a full
+   * resync.
    */
   since: number;
   /** Restrict to these physical table names. Empty/omitted → all tables. */
@@ -310,6 +317,18 @@ export async function ensureChangeFeedTable(
  * module docs). Throws after {@link MAX_APPEND_ATTEMPTS} consecutive
  * conflicts or on any non-conflict database error; the framework's
  * interceptor catches and logs instead of failing the user's write.
+ *
+ * **Transaction assumption.** The conflict retry assumes an autocommit
+ * handle, which is the default framework path: `save()`/`delete()` run their
+ * statements as independent autocommit calls, so a conflicting append aborts
+ * nothing and the retry recomputes `MAX(seq)` against the committed head. If a
+ * caller instead wraps `save()` in its own transaction on an MVCC engine
+ * (e.g. Postgres), a duplicate-key error can abort the *surrounding*
+ * transaction — the retry is then futile and the caller's write rolls back.
+ * Callers wrapping mutations in a transaction under genuine seq-head write
+ * contention should disable the feed writer for that path or accept that
+ * risk. Savepoint-scoped protection is a possible follow-up; it is
+ * intentionally out of scope for the v1 spine.
  */
 export async function appendChange(
   db: DatabaseInterface,
