@@ -207,11 +207,30 @@ ${apiClientInterface}
   // classes, require `list` on the api surface (omitted api config means the
   // full CRUD surface is exposed, so it qualifies), one entry per REST
   // collection (STI children folding into their base table's definition).
-  const isCollectionClassDef = (obj: {
-    extends?: string;
-    extendsTypeArg?: string;
-  }): boolean =>
-    obj.extends === 'SmrtCollection' || obj.extendsTypeArg !== undefined;
+  const isCollectionClassDef = (
+    obj: {
+      extends?: string;
+      extendsQualified?: string;
+      extendsTypeArg?: string;
+    },
+    seen: Set<string> = new Set(),
+  ): boolean => {
+    if (obj.extends === 'SmrtCollection' || obj.extendsTypeArg !== undefined) {
+      return true;
+    }
+    // Walk the extends chain within the manifest: deeper collection
+    // subclasses (e.g. MaterialCollection extends ProductCollection) carry
+    // no type arg themselves.
+    const parentName = obj.extendsQualified || obj.extends;
+    if (!parentName || seen.has(parentName)) return false;
+    seen.add(parentName);
+    const parent = Object.values(manifest.objects).find(
+      (candidate) =>
+        candidate.qualifiedName === parentName ||
+        candidate.className === parentName,
+    );
+    return parent ? isCollectionClassDef(parent, seen) : false;
+  };
 
   const exposesList = (obj: { decoratorConfig?: unknown }): boolean => {
     const api = (obj.decoratorConfig as { api?: unknown } | undefined)?.api;
@@ -225,17 +244,48 @@ ${apiClientInterface}
     return true;
   };
 
-  const seenWebCollections = new Set<string>();
-  const webCollectionEntries: string[] = [];
+  // True when some ancestor model maps to the same REST collection: the STI
+  // base model owns the shared table's definition.
+  const isStiChildDef = (obj: {
+    collection: string;
+    extends?: string;
+    extendsQualified?: string;
+  }): boolean => {
+    const seen = new Set<string>();
+    let parentName = obj.extendsQualified || obj.extends;
+    while (parentName && !seen.has(parentName)) {
+      seen.add(parentName);
+      const name: string = parentName;
+      const parent = Object.values(manifest.objects).find(
+        (candidate) =>
+          candidate.qualifiedName === name || candidate.className === name,
+      );
+      if (!parent) return false;
+      if (parent.collection === obj.collection) return true;
+      parentName = parent.extendsQualified || parent.extends;
+    }
+    return false;
+  };
+
+  const webCollectionChoices = new Map<
+    string,
+    { className: string; isStiChild: boolean }
+  >();
   for (const obj of Object.values(manifest.objects)) {
     if (isCollectionClassDef(obj)) continue;
     if (!exposesList(obj)) continue;
-    if (seenWebCollections.has(obj.collection)) continue;
-    seenWebCollections.add(obj.collection);
-    webCollectionEntries.push(
-      `    ${obj.collection}: SmrtWebCollectionDefinition<import('./smrt-objects').${obj.className}Data>;`,
-    );
+    const isStiChild = isStiChildDef(obj);
+    const existing = webCollectionChoices.get(obj.collection);
+    if (existing && !(existing.isStiChild && !isStiChild)) continue;
+    webCollectionChoices.set(obj.collection, {
+      className: obj.className,
+      isStiChild,
+    });
   }
+  const webCollectionEntries = [...webCollectionChoices.entries()].map(
+    ([collection, choice]) =>
+      `    ${collection}: SmrtWebCollectionDefinition<import('./smrt-objects').${choice.className}Data>;`,
+  );
 
   const webDeclaration = `/**
  * Auto-generated web collection-definition module declaration (spike #1756)

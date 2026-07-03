@@ -16,9 +16,9 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import { useLiveQuery } from '@happyvertical/smrt-web/svelte';
 import { onMount } from 'svelte';
 import {
-  PRODUCTS_STALE_TIME_MS,
   createProductOptimistically,
   getProductsCollection,
+  PRODUCTS_STALE_TIME_MS,
 } from '../../lib/stores/product-live-collection.js';
 import AppLayout from '../layouts/AppLayout.svelte';
 
@@ -132,13 +132,13 @@ async function handleCreate() {
         <p class="loading">Loading products…</p>
       {:else}
         <ul class="product-list">
-          {#each query.data as row (row.product.id)}
+          {#each query.data as row (row.id)}
             <li class="product-row">
-              <span class="product-name">{row.product.name}</span>
+              <span class="product-name">{row.name}</span>
               <span class="product-price">
-                ${Number(row.product.price ?? 0).toFixed(2)}
+                ${Number(row.price ?? 0).toFixed(2)}
               </span>
-              <span class="product-id">{row.product.id}</span>
+              <span class="product-id">{row.id}</span>
             </li>
           {/each}
         </ul>

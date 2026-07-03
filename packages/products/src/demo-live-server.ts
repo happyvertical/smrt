@@ -2,11 +2,20 @@
 /**
  * Demo API server for the TanStack DB spike (#1756).
  *
- * Runs the REAL generated REST stack (startRestServer over the Product and
+ * Runs the REAL generated REST stack (APIGenerator over the Product and
  * Category models, SQLite persistence, schema applied from the package
- * manifest's DDL) with one demo valve: POST bodies whose `name` starts with
- * "FAIL" are rejected with a 500 — the switch the live demo page uses to
- * show optimistic-create rollback.
+ * manifest's DDL) with one demo valve: POST/PUT bodies whose `name` starts
+ * with "FAIL" are rejected with a 500 — the switch the live demo page uses
+ * to show optimistic-create rollback.
+ *
+ * Spike findings baked into this file's shape:
+ * - Collections are registered explicitly under their PLURAL names.
+ *   APIGenerator's auto-discovery pluralizes the URL segment again
+ *   ("products" -> "productses"), so plural URLs — the ones the generated
+ *   client fetches — never match auto-discovery. registerCollection() is
+ *   the only path that serves the generated client's URL scheme.
+ * - The manifest must be registered before model imports (see
+ *   demo-live-register.ts) or decorators register field-less classes.
  *
  * Usage:
  *   pnpm build                 # produces dist/lib/manifest.json (DDL source)
@@ -14,13 +23,16 @@
  *   pnpm dev:standalone        # vite dev proxies /api/v1 to this server
  */
 
+// Side-effect import: must run before model imports (manifest cache).
+import './demo-live-register';
+
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ObjectRegistry, startRestServer } from '@happyvertical/smrt-core';
+import { APIGenerator } from '@happyvertical/smrt-core';
 import { getDatabase, syncSchema } from '@happyvertical/sql';
-import { Category } from './lib/models/Category';
-import { Product } from './lib/models/Product';
+import { CategoryCollection } from './lib/collections/CategoryCollection';
+import { ProductCollection } from './lib/collections/ProductCollection';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(__dirname, '..');
@@ -28,7 +40,11 @@ const PORT = 39456;
 
 interface ManifestObjectDef {
   className?: string;
-  schema?: { tableName?: string; ddl?: string };
+  schema?: {
+    tableName?: string;
+    ddl?: string;
+    indexes?: Array<{ name: string; columns: string[]; unique?: boolean }>;
+  };
 }
 
 interface ManifestFile {
@@ -49,7 +65,7 @@ function loadManifest(): ManifestFile {
     }
   }
   throw new Error(
-    `No manifest found (checked .smrt/ and dist/). Run \`pnpm build\` in packages/products first.`,
+    'No manifest found (checked .smrt/ and dist/). Run `pnpm build` in packages/products first.',
   );
 }
 
@@ -58,12 +74,15 @@ function loadManifest(): ManifestFile {
  * create/update payloads whose name starts with "FAIL" — those get a 500 so
  * the client demo can show a visible optimistic rollback.
  */
-function demoValveMiddleware(_objectName: string, action: string) {
+function demoValveMiddleware(_objectName: string, _action: string) {
   return async (req: Request): Promise<Request | Response> => {
-    if (action === 'create' || action === 'update') {
+    if (req.method === 'POST' || req.method === 'PUT') {
       try {
         const body = (await req.clone().json()) as { name?: unknown };
         if (typeof body?.name === 'string' && body.name.startsWith('FAIL')) {
+          // Small delay so the optimistic row is visibly on screen before
+          // the rollback (localhost roundtrips are otherwise ~5ms).
+          await new Promise((resolve) => setTimeout(resolve, 600));
           return new Response(
             JSON.stringify({
               error:
@@ -83,33 +102,53 @@ function demoValveMiddleware(_objectName: string, action: string) {
 async function main() {
   const manifest = loadManifest();
 
-  // Source-mode runs (tsx) have no build plugin to populate field metadata;
-  // register the package manifest explicitly so save()/toJSON() see fields.
-  ObjectRegistry.registerPackageManifest(
-    manifest as Parameters<typeof ObjectRegistry.registerPackageManifest>[0],
-  );
-
   // In-memory SQLite with schema applied from the manifest's generated DDL —
   // no runtime schema creation, the manifest is the migration source.
   const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
-  const ddl = Object.values(manifest.objects)
-    .filter(
-      (obj) =>
-        (obj.className === 'Product' || obj.className === 'Category') &&
-        obj.schema?.ddl,
-    )
-    .map((obj) => obj.schema?.ddl)
+  const schemaObjects = Object.values(manifest.objects).filter(
+    (obj) =>
+      (obj.className === 'Product' || obj.className === 'Category') &&
+      obj.schema?.ddl,
+  );
+  const ddl = schemaObjects
+    .flatMap((obj) => {
+      const schema = obj.schema;
+      if (!schema?.ddl || !schema.tableName) return [];
+      // Index DDL matters: save() upserts ON CONFLICT(slug, context,
+      // _meta_type), which requires the UNIQUE index from the manifest.
+      const indexes = (schema.indexes ?? []).map(
+        (index) =>
+          `CREATE ${index.unique ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS "${index.name}" ON "${schema.tableName}" (${index.columns.map((c) => `"${c}"`).join(', ')});`,
+      );
+      return [schema.ddl, ...indexes];
+    })
     .join('\n');
   await syncSchema({ db, schema: ddl });
 
-  const shutdown = await startRestServer([Product, Category], { db }, {
-    port: PORT,
-    hostname: '127.0.0.1',
-    basePath: '/api/v1',
-    enableCors: true,
-    allowedOrigins: ['http://localhost:3001', 'http://localhost:4173'],
-    authMiddleware: demoValveMiddleware,
-  });
+  const generator = new APIGenerator(
+    {
+      port: PORT,
+      hostname: '127.0.0.1',
+      basePath: '/api/v1',
+      enableCors: true,
+      allowedOrigins: ['http://localhost:3001', 'http://localhost:4173'],
+      authMiddleware: demoValveMiddleware,
+    },
+    { db },
+  );
+
+  // Register collections under their PLURAL names — the URL scheme the
+  // generated client (and virt-web definitions) actually use.
+  generator.registerCollection(
+    'products',
+    (await ProductCollection.create({ db })) as never,
+  );
+  generator.registerCollection(
+    'categories',
+    (await CategoryCollection.create({ db })) as never,
+  );
+
+  const { url } = generator.createServer();
 
   // Seed a few rows through the real REST surface so the demo has data.
   const seed = [
@@ -128,11 +167,13 @@ async function main() {
     }
   }
 
-  console.log(`[demo] Live demo API at http://127.0.0.1:${PORT}/api/v1`);
-  console.log('[demo] GET  /api/v1/products      — list (watch for SWR: repeat navigations do not refetch)');
-  console.log('[demo] POST /api/v1/products      — create; names starting with "FAIL" get a forced 500');
-
-  return shutdown;
+  console.log(`[demo] Live demo API at ${url}/api/v1`);
+  console.log(
+    '[demo] GET  /api/v1/products — list (watch for SWR: repeat navigations do not refetch)',
+  );
+  console.log(
+    '[demo] POST /api/v1/products — create; names starting with "FAIL" get a forced 500',
+  );
 }
 
 main().catch((error) => {

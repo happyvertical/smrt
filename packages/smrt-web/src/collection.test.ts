@@ -8,11 +8,11 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  createSmrtCollection,
+  newLocalId,
   type SmrtCollectionDefinition,
   type SmrtCrudFetchers,
   SmrtWebRequestError,
-  createSmrtCollection,
-  newLocalId,
   unwrapItemResult,
   unwrapListResult,
 } from './index.js';
@@ -91,10 +91,10 @@ describe('createSmrtCollection', () => {
     const scripted = makeScriptedFetchers([
       { id: 'p1', name: 'Widget', price: 9.99 },
     ]);
-    const collection = createSmrtCollection(
-      productDefinition('products-swr'),
-      { fetchers: scripted.fetchers, staleTimeMs: 60_000 },
-    );
+    const collection = createSmrtCollection(productDefinition('products-swr'), {
+      fetchers: scripted.fetchers,
+      staleTimeMs: 60_000,
+    });
 
     await collection.preload();
     // Note: TanStack DB 0.6 decorates rows with virtual props ($key,
@@ -191,6 +191,66 @@ describe('createSmrtCollection', () => {
     expect(collection.has(localId)).toBe(false);
     expect(collection.toArray).toMatchObject([{ id: 'p1', name: 'Widget' }]);
     expect(collection.size).toBe(1);
+
+    await collection.cleanup();
+  });
+});
+
+describe('definition-derived fetchers', () => {
+  it('serves reads and rolls back failed creates using only the generated definition and a base path', async () => {
+    const serverRows = [{ id: 'p1', name: 'Widget' }];
+    const requests: Array<{ url: string; method: string }> = [];
+
+    // Mock ONLY the network boundary: a fetch stand-in for the generated
+    // REST routes (bare array list, `{ error }` + status on failure).
+    const fetchFn = (async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      requests.push({ url, method });
+      if (method === 'GET') {
+        return new Response(JSON.stringify(serverRows), { status: 200 });
+      }
+      if (method === 'POST') {
+        const body = JSON.parse(String(init?.body)) as { name?: string };
+        if (body.name?.startsWith('FAIL')) {
+          return new Response(JSON.stringify({ error: 'rejected by server' }), {
+            status: 500,
+          });
+        }
+        const created = { ...body, id: `server-${serverRows.length + 1}` };
+        serverRows.push(created as (typeof serverRows)[number]);
+        return new Response(JSON.stringify(created), { status: 201 });
+      }
+      return new Response(null, { status: 405 });
+    }) as typeof fetch;
+
+    const collection = createSmrtCollection(
+      productDefinition('products-deffetch'),
+      { basePath: '/api/v1', fetchFn, staleTimeMs: 60_000 },
+    );
+
+    await collection.preload();
+    expect(requests[0]).toEqual({
+      url: '/api/v1/products-deffetch',
+      method: 'GET',
+    });
+    expect(collection.size).toBe(1);
+
+    // Failed create: HTTP 500 rejects and rolls back the optimistic row.
+    const localId = newLocalId();
+    const tx = collection.insert({ id: localId, name: 'FAIL thing' });
+    expect(collection.has(localId)).toBe(true);
+    await expect(tx.isPersisted.promise).rejects.toThrow('rejected by server');
+    expect(collection.has(localId)).toBe(false);
+    expect(collection.size).toBe(1);
+
+    // Successful create persists and reconciles to the server id.
+    const okTx = collection.insert({ id: newLocalId(), name: 'Gadget' });
+    await okTx.isPersisted.promise;
+    expect(collection.size).toBe(2);
+    expect(collection.toArray.find((row) => row.name === 'Gadget')?.id).toBe(
+      'server-2',
+    );
 
     await collection.cleanup();
   });

@@ -12,8 +12,8 @@
  * packaging constraint to weigh in the go/no-go.
  */
 
-export { useLiveQuery } from '@tanstack/svelte-db';
 export type {
   UseLiveQueryReturn,
   UseLiveQueryReturnWithCollection,
 } from '@tanstack/svelte-db';
+export { useLiveQuery } from '@tanstack/svelte-db';

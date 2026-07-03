@@ -187,6 +187,12 @@ export default defineConfig(async ({ mode }) => {
 					'/api/v1': 'http://127.0.0.1:39456',
 				},
 			},
+			preview: {
+				// Same proxy for the built app (`vite preview --mode standalone`).
+				proxy: {
+					'/api/v1': 'http://127.0.0.1:39456',
+				},
+			},
 			plugins: [svelte(), await loadSmrtConsumer(), smrt],
 		};
 	}

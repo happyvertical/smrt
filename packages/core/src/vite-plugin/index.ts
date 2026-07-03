@@ -1288,9 +1288,28 @@ export { createClient as default };
  * ProductCollection` resolve `extendsTypeArg` during scanning).
  */
 function isWebCollectionClass(
+  manifest: SmartObjectManifest,
   obj: SmartObjectManifest['objects'][string],
+  seen: Set<string> = new Set(),
 ): boolean {
-  return obj.extends === 'SmrtCollection' || obj.extendsTypeArg !== undefined;
+  if (obj.extends === 'SmrtCollection' || obj.extendsTypeArg !== undefined) {
+    return true;
+  }
+
+  // Walk the extends chain within the manifest: `MaterialCollection extends
+  // ProductCollection` carries no type arg itself, but its parent does.
+  const parentName = obj.extendsQualified || obj.extends;
+  if (!parentName || seen.has(parentName)) {
+    return false;
+  }
+  seen.add(parentName);
+
+  const parent = Object.values(manifest.objects).find(
+    (candidate) =>
+      candidate.qualifiedName === parentName ||
+      candidate.className === parentName,
+  );
+  return parent ? isWebCollectionClass(manifest, parent, seen) : false;
 }
 
 /**
@@ -1315,36 +1334,69 @@ function isWebCollectionClass(
  * by the runtime module generator and the .d.ts generator so the emitted
  * values and their declared types cannot drift apart.
  */
-function selectWebCollectionEntries(
+/**
+ * True when the model is an STI child: some ancestor model in the manifest
+ * maps to the same REST collection (shared table).
+ */
+function isStiChildModel(
   manifest: SmartObjectManifest,
-): Array<{
+  obj: SmartObjectManifest['objects'][string],
+): boolean {
+  const seen = new Set<string>();
+  let parentName = obj.extendsQualified || obj.extends;
+  while (parentName && !seen.has(parentName)) {
+    seen.add(parentName);
+    const name: string = parentName;
+    const parent = Object.values(manifest.objects).find(
+      (candidate) =>
+        candidate.qualifiedName === name || candidate.className === name,
+    );
+    if (!parent) return false;
+    if (parent.collection === obj.collection) return true;
+    parentName = parent.extendsQualified || parent.extends;
+  }
+  return false;
+}
+
+function selectWebCollectionEntries(manifest: SmartObjectManifest): Array<{
   collection: string;
   obj: SmartObjectManifest['objects'][string];
   actions: string[];
 }> {
-  const seen = new Set<string>();
-  const entries: Array<{
-    collection: string;
-    obj: SmartObjectManifest['objects'][string];
-    actions: string[];
-  }> = [];
+  const byCollection = new Map<
+    string,
+    {
+      collection: string;
+      obj: SmartObjectManifest['objects'][string];
+      actions: string[];
+      isStiChild: boolean;
+    }
+  >();
 
   for (const obj of Object.values(manifest.objects)) {
-    if (isWebCollectionClass(obj)) continue;
+    if (isWebCollectionClass(manifest, obj)) continue;
 
     const exposedActions = resolveApiActionSet(obj);
     if (!exposedActions.has('list')) continue;
-    if (seen.has(obj.collection)) continue; // STI: first model wins
-    seen.add(obj.collection);
 
-    entries.push({
+    const isStiChild = isStiChildModel(manifest, obj);
+    const existing = byCollection.get(obj.collection);
+    // One definition per REST collection. The STI BASE model owns the shared
+    // table's definition — a child (e.g. Material extends Product on
+    // `products`) only wins while no base has been seen.
+    if (existing && !(existing.isStiChild && !isStiChild)) continue;
+
+    byCollection.set(obj.collection, {
       collection: obj.collection,
       obj,
       actions: [...exposedActions].sort(),
+      isStiChild,
     });
   }
 
-  return entries;
+  return [...byCollection.values()].map(
+    ({ collection, obj, actions }) => ({ collection, obj, actions }),
+  );
 }
 
 function generateWebModule(manifest: SmartObjectManifest): string {

@@ -16,8 +16,8 @@
  * invalidation, persistence, version awareness.
  */
 
-import { createCollection } from '@tanstack/db';
 import type { Collection } from '@tanstack/db';
+import { createCollection } from '@tanstack/db';
 import { QueryClient } from '@tanstack/query-core';
 import {
   type QueryCollectionUtils,

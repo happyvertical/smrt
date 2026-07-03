@@ -25,9 +25,9 @@
 import type { ProductData } from '@happyvertical/smrt-virt-types';
 import { collectionDefinitions } from '@happyvertical/smrt-virt-web';
 import {
-  type SmrtWebCollection,
   createSmrtCollection,
   newLocalId,
+  type SmrtWebCollection,
 } from '@happyvertical/smrt-web';
 
 /** Staleness window: reads within this window never hit the network. */
