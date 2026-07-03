@@ -16,6 +16,7 @@ export {
 export { InvoiceLineItemCollection } from './InvoiceLineItemCollection.js';
 export { PaymentAllocationCollection } from './PaymentAllocationCollection.js';
 export { PaymentCollection } from './PaymentCollection.js';
+export { PaymentInstrumentCollection } from './PaymentInstrumentCollection.js';
 export {
   PaymentIntentCollection,
   type PaymentIntentIdempotencyArgs,

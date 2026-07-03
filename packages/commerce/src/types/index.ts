@@ -108,6 +108,17 @@ export enum PaymentStatus {
   CANCELLED = 'cancelled',
 }
 
+/**
+ * Lifecycle status for a saved {@link PaymentInstrument} (card on file).
+ * `active` while chargeable, `expired` once the card lapses, `removed` when the
+ * customer detaches it.
+ */
+export enum PaymentInstrumentStatus {
+  ACTIVE = 'active',
+  EXPIRED = 'expired',
+  REMOVED = 'removed',
+}
+
 // ============================================================================
 // Payout Types
 // ============================================================================
@@ -539,6 +550,24 @@ export interface PaymentOptions extends SmrtObjectOptions {
   nativeCurrency?: string;
   usdAtQuote?: number;
   usdAtConfirmation?: number;
+}
+
+/**
+ * Constructor options for {@link PaymentInstrument}.
+ */
+export interface PaymentInstrumentOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  customerId?: string;
+  backendId?: string;
+  providerCustomerId?: string;
+  providerPaymentMethodId?: string;
+  type?: string;
+  brand?: string;
+  last4?: string;
+  expMonth?: number;
+  expYear?: number;
+  isDefault?: boolean;
+  status?: PaymentInstrumentStatus;
 }
 
 /**
