@@ -32,10 +32,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import {
-  ensureChangeFeedTable,
-  getTenantScopedChangesSince,
-} from '../change-feed.js';
+import { ensureChangeFeedTable, getChangesSince } from '../change-feed.js';
 import {
   type ChangeSignal,
   subscribeToChangeSignals,
@@ -189,10 +186,22 @@ export function buildChangeEventStream(
       // (c) Catch-up replay from the cursor, if one was supplied.
       if (cursor != null) {
         try {
+          // Catch-up MUST filter by the scope captured at connection open, not
+          // re-resolve the tenant via ALS at call time. start() happens to run
+          // in-request today, but relying on that is fragile — and it must match
+          // the live-signal filter exactly (signalVisibleToTenant): when
+          // enforced, `scope.tenantId` (a tenant id → that tenant + global; null
+          // → global only); when not enforced, undefined → no tenant filter.
+          const catchupTenantId = tenantScope.enforced
+            ? tenantScope.tenantId
+            : undefined;
           let since = cursor;
           // Page until exhausted (cursor stops advancing / resync).
           for (;;) {
-            const page = await getTenantScopedChangesSince(db, { since });
+            const page = await getChangesSince(db, {
+              since,
+              tenantId: catchupTenantId,
+            });
             if (page.resyncRequired) {
               controller.enqueue(encoder.encode('event: resync\ndata: {}\n\n'));
               break;
@@ -208,10 +217,25 @@ export function buildChangeEventStream(
                 }),
               );
             }
+            if (closed) break;
             if (page.cursor === since || page.changes.length === 0) {
               break;
             }
             since = page.cursor;
+            // NOTE: catch-up enqueues per-page without a hard cap. It is
+            // bounded — an over-old cursor hits `resyncRequired` and stops — but
+            // a large retention window replayed to a slow client could spike
+            // memory. Honor the controller's backpressure signal cheaply: when
+            // the internal queue is full (`desiredSize <= 0`), yield between
+            // pages so the consumer drains first. Bounded by `closed` (set on
+            // cancel/disconnect), so it can't spin on a client that never reads.
+            while (
+              !closed &&
+              controller.desiredSize !== null &&
+              controller.desiredSize <= 0
+            ) {
+              await new Promise((resolve) => setTimeout(resolve, 5));
+            }
           }
         } catch (error) {
           logger.warn('_events: cursor catch-up failed', {

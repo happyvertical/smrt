@@ -47,6 +47,17 @@
  *   write path (same accepted gap as the #1758 feed and #1498 cache). A
  *   `bumpChangeFeed` escape-hatch write appends a feed row but does not
  *   publish a signal.
+ * - **Caller-managed transactions are best-effort**: the append + signal fire
+ *   from `afterSave`/`afterDelete`, i.e. *before* a caller-wrapped transaction
+ *   commits (the autocommit default path — save()/delete() as independent
+ *   statements — is exact). Inside such a transaction, a signal may fire for a
+ *   change that a later rollback undoes, and the rolled-back seq is then reused
+ *   by the next append — so a client trusting a pre-commit `Last-Event-ID`
+ *   could skip the reuse via catch-up. This inherits the change feed's
+ *   documented transaction caveat (see `change-feed.ts`); no generic
+ *   post-commit hook exists to close it. Clients reconcile via full catch-up /
+ *   resync, so convergence still holds — live delivery is just best-effort for
+ *   transaction-wrapped writes.
  *
  * @see https://github.com/happyvertical/smrt/issues/1763
  * @packageDocumentation

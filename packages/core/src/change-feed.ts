@@ -349,11 +349,22 @@ export async function appendChange(
   }
 
   const p = placeholders(db);
+  // `RETURNING seq` yields the ACTUAL sequence the INSERT allocated, in the
+  // SAME statement — atomic. This matters for correctness, not just tidiness: a
+  // separate follow-up `SELECT MAX(seq)` is racy under concurrent appends (a
+  // peer can commit a higher seq in between), which would hand two distinct
+  // changes the same SSE `id` (a client that dedupes by id drops one → stale)
+  // and let a client's `Last-Event-ID` overshoot a change it never received.
+  // RETURNING closes that: each caller gets its own row's seq. SQLite (3.35+),
+  // Postgres, and DuckDB all support it, and the sql adapters surface the
+  // returned rows through `getQueryRows`. The allocator stays `MAX+1` under the
+  // unique-PK retry, so committed sequences remain contiguous (the cursor
+  // guarantee — see module docs).
   const sql =
     `INSERT INTO ${CHANGE_FEED_TABLE} ` +
     '(seq, table_name, row_id, operation, tenant_id, created_at) ' +
     `SELECT COALESCE(MAX(seq), 0) + 1, ${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)} ` +
-    `FROM ${CHANGE_FEED_TABLE}`;
+    `FROM ${CHANGE_FEED_TABLE} RETURNING seq`;
   const params = [
     table,
     input.rowId ?? null,
@@ -364,21 +375,7 @@ export async function appendChange(
 
   for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
     try {
-      await db.query(sql, ...params);
-      // Read back the allocated sequence so callers (the signal publisher)
-      // can carry it as a coarse resume cursor. Committed sequences are
-      // contiguous (module docs), so immediately after a successful insert on
-      // a single-writer handle — the default framework path — MAX(seq) is this
-      // row's seq. On an MVCC engine a concurrent append committing in the tiny
-      // window between this INSERT and the SELECT could report a higher value;
-      // that only makes the live signal's `seq` hint slightly ahead, never
-      // missing a change: the authoritative catch-up (getChangesSince) is exact
-      // and the client dedupes by seq. The feed row itself is unaffected.
-      // (No portable RETURNING clause exists across the supported engines, so a
-      // follow-up read mirrors the module's existing MAX(seq) style.)
-      const rows = getQueryRows(
-        await db.query(`SELECT MAX(seq) AS seq FROM ${CHANGE_FEED_TABLE}`),
-      );
+      const rows = getQueryRows(await db.query(sql, ...params));
       return toSeqNumber(rows[0]?.seq);
     } catch (error) {
       if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {

@@ -211,8 +211,24 @@ export class APIGenerator {
           if (done || clientGone) break;
           if (!res.write(value)) {
             // Respect back-pressure so a slow/absent consumer can't unbounded-
-            // buffer in the Node socket.
-            await new Promise<void>((resolve) => res.once('drain', resolve));
+            // buffer in the Node socket. Resolve on 'drain' OR on 'close'/
+            // 'error' — a disconnect while back-pressured never fires 'drain',
+            // so waiting only for it would hang this frame forever (leaking it
+            // and pinning the reader for the long-lived `_events` stream). Race
+            // the three and remove the losers so one-shot listeners don't pile
+            // up across many drains.
+            await new Promise<void>((resolve) => {
+              const settle = () => {
+                res.off('drain', settle);
+                res.off('close', settle);
+                res.off('error', settle);
+                resolve();
+              };
+              res.once('drain', settle);
+              res.once('close', settle);
+              res.once('error', settle);
+            });
+            if (clientGone) break;
           }
         }
       } catch {

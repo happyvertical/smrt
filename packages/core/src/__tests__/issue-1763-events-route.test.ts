@@ -336,6 +336,46 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
   // Step 4: real write path publishes signals
   // ==========================================================================
 
+  // ==========================================================================
+  // appendChange returns the seq of the row IT inserted (atomic, #1763 review)
+  // ==========================================================================
+
+  describe('appendChange seq return', () => {
+    it('returns the sequence of the row it inserted', async () => {
+      // Concurrency-correctness is by construction: `RETURNING seq` yields the
+      // value the INSERT itself allocated, in the same statement, so no
+      // interleaving append can substitute a different seq. Here we assert the
+      // sequential contract — the return equals the seq queryable back for that
+      // exact change.
+      const s1 = await appendChange(db, {
+        table: 'events_widgets',
+        rowId: 'r1',
+        operation: 'create',
+      });
+      const s2 = await appendChange(db, {
+        table: 'events_widgets',
+        rowId: 'r2',
+        operation: 'update',
+      });
+      const s3 = await appendChange(db, {
+        table: 'events_widgets',
+        rowId: 'r3',
+        operation: 'delete',
+      });
+
+      expect(s1).toBe(1);
+      expect(s2).toBe(2);
+      expect(s3).toBe(3);
+
+      // Each returned seq maps to the row it actually inserted.
+      const { changes } = await getChangesSince(db, { since: 0 });
+      const bySeq = new Map(changes.map((c) => [c.seq, c]));
+      expect(bySeq.get(s1)?.rowId).toBe('r1');
+      expect(bySeq.get(s2)?.rowId).toBe('r2');
+      expect(bySeq.get(s3)?.rowId).toBe('r3');
+    });
+  });
+
   describe('write path integration', () => {
     it('publishes create/update/delete signals mirroring the change feed', async () => {
       const widgets = await EventsWidgetCollection.create({ db });
@@ -630,6 +670,50 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       await stream.cancel().catch(() => {});
     });
 
+    it('catch-up filters by the CAPTURED scope, not the live ALS resolver', async () => {
+      const docs = await EventsTenantDocCollection.create({ db });
+      const aDoc = await docs.create({ title: 'a-doc', tenantId: 'tenant-a' });
+      const bDoc = await docs.create({ title: 'b-doc', tenantId: 'tenant-b' });
+      const gDoc = await docs.create({ title: 'g-doc', tenantId: '' }); // global
+
+      // The ALS resolver reports a DIFFERENT tenant than the captured scope. If
+      // catch-up (incorrectly) re-resolved via ALS, it would replay tenant-b and
+      // hide the captured tenant-a. The captured scope must win.
+      setDispatchTenantResolver(() => 'tenant-b');
+
+      const stream = buildChangeEventStream(db, {
+        cursor: 0,
+        tenantScope: { enforced: true, tenantId: 'tenant-a' },
+      });
+      const text = await readStreamText(stream, 100);
+
+      // Only tenant-a's rows plus global rows are replayed.
+      expect(text).toContain(aDoc.id);
+      expect(text).toContain(gDoc.id);
+      expect(text).not.toContain(bDoc.id);
+      await stream.cancel().catch(() => {});
+    });
+
+    it('catch-up with an enforced-but-no-tenant scope replays global rows only', async () => {
+      const docs = await EventsTenantDocCollection.create({ db });
+      const aDoc = await docs.create({ title: 'a-doc', tenantId: 'tenant-a' });
+      const gDoc = await docs.create({ title: 'g-doc', tenantId: '' });
+
+      // Even if the ALS resolver names a tenant, an enforced+null captured scope
+      // (fail-closed: no active tenant) must replay only global rows.
+      setDispatchTenantResolver(() => 'tenant-a');
+
+      const stream = buildChangeEventStream(db, {
+        cursor: 0,
+        tenantScope: { enforced: true, tenantId: null },
+      });
+      const text = await readStreamText(stream, 100);
+
+      expect(text).toContain(gDoc.id);
+      expect(text).not.toContain(aDoc.id);
+      await stream.cancel().catch(() => {});
+    });
+
     it('emits event: resync when the cursor cannot be served incrementally', async () => {
       const widgets = await EventsWidgetCollection.create({ db });
       await widgets.create({ name: 'only' }); // horizon = 1
@@ -759,6 +843,60 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
         // The server-side stream cancel() must fire, unsubscribing and clearing
         // the heartbeat so the subscription refcount returns to 0.
         await waitFor(() => activeSubscriberCount(db) === 0, 2000);
+        expect(activeSubscriberCount(db)).toBe(0);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
+    it('tears down even when the client disconnects while back-pressured', async () => {
+      const generator = new APIGenerator(
+        {
+          basePath: '/api/v1',
+          authMiddleware: allowAuth,
+          port: 0,
+          hostname: '127.0.0.1',
+        },
+        { db },
+      );
+      const { server } = generator.createServer();
+      await new Promise<void>((resolve) => server.on('listening', resolve));
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+
+      try {
+        const req = http.get({
+          host: '127.0.0.1',
+          port,
+          path: '/api/v1/_events',
+        });
+        const res = await new Promise<http.IncomingMessage>(
+          (resolve, reject) => {
+            req.on('response', resolve);
+            req.on('error', reject);
+          },
+        );
+        // Read the preamble, then STOP reading (pause) so the client-side and
+        // server-side socket buffers fill and res.write() starts returning false
+        // — driving the server into the back-pressure drain-await.
+        await new Promise<void>((resolve) => res.once('data', () => resolve()));
+        res.pause();
+        expect(activeSubscriberCount(db)).toBe(1);
+
+        // Flood large signals so the server's write buffer back-pressures. The
+        // large rowId inflates each SSE frame to force the socket buffer full.
+        const bigRowId = 'x'.repeat(64 * 1024);
+        for (let i = 0; i < 200; i++) {
+          publishChangeSignal(db, signal({ seq: 100 + i, rowId: bigRowId }));
+        }
+        await flushAsync();
+
+        // Disconnect abruptly WHILE back-pressured — no 'drain' will ever fire,
+        // so the fix must also settle the await on 'close' and tear down.
+        req.destroy();
+        res.destroy();
+
+        await waitFor(() => activeSubscriberCount(db) === 0, 3000);
         expect(activeSubscriberCount(db)).toBe(0);
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
