@@ -45,7 +45,7 @@ describe('home page data-loading convention (structural)', () => {
 });
 
 describe('home page server load (runtime)', () => {
-  let tempDir: string;
+  let tempDir: string | undefined;
   let routeModule: typeof import('../template/src/routes/+page.server.js');
   const previousEnv = {
     DATABASE_URL: process.env.DATABASE_URL,
@@ -65,7 +65,11 @@ describe('home page server load (runtime)', () => {
   afterAll(() => {
     process.env.DATABASE_URL = previousEnv.DATABASE_URL;
     process.env.DATABASE_TYPE = previousEnv.DATABASE_TYPE;
-    rmSync(tempDir, { recursive: true, force: true });
+    // Guard: if beforeAll failed before mkdtempSync assigned tempDir, a
+    // bare rmSync(undefined) here would throw and mask the real failure.
+    if (tempDir) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('registers depends("smrt:items") before querying and degrades gracefully without a prepared database', async () => {

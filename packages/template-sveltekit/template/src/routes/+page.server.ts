@@ -51,12 +51,17 @@ export const load: PageServerLoad = async ({ depends }) => {
     return {
       // Return plain serializable objects: SvelteKit encodes load data into
       // the initial HTML with devalue, so pick the fields the page needs
-      // rather than returning class instances.
-      items: rows.map((item) => ({
-        id: item.id ?? '',
-        title: item.title,
-        status: item.status,
-      })),
+      // rather than returning class instances. Persisted rows always carry a
+      // UUID `id`; the filter narrows the field's `string | null | undefined`
+      // type instead of coercing — a '' fallback would produce colliding
+      // `{#each}` keys if an id were ever missing.
+      items: rows
+        .filter((item): item is Item & { id: string } => Boolean(item.id))
+        .map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+        })),
       loadError: null as string | null,
     };
   } catch (e) {

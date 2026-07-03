@@ -52,14 +52,19 @@
       use:enhance={() => {
         creating = true;
         return async ({ result, update }) => {
-          // Apply the action result (sets `form`, resets the input) but skip
-          // SvelteKit's default invalidateAll() — we re-run only the loads
-          // that depend on this collection.
-          await update({ invalidateAll: false });
-          if (result.type === 'success') {
-            await invalidate('smrt:items');
+          try {
+            // Apply the action result (sets `form`, resets the input) but
+            // skip SvelteKit's default invalidateAll() — we re-run only the
+            // loads that depend on this collection.
+            await update({ invalidateAll: false });
+            if (result.type === 'success') {
+              await invalidate('smrt:items');
+            }
+          } finally {
+            // Always re-enable the form, even if update()/invalidate()
+            // throws (network error, aborted navigation, …).
+            creating = false;
           }
-          creating = false;
         };
       }}
     >
