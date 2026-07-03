@@ -112,7 +112,7 @@ HTTP 200
 | `rejected` | `auth_required` | No authenticated principal (and the model is not `public: true`), or the auth middleware answered 401. |
 | `rejected` | `forbidden` | The auth middleware refused with a non-401 status. |
 | `rejected` | `not_found` | Update target does not exist — or is not visible in the caller's tenant. |
-| `rejected` | `id_conflict` | A create's id (or natural key) collides with a row the caller cannot see (e.g. another tenant's) or a concurrent writer won the race. Never overwrites the existing row. |
+| `rejected` | `id_conflict` | A create collides with an existing row: its id belongs to a row the caller cannot see (e.g. another tenant's), a natural-key unique constraint (e.g. slug) matches a different row, or a concurrent writer won the race. Sync creates are strict inserts — the existing row is never adopted or overwritten. |
 | `rejected` | `write_failed` | Unexpected error applying this item; the batch continued. Safe to retry. |
 
 ## Ordering
@@ -129,8 +129,13 @@ multi-tab leader election on web, single-flight coalesced flush on mobile).
 (request sent, response lost) can never duplicate rows, resurrect deletes, or
 double-apply effects. This is by construction, not by ledger:
 
-1. **Row identity is the client UUID.** The ORM's save semantics upsert on
-   `id` (#1472), so a re-delivered create converges on the same row.
+1. **Row identity is the client UUID — and only the UUID.** Sync creates
+   persist via a strict INSERT (`_insertOnly`): the natural-key dedup that
+   `create()` performs elsewhere (#1472's ingestion-style upsert on
+   slug/context or configured `conflictColumns`) does **not** apply, so a
+   create can never adopt or rewrite a different row whose natural key
+   happens to collide — it rejects with `id_conflict` instead. A re-delivered
+   create finds its own row by id and reports `applied` as a no-op.
 2. **No-op detection.** Before writing, each create/update is compared with
    the current row; if the row already reflects every payload field, nothing
    is written and the item reports `applied` with the row's existing
@@ -164,10 +169,21 @@ Detection uses the **updated-at guard**: an `update`/`delete` carrying
 `baseUpdatedAt` older than the server row's `updated_at` is a **stale write**
 — the server row has changed since the client last saw it.
 
-Resolution: **the losing (stale) write is skipped — the newer server state
-wins — and the item always reports `conflict`** with the server's current
-`updatedAt`. The same guard applies to a create that lands on an existing,
-diverged row (`create_conflict`).
+Resolution: **a losing (stale) write is skipped — the newer server state wins
+— and the item reports `conflict`** with the server's current `updatedAt`.
+The same policy applies to a create that lands on an existing, diverged row
+(`create_conflict`).
+
+The guard fires only when the mutation would actually change server state —
+two idempotency rules deliberately take precedence over "stale ⇒ conflict":
+
+- **No-op detection runs first.** A stale update whose payload already
+  matches the row is a replay of a write that already landed (typically this
+  very item, delivered earlier with the response lost) and reports `applied`.
+  Clients must not assume a stale `baseUpdatedAt` unconditionally yields
+  `conflict`.
+- **Deletes of missing rows are no-ops.** A delete whose target is already
+  gone reports `applied` regardless of `baseUpdatedAt`.
 
 Why skip rather than apply the stale write:
 
