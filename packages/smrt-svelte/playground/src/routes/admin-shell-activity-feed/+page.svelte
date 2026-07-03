@@ -35,7 +35,6 @@ import {
   createSmrtCollection,
   getEngineCollection,
 } from '@happyvertical/smrt-web';
-import { onDestroy } from 'svelte';
 import { M } from '../../../../src/i18n/strings.workspace.js';
 
 const { t } = useI18n();
@@ -97,7 +96,10 @@ const shell = createShellState({
 
 // Bridge the live collection into the shell. One editorial map turns each job
 // row into a Focus-scope activity; the adapter drives upsert/update/remove.
-const handle = activityFeed<JobRow>({
+// The feed auto-retracts its activities when this page unmounts, so no manual
+// `onDestroy(handle.dispose)` is needed (the returned handle's `dispose()` is
+// only for retracting sooner, without unmounting).
+activityFeed<JobRow>({
   collection,
   shell,
   map: (row) => ({
@@ -108,8 +110,6 @@ const handle = activityFeed<JobRow>({
     progress: row.progress,
   }),
 });
-
-onDestroy(() => handle.dispose());
 
 let nextId = $state(1);
 // Mirror of the rows the demo has pushed, shown in the "backing rows" panel.

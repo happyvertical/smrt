@@ -204,6 +204,60 @@ describe('ActivityFeedReconciler', () => {
     expect(shell.listActivities({ edge: 'right' })).toHaveLength(1);
   });
 
+  it('re-homes the activity to the new edge when its scope changes (no explicit edge)', () => {
+    const shell = createShellState();
+    // Map keys scope off the row so a later tick can change it; no `edge` set.
+    const reconciler = new ActivityFeedReconciler<JobRow>(shell, (row) => ({
+      kind: 'render-job',
+      // Reuse the unused `draft` flag as a cheap "move to system scope" toggle.
+      scope: row.draft ? 'system' : 'focus',
+      label: row.title,
+      status: row.state,
+    }));
+
+    reconciler.reconcile([{ id: 'job-1', title: 'Job', state: 'running' }]);
+    // Focus → right edge.
+    expect(shell.listActivities({ edge: 'right' })).toHaveLength(1);
+    expect(shell.listActivities({ edge: 'bottom' })).toHaveLength(0);
+
+    // Scope flips to system; the map still sets no explicit edge. The activity
+    // must RE-DERIVE its edge from the new scope (system → bottom), not stay
+    // pinned to the old right edge.
+    reconciler.reconcile([
+      { id: 'job-1', title: 'Job', state: 'running', draft: true },
+    ]);
+    expect(shell.listActivities({ edge: 'right' })).toHaveLength(0);
+    expect(shell.listActivities({ edge: 'bottom' })).toHaveLength(1);
+    expect(shell.listActivities()[0].scope).toBe('system');
+  });
+
+  it('clears a previously-set optional field when a later mapping drops it', () => {
+    const shell = createShellState();
+    // Map emits `message`/`detailHref` only while the job is running.
+    const reconciler = new ActivityFeedReconciler<JobRow>(shell, (row) => ({
+      kind: 'render-job',
+      scope: 'focus',
+      label: row.title,
+      status: row.state,
+      ...(row.state === 'running'
+        ? { message: 'Rendering frames', detailHref: '/jobs/job-1' }
+        : {}),
+    }));
+
+    reconciler.reconcile([{ id: 'job-1', title: 'Job', state: 'running' }]);
+    let activity = shell.listActivities()[0];
+    expect(activity.message).toBe('Rendering frames');
+    expect(activity.detailHref).toBe('/jobs/job-1');
+
+    // The job completes → the map no longer emits message/detailHref. Those
+    // stale values must be CLEARED, not retained from the previous mapping.
+    reconciler.reconcile([{ id: 'job-1', title: 'Job', state: 'completed' }]);
+    activity = shell.listActivities()[0];
+    expect(activity.status).toBe('completed');
+    expect(activity.message).toBeUndefined();
+    expect(activity.detailHref).toBeUndefined();
+  });
+
   it('dispose() removes exactly the feed activities and stops reconciling', () => {
     const { shell, reconciler, events } = setup();
 

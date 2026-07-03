@@ -197,4 +197,38 @@ describe('activityFeed (integration)', () => {
     expect(shell.listActivities()).toHaveLength(0);
     expect(mounted.handle.isDisposed).toBe(true);
   });
+
+  it('auto-retracts the feed activities when the host component unmounts', async () => {
+    const scripted = makeScriptedFetchers([
+      { id: 'job-1', title: 'Render intro', state: 'running' },
+      { id: 'job-2', title: 'Render outro', state: 'queued' },
+    ]);
+    const collection = createSmrtCollection(jobDefinition('feed-unmount'), {
+      fetchers: scripted.fetchers,
+      staleTimeMs: 60_000,
+    });
+    const shell = createShellState();
+    // An activity from another source must survive the feed's unmount.
+    shell.upsertActivity({
+      id: 'external-1',
+      label: 'External',
+      kind: 'other',
+      scope: 'app',
+      status: 'running',
+    });
+
+    const mounted = mountFeed(collection, shell);
+    await collection.preload();
+    flushSync();
+    expect(shell.listActivities()).toHaveLength(3);
+
+    // Unmount WITHOUT calling dispose() manually: the adapter's $effect teardown
+    // must retract exactly its own activities, leaving the external one intact.
+    mounted.teardown();
+    flushSync();
+
+    const remaining = shell.listActivities();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('external-1');
+  });
 });

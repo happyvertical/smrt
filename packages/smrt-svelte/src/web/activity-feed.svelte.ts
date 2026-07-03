@@ -198,6 +198,43 @@ function resolveInput<TData extends object>(
 }
 
 /**
+ * Build the update patch for a re-mapped activity so it REPLACES the mapped
+ * field set rather than merging over it.
+ *
+ * `ShellState.updateActivity(id, patch)` merges `{ ...current, ...patch }`, so a
+ * key the new mapping OMITS would otherwise retain its stale prior value. To
+ * keep the shell activity an exact mirror of the current mapping, every field a
+ * map controls is listed EXPLICITLY here — an omitted optional field is carried
+ * as `undefined`, which overwrites the stale value on merge. Two consequences:
+ *
+ *  - Dropped optionals (`message`, `detailHref`, `subject`, `progress`, `cancel`)
+ *    are cleared, not kept (codex P2).
+ *  - `edge` is passed through as the mapping left it — `undefined` when the map
+ *    did not pin an edge — so when a row's `scope` changes without an explicit
+ *    `edge`, the merged activity carries `edge: undefined` and `upsertActivity`
+ *    RE-DERIVES the edge from the new scope (`edge ?? homeEdgeForScope(scope)`),
+ *    re-homing it instead of pinning it to the previous scope's edge (copilot).
+ *
+ * `id` is deliberately excluded (it is the update key, not a patched field).
+ */
+function toUpdatePatch(
+  input: ShellActivityInput & { id: string },
+): Partial<Omit<ShellActivity, 'id'>> {
+  return {
+    label: input.label,
+    kind: input.kind,
+    scope: input.scope,
+    status: input.status,
+    subject: input.subject,
+    edge: input.edge,
+    progress: input.progress,
+    detailHref: input.detailHref,
+    message: input.message,
+    cancel: input.cancel,
+  };
+}
+
+/**
  * The pure reconciliation core of {@link activityFeed}: it owns the diff between
  * a set of live rows and the shell's activity registry, with NO Svelte reactive
  * or client-data-engine dependency. {@link activityFeed} wraps one of these in a
@@ -269,10 +306,11 @@ export class ActivityFeedReconciler<TData extends object> {
       }
       if (!fingerprintsEqual(prior.fingerprint, entry.fingerprint)) {
         // Changed: patch it, preserving createdAt and letting the shell emit a
-        // `transition` when the status changed. Passing the full editorial input
-        // (minus id) as the patch keeps the shell activity in exact sync.
-        const { id: _omit, ...patch } = entry.input;
-        this.shell.updateActivity(id, patch);
+        // `transition` when the status changed. The patch lists every mappable
+        // field explicitly (see `toUpdatePatch`) so it REPLACES the mapped set
+        // rather than merging over it — dropped optionals are cleared and a
+        // changed `scope` re-derives the `edge` instead of pinning the old one.
+        this.shell.updateActivity(id, toUpdatePatch(entry.input));
         this.owned.set(id, entry);
       }
       // Unchanged: no shell mutation.
@@ -300,8 +338,11 @@ export class ActivityFeedReconciler<TData extends object> {
  * {@link liveCollection} (which installs a `$effect`) and installs its own
  * reconciliation `$effect`. Both bind to the calling component's lifecycle, so
  * the live subscription and reconciliation tear down automatically on unmount.
- * The returned {@link ActivityFeedHandle.dispose} additionally REMOVES the
- * feed's activities from the shell — call it to retract them without unmounting.
+ * Unmount ALSO auto-retracts the feed's activities from the shell (via an
+ * `$effect` teardown), so they never linger after the host component is gone —
+ * no manual cleanup required. The returned {@link ActivityFeedHandle.dispose}
+ * retracts them SOONER (without unmounting) and is idempotent, so calling it and
+ * then unmounting is safe.
  *
  * Lifecycle per row:
  *  - a row that newly maps to an activity → `shell.upsertActivity(...)` (creates
@@ -365,6 +406,18 @@ export function activityFeed<TData extends object>(
   // The effect binds to the hosting component and tears down on unmount.
   $effect(() => {
     reconciler.reconcile(view.rows);
+  });
+
+  // Auto-cleanup on unmount: retract this feed's activities from the shell when
+  // the hosting component is destroyed, so they never linger after the UI that
+  // created them is gone. This effect reads NO reactive state, so it never
+  // re-runs — its teardown fires only when the effect is destroyed (component
+  // unmount / `$effect.root` teardown), exactly the unmount hook we want. The
+  // returned `dispose()` stays available for callers that want to retract the
+  // feed's activities sooner (without unmounting); `dispose` is idempotent, so
+  // an explicit call followed by the unmount teardown is safe.
+  $effect(() => {
+    return () => reconciler.dispose();
   });
 
   return {
