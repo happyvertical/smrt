@@ -708,6 +708,13 @@ export interface LoadConfigOptions {
   searchParents?: boolean;
 
   /**
+   * Directory to start the config search from. Defaults to `process.cwd()`.
+   * Ignored when `configPath` is provided. Useful for tests and for tools that
+   * resolve config relative to a project root other than the current directory.
+   */
+  searchFrom?: string;
+
+  /**
    * Whether to cache the loaded config in `globalThis.__smrtLoaderCachedConfig`.
    * Disable for test isolation or hot-reload scenarios.
    *

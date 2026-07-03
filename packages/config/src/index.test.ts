@@ -162,6 +162,70 @@ describe('@smrt/config', () => {
         loadConfig({ configPath: badPath, cache: false }),
       ).rejects.toThrow(/Failed to load smrt config/);
     });
+
+    it('loads a TypeScript smrt.config.ts (#1783)', async () => {
+      // Genuinely TS-only syntax (interface, type annotation, `as const`,
+      // `satisfies`, and a runtime `process.env` read) — a plain-JSON or
+      // untranspiled read would choke on all of these. The SvelteKit template
+      // ships its config as `smrt.config.ts`, so the loader must transpile it.
+      const tsConfigPath = join(testDir, 'smrt.config.ts');
+      process.env.SMRT_TEST_DB_URL = './from-env.db';
+      const tsConfigContent = `
+        interface DatabaseConfig {
+          type: string;
+          url: string;
+        }
+        const dbType: string = 'sqlite';
+        export default {
+          smrt: {
+            logLevel: 'debug' as const,
+          },
+          packages: {
+            cli: {
+              database: {
+                type: dbType,
+                url: process.env.SMRT_TEST_DB_URL ?? './fallback.db',
+              } satisfies DatabaseConfig,
+            },
+          },
+        };
+      `;
+      writeFileSync(tsConfigPath, tsConfigContent, 'utf-8');
+
+      try {
+        const config = await loadConfig({
+          configPath: tsConfigPath,
+          cache: false,
+        });
+
+        expect(config.smrt?.logLevel).toBe('debug');
+        const cli = config.packages?.cli as
+          | { database?: { type?: string; url?: string } }
+          | undefined;
+        expect(cli?.database?.type).toBe('sqlite');
+        expect(cli?.database?.url).toBe('./from-env.db');
+      } finally {
+        process.env.SMRT_TEST_DB_URL = undefined;
+      }
+    });
+
+    it('discovers smrt.config.ts via search (#1783)', async () => {
+      // The CLI loads config with no explicit path (cosmiconfig search), so the
+      // TS extension must be in searchPlaces, not just loadable by path.
+      const tsConfigPath = join(testDir, 'smrt.config.ts');
+      writeFileSync(
+        tsConfigPath,
+        `export default { smrt: { logLevel: 'warn' as const } };`,
+        'utf-8',
+      );
+
+      const config = await loadConfig({
+        searchFrom: testDir,
+        cache: false,
+      });
+
+      expect(config.smrt?.logLevel).toBe('warn');
+    });
   });
 
   describe('getModuleConfig', () => {
