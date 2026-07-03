@@ -1516,11 +1516,14 @@ async function generateTypeDeclarationFile(
           })
           .join('\n');
 
+        // Timestamps are snake_case on the wire (#1797): the server returns
+        // `created_at`/`updated_at` exactly as SmrtObject.toJSON() emits them,
+        // matching the prebuild + client-mode type paths.
         return `  export interface ${interfaceName} {
     id?: string;
 ${fields}
-    createdAt?: string;
-    updatedAt?: string;
+    created_at?: string;
+    updated_at?: string;
   }`;
       })
       .join('\n\n');
@@ -1647,13 +1650,24 @@ declare module '@happyvertical/smrt-virt-routes' {
   export default setupRoutes;
 }
 
-// Client module - Auto-generated API client  
+// Client module - Auto-generated API client
+// Wire-shape policy (#1797): the server returns BARE JSON — a bare array for
+// list/search, a bare object for get/create/update — with snake_case field
+// names (created_at, updated_at). These declarations match that shape (no
+// envelope, no camelCase). Fetchers reject on non-2xx with a SmrtClientError
+// (#1796). This is byte-identical to the prebuild declaration path.
 declare module '@happyvertical/smrt-virt-client' {
-  export interface ApiResponse<T = any> {
-    id?: string;
-    data?: T;
+  /** Shape of a JSON error body carried by a rejected request (SmrtClientError.body). */
+  export interface ApiError {
     error?: string;
     message?: string;
+  }
+
+  /** Typed error thrown by every fetcher on a non-2xx response (#1796). */
+  export interface SmrtClientError extends Error {
+    name: 'SmrtClientError';
+    status: number;
+    body?: ApiError | string;
   }
 
   export interface CrudOperations<T = any> {
