@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-mobile",
-  "version": "0.37.7",
+  "version": "0.37.8",
   "description": "Kotlin Multiplatform shared mobile foundation for SMRT apps: offline pack model, evidence capture model, pack i18n resolver, shell state, and platform adapter contracts (durable queue, auth, and networking land in later phases)",
   "author": "HappyVertical",
   "license": "MIT",

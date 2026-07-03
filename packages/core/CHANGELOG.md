@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.37.8
+
+### Patch Changes
+
+- ### Features
+
+  - change-feed spine — \_smrt_changes log + cursor API + \_changes route (#1804) (core)
+
+  ### Bug Fixes
+
+  - lazy, browser-safe logger init to fix dev hydration (#1803) (smrt-svelte)
+  - tenant public-read leak, TS config loader, oxc decorator attribution + docs (#1782–#1785) (#1802)
+  - @happyvertical/smrt-config@0.37.8
+  - @happyvertical/smrt-types@0.37.8
+  - @happyvertical/smrt-scanner@0.37.8
+
 ## 0.37.7
 
 ### Patch Changes

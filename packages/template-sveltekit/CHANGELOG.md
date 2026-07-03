@@ -1,5 +1,12 @@
 # @happyvertical/smrt-template-sveltekit
 
+## 0.37.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.37.8
+
 ## 0.37.7
 
 ### Patch Changes
