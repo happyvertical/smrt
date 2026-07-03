@@ -5,14 +5,20 @@
 export type { CLIConfig, CLIContext } from './cli';
 // CLI Generator
 export { CLIGenerator, getCLIHandler, setupCLI } from './cli';
-// Conditional GET for generated read routes (#1757)
+// Conditional GET for generated read routes (#1757 v1 body-hash, #1765 v2
+// per-table change-feed version source)
 export {
+  canonicalReadRepresentation,
   computeBodyEtag,
+  computeTableVersionEtag,
   conditionalJsonResponse,
+  ifNoneMatchHasConcreteMatch,
   ifNoneMatchSatisfied,
   PRIVATE_READ_CACHE_CONTROL,
   type ReadCacheControlOptions,
   resolveReadCacheControl,
+  resolveTenantEtagDiscriminator,
+  versionConditionalResponse,
   warnIfSharedCacheNeutralized,
 } from './conditional-get';
 export type {

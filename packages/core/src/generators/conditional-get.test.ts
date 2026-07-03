@@ -1,17 +1,19 @@
 /**
- * Unit coverage for the conditional-GET helper module (#1757): body-hash ETag
- * shape and determinism, RFC 9110 If-None-Match matching, the Cache-Control
- * policy matrix (private by default, shared caching only for public models
- * that opt in), the conditional JSON response builder, and the SvelteKit
- * route-helper snippet — which is executed for real (written to a temp module
- * and imported) so the emitted code is tested behaviorally, not textually.
+ * Unit coverage for the conditional-GET helper module: the v1 body-hash ETag
+ * primitives that remain public (shape/determinism, RFC 9110 If-None-Match
+ * matching, the Cache-Control policy matrix, the conditional JSON response
+ * builder), and the ETag v2 emitted SvelteKit route helper (#1765).
+ *
+ * The v2 helper imports its version primitives from `@happyvertical/smrt-core`
+ * (the version lookup is dialect-aware SQL that cannot be inlined portably), so
+ * unlike the v1 snippet it can no longer be written to a bare temp module and
+ * executed. Its runtime behavior — a matching If-None-Match answers 304 without
+ * running the query, a write bumps the version — is covered end to end by
+ * `conditional-get.spec.ts` over the SAME core primitives; here we assert the
+ * emitted code's structure and the baked-in Cache-Control policy.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   computeBodyEtag,
   conditionalJsonResponse,
@@ -233,112 +235,104 @@ describe('conditionalJsonResponse (#1757)', () => {
   });
 });
 
-describe('generated SvelteKit route helper snippet (#1757)', () => {
-  const tempDirs: string[] = [];
-
-  afterAll(() => {
-    for (const dir of tempDirs) {
-      rmSync(dir, { force: true, recursive: true });
+describe('emitted SvelteKit route helper: ETag v2 structure (#1765)', () => {
+  it('imports the version primitives from smrt-core and derives the ETag from the table version', () => {
+    const snippet = generateConditionalGetRouteHelper({ public: false });
+    expect(snippet).toContain("from '@happyvertical/smrt-core'");
+    for (const primitive of [
+      'getTableVersion',
+      'computeTableVersionEtag',
+      'canonicalReadRepresentation',
+      'ifNoneMatchSatisfied',
+    ]) {
+      expect(snippet).toContain(primitive);
     }
+    // The emitted helper is the query-skipping shape the routes wrap their
+    // query in, not the v1 body-hash conditionalJson.
+    expect(snippet).toContain('async function conditionalVersionedRead(');
+    expect(snippet).not.toContain('function bodyEtag(');
+    // Imports the concrete-match helper too (the wildcard-safe fast path).
+    expect(snippet).toContain('ifNoneMatchHasConcreteMatch');
   });
 
-  /**
-   * Write the emitted helper snippet to a temp module and import it, so the
-   * code that ships inside generated `+server.ts` files is executed for real
-   * (mirroring the sveltekit-generator.runtime.test.ts precedent).
-   */
-  async function importSnippet(
-    apiConfig: unknown,
-    options: { tenantScoped?: boolean } = {},
-  ) {
-    const dir = mkdtempSync(join(tmpdir(), 'smrt-conditional-get-'));
-    tempDirs.push(dir);
-    const modulePath = join(dir, 'conditional-get-helper.ts');
-    writeFileSync(
-      modulePath,
-      `${generateConditionalGetRouteHelper(apiConfig, options)}\nexport { conditionalJson, READ_CACHE_CONTROL };\n`,
+  it('takes the fast path only on a CONCRETE match, before building the payload (zero-query invariant)', () => {
+    const snippet = generateConditionalGetRouteHelper({ public: false });
+    const concreteGuard = snippet.indexOf(
+      'ifNoneMatchHasConcreteMatch(ifNoneMatch',
     );
-    return await import(pathToFileURL(modulePath).href);
-  }
-
-  it('bakes the private policy in and answers 304 on a matching If-None-Match', async () => {
-    const helper = await importSnippet({ public: false });
-    expect(helper.READ_CACHE_CONTROL).toBe(PRIVATE_READ_CACHE_CONTROL);
-
-    const payload = { items: [{ id: '1' }], count: 1 };
-    const first: Response = helper.conditionalJson(
-      new Request('http://local/api/widgets'),
-      payload,
-    );
-    expect(first.status).toBe(200);
-    expect(first.headers.get('cache-control')).toBe(PRIVATE_READ_CACHE_CONTROL);
-    const etag = first.headers.get('etag');
-    expect(etag).toMatch(/^"[A-Za-z0-9_-]+"$/);
-    expect(await first.json()).toEqual(payload);
-
-    // Same payload + If-None-Match → 304 with an empty body.
-    const revalidated: Response = helper.conditionalJson(
-      new Request('http://local/api/widgets', {
-        headers: { 'if-none-match': etag as string },
-      }),
-      payload,
-    );
-    expect(revalidated.status).toBe(304);
-    expect(await revalidated.text()).toBe('');
-    expect(revalidated.headers.get('etag')).toBe(etag);
-
-    // Changed payload → 200 with a NEW ETag (mutation changes the ETag).
-    const changed: Response = helper.conditionalJson(
-      new Request('http://local/api/widgets', {
-        headers: { 'if-none-match': etag as string },
-      }),
-      { items: [{ id: '1', name: 'renamed' }], count: 1 },
-    );
-    expect(changed.status).toBe(200);
-    expect(changed.headers.get('etag')).not.toBe(etag);
+    const buildIndex = snippet.indexOf('await buildPayload()');
+    const wildcardCheck = snippet.indexOf('ifNoneMatchSatisfied(ifNoneMatch');
+    expect(concreteGuard).toBeGreaterThanOrEqual(0);
+    expect(buildIndex).toBeGreaterThanOrEqual(0);
+    expect(wildcardCheck).toBeGreaterThanOrEqual(0);
+    // The concrete-match short-circuit must precede the query thunk (the point
+    // of ETag v2)...
+    expect(concreteGuard).toBeLessThan(buildIndex);
+    // ...and the wildcard `*` check must come AFTER the build, so a `304` is
+    // never returned for a row the build could not produce (a missing item).
+    expect(buildIndex).toBeLessThan(wildcardCheck);
   });
 
-  it('bakes the shared policy in for public models with sMaxage', async () => {
-    const helper = await importSnippet({
+  it('bakes the private default policy in as a constant', () => {
+    const snippet = generateConditionalGetRouteHelper({ public: false });
+    expect(snippet).toContain(
+      `const READ_CACHE_CONTROL = '${PRIVATE_READ_CACHE_CONTROL}';`,
+    );
+  });
+
+  it('bakes the shared policy in for public models with sMaxage', () => {
+    const snippet = generateConditionalGetRouteHelper({
       public: true,
       cache: { sMaxage: 120 },
     });
-    expect(helper.READ_CACHE_CONTROL).toBe('public, max-age=0, s-maxage=120');
-
-    const res: Response = helper.conditionalJson(
-      new Request('http://local/api/widgets'),
-      { ok: true },
-    );
-    expect(res.headers.get('cache-control')).toBe(
-      'public, max-age=0, s-maxage=120',
+    expect(snippet).toContain(
+      "const READ_CACHE_CONTROL = 'public, max-age=0, s-maxage=120';",
     );
   });
 
-  it('bakes the private policy for tenant-scoped models even with public + sMaxage', async () => {
-    const helper = await importSnippet(
+  it('bakes the private policy for tenant-scoped models even with public + sMaxage', () => {
+    const snippet = generateConditionalGetRouteHelper(
       { public: 'read', cache: { sMaxage: 600 } },
       { tenantScoped: true },
     );
-    expect(helper.READ_CACHE_CONTROL).toBe(PRIVATE_READ_CACHE_CONTROL);
-
-    const res: Response = helper.conditionalJson(
-      new Request('http://local/api/widgets'),
-      { ok: true },
+    expect(snippet).toContain(
+      `const READ_CACHE_CONTROL = '${PRIVATE_READ_CACHE_CONTROL}';`,
     );
-    const cacheControl = res.headers.get('cache-control') as string;
-    expect(cacheControl).toBe(PRIVATE_READ_CACHE_CONTROL);
-    expect(cacheControl).not.toContain('s-maxage');
+    expect(snippet).not.toContain('s-maxage');
   });
 
-  it('parity: the snippet ETag equals the runtime computeBodyEtag', async () => {
-    const helper = await importSnippet(undefined);
-    const payload = { parity: true };
-    const res: Response = helper.conditionalJson(
-      new Request('http://local/api/widgets'),
-      payload,
+  it('folds the active tenant into the representation for tenant-scoped models', () => {
+    const tenant = generateConditionalGetRouteHelper(
+      { public: false },
+      { tenantScoped: true },
     );
-    expect(res.headers.get('etag')).toBe(
-      computeBodyEtag(JSON.stringify(payload)),
+    // Imports and calls the shared tenant discriminator.
+    expect(tenant).toContain('resolveTenantEtagDiscriminator');
+    expect(tenant).toContain(
+      'canonicalReadRepresentation(request, resolveTenantEtagDiscriminator())',
+    );
+  });
+
+  it('omits the tenant discriminator for non-tenant-scoped models', () => {
+    const plain = generateConditionalGetRouteHelper({ public: false });
+    expect(plain).not.toContain('resolveTenantEtagDiscriminator');
+    expect(plain).toContain('canonicalReadRepresentation(request, undefined)');
+  });
+
+  it('emits the v1 body-hash helper (not the version source) when useBodyHash is set', () => {
+    // Serializer-backed routes can render related-table data the per-table
+    // version cannot observe (#1765), so they keep the v1 body-hash ETag.
+    const snippet = generateConditionalGetRouteHelper(
+      { public: false },
+      { useBodyHash: true },
+    );
+    expect(snippet).toContain("import { createHash } from 'node:crypto';");
+    expect(snippet).toContain('function conditionalJson(');
+    expect(snippet).not.toContain('conditionalVersionedRead');
+    expect(snippet).not.toContain('@happyvertical/smrt-core');
+    // The Cache-Control policy is still baked in.
+    expect(snippet).toContain(
+      `const READ_CACHE_CONTROL = '${PRIVATE_READ_CACHE_CONTROL}';`,
     );
   });
 });

@@ -1774,10 +1774,13 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'items.map((item) => serializeItemResponse(item))',
       );
-      // List reads respond via the conditional-GET helper (#1757).
+      // Content uses a custom serializer (serializeContent loads related tables),
+      // so the route keeps the v1 body-hash ETag rather than the v2 per-table
+      // version source, which cannot observe related-table changes (#1765).
       expect(collectionContent).toContain(
         'return conditionalJson(request, { items: serializedItems, count, limit, offset });',
       );
+      expect(collectionContent).not.toContain('conditionalVersionedRead');
       expect(collectionContent).toContain(
         'const serializedItem = await serializeItemResponse(item);',
       );

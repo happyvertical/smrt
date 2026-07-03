@@ -25,9 +25,9 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
-import { generateSyncApplyRoute } from './sync-apply-route.js';
 import { generateChangesRoute } from './changes-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import { generateSyncApplyRoute } from './sync-apply-route.js';
 
 export interface SvelteKitOptions {
   enabled: boolean;
@@ -1864,6 +1864,10 @@ function generateCollectionRouteTemplate(
     objectDef.decoratorConfig?.api,
   );
   const serializerImports = serializers.importStatements.join('\n');
+  // A custom list serializer can render related-table data the per-table
+  // change-feed version cannot observe (#1765), so such routes keep the v1
+  // body-hash ETag; the default toPublicJSON path uses the v2 version source.
+  const listUsesSerializer = !!serializers.listItemSerializerName;
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -1874,7 +1878,7 @@ ${
 }import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className }) : ''}`;
+${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className, useBodyHash: listUsesSerializer }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -1895,18 +1899,21 @@ ${routeGuardPreamble(objectDef, false)}
   const offset = Number(url.searchParams.get('offset')) || 0;
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
-${listAndCount}
 ${
-  serializers.listItemSerializerName
-    ? `
+  listUsesSerializer
+    ? `${listAndCount}
+  // Custom serializer may render related-table data → v1 body-hash ETag (#1765).
   const serializedItems = await Promise.all(
     items.map((item) => ${serializers.listItemSerializerName}(item)),
   );
-
   return conditionalJson(request, { items: serializedItems, count, limit, offset });`
-    : `
-  const items_public = items.map((item) => item.toPublicJSON());
-  return conditionalJson(request, { items: items_public, count, limit, offset });`
+    : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
+  // If-None-Match the list query below never runs (zero-query 304).
+  return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
+${listAndCount}
+    const items_public = items.map((item) => item.toPublicJSON());
+    return { items: items_public, count, limit, offset };
+  });`
 }
 };
 `
@@ -2014,6 +2021,10 @@ function generateItemRouteTemplate(
     objectDef.decoratorConfig?.api,
   );
   const serializerImports = serializers.importStatements.join('\n');
+  // A custom item serializer can render related-table data the per-table
+  // change-feed version cannot observe (#1765), so such routes keep the v1
+  // body-hash ETag; the default toPublicJSON path uses the v2 version source.
+  const getUsesSerializer = !!serializers.itemSerializerName;
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -2021,7 +2032,7 @@ function generateItemRouteTemplate(
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className }) : ''}`;
+${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className, useBodyHash: getUsesSerializer }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -2040,16 +2051,21 @@ ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenan
 export const GET: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, false)}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
+${
+  getUsesSerializer
+    ? `${getForRead}
+${generateNotFoundError(className)}
+  // Custom serializer may render related-table data → v1 body-hash ETag (#1765).
+  const serializedItem = await ${serializers.itemSerializerName}(item);
+  return conditionalJson(request, serializedItem);`
+    : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
+  // (a delete advances the version, so a since-deleted row can't false-match);
+  // a wildcard \`*\` is deferred until the fetch confirms the row exists.
+  return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${getForRead}
 ${generateNotFoundError(className)}
-${
-  serializers.itemSerializerName
-    ? `
-  const serializedItem = await ${serializers.itemSerializerName}(item);
-
-  return conditionalJson(request, serializedItem);`
-    : `
-  return conditionalJson(request, item.toPublicJSON());`
+    return item.toPublicJSON();
+  });`
 }
 };
 `

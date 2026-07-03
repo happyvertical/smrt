@@ -20,7 +20,11 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { getChangesSince, registerChangeFeedWriter } from '../change-feed';
+import {
+  getChangesSince,
+  getTableVersion,
+  registerChangeFeedWriter,
+} from '../change-feed';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
@@ -178,6 +182,10 @@ describe('Sync-apply batch endpoint (#1759)', () => {
 
       // Snapshot the feed horizon first — the db is shared across this file.
       const { cursor: start } = await getChangesSince(db, { since: 0 });
+      // ETag v2 (#1765): a sync-apply write must advance the table version (and
+      // therefore its reads' ETags), and an idempotent replay must NOT — else a
+      // blind outbox retry would bust every cache and re-wake subscribers.
+      const versionBefore = await getTableVersion(db, notes.tableName);
 
       // First application creates the row → exactly one change-feed entry,
       // proving the writer observed the sync-apply create (guards false-pass).
@@ -190,6 +198,11 @@ describe('Sync-apply batch endpoint (#1759)', () => {
       const ours = afterFirst.changes.filter((c) => c.rowId === XSLICE_ID);
       expect(ours).toHaveLength(1);
       expect(ours[0].operation).toBe('create');
+
+      // #1765: the sync-apply create advanced the table version (its reads' ETags
+      // change) — the "or sync-apply" half of "any framework write changes ETags".
+      const versionAfterCreate = await getTableVersion(db, notes.tableName);
+      expect(versionAfterCreate).toBeGreaterThan(versionBefore);
 
       // Replaying the identical batch is an idempotent no-op (the row already
       // matches, so sync-apply skips the write before save()) → NO new
@@ -205,6 +218,12 @@ describe('Sync-apply batch endpoint (#1759)', () => {
       expect(
         afterReplay.changes.filter((c) => c.rowId === XSLICE_ID),
       ).toHaveLength(0);
+
+      // #1765: the no-op replay left the table version unchanged, so the ETag is
+      // stable across blind retries — no needless cache busting on the read path.
+      expect(await getTableVersion(db, notes.tableName)).toBe(
+        versionAfterCreate,
+      );
     });
   });
 
