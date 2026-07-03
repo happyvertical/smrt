@@ -3,17 +3,27 @@
  * slice D).
  *
  * Products is the reference consumer of the browser client-data runtime. This
- * module materializes the manifest-generated `products` web collection
- * definition (`@happyvertical/smrt-virt-web`) into a cached, reactive
- * {@link SmrtWebCollection} over the generated `/api/v1/products` REST surface
- * via {@link createSmrtCollection}. The Svelte live-query binding + optimistic
- * insert live in `../components/LiveProductList.svelte`.
+ * module materializes a manifest-generated `products` web collection definition
+ * into a cached, reactive {@link SmrtWebCollection} over the generated
+ * `/api/v1/products` REST surface via {@link createSmrtCollection}. The Svelte
+ * live-query binding + optimistic insert live in
+ * `../components/LiveProductList.svelte`.
+ *
+ * ── Plugin-agnostic on purpose ──────────────────────────────────────────────
+ * The `products` definition comes from the `@happyvertical/smrt-virt-web`
+ * virtual module, which exists ONLY under a SMRT Vite-plugin build. To keep
+ * this module importable everywhere (unit tests, plain `tsc`, an npm consumer
+ * wiring its own definition), it does NOT import that virtual module at the top
+ * level. Instead the definition is supplied by the caller:
+ *   - the live component resolves it from the plugin (see LiveProductList),
+ *   - {@link productsCollectionDefinition} lazily resolves it on demand.
+ * A caller passing an explicit `definition` never touches the virtual module.
  *
  * ── Engine-absorption boundary ──────────────────────────────────────────────
  * `createSmrtCollection` pulls the client-data engine (currently the ~76 kB
- * TanStack DB/Query layer). This module is therefore the FIRST module in the
- * products graph that carries that engine. It is imported ONLY through a
- * dynamic `import()` (see `../components/LiveProductList.svelte`, reached from
+ * TanStack DB/Query layer). This module is therefore engine-bearing. It is
+ * imported ONLY through a dynamic `import()` (see
+ * `../components/LiveProductList.svelte`, reached from
  * `src/app/pages/LiveProductsPage.svelte` via `import()`), so the bundler lands
  * the engine in a lazily-loaded chunk that public / smrt-sites pages never
  * fetch (ratified condition ① of #1761). NEVER import this module (or the live
@@ -22,16 +32,12 @@
  * `scripts/check-web-engine-code-split.mjs` assertion guards this.
  */
 
-// Manifest-generated per-collection definitions. Served at runtime by the SMRT
-// Vite plugin (standalone/federation app builds + vitest); resolved for `tsc`
-// via the ambient `@happyvertical/smrt-virt-web` → `@smrt/web` alias in
-// `ambient.d.ts`.
-import { getCollectionDefinition } from '@happyvertical/smrt-virt-web';
 import {
   type CreateSmrtCollectionOptions,
   createSmrtCollection,
   type SmrtWebClient,
   type SmrtWebCollection,
+  type SmrtWebCollectionDefinition,
 } from '@happyvertical/smrt-web';
 import type { ProductData } from '../types';
 
@@ -41,22 +47,45 @@ import type { ProductData } from '../types';
  */
 export type ProductRow = ProductData & { id: string };
 
+/** The `products` collection definition, typed to this package's row shape. */
+export type ProductCollectionDefinition =
+  SmrtWebCollectionDefinition<ProductData>;
+
 /** Options for {@link createProductCollection}. */
-export interface CreateProductCollectionOptions
-  extends Pick<
-    CreateSmrtCollectionOptions,
-    'basePath' | 'fetchFn' | 'client' | 'scope' | 'staleTimeMs' | 'retry'
-  > {
-  /**
-   * Override the collection definition (tests / non-plugin builds). Defaults to
-   * the manifest-generated `products` definition from
-   * `@happyvertical/smrt-virt-web`.
-   */
-  definition?: Parameters<typeof createSmrtCollection<ProductData>>[0];
+export type CreateProductCollectionOptions = Pick<
+  CreateSmrtCollectionOptions,
+  'basePath' | 'fetchFn' | 'client' | 'scope' | 'staleTimeMs' | 'retry'
+>;
+
+/**
+ * Lazily resolve the manifest-generated `products` definition from the
+ * `@happyvertical/smrt-virt-web` virtual module.
+ *
+ * Kept out of module top-level so importing this store never eagerly resolves a
+ * module that exists only under a SMRT Vite-plugin build — a unit test or npm
+ * consumer that supplies its own definition must never trigger it. The dynamic
+ * `import()` also keeps the virtual specifier out of every static import graph.
+ * Resolved for `tsc` via the ambient `@happyvertical/smrt-virt-web` → `@smrt/web`
+ * alias in `ambient.d.ts`.
+ */
+export async function productsCollectionDefinition(): Promise<ProductCollectionDefinition> {
+  const { getCollectionDefinition } = await import(
+    '@happyvertical/smrt-virt-web'
+  );
+  return getCollectionDefinition(
+    'products',
+  ) as unknown as ProductCollectionDefinition;
 }
 
 /**
- * Build the reference products collection over the generated REST surface.
+ * Build the reference products collection over the generated REST surface from
+ * a `products` collection definition.
+ *
+ * The definition is a parameter (not resolved here) so this factory is
+ * synchronous and plugin-agnostic: the live component passes the
+ * plugin-provided definition (via {@link productsCollectionDefinition}); a unit
+ * test or npm consumer passes its own. Neither path imports the virtual module
+ * unless it explicitly calls {@link productsCollectionDefinition}.
  *
  * Reads are stale-while-revalidate; `insert({ ...data, id })` is optimistic and
  * rolls back automatically if the server rejects the create. Pass a shared
@@ -66,20 +95,21 @@ export interface CreateProductCollectionOptions
  *
  * @example
  * ```ts
- * const products = createProductCollection({ basePath: '/api/v1' });
+ * const definition = await productsCollectionDefinition();
+ * const products = createProductCollection(definition, { basePath: '/api/v1' });
  * await products.preload();
  * const tx = products.insert({ id: crypto.randomUUID(), name: 'New' });
  * await tx.isPersisted.promise;
  * ```
  */
 export function createProductCollection(
+  definition: ProductCollectionDefinition,
   options: CreateProductCollectionOptions = {},
 ): SmrtWebCollection<ProductData> {
-  const { definition, ...collectionOptions } = options;
-  return createSmrtCollection<ProductData>(
-    definition ?? getCollectionDefinition('products'),
-    { basePath: '/api/v1', ...collectionOptions },
-  );
+  return createSmrtCollection<ProductData>(definition, {
+    basePath: '/api/v1',
+    ...options,
+  });
 }
 
-export type { SmrtWebClient, SmrtWebCollection };
+export type { SmrtWebClient, SmrtWebCollection, SmrtWebCollectionDefinition };

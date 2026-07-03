@@ -20,19 +20,33 @@ import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
 import { M } from '../../lib/i18n.js';
+import type { ProductCollectionDefinition } from '../../lib/stores/product-collection';
 import AppLayout from '../layouts/AppLayout.svelte';
 
 const { t } = useI18n();
 
-// Lazily-resolved live component. The dynamic import is what code-splits the
-// engine out of the entry bundle — do NOT convert this to a static import.
-let LiveProductList = $state<Component<{ basePath?: string }> | null>(null);
+type LiveProductListProps = {
+  definition: ProductCollectionDefinition;
+  basePath?: string;
+};
+
+// Lazily-resolved live component + its `products` collection definition. BOTH
+// dynamic imports are what code-split the engine out of the entry bundle:
+// `LiveProductList` carries the runtime, and the store's
+// `productsCollectionDefinition()` resolves `@happyvertical/smrt-virt-web`
+// behind `import()` too. Do NOT convert either to a static import.
+let LiveProductList = $state<Component<LiveProductListProps> | null>(null);
+let definition = $state<ProductCollectionDefinition | null>(null);
 let loadError = $state<string | null>(null);
 
 onMount(async () => {
   try {
-    const mod = await import('../../lib/components/LiveProductList.svelte');
-    LiveProductList = mod.default as Component<{ basePath?: string }>;
+    const [componentMod, storeMod] = await Promise.all([
+      import('../../lib/components/LiveProductList.svelte'),
+      import('../../lib/stores/product-collection'),
+    ]);
+    definition = await storeMod.productsCollectionDefinition();
+    LiveProductList = componentMod.default as Component<LiveProductListProps>;
   } catch (error) {
     loadError = error instanceof Error ? error.message : String(error);
   }
@@ -51,8 +65,8 @@ onMount(async () => {
         <p class="page-status" role="alert">
           {t(M['products.live_page.load_failed'])} {loadError}
         </p>
-      {:else if LiveProductList}
-        <LiveProductList />
+      {:else if LiveProductList && definition}
+        <LiveProductList {definition} />
       {:else}
         <p class="page-status" role="status" aria-live="polite">
           {t(M['products.live_page.loading_runtime'])}

@@ -1,15 +1,22 @@
 /**
  * CI-gated proof that the `@happyvertical/smrt-web` client-data engine
- * code-splits out of a public entry (#1761, slice D, ratified condition ①).
+ * code-splits out of the products standalone app's public entry (#1761, slice D,
+ * ratified condition ①).
  *
- * The heavy lifting lives in `scripts/check-web-engine-code-split.mjs` (a
- * standalone, esbuild-based, oxc-free chunk-graph assertion that CI can also run
- * directly). This spec runs that script inside the normal `vitest run` so the
- * proof is part of the products test suite and gates every PR — the engine
- * NEVER reaching a public / smrt-sites page is the #1 risk of #1761.
+ * The analysis lives in `scripts/check-web-engine-code-split.mjs`, which
+ * exercises the REAL app graph — not a synthetic fixture:
+ *   - in CI (and whenever the build runs) it runs the products `--mode
+ *     standalone` vite build and asserts, over the emitted rollup chunk graph,
+ *     that the entry's STATIC-import closure has zero `@tanstack/*` and the
+ *     engine appears only in `dynamicImports`-reached chunks;
+ *   - locally, if the build hits the pre-existing nested-worktree `Tsconfig not
+ *     found` failure, it falls back to parsing the real `src/app/main.ts` static
+ *     import graph and asserts no engine-bearing module is reachable via a static
+ *     edge.
  *
- * `.spec.ts` (integration): it shells out to a real esbuild bundle rather than
- * exercising a unit in isolation.
+ * This spec runs that script inside the normal `vitest run` so the proof gates
+ * every PR — the engine NEVER reaching a public / smrt-sites page is the #1 risk
+ * of #1761. `.spec.ts` (integration): it shells out to a real build / graph walk.
  */
 
 import { execFile } from 'node:child_process';
@@ -23,16 +30,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = resolve(HERE, '../scripts/check-web-engine-code-split.mjs');
 
 describe('smrt-web engine code-split (#1761 ①)', () => {
-  it('keeps the public entry engine-free and isolates @tanstack to a lazy chunk', async () => {
+  it('keeps the standalone app entry engine-free and reaches @tanstack only via import()', async () => {
     // The script exits 0 and prints the proof on success; non-zero on any
-    // regression (engine leaking into the public entry, or not bundled at
-    // all). A non-zero exit makes execFile reject, failing the test.
-    const { stdout } = await execFileAsync(process.execPath, [SCRIPT]);
+    // regression (engine reachable from the public entry via a static edge, or
+    // not bundled at all). A non-zero exit makes execFile reject, failing the
+    // test. maxBuffer is raised for the vite build's verbose stdout.
+    const { stdout } = await execFileAsync(process.execPath, [SCRIPT], {
+      maxBuffer: 32 * 1024 * 1024,
+    });
 
-    expect(stdout).toContain('public entry is engine-free');
-    expect(stdout).toContain('public-entry @tanstack modules: 0');
-    // At least one @tanstack module must be isolated to a lazy chunk, proving
-    // the engine is really bundled (the split isn't masking a broken import).
-    expect(stdout).toMatch(/lazy-chunk\s+@tanstack modules: [1-9]\d*/);
-  }, 120_000); // esbuild-bundles the real engine on a cold run; CI runners are slower.
+    // Robust to both the real-build and source-graph modes.
+    expect(stdout).toContain('✓ web-engine-code-split');
+    expect(stdout).toMatch(
+      /engine-free|no engine-bearing module|only reached through import\(\)/,
+    );
+  }, // The real standalone vite build runs here; CI runners are slower.
+  240_000);
 });

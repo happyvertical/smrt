@@ -22,23 +22,33 @@ import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
-import { createProductCollection } from '../stores/product-collection';
+import {
+  createProductCollection,
+  type ProductCollectionDefinition,
+} from '../stores/product-collection';
 import type { ProductData } from '../types';
 
 interface Props {
+  /**
+   * The `products` collection definition, resolved by the caller (the hosting
+   * page resolves it from the SMRT Vite plugin via `productsCollectionDefinition()`
+   * and passes it here). Threading it in as a prop keeps this component — and the
+   * store it uses — free of a top-level `@happyvertical/smrt-virt-web` import.
+   */
+  definition: ProductCollectionDefinition;
   /** API base path for the generated REST surface (default `/api/v1`). */
   basePath?: string;
 }
 
-const { basePath = '/api/v1' }: Props = $props();
+const { definition, basePath = '/api/v1' }: Props = $props();
 const { t } = useI18n();
 
-// Build the reference collection once (from the initial `basePath`), then bind a
+// Build the reference collection once (from the initial props), then bind a
 // runes-reactive live view. `liveCollection` installs a `$effect` internally, so
 // it (like this whole initializer) must run during component initialization —
 // which it does. `liveCollection` rows are `SmrtWebRow<ProductData>`, i.e.
 // `ProductData & { id: string }`, so it exposes the required key on every row.
-const products = createProductCollection({ basePath });
+const products = createProductCollection(definition, { basePath });
 const view = liveCollection<ProductData>(products);
 
 let newName = $state('');
@@ -117,7 +127,7 @@ async function addProduct() {
       {#each view.rows as row (row.id)}
         <li class="live-products__item">
           <span class="live-products__item-name">{row.name}</span>
-          {#if row.price}
+          {#if row.price != null}
             <span class="live-products__item-price">${row.price}</span>
           {/if}
         </li>
