@@ -27,11 +27,9 @@
 import {
   type DefineToolsDockOptions,
   defineToolsDock,
-  type ToolDef,
-  type ToolsDockApi,
-  type ToolsDockContext,
   type ToolsDockInstance,
-} from '../../index.js';
+} from '../../tools-dock/define-tools-dock.svelte.js';
+import type { ToolDef, ToolsDockApi, ToolsDockContext } from '../../types.js';
 import TypedTool from './TypedTool.svelte';
 import type { MyActions, MyData } from './typed-tool-types.js';
 

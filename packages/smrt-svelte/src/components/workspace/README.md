@@ -1,34 +1,31 @@
 # workspace/
 
-Upstream admin shell primitives for SMRT consumer apps. These pieces are
-SvelteKit-agnostic, SSR-safe, and carry no domain coupling — they slot into
-any Svelte 5 app that wants a sidebar + topbar + tools-dock layout.
+Canonical AdminShell family for SMRT admin web apps.
 
-## Tracking
+`@happyvertical/smrt-svelte/workspace` now exports the four-edge AdminShell
+contract:
 
-- Epic: [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226)
-- Implementers:
-  - `WorkspaceShell` — [#1227](https://github.com/happyvertical/smrt/issues/1227)
-  - `NavTree`, `Breadcrumbs` — [#1228](https://github.com/happyvertical/smrt/issues/1228)
-  - `ToolsDock`, `defineToolsDock`, `useToolsDock` — [#1229](https://github.com/happyvertical/smrt/issues/1229)
+- App scope on the top edge
+- Tenant scope on the left edge
+- Focus scope on the right edge
+- System scope on the bottom edge
 
-## Shared types (this PR)
+The shell owns geometry, keyboard behavior, settings deltas, responsive
+presentation, focus tool registration, activity registry/watch components, and
+optional SMRT-fed content seams. It does not depend on jobs, users, tenancy, or
+SvelteKit route APIs; apps pass data, endpoints, and permission-filtered nav in.
 
-Exported from `./types.js` via the barrel:
+## Main Exports
 
-- `NavItem`, `BreadcrumbItem`
-- `ToolDef`, `AvailableTool`, `ToolsDockContext`, `ToolsDockApi`
+- `AdminShell`
+- `ShellState` / `createShellState`
+- `ShellSettingsPanel`, `HotkeyInput`, `ShortcutsOverlay`
+- `ShellDockTool`, `TenantNav`
+- `ActivityBadge`, `ActivityList`, `ActivityItem`, `ActivityToasts`
+- `AppScopePanel`, `SystemStatusChips`, `SystemScopePanel`
+- `tenantNavFromManifest`
 
-## Planned component exports
+## Migration
 
-- `WorkspaceShell` (#1227) — outer shell layout primitive
-- `NavTree`, `Breadcrumbs` (#1228) — navigation primitives consuming `NavItem` / `BreadcrumbItem`
-- `ToolsDock` + `defineToolsDock` + `useToolsDock` (#1229) — right-rail tools dock + registry
-
-## Principles
-
-- **SvelteKit-agnostic** — no `$app/state` or `$app/navigation` imports
-- **SSR-safe** — guard all `window` / `localStorage` access
-- **No token bridges** — consume `var(--smrt-color-*)` tokens directly
-- **No domain coupling** — domain-specific tools live in consumer packages
-- **Extensible tool IDs** — tool IDs are arbitrary strings, not an enum
+See [MIGRATION.md](./MIGRATION.md) for the first-generation workspace migration
+map.

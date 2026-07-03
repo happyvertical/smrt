@@ -1,28 +1,24 @@
-/**
- * Smoke test: the workspace subpath barrel must export the new
- * NavTree and Breadcrumbs components (plus existing types).
- */
-
 import { describe, expect, it } from 'vitest';
-import type { ToolsDockEvents } from '../index.js';
 import * as workspace from '../index.js';
 
 describe('workspace barrel', () => {
-  it('exports NavTree', () => {
-    expect(workspace.NavTree).toBeDefined();
+  it('exports AdminShell', () => {
+    expect(workspace.AdminShell).toBeDefined();
   });
 
-  it('exports Breadcrumbs', () => {
-    expect(workspace.Breadcrumbs).toBeDefined();
+  it('exports shell state helpers', () => {
+    expect(workspace.createShellState).toBeDefined();
+    expect(workspace.resolveShellConfig).toBeDefined();
   });
 
-  it('exports RoleShell', () => {
-    expect(workspace.RoleShell).toBeDefined();
+  it('exports settings and activity components', () => {
+    expect(workspace.ShellSettingsPanel).toBeDefined();
+    expect(workspace.ActivityList).toBeDefined();
   });
 
-  it('exports navTreeFromManifest helper', () => {
-    expect(workspace.navTreeFromManifest).toBeDefined();
-    expect(typeof workspace.navTreeFromManifest).toBe('function');
+  it('exports tenant nav helper from the manifest implementation', () => {
+    expect(workspace.tenantNavFromManifest).toBeDefined();
+    expect(typeof workspace.tenantNavFromManifest).toBe('function');
   });
 
   it('exports pluralizeClassName helper', () => {
@@ -30,16 +26,9 @@ describe('workspace barrel', () => {
     expect(typeof workspace.pluralizeClassName).toBe('function');
   });
 
-  it('re-exports ToolsDockEvents for typed dock:* event payloads', () => {
-    // Compile-time assertion: the type must be importable from the barrel
-    // so consumers can reference the built-in `'dock:*'` event payloads in
-    // their own typed wrappers / stores.
-    // (No runtime export; the `import type` above is the real check.)
-    const _typeCheck: ToolsDockEvents['dock:change'] = {
-      isOpen: false,
-      activeTool: null,
-      context: null,
-    };
-    expect(_typeCheck.isOpen).toBe(false);
+  it('does not export first-generation shell components as first-class API', () => {
+    expect('WorkspaceShell' in workspace).toBe(false);
+    expect('RoleShell' in workspace).toBe(false);
+    expect('ToolsDock' in workspace).toBe(false);
   });
 });
