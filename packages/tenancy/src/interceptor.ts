@@ -21,6 +21,7 @@ import {
   type QueryOptions,
   setDispatchTenantResolver,
   setTenantEntryPointRunner,
+  setTenantScopedClassResolver,
 } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
@@ -675,6 +676,11 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // (tenancy disabled) those surfaces pass through unchanged.
   setTenantEntryPointRunner(runTenantScopedEntryPoint);
 
+  // Wire the tenant-scoped-class resolver so core-side fail-closed read guards
+  // (generated REST read scope, #1782) recognize `@TenantScoped()`-decorated
+  // classes, which record their config only in the tenancy registry.
+  setTenantScopedClassResolver((className) => isTenantScopedClass(className));
+
   setTenancyEnabled(true);
 }
 
@@ -711,6 +717,8 @@ export function disableTenancy(): void {
   setDispatchTenantResolver(undefined);
   // Clear the CLI/MCP tenant gate so those surfaces pass through (#1554).
   setTenantEntryPointRunner(undefined);
+  // Clear the tenant-scoped-class resolver (#1782).
+  setTenantScopedClassResolver(undefined);
   registeredInterceptor = null;
   setTenancyEnabled(false);
 }

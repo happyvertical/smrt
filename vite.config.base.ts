@@ -376,6 +376,11 @@ export function createPackageConfig(
             'jpeg-js',
             '@gutenye/ocr-node',
             'cosmiconfig',
+            // jiti loads its own babel transform via a relative require
+            // (`../dist/babel.cjs`); bundling it breaks that path, so it must
+            // stay external (#1783).
+            'jiti',
+            /^jiti\//,
             '@libsql/client',
             'fast-glob',
             'minimatch',

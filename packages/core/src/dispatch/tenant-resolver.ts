@@ -28,6 +28,10 @@ export type DispatchTenantResolver = () => string | null | undefined;
 declare global {
   // eslint-disable-next-line no-var
   var __smrtDispatchTenantResolver: DispatchTenantResolver | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtTenantScopedClassResolver:
+    | ((className: string) => boolean)
+    | undefined;
 }
 
 /**
@@ -131,5 +135,43 @@ export function resolveDispatchTenantId(): string | null | undefined {
     // A misbehaving resolver must never break dispatch emission; treat a
     // throwing resolver as "no tenant context".
     return undefined;
+  }
+}
+
+/**
+ * Register the resolver that reports whether a class is tenant-scoped, covering
+ * BOTH registration forms (S #1782). Core's `ObjectRegistry.isTenantScoped`
+ * recognizes `@smrt({ tenantScoped })` and the manifest-merged `@TenantScoped()`
+ * config, but the standalone `@TenantScoped()` decorator (smrt-tenancy) records
+ * its config only in the tenancy registry at decoration time — invisible to core
+ * until/unless a manifest carries it. Tenancy fills this slot at
+ * `enableTenancy()` so core-side fail-closed guards (the generated REST read
+ * scope) recognize tenant-scoped classes regardless of registration form or
+ * manifest timing. Mirrors {@link setDispatchTenantResolver}.
+ *
+ * @param resolver - Predicate returning `true` for tenant-scoped class names, or
+ *   `undefined` to clear (which `disableTenancy()` does).
+ */
+export function setTenantScopedClassResolver(
+  resolver: ((className: string) => boolean) | undefined,
+): void {
+  globalThis.__smrtTenantScopedClassResolver = resolver;
+}
+
+/**
+ * Whether the tenancy layer reports `className` as tenant-scoped. Returns
+ * `false` when tenancy is disabled (no resolver) or the resolver throws.
+ *
+ * @param className - Class name (simple or qualified) to check.
+ */
+export function isTenantScopedClassResolved(className: string): boolean {
+  const resolver = globalThis.__smrtTenantScopedClassResolver;
+  if (!resolver) {
+    return false;
+  }
+  try {
+    return resolver(className) === true;
+  } catch {
+    return false;
   }
 }

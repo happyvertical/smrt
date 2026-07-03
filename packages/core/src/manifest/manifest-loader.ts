@@ -35,6 +35,10 @@ import type {
 } from '../scanner/types.js';
 import { parse } from '../utils/json.js';
 import {
+  isDecoratorRuntimeFramePath,
+  isDecoratorRuntimePackageName,
+} from '../utils/stack-frames.js';
+import {
   createQualifiedName,
   isQualifiedName,
   parseQualifiedName,
@@ -464,13 +468,23 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
  * 3. require.resolve() (resolves package.json from constructor file location)
  * 4. Error stack trace parsing (fallback, fragile in pnpm workspaces)
  *
+ * Decorator-lowering runtime helpers (`@oxc-project/runtime` under Vite 8,
+ * `tslib`/`@swc/helpers`/`@babel/runtime` elsewhere) are skipped by both
+ * stack-based methods (3 and 4): the compiler inserts such a frame between the
+ * `@smrt()` decorator and the consumer module, and without skipping it the class
+ * misattributes to the helper package (e.g. `@oxc-project/runtime`) instead of
+ * the declaring package (#1785).
+ *
  * @param ctor - Class constructor
  * @param skipRegistry - If true, skip checking ObjectRegistry (used during initial registration to avoid circular dependency)
+ * @param stackOverride - Optional stack string to parse instead of a fresh
+ *   `Error().stack`. Used by tests to simulate a lowered call pattern.
  * @returns Package name (e.g., '@happyvertical/smrt-places') or null
  */
 export function getPackageName(
   ctor: SmrtObjectConstructor,
   skipRegistry: boolean = false,
+  stackOverride?: string,
 ): string | null {
   try {
     // 1. Try ObjectRegistry first (most reliable - from build-time manifest)
@@ -495,8 +509,7 @@ export function getPackageName(
     // 3. Try require.resolve() to find package.json from constructor location
     // This is more reliable than stack trace parsing for published packages
     try {
-      const error = new Error();
-      const stack = error.stack || '';
+      const stack = stackOverride ?? new Error().stack ?? '';
       const stackLines = stack.split('\n');
 
       // Find the first line with a file path that's NOT from smrt-core
@@ -505,11 +518,13 @@ export function getPackageName(
         const fileMatch = line.match(/\(([^)]+\.(?:js|ts))/);
         if (fileMatch) {
           const filePath = fileMatch[1];
-          // Skip smrt-core internal files
+          // Skip smrt-core internal files and decorator-lowering runtime
+          // helpers (#1785) — the class is declared in neither.
           if (
             filePath.includes('manifest-loader') ||
             filePath.includes('registry') ||
-            filePath.includes('/smrt-core/dist/')
+            filePath.includes('/smrt-core/dist/') ||
+            isDecoratorRuntimeFramePath(filePath.replace(/\\/g, '/'))
           ) {
             continue; // Skip smrt-core files, look for external package
           }
@@ -550,14 +565,19 @@ export function getPackageName(
 
     // 4. Final fallback: Try to extract from Error stack trace with node_modules pattern
     // This method is fragile and fails in pnpm workspaces, but kept for backward compatibility
-    const error = new Error();
-    const stack = error.stack || '';
+    const stack = stackOverride ?? new Error().stack ?? '';
     const stackLines = stack.split('\n');
 
     // Look for line with 'node_modules/@scope/package' pattern
     for (const line of stackLines) {
       const match = line.match(/node_modules\/(@[^/]+\/[^/]+)/);
       if (match) {
+        // Skip decorator-lowering runtime helpers (e.g. @oxc-project/runtime) —
+        // the compiler inserts them between @smrt() and the declaring module, so
+        // attributing to them is wrong; keep walking to the real package (#1785).
+        if (isDecoratorRuntimePackageName(match[1])) {
+          continue;
+        }
         return match[1];
       }
     }

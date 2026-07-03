@@ -1,7 +1,44 @@
+import type { Loader } from 'cosmiconfig';
 import { cosmiconfig } from 'cosmiconfig';
+import { createJiti } from 'jiti';
 import type { LoadConfigOptions, SmrtConfig } from './types.js';
 
 const MODULE_NAME = 'smrt';
+
+/**
+ * Lazily-created jiti instance used to load TypeScript config files.
+ *
+ * cosmiconfig ships no TypeScript loader (dropped in v8+), so a project whose
+ * config is `smrt.config.ts` — the SvelteKit template default — silently fell
+ * back to empty config, breaking `smrt db:setup` / `db:migrate` (#1783). jiti
+ * transpiles and imports the `.ts`/`.mts`/`.cts` file on demand (it is the same
+ * engine cosmiconfig-typescript-loader wraps), honoring the config's own
+ * relative imports and `process.env` reads. Created once and reused so repeated
+ * `loadConfig()` calls don't rebuild the transform pipeline.
+ */
+let jitiInstance: ReturnType<typeof createJiti> | undefined;
+
+function getJiti(): ReturnType<typeof createJiti> {
+  if (!jitiInstance) {
+    // moduleCache: false so a re-read after the file changes on disk (hot
+    // reload, or `loadConfig({ cache: false })`) re-evaluates instead of
+    // returning jiti's in-memory copy. The common `cache: true` path is already
+    // short-circuited by our own config cache before it reaches jiti, so this
+    // adds no cost to steady-state loads. fsCache (default) still disk-caches
+    // the content-hashed transpile output.
+    jitiInstance = createJiti(import.meta.url, { moduleCache: false });
+  }
+  return jitiInstance;
+}
+
+/**
+ * cosmiconfig loader for TypeScript config files. Returns the config's default
+ * export (or the module namespace when there is no default), matching how the
+ * JS loaders treat `export default` / `module.exports`.
+ */
+const typeScriptLoader: Loader = async (filepath: string) => {
+  return getJiti().import(filepath, { default: true });
+};
 
 /**
  * Extend globalThis to include loader cache properties.
@@ -61,8 +98,9 @@ function isFileNotFound(error: unknown): boolean {
 /**
  * Load and parse configuration from the project root using cosmiconfig.
  *
- * Searches for `smrt.config.{js,mjs,cjs,json}` starting from `cwd`, walking
- * up the directory tree unless `searchParents` is `false`. The result is
+ * Searches for `smrt.config.{js,mjs,cjs,ts,mts,cts,json}` starting from `cwd`,
+ * walking up the directory tree unless `searchParents` is `false`. TypeScript
+ * configs are transpiled on demand via jiti (#1783). The result is
  * cached in `globalThis.__smrtLoaderCachedConfig` so that all modules sharing
  * the same runtime (including pnpm workspace symlinks) see the same config.
  *
@@ -94,7 +132,12 @@ function isFileNotFound(error: unknown): boolean {
 export async function loadConfig(
   options: LoadConfigOptions = {},
 ): Promise<SmrtConfig> {
-  const { configPath, searchParents = true, cache = true } = options;
+  const {
+    configPath,
+    searchParents = true,
+    searchFrom,
+    cache = true,
+  } = options;
 
   // Return cached config if available
   const cached = getCachedConfig();
@@ -110,9 +153,23 @@ export async function loadConfig(
         `${MODULE_NAME}.config.js`,
         `${MODULE_NAME}.config.mjs`,
         `${MODULE_NAME}.config.cjs`,
+        `${MODULE_NAME}.config.ts`,
+        `${MODULE_NAME}.config.mts`,
+        `${MODULE_NAME}.config.cts`,
         `${MODULE_NAME}.config.json`,
       ],
-      stopDir: searchParents ? undefined : process.cwd(),
+      // cosmiconfig has no built-in TypeScript loader; register jiti for the TS
+      // extensions so a `smrt.config.ts` scaffold loads end to end (#1783).
+      loaders: {
+        '.ts': typeScriptLoader,
+        '.mts': typeScriptLoader,
+        '.cts': typeScriptLoader,
+      },
+      // When not searching parents, stop at the actual search root so
+      // `searchParents: false` is honored even if `searchFrom` is outside the
+      // cwd tree (otherwise the upward walk from `searchFrom` never hits cwd and
+      // runs to the filesystem root).
+      stopDir: searchParents ? undefined : (searchFrom ?? process.cwd()),
       cache: cache, // Respect cache option
     });
     setExplorer(explorer);
@@ -125,7 +182,7 @@ export async function loadConfig(
     if (configPath) {
       result = await explorer.load(configPath);
     } else {
-      result = await explorer.search();
+      result = await explorer.search(searchFrom ?? process.cwd());
     }
   } catch (error) {
     // A genuinely-absent config file is not an error: an explicit `configPath`

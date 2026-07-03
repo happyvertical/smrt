@@ -34,6 +34,8 @@ Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, run
 
 Mismatches throw `TenantIsolationError`. Missing required context throws `TenantContextError`.
 
+**Optional-mode reads with no context pass through UNFILTERED at the interceptor.** That is intentional for trusted/admin call paths, but it means the interceptor alone does not protect a tenant-scoped model exposed as `@smrt({ api: { public } })`: an anonymous HTTP read has no context, so the interceptor would return every tenant's rows. The generated REST + SvelteKit read routes close this by injecting a `{ tenantId: null }` filter when tenancy is enabled but no context is active, so public/anonymous reads fail closed to **global (NULL-tenant) rows only** — mirroring the dispatch resolver's *enforced, no active tenant → global rows only* rule (#1782). Authenticated reads still scope to the caller's tenant via the interceptor.
+
 ## Registration — Two Patterns
 
 ```typescript

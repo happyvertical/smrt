@@ -655,6 +655,9 @@ importers:
       cosmiconfig:
         specifier: ^9.0.2
         version: 9.0.2(typescript@5.9.3)
+      jiti:
+        specifier: ^2.6.1
+        version: 2.6.1
     devDependencies:
       '@types/node':
         specifier: 24.13.2

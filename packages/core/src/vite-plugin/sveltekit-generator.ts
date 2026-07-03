@@ -453,24 +453,28 @@ function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
 }
 
 /**
- * Emit the tenant-context establishment helper for `@TenantScoped` objects
- * (#1540, facet 2). Generated handlers call `establishTenantContext(locals)`
- * after the auth guard so every collection query runs inside the tenant context
- * derived from the authenticated principal — engaging the `@TenantScoped`
- * interceptors that auto-filter by tenant.
+ * Emit the tenant-context establishment + fail-closed read-scope helpers for
+ * `@TenantScoped` objects (#1540 facet 2; #1782). Generated handlers call
+ * `establishTenantContext(locals)` after the auth guard so every query runs
+ * inside the tenant context derived from the authenticated principal — engaging
+ * the `@TenantScoped` interceptors that auto-filter by tenant.
  *
- * Without this, an `optional`-mode scoped object queried over a generated route
- * with no active context returns rows from ALL tenants (the interceptor only
- * hard-fails `required` mode). We read the canonical `locals.tenantId` set by
- * the smrt-users auth hook (with `user`/`session` fallbacks). It is a no-op when
- * a context is already active (e.g. an upstream tenancy handle) or when the
- * principal carries no tenant (global/admin — preserving optional-mode global
- * access). Imported only for tenant-scoped routes, which already depend on
- * `@happyvertical/smrt-tenancy`.
+ * `establishTenantContext` reads the canonical `locals.tenantId` set by the
+ * smrt-users auth hook (with `user`/`session` fallbacks). It is a no-op when a
+ * context is already active (e.g. an upstream tenancy handle) or when the
+ * request carries no tenant (anonymous / global principal).
+ *
+ * When no context could be established, an `optional`-mode read would otherwise
+ * fall through the interceptor UNFILTERED and return rows from ALL tenants (the
+ * interceptor only hard-fails `required` mode) — the #1782 leak. So read
+ * handlers additionally call `tenantReadScope()`, which restricts reads to
+ * NULL-tenant (global) rows only when tenancy is enabled but no context is
+ * active. Both helpers are imported only for tenant-scoped routes, which already
+ * depend on `@happyvertical/smrt-tenancy`.
  */
 function generateTenantContextHelper(): string {
   return `
-import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, hasTenantContext, isTenancyEnabled } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -482,6 +486,19 @@ function establishTenantContext(locals: unknown): void {
   if (typeof tenantId === 'string' && tenantId) {
     enterTenantContext({ tenantId });
   }
+}
+
+// Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
+// model has no tenant context, so the tenancy interceptor (optional mode) would
+// pass the query through UNFILTERED and return every tenant's rows. When tenancy
+// is enabled but no context was established, restrict reads to NULL-tenant
+// (global) rows only — mirroring the dispatch resolver + _changes convention:
+// tenancy enforced with no context => global rows only. Returns undefined when a
+// context is active (the interceptor filters by it) or tenancy is disabled.
+function tenantReadScope(): { tenantId: null } | undefined {
+  return isTenancyEnabled() && !hasTenantContext()
+    ? { tenantId: null }
+    : undefined;
 }
 `;
 }
@@ -1852,6 +1869,16 @@ ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type 
 // Note: ${className} is auto-registered by the Vite plugin scanner
 ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className }) : ''}`;
 
+  // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
+  // tenant context is active (public/anonymous read). Non-tenant models keep the
+  // plain list/count.
+  const listAndCount = isTenantScoped(objectDef)
+    ? `  const readScope = tenantReadScope();
+  const items = await collection.list({ limit, offset, where: readScope });
+  const count = await collection.count({ where: readScope });`
+    : `  const items = await collection.list({ limit, offset });
+  const count = await collection.count();`;
+
   const getHandler = hasGet
     ? `
 // List all ${className.toLowerCase()}s
@@ -1861,8 +1888,7 @@ ${routeGuardPreamble(objectDef, false)}
   const offset = Number(url.searchParams.get('offset')) || 0;
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
-  const items = await collection.list({ limit, offset });
-  const count = await collection.count();
+${listAndCount}
 ${
   serializers.listItemSerializerName
     ? `
@@ -1990,13 +2016,24 @@ ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } fro
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className }) : ''}`;
 
+  // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
+  // rows when no tenant context is active, so a public/anonymous GET /:id can't
+  // fetch another tenant's row by id. Mutations (PUT/DELETE) require auth, so
+  // they keep the plain id lookup and rely on the interceptor.
+  const getForRead = isTenantScoped(objectDef)
+    ? `  const readScope = tenantReadScope();
+  const item = await collection.get(
+    readScope ? { id: params.id, ...readScope } : params.id,
+  );`
+    : `  const item = await collection.get(params.id);`;
+
   const getHandler = hasGet
     ? `
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, false)}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
-  const item = await collection.get(params.id);
+${getForRead}
 ${generateNotFoundError(className)}
 ${
   serializers.itemSerializerName

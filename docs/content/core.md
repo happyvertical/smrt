@@ -474,6 +474,32 @@ Notes:
 - Reserve the opt-in for responses that are identical for every requester; it is distinct from the top-level `@smrt({ cache })` knob, which configures the server-side collection read-through cache.
 - Mutations (`create`/`update`/`delete`) and custom action routes are unaffected.
 
+### Tenant-Scoped Public Reads Fail Closed to Global Rows
+
+A tenant-scoped model (`@smrt({ tenantScoped })` or `@TenantScoped()`) that is
+also marked `api: { public: true | 'read' }` can be read without authentication.
+Such a request carries no tenant context, so — left unguarded — the generated
+read would return rows from **every** tenant to an anonymous caller.
+
+Generated reads fail closed instead. When tenancy is enabled but no tenant
+context is active, `list`, `get /:id`, and `count` are restricted to
+**NULL-tenant (global) rows only** on both transports (the REST generator and
+the generated SvelteKit routes), mirroring the dispatch resolver and `_changes`
+convention: *tenancy enforced with no context → global rows only*. A
+client-supplied `?tenantId=` / `?tenant_id=` query param cannot widen the scope.
+
+| Request against a tenant-scoped `public` model | Rows returned |
+|-----------------------------------------------|---------------|
+| No tenant context (anonymous), tenancy enabled | NULL-tenant (global) rows only |
+| Active tenant context (authenticated) | that tenant's rows (interceptor-filtered) |
+| Tenancy disabled | all rows (no isolation to enforce) |
+
+Registering the `tenantScoped` + `api.public` combination logs a one-time
+warning so the global-only behavior is not mistaken for a broken endpoint. If
+per-tenant public reads are intended, resolve a tenant from the request itself
+(host, subdomain, or path) and enter that tenant context before the read. This
+scoping applies to reads only; mutations always require authentication.
+
 ### MCP Server Generation
 
 ```typescript

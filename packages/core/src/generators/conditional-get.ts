@@ -135,9 +135,50 @@ export function resolveReadCacheControl(
   return requestedSharedCacheControl(apiConfig) ?? PRIVATE_READ_CACHE_CONTROL;
 }
 
+/** Whether an `api` config opts reads out of auth (`public: true | 'read'`). */
+function isPublicRead(apiConfig: unknown): boolean {
+  if (!apiConfig || typeof apiConfig !== 'object') {
+    return false;
+  }
+  const value = (apiConfig as ApiCacheShape).public;
+  return value === true || value === 'read';
+}
+
 // One warning per model — both transports resolve the same model repeatedly
 // (per route template at generation time, per request at runtime).
 const sharedCacheNeutralizedWarned = new Set<string>();
+
+// One warning per model for the tenant-scoped + public-read combination (#1782).
+const tenantScopedPublicReadWarned = new Set<string>();
+
+/**
+ * Warn (once per model) when a tenant-scoped model is also marked publicly
+ * readable (`@smrt({ api: { public: true | 'read' } })`).
+ *
+ * Anonymous / no-tenant-context reads on such a model fail closed to NULL-tenant
+ * (global) rows only (#1782): they never expose any tenant's rows. That is the
+ * intended, safe behavior, but silently it reads as "the public endpoint returns
+ * nothing" — so surface the combination and its consequence at generation /
+ * serve time. Called from both the REST runtime and the SvelteKit route
+ * generator so the message appears wherever the model is exposed.
+ */
+export function warnIfTenantScopedPublicRead(
+  modelName: string,
+  apiConfig: unknown,
+  tenantScoped: boolean,
+): void {
+  if (!tenantScoped) return;
+  if (!isPublicRead(apiConfig)) return;
+  if (tenantScopedPublicReadWarned.has(modelName)) return;
+  tenantScopedPublicReadWarned.add(modelName);
+  console.warn(
+    `[smrt] tenant-scoped model ${modelName} is marked api.public — ` +
+      'anonymous reads with no tenant context return NULL-tenant (global) ' +
+      'rows ONLY, never any tenant’s rows (fail-closed, #1782). Resolve a ' +
+      'tenant from the request (host/subdomain/session) if per-tenant public ' +
+      'reads are intended.',
+  );
+}
 
 /**
  * Warn (once per model) when a tenant-scoped model configures
@@ -225,6 +266,11 @@ export function generateConditionalGetRouteHelper(
   const cacheControl = resolveReadCacheControl(apiConfig, options);
   if (options.modelName) {
     warnIfSharedCacheNeutralized(
+      options.modelName,
+      apiConfig,
+      options.tenantScoped === true,
+    );
+    warnIfTenantScopedPublicRead(
       options.modelName,
       apiConfig,
       options.tenantScoped === true,
