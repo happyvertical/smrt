@@ -263,6 +263,23 @@ compatibility.
 
 See `src/components/workspace/MIGRATION.md` for the old-to-new concept map.
 
+### Live activity feed adapter (`./web`, #1779)
+
+`activityFeed({ collection, map, shell })` (from `@happyvertical/smrt-svelte/web`)
+bridges a `@happyvertical/smrt-web` live collection into a `ShellState` activity
+registry: it subscribes the collection through `liveCollection`, reactively maps
+each row → `ShellActivity` via the app-supplied editorial `map`, and drives
+`upsertActivity` / `updateActivity` / `removeActivity` as rows appear, change,
+and vanish (a row mapping to `null` is excluded / retracted). Returns a disposer
+that removes exactly the activities it created. Must be called during component
+init (installs a `$effect`); the subscription tears down on unmount.
+
+It lives behind the opt-in `./web` entry — which pulls the TanStack client-data
+engine — and is **never** imported under `components/workspace/`, so the
+AdminShell core (`./workspace`) stays transport-agnostic and TanStack-free (epic
+#1766). The pure diff core is `ActivityFeedReconciler` (engine-free, unit-tested
+against a real `ShellState`). Demo: `playground/.../admin-shell-activity-feed`.
+
 ### Dock availability gates (server-side)
 
 `ToolDef.gates?: string[]` declares the gates a tool must pass to be visible.

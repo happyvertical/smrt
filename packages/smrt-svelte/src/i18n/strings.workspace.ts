@@ -69,6 +69,19 @@ export const M = defineMessages({
   'ui.system_status_chips.system_status': 'System status',
   'ui.tenant_nav.tenant_navigation': 'Tenant navigation',
 
+  // web/activity-feed adapter demo (#1779) — playground/admin-shell-activity-feed
+  'ui.activity_feed.title': 'Live activity feed',
+  'ui.activity_feed.description':
+    'A smrt-web live collection reconciled into the shell activity registry.',
+  'ui.activity_feed.enqueue_job': 'Enqueue job',
+  'ui.activity_feed.advance_job': 'Advance job',
+  'ui.activity_feed.complete_job': 'Complete job',
+  'ui.activity_feed.fail_job': 'Fail job',
+  'ui.activity_feed.clear_finished': 'Clear finished',
+  'ui.activity_feed.rows_heading': 'Backing collection rows',
+  'ui.activity_feed.no_rows': 'No rows yet',
+  'ui.activity_feed.job_label': 'Render job',
+
   // components/workspace/live/* (systemFeed demo — issue #1774)
   'ui.system_feed.title': 'System feed',
   'ui.system_feed.description':
