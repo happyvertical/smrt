@@ -6,6 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin } from 'vite';
+import { CLIENT_FETCH_RUNTIME } from '../generated-client-runtime.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 
@@ -76,12 +77,19 @@ export interface SmrtConsumerOptions {
   disableScanning?: boolean;
 }
 
+// Distinct resolved ids per plugin (#1795). smrtPlugin resolves
+// `@happyvertical/smrt-virt-*` to `\0smrt:*`; if this consumer plugin also
+// resolved its `@smrt/*` specifiers to `\0smrt:*` the two virtual modules would
+// share a rollup id, and in standalone/federation builds the consumer's
+// fallback `load` would non-deterministically win and shadow smrtPlugin's real
+// module. Namespacing the consumer ids (`\0smrt-consumer:*`) keeps them
+// separate so each plugin only ever loads its own module.
 const VIRTUAL_MODULES = {
-  '@smrt/routes': 'smrt:routes',
-  '@smrt/client': 'smrt:client',
-  '@smrt/mcp': 'smrt:mcp',
-  '@smrt/types': 'smrt:types',
-  '@smrt/manifest': 'smrt:manifest',
+  '@smrt/routes': 'smrt-consumer:routes',
+  '@smrt/client': 'smrt-consumer:client',
+  '@smrt/mcp': 'smrt-consumer:mcp',
+  '@smrt/types': 'smrt-consumer:types',
+  '@smrt/manifest': 'smrt-consumer:manifest',
 };
 
 /**
@@ -164,19 +172,19 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       }
 
       switch (cleanId) {
-        case 'smrt:routes':
+        case 'smrt-consumer:routes':
           return generateFallbackRoutesModule();
 
-        case 'smrt:client':
+        case 'smrt-consumer:client':
           return generateFallbackClientModule(typeManifest);
 
-        case 'smrt:mcp':
+        case 'smrt-consumer:mcp':
           return generateFallbackMcpModule();
 
-        case 'smrt:types':
+        case 'smrt-consumer:types':
           return generateFallbackTypesModule(typeManifest);
 
-        case 'smrt:manifest':
+        case 'smrt-consumer:manifest':
           return generateFallbackManifestModule(typeManifest);
 
         default:
@@ -689,33 +697,42 @@ export default createClient;
 `;
   }
 
-  // Generate basic client from manifest
+  // Generate basic client from manifest.
+  //
+  // Object keys are QUOTED via JSON.stringify (#1795): a manifest key can be a
+  // package-qualified name like `@happyvertical/smrt-assets:AssetAssociation`,
+  // which is not a valid bare object-literal key and produced a build-breaking
+  // syntax error in the emitted module. Fetchers reject on !response.ok (#1796)
+  // via the shared __smrtFetchJson/__smrtFetchOk runtime.
   const clientMethods = objects
     .map(([name, obj]) => {
       const { collection } = obj;
       return `
-  ${name}: {
-    list: () => fetch(basePath + '/${collection}').then(r => r.json()),
-    get: (id) => fetch(basePath + '/${collection}/' + id).then(r => r.json()),
-    create: (data) => fetch(basePath + '/${collection}', {
+  ${JSON.stringify(name)}: {
+    list: () => __smrtFetchJson(basePath + '/${collection}', { method: 'GET' }),
+    get: (id) => __smrtFetchJson(basePath + '/${collection}/' + id, { method: 'GET' }),
+    create: (data) => __smrtFetchJson(basePath + '/${collection}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
-    }).then(r => r.json()),
-    update: (id, data) => fetch(basePath + '/${collection}/' + id, {
+    }),
+    update: (id, data) => __smrtFetchJson(basePath + '/${collection}/' + id, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
-    }).then(r => r.json()),
-    delete: (id) => fetch(basePath + '/${collection}/' + id, {
+    }),
+    delete: (id) => __smrtFetchOk(basePath + '/${collection}/' + id, {
       method: 'DELETE'
-    }).then(r => r.ok)
+    })
   }`;
     })
     .join(',');
 
   return `
 // Auto-generated API client from SMRT consumer
+
+${CLIENT_FETCH_RUNTIME}
+
 export function createClient(basePath = '/api/v1') {
   return {${clientMethods}
   };
