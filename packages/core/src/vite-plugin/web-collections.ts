@@ -95,6 +95,25 @@ function findByName(
 }
 
 /**
+ * Normalize a relationship field's `related` value to a resolvable class name.
+ *
+ * Thunk forward-ref decorators — `@foreignKey(() => Scene)`, used heavily in
+ * video/voice for models that reference a class declared later — serialize as
+ * the RAW arrow-function source string `"() => Scene"` in the manifest, which
+ * neither `className` nor `qualifiedName` matches. Extract the target class
+ * name from the thunk so the edge resolves. Plain (`"Scene"`) and qualified
+ * (`"@happyvertical/smrt-assets:Asset"`) forms contain no `=>` and pass through
+ * untouched — the qualified `:` separator is preserved.
+ *
+ * Kept local to the relationship-edge path on purpose: extends-chain resolution
+ * never sees a thunk, so `findByName` and the scanner stay unchanged.
+ */
+function normalizeRelatedName(related: string): string {
+  const thunk = related.match(/=>\s*([A-Za-z_$][\w$]*)/);
+  return thunk ? thunk[1] : related.trim();
+}
+
+/**
  * True when `obj` is (transitively) a SmrtCollection subclass. Collection
  * classes describe access, not row shapes, so they never become web
  * collection definitions.
@@ -250,7 +269,9 @@ export function buildWebRelationships(
     if (!RELATIONSHIP_EDGE_TYPES.has(field.type)) continue;
     if (!field.related) continue;
 
-    const target = findByName(manifest, field.related);
+    // Normalize first: `@foreignKey(() => Scene)` thunks serialize as the raw
+    // "() => Scene" source, which findByName cannot match on its own.
+    const target = findByName(manifest, normalizeRelatedName(field.related));
     if (!target) continue;
     if (!exposedCollections.has(target.collection)) continue;
 

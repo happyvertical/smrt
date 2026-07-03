@@ -306,6 +306,31 @@ describe('buildWebRelationships', () => {
     ]);
   });
 
+  it('resolves a thunk forward-ref edge (@foreignKey(() => Scene)) to the related collection', () => {
+    // Thunk forward-refs (heavy in video/voice) serialize `related` as the raw
+    // arrow-function source "() => Scene", which findByName cannot match on its
+    // own; buildWebRelationships must extract the class name so the edge resolves
+    // — regression for edges silently dropped from those collections (#1761).
+    const character = obj({
+      className: 'Character',
+      collection: 'characters',
+      fields: {
+        name: field({ type: 'text' }),
+        defaultSceneId: field({ type: 'foreignKey', related: '() => Scene' }),
+      },
+    });
+    const scene = obj({ className: 'Scene', collection: 'scenes' });
+
+    const edges = buildWebRelationships(character, manifest(character, scene));
+    expect(edges).toEqual([
+      {
+        field: 'defaultSceneId',
+        kind: 'foreignKey',
+        relatedCollection: 'scenes',
+      },
+    ]);
+  });
+
   it('skips an edge whose related model is not in the manifest (unresolved target)', () => {
     // A cross-package ref to a model that was never scanned into this manifest
     // (the common per-package build case) has no collection to invalidate.
