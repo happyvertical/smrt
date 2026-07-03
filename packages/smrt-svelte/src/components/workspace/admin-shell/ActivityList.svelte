@@ -1,4 +1,6 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { M } from '../../../i18n/strings.workspace.js';
 import ActivityItem from './ActivityItem.svelte';
 import { useAdminShell } from './context.js';
 import type { ShellActivityFilter } from './types.js';
@@ -9,11 +11,8 @@ interface Props {
   emptyLabel?: string;
 }
 
-let {
-  filter = {},
-  hideWhenEmpty = false,
-  emptyLabel = 'No activities',
-}: Props = $props();
+let { filter = {}, hideWhenEmpty = false, emptyLabel }: Props = $props();
+const { t } = useI18n();
 const shell = useAdminShell();
 const activities = $derived(shell.listActivities(filter));
 </script>
@@ -25,7 +24,9 @@ const activities = $derived(shell.listActivities(filter));
     {/each}
   </div>
 {:else if !hideWhenEmpty}
-  <p class="smrt-activity-list__empty">{emptyLabel}</p>
+  <p class="smrt-activity-list__empty">
+    {emptyLabel ?? t(M['ui.activity_list.empty'])}
+  </p>
 {/if}
 
 <style>

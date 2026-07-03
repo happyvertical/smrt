@@ -22,6 +22,9 @@ const { t } = useI18n();
 
 function handleKeydown(event: KeyboardEvent): void {
   if (disabled) return;
+  // Let Tab move focus out of the capture control — swallowing it would trap
+  // keyboard users on the button. (Tab therefore can't be bound as a hotkey.)
+  if (event.key === 'Tab') return;
   event.preventDefault();
   if (event.key === 'Backspace' || event.key === 'Delete') {
     oncapture?.(null);

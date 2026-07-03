@@ -48,6 +48,7 @@ export const M = defineMessages({
   'ui.activity_toasts.dismiss_action': 'Dismiss',
   'ui.activity_item.view': 'View',
   'ui.activity_item.cancel': 'Cancel',
+  'ui.activity_list.empty': 'No activities',
   'ui.app_scope_panel.app_scope': 'App scope',
   'ui.hotkey_input.capture_title': 'Press a key to capture it',
   'ui.hotkey_input.conflicts_with': 'Conflicts with',
