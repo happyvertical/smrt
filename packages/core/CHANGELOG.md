@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.1
+
+### Patch Changes
+
+- ### Features
+
+  - ETag v2 — per-table change-feed version source for zero-query 304s (#1765) (core)
+  - @happyvertical/smrt-config@0.38.1
+  - @happyvertical/smrt-types@0.38.1
+  - @happyvertical/smrt-scanner@0.38.1
+
 ## 1.0.0
 
 ### Patch Changes
