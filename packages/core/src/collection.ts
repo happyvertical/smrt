@@ -131,6 +131,13 @@ export type SmrtCreateInput<T extends SmrtObject> = Partial<
   _skipLoad?: boolean;
   /** Skip save-time embedding auto-generation (framework internal) */
   _skipAutoEmbeddings?: boolean;
+  /**
+   * Persist via a plain INSERT instead of the natural-key upsert: a collision
+   * on the primary key or any unique constraint raises a typed error rather
+   * than dedup-updating an existing row in place. For write paths where row
+   * identity is an explicit client-supplied `id` (sync-apply, #1759).
+   */
+  _insertOnly?: boolean;
   /** Allow arbitrary additional fields for dynamic usage */
   [key: string]: unknown;
 };
@@ -1715,6 +1722,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (!instance.id) {
         (instance as unknown as { _id?: string })._id = crypto.randomUUID();
       }
+      if (options._insertOnly === true) {
+        instance.requireInsertOnSave();
+      }
       await instance.save();
       return instance;
     }
@@ -1750,6 +1760,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // backing field; view as a writable bag for the runtime assignment.
     if (!instance.id) {
       (instance as unknown as { _id?: string })._id = crypto.randomUUID();
+    }
+    if (options._insertOnly === true) {
+      instance.requireInsertOnSave();
     }
     await instance.save();
     return instance;

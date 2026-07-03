@@ -133,6 +133,9 @@ export { detectEngine, generateDDLForEngine } from './schema/ddl';
 export type { SchemaDefinition } from './schema/types';
 // Universal signaling system
 export * from './signals/index';
+// Idempotent sync-apply batch write contract (#1759) — shared by the runtime
+// REST generator and the generated SvelteKit sync route
+export * from './sync/apply';
 // System tables and types (note-taking, migrations, registry, signals)
 export * from './system/index';
 export type {

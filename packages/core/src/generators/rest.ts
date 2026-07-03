@@ -14,6 +14,12 @@ import {
   resolveReadCacheControl,
   warnIfSharedCacheNeutralized,
 } from './conditional-get';
+import {
+  processSyncApplyBatch,
+  SYNC_APPLY_ROUTE_SEGMENTS,
+  type SyncApplyOp,
+  type SyncApplyTarget,
+} from '../sync/apply';
 
 export interface APIConfig {
   basePath?: string;
@@ -215,6 +221,17 @@ export class APIGenerator {
 
     if (pathParts.length === 0) {
       return this.createErrorResponse(400, 'Object type required');
+    }
+
+    // Reserved batch write contract route (#1759): POST {basePath}/sync/apply.
+    if (
+      pathParts.length === SYNC_APPLY_ROUTE_SEGMENTS.length &&
+      SYNC_APPLY_ROUTE_SEGMENTS.every((segment, i) => pathParts[i] === segment)
+    ) {
+      if (req.method !== 'POST') {
+        return this.createErrorResponse(405, 'Method not allowed');
+      }
+      return await this.handleSyncApply(req);
     }
 
     const objectType = pathParts[0];
@@ -625,6 +642,102 @@ export class APIGenerator {
 
     await object.delete();
     return new Response(null, { status: 204 });
+  }
+
+  /**
+   * Handle POST /sync/apply — the idempotent batch write contract (#1759).
+   * All processing lives in `sync/apply.ts`; this method only adapts the
+   * generator's existing collection resolution, auth, action gating, and
+   * writable policy into a {@link SyncApplyTarget} per item.
+   */
+  private async handleSyncApply(req: Request): Promise<Response> {
+    // Buffer the body once. Request bodies are single-read streams, and the
+    // per-item auth middleware below must receive a readable body exactly as
+    // it does on CRUD routes (where auth runs before parsing) — so each
+    // middleware invocation gets a fresh Request rebuilt from this buffer.
+    let rawBody: string;
+    let body: unknown;
+    try {
+      rawBody = await req.text();
+      body = JSON.parse(rawBody);
+    } catch {
+      return this.createErrorResponse(400, 'Invalid JSON body');
+    }
+
+    const outcome = await processSyncApplyBatch(body, {
+      resolveTarget: (objectSegment) =>
+        this.resolveSyncApplyTarget(objectSegment, req, rawBody),
+    });
+    return this.createJsonResponse(outcome.body, outcome.status);
+  }
+
+  /**
+   * Resolve a sync item's `object` segment exactly like `handleObjectRoute`
+   * resolves a CRUD URL segment (registered collections first, then registry
+   * auto-discovery), and wrap the generator's per-object machinery.
+   */
+  private resolveSyncApplyTarget(
+    objectSegment: string,
+    req: Request,
+    rawBody: string,
+  ): SyncApplyTarget | null {
+    let collection: SmrtCollection<SmrtObject> | null = null;
+    let objectName: string | null = null;
+
+    const registered = this.collections.get(objectSegment);
+    if (registered) {
+      collection = registered;
+      objectName = this.getCollectionObjectName(registered) || objectSegment;
+    } else {
+      const pluralName = this.pluralize(objectSegment);
+      for (const [key, info] of ObjectRegistry.getAllClasses()) {
+        if (this.pluralize((info.name || key).toLowerCase()) === pluralName) {
+          collection = this.getCollection(info);
+          objectName = info.name;
+          break;
+        }
+      }
+    }
+
+    if (!collection || !objectName) {
+      return null;
+    }
+
+    const resolvedName = objectName;
+    const resolvedCollection = collection;
+    return {
+      objectName: resolvedName,
+      collection: resolvedCollection,
+      isOpAllowed: (op: SyncApplyOp) =>
+        this.isApiActionEnabled(resolvedName, op),
+      authorize: async (op: SyncApplyOp) => {
+        if (this.config.authMiddleware) {
+          const verb =
+            op === 'create' ? 'post' : op === 'update' ? 'put' : 'delete';
+          const authCheck = this.config.authMiddleware(resolvedName, verb);
+          // Fresh Request per invocation: the batch handler already consumed
+          // the original body, and middleware may read it (body-based auth,
+          // request signing) exactly as it can on CRUD routes.
+          const authResult = await authCheck(
+            new Request(req.url, {
+              method: req.method,
+              headers: req.headers,
+              body: rawBody,
+            }),
+          );
+          if (authResult instanceof Response) {
+            return authResult.status === 401 ? 'auth_required' : 'forbidden';
+          }
+          return 'ok';
+        }
+        // Fail-closed (#1540): every sync op is mutating, so only
+        // `@smrt({ api: { public: true } })` objects apply without auth.
+        return this.isRoutePublic(resolvedName, 'POST')
+          ? 'ok'
+          : 'auth_required';
+      },
+      prepare: (payload) => this.applyWritablePolicy(resolvedName, payload),
+    };
   }
 
   /**

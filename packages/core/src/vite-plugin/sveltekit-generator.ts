@@ -25,6 +25,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
+import { generateSyncApplyRoute } from './sync-apply-route.js';
 
 export interface SvelteKitOptions {
   enabled: boolean;
@@ -898,6 +899,9 @@ export async function generateSvelteKitRoutes(
   if (options.knowledge?.api?.enabled) {
     generateKnowledgeRoute(projectRoot, options);
   }
+
+  // Batch write contract route (#1759): {routesDir}/sync/apply/+server.ts.
+  generateSyncApplyRoute(projectRoot, manifest, options);
 
   // Update .gitignore to exclude generated routes
   updateGitignore(projectRoot, options);
