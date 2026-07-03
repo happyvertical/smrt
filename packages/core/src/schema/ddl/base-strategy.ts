@@ -145,7 +145,7 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
 
     for (const index of indexes) {
       // Skip malformed index entries
-      if (!index || !index.columns || !Array.isArray(index.columns)) {
+      if (!index?.columns || !Array.isArray(index.columns)) {
         continue;
       }
 

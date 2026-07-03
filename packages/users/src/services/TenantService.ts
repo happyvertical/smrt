@@ -85,8 +85,7 @@ export class TenantService {
    */
   async initialize(): Promise<void> {
     this.tenantCollection = await TenantCollection.create(this.options);
-    this.membershipCollection =
-      await MembershipCollection.create(this.options);
+    this.membershipCollection = await MembershipCollection.create(this.options);
     this.roleCollection = await RoleCollection.create(this.options);
 
     // Seed system roles if needed

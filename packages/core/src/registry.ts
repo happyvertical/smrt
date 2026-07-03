@@ -978,7 +978,7 @@ export class ObjectRegistry {
     for (const packageName of smrtPackages) {
       const manifest = await loadExternalManifest(packageName);
 
-      if (!manifest || !manifest.objects) {
+      if (!manifest?.objects) {
         continue;
       }
 
@@ -1544,8 +1544,11 @@ export class ObjectRegistry {
   private static resolveCollectionRegistration(className: string): {
     canonicalName: string;
     registered?: RegisteredClass;
-    // biome-ignore lint/suspicious/noExplicitAny: concrete collection constructor with contravariant `options` and invariant `ModelType`; mirrors `CollectionConstructor`. S4 #1579.
-    collectionConstructor?: new (options: any) => SmrtCollection<any>;
+    collectionConstructor?: new (
+      // biome-ignore lint/suspicious/noExplicitAny: concrete collection constructor with contravariant `options`; mirrors `CollectionConstructor`. S4 #1579.
+      options: any,
+      // biome-ignore lint/suspicious/noExplicitAny: invariant `ModelType` escape hatch; mirrors `CollectionConstructor`. S4 #1579.
+    ) => SmrtCollection<any>;
   } {
     let registered = ObjectRegistry.findClass(className);
     let collectionConstructor = registered?.collectionConstructor;

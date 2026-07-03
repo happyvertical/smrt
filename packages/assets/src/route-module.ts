@@ -12,14 +12,14 @@ import {
   createAssetsRouteNavigation,
 } from './svelte/routes/shared.js';
 
-export { AssetManagerRoute };
+export type { AssetsRouteId, AssetsRouteNavigationItem };
 export {
   ASSETS_DEFAULT_ROUTE_NAVIGATION,
   ASSETS_ROUTE_IDS,
   ASSETS_ROUTE_META,
+  AssetManagerRoute,
   createAssetsRouteNavigation,
 };
-export type { AssetsRouteId, AssetsRouteNavigationItem };
 
 export interface AssetsRouteDefinitions {
   manager: SmrtRouteDefinition;

@@ -500,7 +500,11 @@ function readNestedRecord(
 
 function getPublicPrompt(metadata: Record<string, unknown>): string | null {
   return (
-    readNestedString(metadata, ['transparency', 'generation', 'publicPrompt']) ||
+    readNestedString(metadata, [
+      'transparency',
+      'generation',
+      'publicPrompt',
+    ]) ||
     readNestedString(metadata, ['generation', 'publicPrompt']) ||
     readNestedString(metadata, ['publicPrompt']) ||
     null

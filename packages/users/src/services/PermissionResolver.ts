@@ -127,12 +127,14 @@ export class PermissionResolver {
    */
   async initialize(): Promise<void> {
     this.membershipCollection = await MembershipCollection.create(this.options);
-    this.rolePermissionCollection =
-      await RolePermissionCollection.create(this.options);
+    this.rolePermissionCollection = await RolePermissionCollection.create(
+      this.options,
+    );
     this.membershipOverrideCollection =
       await MembershipOverrideCollection.create(this.options);
-    this.groupMemberCollection =
-      await GroupMemberCollection.create(this.options);
+    this.groupMemberCollection = await GroupMemberCollection.create(
+      this.options,
+    );
     this.groupRoleCollection = await GroupRoleCollection.create(this.options);
     this.permissionCollection = await PermissionCollection.create(this.options);
     this.tenantCollection = await TenantCollection.create(this.options);
@@ -368,7 +370,7 @@ export class PermissionResolver {
       options.membership === undefined
         ? await this.membershipCollection.findByUserAndTenant(userId, tenantId)
         : options.membership;
-    if (!membership || !membership.isActive()) {
+    if (!membership?.isActive()) {
       return result;
     }
     if (membership.userId !== userId || membership.tenantId !== tenantId) {

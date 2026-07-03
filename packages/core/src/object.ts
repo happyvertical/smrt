@@ -22,10 +22,7 @@ import {
 } from './errors';
 import { createInterceptorContext, GlobalInterceptors } from './interceptors';
 import { ObjectRegistry } from './registry';
-import type {
-  RegisteredField,
-  SmrtObjectConstructor,
-} from './registry/types';
+import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   executeToolCall as executeToolCallInternal,
@@ -1002,7 +999,12 @@ export class SmrtObject extends SmrtClass {
     const cachedFields = await ObjectRegistry.getAllFields(className);
     const fields: Record<
       string,
-      { name: string; type: string; _meta: Record<string, unknown>; value?: unknown }
+      {
+        name: string;
+        type: string;
+        _meta: Record<string, unknown>;
+        value?: unknown;
+      }
     > = {};
 
     for (const [key, field] of cachedFields.entries()) {
@@ -1215,7 +1217,8 @@ export class SmrtObject extends SmrtClass {
           // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
           const propTenancy =
             prop && typeof prop === 'object' && '__tenancy' in prop
-              ? (prop as { __tenancy?: { isTenantIdField?: boolean } }).__tenancy
+              ? (prop as { __tenancy?: { isTenantIdField?: boolean } })
+                  .__tenancy
               : undefined;
           const hasTenancyMarker =
             propTenancy?.isTenantIdField ||

@@ -13,13 +13,6 @@ import type {
 } from '@happyvertical/sql';
 import type { MigrationResult } from '../schema/types.js';
 
-export type {
-  SqlColumnDefinitionWithName,
-  DatabaseInterface,
-  SqlIndexDefinition,
-  SqlTableSchemaInfo,
-};
-
 // Re-export schema migration types
 export type {
   DriftReport,
@@ -30,6 +23,12 @@ export type {
   SchemaDiff,
   SchemaMigrationRecord,
 } from '../schema/types.js';
+export type {
+  DatabaseInterface,
+  SqlColumnDefinitionWithName,
+  SqlIndexDefinition,
+  SqlTableSchemaInfo,
+};
 
 /**
  * Options for the MigrationTracker

@@ -701,7 +701,7 @@ function buildResolvedGovernance(
   const normalizedAssignment = assignment
     ? normalizeAssignmentDefinition(assignment)
     : null;
-  if (!normalizedAssignment || normalizedAssignment.enabled !== true) {
+  if (normalizedAssignment?.enabled !== true) {
     return {
       isGoverned: false,
       factLinkingEnabled: false,

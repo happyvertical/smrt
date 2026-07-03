@@ -234,9 +234,7 @@ export function createAuditEntry(params: {
   // null — a system-initiated operation has no authenticated user. Callers may
   // pass `null`/`undefined` directly to express that (#1444).
   const userId =
-    params.userId == null ||
-    params.userId === 'system' ||
-    params.userId === ''
+    params.userId == null || params.userId === 'system' || params.userId === ''
       ? null
       : params.userId;
 

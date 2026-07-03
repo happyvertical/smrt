@@ -622,12 +622,14 @@ export function htmlToMarkdown(html: string): string {
 
   // Structural view of the DOMParser API we rely on; avoids depending on the
   // DOM lib in this environment-agnostic module.
-  const parser = new (Parser as new () => {
-    parseFromString: (
-      source: string,
-      mimeType: string,
-    ) => { body?: { childNodes?: ArrayLike<MarkdownDomNode> } | null };
-  })();
+  const parser = new (
+    Parser as new () => {
+      parseFromString: (
+        source: string,
+        mimeType: string,
+      ) => { body?: { childNodes?: ArrayLike<MarkdownDomNode> } | null };
+    }
+  )();
   const document = parser.parseFromString(
     `<body>${sanitized}</body>`,
     'text/html',
@@ -782,7 +784,9 @@ export interface ImageAssetLike {
   width?: unknown;
 }
 
-export function getImageSource(asset: ImageAssetLike | null | undefined): string {
+export function getImageSource(
+  asset: ImageAssetLike | null | undefined,
+): string {
   return String(asset?.sourceUri || asset?.url || asset?.src || '');
 }
 

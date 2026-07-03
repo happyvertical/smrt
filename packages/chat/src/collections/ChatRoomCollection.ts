@@ -118,7 +118,7 @@ export class ChatRoomCollection extends SmrtCollection<ChatRoom> {
 
     for (const roomId of candidateRoomIds) {
       const dm = await this.get({ id: roomId, tenantId });
-      if (!dm || dm.roomType !== 'dm' || dm.status !== 'active') continue;
+      if (dm?.roomType !== 'dm' || dm.status !== 'active') continue;
 
       // Confirm profile2 is also an active participant of this same room.
       const others = await participants.list({

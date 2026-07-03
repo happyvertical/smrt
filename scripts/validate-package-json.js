@@ -83,10 +83,7 @@ function validatePackageJson(filePath) {
     }
 
     // Check for required Node.js version in root package
-    if (
-      isRootPackage &&
-      (!pkg.engines?.node || !pkg.engines.node.startsWith('>=24'))
-    ) {
+    if (isRootPackage && !pkg.engines?.node?.startsWith('>=24')) {
       errors.push(
         `Root package should specify Node.js version >=24.0.0 (got: ${pkg.engines?.node || 'none'})`,
       );

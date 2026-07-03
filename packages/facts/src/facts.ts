@@ -95,9 +95,7 @@ function normalizeConfidence(value: unknown): number | undefined {
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' && value !== null && !Array.isArray(value)
-  );
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function asOptionalString(value: unknown): string | undefined {
@@ -200,8 +198,7 @@ interface MessageCapableAi {
  * Returns null when the client does not provide a callable `message`.
  */
 function asMessageCapableAi(ai: unknown): MessageCapableAi | null {
-  return ai &&
-    typeof (ai as Partial<MessageCapableAi>).message === 'function'
+  return ai && typeof (ai as Partial<MessageCapableAi>).message === 'function'
     ? (ai as MessageCapableAi)
     : null;
 }

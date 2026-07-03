@@ -58,4 +58,4 @@ export function hasThemeContext(): boolean {
 }
 
 // Re-export types for convenience
-export type { ThemeContext, ThemePreset, ColorScheme, ThemeConfig };
+export type { ColorScheme, ThemeConfig, ThemeContext, ThemePreset };

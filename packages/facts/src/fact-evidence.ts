@@ -109,7 +109,8 @@ export class FactEvidence extends SmrtObject {
   getMetadata(): Record<string, unknown> {
     const raw = this.metadata;
     if (!raw) return {};
-    if (typeof raw === 'object') return raw as unknown as Record<string, unknown>;
+    if (typeof raw === 'object')
+      return raw as unknown as Record<string, unknown>;
     try {
       return JSON.parse(String(raw));
     } catch {

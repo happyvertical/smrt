@@ -79,8 +79,9 @@ export class DynamicClassLoader {
 
       // Extract classes. Module exports are loosely-typed at the dynamic-import
       // boundary; narrow them to the framework base-class constructor handles.
-      const ObjectClass = (module[objectDef.exportName || objectDef.className] ||
-        module.default) as typeof SmrtObject | undefined;
+      const ObjectClass = (module[
+        objectDef.exportName || objectDef.className
+      ] || module.default) as typeof SmrtObject | undefined;
       const CollectionClass = objectDef.collectionExportName
         ? (module[objectDef.collectionExportName] as
             | typeof SmrtCollection

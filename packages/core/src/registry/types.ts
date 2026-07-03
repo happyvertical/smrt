@@ -817,8 +817,11 @@ export interface RegisteredClass {
    * `typeof SmrtCollection`. This mirrors the `SmrtObjectConstructor` escape
    * hatch above.
    */
-  // biome-ignore lint/suspicious/noExplicitAny: assigned from `typeof SmrtCollection` (contravariant `options?`, invariant `ModelType`) and called by generators passing a loosely-typed `{ ai, db }` context; precise types break those sites. Mirrors `SmrtObjectConstructor`. S4 #1579.
-  collectionConstructor?: new (options: any) => SmrtCollection<any>;
+  collectionConstructor?: new (
+    // biome-ignore lint/suspicious/noExplicitAny: assigned from `typeof SmrtCollection` and called by generators passing a loosely-typed `{ ai, db }` context. S4 #1579.
+    options: any,
+    // biome-ignore lint/suspicious/noExplicitAny: invariant `ModelType` escape hatch; precise element types break assignment from `typeof SmrtCollection`. S4 #1579.
+  ) => SmrtCollection<any>;
   config: SmartObjectConfig;
   fields: Map<string, RegisteredField>;
   /** Method definitions from manifest (for custom CLI/API/MCP generation) */

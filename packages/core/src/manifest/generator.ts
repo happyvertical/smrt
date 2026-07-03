@@ -3,9 +3,9 @@
  * Consolidates manifest generation logic for both build and test manifests
  */
 
-import { createLogger } from '@happyvertical/logger';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { createLogger } from '@happyvertical/logger';
 import fg from 'fast-glob';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';

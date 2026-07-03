@@ -124,7 +124,9 @@ async function refreshContributionOperations() {
     ]);
     await loadPortal();
   } catch (err) {
-    error = (err instanceof Error ? err.message : '') || 'Failed to load contribution operations.';
+    error =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to load contribution operations.';
   } finally {
     loading = false;
   }
@@ -137,7 +139,9 @@ async function refreshPortalOnly() {
   try {
     await loadPortal();
   } catch (err) {
-    error = (err instanceof Error ? err.message : '') || 'Failed to load contributor submissions.';
+    error =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to load contributor submissions.';
   } finally {
     refreshingPortal = false;
   }

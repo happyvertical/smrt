@@ -12,14 +12,14 @@ import {
   type ImagesRouteNavigationItem,
 } from './svelte/routes/shared.js';
 
-export { ImageStudioRoute };
+export type { ImagesRouteId, ImagesRouteNavigationItem };
 export {
+  createImagesRouteNavigation,
   IMAGES_DEFAULT_ROUTE_NAVIGATION,
   IMAGES_ROUTE_IDS,
   IMAGES_ROUTE_META,
-  createImagesRouteNavigation,
+  ImageStudioRoute,
 };
-export type { ImagesRouteId, ImagesRouteNavigationItem };
 
 export interface ImagesRouteDefinitions {
   studio: SmrtRouteDefinition;

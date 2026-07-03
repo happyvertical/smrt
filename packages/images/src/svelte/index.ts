@@ -15,9 +15,6 @@ import AssetsGallery from './components/AssetsGallery.svelte';
 import ImageEditor from './components/ImageEditor.svelte';
 import ImageUploader from './components/ImageUploader.svelte';
 
-// Export components
-export { AssetsGallery, ImageEditor, ImageUploader };
-
 export type {
   ImageConvertRequest,
   ImageCropRequest,
@@ -30,6 +27,8 @@ export type {
   ImagesGalleryQuery,
   ImagesGalleryResult,
 } from './image-clients';
+// Export components
+export { AssetsGallery, ImageEditor, ImageUploader };
 
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(IMAGES_MODULE_META);

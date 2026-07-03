@@ -17,12 +17,12 @@ import {
   sanitizeContentEditorAssistantFieldUpdates,
 } from '../../content-editor-assistant';
 import type {
+  ContentData,
   FactAuditResourceClaimData,
   FactAuditStateData,
   FactEvidenceStatus,
 } from '../../mock-smrt-client';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
-import type { ContentData } from '../../mock-smrt-client';
 import {
   type ContentEditorAsset,
   type ContentEditorFormData,
@@ -36,6 +36,7 @@ import {
 } from '../content-editor-form';
 
 type ContentEditorSnapshot = ReturnType<typeof getContentEditorSnapshot>;
+
 import { M } from '../i18n.editor.js';
 import ContentAgentChat from './ContentAgentChat.svelte';
 import ContentBodyEditor, {

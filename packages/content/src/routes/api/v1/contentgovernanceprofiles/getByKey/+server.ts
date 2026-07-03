@@ -76,15 +76,17 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(
-    value as Record<string, unknown>,
-  )) {
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
+import {
+  enterTenantContext,
+  hasTenantContext,
+  isTenancyEnabled,
+} from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -98,6 +100,19 @@ function establishTenantContext(locals: unknown): void {
   }
 }
 
+// Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
+// model has no tenant context, so the tenancy interceptor (optional mode) would
+// pass the query through UNFILTERED and return every tenant's rows. When tenancy
+// is enabled but no context was established, restrict reads to NULL-tenant
+// (global) rows only — mirroring the dispatch resolver + _changes convention:
+// tenancy enforced with no context => global rows only. Returns undefined when a
+// context is active (the interceptor filters by it) or tenancy is disabled.
+function tenantReadScope(): { tenantId: null } | undefined {
+  return isTenancyEnabled() && !hasTenantContext()
+    ? { tenantId: null }
+    : undefined;
+}
+
 // Custom collection method: getByKey
 export const POST: RequestHandler = async ({ locals, request }) => {
   requireRouteAuth(locals, true);
@@ -105,13 +120,13 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const collection = await getCollection<ContentGovernanceProfile>(
     '@happyvertical/smrt-content:ContentGovernanceProfile',
   );
-  const typedCollection = collection as unknown as ContentGovernanceProfileCollection;
+  const typedCollection =
+    collection as unknown as ContentGovernanceProfileCollection;
   if (!collection)
     throw error(
       500,
       '@happyvertical/smrt-content:ContentGovernanceProfile collection is not registered',
     );
-
 
   type ActionArgs = Parameters<ContentGovernanceProfileCollection['getByKey']>;
   type ActionOptions = {

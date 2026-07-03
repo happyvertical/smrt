@@ -3,7 +3,7 @@
  * Runs once on first access — checks if contents exist and creates sample ones if empty.
  */
 
-import { Content } from '../../content';
+import type { Content } from '../../content';
 import { getCollection } from './smrt.js';
 
 let seeded = false;

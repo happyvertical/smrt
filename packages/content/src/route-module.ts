@@ -54,27 +54,25 @@ import {
   type PublishedContentArticleRouteData,
 } from './svelte/routes/shared.js';
 
-export {
-  ContentContributionsRoute,
-  ContentFactsRoute,
-  ContentGovernanceRoute,
-  ContentWorkspaceRoute,
-  PublishedArticleRoute,
-};
-export {
-  CONTENT_DEFAULT_ROUTE_NAVIGATION,
-  CONTENT_ROUTE_IDS,
-  CONTENT_ROUTE_META,
-  createContentRouteNavigation,
-  isContentRouteLoadError,
-  loadPublishedArticleRouteData,
-};
 export type {
   ContentRouteId,
   ContentRouteLoadError,
   ContentRouteNavigationItem,
   LoadPublishedArticleRouteInput,
   PublishedContentArticleRouteData,
+};
+export {
+  CONTENT_DEFAULT_ROUTE_NAVIGATION,
+  CONTENT_ROUTE_IDS,
+  CONTENT_ROUTE_META,
+  ContentContributionsRoute,
+  ContentFactsRoute,
+  ContentGovernanceRoute,
+  ContentWorkspaceRoute,
+  createContentRouteNavigation,
+  isContentRouteLoadError,
+  loadPublishedArticleRouteData,
+  PublishedArticleRoute,
 };
 
 export interface ContentRouteDefinitions {

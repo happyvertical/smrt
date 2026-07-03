@@ -1,7 +1,7 @@
 import { createLogger } from '@happyvertical/logger';
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { Content } from '../../../../../../content.js';
 import { getCollection } from '$lib/server/smrt';
+import type { Content } from '../../../../../../content.js';
 import {
   createContentEditorChatThread,
   getOrCreateContentEditorChatSession,

@@ -114,8 +114,7 @@ export class SessionService {
   async initialize(): Promise<void> {
     this.sessionCollection = await SessionCollection.create(this.options);
     this.userCollection = await UserCollection.create(this.options);
-    this.membershipCollection =
-      await MembershipCollection.create(this.options);
+    this.membershipCollection = await MembershipCollection.create(this.options);
     this.permissionResolver = await PermissionResolver.create(this.options);
   }
 
@@ -156,7 +155,7 @@ export class SessionService {
 
     // Load user
     const user = await this.userCollection.get(session.userId);
-    if (!user || !user.isActive()) return null;
+    if (!user?.isActive()) return null;
 
     // Resolve permissions (only if tenant context exists)
     let permissions: string[] = [];
@@ -280,7 +279,7 @@ export class SessionService {
       session.userId,
       tenantId,
     );
-    if (!membership || !membership.isActive()) {
+    if (!membership?.isActive()) {
       return failClosed;
     }
 

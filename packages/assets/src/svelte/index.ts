@@ -20,17 +20,6 @@ import AssetManager from './AssetManager.svelte';
 import AssetToolbar from './AssetToolbar.svelte';
 import CreateAssetModal from './CreateAssetModal.svelte';
 
-// Components
-export {
-  ActionBar,
-  AssetDetail,
-  AssetGrid,
-  AssetList,
-  AssetManager,
-  AssetToolbar,
-  CreateAssetModal,
-};
-
 // Types
 export type {
   ActionBarProps,
@@ -46,6 +35,16 @@ export type {
   AssetToolbarProps,
   AssetViewMode,
 } from './types';
+// Components
+export {
+  ActionBar,
+  AssetDetail,
+  AssetGrid,
+  AssetList,
+  AssetManager,
+  AssetToolbar,
+  CreateAssetModal,
+};
 
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(ASSETS_MODULE_META);
