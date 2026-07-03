@@ -93,6 +93,11 @@ export interface SmrtPluginOptions {
      * the next major. An explicit `api.routes[name].path` always wins.
      */
     kebabRoutes?: boolean;
+    /**
+     * Change-feed `_changes` route generation (#1758). Enabled by default
+     * (the route is auth-guarded fail-closed); `{ enabled: false }` skips it.
+     */
+    changesRoute?: { enabled?: boolean };
   };
   /** Domain-scoped agent/developer knowledge artifact generation. */
   knowledge?: DomainKnowledgeConfig | false;
@@ -529,6 +534,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           configPath: svelteKit.configPath || 'src/lib/server',
           configFileName: svelteKit.configFileName || 'smrt.ts',
           kebabRoutes: svelteKit.kebabRoutes ?? false,
+          changesRoute: svelteKit.changesRoute,
           knowledge: await resolveKnowledgeConfig(
             resolvedConfig.root,
             manifest,
@@ -657,6 +663,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   configPath: svelteKit.configPath || 'src/lib/server',
                   configFileName: svelteKit.configFileName || 'smrt.ts',
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
+                  changesRoute: svelteKit.changesRoute,
                   knowledge: await resolveKnowledgeConfig(
                     server.config.root,
                     manifest,
@@ -701,6 +708,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   configPath: svelteKit.configPath || 'src/lib/server',
                   configFileName: svelteKit.configFileName || 'smrt.ts',
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
+                  changesRoute: svelteKit.changesRoute,
                   knowledge: await resolveKnowledgeConfig(
                     server.config.root,
                     manifest,
@@ -737,6 +745,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   configPath: svelteKit.configPath || 'src/lib/server',
                   configFileName: svelteKit.configFileName || 'smrt.ts',
                   kebabRoutes: svelteKit.kebabRoutes ?? false,
+                  changesRoute: svelteKit.changesRoute,
                   knowledge: await resolveKnowledgeConfig(
                     server.config.root,
                     manifest,

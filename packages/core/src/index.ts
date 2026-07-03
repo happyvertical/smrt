@@ -23,6 +23,29 @@ export {
   applyOneToManyChildAccessors,
   childAccessorName,
 } from './child-accessors';
+// Adapter-agnostic change feed — _smrt_changes log, cursor reads, retention,
+// manual bump escape hatch (issue #1758)
+export {
+  type AppendChangeInput,
+  appendChange,
+  bumpChangeFeed,
+  CHANGE_FEED_INTERCEPTOR_NAME,
+  CHANGE_FEED_TABLE,
+  type ChangeFeedEntry,
+  type ChangeFeedPage,
+  type ChangeFeedRetention,
+  type ChangeOperation,
+  DEFAULT_CHANGES_LIMIT,
+  ensureChangeFeedTable,
+  type GetChangesOptions,
+  getChangesSince,
+  getTenantScopedChangesSince,
+  MAX_CHANGES_LIMIT,
+  pruneChangeFeed,
+  registerChangeFeedWriter,
+  resetChangeFeedWarnings,
+  unregisterChangeFeedWriter,
+} from './change-feed';
 // Core SMRT framework
 export * from './class';
 export * from './collection';

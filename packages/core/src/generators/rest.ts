@@ -25,6 +25,7 @@ import {
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '../sync/apply';
+import { handleChangesRoute } from './changes-route';
 
 export interface APIConfig {
   basePath?: string;
@@ -203,6 +204,16 @@ export class APIGenerator {
           return this.addCorsHeaders(response, req);
         }
       }
+    }
+
+    // Change-feed route (#1758): auth-guarded, tenant-scoped cursor read
+    // over the _smrt_changes log. Logic lives in ./changes-route.ts.
+    if (url.pathname === `${this.config.basePath}/_changes`) {
+      const response = await handleChangesRoute(req, {
+        authMiddleware: this.config.authMiddleware,
+        db: this.context.db,
+      });
+      return this.addCorsHeaders(response, req);
     }
 
     // Handle object routes
