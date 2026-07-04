@@ -276,6 +276,13 @@ interface ManifestMethodCandidate {
   name?: string;
 }
 
+interface FieldReadPermissionCandidate {
+  _meta?: {
+    readPermission?: unknown;
+  };
+  readPermission?: unknown;
+}
+
 type MethodCandidate =
   | ManifestMethodCandidate
   | readonly [string, ManifestMethodCandidate];
@@ -701,11 +708,12 @@ export class PermissionCatalogService {
             (registered?.inheritedFields ?? metadata.fields).entries(),
           );
       for (const [fieldName, fieldDef] of fieldEntries) {
+        const field = fieldDef as FieldReadPermissionCandidate;
         const readPermission =
-          typeof fieldDef.readPermission === 'string'
-            ? fieldDef.readPermission
-            : typeof fieldDef._meta?.readPermission === 'string'
-              ? fieldDef._meta.readPermission
+          typeof field.readPermission === 'string'
+            ? field.readPermission
+            : typeof field._meta?.readPermission === 'string'
+              ? field._meta.readPermission
               : undefined;
         if (!readPermission || definitions.has(readPermission)) {
           continue;
