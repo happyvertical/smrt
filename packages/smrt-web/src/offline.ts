@@ -23,11 +23,14 @@
  *   then SUPPRESSES the post-mutation refetch + `invalidateRelated()` (its
  *   `{ refetch: false }` path), so the optimistic row the app just inserted
  *   STANDS instead of being dropped by a refetch of a server list that has never
- *   seen the offline write. The write never touches `ctx.fetchers.create` — it
- *   replays ONLY through `sync/apply`, which is load-bearing: the normal REST
- *   create strips the client id (#1540) and would mint a NEW server id, orphaning
- *   the optimistic row; sync/apply's strict-insert path preserves the client
- *   UUID (#1540, #1540's mass-assignment guard on the sync path).
+ *   seen the offline write. If the durable queue is unavailable, it returns
+ *   `{ handled: false }` so the normal fetcher path runs instead of silently
+ *   acknowledging a non-durable write. A handled write never touches
+ *   `ctx.fetchers.create` — it replays ONLY through `sync/apply`, which is
+ *   load-bearing: the normal REST create strips the client id (#1540) and would
+ *   mint a NEW server id, orphaning the optimistic row; sync/apply's
+ *   strict-insert path preserves the client UUID (#1540, #1540's
+ *   mass-assignment guard on the sync path).
  * - `onAttach(ctx)` — attaches this collection to the shared, namespace-keyed
  *   {@link OutboxEngine} (ref-counted so N collections share ONE engine / IDB
  *   db / leader lock / FIFO queue).
@@ -190,6 +193,16 @@ function resolveBackoff(backoff?: OutboxBackoff): ResolvedBackoff {
  */
 const handlesByNamespace = new Map<string, OutboxEngine>();
 
+/** Extract a timestamp from a payload for direct wrapMutation callers. */
+function getPayloadUpdatedAt(
+  data: Record<string, unknown>,
+): string | undefined {
+  const value = data.updatedAt ?? data.updated_at;
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
+}
+
 /**
  * Build a durable offline-outbox capability for a collection. Add the returned
  * capability to the collection's `capabilities` array; a collection without it
@@ -247,20 +260,15 @@ export function offlineOutbox<TData extends object = object>(
       // If onAttach hasn't run yet (shouldn't happen — wrapMutation fires only
       // after construction), fall through so the write isn't silently dropped.
       if (!engine) return { handled: false };
-      await engine.enqueue({
+      const itemId = await engine.enqueue({
         kind: envelope.kind,
         object,
         rowId: envelope.key,
         data: envelope.data,
-        // The optimistic row may carry the server updated_at it was based on;
-        // pass it through as the conflict guard base when present.
         baseUpdatedAt:
-          typeof envelope.data.updatedAt === 'string'
-            ? envelope.data.updatedAt
-            : typeof envelope.data.updated_at === 'string'
-              ? envelope.data.updated_at
-              : undefined,
+          envelope.baseUpdatedAt ?? getPayloadUpdatedAt(envelope.data),
       });
+      if (!itemId) return { handled: false };
       // The optimistic row (envelope.data) stands in for the fetcher result; the
       // factory suppresses the refetch so it isn't dropped. Exactly-once replay
       // then reconciles it server-side via sync/apply.

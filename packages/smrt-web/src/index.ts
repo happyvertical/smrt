@@ -461,6 +461,16 @@ export interface SmrtWebCollection<TData extends object> {
   insert(row: SmrtWebRow<TData>): SmrtWebTransaction;
 }
 
+/** Extract a row's server revision timestamp for sync/apply conflict guards. */
+function getBaseUpdatedAt(row: unknown): string | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const record = row as Record<string, unknown>;
+  const value = record.updatedAt ?? record.updated_at;
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
+}
+
 /**
  * Options for {@link createSmrtCollection}. Generic in the collection's row
  * type `TData` so {@link initialData} is checked against the same DTO the
@@ -932,6 +942,7 @@ export function createSmrtCollection<TData extends object>(
                 kind: 'update',
                 key,
                 data: changes,
+                baseUpdatedAt: getBaseUpdatedAt(mutation.original),
               };
               const outcome = await persistMutation(envelope, async () =>
                 unwrapItemResult(
@@ -955,6 +966,7 @@ export function createSmrtCollection<TData extends object>(
                 kind: 'delete',
                 key,
                 data: {},
+                baseUpdatedAt: getBaseUpdatedAt(mutation.original),
               };
               const outcome = await persistMutation(envelope, async () =>
                 // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary

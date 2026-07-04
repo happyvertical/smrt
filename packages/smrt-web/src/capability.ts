@@ -74,6 +74,13 @@ export interface SmrtWebMutationEnvelope {
    * and an empty object on delete (the key carries the target).
    */
   readonly data: Record<string, unknown>;
+  /**
+   * The server `updated_at` / `updatedAt` value the mutation is based on, when
+   * known. Update/delete handlers capture this from the original row so offline
+   * replay can preserve the sync/apply conflict guard even when the write
+   * payload only carries changed fields (or no fields for delete).
+   */
+  readonly baseUpdatedAt?: string;
 }
 
 /** The outcome handed to {@link SmrtWebCapability.wrapMutation}. */

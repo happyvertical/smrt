@@ -21,7 +21,7 @@
  * | `rejected` `write_failed`           | keep, attempts++, backoff → `pending`  |
  * | `rejected` `auth_required`/`forbidden` | PAUSE the loop, keep queued → `pending` |
  * | `rejected` other (`invalid_*`/`unknown_object`/`not_found`/`op_not_allowed`/`id_conflict`) | remove → `failed` (terminal) |
- * | network reject / non-200 / lost response | whole batch stays `pending` (blind replay is safe by construction — idempotency) |
+ * | network reject / non-200 / lost response | whole batch stays `pending`, drain stops behind it (blind replay is safe by construction — idempotency) |
  *
  * Because items carry client-generated UUIDs and the endpoint is idempotent
  * (`_insertOnly` create + no-op re-apply), a batch that was sent but whose
@@ -326,28 +326,28 @@ export class OutboxEngine {
    * enqueue — reloaded from disk) route to the registered per-`object`
    * callbacks, so a reload does not lose observability.
    *
-   * In degraded (no-IndexedDB) mode the write is NOT durable: we still fire a
-   * `pending` event and return so the optimistic row stands, but nothing will
-   * replay — matching the documented gap.
+   * In degraded (no-IndexedDB) mode the write is NOT durable, so this returns
+   * `undefined` and the capability falls through to the real fetcher instead
+   * of acknowledging an optimistic-only write.
    */
-  async enqueue(request: OutboxEnqueueRequest): Promise<string> {
+  async enqueue(request: OutboxEnqueueRequest): Promise<string | undefined> {
     await this.ready;
+    if (!this.queue || this.degraded) return undefined;
+
     const itemId = newItemId();
     const op = envelopeKindToOp(request.kind);
 
     // A delete carries no payload; create/update carry the row/changed fields.
     const payload = op === 'delete' ? undefined : request.data;
 
-    if (this.queue && !this.degraded) {
-      await this.queue.enqueue({
-        itemId,
-        object: request.object,
-        op,
-        id: request.rowId,
-        payload,
-        baseUpdatedAt: request.baseUpdatedAt,
-      });
-    }
+    await this.queue.enqueue({
+      itemId,
+      object: request.object,
+      op,
+      id: request.rowId,
+      payload,
+      baseUpdatedAt: request.baseUpdatedAt,
+    });
 
     this.emit({
       itemId,
@@ -453,7 +453,6 @@ export class OutboxEngine {
     try {
       // Loop so a queued re-request (or a freshly-eligible backoff row) runs
       // without re-entrancy.
-      // eslint-disable-next-line no-constant-condition
       for (;;) {
         this.drainQueued = false;
         await this.drainOnce();
@@ -472,10 +471,16 @@ export class OutboxEngine {
     if (this.degraded || !this.queue) return;
     if (isDefinitelyOffline()) return;
 
+    const pending = (await this.queue.all()).filter(
+      (row) => row.state === 'pending',
+    );
+    if (pending.length === 0) return;
+
     const now = Date.now();
-    const due = await this.queue.listPending(now);
+    const firstBlocked = pending.findIndex((row) => row.nextAttemptAt > now);
+    const due = firstBlocked === -1 ? pending : pending.slice(0, firstBlocked);
     if (due.length === 0) {
-      // Nothing due now; schedule a wake for the soonest backed-off row.
+      // The oldest pending row is backed off; FIFO forbids draining newer rows.
       await this.scheduleNextBackoff();
       return;
     }
@@ -485,7 +490,8 @@ export class OutboxEngine {
     for (let i = 0; i < due.length; i += MAX_SYNC_APPLY_BATCH_SIZE) {
       if (this.disposed || this.paused || !this.isLeader) break;
       const chunk = due.slice(i, i + MAX_SYNC_APPLY_BATCH_SIZE);
-      await this.sendBatch(chunk);
+      const drained = await this.sendBatch(chunk);
+      if (!drained) break;
     }
 
     // After processing, some rows may have been re-queued with a backoff gate;
@@ -498,9 +504,10 @@ export class OutboxEngine {
    * onto durable transitions. On a network reject / non-200 / lost/mismatched
    * response the WHOLE chunk stays `pending` (blind replay is safe) — every row
    * goes back to `pending` with an incremented attempt + backoff so the loop
-   * doesn't hot-spin.
+   * doesn't hot-spin. Returns false when a retryable row remains pending, which
+   * stops this drain pass so newer FIFO chunks do not overtake it.
    */
-  private async sendBatch(chunk: OutboxRow[]): Promise<void> {
+  private async sendBatch(chunk: OutboxRow[]): Promise<boolean> {
     // Mark the chunk uploading (observable), build the request items in order.
     for (const row of chunk) {
       this.emit({
@@ -526,14 +533,15 @@ export class OutboxEngine {
     } catch {
       // Network reject / non-200 / lost response: keep the whole batch pending.
       await this.requeueBatch(chunk, 'network error during sync');
-      return;
+      return false;
     }
     if (!results) {
       await this.requeueBatch(chunk, 'unexpected sync response shape');
-      return;
+      return false;
     }
 
     // Results are positional (results[i] ↔ items[i] ↔ chunk[i]). Map each.
+    let drained = true;
     for (let i = 0; i < chunk.length; i += 1) {
       const row = chunk[i];
       const result = results[i];
@@ -541,10 +549,13 @@ export class OutboxEngine {
       // (leave pending); safer than dropping the item.
       if (!result) {
         await this.requeueRow(row, 'missing result for item');
+        drained = false;
         continue;
       }
-      await this.applyResult(row, result);
+      const applied = await this.applyResult(row, result);
+      drained = drained && applied;
     }
+    return drained;
   }
 
   /**
@@ -581,12 +592,12 @@ export class OutboxEngine {
   private async applyResult(
     row: OutboxRow,
     result: SyncApplyItemResult,
-  ): Promise<void> {
-    if (row.seq === undefined) return;
+  ): Promise<boolean> {
+    if (row.seq === undefined) return true;
 
     if (result.status === 'applied') {
       await this.finishSynced(row);
-      return;
+      return true;
     }
 
     if (result.status === 'conflict') {
@@ -603,7 +614,7 @@ export class OutboxEngine {
         serverUpdatedAt: result.updatedAt,
       });
       await this.finishSynced(row);
-      return;
+      return true;
     }
 
     // status === 'rejected'
@@ -623,13 +634,13 @@ export class OutboxEngine {
         attempts: row.attempts,
         error: `sync ${reason}`,
       });
-      return;
+      return false;
     }
 
     if (reason === 'write_failed') {
       // Retryable: keep, count an attempt, back off.
       await this.requeueRow(row, 'sync write_failed');
-      return;
+      return false;
     }
 
     // Any other rejection (invalid_item/invalid_id/invalid_payload/
@@ -644,6 +655,7 @@ export class OutboxEngine {
       attempts: row.attempts,
       error: reason ? `sync ${reason}` : 'sync rejected',
     });
+    return true;
   }
 
   /** Remove a successfully-applied (or conflict-resolved) row → `synced`. */
@@ -698,20 +710,12 @@ export class OutboxEngine {
   private async scheduleNextBackoff(): Promise<void> {
     if (this.disposed || this.paused || !this.queue) return;
     const rows = await this.queue.all();
-    const pending = rows.filter((r) => r.state === 'pending');
-    if (pending.length === 0) return;
+    const firstPending = rows.find((r) => r.state === 'pending');
+    if (!firstPending) return;
     const now = Date.now();
-    // Soonest future attempt time; if any is due now, drain immediately.
-    let soonest = Number.POSITIVE_INFINITY;
-    for (const row of pending) {
-      if (row.nextAttemptAt <= now) {
-        soonest = now;
-        break;
-      }
-      soonest = Math.min(soonest, row.nextAttemptAt);
-    }
-    if (!Number.isFinite(soonest)) return;
-    const delay = Math.max(0, soonest - now);
+    // FIFO: the oldest pending row gates every newer row, even if a newer row
+    // has no backoff delay.
+    const delay = Math.max(0, firstPending.nextAttemptAt - now);
     if (this.backoffTimer) clearTimeout(this.backoffTimer);
     const timers = globalThis as {
       setTimeout?: typeof setTimeout;

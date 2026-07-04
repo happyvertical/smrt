@@ -16,16 +16,18 @@ import 'fake-indexeddb/auto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
-  SmrtWebCapability,
   SmrtWebCapabilityContext,
   SmrtWebMutationEnvelope,
 } from './capability.js';
 import type { DurableStoreKey } from './durable-store.js';
 import { durableStoreNamespace } from './durable-store.js';
-import { computeBackoffDelay, DEFAULT_BACKOFF } from './offline/types.js';
+import {
+  computeBackoffDelay,
+  DEFAULT_BACKOFF,
+  MAX_SYNC_APPLY_BATCH_SIZE,
+} from './offline/types.js';
 import {
   getOutboxHandle,
-  type OfflineOutboxConfig,
   offlineOutbox,
   type SyncStateEvent,
 } from './offline.js';
@@ -137,7 +139,11 @@ describe('computeBackoffDelay', () => {
 describe('offlineOutbox — capability contract', () => {
   const teardowns: Array<() => Promise<void>> = [];
   afterEach(async () => {
-    for (const t of teardowns.splice(0)) await t();
+    try {
+      for (const t of teardowns.splice(0)) await t();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('has the diagnostic name "offline-outbox" and only the offline hooks', () => {
@@ -195,6 +201,34 @@ describe('offlineOutbox — capability contract', () => {
     expect(snap.length).toBeGreaterThanOrEqual(0); // snapshot callable
   });
 
+  it('falls through when the durable queue is unavailable', async () => {
+    vi.stubGlobal('indexedDB', undefined);
+
+    const key = uniqueKey();
+    const states: SyncStateEvent[] = [];
+    const cap = offlineOutbox({
+      object: { name: 'products' },
+      namespace: key,
+      fetchFn: appliedFetch(),
+      onSyncStateChange: (e) => states.push(e),
+    });
+    const ctx = fakeCtx('products');
+    cap.onAttach?.(ctx);
+    teardowns.push(async () => {
+      await cap.teardown?.(ctx);
+    });
+
+    const envelope: SmrtWebMutationEnvelope = {
+      kind: 'insert',
+      key: '12121212-1212-4121-8121-121212121212',
+      data: { id: '12121212-1212-4121-8121-121212121212', name: 'Widget' },
+    };
+    const outcome = await cap.wrapMutation?.(envelope, ctx);
+
+    expect(outcome).toEqual({ handled: false });
+    expect(states).toEqual([]);
+  });
+
   it('maps insert/update/delete envelope kinds to create/update/delete ops', async () => {
     const key = uniqueKey();
     const namespace = durableStoreNamespace(key);
@@ -242,6 +276,139 @@ describe('offlineOutbox — capability contract', () => {
     expect(byRow.get(ids.delete)?.op).toBe('delete');
     // FIFO order preserved by seq.
     expect(snap.map((s) => s.op)).toEqual(['create', 'update', 'delete']);
+  });
+
+  it('preserves envelope baseUpdatedAt on update and delete replay items', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+
+    const key = uniqueKey();
+    const namespace = durableStoreNamespace(key);
+    const received: Array<{
+      op: string;
+      id: string;
+      baseUpdatedAt?: string;
+    }> = [];
+    const captureFetch = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        items: Array<{ op: string; id: string; baseUpdatedAt?: string }>;
+      };
+      received.push(...body.items);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          results: body.items.map((it) => ({
+            itemId: (it as { itemId: string }).itemId,
+            id: it.id,
+            status: 'applied',
+          })),
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const cap = offlineOutbox({
+      object: { name: 'products' },
+      namespace: key,
+      fetchFn: captureFetch,
+    });
+    const ctx = fakeCtx('products');
+    cap.onAttach?.(ctx);
+    teardowns.push(async () => {
+      await cap.teardown?.(ctx);
+    });
+
+    await cap.wrapMutation?.(
+      {
+        kind: 'update',
+        key: '13131313-1313-4131-8131-131313131313',
+        data: { name: 'updated' },
+        baseUpdatedAt: '2026-07-03T12:00:00.000Z',
+      },
+      ctx,
+    );
+    await cap.wrapMutation?.(
+      {
+        kind: 'delete',
+        key: '14141414-1414-4141-8141-141414141414',
+        data: {},
+        baseUpdatedAt: '2026-07-03T13:00:00.000Z',
+      },
+      ctx,
+    );
+
+    const handle = requireHandle(namespace);
+    const snap = await handle.snapshot();
+    vi.stubGlobal('navigator', { onLine: true });
+    await handle.retry(snap[0].itemId);
+
+    await waitFor(() => received.length === 2);
+    expect(received.map((item) => item.baseUpdatedAt)).toEqual([
+      '2026-07-03T12:00:00.000Z',
+      '2026-07-03T13:00:00.000Z',
+    ]);
+  });
+
+  it('stops draining newer FIFO chunks after an earlier retryable batch failure', async () => {
+    vi.stubGlobal('navigator', { onLine: false });
+
+    const key = uniqueKey();
+    const namespace = durableStoreNamespace(key);
+    const posted: string[][] = [];
+    const failFirstBatch = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        items: Array<{ id: string; itemId: string }>;
+      };
+      posted.push(body.items.map((item) => item.id));
+      if (posted.length === 1) throw new Error('network down');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          results: body.items.map((it) => ({
+            itemId: it.itemId,
+            id: it.id,
+            status: 'applied',
+          })),
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const cap = offlineOutbox({
+      object: { name: 'products' },
+      namespace: key,
+      fetchFn: failFirstBatch,
+      backoff: { initialDelayMs: 100_000, maxDelayMs: 100_000 },
+      random: () => 1,
+    });
+    const ctx = fakeCtx('products');
+    cap.onAttach?.(ctx);
+    teardowns.push(async () => {
+      await cap.teardown?.(ctx);
+    });
+
+    for (let i = 0; i < MAX_SYNC_APPLY_BATCH_SIZE + 1; i += 1) {
+      const suffix = String(i).padStart(12, '0');
+      const id = `15151515-1515-4151-8151-${suffix}`;
+      await cap.wrapMutation?.(
+        { kind: 'insert', key: id, data: { id, name: `row-${i}` } },
+        ctx,
+      );
+    }
+
+    const handle = requireHandle(namespace);
+    const snap = await handle.snapshot();
+    expect(snap).toHaveLength(MAX_SYNC_APPLY_BATCH_SIZE + 1);
+
+    vi.stubGlobal('navigator', { onLine: true });
+    await handle.retry(snap[0].itemId);
+    await waitFor(() => posted.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toHaveLength(MAX_SYNC_APPLY_BATCH_SIZE);
+    const afterFailure = await handle.snapshot();
+    expect(afterFailure).toHaveLength(MAX_SYNC_APPLY_BATCH_SIZE + 1);
+    expect(afterFailure.at(-1)?.attempts).toBe(0);
   });
 
   it('teardown detaches so getOutboxHandle returns undefined once the last collection leaves', async () => {

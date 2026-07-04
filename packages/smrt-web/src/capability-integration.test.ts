@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createSmrtCollection,
   createSmrtWebClient,
+  getEngineCollection,
   newLocalId,
   type SmrtCrudFetchers,
   type SmrtWebCapability,
@@ -25,12 +26,15 @@ import {
   type SmrtWebCollection,
   type SmrtWebCollectionDefinition,
   type SmrtWebMutationEnvelope,
+  type SmrtWebTransaction,
 } from './index.js';
 
 interface ProductData {
   id?: string;
   name: string;
   price?: number;
+  updatedAt?: string;
+  updated_at?: string;
 }
 
 function productDefinition(
@@ -464,6 +468,74 @@ describe('capability seam — wrapMutation', () => {
     // (the row reconciles to its server id via that refetch).
     await waitFor(() => scripted.calls.list > listAfterPreload);
     expect(scripted.calls.list).toBeGreaterThan(listAfterPreload);
+  });
+
+  it('captures original row updatedAt/updated_at as baseUpdatedAt for update and delete envelopes', async () => {
+    const calls: HookCall[] = [];
+    const scripted = makeScriptedFetchers([
+      {
+        id: 'p1',
+        name: 'Widget',
+        updatedAt: '2026-07-03T12:00:00.000Z',
+      },
+      {
+        id: 'p2',
+        name: 'Gadget',
+        updated_at: '2026-07-03T13:00:00.000Z',
+      },
+    ]);
+    const capability = makeFakeCapability(calls, {
+      wrap: () => ({ handled: false }),
+    });
+
+    const collection = track(
+      createSmrtCollection(productDefinition('wrap-base-updated-at'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        initialData: [
+          {
+            id: 'p1',
+            name: 'Widget',
+            updatedAt: '2026-07-03T12:00:00.000Z',
+          },
+          {
+            id: 'p2',
+            name: 'Gadget',
+            updated_at: '2026-07-03T13:00:00.000Z',
+          },
+        ],
+        capabilities: [capability],
+      }),
+    );
+    await collection.preload();
+
+    const engine = getEngineCollection(collection) as {
+      update(
+        id: string,
+        callback: (draft: ProductData) => void,
+      ): SmrtWebTransaction;
+      delete(id: string): SmrtWebTransaction;
+    };
+
+    const updateTx = engine.update('p1', (draft) => {
+      draft.name = 'Updated Widget';
+    });
+    await updateTx.isPersisted.promise;
+
+    const deleteTx = engine.delete('p2');
+    await deleteTx.isPersisted.promise;
+
+    const envelopes = calls
+      .filter((call) => call.hook === 'wrapMutation')
+      .map((call) => call.envelope);
+    expect(envelopes.find((e) => e?.kind === 'update')).toMatchObject({
+      key: 'p1',
+      baseUpdatedAt: '2026-07-03T12:00:00.000Z',
+    });
+    expect(envelopes.find((e) => e?.kind === 'delete')).toMatchObject({
+      key: 'p2',
+      baseUpdatedAt: '2026-07-03T13:00:00.000Z',
+    });
   });
 
   it('with two capabilities the FIRST { handled: true } wins and the later one is skipped', async () => {
