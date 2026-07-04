@@ -67,6 +67,21 @@ export {
   registerDurableResource,
   wipeDurableStore,
 } from './durable-store.js';
+// The durable offline outbox capability (#1762) — the first concrete capability
+// over the seam above. A hand-rolled IndexedDB queue + Web Locks leader election
+// (NOT @tanstack/offline-transactions, which would leak an engine type into the
+// .d.ts and fail the boundary check). Surfaced here as the root barrel; no
+// subpath. The public surface is engine-free by construction.
+export type {
+  OfflineOutboxConfig,
+  OutboxBackoff,
+  OutboxConflict,
+  OutboxHandle,
+  OutboxSnapshotItem,
+  OutboxSyncState,
+  SyncStateEvent,
+} from './offline.js';
+export { getOutboxHandle, offlineOutbox } from './offline.js';
 // Live-updates subscriber (#1763-client): the ONE app-wide SSE `_events`
 // subscriber (with `_changes` polling fallback) and the thin per-collection
 // `liveInvalidation` capability that wires a collection's `ctx.invalidate()` to
@@ -461,6 +476,16 @@ export interface SmrtWebCollection<TData extends object> {
    * server outcome (see {@link SmrtWebTransaction}).
    */
   insert(row: SmrtWebRow<TData>): SmrtWebTransaction;
+}
+
+/** Extract a row's server revision timestamp for sync/apply conflict guards. */
+function getBaseUpdatedAt(row: unknown): string | undefined {
+  if (!row || typeof row !== 'object') return undefined;
+  const record = row as Record<string, unknown>;
+  const value = record.updatedAt ?? record.updated_at;
+  if (typeof value === 'string') return value;
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
 }
 
 /**
@@ -934,6 +959,7 @@ export function createSmrtCollection<TData extends object>(
                 kind: 'update',
                 key,
                 data: changes,
+                baseUpdatedAt: getBaseUpdatedAt(mutation.original),
               };
               const outcome = await persistMutation(envelope, async () =>
                 unwrapItemResult(
@@ -957,6 +983,7 @@ export function createSmrtCollection<TData extends object>(
                 kind: 'delete',
                 key,
                 data: {},
+                baseUpdatedAt: getBaseUpdatedAt(mutation.original),
               };
               const outcome = await persistMutation(envelope, async () =>
                 // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
