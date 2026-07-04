@@ -1068,6 +1068,7 @@ export class Content
       contentType: this.type,
       contentVariant: this.variant,
       db: this.db,
+      tenantId: this.tenantId ?? null,
     });
   }
 

@@ -1,4 +1,10 @@
 import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
+import {
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  isTenancyEnabled,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { Content } from './content';
 
@@ -209,6 +215,7 @@ export interface ResolveContentGovernanceOptions {
   contentType?: string | null;
   contentVariant?: string | null;
   db?: DatabaseInterface | null;
+  tenantId?: string | null;
 }
 
 const DEFAULT_FACT_RELATIONSHIP: FactContentRelationship = 'supports';
@@ -517,6 +524,25 @@ function safeParseJSONArray<T>(value: unknown, mapEntry: (entry: T) => T): T[] {
   }
 }
 
+function resolveGovernanceTenantFilter(
+  tenantId: string | null | undefined,
+): string | null | undefined {
+  if (tenantId !== undefined) {
+    return tenantId;
+  }
+
+  if (isSystemContext() || isSuperAdminBypass()) {
+    return undefined;
+  }
+
+  const currentTenant = getCurrentTenant();
+  if (currentTenant?.tenantId) {
+    return currentTenant.tenantId;
+  }
+
+  return isTenancyEnabled() ? null : undefined;
+}
+
 function mapPersistedPolicyRow(
   row: Record<string, unknown>,
 ): PersistedContentGovernancePolicyRecord {
@@ -609,7 +635,7 @@ function mapPersistedAssignmentRow(
 }
 
 export async function loadPersistedContentGovernanceDefinitions(
-  options: { db?: DatabaseInterface | null } = {},
+  options: { db?: DatabaseInterface | null; tenantId?: string | null } = {},
 ): Promise<PersistedContentGovernanceDefinitions> {
   const { db } = options;
   if (!db) {
@@ -621,23 +647,48 @@ export async function loadPersistedContentGovernanceDefinitions(
   }
 
   try {
+    const tenantId = resolveGovernanceTenantFilter(options.tenantId);
+    const listGovernanceRows = async (tableName: string) => {
+      const byCreatedAt = (
+        a: Record<string, unknown>,
+        b: Record<string, unknown>,
+      ): number =>
+        String(a.created_at || a.createdAt || '').localeCompare(
+          String(b.created_at || b.createdAt || ''),
+        );
+      const sortRows = (rows: Record<string, unknown>[]) =>
+        rows.sort(byCreatedAt);
+
+      if (tenantId === undefined) {
+        return sortRows(
+          (await db.list(tableName, {})) as Record<string, unknown>[],
+        );
+      }
+
+      if (tenantId === null) {
+        return sortRows(
+          (await db.list(tableName, {
+            tenant_id: null,
+          })) as Record<string, unknown>[],
+        );
+      }
+
+      const [globalRows, tenantRows] = await Promise.all([
+        db.list(tableName, { tenant_id: null }) as Promise<
+          Record<string, unknown>[]
+        >,
+        db.list(tableName, { tenant_id: tenantId }) as Promise<
+          Record<string, unknown>[]
+        >,
+      ]);
+
+      return [...sortRows(globalRows), ...sortRows(tenantRows)];
+    };
     const [policyRows, profileRows, assignmentRows] = await Promise.all([
-      db.list('content_governance_policies', {}),
-      db.list('content_governance_profiles', {}),
-      db.list('content_governance_assignments', {}),
+      listGovernanceRows('content_governance_policies'),
+      listGovernanceRows('content_governance_profiles'),
+      listGovernanceRows('content_governance_assignments'),
     ]);
-
-    const byCreatedAt = (
-      a: Record<string, unknown>,
-      b: Record<string, unknown>,
-    ): number =>
-      String(a.created_at || a.createdAt || '').localeCompare(
-        String(b.created_at || b.createdAt || ''),
-      );
-
-    policyRows.sort(byCreatedAt);
-    profileRows.sort(byCreatedAt);
-    assignmentRows.sort(byCreatedAt);
 
     return {
       policies: policyRows.map((row: Record<string, unknown>) =>
@@ -817,10 +868,11 @@ export function resetContentGovernanceConfig(): ContentGovernanceConfig {
 }
 
 export async function getEffectiveContentGovernanceConfig(
-  options: { db?: DatabaseInterface | null } = {},
+  options: { db?: DatabaseInterface | null; tenantId?: string | null } = {},
 ): Promise<ContentGovernanceConfig> {
   const persisted = await loadPersistedContentGovernanceDefinitions({
     db: options.db,
+    tenantId: options.tenantId,
   });
 
   return {
@@ -924,6 +976,7 @@ export async function resolveEffectiveContentGovernance(
 ): Promise<ResolvedContentGovernance> {
   const effectiveConfig = await getEffectiveContentGovernanceConfig({
     db: options.db,
+    tenantId: options.tenantId,
   });
   const assignment = resolveAssignmentDefinition(effectiveConfig.assignments, {
     contentType: options.contentType,

@@ -84,7 +84,9 @@ function toPublicResult(
 
 import {
   enterTenantContext,
+  getCurrentTenant,
   hasTenantContext,
+  isSuperAdminBypass,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 
@@ -113,8 +115,15 @@ function tenantReadScope(): { tenantId: null } | undefined {
     : undefined;
 }
 
+function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
+  if (!isTenancyEnabled() || isSuperAdminBypass()) {
+    return undefined;
+  }
+  return { tenantId: getCurrentTenant()?.tenantId ?? null };
+}
+
 // Custom collection method: getContributionTypesAction
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, request }) => {
   requireRouteAuth(locals, false);
   establishTenantContext(locals);
   const collection = await getCollection<ContentContribution>(
@@ -127,7 +136,19 @@ export const GET: RequestHandler = async ({ locals }) => {
       '@happyvertical/smrt-content:ContentContribution collection is not registered',
     );
 
-  const result = await typedCollection.getContributionTypesAction();
+  type ActionArgs = Parameters<
+    ContentContributions['getContributionTypesAction']
+  >;
+  const options = Object.fromEntries(
+    new URL(request.url).searchParams.entries(),
+  ) as ActionArgs[0];
+  const readScope = tenantReadOptionsScope();
+  const scopedOptions = readScope
+    ? ({ ...options, ...readScope } as ActionArgs[0])
+    : options;
+
+  const result =
+    await typedCollection.getContributionTypesAction(scopedOptions);
 
   return json({
     action: 'getContributionTypesAction',

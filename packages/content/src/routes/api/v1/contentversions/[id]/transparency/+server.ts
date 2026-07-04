@@ -119,7 +119,10 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   const collection = await getCollection<ContentVersion>(
     '@happyvertical/smrt-content:ContentVersion',
   );
-  const item = await collection.get(params.id);
+  const readScope = tenantReadScope();
+  const item = await collection.get(
+    readScope ? { id: params.id, ...readScope } : params.id,
+  );
   if (!item)
     throw error(404, '@happyvertical/smrt-content:ContentVersion not found');
 

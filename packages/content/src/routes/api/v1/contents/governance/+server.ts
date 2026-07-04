@@ -84,7 +84,9 @@ function toPublicResult(
 
 import {
   enterTenantContext,
+  getCurrentTenant,
   hasTenantContext,
+  isSuperAdminBypass,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 
@@ -113,8 +115,15 @@ function tenantReadScope(): { tenantId: null } | undefined {
     : undefined;
 }
 
+function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
+  if (!isTenancyEnabled() || isSuperAdminBypass()) {
+    return undefined;
+  }
+  return { tenantId: getCurrentTenant()?.tenantId ?? null };
+}
+
 // Custom collection method: getGovernanceDefinitionsAction
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, request }) => {
   requireRouteAuth(locals, false);
   establishTenantContext(locals);
   const collection = await getCollection<Content>(
@@ -127,7 +136,17 @@ export const GET: RequestHandler = async ({ locals }) => {
       '@happyvertical/smrt-content:Content collection is not registered',
     );
 
-  const result = await typedCollection.getGovernanceDefinitionsAction();
+  type ActionArgs = Parameters<Contents['getGovernanceDefinitionsAction']>;
+  const options = Object.fromEntries(
+    new URL(request.url).searchParams.entries(),
+  ) as ActionArgs[0];
+  const readScope = tenantReadOptionsScope();
+  const scopedOptions = readScope
+    ? ({ ...options, ...readScope } as ActionArgs[0])
+    : options;
+
+  const result =
+    await typedCollection.getGovernanceDefinitionsAction(scopedOptions);
 
   return json({
     action: 'getGovernanceDefinitionsAction',

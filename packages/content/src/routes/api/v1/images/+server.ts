@@ -1,6 +1,13 @@
 import { createLogger } from '@happyvertical/logger';
+import '@happyvertical/smrt-assets';
 import type { Asset } from '@happyvertical/smrt-assets';
+import '@happyvertical/smrt-images';
 import type { Image } from '@happyvertical/smrt-images';
+import {
+  enterTenantContext,
+  hasTenantContext,
+  isTenancyEnabled,
+} from '@happyvertical/smrt-tenancy';
 import { json } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
@@ -14,8 +21,27 @@ async function ensureImageBaseTables() {
   await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
 }
 
-export const GET: RequestHandler = async () => {
+function establishTenantContext(locals: unknown): void {
+  if (hasTenantContext()) return;
+  if (!locals || typeof locals !== 'object') return;
+  const l = locals as Record<string, unknown>;
+  const user = l.user as Record<string, unknown> | undefined;
+  const session = l.session as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
+  if (typeof tenantId === 'string' && tenantId) {
+    enterTenantContext({ tenantId });
+  }
+}
+
+function tenantReadScope(): { tenantId: null } | undefined {
+  return isTenancyEnabled() && !hasTenantContext()
+    ? { tenantId: null }
+    : undefined;
+}
+
+export const GET: RequestHandler = async ({ locals }) => {
   try {
+    establishTenantContext(locals);
     if (dev || env.SMRT_CONTENT_SEED_IMAGES === 'true') {
       await seedImages();
     }
@@ -25,7 +51,8 @@ export const GET: RequestHandler = async () => {
     const collection = await getCollection<Image>(
       '@happyvertical/smrt-images:Image',
     );
-    const items = await collection.list({});
+    const readScope = tenantReadScope();
+    const items = await collection.list(readScope ? { where: readScope } : {});
 
     return json({
       items: items,
@@ -44,7 +71,8 @@ export const GET: RequestHandler = async () => {
   }
 };
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ locals, request }) => {
+  establishTenantContext(locals);
   await ensureImageBaseTables();
 
   const collection = await getCollection<Image>(

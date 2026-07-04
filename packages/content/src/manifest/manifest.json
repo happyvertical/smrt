@@ -1909,7 +1909,13 @@
         "getContributionTypesAction": {
           "name": "getContributionTypesAction",
           "async": true,
-          "parameters": [],
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
           "returnType": "any",
           "isStatic": false,
           "isPublic": true
@@ -11667,7 +11673,13 @@
         "getGovernanceDefinitionsAction": {
           "name": "getGovernanceDefinitionsAction",
           "async": true,
-          "parameters": [],
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
           "returnType": "any",
           "isStatic": false,
           "isPublic": true

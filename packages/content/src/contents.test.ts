@@ -297,4 +297,49 @@ describe('Contents', () => {
       enforcePublishReadiness: true,
     });
   });
+
+  it('scopes governance definitions to global and selected tenant rows', async () => {
+    const policies = await ContentGovernancePolicyCollection.create({ db });
+    for (const input of [
+      {
+        key: 'global-policy',
+        label: 'Global Policy',
+        tenantId: null,
+      },
+      {
+        key: 'tenant-policy',
+        label: 'Tenant Policy',
+        tenantId: 'tenant-1',
+      },
+      {
+        key: 'other-tenant-policy',
+        label: 'Other Tenant Policy',
+        tenantId: 'tenant-2',
+      },
+    ]) {
+      const policy = await policies.create({
+        ...input,
+        kind: 'custom',
+        instructions: `${input.label} instructions`,
+      });
+      await policy.save();
+    }
+
+    const tenantDefinitions = await contents.getGovernanceDefinitionsAction({
+      tenantId: 'tenant-1',
+    });
+    const globalDefinitions = await contents.getGovernanceDefinitionsAction({
+      tenantId: null,
+    });
+
+    expect(
+      tenantDefinitions.persisted.policies.map((policy) => policy.key).sort(),
+    ).toEqual(['global-policy', 'tenant-policy']);
+    expect(
+      tenantDefinitions.effective.policies.map((policy) => policy.key),
+    ).not.toContain('other-tenant-policy');
+    expect(
+      globalDefinitions.persisted.policies.map((policy) => policy.key),
+    ).toEqual(['global-policy']);
+  });
 });

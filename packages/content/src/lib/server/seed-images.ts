@@ -3,6 +3,7 @@
  * Runs once on first access — checks if images exist and creates sample ones if empty.
  */
 
+import '@happyvertical/smrt-images';
 import type { Image } from '@happyvertical/smrt-images';
 import { getCollection } from './smrt.js';
 
