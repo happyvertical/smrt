@@ -14,7 +14,7 @@
  * it received the contract-specified arguments.
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createSmrtCollection,
   createSmrtWebClient,
@@ -272,12 +272,15 @@ describe('capability seam — contributeCacheKey', () => {
     // capability does not observe its own not-yet-applied segment.
     expect(contrib[0].cacheId).toBe('smrt:contrib');
     // But once every contribution is folded in, the ctx (captured in onAttach,
-    // which runs after construction) exposes the FINAL cache id/key.
+    // which runs after construction) exposes the FINAL cache id/key. Contributed
+    // segments are spliced in BEFORE the collection name so the name stays LAST
+    // in the queryKey — the invariant invalidateRelated()'s predicate relies on.
+    // cacheId is an opaque engine id (predicate never reads it) so it appends.
     expect(attachedCtx?.cacheId).toBe('smrt:contrib:variant-x');
     expect([...(attachedCtx?.cacheKey ?? [])]).toEqual([
       'smrt',
-      'contrib',
       'variant-x',
+      'contrib',
     ]);
 
     await collection.preload();
@@ -385,7 +388,7 @@ describe('capability seam — wrapMutation', () => {
     tracked.length = 0;
   });
 
-  it('{ handled: true } takes over the write — the fetcher is NEVER called and the optimistic row reconciles from result', async () => {
+  it('{ handled: true } takes over the write — the fetcher is NEVER called and the offline optimistic row is KEPT (not dropped by a post-mutation refetch)', async () => {
     const calls: HookCall[] = [];
     const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
     const capability = makeFakeCapability(calls, {
@@ -403,6 +406,7 @@ describe('capability seam — wrapMutation', () => {
       }),
     );
     await collection.preload();
+    const listAfterPreload = scripted.calls.list;
 
     const localId = newLocalId();
     const tx = collection.insert({ id: localId, name: 'Gadget', price: 5 });
@@ -419,6 +423,16 @@ describe('capability seam — wrapMutation', () => {
     // result), proving the handler's { result } flowed through the settle path.
     const settle = calls.find((c) => c.hook === 'onSettled');
     expect(settle?.settleOk).toBe(true);
+
+    // Fix B: an offline (handled) write never hit the server, so the engine's
+    // post-mutation refetch AND invalidateRelated() are suppressed — no extra
+    // list() fired. Give any (erroneous) refetch time to land, then confirm the
+    // offline row is STILL present (it would be dropped if the server list, which
+    // lacks it, had been refetched). This is what #1762's outbox depends on.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(scripted.calls.list).toBe(listAfterPreload);
+    expect(collection.has(localId)).toBe(true);
+    expect(collection.get(localId)?.name).toBe('Gadget');
   });
 
   it('{ handled: false } falls through to the real fetcher', async () => {
@@ -436,6 +450,7 @@ describe('capability seam — wrapMutation', () => {
       }),
     );
     await collection.preload();
+    const listAfterPreload = scripted.calls.list;
 
     const tx = collection.insert({ id: newLocalId(), name: 'Gadget' });
     await tx.isPersisted.promise;
@@ -444,6 +459,11 @@ describe('capability seam — wrapMutation', () => {
     expect(scripted.calls.create).toBe(1);
     expect(calls.filter((c) => c.hook === 'wrapMutation')).toHaveLength(1);
     expect(collection.toArray.some((r) => r.name === 'Gadget')).toBe(true);
+    // Fix B no-op side: an UNHANDLED write behaves exactly as before the seam —
+    // the engine's post-mutation refetch still runs, so a further list() fired
+    // (the row reconciles to its server id via that refetch).
+    await waitFor(() => scripted.calls.list > listAfterPreload);
+    expect(scripted.calls.list).toBeGreaterThan(listAfterPreload);
   });
 
   it('with two capabilities the FIRST { handled: true } wins and the later one is skipped', async () => {
@@ -619,5 +639,298 @@ describe('capability seam — teardown', () => {
     // A second cleanup() runs teardown again (idempotent from the seam's view —
     // it mirrors the engine's own cleanup being callable), but the common path
     // is a single cleanup; assert the single-call contract above holds.
+  });
+});
+
+// A capability that only contributes a cache-key segment (mirrors #1764
+// persistence keying its cache by a manifest hash) — the exact shape that
+// exercised the name-last invariant.
+function cacheKeyCapability(segment: string): SmrtWebCapability<object> {
+  return {
+    name: `key-${segment}`,
+    contributeCacheKey: () => [segment],
+  };
+}
+
+describe('capability seam — contributeCacheKey preserves relationship invalidation (Fix A)', () => {
+  const tracked: SmrtWebCollection<object>[] = [];
+  const track = <T extends object>(c: SmrtWebCollection<T>) => {
+    tracked.push(c as unknown as SmrtWebCollection<object>);
+    return c;
+  };
+  afterEach(async () => {
+    await Promise.all(tracked.map((c) => c.cleanup()));
+    tracked.length = 0;
+  });
+
+  interface CommentData {
+    id?: string;
+    body: string;
+    articleId?: string;
+  }
+  interface ArticleData {
+    id?: string;
+    title: string;
+  }
+
+  const commentsDefinition = (): SmrtWebCollectionDefinition<CommentData> => ({
+    name: 'comments',
+    className: 'Comment',
+    endpoint: '/comments',
+    idField: 'id',
+    actions: ['create', 'delete', 'get', 'list', 'update'],
+    fields: { body: { type: 'text', required: true } },
+    relationships: [
+      { field: 'articleId', kind: 'foreignKey', relatedCollection: 'articles' },
+    ],
+  });
+  const articlesDefinition = (): SmrtWebCollectionDefinition<ArticleData> => ({
+    name: 'articles',
+    className: 'Article',
+    endpoint: '/articles',
+    idField: 'id',
+    actions: ['create', 'delete', 'get', 'list', 'update'],
+    fields: { title: { type: 'text', required: true } },
+    relationships: [],
+  });
+
+  it('a collection using contributeCacheKey still self-invalidates after its OWN mutation', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
+    const collection = track(
+      createSmrtCollection(productDefinition('self-inval'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        // A contributed segment means the queryKey is now
+        // ['smrt', 'mh', 'self-inval'] — name still LAST, so the predicate
+        // matches and the collection refetches itself after a settled mutation.
+        capabilities: [cacheKeyCapability('mh')],
+      }),
+    );
+
+    const sub = collection.subscribeChanges(() => {});
+    await collection.preload();
+    expect(scripted.calls.list).toBe(1);
+
+    const tx = collection.insert({ id: newLocalId(), name: 'Gadget' });
+    await tx.isPersisted.promise;
+
+    // Self-invalidation fired => a second list() (would NOT happen if the
+    // contributed segment had been appended after the name, hiding it from the
+    // predicate — the bug Fix A closes).
+    await waitFor(() => scripted.calls.list >= 2);
+    expect(scripted.calls.list).toBeGreaterThanOrEqual(2);
+    sub.unsubscribe();
+  });
+
+  it('a RELATED collection using contributeCacheKey is invalidated when its relation mutates', async () => {
+    const client = createSmrtWebClient();
+    const commentsBackend = makeScriptedFetchers([
+      { id: 'c1', body: 'first', articleId: 'a1' },
+    ]);
+    const articlesBackend = makeScriptedFetchers([
+      { id: 'a1', title: 'Hello' },
+    ]);
+
+    // BOTH collections carry a contributeCacheKey (persistence-keyed). comments
+    // edges to articles; a settled comments mutation must still reach the
+    // articles cache — only possible because 'articles' stays the LAST segment
+    // of the articles queryKey ['smrt', 'mh', 'articles'].
+    const comments = track(
+      createSmrtCollection(commentsDefinition(), {
+        fetchers: commentsBackend.fetchers,
+        client,
+        staleTimeMs: 60_000,
+        capabilities: [cacheKeyCapability('mh')],
+      }),
+    );
+    const articles = track(
+      createSmrtCollection(articlesDefinition(), {
+        fetchers: articlesBackend.fetchers,
+        client,
+        staleTimeMs: 60_000,
+        capabilities: [cacheKeyCapability('mh')],
+      }),
+    );
+
+    const articlesSub = articles.subscribeChanges(() => {});
+    await Promise.all([comments.preload(), articles.preload()]);
+    expect(articlesBackend.calls.list).toBe(1);
+
+    const tx = comments.insert({
+      id: newLocalId(),
+      body: 'second',
+      articleId: 'a1',
+    });
+    await tx.isPersisted.promise;
+
+    await waitFor(() => articlesBackend.calls.list >= 2);
+    expect(articlesBackend.calls.list).toBeGreaterThanOrEqual(2);
+    articlesSub.unsubscribe();
+  });
+});
+
+describe('capability seam — hook error isolation (Fix C)', () => {
+  const tracked: SmrtWebCollection<object>[] = [];
+  const track = <T extends object>(c: SmrtWebCollection<T>) => {
+    tracked.push(c as unknown as SmrtWebCollection<object>);
+    return c;
+  };
+  const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  afterEach(async () => {
+    await Promise.all(tracked.map((c) => c.cleanup()));
+    tracked.length = 0;
+    warnSpy.mockClear();
+  });
+
+  it('a throwing onSettled does not reject a SUCCESSFUL mutation, and later capabilities still run', async () => {
+    const calls: HookCall[] = [];
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
+    const thrower: SmrtWebCapability<ProductData> = {
+      name: 'bad-settle',
+      onSettled() {
+        throw new Error('onSettled boom');
+      },
+    };
+    const good = makeFakeCapability(calls, { name: 'good' });
+
+    const collection = track(
+      createSmrtCollection(productDefinition('iso-settle'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [thrower, good],
+      }),
+    );
+    await collection.preload();
+
+    const localId = newLocalId();
+    const tx = collection.insert({ id: localId, name: 'Gadget' });
+    // The successful mutation still commits — the throwing onSettled did not
+    // reject the transaction nor roll the row back.
+    await tx.isPersisted.promise;
+    expect(scripted.calls.create).toBe(1);
+    // The later (good) capability's onSettled still fired despite the earlier
+    // throw.
+    expect(good).toBeDefined();
+    expect(calls.filter((c) => c.hook === 'onSettled')).toHaveLength(1);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('a throwing onAttach does not break construction, and later capabilities still attach', async () => {
+    const calls: HookCall[] = [];
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
+    const thrower: SmrtWebCapability<ProductData> = {
+      name: 'bad-attach',
+      onAttach() {
+        throw new Error('onAttach boom');
+      },
+    };
+    const good = makeFakeCapability(calls, { name: 'good' });
+
+    // Construction must not throw even though the first capability's onAttach does.
+    const collection = track(
+      createSmrtCollection(productDefinition('iso-attach'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [thrower, good],
+      }),
+    );
+    expect(collection).toBeDefined();
+    // The later capability still attached.
+    expect(calls.filter((c) => c.hook === 'onAttach')).toHaveLength(1);
+    expect(warnSpy).toHaveBeenCalled();
+    await collection.preload();
+    expect(collection.size).toBe(1);
+  });
+
+  it('a rejecting teardown does not skip later teardowns nor reject cleanup()', async () => {
+    const calls: HookCall[] = [];
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
+    const thrower: SmrtWebCapability<ProductData> = {
+      name: 'bad-teardown',
+      teardown() {
+        return Promise.reject(new Error('teardown boom'));
+      },
+    };
+    const good: SmrtWebCapability<ProductData> = {
+      name: 'good-teardown',
+      teardown() {
+        calls.push({ hook: 'teardown' });
+      },
+    };
+
+    const collection = createSmrtCollection(productDefinition('iso-teardown'), {
+      fetchers: scripted.fetchers,
+      staleTimeMs: 60_000,
+      capabilities: [thrower, good],
+    });
+    await collection.preload();
+
+    // cleanup() resolves despite the rejecting teardown, and the later teardown
+    // still ran.
+    await expect(collection.cleanup()).resolves.toBeUndefined();
+    expect(calls.filter((c) => c.hook === 'teardown')).toHaveLength(1);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+
+  it('a rejecting async warmStart does not surface as an unhandled rejection and does not break the read', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    const capability: SmrtWebCapability<ProductData> = {
+      name: 'bad-warm',
+      warmStart: () => Promise.reject(new Error('warmStart boom')),
+    };
+
+    const collection = track(
+      createSmrtCollection(productDefinition('iso-warm'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [capability],
+      }),
+    );
+
+    // preload() gates on the (rejecting) warmStart, which is caught internally,
+    // then falls through to a normal fetch — the read still works.
+    await collection.preload();
+    expect(collection.get('p1')?.name).toBe('from-server');
+    expect(scripted.calls.list).toBe(1);
+    expect(warnSpy).toHaveBeenCalled();
+  });
+});
+
+describe('capability seam — async warmStart suppresses the first read (Fix D)', () => {
+  const tracked: SmrtWebCollection<object>[] = [];
+  const track = <T extends object>(c: SmrtWebCollection<T>) => {
+    tracked.push(c as unknown as SmrtWebCollection<object>);
+    return c;
+  };
+  afterEach(async () => {
+    await Promise.all(tracked.map((c) => c.cleanup()));
+    tracked.length = 0;
+  });
+
+  it('an async warmStart (resolved next tick) suppresses the first list() when the consumer awaits preload()', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    const capability: SmrtWebCapability<ProductData> = {
+      name: 'async-warm',
+      // Resolves a couple of microtasks later — the persistence rehydrate shape.
+      warmStart: async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        return [{ id: 'p1', name: 'from-async-warm' }];
+      },
+    };
+
+    const collection = track(
+      createSmrtCollection(productDefinition('async-warm'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [capability],
+      }),
+    );
+
+    // preload() gates the engine's own load on the pending warmStart, so the
+    // seed lands FIRST and the first read is served from it — zero list().
+    await collection.preload();
+    expect(scripted.calls.list).toBe(0);
+    expect(collection.get('p1')?.name).toBe('from-async-warm');
   });
 });

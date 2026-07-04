@@ -546,6 +546,26 @@ export function getEngineCollection<TData extends object>(
 }
 
 /**
+ * Report a capability hook that threw or rejected, without letting it break the
+ * collection (#1755). Capability hooks are third-party plug-ins; one misbehaving
+ * hook must not reject a successful mutation, abort construction, or wedge
+ * `cleanup()`. smrt-web has no logger dependency (TanStack-only), so this uses
+ * `console.warn` — a swallowed diagnostic, matching the package's fail-loud-in-
+ * the-console style.
+ */
+function warnCapability(
+  capability: { name: string },
+  hook: string,
+  error: unknown,
+): void {
+  // biome-ignore lint/suspicious/noConsole: smrt-web has no logger dep (TanStack-only); a swallowed capability fault is surfaced via console.warn by design (#1755)
+  console.warn(
+    `[smrt-web] capability "${capability.name}" ${hook} threw; ignoring`,
+    error,
+  );
+}
+
+/**
  * Create a typed client collection over a generated SMRT collection definition
  * and the matching generated REST client fetchers.
  *
@@ -655,12 +675,30 @@ export function createSmrtCollection<TData extends object>(
 
   // contributeCacheKey (#1755): fold each capability's returned segments into
   // the cache key/id, extending the base scope-based scheme. Runs ONCE, before
-  // construction. With no capabilities this loop is empty and the keys are
-  // untouched — the no-op path.
+  // construction. Isolated per capability: a throwing contributeCacheKey is
+  // logged and skipped rather than aborting construction. With no capabilities
+  // this loop is empty and the keys are untouched — the no-op path.
+  //
+  // CRITICAL — segments are spliced in JUST BEFORE the collection name, so the
+  // name stays the LAST queryKey element. `invalidateRelated()`'s predicate
+  // (and thus relationship-derived invalidation #1761, and a capability's own
+  // `ctx.invalidate()`) identifies a collection by `key[key.length - 1]`;
+  // appending segments after the name would hide it from that predicate and
+  // silently break invalidation for any collection using contributeCacheKey
+  // (exactly the #1764 persistence slice). `cacheId` is an opaque engine id the
+  // predicate never reads, so it can keep appending.
   for (const capability of capabilities) {
-    const extra = capability.contributeCacheKey?.(ctx);
+    let extra: string[] | undefined;
+    try {
+      extra = capability.contributeCacheKey?.(ctx);
+    } catch (error) {
+      warnCapability(capability, 'contributeCacheKey', error);
+    }
     if (extra && extra.length > 0) {
-      queryKey = [...queryKey, ...extra];
+      // Rebuild as [prefix..., ...extra, name] — name remains last.
+      const name = queryKey[queryKey.length - 1];
+      const prefix = queryKey.slice(0, -1);
+      queryKey = [...prefix, ...extra, name];
       cacheId = `${cacheId}:${extra.join(':')}`;
     }
   }
@@ -691,20 +729,38 @@ export function createSmrtCollection<TData extends object>(
   const seedCache = (rows: Row[]): void => {
     queryClient.setQueryData<Row[]>(queryKey, (existing) => existing ?? rows);
   };
+  // A pending async `warmStart` (persistence rehydrating from OPFS/IndexedDB).
+  // Construction stays synchronous, but `preload()` (below) AWAITS this before
+  // starting the engine's own load, so an async rehydrate reliably suppresses
+  // the first `list()` on the preload path. A subscribe-driven read that races
+  // an unresolved warmStart may still fetch once — bounded, and it self-heals
+  // via the atomic seed updater. Undefined when there is no async warmStart.
+  let warmStartPending: Promise<void> | undefined;
   if (initialData !== undefined) {
     seedCache(initialData);
   } else {
     for (const capability of capabilities) {
-      const warm = capability.warmStart?.(ctx);
+      let warm: Promise<Row[] | undefined> | Row[] | undefined;
+      try {
+        warm = capability.warmStart?.(ctx);
+      } catch (error) {
+        // A synchronous warmStart throw must not abort construction.
+        warnCapability(capability, 'warmStart', error);
+        continue;
+      }
       if (warm === undefined) continue;
       if (warm instanceof Promise) {
-        // Async rehydrate (persistence over OPFS/IndexedDB): seed when it lands.
-        // The persistence slice preloads after its own rehydrate, so a late seed
-        // still suppresses that first read; the atomic updater keeps it from
-        // clobbering fresher rows. Fire-and-forget — construction stays sync.
-        void warm.then((rows) => {
-          if (rows !== undefined) seedCache(rows);
-        });
+        // Capture the promise so preload() can gate the first read on it, and
+        // isolate its rejection so a failed rehydrate can't surface as an
+        // unhandled rejection. The atomic updater keeps a late seed from
+        // clobbering fresher rows.
+        warmStartPending = warm
+          .then((rows) => {
+            if (rows !== undefined) seedCache(rows);
+          })
+          .catch((error) => {
+            warnCapability(capability, 'warmStart', error);
+          });
         break;
       }
       seedCache(warm);
@@ -713,15 +769,21 @@ export function createSmrtCollection<TData extends object>(
   }
 
   // Notify every capability that a mutation settled (#1755) — on BOTH a
-  // successful persist and a fetcher throw. Never throws itself (it must not
-  // mask a fetcher error), so a capability's onSettled cannot break the
-  // rollback. With no capabilities this loop is empty — the no-op path.
+  // successful persist and a fetcher throw. Per-capability try/catch so this
+  // genuinely NEVER throws: a throwing onSettled must not reject a SUCCESSFUL
+  // mutation nor mask a fetcher error, and one bad capability must not stop the
+  // others being notified. With no capabilities this loop is empty — the no-op
+  // path.
   const notifySettled = (
     envelope: SmrtWebMutationEnvelope,
     outcome: { ok: true; result: unknown } | { ok: false; error: unknown },
   ): void => {
     for (const capability of capabilities) {
-      capability.onSettled?.(envelope, outcome, ctx);
+      try {
+        capability.onSettled?.(envelope, outcome, ctx);
+      } catch (error) {
+        warnCapability(capability, 'onSettled', error);
+      }
     }
   };
 
@@ -731,20 +793,25 @@ export function createSmrtCollection<TData extends object>(
    * a handling capability's result stands in for the fetcher (the offline
    * path), otherwise `runFetcher` performs the real write. On success notifies
    * `onSettled({ ok: true })`; on ANY throw notifies `onSettled({ ok: false })`
-   * and RE-THROWS so the optimistic state still rolls back. With no
-   * capabilities `runWrapMutation` returns `{ handled: false }` and both notify
-   * loops are empty, so this reduces to `await runFetcher()` — behavior
-   * identical to before the seam.
+   * and RE-THROWS so the optimistic state still rolls back.
+   *
+   * Returns `handled` so the caller can suppress the engine's post-mutation
+   * refetch for an offline write (#1762): a handled write never hit the server,
+   * so refetching the server list would DROP the optimistic row the outbox must
+   * keep until it replays. With no capabilities `runWrapMutation` returns
+   * `{ handled: false }` and both notify loops are empty, so this reduces to
+   * `await runFetcher()` with `handled: false` — behavior identical to before
+   * the seam.
    */
   const persistMutation = async (
     envelope: SmrtWebMutationEnvelope,
     runFetcher: () => Promise<unknown>,
-  ): Promise<unknown> => {
+  ): Promise<{ handled: boolean; result: unknown }> => {
     try {
       const wrapped = await runWrapMutation(capabilities, envelope, ctx);
       const result = wrapped.handled ? wrapped.result : await runFetcher();
       notifySettled(envelope, { ok: true, result });
-      return result;
+      return { handled: wrapped.handled, result };
     } catch (error) {
       notifySettled(envelope, { ok: false, error });
       throw error;
@@ -762,6 +829,7 @@ export function createSmrtCollection<TData extends object>(
         unwrapListResult(await fetchers.list(), definition.name) as Array<Row>,
       getKey: (row) => String((row as Record<string, unknown>)[idField]),
       onInsert: async ({ transaction }) => {
+        let anyHandled = false;
         for (const mutation of transaction.mutations) {
           const modified = mutation.modified as Record<string, unknown>;
           // Offer the write to the capability seam first (#1755), then fall
@@ -775,21 +843,30 @@ export function createSmrtCollection<TData extends object>(
             key: String(modified[idField]),
             data: modified,
           };
-          await persistMutation(envelope, async () => {
+          const outcome = await persistMutation(envelope, async () => {
             const { [idField]: _localId, ...data } = modified;
             return unwrapItemResult(
               await fetchers.create(data),
               `create(${definition.name})`,
             );
           });
+          anyHandled = anyHandled || outcome.handled;
         }
-        // Persisted: refresh this collection and its related collections. Runs
-        // only after every create resolved — a rejected create rolls the
-        // optimistic row back and never reaches here.
+        // If a capability handled the write offline (#1762) it never reached the
+        // server, so BOTH the engine's own post-mutation refetch (suppressed via
+        // `{ refetch: false }`) and `invalidateRelated()` are skipped — else the
+        // server list, which lacks the offline row, would drop the optimistic
+        // row the outbox must keep until it replays. A mixed batch (some
+        // handled, some not) is conservative: if ANY mutation was handled we
+        // suppress, so an unsent row is never dropped; the common case is one
+        // mutation per transaction. An UNHANDLED batch behaves exactly as
+        // before: refetch runs and related caches invalidate.
+        if (anyHandled) return { refetch: false };
         invalidateRelated();
       },
       onUpdate: fetchers.update
         ? async ({ transaction }) => {
+            let anyHandled = false;
             for (const mutation of transaction.mutations) {
               const key = String(mutation.key);
               const changes = mutation.changes as Record<string, unknown>;
@@ -798,19 +875,22 @@ export function createSmrtCollection<TData extends object>(
                 key,
                 data: changes,
               };
-              await persistMutation(envelope, async () =>
+              const outcome = await persistMutation(envelope, async () =>
                 unwrapItemResult(
                   // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
                   await fetchers.update!(key, changes),
                   `update(${definition.name})`,
                 ),
               );
+              anyHandled = anyHandled || outcome.handled;
             }
+            if (anyHandled) return { refetch: false };
             invalidateRelated();
           }
         : undefined,
       onDelete: fetchers.delete
         ? async ({ transaction }) => {
+            let anyHandled = false;
             for (const mutation of transaction.mutations) {
               const key = String(mutation.key);
               const envelope: SmrtWebMutationEnvelope = {
@@ -818,11 +898,13 @@ export function createSmrtCollection<TData extends object>(
                 key,
                 data: {},
               };
-              await persistMutation(envelope, async () =>
+              const outcome = await persistMutation(envelope, async () =>
                 // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
                 fetchers.delete!(key),
               );
+              anyHandled = anyHandled || outcome.handled;
             }
+            if (anyHandled) return { refetch: false };
             invalidateRelated();
           }
         : undefined,
@@ -848,16 +930,33 @@ export function createSmrtCollection<TData extends object>(
       return row === undefined ? undefined : toPlainRow<TData>(row);
     },
     preload() {
-      return collection.preload();
+      // Gate the first read on a pending async warmStart (#1755) so an async
+      // rehydrate (persistence over OPFS/IndexedDB) reliably seeds the cache
+      // BEFORE the engine's own load runs — otherwise the fetch that persistence
+      // was meant to suppress would race ahead. Resolved/rejected warmStart is
+      // already handled (seeded or logged); we only need to await settlement.
+      //
+      // When there is NO pending warmStart (incl. the no-op path and the
+      // `initialData` seed path) return the engine promise DIRECTLY — no extra
+      // async wrapper — so the microtask timing is byte-identical to before the
+      // seam (a wrapper tick would let a staleTime:0 revalidation land early).
+      if (!warmStartPending) return collection.preload();
+      return warmStartPending.then(() => collection.preload());
     },
     async cleanup() {
       // Tear down the engine first, THEN each capability (#1755) — so a
       // capability's teardown runs against a stopped engine. Awaited so async
       // teardowns (closing an SSE stream, flushing a store) complete before
-      // cleanup() resolves. With no capabilities this awaits nothing extra.
+      // cleanup() resolves. Per-capability try/catch so one rejecting teardown
+      // does not skip the others nor reject cleanup(). With no capabilities this
+      // awaits nothing extra.
       await collection.cleanup();
       for (const capability of capabilities) {
-        await capability.teardown?.(ctx);
+        try {
+          await capability.teardown?.(ctx);
+        } catch (error) {
+          warnCapability(capability, 'teardown', error);
+        }
       }
     },
     subscribeChanges(callback) {
@@ -876,9 +975,15 @@ export function createSmrtCollection<TData extends object>(
   // onAttach (#1755): now that the engine collection exists, let each capability
   // wire an external (non-mutation) trigger — an SSE subscription, a focus
   // listener — with a callable `ctx.invalidate()`. Runs ONCE, in array order.
-  // With no capabilities this loop is empty — the no-op path.
+  // Per-capability try/catch so a throwing onAttach cannot break construction
+  // after the handle is already registered, nor skip later capabilities. With
+  // no capabilities this loop is empty — the no-op path.
   for (const capability of capabilities) {
-    capability.onAttach?.(ctx);
+    try {
+      capability.onAttach?.(ctx);
+    } catch (error) {
+      warnCapability(capability, 'onAttach', error);
+    }
   }
 
   return handle;

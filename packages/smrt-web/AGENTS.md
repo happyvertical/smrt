@@ -36,18 +36,36 @@ plug-ins that hook the collection lifecycle so the three follow-on client slices
 each live in their OWN module instead of contending on `index.ts`. Capabilities
 run in **array order** at six fixed points:
 
-1. `contributeCacheKey(ctx)` — ONCE, before construction. Returned segments are
-   appended to the collection's cache id/key, extending the base
-   `smrt:(scope:)name` scheme so a capability can partition the cache.
+1. `contributeCacheKey(ctx)` — ONCE, before construction. Returned segments
+   extend the base `smrt:(scope:)name` scheme so a capability can partition the
+   cache. Segments are spliced into the queryKey **just before the collection
+   name, so the name stays the LAST segment** — `invalidateRelated()`'s predicate
+   (and thus relationship-derived invalidation #1761 and a capability's own
+   `ctx.invalidate()`) identifies a collection by `key[key.length - 1]`, so a
+   name-last key is required or a collection using this hook would silently stop
+   invalidating. `cacheId` is an opaque engine id the predicate never reads, so it
+   appends.
 2. `warmStart(ctx)` — ONCE, before the first read. Returns rows that seed the
    cache (the persistence rehydrate-from-disk path). **`initialData` wins**: it
    is the fresher same-request SSR truth, so `warmStart` is consulted only when
    `initialData` is undefined; the FIRST capability that returns rows contributes.
+   A **sync** return seeds inline; an **async** return is captured and
+   `SmrtWebCollection.preload()` AWAITS it before the engine's own load, so an
+   async rehydrate reliably suppresses the first `list()` on the preload path (a
+   subscribe-driven read racing an unresolved warmStart may still fetch once —
+   bounded, self-heals via the atomic seed updater).
 3. `wrapMutation(envelope, ctx)` — per mutation, BEFORE the fetcher. Return
    `{ handled: true, result }` to take over the write (the fetcher is skipped and
    `result` reconciles the optimistic row — the offline path); return
    `{ handled: false }`/`undefined` to fall through. The FIRST `{ handled: true }`
    wins and later capabilities' `wrapMutation` are skipped (`runWrapMutation`).
+   When a write is handled offline, the engine's post-mutation refetch AND
+   `invalidateRelated()` are **suppressed** (the handler returns `{ refetch:
+   false }`) — the offline write never hit the server, so a refetch of the server
+   list would DROP the optimistic row #1762's outbox must keep until it replays.
+   A mixed batch is conservative: any handled mutation suppresses the whole
+   handler's refetch (common case is one mutation per transaction). An unhandled
+   write refetches/invalidates exactly as before the seam.
 4. `onSettled(envelope, outcome, ctx)` — per mutation, after it settles, on BOTH
    a successful persist (`{ ok: true, result }`) AND a fetcher throw
    (`{ ok: false, error }`). Never swallows the throw — a rejected fetcher still
@@ -58,6 +76,14 @@ run in **array order** at six fixed points:
    invalidation the factory runs post-mutation.
 6. `teardown(ctx)` — inside `cleanup()`, AFTER the engine's own cleanup; awaited
    if async.
+
+**Hook error isolation.** Every hook invocation is wrapped so one misbehaving
+capability cannot break the collection: a throwing `contributeCacheKey`,
+`warmStart` (sync throw or async reject), `onSettled`, `onAttach`, or `teardown`
+is logged via `console.warn` and skipped — a successful mutation still commits
+(no rollback), construction still completes, `cleanup()` still resolves, later
+capabilities' hooks still run, and an async warmStart rejection never escapes as
+an unhandled rejection.
 
 The context (`SmrtWebCapabilityContext`) and mutation envelope
 (`SmrtWebMutationEnvelope`) are typed **entirely in SMRT-owned terms**
