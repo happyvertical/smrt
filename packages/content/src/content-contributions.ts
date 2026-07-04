@@ -114,9 +114,11 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
 
   private async resolveSubmissionType(
     typeKey: string | null | undefined,
+    tenantId?: string | null,
   ): Promise<ContentContributionTypeDefinition> {
     const effective = await getEffectiveContentContributionConfig({
       db: this.db,
+      tenantId,
     });
 
     if (typeKey) {
@@ -137,8 +139,11 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
     return defaultType;
   }
 
-  async getContributionTypesAction() {
-    return getContentContributionTypeConfigState({ db: this.db });
+  async getContributionTypesAction(options: { tenantId?: string | null } = {}) {
+    return getContentContributionTypeConfigState({
+      db: this.db,
+      tenantId: options.tenantId,
+    });
   }
 
   async listForContributor(
@@ -198,7 +203,10 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
   }
 
   async submitWebContribution(options: SubmitWebContentContributionOptions) {
-    const type = await this.resolveSubmissionType(options.typeKey);
+    const type = await this.resolveSubmissionType(
+      options.typeKey,
+      options.tenantId,
+    );
     const contributors = await this.getContributorCollection();
     const contributor = await contributors.findOrCreateByEmail({
       email: options.contributorEmail,
@@ -282,7 +290,10 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
       throw new Error(`Email "${options.emailId}" not found.`);
     }
 
-    const type = await this.resolveSubmissionType(options.typeKey);
+    const type = await this.resolveSubmissionType(
+      options.typeKey,
+      options.tenantId,
+    );
     const contributors = await this.getContributorCollection();
     const contributor = await contributors.findOrCreateByEmail({
       email: email.fromAddress,

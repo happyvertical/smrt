@@ -288,10 +288,18 @@ export class Contents extends SmrtCollection<Content> {
     return serializeContent(content);
   }
 
-  public async getGovernanceDefinitionsAction() {
+  public async getGovernanceDefinitionsAction(
+    options: { tenantId?: string | null } = {},
+  ) {
     const [effective, persisted] = await Promise.all([
-      getEffectiveContentGovernanceConfig({ db: this.db }),
-      loadPersistedContentGovernanceDefinitions({ db: this.db }),
+      getEffectiveContentGovernanceConfig({
+        db: this.db,
+        tenantId: options.tenantId,
+      }),
+      loadPersistedContentGovernanceDefinitions({
+        db: this.db,
+        tenantId: options.tenantId,
+      }),
     ]);
 
     return {

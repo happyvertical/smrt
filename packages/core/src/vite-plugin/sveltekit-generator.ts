@@ -859,6 +859,9 @@ function buildScopedOptionsForTenantRead(
   routeConfig: ResolvedApiActionRouteConfig,
   tenantScoped: boolean,
 ): { source: string; optionsIdentifier: string } {
+  // The generator can only pass tenant read scope to methods that expose an
+  // options object. Zero-argument methods that perform their own raw reads must
+  // infer tenant scope in their implementation or adopt the options contract.
   if (
     !tenantScoped ||
     routeConfig.method !== 'GET' ||

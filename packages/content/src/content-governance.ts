@@ -2,6 +2,7 @@ import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import {
   getCurrentTenant,
   isSuperAdminBypass,
+  isSystemContext,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -530,7 +531,7 @@ function resolveGovernanceTenantFilter(
     return tenantId;
   }
 
-  if (isSuperAdminBypass()) {
+  if (isSystemContext() || isSuperAdminBypass()) {
     return undefined;
   }
 

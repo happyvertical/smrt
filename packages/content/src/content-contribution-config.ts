@@ -1,3 +1,9 @@
+import {
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  isTenancyEnabled,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 
 export type ContentContributionChannel = 'web' | 'email';
@@ -69,6 +75,11 @@ export interface ResolvedContentContributionType
 export interface ContentContributionTypeConfigState {
   effective: ContentContributionTypeDefinition[];
   persisted: PersistedContentContributionTypeRecord[];
+}
+
+export interface ContentContributionConfigReadOptions {
+  db?: DatabaseInterface | null;
+  tenantId?: string | null;
 }
 
 export interface EvaluateContributionIntakeOptions {
@@ -246,6 +257,67 @@ function isMissingContributionTypesTableError(error: unknown): boolean {
   );
 }
 
+function resolveContributionConfigTenantFilter(
+  tenantId: string | null | undefined,
+): string | null | undefined {
+  if (tenantId !== undefined) {
+    return tenantId;
+  }
+
+  if (isSystemContext() || isSuperAdminBypass()) {
+    return undefined;
+  }
+
+  const currentTenant = getCurrentTenant();
+  if (currentTenant?.tenantId) {
+    return currentTenant.tenantId;
+  }
+
+  return isTenancyEnabled() ? null : undefined;
+}
+
+async function listPersistedContributionTypeRows(
+  db: DatabaseInterface,
+  tenantId: string | null | undefined,
+): Promise<Record<string, unknown>[]> {
+  const byCreatedAt = (
+    a: Record<string, unknown>,
+    b: Record<string, unknown>,
+  ): number =>
+    String(a.created_at || a.createdAt || '').localeCompare(
+      String(b.created_at || b.createdAt || ''),
+    );
+  const sortRows = (rows: Record<string, unknown>[]) => rows.sort(byCreatedAt);
+
+  if (tenantId === undefined) {
+    return sortRows(
+      (await db.list('content_contribution_types', {})) as Record<
+        string,
+        unknown
+      >[],
+    );
+  }
+
+  if (tenantId === null) {
+    return sortRows(
+      (await db.list('content_contribution_types', {
+        tenant_id: null,
+      })) as Record<string, unknown>[],
+    );
+  }
+
+  const [globalRows, tenantRows] = await Promise.all([
+    db.list('content_contribution_types', { tenant_id: null }) as Promise<
+      Record<string, unknown>[]
+    >,
+    db.list('content_contribution_types', { tenant_id: tenantId }) as Promise<
+      Record<string, unknown>[]
+    >,
+  ]);
+
+  return [...sortRows(globalRows), ...sortRows(tenantRows)];
+}
+
 function mapPersistedTypeRow(
   row: Record<string, unknown>,
 ): PersistedContentContributionTypeRecord {
@@ -315,22 +387,15 @@ export function hasStaticContentContributionType(key: string): boolean {
 }
 
 export async function loadPersistedContentContributionTypes(
-  options: { db?: DatabaseInterface | null } = {},
+  options: ContentContributionConfigReadOptions = {},
 ): Promise<PersistedContentContributionTypeRecord[]> {
   if (!options.db) {
     return [];
   }
 
   try {
-    const rows = (await options.db.list(
-      'content_contribution_types',
-      {},
-    )) as Record<string, unknown>[];
-    rows.sort((a, b) =>
-      String(a.created_at || a.createdAt || '').localeCompare(
-        String(b.created_at || b.createdAt || ''),
-      ),
-    );
+    const tenantId = resolveContributionConfigTenantFilter(options.tenantId);
+    const rows = await listPersistedContributionTypeRows(options.db, tenantId);
     return rows.map((row) => mapPersistedTypeRow(row));
   } catch (error) {
     if (isMissingContributionTypesTableError(error)) {
@@ -342,10 +407,11 @@ export async function loadPersistedContentContributionTypes(
 }
 
 export async function getEffectiveContentContributionConfig(
-  options: { db?: DatabaseInterface | null } = {},
+  options: ContentContributionConfigReadOptions = {},
 ): Promise<ContentContributionConfig> {
   const persisted = await loadPersistedContentContributionTypes({
     db: options.db,
+    tenantId: options.tenantId,
   });
 
   return {
@@ -360,7 +426,7 @@ export async function getEffectiveContentContributionConfig(
 }
 
 export async function getContentContributionTypeConfigState(
-  options: { db?: DatabaseInterface | null } = {},
+  options: ContentContributionConfigReadOptions = {},
 ): Promise<ContentContributionTypeConfigState> {
   const [effective, persisted] = await Promise.all([
     getEffectiveContentContributionConfig(options),
@@ -375,7 +441,7 @@ export async function getContentContributionTypeConfigState(
 
 export async function resolveEffectiveContentContributionType(
   key: string,
-  options: { db?: DatabaseInterface | null } = {},
+  options: ContentContributionConfigReadOptions = {},
 ): Promise<ResolvedContentContributionType | null> {
   const effective = await getEffectiveContentContributionConfig(options);
   const type = effective.types.find((entry) => entry.key === key);
