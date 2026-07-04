@@ -40,6 +40,34 @@ import { createCollection } from '@tanstack/db';
 import { QueryClient } from '@tanstack/query-core';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
 
+import type {
+  SmrtWebCapability,
+  SmrtWebCapabilityContext,
+  SmrtWebMutationEnvelope,
+} from './capability.js';
+import { runWrapMutation } from './capability.js';
+
+// Re-export the capability seam (#1755) and the shared durable-store foundation
+// through this single entry — the package ships one export subpath, so both are
+// reachable as `@happyvertical/smrt-web`. Kept in their own modules so each is
+// reviewable and testable on its own; surfaced here for consumers-to-be (the
+// offline outbox #1762, persistence #1764, and live SSE invalidation
+// #1763-client slices).
+export type {
+  MutationSettleOutcome,
+  SmrtWebCapability,
+  SmrtWebCapabilityContext,
+  SmrtWebMutationEnvelope,
+  WrapMutationOutcome,
+} from './capability.js';
+export { runWrapMutation } from './capability.js';
+export type { DurableResource, DurableStoreKey } from './durable-store.js';
+export {
+  durableStoreNamespace,
+  registerDurableResource,
+  wipeDurableStore,
+} from './durable-store.js';
+
 // ---------------------------------------------------------------------------
 // Generated definition contract (mirrors @happyvertical/smrt-virt-web)
 // ---------------------------------------------------------------------------
@@ -478,6 +506,16 @@ export interface CreateSmrtCollectionOptions<TData extends object = object> {
    * `staleTimeMs` window.
    */
   initialData?: SmrtWebRow<TData>[];
+  /**
+   * Capability plug-ins hooking the collection lifecycle (#1755) — the seam
+   * that lets the offline outbox (#1762), persistence (#1764), and live SSE
+   * invalidation (#1763-client) slices each live in their own module instead of
+   * contending on this factory. Capabilities run in array order at six fixed
+   * points (see {@link SmrtWebCapability}). Additive and defaulting to none: an
+   * undefined or empty array is byte-for-byte the collection of today (the
+   * no-op guarantee), so this ships zero concrete capabilities by design.
+   */
+  capabilities?: SmrtWebCapability<TData>[];
 }
 
 /**
@@ -505,6 +543,26 @@ export function getEngineCollection<TData extends object>(
     );
   }
   return engine;
+}
+
+/**
+ * Report a capability hook that threw or rejected, without letting it break the
+ * collection (#1755). Capability hooks are third-party plug-ins; one misbehaving
+ * hook must not reject a successful mutation, abort construction, or wedge
+ * `cleanup()`. smrt-web has no logger dependency (TanStack-only), so this uses
+ * `console.warn` — a swallowed diagnostic, matching the package's fail-loud-in-
+ * the-console style.
+ */
+function warnCapability(
+  capability: { name: string },
+  hook: string,
+  error: unknown,
+): void {
+  // biome-ignore lint/suspicious/noConsole: smrt-web has no logger dep (TanStack-only); a swallowed capability fault is surfaced via console.warn by design (#1755)
+  console.warn(
+    `[smrt-web] capability "${capability.name}" ${hook} threw; ignoring`,
+    error,
+  );
 }
 
 /**
@@ -539,6 +597,7 @@ export function createSmrtCollection<TData extends object>(
   type Row = SmrtWebRow<TData>;
 
   const { staleTimeMs = 30_000, retry = false, scope, initialData } = options;
+  const capabilities = options.capabilities ?? [];
   const fetchers =
     options.fetchers ??
     createDefinitionFetchers(definition, options.basePath, options.fetchFn);
@@ -547,35 +606,14 @@ export function createSmrtCollection<TData extends object>(
 
   // Scope discriminates the cache key so a shared client can materialize the
   // same collection against different backends without cross-serving reads.
-  const cacheId = scope
+  // `let` so capabilities can extend the scheme via `contributeCacheKey` below;
+  // with no capabilities these stay exactly the base `smrt:(scope:)name` form.
+  let cacheId = scope
     ? `smrt:${scope}:${definition.name}`
     : `smrt:${definition.name}`;
-  const queryKey = scope
+  let queryKey = scope
     ? ['smrt', scope, definition.name]
     : ['smrt', definition.name];
-
-  // Hydration seeding (#1761): if the caller passed rows fetched server-side,
-  // write them into the query cache BEFORE the collection's engine starts its
-  // sync. On the first read the engine finds cached data and populates from it
-  // instead of fetching (verified: zero list() calls). `setQueryData` stamps a
-  // fresh `dataUpdatedAt`, so the seed counts as fresh for `staleTime` — the
-  // first read serves it with no request, and revalidation fires only once
-  // `staleTimeMs` elapses (or immediately when it is 0). An explicit empty seed
-  // is honored too: it means "the server returned zero rows", a valid fresh
-  // state that likewise suppresses the first fetch.
-  //
-  // Seed only when the key is empty, via the ATOMIC updater form: a plain
-  // get-then-set would let two collections sharing this key and materialized in
-  // the same tick both observe `undefined` and have the later seed clobber the
-  // earlier one. `(existing) => existing ?? initialData` keeps the first seed
-  // (or any already-cached rows, which may be newer than this late SSR payload)
-  // in a single cache write.
-  if (initialData !== undefined) {
-    queryClient.setQueryData<Row[]>(
-      queryKey,
-      (existing) => existing ?? initialData,
-    );
-  }
 
   // Relationship-derived invalidation target set (#1761): the collections
   // whose caches a settled mutation on THIS collection must invalidate. Always
@@ -616,6 +654,213 @@ export function createSmrtCollection<TData extends object>(
     });
   };
 
+  // The engine-free context every capability hook receives (#1755). `cacheKey`
+  // / `cacheId` are getter-backed over the live `let` bindings, so a capability
+  // observes the key AS IT STANDS when it reads: during `contributeCacheKey`
+  // (below) that is the base key plus any EARLIER capability's segments (not its
+  // own, not-yet-applied one); from `onAttach`/`warmStart` onward it is the
+  // FINAL key. `invalidate` enters the same `invalidateRelated()` the factory
+  // runs post-mutation, so a capability can refetch off an external trigger.
+  const ctx: SmrtWebCapabilityContext<TData> = {
+    definition,
+    fetchers,
+    get cacheKey() {
+      return queryKey;
+    },
+    get cacheId() {
+      return cacheId;
+    },
+    invalidate: () => invalidateRelated(),
+  };
+
+  // contributeCacheKey (#1755): fold each capability's returned segments into
+  // the cache key/id, extending the base scope-based scheme. Runs ONCE, before
+  // construction. Isolated per capability: a throwing contributeCacheKey is
+  // logged and skipped rather than aborting construction. With no capabilities
+  // this loop is empty and the keys are untouched — the no-op path.
+  //
+  // CRITICAL — segments are spliced in JUST BEFORE the collection name, so the
+  // name stays the LAST queryKey element. `invalidateRelated()`'s predicate
+  // (and thus relationship-derived invalidation #1761, and a capability's own
+  // `ctx.invalidate()`) identifies a collection by `key[key.length - 1]`;
+  // appending segments after the name would hide it from that predicate and
+  // silently break invalidation for any collection using contributeCacheKey
+  // (exactly the #1764 persistence slice). `cacheId` is an opaque engine id the
+  // predicate never reads, so it can keep appending.
+  for (const capability of capabilities) {
+    let extra: string[] | undefined;
+    try {
+      extra = capability.contributeCacheKey?.(ctx);
+    } catch (error) {
+      warnCapability(capability, 'contributeCacheKey', error);
+    }
+    if (extra && extra.length > 0) {
+      // Rebuild as [prefix..., ...extra, name] — name remains last.
+      const name = queryKey[queryKey.length - 1];
+      const prefix = queryKey.slice(0, -1);
+      queryKey = [...prefix, ...extra, name];
+      cacheId = `${cacheId}:${extra.join(':')}`;
+    }
+  }
+
+  // Seed the query cache BEFORE the collection's engine starts its sync, so the
+  // first read populates from the seed instead of fetching (verified: zero
+  // list() calls). `setQueryData` stamps a fresh `dataUpdatedAt`, so the seed
+  // counts as fresh for `staleTime` — the first read serves it with no request,
+  // and revalidation fires only once `staleTimeMs` elapses (or immediately when
+  // it is 0). An explicit empty seed is honored too: it means "zero rows", a
+  // valid fresh state that likewise suppresses the first fetch.
+  //
+  // Two seed sources with a fixed precedence:
+  //   1. `initialData` — hydration seeding (#1761): rows a SvelteKit
+  //      `+page.server.ts` load serialized, the fresher same-request SSR truth.
+  //   2. a capability `warmStart` (#1755) — e.g. the persistence slice
+  //      rehydrating from disk. Only the FIRST capability that returns rows
+  //      contributes.
+  // `initialData` WINS: it is resolved first, and `warmStart` is only consulted
+  // when `initialData` is undefined. With no capabilities, step 2 never runs and
+  // this is byte-identical to the #1761 seed — the no-op path.
+  //
+  // Seed via the ATOMIC updater form: a plain get-then-set would let two
+  // collections sharing this key and materialized in the same tick both observe
+  // `undefined` and have the later seed clobber the earlier one.
+  // `(existing) => existing ?? seed` keeps the first seed (or any already-cached
+  // rows, which may be newer than this late payload) in a single cache write.
+  const seedCache = (rows: Row[]): void => {
+    queryClient.setQueryData<Row[]>(queryKey, (existing) => existing ?? rows);
+  };
+  // Set by cleanup(); guards the async-warmStart continuations (#1755) so a
+  // collection torn down while a rehydrate is still in flight neither seeds the
+  // SHARED query cache after teardown (which could suppress the next collection's
+  // real fetch on the same client/key) nor preloads the dead engine.
+  let disposed = false;
+  // Resolve a warmStart result to rows, isolating a sync throw / async reject
+  // (logged, treated as "no rows") so a misbehaving provider can neither abort
+  // construction nor leak an unhandled rejection.
+  const warmRowsFrom = async (
+    capability: SmrtWebCapability<TData>,
+    warm: Promise<Row[] | undefined> | Row[] | undefined,
+  ): Promise<Row[] | undefined> => {
+    try {
+      return await warm;
+    } catch (error) {
+      warnCapability(capability, 'warmStart', error);
+      return undefined;
+    }
+  };
+
+  // A pending async `warmStart` (persistence rehydrating from OPFS/IndexedDB).
+  // Construction stays synchronous, but `preload()` (below) AWAITS this before
+  // starting the engine's own load, so an async rehydrate reliably suppresses
+  // the first `list()` on the preload path. A subscribe-driven read that races
+  // an unresolved warmStart may still fetch once — bounded, and it self-heals
+  // via the atomic seed updater. Undefined when there is no async warmStart.
+  let warmStartPending: Promise<void> | undefined;
+  if (initialData !== undefined) {
+    seedCache(initialData);
+  } else {
+    // Honor "the FIRST capability that returns ROWS" across BOTH sync and async
+    // warmStart. A sync provider that returns rows seeds inline immediately (so
+    // it suppresses even a non-preload read). The FIRST provider that returns a
+    // Promise hands off to an ORDERED async chain covering itself and every
+    // LATER capability, in array order: it awaits each, skips a result that is
+    // undefined or throws/rejects, and seeds the first that yields rows. So an
+    // async miss or reject no longer blocks a later provider from seeding.
+    for (let i = 0; i < capabilities.length; i += 1) {
+      const capability = capabilities[i];
+      let warm: Promise<Row[] | undefined> | Row[] | undefined;
+      try {
+        warm = capability.warmStart?.(ctx);
+      } catch (error) {
+        // A synchronous warmStart throw must not abort construction.
+        warnCapability(capability, 'warmStart', error);
+        continue;
+      }
+      if (warm === undefined) continue;
+      if (warm instanceof Promise) {
+        const firstPromise = warm;
+        warmStartPending = (async () => {
+          // This capability first (its promise is already in flight), then each
+          // later capability in order until one yields rows.
+          let rows = await warmRowsFrom(capability, firstPromise);
+          for (
+            let j = i + 1;
+            rows === undefined && j < capabilities.length;
+            j += 1
+          ) {
+            const later = capabilities[j];
+            let laterWarm: Promise<Row[] | undefined> | Row[] | undefined;
+            try {
+              laterWarm = later.warmStart?.(ctx);
+            } catch (error) {
+              warnCapability(later, 'warmStart', error);
+              continue;
+            }
+            if (laterWarm === undefined) continue;
+            rows = await warmRowsFrom(later, laterWarm);
+          }
+          // Skip the seed if the collection was cleaned up while the rehydrate
+          // was in flight — a late write to the shared cache could otherwise
+          // suppress the NEXT collection's real fetch on the same client/key.
+          if (rows !== undefined && !disposed) seedCache(rows);
+        })();
+        break;
+      }
+      seedCache(warm);
+      break;
+    }
+  }
+
+  // Notify every capability that a mutation settled (#1755) — on BOTH a
+  // successful persist and a fetcher throw. Per-capability try/catch so this
+  // genuinely NEVER throws: a throwing onSettled must not reject a SUCCESSFUL
+  // mutation nor mask a fetcher error, and one bad capability must not stop the
+  // others being notified. With no capabilities this loop is empty — the no-op
+  // path.
+  const notifySettled = (
+    envelope: SmrtWebMutationEnvelope,
+    outcome: { ok: true; result: unknown } | { ok: false; error: unknown },
+  ): void => {
+    for (const capability of capabilities) {
+      try {
+        capability.onSettled?.(envelope, outcome, ctx);
+      } catch (error) {
+        warnCapability(capability, 'onSettled', error);
+      }
+    }
+  };
+
+  /**
+   * Persist one mutation through the capability seam then the real fetcher.
+   * First offers the write to `wrapMutation` (array order, first-handled-wins):
+   * a handling capability's result stands in for the fetcher (the offline
+   * path), otherwise `runFetcher` performs the real write. On success notifies
+   * `onSettled({ ok: true })`; on ANY throw notifies `onSettled({ ok: false })`
+   * and RE-THROWS so the optimistic state still rolls back.
+   *
+   * Returns `handled` so the caller can suppress the engine's post-mutation
+   * refetch for an offline write (#1762): a handled write never hit the server,
+   * so refetching the server list would DROP the optimistic row the outbox must
+   * keep until it replays. With no capabilities `runWrapMutation` returns
+   * `{ handled: false }` and both notify loops are empty, so this reduces to
+   * `await runFetcher()` with `handled: false` — behavior identical to before
+   * the seam.
+   */
+  const persistMutation = async (
+    envelope: SmrtWebMutationEnvelope,
+    runFetcher: () => Promise<unknown>,
+  ): Promise<{ handled: boolean; result: unknown }> => {
+    try {
+      const wrapped = await runWrapMutation(capabilities, envelope, ctx);
+      const result = wrapped.handled ? wrapped.result : await runFetcher();
+      notifySettled(envelope, { ok: true, result });
+      return { handled: wrapped.handled, result };
+    } catch (error) {
+      notifySettled(envelope, { ok: false, error });
+      throw error;
+    }
+  };
+
   const collection = createCollection(
     queryCollectionOptions<Row>({
       id: cacheId,
@@ -627,42 +872,82 @@ export function createSmrtCollection<TData extends object>(
         unwrapListResult(await fetchers.list(), definition.name) as Array<Row>,
       getKey: (row) => String((row as Record<string, unknown>)[idField]),
       onInsert: async ({ transaction }) => {
+        let anyHandled = false;
         for (const mutation of transaction.mutations) {
           const modified = mutation.modified as Record<string, unknown>;
-          // Strip the client-local id: the generated REST layer rejects or
-          // ignores client-supplied ids on create (#1540); the follow-up
-          // refetch swaps the optimistic row for the server-assigned one.
-          const { [idField]: _localId, ...data } = modified;
-          unwrapItemResult(
-            await fetchers.create(data),
-            `create(${definition.name})`,
-          );
+          // Offer the write to the capability seam first (#1755), then fall
+          // through to the real create fetcher. The envelope carries the FULL
+          // optimistic row; the fetcher closure strips the client-local id: the
+          // generated REST layer rejects or ignores client-supplied ids on
+          // create (#1540), and the follow-up refetch swaps the optimistic row
+          // for the server-assigned one.
+          const envelope: SmrtWebMutationEnvelope = {
+            kind: 'insert',
+            key: String(modified[idField]),
+            data: modified,
+          };
+          const outcome = await persistMutation(envelope, async () => {
+            const { [idField]: _localId, ...data } = modified;
+            return unwrapItemResult(
+              await fetchers.create(data),
+              `create(${definition.name})`,
+            );
+          });
+          anyHandled = anyHandled || outcome.handled;
         }
-        // Persisted: refresh this collection and its related collections. Runs
-        // only after every create resolved — a rejected create rolls the
-        // optimistic row back and never reaches here.
+        // If a capability handled the write offline (#1762) it never reached the
+        // server, so BOTH the engine's own post-mutation refetch (suppressed via
+        // `{ refetch: false }`) and `invalidateRelated()` are skipped — else the
+        // server list, which lacks the offline row, would drop the optimistic
+        // row the outbox must keep until it replays. A mixed batch (some
+        // handled, some not) is conservative: if ANY mutation was handled we
+        // suppress, so an unsent row is never dropped; the common case is one
+        // mutation per transaction. An UNHANDLED batch behaves exactly as
+        // before: refetch runs and related caches invalidate.
+        if (anyHandled) return { refetch: false };
         invalidateRelated();
       },
       onUpdate: fetchers.update
         ? async ({ transaction }) => {
+            let anyHandled = false;
             for (const mutation of transaction.mutations) {
               const key = String(mutation.key);
               const changes = mutation.changes as Record<string, unknown>;
-              unwrapItemResult(
-                // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
-                await fetchers.update!(key, changes),
-                `update(${definition.name})`,
+              const envelope: SmrtWebMutationEnvelope = {
+                kind: 'update',
+                key,
+                data: changes,
+              };
+              const outcome = await persistMutation(envelope, async () =>
+                unwrapItemResult(
+                  // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
+                  await fetchers.update!(key, changes),
+                  `update(${definition.name})`,
+                ),
               );
+              anyHandled = anyHandled || outcome.handled;
             }
+            if (anyHandled) return { refetch: false };
             invalidateRelated();
           }
         : undefined,
       onDelete: fetchers.delete
         ? async ({ transaction }) => {
+            let anyHandled = false;
             for (const mutation of transaction.mutations) {
-              // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
-              await fetchers.delete!(String(mutation.key));
+              const key = String(mutation.key);
+              const envelope: SmrtWebMutationEnvelope = {
+                kind: 'delete',
+                key,
+                data: {},
+              };
+              const outcome = await persistMutation(envelope, async () =>
+                // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
+                fetchers.delete!(key),
+              );
+              anyHandled = anyHandled || outcome.handled;
             }
+            if (anyHandled) return { refetch: false };
             invalidateRelated();
           }
         : undefined,
@@ -688,10 +973,43 @@ export function createSmrtCollection<TData extends object>(
       return row === undefined ? undefined : toPlainRow<TData>(row);
     },
     preload() {
-      return collection.preload();
+      // Gate the first read on a pending async warmStart (#1755) so an async
+      // rehydrate (persistence over OPFS/IndexedDB) reliably seeds the cache
+      // BEFORE the engine's own load runs — otherwise the fetch that persistence
+      // was meant to suppress would race ahead. Resolved/rejected warmStart is
+      // already handled (seeded or logged); we only need to await settlement.
+      //
+      // When there is NO pending warmStart (incl. the no-op path and the
+      // `initialData` seed path) return the engine promise DIRECTLY — no extra
+      // async wrapper — so the microtask timing is byte-identical to before the
+      // seam (a wrapper tick would let a staleTime:0 revalidation land early).
+      if (!warmStartPending) return collection.preload();
+      // If cleanup() ran while the warmStart was still pending, don't preload the
+      // torn-down engine — resolve to nothing.
+      return warmStartPending.then(() => {
+        if (disposed) return;
+        return collection.preload();
+      });
     },
-    cleanup() {
-      return collection.cleanup();
+    async cleanup() {
+      // Mark disposed FIRST so any still-pending async warmStart continuation
+      // sees it and skips seeding the shared cache / preloading the dead engine
+      // (#1755, Fix G) — even though the continuation runs on a later tick.
+      disposed = true;
+      // Tear down the engine first, THEN each capability (#1755) — so a
+      // capability's teardown runs against a stopped engine. Awaited so async
+      // teardowns (closing an SSE stream, flushing a store) complete before
+      // cleanup() resolves. Per-capability try/catch so one rejecting teardown
+      // does not skip the others nor reject cleanup(). With no capabilities this
+      // awaits nothing extra.
+      await collection.cleanup();
+      for (const capability of capabilities) {
+        try {
+          await capability.teardown?.(ctx);
+        } catch (error) {
+          warnCapability(capability, 'teardown', error);
+        }
+      }
     },
     subscribeChanges(callback) {
       const subscription = collection.subscribeChanges((changes: unknown) =>
@@ -705,5 +1023,20 @@ export function createSmrtCollection<TData extends object>(
   };
 
   engineCollections.set(handle, collection);
+
+  // onAttach (#1755): now that the engine collection exists, let each capability
+  // wire an external (non-mutation) trigger — an SSE subscription, a focus
+  // listener — with a callable `ctx.invalidate()`. Runs ONCE, in array order.
+  // Per-capability try/catch so a throwing onAttach cannot break construction
+  // after the handle is already registered, nor skip later capabilities. With
+  // no capabilities this loop is empty — the no-op path.
+  for (const capability of capabilities) {
+    try {
+      capability.onAttach?.(ctx);
+    } catch (error) {
+      warnCapability(capability, 'onAttach', error);
+    }
+  }
+
   return handle;
 }
