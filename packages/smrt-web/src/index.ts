@@ -82,6 +82,23 @@ export type {
   SyncStateEvent,
 } from './offline.js';
 export { getOutboxHandle, offlineOutbox } from './offline.js';
+// Live-updates subscriber (#1763-client): the ONE app-wide SSE `_events`
+// subscriber (with `_changes` polling fallback) and the thin per-collection
+// `liveInvalidation` capability that wires a collection's `ctx.invalidate()` to
+// it. Its own module for the same reason as the seam above — reviewable and
+// testable on its own (mock only EventSource + fetch).
+export type {
+  LiveInvalidationConfig,
+  SmrtWebEventSource,
+  SmrtWebEventSourceFactory,
+  SmrtWebEventSubscriber,
+  SmrtWebEventSubscriberConfig,
+  SmrtWebSubscriberTransport,
+} from './sse-client.js';
+export {
+  createSmrtWebEventSubscriber,
+  liveInvalidation,
+} from './sse-client.js';
 
 // ---------------------------------------------------------------------------
 // Generated definition contract (mirrors @happyvertical/smrt-virt-web)

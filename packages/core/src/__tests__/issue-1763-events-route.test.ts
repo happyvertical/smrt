@@ -724,6 +724,7 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       });
       const text = await readStreamText(stream, 80);
       expect(text).toContain('event: resync');
+      expect(text).toContain('id: 1');
       await stream.cancel().catch(() => {});
     });
 

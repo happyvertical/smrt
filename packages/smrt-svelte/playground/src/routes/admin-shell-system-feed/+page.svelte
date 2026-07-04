@@ -1,6 +1,4 @@
 <script lang="ts">
-import { Button } from '@happyvertical/smrt-ui';
-import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import {
   type ShellStatusChip,
   type ShellSystemPanel,
@@ -8,6 +6,8 @@ import {
   SystemStatusChips,
 } from '@happyvertical/smrt-svelte/workspace';
 import { systemFeed } from '@happyvertical/smrt-svelte/workspace/live';
+import { Button } from '@happyvertical/smrt-ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { onDestroy } from 'svelte';
 import { M } from '../../../../src/i18n/strings.workspace.js';
 
@@ -31,8 +31,18 @@ interface SystemStatus {
     status: string;
     detail?: string;
   }>;
-  schedules: Array<{ id: string; label: string; status: string; detail?: string }>;
-  dispatch: Array<{ id: string; label: string; status: string; detail?: string }>;
+  schedules: Array<{
+    id: string;
+    label: string;
+    status: string;
+    detail?: string;
+  }>;
+  dispatch: Array<{
+    id: string;
+    label: string;
+    status: string;
+    detail?: string;
+  }>;
 }
 
 let calls = $state(0);

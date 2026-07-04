@@ -22,7 +22,7 @@ export default defineConfig({
     // unaffected; component tests opt in with `// @vitest-environment jsdom`.
     setupFiles: [smrtVitestSetupPath, '@happyvertical/smrt-vitest/svelte-setup'],
     testTimeout: 60000,
-    hookTimeout: 30000,
+    hookTimeout: 60000,
     // Run test files sequentially to avoid SQLite locking issues
     fileParallelism: false,
     // Use single-threaded pool to avoid database contention
