@@ -23,9 +23,18 @@ export {
 export { MembershipCollection } from './MembershipCollection.js';
 export { MembershipOverrideCollection } from './MembershipOverrideCollection.js';
 export { PermissionCollection } from './PermissionCollection.js';
-export { RoleCollection } from './RoleCollection.js';
+export {
+  RoleCollection,
+  type SeedSystemRolesOptions,
+} from './RoleCollection.js';
 // Role-permission join
-export { RolePermissionCollection } from './RolePermissionCollection.js';
+export {
+  DEFAULT_ROLE_PERMISSION_PATTERNS,
+  RolePermissionCollection,
+  type RolePermissionPatternMatrix,
+  type SeedRolePermissionsOptions,
+  type SeedRolePermissionsResult,
+} from './RolePermissionCollection.js';
 // Session collection
 export {
   type CreateSessionOptions,

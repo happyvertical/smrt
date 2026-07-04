@@ -56,6 +56,20 @@ export {
   type UsersOidcConfig,
 } from './OidcLoginService.js';
 export {
+  assertOperationPermission,
+  checkOperationPermission,
+  hasOperationPermission,
+  type OperationPermissionAllowReason,
+  type OperationPermissionDecision,
+  type OperationPermissionDenyReason,
+  OperationPermissionError,
+  type OperationPermissionOptions,
+} from './OperationPermissionService.js';
+export {
+  deriveOperationPermissionCollectionName,
+  deriveOperationPermissionSlug,
+  normalizeOperationPermissionAction,
+  type OperationPermissionCollectionInput,
   type PermissionCatalog,
   PermissionCatalogService,
   type PermissionCatalogSource,
