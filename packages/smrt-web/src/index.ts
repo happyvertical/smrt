@@ -67,6 +67,21 @@ export {
   registerDurableResource,
   wipeDurableStore,
 } from './durable-store.js';
+// The durable offline outbox capability (#1762) — the first concrete capability
+// over the seam above. A hand-rolled IndexedDB queue + Web Locks leader election
+// (NOT @tanstack/offline-transactions, which would leak an engine type into the
+// .d.ts and fail the boundary check). Surfaced here as the root barrel; no
+// subpath. The public surface is engine-free by construction.
+export type {
+  OfflineOutboxConfig,
+  OutboxBackoff,
+  OutboxConflict,
+  OutboxHandle,
+  OutboxSnapshotItem,
+  OutboxSyncState,
+  SyncStateEvent,
+} from './offline.js';
+export { getOutboxHandle, offlineOutbox } from './offline.js';
 
 // ---------------------------------------------------------------------------
 // Generated definition contract (mirrors @happyvertical/smrt-virt-web)
