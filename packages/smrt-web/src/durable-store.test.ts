@@ -43,7 +43,8 @@ describe('durableStoreNamespace', () => {
     expect(durableStoreNamespace(key)).toBe(durableStoreNamespace({ ...key }));
   });
 
-  it('encodes every key segment in a stable order', () => {
+  it('encodes every key segment in a stable order (URI-encoded, empty for absent)', () => {
+    // Segments are encodeURIComponent-encoded, so '/api/v1' -> '%2Fapi%2Fv1'.
     expect(
       durableStoreNamespace({
         apiBase: '/api/v1',
@@ -51,13 +52,13 @@ describe('durableStoreNamespace', () => {
         identityId: 'u1',
         manifestHash: 'abc123',
       }),
-    ).toBe('smrt-web:/api/v1:t1:u1:abc123');
+    ).toBe('smrt-web:%2Fapi%2Fv1:t1:u1:abc123');
   });
 
-  it("substitutes '-' for an absent tenant or identity", () => {
+  it('uses an EMPTY segment for an absent tenant or identity', () => {
     expect(
       durableStoreNamespace({ apiBase: '/api/v1', manifestHash: 'abc123' }),
-    ).toBe('smrt-web:/api/v1:-:-:abc123');
+    ).toBe('smrt-web:%2Fapi%2Fv1:::abc123');
   });
 
   it('changes when the manifest hash changes (a schema shift => a fresh namespace)', () => {
@@ -75,6 +76,41 @@ describe('durableStoreNamespace', () => {
     expect(durableStoreNamespace({ ...base, identityId: 'a' })).not.toBe(
       durableStoreNamespace({ ...base, identityId: 'b' }),
     );
+  });
+
+  // Fix F — the namespace is an isolation boundary, so it MUST be injective:
+  // no two distinct keys may collide onto one namespace, or durable data would
+  // be reused/wiped across api/tenant/identity boundaries.
+  it('is collision-safe when a segment contains the separator character', () => {
+    // Without encoding, tenantId 'a:b' + identityId 'c' would render the same
+    // string as tenantId 'a' + identityId 'b:c'. Encoding the ':' to %3A keeps
+    // them distinct.
+    const base: DurableStoreKey = { apiBase: '/api/v1', manifestHash: 'h' };
+    expect(
+      durableStoreNamespace({ ...base, tenantId: 'a:b', identityId: 'c' }),
+    ).not.toBe(
+      durableStoreNamespace({ ...base, tenantId: 'a', identityId: 'b:c' }),
+    );
+  });
+
+  it('distinguishes a literal tenantId "-" from an absent tenantId', () => {
+    const base: DurableStoreKey = { apiBase: '/api/v1', manifestHash: 'h' };
+    // A real tenant whose id happens to be '-' must not share the "no tenant"
+    // namespace.
+    expect(durableStoreNamespace({ ...base, tenantId: '-' })).not.toBe(
+      durableStoreNamespace(base),
+    );
+    // Same for identity.
+    expect(durableStoreNamespace({ ...base, identityId: '-' })).not.toBe(
+      durableStoreNamespace(base),
+    );
+  });
+
+  it('is collision-safe when apiBase or manifestHash contains a separator', () => {
+    // A ':' in apiBase must not bleed into the tenant segment position.
+    expect(
+      durableStoreNamespace({ apiBase: 'a:b', manifestHash: 'h' }),
+    ).not.toBe(durableStoreNamespace({ apiBase: 'a', manifestHash: 'b:h' }));
   });
 });
 

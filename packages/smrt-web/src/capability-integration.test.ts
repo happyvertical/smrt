@@ -933,4 +933,95 @@ describe('capability seam — async warmStart suppresses the first read (Fix D)'
     expect(scripted.calls.list).toBe(0);
     expect(collection.get('p1')?.name).toBe('from-async-warm');
   });
+
+  it('Fix E: when the FIRST async warmStart resolves to undefined, a LATER capability that returns rows seeds', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    const first: SmrtWebCapability<ProductData> = {
+      name: 'async-miss',
+      // Async, resolves to undefined — a rehydrate that found nothing on disk.
+      warmStart: async () => {
+        await Promise.resolve();
+        return undefined;
+      },
+    };
+    const second: SmrtWebCapability<ProductData> = {
+      name: 'async-hit',
+      warmStart: async () => {
+        await Promise.resolve();
+        return [{ id: 'p1', name: 'from-second' }];
+      },
+    };
+
+    const collection = track(
+      createSmrtCollection(productDefinition('async-order-miss'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [first, second],
+      }),
+    );
+
+    // The ordered chain skips the first (undefined) and seeds from the second —
+    // the first list() is suppressed even though the FIRST provider missed.
+    await collection.preload();
+    expect(scripted.calls.list).toBe(0);
+    expect(collection.get('p1')?.name).toBe('from-second');
+  });
+
+  it('Fix E: when the FIRST async warmStart REJECTS, a later capability still seeds and no unhandled rejection leaks', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    const first: SmrtWebCapability<ProductData> = {
+      name: 'async-reject',
+      warmStart: async () => {
+        await Promise.resolve();
+        throw new Error('rehydrate failed');
+      },
+    };
+    const second: SmrtWebCapability<ProductData> = {
+      name: 'async-hit',
+      warmStart: async () => [{ id: 'p1', name: 'from-second' }],
+    };
+
+    const collection = track(
+      createSmrtCollection(productDefinition('async-order-reject'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [first, second],
+      }),
+    );
+
+    await collection.preload();
+    // The reject was caught (logged) and the chain moved on to the second.
+    expect(scripted.calls.list).toBe(0);
+    expect(collection.get('p1')?.name).toBe('from-second');
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('Fix E: a SYNC warmStart returning rows before an async one seeds inline (no preload needed)', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    const syncFirst: SmrtWebCapability<ProductData> = {
+      name: 'sync-hit',
+      warmStart: () => [{ id: 'p1', name: 'from-sync' }],
+    };
+    const asyncSecond: SmrtWebCapability<ProductData> = {
+      name: 'async-later',
+      warmStart: async () => [{ id: 'p1', name: 'from-async' }],
+    };
+
+    const collection = track(
+      createSmrtCollection(productDefinition('sync-before-async'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [syncFirst, asyncSecond],
+      }),
+    );
+
+    // The sync provider seeded synchronously at construction — the value is in
+    // cache before any preload(), and the later async provider never overrides
+    // it (first-that-returns-rows wins, and the atomic updater keeps the seed).
+    await collection.preload();
+    expect(scripted.calls.list).toBe(0);
+    expect(collection.get('p1')?.name).toBe('from-sync');
+  });
 });

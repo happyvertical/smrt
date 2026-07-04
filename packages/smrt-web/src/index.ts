@@ -729,6 +729,21 @@ export function createSmrtCollection<TData extends object>(
   const seedCache = (rows: Row[]): void => {
     queryClient.setQueryData<Row[]>(queryKey, (existing) => existing ?? rows);
   };
+  // Resolve a warmStart result to rows, isolating a sync throw / async reject
+  // (logged, treated as "no rows") so a misbehaving provider can neither abort
+  // construction nor leak an unhandled rejection.
+  const warmRowsFrom = async (
+    capability: SmrtWebCapability<TData>,
+    warm: Promise<Row[] | undefined> | Row[] | undefined,
+  ): Promise<Row[] | undefined> => {
+    try {
+      return await warm;
+    } catch (error) {
+      warnCapability(capability, 'warmStart', error);
+      return undefined;
+    }
+  };
+
   // A pending async `warmStart` (persistence rehydrating from OPFS/IndexedDB).
   // Construction stays synchronous, but `preload()` (below) AWAITS this before
   // starting the engine's own load, so an async rehydrate reliably suppresses
@@ -739,7 +754,15 @@ export function createSmrtCollection<TData extends object>(
   if (initialData !== undefined) {
     seedCache(initialData);
   } else {
-    for (const capability of capabilities) {
+    // Honor "the FIRST capability that returns ROWS" across BOTH sync and async
+    // warmStart. A sync provider that returns rows seeds inline immediately (so
+    // it suppresses even a non-preload read). The FIRST provider that returns a
+    // Promise hands off to an ORDERED async chain covering itself and every
+    // LATER capability, in array order: it awaits each, skips a result that is
+    // undefined or throws/rejects, and seeds the first that yields rows. So an
+    // async miss or reject no longer blocks a later provider from seeding.
+    for (let i = 0; i < capabilities.length; i += 1) {
+      const capability = capabilities[i];
       let warm: Promise<Row[] | undefined> | Row[] | undefined;
       try {
         warm = capability.warmStart?.(ctx);
@@ -750,17 +773,29 @@ export function createSmrtCollection<TData extends object>(
       }
       if (warm === undefined) continue;
       if (warm instanceof Promise) {
-        // Capture the promise so preload() can gate the first read on it, and
-        // isolate its rejection so a failed rehydrate can't surface as an
-        // unhandled rejection. The atomic updater keeps a late seed from
-        // clobbering fresher rows.
-        warmStartPending = warm
-          .then((rows) => {
-            if (rows !== undefined) seedCache(rows);
-          })
-          .catch((error) => {
-            warnCapability(capability, 'warmStart', error);
-          });
+        const firstPromise = warm;
+        warmStartPending = (async () => {
+          // This capability first (its promise is already in flight), then each
+          // later capability in order until one yields rows.
+          let rows = await warmRowsFrom(capability, firstPromise);
+          for (
+            let j = i + 1;
+            rows === undefined && j < capabilities.length;
+            j += 1
+          ) {
+            const later = capabilities[j];
+            let laterWarm: Promise<Row[] | undefined> | Row[] | undefined;
+            try {
+              laterWarm = later.warmStart?.(ctx);
+            } catch (error) {
+              warnCapability(later, 'warmStart', error);
+              continue;
+            }
+            if (laterWarm === undefined) continue;
+            rows = await warmRowsFrom(later, laterWarm);
+          }
+          if (rows !== undefined) seedCache(rows);
+        })();
         break;
       }
       seedCache(warm);

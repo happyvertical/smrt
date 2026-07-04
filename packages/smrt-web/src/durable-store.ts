@@ -43,13 +43,22 @@ export interface DurableStoreKey {
 
 /**
  * Compute the deterministic storage namespace for a {@link DurableStoreKey}.
- * The same key always yields the same string; any differing segment yields a
- * different one. Absent `tenantId` / `identityId` collapse to `-` so the
- * segment count is fixed. Both future slices key their own storage primitive
- * (IndexedDB store name, OPFS path, …) under this string.
+ * The same key always yields the same string; **any differing segment yields a
+ * different one** (injective) — this is critical because the namespace IS the
+ * tenant/identity/api isolation + wipe boundary, so a collision would reuse or
+ * wipe durable data ACROSS those boundaries.
+ *
+ * Injectivity is guaranteed two ways: every segment is `encodeURIComponent`-
+ * encoded, so a raw `:` in a value becomes `%3A` and can never be mistaken for a
+ * separator; and an ABSENT `tenantId` / `identityId` maps to the empty string
+ * while a PRESENT value is encoded, so a real id of `-` no longer collides with
+ * "no tenant". Both future slices key their own storage primitive (IndexedDB
+ * store name, OPFS path, …) under this string.
  */
 export function durableStoreNamespace(key: DurableStoreKey): string {
-  return `smrt-web:${key.apiBase}:${key.tenantId ?? '-'}:${key.identityId ?? '-'}:${key.manifestHash}`;
+  const seg = (value: string | undefined): string =>
+    value === undefined ? '' : encodeURIComponent(value);
+  return `smrt-web:${encodeURIComponent(key.apiBase)}:${seg(key.tenantId)}:${seg(key.identityId)}:${encodeURIComponent(key.manifestHash)}`;
 }
 
 /**
