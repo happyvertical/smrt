@@ -41,10 +41,18 @@ describe('mcp-advisor: previewApiEndpoints', () => {
     );
     const titleParam = create?.parameters?.find((p) => p.name === 'title');
     expect(titleParam).toMatchObject({
+      description: 'Product display name',
+      example: 'example-title',
       location: 'body',
       required: true,
       type: 'text',
     });
+
+    expect(create?.example).toBe(
+      'curl -X POST "http://localhost:3000/api/v1/advisorrichproducts" -H "Content-Type: application/json" -d \'{"title":"example-title","quantity":1,"rate":9.99}\'',
+    );
+    expect(result.markdown).toContain('## POST /api/v1/advisorrichproducts');
+    expect(result.markdown).toContain('```bash\ncurl -X POST');
   });
 
   it('honours an exclude list (delete removed)', async () => {
@@ -58,6 +66,39 @@ describe('mcp-advisor: previewApiEndpoints', () => {
     expect(byKey).toContain('POST /api/v1/advisorexcludenotes');
     expect(byKey).toContain('PUT /api/v1/advisorexcludenotes/:id');
     expect(byKey).not.toContain('DELETE /api/v1/advisorexcludenotes/:id');
+  });
+
+  it('includes query parameters and copyable examples for list endpoints', async () => {
+    const result = await previewApiEndpoints({
+      className: 'AdvisorRichProduct',
+    });
+
+    const list = result.endpoints.find(
+      (e) => e.method === 'GET' && e.path === '/api/v1/advisorrichproducts',
+    );
+    expect(list?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          example: 25,
+          location: 'query',
+          name: 'limit',
+          type: 'integer',
+        }),
+        expect.objectContaining({
+          example: 'example-title',
+          location: 'query',
+          name: 'title',
+          type: 'text',
+        }),
+      ]),
+    );
+    expect(list?.parameters?.map((p) => p.name)).not.toContain('where');
+    expect(list?.example).toContain(
+      'http://localhost:3000/api/v1/advisorrichproducts?',
+    );
+    expect(list?.example).toContain('limit=25');
+    expect(list?.example).toContain('title=example-title');
+    expect(result.markdown).toContain('| title | query | text | no |');
   });
 
   it('respects a custom base path', async () => {
@@ -75,5 +116,7 @@ describe('mcp-advisor: previewApiEndpoints', () => {
     const result = await previewApiEndpoints({ className: 'UnknownApiClass' });
     const methods = result.endpoints.map((e) => e.method).sort();
     expect(methods).toEqual(['DELETE', 'GET', 'GET', 'POST', 'PUT']);
+    expect(result.endpoints.every((e) => e.parameters)).toBe(true);
+    expect(result.endpoints.every((e) => e.example)).toBe(true);
   });
 });
