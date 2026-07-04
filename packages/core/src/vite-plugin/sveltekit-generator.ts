@@ -486,7 +486,7 @@ function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
  */
 function generateTenantContextHelper(): string {
   return `
-import { enterTenantContext, hasTenantContext, isTenancyEnabled } from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -511,6 +511,18 @@ function tenantReadScope(): { tenantId: null } | undefined {
   return isTenancyEnabled() && !hasTenantContext()
     ? { tenantId: null }
     : undefined;
+}
+
+// Custom GET actions that accept a single options object may perform their
+// own reads instead of calling generated list/get handlers. Give those actions
+// an explicit tenant scope: active tenant when present, NULL-tenant global rows
+// when tenancy is enabled but no tenant context exists. Super-admin bypass
+// stays unscoped so admin callers keep deliberate cross-tenant access.
+function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
+  if (!isTenancyEnabled() || isSuperAdminBypass()) {
+    return undefined;
+  }
+  return { tenantId: getCurrentTenant()?.tenantId ?? null };
 }
 `;
 }
@@ -653,7 +665,18 @@ ${pathParamNames
   }`;
 }
 
-function buildActionInvocationArgs(actionDef: MethodDefinition): string[] {
+function hasSingleOptionsParameter(actionDef: MethodDefinition): boolean {
+  const parameters = Array.isArray(actionDef.parameters)
+    ? actionDef.parameters
+    : [];
+
+  return parameters.length === 1 && parameters[0]?.name === 'options';
+}
+
+function buildActionInvocationArgs(
+  actionDef: MethodDefinition,
+  optionsIdentifier = 'options',
+): string[] {
   const parameters = Array.isArray(actionDef.parameters)
     ? actionDef.parameters
     : [];
@@ -662,8 +685,8 @@ function buildActionInvocationArgs(actionDef: MethodDefinition): string[] {
     return [];
   }
 
-  if (parameters.length === 1 && parameters[0]?.name === 'options') {
-    return ['options'];
+  if (hasSingleOptionsParameter(actionDef)) {
+    return [optionsIdentifier];
   }
 
   return parameters.map((parameter) =>
@@ -829,6 +852,30 @@ function buildActionInvocationExpression(
     ...invocationArgs.map((argument) => `    ${argument},`),
     '  )',
   ].join('\n');
+}
+
+function buildScopedOptionsForTenantRead(
+  actionDef: MethodDefinition,
+  routeConfig: ResolvedApiActionRouteConfig,
+  tenantScoped: boolean,
+): { source: string; optionsIdentifier: string } {
+  if (
+    !tenantScoped ||
+    routeConfig.method !== 'GET' ||
+    !hasSingleOptionsParameter(actionDef)
+  ) {
+    return { source: '', optionsIdentifier: 'options' };
+  }
+
+  return {
+    source: `  const readScope = tenantReadOptionsScope();
+  const scopedOptions = readScope
+    ? ({ ...options, ...readScope } as ActionArgs[0])
+    : options;
+
+`,
+    optionsIdentifier: 'scopedOptions',
+  };
 }
 
 function findItemClassRegistryKey(
@@ -2234,7 +2281,6 @@ function generateActionRouteHandler(
   const authGuardLine = guardLines.join('\n');
   const hasInput = actionDef.parameters.length > 0;
   const needsRequest = hasInput;
-  const invocationArgs = buildActionInvocationArgs(actionDef);
   const collectionHandlerArgs = buildRouteHandlerArgs(
     routeConfig.pathParamNames.length > 0,
     needsRequest,
@@ -2255,6 +2301,15 @@ function generateActionRouteHandler(
     const staticTargetLoad = actionDef.isStatic
       ? `  const CollectionClass = typedCollection.constructor as typeof ${hostTypeName};\n`
       : '';
+    const scopedOptions = buildScopedOptionsForTenantRead(
+      actionDef,
+      routeConfig,
+      tenantScoped,
+    );
+    const invocationArgs = buildActionInvocationArgs(
+      actionDef,
+      scopedOptions.optionsIdentifier,
+    );
 
     return `// Custom collection method: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
@@ -2264,7 +2319,7 @@ ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
 ${generateCollectionNotRegisteredError(lookupClassName)}
 ${staticTargetLoad}
 
-${optionsLoad}  const result = ${buildActionInvocationExpression(
+${optionsLoad}${scopedOptions.source}  const result = ${buildActionInvocationExpression(
       receiverExpression,
       actionName,
       invocationArgs,
@@ -2283,13 +2338,22 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
       hostTypeName,
       true,
     );
+    const scopedOptions = buildScopedOptionsForTenantRead(
+      actionDef,
+      routeConfig,
+      tenantScoped,
+    );
+    const invocationArgs = buildActionInvocationArgs(
+      actionDef,
+      scopedOptions.optionsIdentifier,
+    );
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
   const registered = ObjectRegistry.getClass('${lookupClassName}');
 ${generateClassNotRegisteredError(lookupClassName)}
 
-${optionsLoad}  const ClassRef = registered.constructor as typeof ${hostTypeName};
+${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor as typeof ${hostTypeName};
   const result = ${buildActionInvocationExpression(
     'ClassRef',
     actionName,
@@ -2308,11 +2372,19 @@ ${optionsLoad}  const ClassRef = registered.constructor as typeof ${hostTypeName
     hostTypeName,
     false,
   );
+  const scopedItemLoad =
+    tenantScoped && routeConfig.method === 'GET'
+      ? `  const readScope = tenantReadScope();
+  const item = await collection.get(
+    readScope ? { id: params.id, ...readScope } : params.id,
+  );`
+      : '  const item = await collection.get(params.id);';
+  const invocationArgs = buildActionInvocationArgs(actionDef);
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
 ${authGuardLine}
 ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
-  const item = await collection.get(params.id);
+${scopedItemLoad}
 ${generateNotFoundError(lookupClassName)}
 
 ${optionsLoad}  const result = ${buildActionInvocationExpression(

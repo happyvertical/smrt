@@ -142,7 +142,11 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
   }
 
   async listForContributor(
-    options: { contributorId?: string; contributorEmail?: string } = {},
+    options: {
+      contributorId?: string;
+      contributorEmail?: string;
+      tenantId?: string | null;
+    } = {},
   ) {
     let contributorId = options.contributorId;
 
@@ -158,14 +162,21 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
       return [];
     }
 
+    const where: { contributorId: string; tenantId?: string | null } = {
+      contributorId,
+    };
+    if (options.tenantId !== undefined) {
+      where.tenantId = options.tenantId;
+    }
+
     return this.list({
-      where: { contributorId },
+      where,
       orderBy: 'updated_at DESC',
     });
   }
 
   async listInboxAction(
-    options: { statuses?: string | string[] } = {},
+    options: { statuses?: string | string[]; tenantId?: string | null } = {},
   ): Promise<ContentContribution[]> {
     const requested = Array.isArray(options.statuses)
       ? options.statuses
@@ -174,6 +185,10 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
         : ['submitted', 'quarantined', 'needs_changes', 'approved'];
 
     const contributions = await this.list({
+      where:
+        options.tenantId !== undefined
+          ? { tenantId: options.tenantId }
+          : undefined,
       orderBy: 'updated_at DESC',
     });
 

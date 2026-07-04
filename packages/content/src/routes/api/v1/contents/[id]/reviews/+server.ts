@@ -119,7 +119,10 @@ export const GET: RequestHandler = async ({ locals, params, request }) => {
   const collection = await getCollection<Content>(
     '@happyvertical/smrt-content:Content',
   );
-  const item = await collection.get(params.id);
+  const readScope = tenantReadScope();
+  const item = await collection.get(
+    readScope ? { id: params.id, ...readScope } : params.id,
+  );
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
   type ActionArgs = Parameters<Content['listReviews']>;

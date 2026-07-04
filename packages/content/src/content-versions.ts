@@ -112,6 +112,7 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       contentType: content.type,
       contentVariant: content.variant,
       db: this.db,
+      tenantId: content.tenantId ?? null,
     });
     const [references, referenceEdges, assets, factsState] = await Promise.all([
       typeof content.getReferences === 'function'
@@ -332,6 +333,7 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       contentType: content.type,
       contentVariant: content.variant,
       db: this.db,
+      tenantId: content.tenantId ?? null,
     });
 
     if (

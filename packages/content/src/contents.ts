@@ -252,16 +252,30 @@ export class Contents extends SmrtCollection<Content> {
   }
 
   public async getBySlug(
-    options: { slug?: string; context?: string; status?: string } = {},
+    options: {
+      slug?: string;
+      context?: string;
+      status?: string;
+      tenantId?: string | null;
+    } = {},
   ) {
     if (!options.slug) {
       throw new Error('slug is required');
     }
 
-    const content = await this.get({
+    const where: {
+      slug: string;
+      context: string;
+      tenantId?: string | null;
+    } = {
       slug: options.slug,
       context: options.context || '',
-    });
+    };
+    if (options.tenantId !== undefined) {
+      where.tenantId = options.tenantId;
+    }
+
+    const content = await this.get(where);
 
     if (!content) {
       return null;
@@ -307,12 +321,17 @@ export class Contents extends SmrtCollection<Content> {
   }
 
   public async resolveGovernanceAction(
-    options: { type?: string; variant?: string | null } = {},
+    options: {
+      type?: string;
+      variant?: string | null;
+      tenantId?: string | null;
+    } = {},
   ) {
     return resolveEffectiveContentGovernance({
       contentType: options.type || null,
       contentVariant: options.variant || null,
       db: this.db,
+      tenantId: options.tenantId,
     });
   }
 

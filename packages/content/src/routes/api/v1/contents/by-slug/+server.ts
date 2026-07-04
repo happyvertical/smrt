@@ -84,7 +84,9 @@ function toPublicResult(
 
 import {
   enterTenantContext,
+  getCurrentTenant,
   hasTenantContext,
+  isSuperAdminBypass,
   isTenancyEnabled,
 } from '@happyvertical/smrt-tenancy';
 
@@ -113,6 +115,13 @@ function tenantReadScope(): { tenantId: null } | undefined {
     : undefined;
 }
 
+function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
+  if (!isTenancyEnabled() || isSuperAdminBypass()) {
+    return undefined;
+  }
+  return { tenantId: getCurrentTenant()?.tenantId ?? null };
+}
+
 // Custom collection method: getBySlug
 export const GET: RequestHandler = async ({ locals, request }) => {
   requireRouteAuth(locals, false);
@@ -131,7 +140,12 @@ export const GET: RequestHandler = async ({ locals, request }) => {
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   ) as ActionArgs[0];
-  const result = await typedCollection.getBySlug(options);
+  const readScope = tenantReadOptionsScope();
+  const scopedOptions = readScope
+    ? ({ ...options, ...readScope } as ActionArgs[0])
+    : options;
+
+  const result = await typedCollection.getBySlug(scopedOptions);
 
   return json({ action: 'getBySlug', result: toPublicResult(result) });
 };
