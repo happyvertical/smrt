@@ -59,9 +59,12 @@ unconditional union of every DENY in the chain — so a more-specific tenant GRA
   separation-of-duties operations that must require an explicit permission grant.
 - Seed role mappings with `RolePermissionCollection.seedRolePermissions()` or
   `RoleCollection.seedSystemRoles({ seedPermissions: true })`. The default
-  matrix maps owner/admin to all catalog permissions, member to read/create, and
-  viewer to read-only. Re-seeding is additive and idempotent; pruning stale
-  mappings requires `{ prune: true }`.
+  matrix maps owner/admin to all catalog permissions, member to read/create for
+  ordinary app resources, and viewer to read-only. Member create grants
+  intentionally exclude users/RBAC authority and security resources (`users`,
+  `tenants`, `roles`, `permissions`, memberships, groups, sessions, magic-link
+  tokens, and related join/override tables). Re-seeding is additive and
+  idempotent; pruning stale mappings requires `{ prune: true }`.
 
 **Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
 

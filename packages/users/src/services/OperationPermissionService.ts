@@ -84,6 +84,14 @@ interface RuntimeBypassContext {
   systemContext: boolean;
 }
 
+function isModuleNotFoundError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    ((error as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' ||
+      /Cannot find package '@happyvertical\/smrt-tenancy'/.test(error.message))
+  );
+}
+
 async function readTenancyBypassContext(): Promise<RuntimeBypassContext> {
   try {
     const tenancy = await import('@happyvertical/smrt-tenancy');
@@ -91,7 +99,11 @@ async function readTenancyBypassContext(): Promise<RuntimeBypassContext> {
       superAdminBypass: tenancy.isSuperAdminBypass(),
       systemContext: tenancy.isSystemContext(),
     };
-  } catch {
+  } catch (error) {
+    if (!isModuleNotFoundError(error)) {
+      throw error;
+    }
+
     return {
       superAdminBypass: false,
       systemContext: false,
@@ -152,7 +164,12 @@ export async function checkOperationPermission(
   }
 
   const sessionContext = getCurrentSessionPermissionContext();
-  const tenancyContext = await readTenancyBypassContext();
+  let tenancyContext: RuntimeBypassContext;
+  try {
+    tenancyContext = await readTenancyBypassContext();
+  } catch (error) {
+    return deny(permission, 'resolution_error', error);
+  }
   const systemContext =
     sessionContext?.systemContext === true || tenancyContext.systemContext;
   const superAdminBypass =

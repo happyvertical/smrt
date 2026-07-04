@@ -53,6 +53,28 @@ export const DEFAULT_ROLE_PERMISSION_PATTERNS: Record<
   [DEFAULT_ROLE_SLUGS.VIEWER]: ['*.read', '*.list', '*.get'],
 };
 
+const DEFAULT_MEMBER_CREATE_DENIED_RESOURCES = new Set([
+  'group_members',
+  'groupmembers',
+  'group_roles',
+  'grouproles',
+  'groups',
+  'membership_overrides',
+  'membershipoverrides',
+  'memberships',
+  'permissions',
+  'role_permissions',
+  'rolepermissions',
+  'roles',
+  'sessions',
+  'tenant_permission_overrides',
+  'tenantpermissionoverrides',
+  'tenants',
+  'users',
+  'users_magic_link_tokens',
+  'usersmagiclinktokens',
+]);
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -80,6 +102,24 @@ function matchesPattern(slug: string, pattern: string): boolean {
     `^${escapeRegExp(pattern).replaceAll('\\*', '.*')}$`,
   );
   return regex.test(slug);
+}
+
+function shouldSeedDefaultRolePermission(
+  roleSlug: string,
+  permissionSlug: string,
+): boolean {
+  if (roleSlug !== DEFAULT_ROLE_SLUGS.MEMBER) {
+    return true;
+  }
+
+  const [resource, action, ...rest] = permissionSlug.split('.');
+  if (!resource || !action || rest.length > 0) {
+    return true;
+  }
+
+  return (
+    action !== 'create' || !DEFAULT_MEMBER_CREATE_DENIED_RESOURCES.has(resource)
+  );
 }
 
 function emptyResult(): SeedRolePermissionsResult {
@@ -213,6 +253,16 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
     const catalogSlugs = catalog.permissions.map(
       (permission) => permission.slug,
     );
+    const permissionIdBySlug = new Map<string, string>();
+    for (const permission of await permissions.list({})) {
+      if (
+        typeof permission.id === 'string' &&
+        typeof permission.slug === 'string' &&
+        permission.slug.length > 0
+      ) {
+        permissionIdBySlug.set(permission.slug, permission.id);
+      }
+    }
 
     for (const [roleSlug, rawPatterns] of Object.entries(matrix)) {
       ensureResultSlot(result, roleSlug);
@@ -233,6 +283,9 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
           result.unmatchedPatterns[roleSlug].push(pattern);
         }
         for (const slug of matches) {
+          if (!shouldSeedDefaultRolePermission(roleSlug, slug)) {
+            continue;
+          }
           matchedSlugs.add(slug);
         }
       }
@@ -246,19 +299,19 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
       const targetPermissionIds = new Set<string>();
 
       for (const slug of sortedMatchedSlugs) {
-        const permission = await permissions.findBySlug(slug);
-        if (!permission?.id) {
+        const permissionId = permissionIdBySlug.get(slug);
+        if (!permissionId) {
           result.missingPermissions[roleSlug].push(slug);
           continue;
         }
 
-        targetPermissionIds.add(permission.id);
-        if (existingPermissionIds.has(permission.id)) {
+        targetPermissionIds.add(permissionId);
+        if (existingPermissionIds.has(permissionId)) {
           result.unchanged[roleSlug].push(slug);
           continue;
         }
 
-        await this.addPermission(role.id, permission.id);
+        await this.addPermission(role.id, permissionId);
         result.added[roleSlug].push(slug);
       }
 

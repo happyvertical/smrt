@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { withSystemContext, withTenant } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import '../models/index.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
@@ -106,6 +107,22 @@ describe('operation permission guards', () => {
       .filter(Boolean)
       .sort();
   }
+
+  const authorityCreateSlugs = [
+    'groupmembers.create',
+    'grouproles.create',
+    'groups.create',
+    'membershipoverrides.create',
+    'memberships.create',
+    'permissions.create',
+    'rolepermissions.create',
+    'roles.create',
+    'sessions.create',
+    'tenantpermissionoverrides.create',
+    'tenants.create',
+    'users.create',
+    'usersmagiclinktokens.create',
+  ];
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-operation-permission-${randomUUID()}.db`);
@@ -279,14 +296,23 @@ describe('operation permission guards', () => {
     expect(first.added.member).not.toContain(
       'operation_permission_records.update',
     );
+    for (const slug of authorityCreateSlugs) {
+      expect(first.added.owner).toContain(slug);
+      expect(first.added.member).not.toContain(slug);
+    }
     expect(first.added.viewer).toContain('operation_permission_records.read');
     expect(first.added.viewer).not.toContain(
       'operation_permission_records.create',
     );
 
     const adminSlugs = await slugsForRole('admin');
+    const memberSlugs = await slugsForRole('member');
     const viewerSlugs = await slugsForRole('viewer');
     expect(adminSlugs).toContain('operation_permission_records.update');
+    for (const slug of authorityCreateSlugs) {
+      expect(adminSlugs).toContain(slug);
+      expect(memberSlugs).not.toContain(slug);
+    }
     expect(viewerSlugs).toContain('operation_permission_records.read');
     expect(viewerSlugs).not.toContain('operation_permission_records.create');
     expect(viewerSlugs).not.toContain('operation_permission_records.update');
