@@ -5,12 +5,12 @@
  * real component lifecycle, then hands the feed handle back to the test.
  */
 import type { SmrtWebCollection } from '@happyvertical/smrt-web';
+import type { ShellState } from '../../components/workspace/index.js';
 import {
-  activityFeed,
   type ActivityFeedHandle,
   type ActivityFeedMap,
+  activityFeed,
 } from '../activity-feed.svelte.js';
-import type { ShellState } from '../../components/workspace/index.js';
 
 interface Props {
   collection: SmrtWebCollection<Record<string, unknown>>;
