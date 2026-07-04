@@ -5,6 +5,19 @@
 import { ObjectRegistry } from '../../registry.js';
 import type { ApiEndpoint, PreviewApiEndpointsInput } from '../types.js';
 
+const DEFAULT_EXAMPLE_BASE_URL = 'https://api.example.com';
+const EXAMPLE_UUID = '00000000-0000-4000-8000-000000000001';
+
+interface EndpointPreviewField {
+  name: string;
+  type: string;
+  required: boolean;
+  description?: string;
+  example: unknown;
+  readonly: boolean;
+  sensitive: boolean;
+}
+
 /**
  * Preview API endpoints that would be generated for a class
  */
@@ -12,7 +25,11 @@ export async function previewApiEndpoints(
   input: PreviewApiEndpointsInput,
 ): Promise<{ endpoints: ApiEndpoint[]; basePath: string; markdown: string }> {
   try {
-    const { className, basePath = '/api/v1' } = input;
+    const {
+      className,
+      basePath = '/api/v1',
+      baseUrl = DEFAULT_EXAMPLE_BASE_URL,
+    } = input;
 
     // Get class configuration
     const config = ObjectRegistry.getConfig(className);
@@ -27,6 +44,7 @@ export async function previewApiEndpoints(
       typeof apiConfig === 'object' && apiConfig?.exclude
         ? apiConfig.exclude
         : [];
+    const writableAllowlist = getApiWritableAllowlist(apiConfig);
 
     const shouldInclude = (endpoint: string) => {
       if (included && !included.includes(endpoint)) return false;
@@ -47,8 +65,14 @@ export async function previewApiEndpoints(
             ? field._meta.description
             : undefined,
         example: sampleValueForType(type, name),
+        readonly: isReadonlyField(field),
+        sensitive: isSensitiveField(field),
       };
-    });
+    }) satisfies EndpointPreviewField[];
+    const filterableFields = fieldsList.filter((field) => !field.sensitive);
+    const writableFields = fieldsList.filter((field) =>
+      isWritableRequestField(field, writableAllowlist),
+    );
 
     // Generate endpoint definitions
     const endpoints: ApiEndpoint[] = [];
@@ -86,12 +110,12 @@ export async function previewApiEndpoints(
             description: 'SQL-style ordering expression',
             example: 'created_at DESC',
           },
-          ...fieldsList.map((field) => ({
+          ...filterableFields.map((field) => ({
             name: field.name,
             type: field.type,
             required: false,
             location: 'query' as const,
-            description: `Filter by ${field.name}. Operator suffixes like [gt], [gte], [lt], [lte], [ne], [in], and [like] are also supported.`,
+            description: formatListFilterDescription(field),
             example: field.example,
           })),
         ],
@@ -123,7 +147,7 @@ export async function previewApiEndpoints(
         method: 'POST',
         path: `${basePath}/${pluralName}`,
         description: `Create a new ${className}`,
-        parameters: fieldsList.map((field) => ({
+        parameters: writableFields.map((field) => ({
           name: field.name,
           type: field.type,
           required: field.required,
@@ -149,7 +173,7 @@ export async function previewApiEndpoints(
             description: `${className} id or slug`,
             example: 'example-id',
           },
-          ...fieldsList.map((field) => ({
+          ...writableFields.map((field) => ({
             name: field.name,
             type: field.type,
             required: false,
@@ -217,7 +241,7 @@ export async function previewApiEndpoints(
 
     const endpointsWithExamples = endpoints.map((endpoint) => ({
       ...endpoint,
-      example: buildCurlExample(endpoint),
+      example: buildCurlExample(endpoint, baseUrl),
     }));
 
     return {
@@ -238,10 +262,6 @@ export async function previewApiEndpoints(
 function sampleValueForType(type: string, name: string): unknown {
   const normalizedType = type.toLowerCase();
   const normalizedName = name.toLowerCase();
-
-  if (normalizedName === 'id' || normalizedName.endsWith('id')) {
-    return 'example-id';
-  }
 
   if (
     normalizedType.includes('integer') ||
@@ -279,6 +299,15 @@ function sampleValueForType(type: string, name: string): unknown {
     return [];
   }
 
+  if (
+    normalizedType.includes('foreignkey') ||
+    normalizedType.includes('crosspackageref') ||
+    normalizedType.includes('uuid') ||
+    normalizedName === 'id'
+  ) {
+    return EXAMPLE_UUID;
+  }
+
   return `example-${toKebabCase(name)}`;
 }
 
@@ -290,9 +319,9 @@ function toKebabCase(value: string): string {
     .toLowerCase();
 }
 
-function buildCurlExample(endpoint: ApiEndpoint): string {
+function buildCurlExample(endpoint: ApiEndpoint, baseUrl: string): string {
   const path = endpoint.path.replaceAll(':id', 'example-id');
-  const url = new URL(`http://localhost:3000${path}`);
+  const url = new URL(path, baseUrl);
 
   for (const parameter of endpoint.parameters ?? []) {
     if (parameter.location !== 'query') {
@@ -305,7 +334,7 @@ function buildCurlExample(endpoint: ApiEndpoint): string {
   const parts = [`curl -X ${endpoint.method} "${url.toString()}"`];
   if (body) {
     parts.push('-H "Content-Type: application/json"');
-    parts.push(`-d '${JSON.stringify(body)}'`);
+    parts.push(`-d ${shellSingleQuote(JSON.stringify(body))}`);
   }
 
   return parts.join(' ');
@@ -330,6 +359,10 @@ function buildBodyExample(
   return body;
 }
 
+function shellSingleQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 function formatExampleValue(value: unknown): string {
   if (value === undefined) {
     return '';
@@ -338,6 +371,71 @@ function formatExampleValue(value: unknown): string {
     return value;
   }
   return JSON.stringify(value) ?? '';
+}
+
+function formatListFilterDescription(field: EndpointPreviewField): string {
+  return `Filter by ${field.name}. Operator suffixes like [gt], [gte], [lt], [lte], [ne], [like], and [in] are also supported; use [in] with comma-separated values, for example ${field.name}[in]=value1,value2.`;
+}
+
+function getApiWritableAllowlist(apiConfig: unknown): Set<string> | null {
+  if (!apiConfig || typeof apiConfig !== 'object') {
+    return null;
+  }
+
+  const writable = (apiConfig as { writable?: unknown }).writable;
+  if (!Array.isArray(writable)) {
+    return null;
+  }
+
+  return new Set(
+    writable.filter((value): value is string => typeof value === 'string'),
+  );
+}
+
+function isWritableRequestField(
+  field: EndpointPreviewField,
+  writableAllowlist: Set<string> | null,
+): boolean {
+  if (isServerManagedField(field.name)) return false;
+  if (field.readonly) return false;
+  if (writableAllowlist && !writableAllowlist.has(field.name)) return false;
+  return true;
+}
+
+function isServerManagedField(name: string): boolean {
+  return (
+    name.startsWith('_') ||
+    [
+      'id',
+      'tenantId',
+      'tenant_id',
+      'createdAt',
+      'created_at',
+      'updatedAt',
+      'updated_at',
+    ].includes(name)
+  );
+}
+
+function isSensitiveField(field: {
+  sensitive?: unknown;
+  _meta?: unknown;
+}): boolean {
+  return field.sensitive === true || readMetaBoolean(field._meta, 'sensitive');
+}
+
+function isReadonlyField(field: {
+  readonly?: unknown;
+  _meta?: unknown;
+}): boolean {
+  return field.readonly === true || readMetaBoolean(field._meta, 'readonly');
+}
+
+function readMetaBoolean(meta: unknown, key: string): boolean {
+  if (!meta || typeof meta !== 'object') {
+    return false;
+  }
+  return (meta as Record<string, unknown>)[key] === true;
 }
 
 function formatQueryValue(

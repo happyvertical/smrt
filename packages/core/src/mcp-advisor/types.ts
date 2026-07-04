@@ -129,6 +129,7 @@ export interface ValidationResult {
 export interface PreviewApiEndpointsInput {
   className: string;
   basePath?: string;
+  baseUrl?: string;
 }
 
 /**
