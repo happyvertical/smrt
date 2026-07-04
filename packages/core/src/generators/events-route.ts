@@ -116,6 +116,11 @@ function encodeSseEvent(sig: ChangeSignal): Uint8Array {
   return encoder.encode(`id: ${sig.seq}\nevent: change\ndata: ${data}\n\n`);
 }
 
+/** SSE resync frame. The id advances EventSource past an unservable cursor. */
+function encodeSseResyncEvent(cursor: number): Uint8Array {
+  return encoder.encode(`id: ${cursor}\nevent: resync\ndata: {}\n\n`);
+}
+
 /** SSE comment line (used for heartbeats — ignored by EventSource). */
 function encodeSseComment(text: string): Uint8Array {
   return encoder.encode(`: ${text}\n\n`);
@@ -131,7 +136,8 @@ function encodeSseComment(text: string): Uint8Array {
  *     is safe, since the client dedupes by the SSE `id:`/seq.
  *  b. Write the `retry:` reconnection hint.
  *  c. If a cursor was supplied, replay changes after it (paging until
- *     exhausted); on `resyncRequired`, emit `event: resync`.
+ *     exhausted); on `resyncRequired`, emit `event: resync` at the server's
+ *     fresh horizon.
  *  d. Start the heartbeat interval.
  *
  * `cancel()` tears down on disconnect: clears the heartbeat and unsubscribes,
@@ -203,7 +209,13 @@ export function buildChangeEventStream(
               tenantId: catchupTenantId,
             });
             if (page.resyncRequired) {
-              controller.enqueue(encoder.encode('event: resync\ndata: {}\n\n'));
+              const resyncCursor =
+                typeof page.resyncCursor === 'number' &&
+                Number.isFinite(page.resyncCursor) &&
+                page.resyncCursor >= 0
+                  ? page.resyncCursor
+                  : since;
+              controller.enqueue(encodeSseResyncEvent(resyncCursor));
               break;
             }
             for (const change of page.changes) {

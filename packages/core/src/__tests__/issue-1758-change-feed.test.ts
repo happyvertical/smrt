@@ -328,7 +328,12 @@ describe('change feed spine (issue #1758)', () => {
       // A foreign/reset cursor can never be served incrementally: cursor is
       // echoed unchanged (never regresses) and the resync flag is raised.
       const beyond = await getChangesSince(db, { since: 99 });
-      expect(beyond).toEqual({ changes: [], cursor: 99, resyncRequired: true });
+      expect(beyond).toEqual({
+        changes: [],
+        cursor: 99,
+        resyncRequired: true,
+        resyncCursor: 1,
+      });
     });
 
     it('rejects invalid cursors', async () => {
@@ -472,7 +477,12 @@ describe('change feed spine (issue #1758)', () => {
       // No entries were ever recorded here — a nonzero cursor came from a
       // different database (or a reset feed) and cannot be served.
       const foreign = await getChangesSince(db, { since: 5 });
-      expect(foreign).toEqual({ changes: [], cursor: 5, resyncRequired: true });
+      expect(foreign).toEqual({
+        changes: [],
+        cursor: 5,
+        resyncRequired: true,
+        resyncCursor: 0,
+      });
     });
 
     it('a cursor below the retained window is flagged; the window edge still serves', async () => {
@@ -487,9 +497,11 @@ describe('change feed spine (issue #1758)', () => {
       expect(longGone.changes).toHaveLength(0);
       expect(longGone.cursor).toBe(2);
       expect(longGone.resyncRequired).toBe(true);
+      expect(longGone.resyncCursor).toBe(10);
 
       const justBelow = await getChangesSince(db, { since: 6 });
       expect(justBelow.resyncRequired).toBe(true);
+      expect(justBelow.resyncCursor).toBe(10);
 
       // since == floor-1: the next expected row is the floor itself —
       // incremental reads still work.
@@ -554,6 +566,7 @@ describe('change feed spine (issue #1758)', () => {
       expect(page.changes).toHaveLength(0);
       expect(page.cursor).toBe(1);
       expect(page.resyncRequired).toBe(true);
+      expect(page.resyncCursor).toBe(5);
     });
   });
 
@@ -784,10 +797,12 @@ describe('change feed spine (issue #1758)', () => {
         changes: unknown[];
         cursor: number;
         resyncRequired?: boolean;
+        resyncCursor?: number;
       };
       expect(body.resyncRequired).toBe(true);
       expect(body.changes).toHaveLength(0);
       expect(body.cursor).toBe(999);
+      expect(body.resyncCursor).toBe(0);
     });
   });
 });

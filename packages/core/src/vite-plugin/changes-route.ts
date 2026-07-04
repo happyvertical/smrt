@@ -147,7 +147,7 @@ function establishTenantContext(locals: unknown): void {
 // (comma-separated), limit. A response with resyncRequired: true (still
 // HTTP 200 — protocol state, not an error) means the cursor cannot be
 // served incrementally (pruned or foreign) and the client must re-fetch
-// in full before resuming polling.
+// in full before resuming polling from resyncCursor.
 
 import { error, json } from '@sveltejs/kit';
 import { getTenantScopedChangesSince } from '@happyvertical/smrt-core';
