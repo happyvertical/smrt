@@ -855,6 +855,46 @@ describe('createSmrtWebEventSubscriber — runtime downgrade on fatal SSE error'
       vi.useRealTimers();
     }
   });
+
+  it('uses a resync event id as the polling cursor after fatal SSE downgrade', async () => {
+    vi.useFakeTimers();
+    const pollUrls: string[] = [];
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      pollUrls.push(String(input));
+      const since = searchParamsOf(String(input)).get('since');
+      return new Response(
+        JSON.stringify({ changes: [], cursor: Number(since) }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+    try {
+      const subscriber = trackSub(
+        createSmrtWebEventSubscriber({
+          eventsUrl: '/e',
+          changesUrl: '/c',
+          eventSourceFactory: (url, init) => new FakeEventSource(url, init),
+          fetchFn: fetchFn as unknown as typeof fetch,
+          pollIntervalMs: 1000,
+        }),
+      );
+      const invalidate = vi.fn();
+      const unregister = subscriber.registerTable('products', invalidate);
+
+      const es = latestEventSource();
+      es.open();
+      es.dispatch('resync', { data: '{}', lastEventId: '42' });
+      expect(invalidate).toHaveBeenCalledTimes(1);
+
+      es.simulateError({ fatal: true });
+      expect(subscriber.transport).toBe('polling');
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(searchParamsOf(pollUrls[0]).get('since')).toBe('42');
+      unregister();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

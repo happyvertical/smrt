@@ -150,7 +150,8 @@ half in `packages/core/src/generators/`):
 - Push — the `_events` SSE route (`events-route.ts`): **NAMED** events
   `event: change` / `event: resync`, `data` is `{table, operation, rowId,
   tenantId}`, and the cursor `seq` is carried **only** in the SSE `id:` field
-  (the browser mirrors it to `MessageEvent.lastEventId`). Heartbeats are
+  (the browser mirrors it to `MessageEvent.lastEventId`). `resync` uses that
+  `id:` as the fresh horizon for any later polling downgrade. Heartbeats are
   `: heartbeat` comment lines EventSource ignores natively.
 - Pull — the `_changes` route (`changes-route.ts`): `GET {changesUrl}?since=
   &tables=` → `{changes, cursor, resyncRequired?, resyncCursor?}`, the full

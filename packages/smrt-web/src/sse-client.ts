@@ -265,6 +265,12 @@ export function createSmrtWebEventSubscriber(
     }
   };
 
+  /** Keep the resume cursor from an SSE `id:` / MessageEvent.lastEventId. */
+  const advanceLastSeqFromEventId = (lastEventId: string): void => {
+    const seq = Number(lastEventId);
+    if (Number.isFinite(seq)) lastSeq = seq;
+  };
+
   /**
    * Parse a `change` frame's `data` DEFENSIVELY: malformed JSON (or a payload
    * with no string `table`) is logged and dropped — NEVER thrown back into the
@@ -286,14 +292,17 @@ export function createSmrtWebEventSubscriber(
     }
     // The browser mirrors the SSE `id:` field to lastEventId; keep it as the
     // resume cursor (used only by the poll fallback), guarding a non-numeric id.
-    const seq = Number(ev.lastEventId);
-    if (Number.isFinite(seq)) lastSeq = seq;
+    advanceLastSeqFromEventId(ev.lastEventId);
     invalidateTable(table);
   };
 
-  /** A `resync` frame: the server's cursor is stale — invalidate everything. */
-  const onResync = (): void => {
+  /**
+   * A `resync` frame: the server's cursor is stale — invalidate everything and
+   * keep the server-provided horizon from `id:` for any later polling downgrade.
+   */
+  const onResync = (ev: { data: string; lastEventId: string }): void => {
     if (closed) return;
+    advanceLastSeqFromEventId(ev.lastEventId);
     invalidateAll();
   };
 
