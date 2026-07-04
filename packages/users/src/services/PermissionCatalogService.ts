@@ -70,6 +70,20 @@ export interface UsersConfig extends Record<string, unknown> {
   };
 }
 
+export interface ConstructorLike {
+  name?: string;
+}
+
+export interface CollectionLike {
+  getItemClass?: () => ConstructorLike;
+}
+
+export type OperationPermissionCollectionInput =
+  | string
+  | ConstructorLike
+  | CollectionLike
+  | object;
+
 declare global {
   // eslint-disable-next-line no-var
   var __smrtUsersPermissionRegistrations:
@@ -145,6 +159,109 @@ function defaultPermissionDescription(slug: string): string {
   }
 
   return `Allows ${humanizeResource(parsed.action).toLowerCase()} access for ${humanizeResource(parsed.resource).toLowerCase()}`;
+}
+
+export function normalizeOperationPermissionAction(action: string): string {
+  const trimmed = action.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (lower === 'list' || lower === 'get') {
+    return 'read';
+  }
+
+  if (
+    lower === 'read' ||
+    lower === 'create' ||
+    lower === 'update' ||
+    lower === 'delete'
+  ) {
+    return lower;
+  }
+
+  return trimmed;
+}
+
+function isConstructorLike(value: unknown): value is ConstructorLike {
+  return typeof value === 'function';
+}
+
+function isCollectionLike(value: unknown): value is CollectionLike {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as CollectionLike).getItemClass === 'function'
+  );
+}
+
+function resolveConstructor(
+  value: OperationPermissionCollectionInput,
+): ConstructorLike | undefined {
+  if (isConstructorLike(value)) {
+    return value;
+  }
+
+  if (isCollectionLike(value)) {
+    return value.getItemClass?.();
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const ctor = value.constructor;
+    if (typeof ctor === 'function' && ctor.name && ctor.name !== 'Object') {
+      return ctor;
+    }
+  }
+
+  return undefined;
+}
+
+export function deriveOperationPermissionCollectionName(
+  input: OperationPermissionCollectionInput,
+): string {
+  if (typeof input === 'string') {
+    const collection = input.trim();
+    if (!collection) {
+      throw new Error('Operation permission collection must not be empty.');
+    }
+    return collection;
+  }
+
+  const ctor = resolveConstructor(input);
+  if (!ctor?.name) {
+    throw new Error(
+      'Operation permission collection must be a collection slug, model class, model instance, or collection instance.',
+    );
+  }
+
+  const registered =
+    ObjectRegistry.getClassByConstructor(
+      ctor as Parameters<typeof ObjectRegistry.getClassByConstructor>[0],
+    ) ?? ObjectRegistry.getClass(ctor.name);
+  const configuredCollection = (
+    registered?.config as { collection?: unknown } | undefined
+  )?.collection;
+
+  if (typeof configuredCollection === 'string' && configuredCollection) {
+    return configuredCollection;
+  }
+
+  if (registered?.collection) {
+    return registered.collection;
+  }
+
+  return deriveCollectionName(registered?.name ?? ctor.name);
+}
+
+export function deriveOperationPermissionSlug(
+  collection: OperationPermissionCollectionInput,
+  action: string,
+): string {
+  const collectionName = deriveOperationPermissionCollectionName(collection);
+  const normalizedAction = normalizeOperationPermissionAction(action);
+  if (!normalizedAction) {
+    throw new Error('Operation permission action must not be empty.');
+  }
+
+  return `${collectionName}.${normalizedAction}`;
 }
 
 function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
@@ -464,6 +581,19 @@ export class PermissionCatalogService {
         normalizeDefinition(definition, 'runtime'),
       ),
     };
+  }
+
+  deriveOperationPermissionSlug(
+    collection: OperationPermissionCollectionInput,
+    action: string,
+  ): string {
+    return deriveOperationPermissionSlug(collection, action);
+  }
+
+  hasPermissionSlug(slug: string): boolean {
+    return this.getCatalog().permissions.some(
+      (permission) => permission.slug === slug,
+    );
   }
 
   async syncPermissionCatalog(): Promise<PermissionCatalogSyncResult> {
