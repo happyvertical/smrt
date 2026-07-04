@@ -1,5 +1,13 @@
 # @happyvertical/smrt-manufacturing
 
+## 0.38.2
+
+### Patch Changes
+
+- @happyvertical/smrt-core@0.38.2
+- @happyvertical/smrt-inventory@0.38.2
+- @happyvertical/smrt-tenancy@0.38.2
+
 ## 0.38.1
 
 ### Patch Changes
