@@ -48,17 +48,21 @@ export interface DurableStoreKey {
  * tenant/identity/api isolation + wipe boundary, so a collision would reuse or
  * wipe durable data ACROSS those boundaries.
  *
- * Injectivity is guaranteed two ways: every segment is `encodeURIComponent`-
+ * Injectivity is guaranteed three ways: every segment is `encodeURIComponent`-
  * encoded, so a raw `:` in a value becomes `%3A` and can never be mistaken for a
- * separator; and an ABSENT `tenantId` / `identityId` maps to the empty string
- * while a PRESENT value is encoded, so a real id of `-` no longer collides with
- * "no tenant". Both future slices key their own storage primitive (IndexedDB
- * store name, OPFS path, …) under this string.
+ * separator; an ABSENT `tenantId` / `identityId` maps to the empty string while
+ * a PRESENT value is prefixed with `_` (so undefined→``, ``→`_`, `x`→`_x`) — so
+ * an explicitly-EMPTY id no longer collides with "no id", nor does a real id of
+ * `-`. Both future slices key their own storage primitive (IndexedDB store name,
+ * OPFS path, …) under this string.
  */
 export function durableStoreNamespace(key: DurableStoreKey): string {
-  const seg = (value: string | undefined): string =>
-    value === undefined ? '' : encodeURIComponent(value);
-  return `smrt-web:${encodeURIComponent(key.apiBase)}:${seg(key.tenantId)}:${seg(key.identityId)}:${encodeURIComponent(key.manifestHash)}`;
+  // Optional segments: encode PRESENCE distinctly. undefined → '' (absent);
+  // any present value (including '') → `_<encoded>`, so '' → '_' can never equal
+  // the absent '' .
+  const optional = (value: string | undefined): string =>
+    value === undefined ? '' : `_${encodeURIComponent(value)}`;
+  return `smrt-web:${encodeURIComponent(key.apiBase)}:${optional(key.tenantId)}:${optional(key.identityId)}:${encodeURIComponent(key.manifestHash)}`;
 }
 
 /**

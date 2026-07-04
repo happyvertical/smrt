@@ -1025,3 +1025,99 @@ describe('capability seam — async warmStart suppresses the first read (Fix D)'
     expect(collection.get('p1')?.name).toBe('from-sync');
   });
 });
+
+describe('capability seam — cleanup races async warmStart (Fix G)', () => {
+  const tracked: SmrtWebCollection<object>[] = [];
+  const track = <T extends object>(c: SmrtWebCollection<T>) => {
+    tracked.push(c as unknown as SmrtWebCollection<object>);
+    return c;
+  };
+  afterEach(async () => {
+    await Promise.all(tracked.map((c) => c.cleanup()));
+    tracked.length = 0;
+  });
+
+  /** A promise whose resolution is controlled by the test. */
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it('a cleanup() that races a pending async warmStart does NOT seed the shared cache afterward (no pollution of the next collection)', async () => {
+    const client = createSmrtWebClient();
+    // Both collections share client + scope => the SAME queryKey. If the first's
+    // late warmStart seed leaks into the shared cache after cleanup, the second's
+    // real fetch would be (wrongly) suppressed.
+    const firstBackend = makeScriptedFetchers([{ id: 'p1', name: 'srv-1' }]);
+    const secondBackend = makeScriptedFetchers([{ id: 'p1', name: 'srv-2' }]);
+
+    const gate = deferred<ProductData[] | undefined>();
+    const slowWarm: SmrtWebCapability<ProductData> = {
+      name: 'slow-rehydrate',
+      warmStart: () => gate.promise,
+    };
+
+    const first = createSmrtCollection(productDefinition('products'), {
+      fetchers: firstBackend.fetchers,
+      client,
+      scope: 'shared',
+      staleTimeMs: 60_000,
+      capabilities: [slowWarm],
+    });
+
+    // Kick off preload() (gates on the pending warmStart), then tear down BEFORE
+    // the rehydrate resolves.
+    const firstPreload = first.preload();
+    await first.cleanup();
+
+    // Now the rehydrate finishes — its seed continuation must observe disposed
+    // and skip writing to the shared cache; the gated preload must skip the dead
+    // engine.
+    gate.resolve([{ id: 'p1', name: 'from-late-warm' }]);
+    await firstPreload;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    // The shared cache was NOT seeded: a fresh collection on the same key must
+    // still do its real fetch (and see ITS backend's rows, not the leaked ones).
+    const second = track(
+      createSmrtCollection(productDefinition('products'), {
+        fetchers: secondBackend.fetchers,
+        client,
+        scope: 'shared',
+        staleTimeMs: 60_000,
+      }),
+    );
+    await second.preload();
+    expect(secondBackend.calls.list).toBe(1);
+    expect(second.get('p1')?.name).toBe('srv-2');
+  });
+
+  it('a normal (non-cleaned-up) async warmStart still seeds — no regression from the disposed guard', async () => {
+    const scripted = makeScriptedFetchers([{ id: 'p1', name: 'from-server' }]);
+    const gate = deferred<ProductData[] | undefined>();
+    const capability: SmrtWebCapability<ProductData> = {
+      name: 'async-warm',
+      warmStart: () => gate.promise,
+    };
+
+    const collection = track(
+      createSmrtCollection(productDefinition('fixg-control'), {
+        fetchers: scripted.fetchers,
+        staleTimeMs: 60_000,
+        capabilities: [capability],
+      }),
+    );
+
+    const preloadDone = collection.preload();
+    // Resolve the rehydrate while the collection is still alive.
+    gate.resolve([{ id: 'p1', name: 'from-warm' }]);
+    await preloadDone;
+
+    // Seeded => first list() suppressed, warm rows served.
+    expect(scripted.calls.list).toBe(0);
+    expect(collection.get('p1')?.name).toBe('from-warm');
+  });
+});

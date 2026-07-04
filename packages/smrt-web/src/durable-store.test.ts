@@ -43,8 +43,10 @@ describe('durableStoreNamespace', () => {
     expect(durableStoreNamespace(key)).toBe(durableStoreNamespace({ ...key }));
   });
 
-  it('encodes every key segment in a stable order (URI-encoded, empty for absent)', () => {
-    // Segments are encodeURIComponent-encoded, so '/api/v1' -> '%2Fapi%2Fv1'.
+  it('encodes every key segment in a stable order (URI-encoded; present optionals marked with "_")', () => {
+    // Required segments are encodeURIComponent-encoded ('/api/v1' -> '%2Fapi%2Fv1');
+    // a PRESENT optional segment is prefixed with '_' ('t1' -> '_t1') so it can
+    // never equal the empty "absent" segment.
     expect(
       durableStoreNamespace({
         apiBase: '/api/v1',
@@ -52,13 +54,29 @@ describe('durableStoreNamespace', () => {
         identityId: 'u1',
         manifestHash: 'abc123',
       }),
-    ).toBe('smrt-web:%2Fapi%2Fv1:t1:u1:abc123');
+    ).toBe('smrt-web:%2Fapi%2Fv1:_t1:_u1:abc123');
   });
 
   it('uses an EMPTY segment for an absent tenant or identity', () => {
     expect(
       durableStoreNamespace({ apiBase: '/api/v1', manifestHash: 'abc123' }),
     ).toBe('smrt-web:%2Fapi%2Fv1:::abc123');
+  });
+
+  // Fix H — an explicitly-EMPTY id must not collide with an absent id: '' is a
+  // present value (a caller passed it), semantically distinct from "no id".
+  it('distinguishes an empty-string tenantId/identityId from an absent one', () => {
+    const base: DurableStoreKey = { apiBase: '/api/v1', manifestHash: 'h' };
+    expect(durableStoreNamespace({ ...base, tenantId: '' })).not.toBe(
+      durableStoreNamespace(base),
+    );
+    expect(durableStoreNamespace({ ...base, identityId: '' })).not.toBe(
+      durableStoreNamespace(base),
+    );
+    // And an empty tenant differs from an empty identity (position preserved).
+    expect(durableStoreNamespace({ ...base, tenantId: '' })).not.toBe(
+      durableStoreNamespace({ ...base, identityId: '' }),
+    );
   });
 
   it('changes when the manifest hash changes (a schema shift => a fresh namespace)', () => {

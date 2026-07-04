@@ -729,6 +729,11 @@ export function createSmrtCollection<TData extends object>(
   const seedCache = (rows: Row[]): void => {
     queryClient.setQueryData<Row[]>(queryKey, (existing) => existing ?? rows);
   };
+  // Set by cleanup(); guards the async-warmStart continuations (#1755) so a
+  // collection torn down while a rehydrate is still in flight neither seeds the
+  // SHARED query cache after teardown (which could suppress the next collection's
+  // real fetch on the same client/key) nor preloads the dead engine.
+  let disposed = false;
   // Resolve a warmStart result to rows, isolating a sync throw / async reject
   // (logged, treated as "no rows") so a misbehaving provider can neither abort
   // construction nor leak an unhandled rejection.
@@ -794,7 +799,10 @@ export function createSmrtCollection<TData extends object>(
             if (laterWarm === undefined) continue;
             rows = await warmRowsFrom(later, laterWarm);
           }
-          if (rows !== undefined) seedCache(rows);
+          // Skip the seed if the collection was cleaned up while the rehydrate
+          // was in flight — a late write to the shared cache could otherwise
+          // suppress the NEXT collection's real fetch on the same client/key.
+          if (rows !== undefined && !disposed) seedCache(rows);
         })();
         break;
       }
@@ -976,9 +984,18 @@ export function createSmrtCollection<TData extends object>(
       // async wrapper — so the microtask timing is byte-identical to before the
       // seam (a wrapper tick would let a staleTime:0 revalidation land early).
       if (!warmStartPending) return collection.preload();
-      return warmStartPending.then(() => collection.preload());
+      // If cleanup() ran while the warmStart was still pending, don't preload the
+      // torn-down engine — resolve to nothing.
+      return warmStartPending.then(() => {
+        if (disposed) return;
+        return collection.preload();
+      });
     },
     async cleanup() {
+      // Mark disposed FIRST so any still-pending async warmStart continuation
+      // sees it and skips seeding the shared cache / preloading the dead engine
+      // (#1755, Fix G) — even though the continuation runs on a later tick.
+      disposed = true;
       // Tear down the engine first, THEN each capability (#1755) — so a
       // capability's teardown runs against a stopped engine. Awaited so async
       // teardowns (closing an SSE stream, flushing a store) complete before
