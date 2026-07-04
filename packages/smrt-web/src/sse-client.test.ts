@@ -206,6 +206,10 @@ const CHANGE = (
   lastEventId: String(seq),
 });
 
+function searchParamsOf(url: string): URLSearchParams {
+  return new URL(url, 'http://smrt.local').searchParams;
+}
+
 // ---------------------------------------------------------------------------
 // Test-managed lifecycle
 // ---------------------------------------------------------------------------
@@ -544,9 +548,9 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
       const subscriber = trackSub(
         createSmrtWebEventSubscriber({
           eventsUrl: '/api/v1/_events',
-          changesUrl: '/api/v1/_changes',
+          changesUrl: '/api/v1/_changes?mode=live',
           // Force the polling branch: no EventSource can be constructed.
-          eventSourceFactory: () => null as unknown as SmrtWebEventSource,
+          eventSourceFactory: () => undefined,
           fetchFn: fetchFn as unknown as typeof fetch,
           pollIntervalMs: 5000,
         }),
@@ -570,12 +574,14 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
       await vi.advanceTimersByTimeAsync(5000);
       expect(pollUrls[0]).toContain('/api/v1/_changes');
       // First poll uses since=0 (no cursor yet).
-      expect(pollUrls[0]).toContain('since=0');
+      expect(searchParamsOf(pollUrls[0]).get('since')).toBe('0');
+      expect(searchParamsOf(pollUrls[0]).get('mode')).toBe('live');
+      expect(searchParamsOf(pollUrls[0]).get('tables')).toBe('products');
       await waitFor(() => scripted.calls.list >= 2);
 
       // Next poll advances since to the returned cursor (12).
       await vi.advanceTimersByTimeAsync(5000);
-      expect(pollUrls[1]).toContain('since=12');
+      expect(searchParamsOf(pollUrls[1]).get('since')).toBe('12');
 
       sub.unsubscribe();
     } finally {
@@ -583,7 +589,53 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
     }
   });
 
-  it('resyncRequired invalidates all + resets the cursor so the NEXT poll uses since=0', async () => {
+  it('skips polling with no registered tables and sends the current table filter when registered', async () => {
+    vi.useFakeTimers();
+    try {
+      const pollUrls: string[] = [];
+      const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+        pollUrls.push(String(input));
+        const since = searchParamsOf(String(input)).get('since');
+        return new Response(
+          JSON.stringify({ changes: [], cursor: Number(since) }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      });
+
+      const subscriber = trackSub(
+        createSmrtWebEventSubscriber({
+          eventsUrl: '/e',
+          changesUrl: '/c?scope=tenant',
+          eventSourceFactory: () => undefined,
+          fetchFn: fetchFn as unknown as typeof fetch,
+          pollIntervalMs: 1000,
+        }),
+      );
+      expect(subscriber.transport).toBe('polling');
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(fetchFn).not.toHaveBeenCalled();
+
+      const unregisterProducts = subscriber.registerTable('products', () => {});
+      const unregisterOrders = subscriber.registerTable('orders', () => {});
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      const params = searchParamsOf(pollUrls[0]);
+      expect(params.get('scope')).toBe('tenant');
+      expect(params.get('since')).toBe('0');
+      expect(params.get('tables')).toBe('orders,products');
+
+      unregisterProducts();
+      unregisterOrders();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('resyncRequired invalidates all + resumes polling from resyncCursor', async () => {
     vi.useFakeTimers();
     try {
       const pollUrls: string[] = [];
@@ -610,13 +662,14 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
           );
         }
         // Poll 2 (since=30): the server signals resyncRequired (HTTP 200) and
-        // does NOT advance the cursor — echoes since.
+        // keeps cursor echoing since, but includes a fresh resyncCursor.
         if (pollUrls.length === 2) {
           return new Response(
             JSON.stringify({
               changes: [],
               cursor: 30,
               resyncRequired: true,
+              resyncCursor: 120,
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
@@ -633,7 +686,7 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
         createSmrtWebEventSubscriber({
           eventsUrl: '/e',
           changesUrl: '/c',
-          eventSourceFactory: () => null as unknown as SmrtWebEventSource,
+          eventSourceFactory: () => undefined,
           fetchFn: fetchFn as unknown as typeof fetch,
           pollIntervalMs: 1000,
         }),
@@ -652,18 +705,19 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
 
       // Poll 1: since=0, cursor advances to 30.
       await vi.advanceTimersByTimeAsync(1000);
-      expect(pollUrls[0]).toContain('since=0');
+      expect(searchParamsOf(pollUrls[0]).get('since')).toBe('0');
       await waitFor(() => scripted.calls.list >= 2);
 
-      // Poll 2: since=30, server says resyncRequired → invalidateAll + reset.
+      // Poll 2: since=30, server says resyncRequired → invalidateAll +
+      // advance to the current horizon.
       await vi.advanceTimersByTimeAsync(1000);
-      expect(pollUrls[1]).toContain('since=30');
+      expect(searchParamsOf(pollUrls[1]).get('since')).toBe('30');
       await waitFor(() => scripted.calls.list >= 3);
 
-      // Poll 3: cursor was RESET (resyncRequired does not advance it), so this
-      // poll goes back to since=0 rather than looping forever on since=30.
+      // Poll 3: cursor resumes from resyncCursor, rather than looping on the
+      // rejected cursor or going back to a pruned since=0.
       await vi.advanceTimersByTimeAsync(1000);
-      expect(pollUrls[2]).toContain('since=0');
+      expect(searchParamsOf(pollUrls[2]).get('since')).toBe('120');
 
       sub.unsubscribe();
     } finally {
@@ -692,12 +746,13 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
         createSmrtWebEventSubscriber({
           eventsUrl: '/e',
           changesUrl: '/c',
-          eventSourceFactory: () => null as unknown as SmrtWebEventSource,
+          eventSourceFactory: () => undefined,
           fetchFn: fetchFn as unknown as typeof fetch,
           pollIntervalMs: 1000,
         }),
       );
       expect(subscriber.transport).toBe('polling');
+      const unregister = subscriber.registerTable('products', () => {});
 
       // First tick rejects — must be caught (no unhandled rejection), logged.
       await vi.advanceTimersByTimeAsync(1000);
@@ -706,6 +761,7 @@ describe('createSmrtWebEventSubscriber — polling fallback', () => {
       // The interval keeps ticking: the second poll runs (proves self-heal).
       await vi.advanceTimersByTimeAsync(1000);
       expect(fetchFn.mock.calls.length).toBeGreaterThanOrEqual(2);
+      unregister();
     } finally {
       vi.useRealTimers();
     }
@@ -776,6 +832,7 @@ describe('createSmrtWebEventSubscriber — runtime downgrade on fatal SSE error'
         }),
       );
       expect(subscriber.transport).toBe('sse');
+      const unregister = subscriber.registerTable('products', () => {});
 
       const es = latestEventSource();
       es.open();
@@ -789,6 +846,7 @@ describe('createSmrtWebEventSubscriber — runtime downgrade on fatal SSE error'
       // Polling is now live.
       await vi.advanceTimersByTimeAsync(1000);
       expect(fetchFn).toHaveBeenCalled();
+      unregister();
 
       // A further error must NOT flap back to SSE — it stays polling for life.
       es.simulateError({ fatal: true });
@@ -991,15 +1049,17 @@ describe('createSmrtWebEventSubscriber — close()', () => {
       const subscriber = createSmrtWebEventSubscriber({
         eventsUrl: '/e',
         changesUrl: '/c',
-        eventSourceFactory: () => null as unknown as SmrtWebEventSource,
+        eventSourceFactory: () => undefined,
         fetchFn: fetchFn as unknown as typeof fetch,
         pollIntervalMs: 1000,
       });
       expect(subscriber.transport).toBe('polling');
+      const unregister = subscriber.registerTable('products', () => {});
 
       await vi.advanceTimersByTimeAsync(1000);
       const callsBeforeClose = fetchFn.mock.calls.length;
       expect(callsBeforeClose).toBeGreaterThanOrEqual(1);
+      unregister();
 
       subscriber.close();
       await vi.advanceTimersByTimeAsync(5000);

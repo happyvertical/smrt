@@ -152,8 +152,9 @@ half in `packages/core/src/generators/`):
   tenantId}`, and the cursor `seq` is carried **only** in the SSE `id:` field
   (the browser mirrors it to `MessageEvent.lastEventId`). Heartbeats are
   `: heartbeat` comment lines EventSource ignores natively.
-- Pull — the `_changes` route (`changes-route.ts`): `GET {changesUrl}?since=`
-  → `{changes, cursor, resyncRequired?}`, the full fallback.
+- Pull — the `_changes` route (`changes-route.ts`): `GET {changesUrl}?since=
+  &tables=` → `{changes, cursor, resyncRequired?, resyncCursor?}`, the full
+  fallback.
 
 **The NAMED-event gotcha.** The frames are named, so the subscriber wires
 `es.addEventListener('change', …)` / `('resync', …)` — **`onmessage` never
@@ -176,13 +177,14 @@ no code — the browser auto-reconnects, resending Last-Event-ID. A **fatal** er
 (readyState CLOSED — server 401 / route disabled) downgrades to polling **for the
 subscriber's life (no flap-back)**.
 
-**Polling fallback + resync reset.** `poll()` fetches `{changesUrl}?since=
-${lastSeq ?? 0}`; each change invalidates its table and the cursor advances to
-the page cursor. `resyncRequired: true` (HTTP 200, does **not** advance the
-server cursor) invalidates everything and **resets `lastSeq` to null** so the
-next poll restarts at `since=0` — otherwise it loops forever on the same stale
-`since`. A fetch **rejection** is a separate path: caught + logged, the interval
-keeps ticking (self-heals).
+**Polling fallback + resync cursor.** `poll()` skips work until at least one
+table is registered, then fetches `{changesUrl}?since=${lastSeq ?? 0}&tables=`
+for the current registered physical tables; each returned change invalidates
+its table and the cursor advances to the page cursor. `resyncRequired: true`
+(HTTP 200, with `cursor` still echoing the rejected value) invalidates
+everything and resumes from `resyncCursor`, the server's current horizon after
+the client performs a full refetch. A fetch **rejection** is a separate path:
+caught + logged, the interval keeps ticking (self-heals).
 
 **Idempotent → no client-side seq dedup.** Re-invalidating on a replayed change
 (a reconnect replays the tail) is safe — invalidation only schedules a background

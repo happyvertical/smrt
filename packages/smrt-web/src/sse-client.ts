@@ -15,8 +15,9 @@
  *   are `: heartbeat` comment lines EventSource ignores natively.
  * - the pull channel — the generated `_changes` route
  *   (`packages/core/src/generators/changes-route.ts`): `GET {changesUrl}
- *   ?since=&tables=&limit=` → `{changes, cursor, resyncRequired?}`, the full
- *   fallback where SSE is unavailable.
+ *   ?since=&tables=&limit=` →
+ *   `{changes, cursor, resyncRequired?, resyncCursor?}`, the full fallback
+ *   where SSE is unavailable.
  *
  * ## No row payload, no tenant logic, no authorization here
  *
@@ -94,7 +95,7 @@ const EVENT_SOURCE_CLOSED = 2;
 export type SmrtWebEventSourceFactory = (
   url: string,
   init: { withCredentials: boolean },
-) => SmrtWebEventSource;
+) => SmrtWebEventSource | null | undefined;
 
 /** Configuration for {@link createSmrtWebEventSubscriber}. */
 export interface SmrtWebEventSubscriberConfig {
@@ -174,6 +175,7 @@ interface ChangesPageLike {
   changes: ChangeEntryLike[];
   cursor: number;
   resyncRequired?: boolean;
+  resyncCursor?: number;
 }
 
 /**
@@ -206,6 +208,25 @@ export function createSmrtWebEventSubscriber(
   let eventSource: SmrtWebEventSource | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let closed = false;
+
+  const registeredTables = (): string[] =>
+    [...tableInvalidators.keys()].sort((a, b) => a.localeCompare(b));
+
+  const buildChangesUrl = (since: number, tables: string[]): string => {
+    const url = new URL(changesUrl, 'http://smrt.local/');
+    url.searchParams.set('since', String(since));
+    url.searchParams.set('tables', tables.join(','));
+    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(changesUrl)) return url.href;
+    const pathQueryHash = `${url.pathname}${url.search}${url.hash}`;
+    if (changesUrl.startsWith('//')) return `//${url.host}${pathQueryHash}`;
+    if (changesUrl.startsWith('/')) return pathQueryHash;
+    return pathQueryHash.startsWith('/')
+      ? pathQueryHash.slice(1)
+      : pathQueryHash;
+  };
+
+  const isFiniteNumber = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(value);
 
   /**
    * Report a fault without a logger dep (smrt-web is TanStack-only) — a
@@ -277,26 +298,33 @@ export function createSmrtWebEventSubscriber(
   };
 
   /**
-   * Poll `_changes` once from the resume cursor. `resyncRequired` (HTTP 200,
-   * does NOT advance the server cursor) invalidates everything and RESETS the
-   * cursor to `null` so the next poll restarts at `since=0` — otherwise it would
-   * loop forever re-requesting the same stale `since`. Otherwise each change
-   * invalidates its table and the cursor advances to the page cursor. A fetch
-   * rejection is caught+logged; the interval keeps ticking (self-heals) — a
-   * path distinct from `resyncRequired`.
+   * Poll `_changes` once from the resume cursor. `resyncRequired` (HTTP 200)
+   * invalidates everything, then resumes from the server-provided
+   * `resyncCursor` horizon so a pruned `since=0` does not loop forever.
+   * Otherwise each change invalidates its table and the cursor advances to the
+   * page cursor. A fetch rejection is caught+logged; the interval keeps ticking
+   * (self-heals) — a path distinct from `resyncRequired`.
    */
   const poll = async (): Promise<void> => {
     if (closed) return;
+    const tables = registeredTables();
+    if (tables.length === 0) return;
     try {
       const since = lastSeq ?? 0;
-      const url = `${changesUrl}?since=${since}`;
+      const url = buildChangesUrl(since, tables);
       const response = await fetchFn(url, { credentials: 'include' });
       if (closed) return;
       const page = (await response.json()) as ChangesPageLike;
       if (closed) return;
       if (page.resyncRequired) {
         invalidateAll();
-        lastSeq = null;
+        if (isFiniteNumber(page.resyncCursor)) {
+          lastSeq = page.resyncCursor;
+        } else if (isFiniteNumber(page.cursor) && page.cursor > since) {
+          lastSeq = page.cursor;
+        } else {
+          lastSeq = null;
+        }
         return;
       }
       for (const change of page.changes ?? []) {

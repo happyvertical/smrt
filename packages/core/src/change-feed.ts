@@ -80,7 +80,8 @@
  * always retains the newest entry, so retained sequences stay a contiguous
  * `[floor..horizon]` run — which is how {@link getChangesSince} *detects* a
  * consumer whose cursor predates the retained window and answers it with
- * `resyncRequired: true` instead of silently skipping the pruned changes.
+ * `resyncRequired: true` plus a fresh resume cursor instead of silently
+ * skipping the pruned changes.
  *
  * @see https://github.com/happyvertical/smrt/issues/1758
  * @packageDocumentation
@@ -142,7 +143,7 @@ export interface GetChangesOptions {
    * start, `since: 0` (like any cursor older than the retained window) can no
    * longer be served incrementally — the read returns
    * {@link ChangeFeedPage.resyncRequired} and the caller must do a full
-   * resync.
+   * resync before resuming from {@link ChangeFeedPage.resyncCursor}.
    */
   since: number;
   /** Restrict to these physical table names. Empty/omitted → all tables. */
@@ -185,13 +186,21 @@ export interface ChangeFeedPage {
    * - the cursor is ahead of the committed horizon / unknown to this
    *   database (a foreign or reset cursor).
    *
-   * When set, `changes` is empty and `cursor` echoes `since` unchanged —
-   * the consumer must re-fetch its data in full and restart polling from
-   * the cursor returned by its post-resync read. Detection is computed on
-   * the **unfiltered** log: `tables`/`tenantId` filters legitimately hide
-   * rows and never trigger (or mask) a resync signal.
+   * When set, `changes` is empty and `cursor` echoes `since` unchanged.
+   * After its full data refetch, the consumer should resume polling from
+   * {@link resyncCursor}, the committed horizon observed by this read.
+   * Detection is computed on the **unfiltered** log: `tables`/`tenantId`
+   * filters legitimately hide rows and never trigger (or mask) a resync
+   * signal.
    */
   resyncRequired?: boolean;
+  /**
+   * Current committed horizon to use after handling a resync. Present with
+   * {@link resyncRequired}; separated from `cursor` so old callers that rely
+   * on `cursor` echoing the rejected value keep their monotonic-cursor
+   * invariant.
+   */
+  resyncCursor?: number;
 }
 
 /** Input for {@link appendChange} / {@link bumpChangeFeed}. */
@@ -433,8 +442,9 @@ export async function bumpChangeFeed(
  * ## Resync detection (pruned / foreign cursors)
  *
  * A cursor that cannot be served incrementally is flagged with
- * `resyncRequired: true` (empty `changes`, `cursor` echoed unchanged) so
- * pollers never go silently, permanently stale:
+ * `resyncRequired: true` (empty `changes`, `cursor` echoed unchanged,
+ * `resyncCursor` set to the current horizon) so pollers never go silently,
+ * permanently stale:
  *
  * - **Pruned gap**: retained sequences always form a contiguous run
  *   `[floor..horizon]` and {@link pruneChangeFeed} deletes oldest-first
@@ -489,17 +499,27 @@ export async function getChangesSince(
     // cannot be served incrementally.
     return since === 0
       ? { changes: [], cursor: 0 }
-      : { changes: [], cursor: since, resyncRequired: true };
+      : { changes: [], cursor: since, resyncRequired: true, resyncCursor: 0 };
   }
 
   if (since > horizon) {
     // Foreign or reset cursor — ahead of anything this database allocated.
-    return { changes: [], cursor: since, resyncRequired: true };
+    return {
+      changes: [],
+      cursor: since,
+      resyncRequired: true,
+      resyncCursor: horizon,
+    };
   }
 
   if (since < floor - 1) {
     // Pruned gap — the changes with seq in (since, floor) are gone for good.
-    return { changes: [], cursor: since, resyncRequired: true };
+    return {
+      changes: [],
+      cursor: since,
+      resyncRequired: true,
+      resyncCursor: horizon,
+    };
   }
 
   if (horizon === since) {
