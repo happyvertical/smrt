@@ -74,6 +74,28 @@ class RestExcludeWidgetCollection extends SmrtCollection<RestExcludeWidget> {
   static readonly _itemClass = RestExcludeWidget;
 }
 
+@smrt({
+  api: { public: 'read', cache: { sMaxage: 120 } },
+})
+class RestReadPermissionWidget extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+
+  @field({ type: 'text', readPermission: 'widgets.read.internal' })
+  internalNote: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name !== undefined) this.name = options.name;
+    if (options.internalNote !== undefined)
+      this.internalNote = options.internalNote;
+  }
+}
+
+class RestReadPermissionWidgetCollection extends SmrtCollection<RestReadPermissionWidget> {
+  static readonly _itemClass = RestReadPermissionWidget;
+}
+
 describe('REST generator route map (#1500)', () => {
   ObjectRegistry.registerCollection(
     'RestRouteWidget',
@@ -87,21 +109,45 @@ describe('REST generator route map (#1500)', () => {
     'RestExcludeWidget',
     RestExcludeWidgetCollection,
   );
+  ObjectRegistry.registerCollection(
+    'RestReadPermissionWidget',
+    RestReadPermissionWidgetCollection,
+  );
 
   let db: any;
   let handler: (req: Request) => Promise<Response>;
   let collection: RestRouteWidgetCollection;
+  let permissionCollection: RestReadPermissionWidgetCollection;
+  let permissionWidgetId: string;
 
   beforeAll(async () => {
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
-      classes: ['RestRouteWidget', 'RestReadOnlyWidget', 'RestExcludeWidget'],
+      classes: [
+        'RestRouteWidget',
+        'RestReadOnlyWidget',
+        'RestExcludeWidget',
+        'RestReadPermissionWidget',
+      ],
     });
     collection = await RestRouteWidgetCollection.create({ db });
+    permissionCollection = await RestReadPermissionWidgetCollection.create({
+      db,
+    });
+    const permissionWidget = await permissionCollection.create({
+      name: 'Permissioned',
+      internalNote: 'internal',
+    });
+    await permissionWidget.save();
+    permissionWidgetId = permissionWidget.id;
 
     const api = new APIGenerator({ basePath: '/api/v1' });
     api.registerCollection('restroutewidgets', collection);
+    api.registerCollection(
+      'restreadpermissionwidgets',
+      permissionCollection as unknown as SmrtCollection<SmrtObject>,
+    );
     handler = api.generateHandler();
   });
 
@@ -237,6 +283,58 @@ describe('REST generator route map (#1500)', () => {
         }),
       );
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('field read-permission conditional reads', () => {
+    it('uses a private body-hash validator for caller-specific payloads', async () => {
+      const publicRes = await handler(
+        new Request(
+          `http://local/api/v1/restreadpermissionwidgets/${permissionWidgetId}`,
+        ),
+      );
+      expect(publicRes.status).toBe(200);
+      expect(publicRes.headers.get('cache-control')).toBe('private, no-cache');
+      const publicEtag = publicRes.headers.get('etag');
+      expect(publicEtag).toBeTruthy();
+      const publicJson = (await publicRes.json()) as Record<string, unknown>;
+      expect(publicJson.name).toBe('Permissioned');
+      expect(publicJson).not.toHaveProperty('internalNote');
+
+      const internalApi = new APIGenerator(
+        { basePath: '/api/v1' },
+        { permissions: ['widgets.read.internal'] },
+      );
+      internalApi.registerCollection(
+        'restreadpermissionwidgets',
+        permissionCollection as unknown as SmrtCollection<SmrtObject>,
+      );
+      const internalHandler = internalApi.generateHandler();
+
+      const internalRes = await internalHandler(
+        new Request(
+          `http://local/api/v1/restreadpermissionwidgets/${permissionWidgetId}`,
+          { headers: { 'if-none-match': publicEtag ?? '' } },
+        ),
+      );
+      expect(internalRes.status).toBe(200);
+      const internalEtag = internalRes.headers.get('etag');
+      expect(internalEtag).toBeTruthy();
+      expect(internalEtag).not.toBe(publicEtag);
+      const internalJson = (await internalRes.json()) as Record<
+        string,
+        unknown
+      >;
+      expect(internalJson.internalNote).toBe('internal');
+
+      const revalidated = await internalHandler(
+        new Request(
+          `http://local/api/v1/restreadpermissionwidgets/${permissionWidgetId}`,
+          { headers: { 'if-none-match': internalEtag ?? '' } },
+        ),
+      );
+      expect(revalidated.status).toBe(304);
+      expect(await revalidated.text()).toBe('');
     });
   });
 

@@ -1771,9 +1771,8 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         "import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';",
       );
-      expect(collectionContent).toContain(
-        'items.map((item) => serializeItemResponse(item))',
-      );
+      expect(collectionContent).toContain('await serializeItemResponse(item)');
+      expect(collectionContent).toContain('applyReadPermissionRedaction(');
       // Content uses a custom serializer (serializeContent loads related tables),
       // so the route keeps the v1 body-hash ETag rather than the v2 per-table
       // version source, which cannot observe related-table changes (#1765).
@@ -1785,7 +1784,7 @@ describe('SvelteKit Route Generator', () => {
         'const serializedItem = await serializeItemResponse(item);',
       );
       expect(collectionContent).toContain(
-        'return json(serializedItem, { status: 201 });',
+        'applyReadPermissionRedaction(serializedItem, publicJsonOptions)',
       );
 
       const itemRoute = vi
@@ -1802,7 +1801,9 @@ describe('SvelteKit Route Generator', () => {
       expect(itemContent).toContain(
         'const serializedItem = await serializeItemResponse(item);',
       );
-      expect(itemContent).toContain('return json(serializedItem);');
+      expect(itemContent).toContain(
+        'return json(applyReadPermissionRedaction(serializedItem, publicJsonOptions));',
+      );
     });
 
     it('should support a dedicated list item serializer', async () => {
@@ -1853,8 +1854,9 @@ describe('SvelteKit Route Generator', () => {
         "import { serializeContentListItem as serializeListItemResponse } from '$lib/server/content-api-serializers';",
       );
       expect(collectionContent).toContain(
-        'items.map((item) => serializeListItemResponse(item))',
+        'await serializeListItemResponse(item)',
       );
+      expect(collectionContent).toContain('applyReadPermissionRedaction(');
     });
   });
 

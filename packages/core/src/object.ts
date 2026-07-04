@@ -204,6 +204,37 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
 }
 
 /**
+ * Caller context for public/read serialization.
+ */
+export interface PublicJsonOptions {
+  /**
+   * Resolved permission slugs held by the caller. Fields declared with
+   * `@field({ readPermission })` are omitted unless this iterable contains the
+   * required slug. Missing permissions fail closed.
+   */
+  permissions?: Iterable<string> | null;
+}
+
+interface PublicJsonProjectionContext {
+  permissions: ReadonlySet<string>;
+}
+
+const EMPTY_PUBLIC_JSON_PERMISSIONS = new Set<string>();
+
+function normalizePublicJsonOptions(
+  options: PublicJsonOptions | undefined,
+): PublicJsonProjectionContext {
+  const rawPermissions = options?.permissions;
+  if (!rawPermissions) {
+    return { permissions: EMPTY_PUBLIC_JSON_PERMISSIONS };
+  }
+  if (rawPermissions instanceof Set) {
+    return { permissions: rawPermissions };
+  }
+  return { permissions: new Set(rawPermissions) };
+}
+
+/**
  * Options for the relationship loaders {@link SmrtObject.loadRelated},
  * {@link SmrtObject.loadRelatedMany}, and {@link SmrtObject.getRelated}.
  */
@@ -1299,15 +1330,16 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Collects the property names of fields marked `@field({ sensitive: true })`
-   * for this instance's class (and, under STI, every member of its hierarchy,
-   * since `toJSON()` merges sibling fields into the serialized payload).
+   * Collect public-serialization field policy in one registry traversal.
    *
-   * Reads both the first-class `sensitive` flag and the `_meta.sensitive`
-   * mirror so it works regardless of whether the field metadata came from the
-   * AST manifest or a runtime `@field()` decorator registration.
+   * Sensitive/read-permission flags are read from this instance's class and,
+   * under STI, every member of its hierarchy because `toJSON()` merges sibling
+   * fields into the serialized payload.
    */
-  private getSensitiveFieldNames(): Set<string> {
+  private getPublicFieldPolicies(): {
+    sensitive: Set<string>;
+    readPermissions: Map<string, string>;
+  } {
     const className = this.getResolvedClassName();
     const registered = ObjectRegistry.getClass(className);
     const fieldMaps: Map<string, RegisteredField>[] = [
@@ -1330,14 +1362,24 @@ export class SmrtObject extends SmrtClass {
     }
 
     const sensitive = new Set<string>();
+    const readPermissions = new Map<string, string>();
     for (const fields of fieldMaps) {
       for (const [key, def] of fields) {
         if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
           sensitive.add(key);
         }
+        const permission =
+          typeof def?.readPermission === 'string'
+            ? def.readPermission
+            : typeof def?._meta?.readPermission === 'string'
+              ? def._meta.readPermission
+              : undefined;
+        if (permission) {
+          readPermissions.set(key, permission);
+        }
       }
     }
-    return sensitive;
+    return { sensitive, readPermissions };
   }
 
   /**
@@ -1351,8 +1393,11 @@ export class SmrtObject extends SmrtClass {
    *
    * @returns A plain object safe to send to API consumers.
    */
-  toPublicJSON(): Record<string, unknown> {
-    return this.projectPublicJSON(new WeakSet<SmrtObject>());
+  toPublicJSON(options?: PublicJsonOptions): Record<string, unknown> {
+    return this.projectPublicJSON(
+      new WeakSet<SmrtObject>(),
+      normalizePublicJsonOptions(options),
+    );
   }
 
   /**
@@ -1374,16 +1419,29 @@ export class SmrtObject extends SmrtClass {
    */
   private projectPublicJSON(
     seen: WeakSet<SmrtObject>,
+    context: PublicJsonProjectionContext,
   ): Record<string, unknown> {
     const json = this.toJSON() as Record<string, unknown>;
-    const sensitiveFields = this.getSensitiveFieldNames();
+    const { sensitive, readPermissions } = this.getPublicFieldPolicies();
+    const metaData =
+      json._meta_data && typeof json._meta_data === 'object'
+        ? (json._meta_data as Record<string, unknown>)
+        : null;
 
-    if (sensitiveFields.size > 0) {
-      const metaData =
-        json._meta_data && typeof json._meta_data === 'object'
-          ? (json._meta_data as Record<string, unknown>)
-          : null;
-      for (const name of sensitiveFields) {
+    if (sensitive.size > 0) {
+      for (const name of sensitive) {
+        delete json[name];
+        if (metaData) {
+          delete metaData[name];
+        }
+      }
+    }
+
+    if (readPermissions.size > 0) {
+      for (const [name, permission] of readPermissions) {
+        if (context.permissions.has(permission)) {
+          continue;
+        }
         delete json[name];
         if (metaData) {
           delete metaData[name];
@@ -1394,7 +1452,7 @@ export class SmrtObject extends SmrtClass {
     seen.add(this);
     try {
       for (const key of Object.keys(json)) {
-        json[key] = SmrtObject.sanitizePublicValue(json[key], seen);
+        json[key] = SmrtObject.sanitizePublicValue(json[key], seen, context);
       }
     } finally {
       seen.delete(this);
@@ -1411,6 +1469,7 @@ export class SmrtObject extends SmrtClass {
   private static sanitizePublicValue(
     value: unknown,
     seen: WeakSet<SmrtObject>,
+    context: PublicJsonProjectionContext,
   ): unknown {
     if (value instanceof SmrtObject) {
       // Cycle: this instance is already on the current ancestor path.
@@ -1418,10 +1477,12 @@ export class SmrtObject extends SmrtClass {
       if (seen.has(value)) {
         return undefined;
       }
-      return value.projectPublicJSON(seen);
+      return value.projectPublicJSON(seen, context);
     }
     if (Array.isArray(value)) {
-      return value.map((item) => SmrtObject.sanitizePublicValue(item, seen));
+      return value.map((item) =>
+        SmrtObject.sanitizePublicValue(item, seen, context),
+      );
     }
     // Only descend into plain objects (e.g. `_meta_data`, parsed JSON fields).
     // Leave Date / Map / other class instances untouched so we never rewrite
@@ -1433,7 +1494,7 @@ export class SmrtObject extends SmrtClass {
         for (const [key, item] of Object.entries(
           value as Record<string, unknown>,
         )) {
-          out[key] = SmrtObject.sanitizePublicValue(item, seen);
+          out[key] = SmrtObject.sanitizePublicValue(item, seen, context);
         }
         return out;
       }
@@ -3174,10 +3235,10 @@ export class SmrtObject extends SmrtClass {
 
     // For cross-package qualified targets, derive the simple name for column conventions
     const targetSimpleName = relationship.targetClass.includes(':')
-      ? relationship.targetClass.split(':').pop()!
+      ? (relationship.targetClass.split(':').pop() ?? relationship.targetClass)
       : relationship.targetClass;
     const sourceSimpleName = relationship.sourceClass.includes(':')
-      ? relationship.sourceClass.split(':').pop()!
+      ? (relationship.sourceClass.split(':').pop() ?? relationship.sourceClass)
       : relationship.sourceClass;
 
     const sourceColumn =

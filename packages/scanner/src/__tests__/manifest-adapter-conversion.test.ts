@@ -150,6 +150,26 @@ describe('ManifestAdapter conversion', () => {
       expect(result?.related).toBe('Node');
     });
 
+    it('promotes readPermission while preserving it in field metadata', () => {
+      const result = adapter.convertField(
+        field({
+          name: 'wholesalePrice',
+          typeAnnotation: 'number',
+          initializer: '0.0',
+          hasDecimalPoint: true,
+          decorators: [
+            {
+              name: 'field',
+              arguments: ['{ readPermission: "products.read.internal" }'],
+            },
+          ],
+        }),
+      );
+
+      expect(result?.readPermission).toBe('products.read.internal');
+      expect(result?._meta?.readPermission).toBe('products.read.internal');
+    });
+
     it('ignores a non-object @field argument', () => {
       const result = adapter.convertField(
         field({

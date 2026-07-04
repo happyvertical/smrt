@@ -103,6 +103,14 @@ export interface FieldOptions {
    * cannot mass-assign them. Server-side code can still set them directly.
    */
   readonly?: boolean;
+  /**
+   * Permission slug required to include this field in public/read responses.
+   *
+   * Fields with a read permission are fail-closed: generated serializers omit
+   * them unless the caller's resolved permission set contains this slug.
+   * `sensitive: true` still wins and omits the field for every caller.
+   */
+  readPermission?: string;
   /** Field description */
   description?: string;
   /**

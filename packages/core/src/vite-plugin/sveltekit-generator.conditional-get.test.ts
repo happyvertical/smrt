@@ -111,15 +111,15 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     expect(itemRoute).toContain(
       'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
     );
-    expect(itemRoute).toContain('return item.toPublicJSON();');
+    expect(itemRoute).toContain('return item.toPublicJSON(publicJsonOptions);');
 
     // Mutation handlers stay as-is (plain json responses, no conditional).
     expect(collectionRoute).toContain(
-      'return json(item.toPublicJSON(), { status: 201 });',
+      'return json(item.toPublicJSON(publicJsonOptions), { status: 201 });',
     );
     expect(itemRoute).toContain('export const PUT: RequestHandler');
     expect(itemRoute).toMatch(
-      /PUT[\s\S]*return json\(item\.toPublicJSON\(\)\);/,
+      /PUT[\s\S]*return json\(item\.toPublicJSON\(publicJsonOptions\)\);/,
     );
   });
 
@@ -146,9 +146,8 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     expect(collectionRoute).toContain(
       'return conditionalJson(request, { items: serializedItems, count, limit, offset });',
     );
-    expect(itemRoute).toContain(
-      'return conditionalJson(request, serializedItem);',
-    );
+    expect(itemRoute).toContain('applyReadPermissionRedaction(');
+    expect(itemRoute).toContain('serializedItem, publicJsonOptions');
   });
 
   it('bakes the private default policy into routes for non-public models', async () => {

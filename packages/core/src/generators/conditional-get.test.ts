@@ -157,6 +157,16 @@ describe('resolveReadCacheControl policy matrix (#1757)', () => {
       ),
     ).toBe('public, max-age=0, s-maxage=300');
   });
+
+  it('read-permission-scoped models NEVER emit shared-cache headers', () => {
+    const value = resolveReadCacheControl(
+      { public: 'read', cache: { sMaxage: 300 } },
+      { permissionScoped: true },
+    );
+    expect(value).toBe(PRIVATE_READ_CACHE_CONTROL);
+    expect(value).not.toContain('s-maxage');
+    expect(value).not.toContain('public');
+  });
 });
 
 describe('warnIfSharedCacheNeutralized (#1757)', () => {
@@ -170,6 +180,30 @@ describe('warnIfSharedCacheNeutralized (#1757)', () => {
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn.mock.calls[0][0]).toContain('WarnOnceModel');
       expect(warn.mock.calls[0][0]).toContain('sMaxage');
+      expect(warn.mock.calls[0][0]).toContain('private, no-cache');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('warns once per model when a read-permission model configures sMaxage', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      warnIfSharedCacheNeutralized(
+        'PermissionWarnOnceModel',
+        neutralizedConfig,
+        false,
+        true,
+      );
+      warnIfSharedCacheNeutralized(
+        'PermissionWarnOnceModel',
+        neutralizedConfig,
+        false,
+        true,
+      );
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain('PermissionWarnOnceModel');
+      expect(warn.mock.calls[0][0]).toContain('caller permissions');
       expect(warn.mock.calls[0][0]).toContain('private, no-cache');
     } finally {
       warn.mockRestore();
@@ -334,5 +368,18 @@ describe('emitted SvelteKit route helper: ETag v2 structure (#1765)', () => {
     expect(snippet).toContain(
       `const READ_CACHE_CONTROL = '${PRIVATE_READ_CACHE_CONTROL}';`,
     );
+  });
+
+  it('bakes private cache for permission-scoped routes even with public + sMaxage', () => {
+    const snippet = generateConditionalGetRouteHelper(
+      { public: 'read', cache: { sMaxage: 120 } },
+      { permissionScoped: true },
+    );
+    expect(snippet).toContain('function conditionalJson(');
+    expect(snippet).not.toContain('conditionalVersionedRead');
+    expect(snippet).toContain(
+      `const READ_CACHE_CONTROL = '${PRIVATE_READ_CACHE_CONTROL}';`,
+    );
+    expect(snippet).not.toContain('s-maxage');
   });
 });

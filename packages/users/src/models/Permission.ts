@@ -17,23 +17,24 @@ export interface ParsedPermissionSlug {
   resource: string;
   /** Action part (e.g., 'create' from 'articles.create') */
   action: string;
-  /** Whether the slug follows the valid 'resource.action' pattern */
+  /** Whether the slug follows the valid 'resource.action[.scope...]' pattern */
   isValid: boolean;
 }
 
 /**
  * Parse a permission slug into its resource and action components.
- * Valid format: 'resource.action' (e.g., 'articles.create')
+ * Valid format: 'resource.action[.scope...]' (e.g., 'articles.create' or
+ * 'products.read.internal')
  *
  * @param slug - The permission slug to parse
  * @returns Parsed components with validation status
  */
 export function parsePermissionSlug(slug: string): ParsedPermissionSlug {
   const parts = slug.split('.');
-  if (parts.length === 2 && parts[0] && parts[1]) {
+  if (parts.length >= 2 && parts.every(Boolean)) {
     return {
       resource: parts[0],
-      action: parts[1],
+      action: parts.slice(1).join('.'),
       isValid: true,
     };
   }
@@ -45,7 +46,8 @@ export function parsePermissionSlug(slug: string): ParsedPermissionSlug {
 }
 
 /**
- * Validate that a permission slug follows the 'resource.action' pattern.
+ * Validate that a permission slug follows the 'resource.action[.scope...]'
+ * pattern.
  *
  * @param slug - The slug to validate
  * @returns true if valid, false otherwise
@@ -67,7 +69,8 @@ export interface PermissionOptions extends SmrtObjectOptions {
  * Permission represents a named capability in the system.
  *
  * Permissions are defined by the application and assigned to roles.
- * Permission slugs follow the pattern: resource.action (e.g., 'articles.create')
+ * Permission slugs follow the pattern: resource.action[.scope...] (e.g.,
+ * 'articles.create' or 'products.read.internal')
  *
  * @example
  * ```typescript
