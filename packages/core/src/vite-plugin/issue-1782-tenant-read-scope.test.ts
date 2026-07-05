@@ -103,6 +103,110 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     );
   });
 
+  it('scopes custom item GET action host loads to global rows', async () => {
+    await generate({
+      objects: {
+        PublicTenantDoc: {
+          className: 'PublicTenantDoc',
+          collection: 'publictenantdocs',
+          fields: { title: { type: 'text' } },
+          methods: {
+            listVersions: {
+              name: 'listVersions',
+              parameters: [],
+              returnType: 'Promise<any>',
+              isPublic: true,
+            },
+          },
+          decoratorConfig: {
+            api: {
+              public: 'read',
+              include: ['listVersions'],
+              routes: {
+                listVersions: { method: 'GET', path: 'versions' },
+              },
+            },
+            tenantScoped: { mode: 'optional' },
+          },
+        },
+      },
+    } as unknown as SmartObjectManifest);
+
+    const actionRoute = findRouteContent(
+      'publictenantdocs/[id]/versions/+server.ts',
+    );
+
+    expect(actionRoute).toContain('function tenantReadScope()');
+    expect(actionRoute).toContain('const readScope = tenantReadScope();');
+    expect(actionRoute).toContain(
+      'readScope ? { id: params.id, ...readScope } : params.id',
+    );
+    expect(actionRoute).toContain('await item.listVersions()');
+  });
+
+  it('passes custom collection GET options through the fail-closed read scope', async () => {
+    await generate({
+      objects: {
+        PublicTenantDoc: {
+          className: 'PublicTenantDoc',
+          collection: 'publictenantdocs',
+          fields: { title: { type: 'text' } },
+          methods: {},
+          decoratorConfig: {
+            api: false,
+            tenantScoped: { mode: 'optional' },
+          },
+        },
+        PublicTenantDocCollection: {
+          className: 'PublicTenantDocCollection',
+          collection: 'publictenantdocs',
+          fields: {},
+          methods: {
+            getBySlug: {
+              name: 'getBySlug',
+              parameters: [{ name: 'options', type: 'any' }],
+              returnType: 'Promise<any>',
+              isPublic: true,
+            },
+          },
+          decoratorConfig: {
+            api: {
+              public: 'read',
+              include: ['getBySlug'],
+              routes: {
+                getBySlug: { method: 'GET', path: 'by-slug' },
+              },
+            },
+          },
+          extends: 'SmrtCollection',
+          extendsTypeArg: 'PublicTenantDoc',
+        },
+      },
+    } as unknown as SmartObjectManifest);
+
+    const collectionActionRoute = findRouteContent(
+      'publictenantdocs/by-slug/+server.ts',
+    );
+
+    expect(collectionActionRoute).toContain('function tenantReadScope()');
+    expect(collectionActionRoute).toContain(
+      'function tenantReadOptionsScope()',
+    );
+    expect(collectionActionRoute).toContain('isSuperAdminBypass()');
+    expect(collectionActionRoute).toContain(
+      'getCurrentTenant()?.tenantId ?? null',
+    );
+    expect(collectionActionRoute).toContain(
+      'const readScope = tenantReadOptionsScope();',
+    );
+    expect(collectionActionRoute).toContain(
+      '? ({ ...options, ...readScope } as ActionArgs[0])',
+    );
+    expect(collectionActionRoute).toContain(
+      'await typedCollection.getBySlug(scopedOptions)',
+    );
+  });
+
   it('does NOT add the read scope to a non-tenant model’s routes', async () => {
     await generate({
       objects: {

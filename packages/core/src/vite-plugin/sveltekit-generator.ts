@@ -26,6 +26,7 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types';
 import { generateChangesRoute } from './changes-route.js';
+import { generateEventsRoute } from './events-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateSyncApplyRoute } from './sync-apply-route.js';
 
@@ -48,6 +49,12 @@ export interface SvelteKitOptions {
    * (the route is auth-guarded fail-closed); set `enabled: false` to skip.
    */
   changesRoute?: { enabled?: boolean };
+  /**
+   * Live `_events` SSE route generation (#1763). Enabled by default (the route
+   * is auth-guarded fail-closed, same-origin only); set `enabled: false` to
+   * skip.
+   */
+  eventsRoute?: { enabled?: boolean };
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -358,6 +365,105 @@ function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
   return false;
 }
 
+function toFieldColumnAlias(fieldName: string): string {
+  return fieldName
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z\d])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
+}
+
+function manifestObjectKey(objectDef: SmartObjectDefinition): string {
+  return objectDef.qualifiedName ?? objectDef.className;
+}
+
+function manifestObjectExtends(
+  objectDef: SmartObjectDefinition,
+  parent: SmartObjectDefinition,
+): boolean {
+  const extendsQualified = objectDef.extendsQualified;
+  const extendsName = objectDef.extends;
+  return (
+    (typeof extendsQualified === 'string' &&
+      extendsQualified === parent.qualifiedName) ||
+    (typeof extendsName === 'string' &&
+      (extendsName === parent.className ||
+        extendsName === parent.qualifiedName))
+  );
+}
+
+function findManifestParent(
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): SmartObjectDefinition | undefined {
+  return Object.values(manifest.objects).find((candidate) =>
+    manifestObjectExtends(objectDef, candidate),
+  );
+}
+
+function collectStiHierarchyObjects(
+  objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
+): SmartObjectDefinition[] {
+  if (!manifest) return [objectDef];
+
+  let cursor: SmartObjectDefinition | undefined = objectDef;
+  let stiBase: SmartObjectDefinition | undefined =
+    cursor.decoratorConfig?.tableStrategy === 'sti' ? cursor : undefined;
+  while (cursor) {
+    const parent = findManifestParent(cursor, manifest);
+    if (!parent) break;
+    if (parent.decoratorConfig?.tableStrategy === 'sti') {
+      stiBase = parent;
+    }
+    cursor = parent;
+  }
+
+  if (!stiBase) return [objectDef];
+
+  const members = new Map<string, SmartObjectDefinition>();
+  const visit = (current: SmartObjectDefinition) => {
+    const key = manifestObjectKey(current);
+    if (members.has(key)) return;
+    members.set(key, current);
+    for (const candidate of Object.values(manifest.objects)) {
+      if (candidate === current) continue;
+      if (manifestObjectExtends(candidate, current)) {
+        visit(candidate);
+      }
+    }
+  };
+
+  visit(stiBase);
+  return [...members.values()];
+}
+
+function collectReadPermissionFields(
+  objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
+): Array<[string, string]> {
+  const result: Array<[string, string]> = [];
+  const seen = new Set<string>();
+  for (const member of collectStiHierarchyObjects(objectDef, manifest)) {
+    for (const [name, def] of Object.entries(member.fields ?? {})) {
+      const permission =
+        typeof def.readPermission === 'string'
+          ? def.readPermission
+          : typeof def._meta?.readPermission === 'string'
+            ? def._meta.readPermission
+            : undefined;
+      if (!permission) continue;
+      for (const fieldName of [name, toFieldColumnAlias(name)]) {
+        const key = `${fieldName}\0${permission}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push([fieldName, permission]);
+      }
+    }
+  }
+  return result;
+}
+
 /**
  * Emit the fail-closed authorization guard injected into generated route files
  * (#1540, 2c). Every generated CRUD/action handler calls `requireRouteAuth`,
@@ -365,13 +471,22 @@ function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
  * authenticated principal. Mirrors the knowledge-route `isKnowledgeAdmin`
  * precedent. Mutating verbs require auth even when reads are public.
  */
-function generateAuthGuardHelper(objectDef: SmartObjectDefinition): string {
+function generateAuthGuardHelper(
+  objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
+): string {
   const publicAccess = getApiPublicAccess(objectDef.decoratorConfig?.api);
+  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
 
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
 const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
+const READ_PERMISSION_FIELDS: Array<[string, string]> = ${JSON.stringify(readPermissionFields)};
+
+interface PublicJsonOptions {
+  permissions?: Iterable<string>;
+}
 
 function hasAuthenticatedPrincipal(locals: unknown): boolean {
   if (!locals || typeof locals !== 'object') return false;
@@ -399,13 +514,74 @@ function requireRouteAuth(locals: unknown, mutating: boolean): void {
   }
 }
 
+function getPublicJsonOptions(locals: unknown): PublicJsonOptions {
+  const l = readJsonRecord(locals);
+  const permissions = l.permissions ?? l.permissionSet ?? l.smrtPermissions;
+  if (Array.isArray(permissions) || permissions instanceof Set) {
+    return { permissions };
+  }
+  return {};
+}
+
+function hasReadPermission(
+  options: PublicJsonOptions,
+  permission: string,
+): boolean {
+  if (!options.permissions) return false;
+  for (const granted of options.permissions) {
+    if (granted === permission) return true;
+  }
+  return false;
+}
+
+function applyReadPermissionRedaction(
+  value: unknown,
+  options: PublicJsonOptions,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (seen.has(value)) return null;
+  if (hasPublicJson(value)) {
+    seen.add(value);
+    return applyReadPermissionRedaction(
+      value.toPublicJSON(options),
+      options,
+      seen,
+    );
+  }
+  if (Array.isArray(value)) {
+    seen.add(value);
+    return value.map((entry) =>
+      applyReadPermissionRedaction(entry, options, seen),
+    );
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  seen.add(value);
+  const out = { ...(value as Record<string, unknown>) };
+  const metaData =
+    out._meta_data && typeof out._meta_data === 'object'
+      ? { ...(out._meta_data as Record<string, unknown>) }
+      : null;
+  for (const [fieldName, permission] of READ_PERMISSION_FIELDS) {
+    if (hasReadPermission(options, permission)) continue;
+    delete out[fieldName];
+    if (metaData) delete metaData[fieldName];
+  }
+  if (metaData) out._meta_data = metaData;
+  for (const [key, entry] of Object.entries(out)) {
+    out[key] = applyReadPermissionRedaction(entry, options, seen);
+  }
+  return out;
+}
+
 // Sensitive-field-safe serialization for custom-action results (#1540): a
 // custom method may return a SmrtObject (or one nested in an array/plain
 // object), so recurse and route each through toPublicJSON() rather than letting
 // JSON.stringify call toJSON(). Non-plain instances (Date, etc.) and primitives
 // pass through; a cycle guard prevents infinite loops.
 interface PublicJsonSource {
-  toPublicJSON(): unknown;
+  toPublicJSON(options?: PublicJsonOptions): unknown;
 }
 
 function hasPublicJson(value: object): value is PublicJsonSource {
@@ -422,17 +598,18 @@ function readJsonRecord(value: unknown): Record<string, unknown> {
 
 function toPublicResult(
   value: unknown,
+  options: PublicJsonOptions,
   seen: WeakSet<object> = new WeakSet(),
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return null;
   if (hasPublicJson(value)) {
     seen.add(value);
-    return toPublicResult(value.toPublicJSON(), seen);
+    return toPublicResult(value.toPublicJSON(options), options, seen);
   }
   if (Array.isArray(value)) {
     seen.add(value);
-    return value.map((entry) => toPublicResult(entry, seen));
+    return value.map((entry) => toPublicResult(entry, options, seen));
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
@@ -441,7 +618,7 @@ function toPublicResult(
   for (const [key, entry] of Object.entries(
     value as Record<string, unknown>,
   )) {
-    out[key] = toPublicResult(entry, seen);
+    out[key] = toPublicResult(entry, options, seen);
   }
   return out;
 }
@@ -479,7 +656,7 @@ function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
  */
 function generateTenantContextHelper(): string {
   return `
-import { enterTenantContext, hasTenantContext, isTenancyEnabled } from '@happyvertical/smrt-tenancy';
+import { enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled } from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -504,6 +681,18 @@ function tenantReadScope(): { tenantId: null } | undefined {
   return isTenancyEnabled() && !hasTenantContext()
     ? { tenantId: null }
     : undefined;
+}
+
+// Custom GET actions that accept a single options object may perform their
+// own reads instead of calling generated list/get handlers. Give those actions
+// an explicit tenant scope: active tenant when present, NULL-tenant global rows
+// when tenancy is enabled but no tenant context exists. Super-admin bypass
+// stays unscoped so admin callers keep deliberate cross-tenant access.
+function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
+  if (!isTenancyEnabled() || isSuperAdminBypass()) {
+    return undefined;
+  }
+  return { tenantId: getCurrentTenant()?.tenantId ?? null };
 }
 `;
 }
@@ -646,7 +835,18 @@ ${pathParamNames
   }`;
 }
 
-function buildActionInvocationArgs(actionDef: MethodDefinition): string[] {
+function hasSingleOptionsParameter(actionDef: MethodDefinition): boolean {
+  const parameters = Array.isArray(actionDef.parameters)
+    ? actionDef.parameters
+    : [];
+
+  return parameters.length === 1 && parameters[0]?.name === 'options';
+}
+
+function buildActionInvocationArgs(
+  actionDef: MethodDefinition,
+  optionsIdentifier = 'options',
+): string[] {
   const parameters = Array.isArray(actionDef.parameters)
     ? actionDef.parameters
     : [];
@@ -655,8 +855,8 @@ function buildActionInvocationArgs(actionDef: MethodDefinition): string[] {
     return [];
   }
 
-  if (parameters.length === 1 && parameters[0]?.name === 'options') {
-    return ['options'];
+  if (hasSingleOptionsParameter(actionDef)) {
+    return [optionsIdentifier];
   }
 
   return parameters.map((parameter) =>
@@ -824,6 +1024,33 @@ function buildActionInvocationExpression(
   ].join('\n');
 }
 
+function buildScopedOptionsForTenantRead(
+  actionDef: MethodDefinition,
+  routeConfig: ResolvedApiActionRouteConfig,
+  tenantScoped: boolean,
+): { source: string; optionsIdentifier: string } {
+  // The generator can only pass tenant read scope to methods that expose an
+  // options object. Zero-argument methods that perform their own raw reads must
+  // infer tenant scope in their implementation or adopt the options contract.
+  if (
+    !tenantScoped ||
+    routeConfig.method !== 'GET' ||
+    !hasSingleOptionsParameter(actionDef)
+  ) {
+    return { source: '', optionsIdentifier: 'options' };
+  }
+
+  return {
+    source: `  const readScope = tenantReadOptionsScope();
+  const scopedOptions = readScope
+    ? ({ ...options, ...readScope } as ActionArgs[0])
+    : options;
+
+`,
+    optionsIdentifier: 'scopedOptions',
+  };
+}
+
 function findItemClassRegistryKey(
   className: string,
   objectDef: SmartObjectDefinition,
@@ -914,7 +1141,13 @@ export async function generateSvelteKitRoutes(
       }
       continue;
     }
-    await generateRoutesForObject(projectRoot, className, objectDef, options);
+    await generateRoutesForObject(
+      projectRoot,
+      className,
+      objectDef,
+      manifest,
+      options,
+    );
     generatedCount++;
   }
 
@@ -926,6 +1159,8 @@ export async function generateSvelteKitRoutes(
   generateSyncApplyRoute(projectRoot, manifest, options);
   // Change-feed route (#1758) — cleanup rides clearGeneratedRouteFiles above.
   generateChangesRoute(projectRoot, manifest, options);
+  // Live change-signal SSE route (#1763) — cleanup rides the sweep above.
+  generateEventsRoute(projectRoot, manifest, options);
 
   // Update .gitignore to exclude generated routes
   updateGitignore(projectRoot, options);
@@ -1391,6 +1626,7 @@ async function generateRoutesForObject(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): Promise<void> {
   const collectionName = objectDef.collection;
@@ -1412,6 +1648,7 @@ async function generateRoutesForObject(
       projectRoot,
       className,
       objectDef,
+      manifest,
       includedActions,
       options,
       routeDir,
@@ -1429,6 +1666,7 @@ async function generateRoutesForObject(
       projectRoot,
       className,
       objectDef,
+      manifest,
       includedActions,
       options,
       join(routeDir, '[id]'),
@@ -1488,6 +1726,7 @@ async function generateRoutesForObject(
       actionRouteDir,
       routeSpecs,
       objectDef,
+      manifest,
       options,
     );
     writeRoute(actionRouteDir, '+server.ts', actionRoute);
@@ -1570,6 +1809,7 @@ async function generateCollectionRoutesForObject(
       actionRouteDir,
       routeSpecs,
       objectDef,
+      manifest,
       options,
     );
     writeRoute(actionRouteDir, '+server.ts', actionRoute);
@@ -1847,6 +2087,7 @@ function generateCollectionRouteTemplate(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   includedActions: string[],
   options: SvelteKitOptions,
   routeDir: string,
@@ -1868,6 +2109,9 @@ function generateCollectionRouteTemplate(
   // change-feed version cannot observe (#1765), so such routes keep the v1
   // body-hash ETag; the default toPublicJSON path uses the v2 version source.
   const listUsesSerializer = !!serializers.listItemSerializerName;
+  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
+  const listUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const listUsesBodyHash = listUsesSerializer || listUsesPermissionScopedBody;
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -1878,7 +2122,7 @@ ${
 }import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className, useBodyHash: listUsesSerializer }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -1895,6 +2139,7 @@ ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenan
 // List all ${className.toLowerCase()}s
 export const GET: RequestHandler = async ({ locals, url, request }) => {
 ${routeGuardPreamble(objectDef, false)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
@@ -1904,14 +2149,24 @@ ${
     ? `${listAndCount}
   // Custom serializer may render related-table data → v1 body-hash ETag (#1765).
   const serializedItems = await Promise.all(
-    items.map((item) => ${serializers.listItemSerializerName}(item)),
+    items.map(async (item) =>
+      applyReadPermissionRedaction(
+        await ${serializers.listItemSerializerName}(item),
+        publicJsonOptions,
+      ),
+    ),
   );
   return conditionalJson(request, { items: serializedItems, count, limit, offset });`
-    : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
+    : listUsesPermissionScopedBody
+      ? `${listAndCount}
+  // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
+  const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
+  return conditionalJson(request, { items: items_public, count, limit, offset });`
+      : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
   // If-None-Match the list query below never runs (zero-query 304).
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${listAndCount}
-    const items_public = items.map((item) => item.toPublicJSON());
+    const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
     return { items: items_public, count, limit, offset };
   });`
 }
@@ -1924,6 +2179,7 @@ ${listAndCount}
 // Create new ${className.toLowerCase()}
 export const POST: RequestHandler = async ({ locals, request }) => {
 ${routeGuardPreamble(objectDef, true)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
   const data = applyWritablePolicy(body);
 
@@ -1935,9 +2191,12 @@ ${
     ? `
   const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(serializedItem, { status: 201 });`
+  return json(
+    applyReadPermissionRedaction(serializedItem, publicJsonOptions),
+    { status: 201 },
+  );`
     : `
-  return json(item.toPublicJSON(), { status: 201 });`
+  return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
 }
 };
 `
@@ -2002,6 +2261,7 @@ function generateItemRouteTemplate(
   projectRoot: string,
   className: string,
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   includedActions: string[],
   options: SvelteKitOptions,
   routeDir: string,
@@ -2025,6 +2285,9 @@ function generateItemRouteTemplate(
   // change-feed version cannot observe (#1765), so such routes keep the v1
   // body-hash ETag; the default toPublicJSON path uses the v2 version source.
   const getUsesSerializer = !!serializers.itemSerializerName;
+  const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
+  const getUsesPermissionScopedBody = readPermissionFields.length > 0;
+  const getUsesBodyHash = getUsesSerializer || getUsesPermissionScopedBody;
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -2032,7 +2295,7 @@ function generateItemRouteTemplate(
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), modelName: className, useBodyHash: getUsesSerializer }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -2050,6 +2313,7 @@ ${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenan
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, false)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${
   getUsesSerializer
@@ -2057,14 +2321,22 @@ ${
 ${generateNotFoundError(className)}
   // Custom serializer may render related-table data → v1 body-hash ETag (#1765).
   const serializedItem = await ${serializers.itemSerializerName}(item);
-  return conditionalJson(request, serializedItem);`
-    : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
+  return conditionalJson(
+    request,
+    applyReadPermissionRedaction(serializedItem, publicJsonOptions),
+  );`
+    : getUsesPermissionScopedBody
+      ? `${getForRead}
+${generateNotFoundError(className)}
+  // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
+  return conditionalJson(request, item.toPublicJSON(publicJsonOptions));`
+      : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
   // (a delete advances the version, so a since-deleted row can't false-match);
   // a wildcard \`*\` is deferred until the fetch confirms the row exists.
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${getForRead}
 ${generateNotFoundError(className)}
-    return item.toPublicJSON();
+    return item.toPublicJSON(publicJsonOptions);
   });`
 }
 };
@@ -2076,6 +2348,7 @@ ${generateNotFoundError(className)}
 // Update ${simpleClassName.toLowerCase()}
 export const PUT: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, true)}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -2089,9 +2362,9 @@ ${
     ? `
   const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(serializedItem);`
+  return json(applyReadPermissionRedaction(serializedItem, publicJsonOptions));`
     : `
-  return json(item.toPublicJSON());`
+  return json(item.toPublicJSON(publicJsonOptions));`
 }
 };
 `
@@ -2123,6 +2396,7 @@ function generateActionRouteTemplate(
   routeDir: string,
   routeSpecs: GeneratedActionRouteSpec[],
   objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
   options: SvelteKitOptions,
 ): string {
   if (routeSpecs.length === 0) {
@@ -2199,7 +2473,7 @@ function generateActionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-${generateAuthGuardHelper(objectDef)}${tenantScoped ? generateTenantContextHelper() : ''}
+${generateAuthGuardHelper(objectDef, manifest)}${tenantScoped ? generateTenantContextHelper() : ''}
 ${handlers}`;
 }
 
@@ -2225,7 +2499,6 @@ function generateActionRouteHandler(
   const authGuardLine = guardLines.join('\n');
   const hasInput = actionDef.parameters.length > 0;
   const needsRequest = hasInput;
-  const invocationArgs = buildActionInvocationArgs(actionDef);
   const collectionHandlerArgs = buildRouteHandlerArgs(
     routeConfig.pathParamNames.length > 0,
     needsRequest,
@@ -2246,22 +2519,35 @@ function generateActionRouteHandler(
     const staticTargetLoad = actionDef.isStatic
       ? `  const CollectionClass = typedCollection.constructor as typeof ${hostTypeName};\n`
       : '';
+    const scopedOptions = buildScopedOptionsForTenantRead(
+      actionDef,
+      routeConfig,
+      tenantScoped,
+    );
+    const invocationArgs = buildActionInvocationArgs(
+      actionDef,
+      scopedOptions.optionsIdentifier,
+    );
 
     return `// Custom collection method: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
   const typedCollection = collection as unknown as ${hostTypeName};
 ${generateCollectionNotRegisteredError(lookupClassName)}
 ${staticTargetLoad}
 
-${optionsLoad}  const result = ${buildActionInvocationExpression(
+${optionsLoad}${scopedOptions.source}  const result = ${buildActionInvocationExpression(
       receiverExpression,
       actionName,
       invocationArgs,
     )};
 
-  return json({ action: '${actionName}', result: toPublicResult(result) });
+  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });
 };
 `;
   }
@@ -2274,20 +2560,33 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
       hostTypeName,
       true,
     );
+    const scopedOptions = buildScopedOptionsForTenantRead(
+      actionDef,
+      routeConfig,
+      tenantScoped,
+    );
+    const invocationArgs = buildActionInvocationArgs(
+      actionDef,
+      scopedOptions.optionsIdentifier,
+    );
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
 ${authGuardLine}
+  const publicJsonOptions = getPublicJsonOptions(locals);
   const registered = ObjectRegistry.getClass('${lookupClassName}');
 ${generateClassNotRegisteredError(lookupClassName)}
 
-${optionsLoad}  const ClassRef = registered.constructor as typeof ${hostTypeName};
+${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor as typeof ${hostTypeName};
   const result = ${buildActionInvocationExpression(
     'ClassRef',
     actionName,
     invocationArgs,
   )};
 
-  return json({ action: '${actionName}', result: toPublicResult(result) });
+  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });
 };
 `;
   }
@@ -2299,11 +2598,20 @@ ${optionsLoad}  const ClassRef = registered.constructor as typeof ${hostTypeName
     hostTypeName,
     false,
   );
+  const scopedItemLoad =
+    tenantScoped && routeConfig.method === 'GET'
+      ? `  const readScope = tenantReadScope();
+  const item = await collection.get(
+    readScope ? { id: params.id, ...readScope } : params.id,
+  );`
+      : '  const item = await collection.get(params.id);';
+  const invocationArgs = buildActionInvocationArgs(actionDef);
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
 ${authGuardLine}
+  const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
-  const item = await collection.get(params.id);
+${scopedItemLoad}
 ${generateNotFoundError(lookupClassName)}
 
 ${optionsLoad}  const result = ${buildActionInvocationExpression(
@@ -2312,7 +2620,10 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
     invocationArgs,
   )};
 
-  return json({ action: '${actionName}', result: toPublicResult(result) });
+  return json({
+    action: '${actionName}',
+    result: toPublicResult(result, publicJsonOptions),
+  });
 };
 `;
 }

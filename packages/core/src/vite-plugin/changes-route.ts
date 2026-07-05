@@ -54,7 +54,9 @@ function isCollectionDefinition(objectDef: SmartObjectDefinition): boolean {
  * when two loaded packages declare the same simple name (mirrors the #1778
  * verbatim-key fix and the sync-apply route's `registryKey`).
  */
-function resolveAnchorClassName(manifest: SmartObjectManifest): string | null {
+export function resolveAnchorClassName(
+  manifest: SmartObjectManifest,
+): string | null {
   const sortedNames = Object.keys(manifest.objects).sort();
   for (const name of sortedNames) {
     const def = manifest.objects[name];
@@ -65,7 +67,9 @@ function resolveAnchorClassName(manifest: SmartObjectManifest): string | null {
   return null;
 }
 
-function manifestHasTenantScopedObject(manifest: SmartObjectManifest): boolean {
+export function manifestHasTenantScopedObject(
+  manifest: SmartObjectManifest,
+): boolean {
   return Object.values(manifest.objects).some(
     (def) =>
       !isCollectionDefinition(def) && !!def.decoratorConfig?.tenantScoped,
@@ -143,7 +147,7 @@ function establishTenantContext(locals: unknown): void {
 // (comma-separated), limit. A response with resyncRequired: true (still
 // HTTP 200 — protocol state, not an error) means the cursor cannot be
 // served incrementally (pruned or foreign) and the client must re-fetch
-// in full before resuming polling.
+// in full before resuming polling from resyncCursor.
 
 import { error, json } from '@sveltejs/kit';
 import { getTenantScopedChangesSince } from '@happyvertical/smrt-core';

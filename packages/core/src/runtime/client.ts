@@ -83,10 +83,7 @@ export class SmrtClient {
   /**
    * GET request
    */
-  async get(
-    path: string,
-    params?: Record<string, unknown>,
-  ): Promise<unknown> {
+  async get(path: string, params?: Record<string, unknown>): Promise<unknown> {
     let url = path;
     if (params && Object.keys(params).length > 0) {
       const searchParams = new URLSearchParams();

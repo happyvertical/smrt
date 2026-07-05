@@ -132,4 +132,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-export { validateCommit, getCommits, CONVENTIONAL_COMMIT_TYPES };
+export { CONVENTIONAL_COMMIT_TYPES, getCommits, validateCommit };

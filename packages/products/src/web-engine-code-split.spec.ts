@@ -44,6 +44,5 @@ describe('smrt-web engine code-split (#1761 ①)', () => {
     expect(stdout).toMatch(
       /engine-free|no engine-bearing module|only reached through import\(\)/,
     );
-  }, // The real standalone vite build runs here; CI runners are slower.
-  240_000);
+  }, 240_000); // The real standalone vite build runs here; CI runners are slower.
 });

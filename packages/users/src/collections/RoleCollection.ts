@@ -6,6 +6,16 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Role } from '../models/Role.js';
 import { DEFAULT_ROLES } from '../types/index.js';
+import type {
+  RolePermissionPatternMatrix,
+  SeedRolePermissionsOptions,
+} from './RolePermissionCollection.js';
+
+export interface SeedSystemRolesOptions
+  extends Omit<SeedRolePermissionsOptions, 'catalog'> {
+  permissionMatrix?: RolePermissionPatternMatrix;
+  seedPermissions?: boolean;
+}
 
 /**
  * Collection for managing Role objects
@@ -71,7 +81,7 @@ export class RoleCollection extends SmrtCollection<Role> {
   /**
    * Seed default system roles
    */
-  async seedSystemRoles(): Promise<Role[]> {
+  async seedSystemRoles(options: SeedSystemRolesOptions = {}): Promise<Role[]> {
     const roles: Role[] = [];
 
     for (const roleDef of DEFAULT_ROLES) {
@@ -92,6 +102,20 @@ export class RoleCollection extends SmrtCollection<Role> {
       });
       await role.save();
       roles.push(role);
+    }
+
+    if (options.seedPermissions) {
+      const { RolePermissionCollection } = await import(
+        './RolePermissionCollection.js'
+      );
+      const rolePermissions = await RolePermissionCollection.create(
+        this.options,
+      );
+      await rolePermissions.seedRolePermissions(options.permissionMatrix, {
+        prune: options.prune,
+        syncCatalog: options.syncCatalog,
+        tenantId: options.tenantId,
+      });
     }
 
     return roles;

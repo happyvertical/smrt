@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-events",
-  "version": "0.38.1",
+  "version": "0.38.3",
   "description": "Hierarchical event management with participant tracking and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",
@@ -78,7 +78,7 @@
     "svelte": "^5.56.4",
     "svelte-check": "^4.7.1",
     "typescript": "^5.9.3",
-    "vite": "^8.1.2",
+    "vite": "^8.1.3",
     "vitest": "^4.1.9"
   },
   "keywords": [

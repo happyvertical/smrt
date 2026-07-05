@@ -9,11 +9,7 @@ import {
   loadConfig,
   setConfig,
 } from './index.js';
-import {
-  clearRuntimeConfig,
-  getRuntimeConfig,
-  mergeConfigs,
-} from './merge.js';
+import { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
 
 describe('mergeConfigs', () => {
   it('should not merge null values', () => {

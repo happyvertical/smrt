@@ -76,15 +76,17 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(
-    value as Record<string, unknown>,
-  )) {
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
+import {
+  enterTenantContext,
+  hasTenantContext,
+  isTenancyEnabled,
+} from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -98,6 +100,19 @@ function establishTenantContext(locals: unknown): void {
   }
 }
 
+// Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
+// model has no tenant context, so the tenancy interceptor (optional mode) would
+// pass the query through UNFILTERED and return every tenant's rows. When tenancy
+// is enabled but no context was established, restrict reads to NULL-tenant
+// (global) rows only — mirroring the dispatch resolver + _changes convention:
+// tenancy enforced with no context => global rows only. Returns undefined when a
+// context is active (the interceptor filters by it) or tenancy is disabled.
+function tenantReadScope(): { tenantId: null } | undefined {
+  return isTenancyEnabled() && !hasTenantContext()
+    ? { tenantId: null }
+    : undefined;
+}
+
 // Custom collection method: listForContribution
 export const POST: RequestHandler = async ({ locals, request }) => {
   requireRouteAuth(locals, true);
@@ -105,21 +120,28 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const collection = await getCollection<ContentContributionAttachment>(
     '@happyvertical/smrt-content:ContentContributionAttachment',
   );
-  const typedCollection = collection as unknown as ContentContributionAttachmentCollection;
+  const typedCollection =
+    collection as unknown as ContentContributionAttachmentCollection;
   if (!collection)
     throw error(
       500,
       '@happyvertical/smrt-content:ContentContributionAttachment collection is not registered',
     );
 
-
-  type ActionArgs = Parameters<ContentContributionAttachmentCollection['listForContribution']>;
+  type ActionArgs = Parameters<
+    ContentContributionAttachmentCollection['listForContribution']
+  >;
   type ActionOptions = {
     contributionId: ActionArgs[0];
   };
   const body: unknown = await request.json();
   const options = readJsonRecord(body) as ActionOptions;
-  const result = await typedCollection.listForContribution(options.contributionId);
+  const result = await typedCollection.listForContribution(
+    options.contributionId,
+  );
 
-  return json({ action: 'listForContribution', result: toPublicResult(result) });
+  return json({
+    action: 'listForContribution',
+    result: toPublicResult(result),
+  });
 };

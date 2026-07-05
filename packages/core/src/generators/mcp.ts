@@ -7,7 +7,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
-import type { SmrtObject } from '../object';
+import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition } from '../scanner/types.js';
@@ -57,6 +57,8 @@ export interface MCPContext {
     id: string;
     roles?: string[];
   };
+  /** Resolved permission slugs held by the caller. */
+  permissions?: Iterable<string>;
   /**
    * Tenant the calling principal is scoped to (#1554). When set, tenant-scoped
    * tools run inside this tenant's context. Hosts that authenticate a principal
@@ -663,16 +665,19 @@ export class MCPGenerator {
   private toPublicData(
     value: unknown,
     seen: WeakSet<object> = new WeakSet(),
+    options: PublicJsonOptions = this.getPublicJsonOptions(),
   ): unknown {
     if (value === null || typeof value !== 'object') return value;
-    const publicSource = value as { toPublicJSON?: () => unknown };
+    const publicSource = value as {
+      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
+    };
     if (typeof publicSource.toPublicJSON === 'function') {
-      return publicSource.toPublicJSON();
+      return publicSource.toPublicJSON(options);
     }
     if (Array.isArray(value)) {
       if (seen.has(value)) return value;
       seen.add(value);
-      return value.map((entry) => this.toPublicData(entry, seen));
+      return value.map((entry) => this.toPublicData(entry, seen, options));
     }
     const proto = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) return value;
@@ -680,9 +685,13 @@ export class MCPGenerator {
     seen.add(value);
     const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
-      out[key] = this.toPublicData(entry, seen);
+      out[key] = this.toPublicData(entry, seen, options);
     }
     return out;
+  }
+
+  private getPublicJsonOptions(): PublicJsonOptions {
+    return { permissions: this.context.permissions };
   }
 
   /**
@@ -1302,7 +1311,7 @@ ${indent}    ai: aiConfig
 ${indent}  });
 
 ${indent}  const items = await collection.list({ where, limit, offset });
-${indent}  const itemsPublic = items.map((item) => item.toPublicJSON());
+${indent}  const itemsPublic = items.map((item) => item.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(itemsPublic) }] };
 ${indent}}`;
 
@@ -1324,7 +1333,7 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(item.toPublicJSON()) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(item.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
 ${indent}}`;
 
           case 'create':
@@ -1337,7 +1346,7 @@ ${indent}  });
 ${indent}  const newItem = await collection.create(applyWritablePolicy('${capitalize(objectName)}', args));
 ${indent}  await newItem.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON()) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
 ${indent}}`;
 
           case 'update':
@@ -1360,7 +1369,7 @@ ${indent}  }
 ${indent}  Object.assign(existing, applyWritablePolicy('${capitalize(objectName)}', updateData));
 ${indent}  await existing.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON()) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
 ${indent}}`;
 
           case 'delete':
@@ -1459,6 +1468,12 @@ const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true
 `
     : ''
 }
+const PUBLIC_JSON_OPTIONS = {
+  permissions: (process.env.SMRT_MCP_PERMISSIONS || '')
+    .split(',')
+    .map((permission) => permission.trim())
+    .filter(Boolean),
+};
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and
@@ -1500,7 +1515,7 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
  */
 function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
   if (value === null || typeof value !== 'object') return value;
-  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON(PUBLIC_JSON_OPTIONS);
   if (Array.isArray(value)) {
     if (seen.has(value)) return value;
     seen.add(value);

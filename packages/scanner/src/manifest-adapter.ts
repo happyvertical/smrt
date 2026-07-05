@@ -51,6 +51,8 @@ interface FieldDefinition {
   sensitive?: boolean;
   /** Read-only over generated write surfaces — stripped from create/update bodies. */
   readonly?: boolean;
+  /** Permission slug required before the field is included in public reads. */
+  readPermission?: string;
 }
 
 type FieldDecoratorOptions = {
@@ -82,6 +84,8 @@ type FieldDecoratorOptions = {
   sensitive?: boolean;
   /** read-only over generated write surfaces */
   readonly?: boolean;
+  /** permission slug required before the field is included in public reads */
+  readPermission?: string;
   /** report grouping/bucket/aggregate metadata */
   __report?: Record<string, unknown>;
   [key: string]: unknown;
@@ -632,6 +636,10 @@ export class ManifestAdapter {
 
     if (fieldDecoratorOptions.readonly === true) {
       definition.readonly = true;
+    }
+
+    if (typeof fieldDecoratorOptions.readPermission === 'string') {
+      definition.readPermission = fieldDecoratorOptions.readPermission;
     }
 
     return definition;

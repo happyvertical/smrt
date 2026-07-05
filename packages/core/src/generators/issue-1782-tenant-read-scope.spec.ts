@@ -224,7 +224,9 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
 
     it('fails closed to global rows when the resolver marks it tenant-scoped', async () => {
       setDispatchTenantResolver(() => undefined);
-      setTenantScopedClassResolver((name) => name.includes('Pattern1TenantDoc'));
+      setTenantScopedClassResolver((name) =>
+        name.includes('Pattern1TenantDoc'),
+      );
 
       const res = await p1list();
       expect(res.status).toBe(200);

@@ -571,7 +571,8 @@ async function searchFacts(query = factQuery, page = 1) {
   } catch (err) {
     catalogFacts = [];
     catalogHasNextPage = false;
-    catalogError = (err instanceof Error ? err.message : '') || 'Failed to browse facts';
+    catalogError =
+      (err instanceof Error ? err.message : '') || 'Failed to browse facts';
   } finally {
     catalogLoading = false;
   }
@@ -622,7 +623,8 @@ async function syncFactsIfSaved(nextFacts: FactData[]) {
     await Promise.all([refreshGovernanceState(), refreshTransparency()]);
     workflowNotice = 'Saved fact associations.';
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to sync facts';
+    workflowError =
+      (err instanceof Error ? err.message : '') || 'Failed to sync facts';
   } finally {
     syncingFacts = false;
   }
@@ -645,7 +647,9 @@ async function repairFactAudit() {
     const factsResponse = await client.contents.getFacts(savedContentId);
     updateSelectedFacts(factsResponse.data.facts || []);
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to repair fact audit';
+    workflowError =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to repair fact audit';
   } finally {
     factAuditBusy = false;
   }
@@ -669,7 +673,9 @@ async function recheckFactClaims(claimIds: string[]) {
     selectedClaimIds = selectedClaimIds.filter((id) => !claimIds.includes(id));
     onFactAuditChange?.(response.data);
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to recheck claim support';
+    workflowError =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to recheck claim support';
   } finally {
     factAuditBusy = false;
   }
@@ -736,7 +742,9 @@ async function loadDraftGovernance() {
     governanceDefinitions = null;
     reviewProfiles = [];
     onGovernanceStateChange?.(null);
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to resolve content governance';
+    workflowError =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to resolve content governance';
   } finally {
     workflowLoading = false;
   }
@@ -796,7 +804,9 @@ async function loadSavedWorkflow() {
       customReviewPolicyKey,
     );
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to load governance workflow state';
+    workflowError =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to load governance workflow state';
   } finally {
     workflowLoading = false;
   }
@@ -852,7 +862,9 @@ async function runReview(action: ReviewAction) {
     workflowNotice = `${action.label} completed.`;
     await refreshVersions();
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to run content review';
+    workflowError =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to run content review';
   } finally {
     reviewBusy = null;
   }
@@ -884,7 +896,8 @@ async function issueCorrection() {
     workflowNotice = 'Correction issued.';
     await loadSavedWorkflow();
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to issue correction';
+    workflowError =
+      (err instanceof Error ? err.message : '') || 'Failed to issue correction';
   } finally {
     correctionBusy = false;
   }
@@ -907,7 +920,9 @@ async function createSnapshot() {
     workflowNotice = 'Snapshot created.';
     await Promise.all([refreshVersions(), refreshTransparency()]);
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to create version snapshot';
+    workflowError =
+      (err instanceof Error ? err.message : '') ||
+      'Failed to create version snapshot';
   } finally {
     versionBusy = false;
   }
@@ -949,7 +964,8 @@ async function restoreVersion(versionNumber: number) {
     workflowNotice = `Restored version ${versionNumber}.`;
     await loadSavedWorkflow();
   } catch (err) {
-    workflowError = (err instanceof Error ? err.message : '') || 'Failed to restore version';
+    workflowError =
+      (err instanceof Error ? err.message : '') || 'Failed to restore version';
   } finally {
     versionBusy = false;
   }

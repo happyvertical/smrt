@@ -68,7 +68,8 @@ async function loadContents() {
     contents = response.data;
     error = null;
   } catch (err) {
-    error = (err instanceof Error ? err.message : '') || 'Failed to load contents.';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to load contents.';
   } finally {
     loading = false;
   }
@@ -99,7 +100,8 @@ async function handleSaveContent(formData: ContentData) {
 
     closeForms();
   } catch (err) {
-    error = (err instanceof Error ? err.message : '') || 'Failed to save content.';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to save content.';
   }
 }
 
@@ -108,7 +110,8 @@ async function handleDeleteContent(content: ContentData) {
     await client.contents.delete(content.id || '');
     contents = contents.filter((item) => item.id !== content.id);
   } catch (err) {
-    error = (err instanceof Error ? err.message : '') || 'Failed to delete content.';
+    error =
+      (err instanceof Error ? err.message : '') || 'Failed to delete content.';
   }
 }
 

@@ -76,15 +76,19 @@ function toPublicResult(
   if (proto !== Object.prototype && proto !== null) return value;
   seen.add(value);
   const out: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(
-    value as Record<string, unknown>,
-  )) {
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;
 }
 
-import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
+import {
+  enterTenantContext,
+  getCurrentTenant,
+  hasTenantContext,
+  isSuperAdminBypass,
+  isTenancyEnabled,
+} from '@happyvertical/smrt-tenancy';
 
 function establishTenantContext(locals: unknown): void {
   if (hasTenantContext()) return;
@@ -96,6 +100,26 @@ function establishTenantContext(locals: unknown): void {
   if (typeof tenantId === 'string' && tenantId) {
     enterTenantContext({ tenantId });
   }
+}
+
+// Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
+// model has no tenant context, so the tenancy interceptor (optional mode) would
+// pass the query through UNFILTERED and return every tenant's rows. When tenancy
+// is enabled but no context was established, restrict reads to NULL-tenant
+// (global) rows only — mirroring the dispatch resolver + _changes convention:
+// tenancy enforced with no context => global rows only. Returns undefined when a
+// context is active (the interceptor filters by it) or tenancy is disabled.
+function tenantReadScope(): { tenantId: null } | undefined {
+  return isTenancyEnabled() && !hasTenantContext()
+    ? { tenantId: null }
+    : undefined;
+}
+
+function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
+  if (!isTenancyEnabled() || isSuperAdminBypass()) {
+    return undefined;
+  }
+  return { tenantId: getCurrentTenant()?.tenantId ?? null };
 }
 
 // Custom collection method: listForContributor
@@ -112,12 +136,16 @@ export const GET: RequestHandler = async ({ locals, request }) => {
       '@happyvertical/smrt-content:ContentContribution collection is not registered',
     );
 
-
   type ActionArgs = Parameters<ContentContributions['listForContributor']>;
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   ) as ActionArgs[0];
-  const result = await typedCollection.listForContributor(options);
+  const readScope = tenantReadOptionsScope();
+  const scopedOptions = readScope
+    ? ({ ...options, ...readScope } as ActionArgs[0])
+    : options;
+
+  const result = await typedCollection.listForContributor(scopedOptions);
 
   return json({ action: 'listForContributor', result: toPublicResult(result) });
 };

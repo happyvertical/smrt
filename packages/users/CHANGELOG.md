@@ -1,5 +1,29 @@
 # @happyvertical/smrt-users
 
+## 0.38.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.38.3
+  - @happyvertical/smrt-profiles@0.38.3
+  - @happyvertical/smrt-tenancy@0.38.3
+  - @happyvertical/smrt-config@0.38.3
+  - @happyvertical/smrt-types@0.38.3
+  - @happyvertical/smrt-ui@0.38.3
+
+## 0.38.2
+
+### Patch Changes
+
+- de80f34: Add reusable operation permission guards for hand-written mutation surfaces and catalog-aware system role permission seeding.
+  - @happyvertical/smrt-config@0.38.2
+  - @happyvertical/smrt-core@0.38.2
+  - @happyvertical/smrt-profiles@0.38.2
+  - @happyvertical/smrt-tenancy@0.38.2
+  - @happyvertical/smrt-types@0.38.2
+  - @happyvertical/smrt-ui@0.38.2
+
 ## 0.38.1
 
 ### Patch Changes

@@ -213,7 +213,7 @@ export class JournalEntryCollection extends SmrtCollection<JournalEntry> {
     });
 
     for (const { entry, journal } of entriesWithJournals) {
-      if (!journal || !journal.isPosted()) continue;
+      if (!journal?.isPosted()) continue;
 
       if (account.isDebitNormal()) {
         runningBalance += entry.debit - entry.credit;

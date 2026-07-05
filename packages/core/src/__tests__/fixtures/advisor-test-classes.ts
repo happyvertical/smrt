@@ -48,6 +48,42 @@ export class AdvisorRichProduct extends SmrtObject {
   }
 }
 
+@smrt({
+  api: {
+    include: ['list', 'create', 'update'],
+    writable: [
+      'displayName',
+      'customerId',
+      'externalId',
+      'secretToken',
+      'internalCode',
+      'tenantId',
+    ],
+  },
+})
+export class AdvisorPolicyRecord extends SmrtObject {
+  @field({ required: true })
+  displayName: string = '';
+
+  @field({ type: 'foreignKey' })
+  customerId: string = '';
+
+  @field({ type: 'integer' })
+  externalId: number = 0;
+
+  @field({ sensitive: true })
+  secretToken: string = '';
+
+  @field({ readonly: true })
+  internalCode: string = '';
+
+  @field()
+  tenantId: string = '';
+
+  @field()
+  ignoredValue: string = '';
+}
+
 /**
  * Boolean-config object: api/mcp enabled via `true`, cli disabled. Exercises
  * the boolean branches in list-registered-objects and get-object-config.

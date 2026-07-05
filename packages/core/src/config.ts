@@ -237,8 +237,6 @@ config.toJSON = (): GlobalSignalConfig => SmrtConfig.getInstance().getConfig();
 config.toString = (): string =>
   JSON.stringify(SmrtConfig.getInstance().getConfig(), null, 2);
 
-export { config };
-
 // Re-export env-config utilities from @happyvertical/utils
 export {
   type ConfigOptions,
@@ -247,3 +245,4 @@ export {
   toCamelCase,
   toScreamingSnakeCase,
 } from '@happyvertical/utils';
+export { config };

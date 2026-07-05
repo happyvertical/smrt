@@ -1,16 +1,45 @@
-import { Asset } from '@happyvertical/smrt-assets';
-import { Image } from '@happyvertical/smrt-images';
+import '@happyvertical/smrt-assets';
+import type { Asset } from '@happyvertical/smrt-assets';
+import '@happyvertical/smrt-images';
+import type { Image } from '@happyvertical/smrt-images';
+import {
+  enterTenantContext,
+  hasTenantContext,
+  isTenancyEnabled,
+} from '@happyvertical/smrt-tenancy';
 import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
+function establishTenantContext(locals: unknown): void {
+  if (hasTenantContext()) return;
+  if (!locals || typeof locals !== 'object') return;
+  const l = locals as Record<string, unknown>;
+  const user = l.user as Record<string, unknown> | undefined;
+  const session = l.session as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
+  if (typeof tenantId === 'string' && tenantId) {
+    enterTenantContext({ tenantId });
+  }
+}
+
+function tenantReadScope(): { tenantId: null } | undefined {
+  return isTenancyEnabled() && !hasTenantContext()
+    ? { tenantId: null }
+    : undefined;
+}
+
 // Mock AI Variation
-export const POST: RequestHandler = async ({ params, request }) => {
+export const POST: RequestHandler = async ({ locals, params, request }) => {
+  establishTenantContext(locals);
   await getCollection<Asset>('@happyvertical/smrt-assets:Asset');
   const collection = await getCollection<Image>(
     '@happyvertical/smrt-images:Image',
   );
-  const image = await collection.get(params.id);
+  const readScope = tenantReadScope();
+  const image = await collection.get(
+    readScope ? { id: params.id, ...readScope } : params.id,
+  );
 
   if (!image) throw error(404, 'Image not found');
 

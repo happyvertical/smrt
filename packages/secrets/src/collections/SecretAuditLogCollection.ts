@@ -103,7 +103,11 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
     secretName: string,
     limit: number = 50,
   ): Promise<SecretAuditLog[]> {
-    return this.listLogs({ tenantId: tenantId ?? undefined, secretName, limit });
+    return this.listLogs({
+      tenantId: tenantId ?? undefined,
+      secretName,
+      limit,
+    });
   }
 
   /**

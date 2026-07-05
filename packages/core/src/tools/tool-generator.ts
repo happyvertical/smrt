@@ -141,7 +141,7 @@ export function shouldIncludeMethod(
   config?: AiConfig,
 ): boolean {
   // Skip if no AI config
-  if (!config || !config.callable) {
+  if (!config?.callable) {
     return false;
   }
 

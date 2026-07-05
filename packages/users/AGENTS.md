@@ -44,6 +44,28 @@ The hard block reflects the tenant cascade's **net** resolution, not an
 unconditional union of every DENY in the chain — so a more-specific tenant GRANT
 (e.g. a child sub-tenant re-granting a permission its parent DENYs) still wins.
 
+## Operation Permission Guards
+
+- Use `assertOperationPermission()` for hand-written mutations in SvelteKit form
+  actions, custom endpoints, CLI scripts, and jobs. It derives the same
+  `<collection>.<action>` slugs as `PermissionCatalogService` (`list`/`get` →
+  `read`), requires the slug to exist in the catalog, then resolves permissions
+  through `PermissionResolver`.
+- `assertOperationPermission()` throws fail-closed by default. Use
+  `{ onDeny: 'return' }`, `checkOperationPermission()`, or
+  `hasOperationPermission()` when a structured/boolean result is needed.
+- System context and super-admin bypass context are honored for parity with
+  Postgres RLS. Pass `{ allowSuperAdminBypass: false }` on money-class or
+  separation-of-duties operations that must require an explicit permission grant.
+- Seed role mappings with `RolePermissionCollection.seedRolePermissions()` or
+  `RoleCollection.seedSystemRoles({ seedPermissions: true })`. The default
+  matrix maps owner/admin to all catalog permissions, member to read/create for
+  ordinary app resources, and viewer to read-only. Member create grants
+  intentionally exclude users/RBAC authority and security resources (`users`,
+  `tenants`, `roles`, `permissions`, memberships, groups, sessions, magic-link
+  tokens, and related join/override tables). Re-seeding is additive and
+  idempotent; pruning stale mappings requires `{ prune: true }`.
+
 **Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
 
 ## Hierarchical Tenants

@@ -114,9 +114,11 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
 
   private async resolveSubmissionType(
     typeKey: string | null | undefined,
+    tenantId?: string | null,
   ): Promise<ContentContributionTypeDefinition> {
     const effective = await getEffectiveContentContributionConfig({
       db: this.db,
+      tenantId,
     });
 
     if (typeKey) {
@@ -137,12 +139,19 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
     return defaultType;
   }
 
-  async getContributionTypesAction() {
-    return getContentContributionTypeConfigState({ db: this.db });
+  async getContributionTypesAction(options: { tenantId?: string | null } = {}) {
+    return getContentContributionTypeConfigState({
+      db: this.db,
+      tenantId: options.tenantId,
+    });
   }
 
   async listForContributor(
-    options: { contributorId?: string; contributorEmail?: string } = {},
+    options: {
+      contributorId?: string;
+      contributorEmail?: string;
+      tenantId?: string | null;
+    } = {},
   ) {
     let contributorId = options.contributorId;
 
@@ -158,14 +167,21 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
       return [];
     }
 
+    const where: { contributorId: string; tenantId?: string | null } = {
+      contributorId,
+    };
+    if (options.tenantId !== undefined) {
+      where.tenantId = options.tenantId;
+    }
+
     return this.list({
-      where: { contributorId },
+      where,
       orderBy: 'updated_at DESC',
     });
   }
 
   async listInboxAction(
-    options: { statuses?: string | string[] } = {},
+    options: { statuses?: string | string[]; tenantId?: string | null } = {},
   ): Promise<ContentContribution[]> {
     const requested = Array.isArray(options.statuses)
       ? options.statuses
@@ -174,6 +190,10 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
         : ['submitted', 'quarantined', 'needs_changes', 'approved'];
 
     const contributions = await this.list({
+      where:
+        options.tenantId !== undefined
+          ? { tenantId: options.tenantId }
+          : undefined,
       orderBy: 'updated_at DESC',
     });
 
@@ -183,7 +203,10 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
   }
 
   async submitWebContribution(options: SubmitWebContentContributionOptions) {
-    const type = await this.resolveSubmissionType(options.typeKey);
+    const type = await this.resolveSubmissionType(
+      options.typeKey,
+      options.tenantId,
+    );
     const contributors = await this.getContributorCollection();
     const contributor = await contributors.findOrCreateByEmail({
       email: options.contributorEmail,
@@ -267,7 +290,10 @@ export class ContentContributions extends SmrtCollection<ContentContribution> {
       throw new Error(`Email "${options.emailId}" not found.`);
     }
 
-    const type = await this.resolveSubmissionType(options.typeKey);
+    const type = await this.resolveSubmissionType(
+      options.typeKey,
+      options.tenantId,
+    );
     const contributors = await this.getContributorCollection();
     const contributor = await contributors.findOrCreateByEmail({
       email: email.fromAddress,

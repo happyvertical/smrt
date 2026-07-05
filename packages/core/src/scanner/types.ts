@@ -108,6 +108,13 @@ export interface FieldDefinition {
    */
   readonly?: boolean;
   /**
+   * Permission slug required to include this field in public/read responses.
+   * Omitted unless the serializer is given a resolved permission set that
+   * includes this slug. `sensitive` still wins and hides the field for all
+   * callers.
+   */
+  readPermission?: string;
+  /**
    * Controls whether the field is included in JSON exports.
    * - `true`: Always exported (unless site explicitly excludes it)
    * - `false`: Never exported (cannot be overridden by site config)

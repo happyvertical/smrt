@@ -87,7 +87,7 @@ export class ApiKeyCollection extends SmrtCollection<ApiKey> {
       where: { keyPrefix },
     });
 
-    if (key && key.isValid()) {
+    if (key?.isValid()) {
       await key.revoke();
       return true;
     }

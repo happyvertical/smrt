@@ -101,10 +101,12 @@ export class FeatureResolver {
   private async ensureInitialized(): Promise<void> {
     if (!this.initializationPromise) {
       this.initializationPromise = (async () => {
-        this.featureDefinitions =
-          await FeatureDefinitionCollection.create(this.options);
-        this.featureOverrides =
-          await FeatureOverrideCollection.create(this.options);
+        this.featureDefinitions = await FeatureDefinitionCollection.create(
+          this.options,
+        );
+        this.featureOverrides = await FeatureOverrideCollection.create(
+          this.options,
+        );
       })();
     }
 

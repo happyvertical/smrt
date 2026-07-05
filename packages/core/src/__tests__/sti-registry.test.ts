@@ -267,9 +267,7 @@ describe('STI Registry Methods', () => {
       expect(eventDescendants).toContain(
         '@happyvertical/smrt-core:SportingEvent',
       );
-      expect(eventDescendants).toContain(
-        '@happyvertical/smrt-core:HockeyGame',
-      );
+      expect(eventDescendants).toContain('@happyvertical/smrt-core:HockeyGame');
       expect(eventDescendants).toContain('@happyvertical/smrt-core:Meeting');
 
       const sportingDescendants =

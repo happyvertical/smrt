@@ -343,6 +343,7 @@ export class ContentContribution extends SmrtObject {
   async resolveContributionType(): Promise<ContentContributionTypeDefinition | null> {
     return resolveEffectiveContentContributionType(this.contributionTypeKey, {
       db: this.db,
+      tenantId: this.tenantId ?? null,
     });
   }
 

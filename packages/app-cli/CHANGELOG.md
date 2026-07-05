@@ -1,5 +1,18 @@
 # @happyvertical/smrt-app-cli
 
+## 0.38.3
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.38.3
+
+## 0.38.2
+
+### Patch Changes
+
+- Updated dependencies [de80f34]
+  - @happyvertical/smrt-users@0.38.2
+
 ## 0.38.1
 
 ### Patch Changes

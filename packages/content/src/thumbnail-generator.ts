@@ -289,8 +289,7 @@ export class ThumbnailGenerator {
       string,
       string | number | null | undefined
     >;
-    const rawLatitude =
-      coordinateMetadata?.latitude ?? coordinateMetadata?.lat;
+    const rawLatitude = coordinateMetadata?.latitude ?? coordinateMetadata?.lat;
     const rawLongitude =
       coordinateMetadata?.longitude ??
       coordinateMetadata?.lng ??

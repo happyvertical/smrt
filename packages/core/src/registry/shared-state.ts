@@ -15,7 +15,6 @@ import {
   getSmrtModuleConfig,
   type SmrtGlobalConfig,
 } from '../config/global-config.js';
-import type { SmrtObject } from '../object';
 import { LRUCache } from '../utils/lru-cache';
 import { isDecoratorRuntimeFramePath } from '../utils/stack-frames';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
@@ -32,10 +31,8 @@ declare global {
   // `create(options: SmrtCreateInput<ModelType>)`), so this cannot be narrowed
   // to `SmrtCollection<SmrtObject>` — the type argument stays `any` (read sites
   // cast back to the concrete collection type).
-  var __smrtRegistryCollectionCache:
-    // biome-ignore lint/suspicious/noExplicitAny: heterogeneous cache keyed by class name; `SmrtCollection` is invariant in `ModelType` so the type arg cannot narrow to `SmrtObject` (read sites cast back). S4 #1579.
-    | LRUCache<string, SmrtCollection<any>>
-    | undefined;
+  var __smrtRegistryCollectionCache: // biome-ignore lint/suspicious/noExplicitAny: heterogeneous cache keyed by class name; `SmrtCollection` is invariant in `ModelType` so the type arg cannot narrow to `SmrtObject` (read sites cast back). S4 #1579.
+  LRUCache<string, SmrtCollection<any>> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryDbInstanceIds: WeakMap<object, number> | undefined;
   // eslint-disable-next-line no-var

@@ -500,7 +500,11 @@ function readNestedRecord(
 
 function getPublicPrompt(metadata: Record<string, unknown>): string | null {
   return (
-    readNestedString(metadata, ['transparency', 'generation', 'publicPrompt']) ||
+    readNestedString(metadata, [
+      'transparency',
+      'generation',
+      'publicPrompt',
+    ]) ||
     readNestedString(metadata, ['generation', 'publicPrompt']) ||
     readNestedString(metadata, ['publicPrompt']) ||
     null
@@ -1064,6 +1068,7 @@ export class Content
       contentType: this.type,
       contentVariant: this.variant,
       db: this.db,
+      tenantId: this.tenantId ?? null,
     });
   }
 

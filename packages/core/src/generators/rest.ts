@@ -11,7 +11,7 @@ import {
   isTenantScopedClassResolved,
   resolveDispatchTenantScope,
 } from '../dispatch';
-import type { SmrtObject } from '../object';
+import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
 import {
@@ -24,6 +24,7 @@ import { handleChangesRoute } from './changes-route';
 import {
   canonicalReadRepresentation,
   computeTableVersionEtag,
+  conditionalJsonResponse,
   ifNoneMatchHasConcreteMatch,
   ifNoneMatchSatisfied,
   resolveReadCacheControl,
@@ -32,6 +33,7 @@ import {
   warnIfSharedCacheNeutralized,
   warnIfTenantScopedPublicRead,
 } from './conditional-get';
+import { handleEventsRoute } from './events-route';
 
 export interface APIConfig {
   basePath?: string;
@@ -59,6 +61,8 @@ export interface APIContext {
     username?: string;
     roles?: string[];
   };
+  /** Resolved permission slugs held by the caller. */
+  permissions?: Iterable<string>;
 }
 
 /**
@@ -190,14 +194,56 @@ export class APIGenerator {
     // Send body
     if (webResponse.body) {
       const reader = webResponse.body.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        res.write(value);
+
+      // Client disconnect handling — essential for the long-lived `_events` SSE
+      // stream (#1763): a never-ending stream is only torn down when its reader
+      // is cancelled, and nothing cancels it unless we detect the socket close.
+      // On `res`/socket 'close' before the response finished, cancel the reader
+      // so the source stream's `cancel()` fires (unsubscribe + clear heartbeat).
+      let clientGone = false;
+      const onClose = () => {
+        if (res.writableFinished) return; // normal completion, not a disconnect
+        clientGone = true;
+        void reader.cancel().catch(() => {});
+      };
+      res.on('close', onClose);
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done || clientGone) break;
+          if (!res.write(value)) {
+            // Respect back-pressure so a slow/absent consumer can't unbounded-
+            // buffer in the Node socket. Resolve on 'drain' OR on 'close'/
+            // 'error' — a disconnect while back-pressured never fires 'drain',
+            // so waiting only for it would hang this frame forever (leaking it
+            // and pinning the reader for the long-lived `_events` stream). Race
+            // the three and remove the losers so one-shot listeners don't pile
+            // up across many drains.
+            await new Promise<void>((resolve) => {
+              const settle = () => {
+                res.off('drain', settle);
+                res.off('close', settle);
+                res.off('error', settle);
+                resolve();
+              };
+              res.once('drain', settle);
+              res.once('close', settle);
+              res.once('error', settle);
+            });
+            if (clientGone) break;
+          }
+        }
+      } catch {
+        // Reader cancelled (client gone) or write failed — stop streaming.
+      } finally {
+        res.off('close', onClose);
       }
     }
 
-    res.end();
+    if (!res.writableEnded) {
+      res.end();
+    }
   }
 
   /**
@@ -236,6 +282,19 @@ export class APIGenerator {
         db: this.resolveContextDb(),
       });
       return this.addCorsHeaders(response, req);
+    }
+
+    // Live change-signal SSE route (#1763): auth-guarded, tenant-scoped
+    // Server-Sent-Events stream of coarse signals (no row payloads). Logic
+    // lives in ./events-route.ts. Deliberately NOT wrapped in addCorsHeaders —
+    // this slice is same-origin only (EventSource cannot set request headers
+    // and credentialed cross-origin SSE needs Allow-Credentials the CORS
+    // helper does not emit); cross-origin SSE is a follow-up.
+    if (url.pathname === `${this.config.basePath}/_events`) {
+      return handleEventsRoute(req, {
+        authMiddleware: this.config.authMiddleware,
+        db: this.resolveContextDb(),
+      });
     }
 
     // Handle object routes
@@ -582,13 +641,32 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
+    const cacheControl = this.resolveReadCachePolicy(objectName);
+
+    if (this.hasReadPermissionFields(objectName)) {
+      // Field-level read permissions make the response body vary by caller
+      // permissions, so the validator must cover the redacted body returned to
+      // this caller rather than only the table version.
+      const scope = this.resolveTenantReadScope(objectName);
+      const object = scope
+        ? await collection.get({ id, ...scope })
+        : await collection.get(id);
+      if (!object) {
+        return this.createErrorResponse(404, 'Object not found');
+      }
+      return conditionalJsonResponse(
+        req,
+        this.toPublicData(object),
+        cacheControl,
+      );
+    }
+
     // ETag v2 (#1765): compute the table-version ETag first. A CONCRETE
     // If-None-Match short-circuits into a 304 BEFORE the row is fetched — a
     // delete advances the table version (tombstone), so a stale cached
     // representation of a since-deleted row can never concretely match. A
     // wildcard `*` is deferred until AFTER the fetch confirms the row exists,
     // so a missing row still returns 404 (not a false 304).
-    const cacheControl = this.resolveReadCachePolicy(objectName);
     const etag = await this.computeReadEtag(collection, req, objectName);
     const ifNoneMatch = req.headers.get('if-none-match');
     const notModified = (): Response =>
@@ -632,14 +710,9 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    // ETag v2 (#1765): resolve the policy + table-version ETag first, then
-    // hand the list query to versionConditionalResponse as a thunk. On a
-    // matching If-None-Match it returns a 304 and the thunk — the collection
-    // query — never runs, so an unchanged table revalidates with no table scan.
     const cacheControl = this.resolveReadCachePolicy(objectName);
-    const etag = await this.computeReadEtag(collection, req, objectName);
 
-    return versionConditionalResponse(req, etag, cacheControl, async () => {
+    const buildPayload = async () => {
       const limit = Number.parseInt(params.get('limit') || '50', 10);
       const offset = Number.parseInt(params.get('offset') || '0', 10);
       const orderBy = params.get('orderBy') || 'created_at DESC';
@@ -689,7 +762,20 @@ export class APIGenerator {
       });
 
       return objects.map((object: SmrtObject) => this.toPublicData(object));
-    });
+    };
+
+    if (this.hasReadPermissionFields(objectName)) {
+      // Field-level read permissions make the response body vary by caller
+      // permissions, so use the v1 body-hash path over the redacted payload.
+      return conditionalJsonResponse(req, await buildPayload(), cacheControl);
+    }
+
+    // ETag v2 (#1765): resolve the policy + table-version ETag first, then
+    // hand the list query to versionConditionalResponse as a thunk. On a
+    // matching If-None-Match it returns a 304 and the thunk — the collection
+    // query — never runs, so an unchanged table revalidates with no table scan.
+    const etag = await this.computeReadEtag(collection, req, objectName);
+    return versionConditionalResponse(req, etag, cacheControl, buildPayload);
   }
 
   /**
@@ -981,10 +1067,16 @@ export class APIGenerator {
    * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
    */
   private toPublicData(object: unknown): unknown {
-    const serializable = object as { toPublicJSON?: () => unknown } | null;
+    const serializable = object as {
+      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
+    } | null;
     return typeof serializable?.toPublicJSON === 'function'
-      ? serializable.toPublicJSON()
+      ? serializable.toPublicJSON(this.getPublicJsonOptions())
       : object;
+  }
+
+  private getPublicJsonOptions(): PublicJsonOptions {
+    return { permissions: this.context.permissions };
   }
 
   /**
@@ -992,7 +1084,8 @@ export class APIGenerator {
    * one-time policy warnings (#1757): private + revalidatable by default;
    * shared `s-maxage` only for public models that opt in; always private for
    * tenant-scoped models, whose bodies vary with tenant context that URL-keyed
-   * shared caches cannot see.
+   * shared caches cannot see. Field read-permission models are also private
+   * because the body varies by caller permissions.
    */
   private resolveReadCachePolicy(objectName: string | undefined): string {
     const config = objectName
@@ -1005,11 +1098,60 @@ export class APIGenerator {
     const tenantScoped = objectName
       ? ObjectRegistry.isTenantScoped(objectName) || !!config?.tenantScoped
       : false;
+    const permissionScoped = this.hasReadPermissionFields(objectName);
     if (objectName) {
-      warnIfSharedCacheNeutralized(objectName, apiConfig, tenantScoped);
+      warnIfSharedCacheNeutralized(
+        objectName,
+        apiConfig,
+        tenantScoped,
+        permissionScoped,
+      );
       warnIfTenantScopedPublicRead(objectName, apiConfig, tenantScoped);
     }
-    return resolveReadCacheControl(apiConfig, { tenantScoped });
+    return resolveReadCacheControl(apiConfig, {
+      tenantScoped,
+      permissionScoped,
+    });
+  }
+
+  private hasReadPermissionFields(objectName: string | undefined): boolean {
+    if (!objectName) return false;
+    for (const fields of this.getFieldMapsForPublicPolicy(objectName)) {
+      for (const [, def] of fields) {
+        if (
+          typeof def?.readPermission === 'string' ||
+          typeof def?._meta?.readPermission === 'string'
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private getFieldMapsForPublicPolicy(
+    objectName: string,
+  ): Array<ReturnType<typeof ObjectRegistry.getFields>> {
+    const registered = ObjectRegistry.getClass(objectName);
+    const className =
+      registered?.qualifiedName ?? registered?.name ?? objectName;
+    const fieldMaps: Array<ReturnType<typeof ObjectRegistry.getFields>> = [
+      registered?.inheritedFields || ObjectRegistry.getFields(className),
+    ];
+    const stiBase = ObjectRegistry.getSTIBase(className);
+    if (stiBase) {
+      fieldMaps.push(
+        ObjectRegistry.getClass(stiBase)?.inheritedFields ||
+          ObjectRegistry.getFields(stiBase),
+      );
+      for (const descendant of ObjectRegistry.getDescendants(stiBase)) {
+        fieldMaps.push(
+          ObjectRegistry.getClass(descendant)?.inheritedFields ||
+            ObjectRegistry.getFields(descendant),
+        );
+      }
+    }
+    return fieldMaps;
   }
 
   /**

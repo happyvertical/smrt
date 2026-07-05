@@ -129,6 +129,7 @@ export interface ValidationResult {
 export interface PreviewApiEndpointsInput {
   className: string;
   basePath?: string;
+  baseUrl?: string;
 }
 
 /**
@@ -143,7 +144,10 @@ export interface ApiEndpoint {
     type: string;
     required: boolean;
     location: 'path' | 'query' | 'body';
+    description?: string;
+    example?: unknown;
   }>;
+  example?: string;
 }
 
 /**

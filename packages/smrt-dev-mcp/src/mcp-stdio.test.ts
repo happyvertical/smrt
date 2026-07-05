@@ -36,7 +36,7 @@ async function createMcpClient() {
 function textContent(result: Awaited<ReturnType<Client['callTool']>>): string {
   if (!('content' in result)) return JSON.stringify(result.toolResult);
   const first = result.content[0];
-  if (!first || first.type !== 'text') {
+  if (first?.type !== 'text') {
     throw new Error('Expected text MCP response');
   }
   return first.text;

@@ -24,6 +24,7 @@ export {
   type MessageCatalog,
 } from './registry.js';
 export { default as Trans } from './Trans.svelte';
+
 // Side-effect: register smrt-ui's own primitive (`ui.*`) English code defaults
 // (DataTable etc.) so a single `@happyvertical/smrt-ui/i18n` import makes every
 // library primitive key resolvable — including in a server snapshot built

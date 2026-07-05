@@ -132,7 +132,7 @@ function isWebCollectionClass(
   // Truthy check (not `!== undefined`) mirrors the scanner's own
   // manifest-generator: a scanner that emits `extendsTypeArg: null` for a
   // non-generic base must not be misread as a collection.
-  if (obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg) {
+  if (obj.extends === 'SmrtCollection' || obj.extendsTypeArg) {
     return true;
   }
   const parentName = obj.extendsQualified || obj.extends;

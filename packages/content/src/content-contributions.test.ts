@@ -10,6 +10,7 @@ import { Content } from './content';
 import {
   configureContentContributions,
   evaluateContributionIntake,
+  getContentContributionTypeConfigState,
   getEffectiveContentContributionConfig,
   resetContentContributionConfig,
 } from './content-contribution-config';
@@ -557,6 +558,62 @@ describe('content contributions', () => {
     const type = effective.types.find((item) => item.key === 'letter');
 
     expect(type?.label).toBe('Letters & opinions');
+  });
+
+  it('scopes persisted contribution type state to global and selected tenant rows', async () => {
+    const types = await ContentContributionTypeCollection.create({ db });
+    for (const input of [
+      {
+        key: 'global-letter',
+        label: 'Global letter',
+        tenantId: null,
+      },
+      {
+        key: 'tenant-letter',
+        label: 'Tenant letter',
+        tenantId: 'tenant-1',
+      },
+      {
+        key: 'other-tenant-letter',
+        label: 'Other tenant letter',
+        tenantId: 'tenant-2',
+      },
+    ]) {
+      const record = await types.create({
+        ...input,
+        allowedChannels: ['web'],
+        allowText: true,
+        allowEmptyText: true,
+        promotion: { targetContentType: 'article' },
+      });
+      await record.save();
+    }
+
+    const state = await getContentContributionTypeConfigState({
+      db,
+      tenantId: 'tenant-1',
+    });
+    const actionState = await contributions.getContributionTypesAction({
+      tenantId: 'tenant-1',
+    });
+    const globalState = await contributions.getContributionTypesAction({
+      tenantId: null,
+    });
+
+    expect(state.persisted.map((type) => type.key).sort()).toEqual([
+      'global-letter',
+      'tenant-letter',
+    ]);
+    expect(actionState.persisted.map((type) => type.key).sort()).toEqual([
+      'global-letter',
+      'tenant-letter',
+    ]);
+    expect(actionState.effective.map((type) => type.key)).not.toContain(
+      'other-tenant-letter',
+    );
+    expect(globalState.persisted.map((type) => type.key)).toEqual([
+      'global-letter',
+    ]);
   });
 
   it('deletes an unused custom contribution type cleanly', async () => {

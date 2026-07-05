@@ -135,7 +135,7 @@ export class SubscriptionResolver {
       return emptyResolution(subscriber);
     }
 
-    if (!plan || !plan.isActive() || !subscription.isEntitled(now)) {
+    if (!plan?.isActive() || !subscription.isEntitled(now)) {
       return {
         ...emptyResolution(subscriber),
         planId: plan?.id ?? subscription.planId ?? null,

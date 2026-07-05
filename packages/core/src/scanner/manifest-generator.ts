@@ -2,9 +2,9 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
-import { createLogger } from '@happyvertical/logger';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { createLogger } from '@happyvertical/logger';
 import {
   loadExternalManifestSync,
   lookupInManifest,

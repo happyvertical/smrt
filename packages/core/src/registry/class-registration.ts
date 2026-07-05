@@ -702,6 +702,15 @@ export function register(
       if (fieldDef.required !== undefined) {
         field.required = fieldDef.required;
       }
+      if (fieldDef.sensitive !== undefined) {
+        field.sensitive = fieldDef.sensitive;
+      }
+      if (fieldDef.readonly !== undefined) {
+        field.readonly = fieldDef.readonly;
+      }
+      if (fieldDef.readPermission !== undefined) {
+        field.readPermission = fieldDef.readPermission;
+      }
 
       // Hoist related to top level for relationship fields
       // Check both fieldDef.related (new manifests) and _meta.related (old manifests)
@@ -774,6 +783,21 @@ export function register(
         } else if (existingField.transient !== undefined) {
           mergedField.transient = existingField.transient;
         }
+        if (opts.sensitive !== undefined) {
+          mergedField.sensitive = opts.sensitive;
+        } else if (existingField.sensitive !== undefined) {
+          mergedField.sensitive = existingField.sensitive;
+        }
+        if (opts.readonly !== undefined) {
+          mergedField.readonly = opts.readonly;
+        } else if (existingField.readonly !== undefined) {
+          mergedField.readonly = existingField.readonly;
+        }
+        if (typeof opts.readPermission === 'string') {
+          mergedField.readPermission = opts.readPermission;
+        } else if (typeof existingField.readPermission === 'string') {
+          mergedField.readPermission = existingField.readPermission;
+        }
 
         // Handle required flag: nullable fields should not be required
         if (opts.nullable === true) {
@@ -809,6 +833,15 @@ export function register(
         // Set top-level flags from decorator options
         if (opts.transient !== undefined) {
           newField.transient = opts.transient;
+        }
+        if (opts.sensitive !== undefined) {
+          newField.sensitive = opts.sensitive;
+        }
+        if (opts.readonly !== undefined) {
+          newField.readonly = opts.readonly;
+        }
+        if (typeof opts.readPermission === 'string') {
+          newField.readPermission = opts.readPermission;
         }
         // Handle required flag: nullable fields should not be required
         if (opts.nullable === true) {
@@ -1250,6 +1283,9 @@ interface DecoratorFieldOptions {
   required?: boolean;
   nullable?: boolean;
   transient?: boolean;
+  sensitive?: boolean;
+  readonly?: boolean;
+  readPermission?: unknown;
   related?: string;
   [key: string]: unknown;
 }

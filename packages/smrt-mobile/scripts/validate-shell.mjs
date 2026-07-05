@@ -47,7 +47,8 @@ const SPEC = [
   {
     path: 'build.gradle.kts',
     mustContain: [
-      'androidTarget()',
+      'alias(libs.plugins.androidKmpLibrary)',
+      'android {',
       'jvm()',
       'iosArm64()',
       'iosSimulatorArm64()',

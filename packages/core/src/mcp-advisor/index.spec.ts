@@ -50,7 +50,7 @@ function textContent(result: Awaited<ReturnType<Client['callTool']>>): string {
     return JSON.stringify(result);
   }
   const first = result.content[0];
-  if (!first || first.type !== 'text') {
+  if (first?.type !== 'text') {
     throw new Error('Expected text MCP response');
   }
   return first.text;

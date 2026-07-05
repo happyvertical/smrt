@@ -621,14 +621,23 @@ describe('collection read cache (issue #1498)', () => {
   });
 
   describe('cross-process invalidation', () => {
+    // The change-feed writer (#1758) also publishes over the notifications
+    // capability now (change signals, #1763), on a DISTINCT channel. Scope the
+    // cache-broadcast assertions to the cache channel so a co-tenant signal
+    // broadcast never confuses them.
+    const cacheBroadcastsOf = (
+      broadcasts: Array<{ channel: string; payload: any }>,
+    ) => broadcasts.filter((b) => b.channel === CACHE_INVALIDATION_CHANNEL);
+
     it('broadcasts invalidation on write when the model opts into crossProcess', async () => {
       const { broadcasts } = stubNotifications(db);
       const feed = await CacheTestFeedItemCollection.create({ db });
 
       await feed.create({ body: 'hello' });
 
-      expect(broadcasts.length).toBeGreaterThan(0);
-      const broadcast = broadcasts.at(-1);
+      const cacheBroadcasts = cacheBroadcastsOf(broadcasts);
+      expect(cacheBroadcasts.length).toBeGreaterThan(0);
+      const broadcast = cacheBroadcasts.at(-1);
       expect(broadcast?.channel).toBe(CACHE_INVALIDATION_CHANNEL);
       expect(broadcast?.payload.table).toBe('cache_test_feed_items');
       expect(typeof broadcast?.payload.source).toBe('string');
@@ -640,7 +649,7 @@ describe('collection read cache (issue #1498)', () => {
 
       await articles.create({ title: 'local only' });
 
-      expect(broadcasts).toHaveLength(0);
+      expect(cacheBroadcastsOf(broadcasts)).toHaveLength(0);
     });
 
     it('broadcasts on a child write when the STI base caches the shared table cross-process', async () => {
@@ -654,23 +663,25 @@ describe('collection read cache (issue #1498)', () => {
       // invalidation is table-scoped, so the broadcast decision must be too.
       await privateStreams.create({ title: 'Private', secret: 'shh' });
 
-      expect(broadcasts.length).toBeGreaterThan(0);
-      expect(broadcasts.at(-1)?.payload.table).toBe('cache_test_streams');
+      const cacheBroadcasts = cacheBroadcastsOf(broadcasts);
+      expect(cacheBroadcasts.length).toBeGreaterThan(0);
+      expect(cacheBroadcasts.at(-1)?.payload.table).toBe('cache_test_streams');
     });
 
     it('broadcasts writes after a per-call crossProcess cached read', async () => {
       const { broadcasts } = stubNotifications(db);
       const products = await CacheTestProductCollection.create({ db });
       await products.create({ name: 'Widget', price: 9.99 });
-      expect(broadcasts).toHaveLength(0); // no opt-in seen yet
+      expect(cacheBroadcastsOf(broadcasts)).toHaveLength(0); // no opt-in seen yet
 
       // Per-call opt-in registers table-scoped interest in this process
       await products.list({ cache: { ttl: 60_000, crossProcess: true } });
 
       await products.create({ name: 'Gadget', price: 19.99 });
 
-      expect(broadcasts.length).toBeGreaterThan(0);
-      expect(broadcasts.at(-1)?.payload.table).toBe('cache_test_products');
+      const cacheBroadcasts = cacheBroadcastsOf(broadcasts);
+      expect(cacheBroadcasts.length).toBeGreaterThan(0);
+      expect(cacheBroadcasts.at(-1)?.payload.table).toBe('cache_test_products');
     });
 
     it('invalidates local cache when a peer broadcast arrives', async () => {

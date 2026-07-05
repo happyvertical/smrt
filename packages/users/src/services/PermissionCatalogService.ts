@@ -70,6 +70,20 @@ export interface UsersConfig extends Record<string, unknown> {
   };
 }
 
+export interface ConstructorLike {
+  name?: string;
+}
+
+export interface CollectionLike {
+  getItemClass?: () => ConstructorLike;
+}
+
+export type OperationPermissionCollectionInput =
+  | string
+  | ConstructorLike
+  | CollectionLike
+  | object;
+
 declare global {
   // eslint-disable-next-line no-var
   var __smrtUsersPermissionRegistrations:
@@ -121,7 +135,7 @@ function deriveCollectionName(className: string): string {
 
 function humanizeResource(resource: string): string {
   return resource
-    .replace(/[_-]+/g, ' ')
+    .replace(/[._-]+/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
@@ -135,7 +149,7 @@ function defaultPermissionName(slug: string): string {
     return humanizeResource(slug);
   }
 
-  return `${capitalize(parsed.action)} ${humanizeResource(parsed.resource)}`;
+  return `${humanizeResource(parsed.action)} ${humanizeResource(parsed.resource)}`;
 }
 
 function defaultPermissionDescription(slug: string): string {
@@ -144,7 +158,110 @@ function defaultPermissionDescription(slug: string): string {
     return `Allows ${slug}`;
   }
 
-  return `Allows ${parsed.action} access for ${humanizeResource(parsed.resource).toLowerCase()}`;
+  return `Allows ${humanizeResource(parsed.action).toLowerCase()} access for ${humanizeResource(parsed.resource).toLowerCase()}`;
+}
+
+export function normalizeOperationPermissionAction(action: string): string {
+  const trimmed = action.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (lower === 'list' || lower === 'get') {
+    return 'read';
+  }
+
+  if (
+    lower === 'read' ||
+    lower === 'create' ||
+    lower === 'update' ||
+    lower === 'delete'
+  ) {
+    return lower;
+  }
+
+  return trimmed;
+}
+
+function isConstructorLike(value: unknown): value is ConstructorLike {
+  return typeof value === 'function';
+}
+
+function isCollectionLike(value: unknown): value is CollectionLike {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as CollectionLike).getItemClass === 'function'
+  );
+}
+
+function resolveConstructor(
+  value: OperationPermissionCollectionInput,
+): ConstructorLike | undefined {
+  if (isConstructorLike(value)) {
+    return value;
+  }
+
+  if (isCollectionLike(value)) {
+    return value.getItemClass?.();
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const ctor = value.constructor;
+    if (typeof ctor === 'function' && ctor.name && ctor.name !== 'Object') {
+      return ctor;
+    }
+  }
+
+  return undefined;
+}
+
+export function deriveOperationPermissionCollectionName(
+  input: OperationPermissionCollectionInput,
+): string {
+  if (typeof input === 'string') {
+    const collection = input.trim();
+    if (!collection) {
+      throw new Error('Operation permission collection must not be empty.');
+    }
+    return collection;
+  }
+
+  const ctor = resolveConstructor(input);
+  if (!ctor?.name) {
+    throw new Error(
+      'Operation permission collection must be a collection slug, model class, model instance, or collection instance.',
+    );
+  }
+
+  const registered =
+    ObjectRegistry.getClassByConstructor(
+      ctor as Parameters<typeof ObjectRegistry.getClassByConstructor>[0],
+    ) ?? ObjectRegistry.getClass(ctor.name);
+  const configuredCollection = (
+    registered?.config as { collection?: unknown } | undefined
+  )?.collection;
+
+  if (typeof configuredCollection === 'string' && configuredCollection) {
+    return configuredCollection;
+  }
+
+  if (registered?.collection) {
+    return registered.collection;
+  }
+
+  return deriveCollectionName(registered?.name ?? ctor.name);
+}
+
+export function deriveOperationPermissionSlug(
+  collection: OperationPermissionCollectionInput,
+  action: string,
+): string {
+  const collectionName = deriveOperationPermissionCollectionName(collection);
+  const normalizedAction = normalizeOperationPermissionAction(action);
+  if (!normalizedAction) {
+    throw new Error('Operation permission action must not be empty.');
+  }
+
+  return `${collectionName}.${normalizedAction}`;
 }
 
 function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
@@ -159,20 +276,46 @@ interface ManifestMethodCandidate {
   name?: string;
 }
 
+interface FieldReadPermissionCandidate {
+  _meta?: {
+    readPermission?: unknown;
+  };
+  readPermission?: unknown;
+}
+
+type MethodCandidate =
+  | ManifestMethodCandidate
+  | readonly [string, ManifestMethodCandidate];
+
+function isMethodEntryTuple(
+  method: MethodCandidate,
+): method is readonly [string, ManifestMethodCandidate] {
+  return Array.isArray(method);
+}
+
+function normalizeMethodCandidate(
+  method: MethodCandidate,
+): ManifestMethodCandidate {
+  if (isMethodEntryTuple(method)) {
+    const [name, definition] = method;
+    return { ...definition, name: definition.name ?? name };
+  }
+  return method;
+}
+
 function getPublicCustomMethodNames(
-  methodEntries: ManifestMethodCandidate[],
+  methodEntries: MethodCandidate[],
   standardActions: readonly string[],
 ): string[] {
   return Array.from(
     new Set(
-      methodEntries
-        .filter(
-          (method) =>
-            Boolean(method?.name) &&
-            method?.isPublic === true &&
-            !standardActions.includes(method.name!),
-        )
-        .map((method) => method.name!),
+      methodEntries.flatMap((method) => {
+        const { isPublic, name } = normalizeMethodCandidate(method);
+        if (!name || isPublic !== true || standardActions.includes(name)) {
+          return [];
+        }
+        return [name];
+      }),
     ),
   );
 }
@@ -345,7 +488,7 @@ function normalizeDefinition(
 ): PermissionDefinition {
   if (!definition.slug || !isValidPermissionSlug(definition.slug.trim())) {
     throw new Error(
-      `Invalid permission slug '${definition.slug}'. Expected 'resource.action'.`,
+      `Invalid permission slug '${definition.slug}'. Expected 'resource.action[.scope...]'.`,
     );
   }
 
@@ -447,6 +590,19 @@ export class PermissionCatalogService {
     };
   }
 
+  deriveOperationPermissionSlug(
+    collection: OperationPermissionCollectionInput,
+    action: string,
+  ): string {
+    return deriveOperationPermissionSlug(collection, action);
+  }
+
+  hasPermissionSlug(slug: string): boolean {
+    return this.getCatalog().permissions.some(
+      (permission) => permission.slug === slug,
+    );
+  }
+
   async syncPermissionCatalog(): Promise<PermissionCatalogSyncResult> {
     const catalog = this.getCatalog();
     const permissions = await PermissionCollection.create(this.options);
@@ -546,6 +702,32 @@ export class PermissionCatalogService {
         });
       }
 
+      const fieldEntries = manifestEntry?.fields
+        ? Object.entries(manifestEntry.fields)
+        : Array.from(
+            (registered?.inheritedFields ?? metadata.fields).entries(),
+          );
+      for (const [fieldName, fieldDef] of fieldEntries) {
+        const field = fieldDef as FieldReadPermissionCandidate;
+        const readPermission =
+          typeof field.readPermission === 'string'
+            ? field.readPermission
+            : typeof field._meta?.readPermission === 'string'
+              ? field._meta.readPermission
+              : undefined;
+        if (!readPermission || definitions.has(readPermission)) {
+          continue;
+        }
+        definitions.set(readPermission, {
+          className,
+          collection,
+          description: `Allows reading ${fieldName} on ${humanizeResource(collection).toLowerCase()}`,
+          name: `Read ${humanizeResource(fieldName)} on ${humanizeResource(collection)}`,
+          qualifiedName,
+          slug: readPermission,
+        });
+      }
+
       for (const action of ['create', 'update', 'delete'] as const) {
         const exposed =
           isOperationEnabled(objectConfig.api, action) ||
@@ -565,7 +747,7 @@ export class PermissionCatalogService {
 
       const methodEntries = manifestEntry?.methods
         ? Object.values(manifestEntry.methods)
-        : Array.from(metadata.methods.values());
+        : Array.from(metadata.methods.entries());
       const publicCustomMethodNames = getPublicCustomMethodNames(
         methodEntries,
         standardActions,

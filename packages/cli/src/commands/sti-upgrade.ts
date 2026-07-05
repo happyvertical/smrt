@@ -12,9 +12,7 @@ type DbRow = Record<string, unknown>;
  * Result of a raw `query` call. Adapters return either a bare row array or an
  * envelope with `rows`/`rowCount`; both shapes are narrowed at the use site.
  */
-type QueryResult =
-  | DbRow[]
-  | { rows?: DbRow[]; rowCount?: number };
+type QueryResult = DbRow[] | { rows?: DbRow[]; rowCount?: number };
 
 type QueryableDb = {
   query(sql: string, ...params: unknown[]): Promise<QueryResult>;
