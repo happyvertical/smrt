@@ -14,6 +14,7 @@ import {
 import { join, relative } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
+import { computeWebManifestHash } from './web-collections.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -2112,6 +2113,11 @@ function generateCollectionRouteTemplate(
   const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
   const listUsesPermissionScopedBody = readPermissionFields.length > 0;
   const listUsesBodyHash = listUsesSerializer || listUsesPermissionScopedBody;
+  // The build-time web-collection shape digest (#1764) salts the v2 read ETag so
+  // a shape-only deploy (no table write) busts every read validator. Deterministic
+  // for a given manifest — same value the generated virt-web module exports and
+  // the client persistence namespace keys on.
+  const webManifestHash = computeWebManifestHash(manifest);
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -2122,7 +2128,7 @@ ${
 }import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -2288,6 +2294,9 @@ function generateItemRouteTemplate(
   const readPermissionFields = collectReadPermissionFields(objectDef, manifest);
   const getUsesPermissionScopedBody = readPermissionFields.length > 0;
   const getUsesBodyHash = getUsesSerializer || getUsesPermissionScopedBody;
+  // The build-time web-collection shape digest (#1764) salts the v2 read ETag —
+  // same value as the list route and the generated virt-web module (see above).
+  const webManifestHash = computeWebManifestHash(manifest);
 
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -2295,7 +2304,7 @@ function generateItemRouteTemplate(
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't

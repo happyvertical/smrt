@@ -13,9 +13,11 @@
  * emitted code's structure and the baked-in Cache-Control policy.
  */
 
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
   computeBodyEtag,
+  computeTableVersionEtag,
   conditionalJsonResponse,
   generateConditionalGetRouteHelper,
   ifNoneMatchSatisfied,
@@ -34,6 +36,56 @@ describe('computeBodyEtag (#1757)', () => {
   it('is deterministic for the same body and changes with the body', () => {
     expect(computeBodyEtag('{"a":1}')).toBe(computeBodyEtag('{"a":1}'));
     expect(computeBodyEtag('{"a":1}')).not.toBe(computeBodyEtag('{"a":2}'));
+  });
+});
+
+describe('computeTableVersionEtag (#1765 + #1764 salt)', () => {
+  it('produces a strong quoted ETag and is deterministic per (version, representation)', () => {
+    const etag = computeTableVersionEtag(3, '/products?limit=10');
+    expect(etag).toMatch(/^"[A-Za-z0-9_-]+"$/);
+    expect(etag).toBe(computeTableVersionEtag(3, '/products?limit=10'));
+  });
+
+  it('changes when the version or the representation changes', () => {
+    const base = computeTableVersionEtag(3, '/products?limit=10');
+    expect(computeTableVersionEtag(4, '/products?limit=10')).not.toBe(base);
+    expect(computeTableVersionEtag(3, '/products?limit=20')).not.toBe(base);
+  });
+
+  it('is backward-compatible: omitting manifestHash reproduces the pre-#1764 digest exactly', () => {
+    // The salted call with an undefined hash must be byte-for-byte the unsalted
+    // call, so existing callers/tests are unaffected. Pin the digest input shape
+    // (`version:representation`, no trailing separator) via an independent hash.
+    const unsalted = computeTableVersionEtag(7, '/orders?offset=5');
+    const explicitUndefined = computeTableVersionEtag(
+      7,
+      '/orders?offset=5',
+      undefined,
+    );
+    expect(explicitUndefined).toBe(unsalted);
+    const expected = `"${createHash('sha256')
+      .update('7:/orders?offset=5')
+      .digest('base64url')}"`;
+    expect(unsalted).toBe(expected);
+  });
+
+  it('busts on a manifest-hash change with the SAME version + representation (the #1764 shape-only-deploy guard)', () => {
+    // The whole point of the salt: a shape-only redeploy (no table write, so the
+    // version is unchanged) must produce a DIFFERENT read ETag so clients refetch
+    // instead of being answered 304 with the old shape.
+    const v1 = computeTableVersionEtag(3, '/products?limit=10', 'hashAAAAAAAAAAAA');
+    const v2 = computeTableVersionEtag(3, '/products?limit=10', 'hashBBBBBBBBBBBB');
+    expect(v1).not.toBe(v2);
+    // ...and each is distinct from the unsalted validator too.
+    const unsalted = computeTableVersionEtag(3, '/products?limit=10');
+    expect(v1).not.toBe(unsalted);
+    expect(v2).not.toBe(unsalted);
+  });
+
+  it('a salted ETag is deterministic for the same (version, representation, manifestHash)', () => {
+    expect(
+      computeTableVersionEtag(9, '/x', 'stableHash000000'),
+    ).toBe(computeTableVersionEtag(9, '/x', 'stableHash000000'));
   });
 });
 
@@ -381,5 +433,27 @@ describe('emitted SvelteKit route helper: ETag v2 structure (#1765)', () => {
       `const READ_CACHE_CONTROL = '${PRIVATE_READ_CACHE_CONTROL}';`,
     );
     expect(snippet).not.toContain('s-maxage');
+  });
+
+  it('salts the v2 ETag with the manifest hash when one is threaded (#1764)', () => {
+    // With a manifestHash the emitted helper bakes it in as a MANIFEST_HASH
+    // constant and passes it as computeTableVersionEtag's third argument — so a
+    // shape-only deploy busts every read validator.
+    const snippet = generateConditionalGetRouteHelper(
+      { public: false },
+      { manifestHash: 'shapeHash0000000' },
+    );
+    expect(snippet).toContain("const MANIFEST_HASH = 'shapeHash0000000';");
+    expect(snippet).toContain('MANIFEST_HASH');
+    // The representation extra stays `undefined` (non-tenant); the salt is a
+    // SEPARATE third argument — it must not be folded into canonicalReadRepresentation.
+    expect(snippet).toContain('canonicalReadRepresentation(request, undefined)');
+  });
+
+  it('omits the MANIFEST_HASH constant and third argument when no hash is threaded (backward-compat)', () => {
+    // The pre-#1764 emit shape exactly: no constant, and computeTableVersionEtag
+    // is called with just (version, representation).
+    const snippet = generateConditionalGetRouteHelper({ public: false });
+    expect(snippet).not.toContain('MANIFEST_HASH');
   });
 });

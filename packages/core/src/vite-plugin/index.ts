@@ -27,8 +27,8 @@ import {
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
 import {
-  buildWebFieldDefinitions,
-  buildWebRelationships,
+  buildWebCollectionDefinition,
+  computeWebManifestHash,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -1318,33 +1318,43 @@ export { createClient as default };
  * API-exposed model in the manifest. This is the codegen contract consumed by
  * `@happyvertical/smrt-web` to construct client collections over the generated
  * REST surface. Deliberately data-only: no fetch code is emitted here, so the
- * runtime wrapper owns all HTTP/error semantics in one place. Selection and
- * field rules live in {@link selectWebCollectionEntries} /
- * {@link buildWebFieldDefinitions} so this value emission and the matching
- * d.ts type emission cannot drift.
+ * runtime wrapper owns all HTTP/error semantics in one place. Selection and the
+ * per-collection shape live in {@link selectWebCollectionEntries} /
+ * {@link buildWebCollectionDefinition} so this value emission, the matching d.ts
+ * type emission, and the #1764 shape digest cannot drift.
  */
 function generateWebModule(manifest: SmartObjectManifest): string {
   const definitions: Record<string, unknown> = {};
 
-  for (const { collection, obj, actions } of selectWebCollectionEntries(
-    manifest,
-  )) {
-    definitions[collection] = {
-      name: collection,
-      className: obj.className,
-      endpoint: `/${collection}`,
-      idField: 'id',
-      actions,
-      fields: buildWebFieldDefinitions(obj),
-      relationships: buildWebRelationships(obj, manifest),
-    };
+  // Emit one definition per MATERIALIZABLE collection (list-exposed), built via
+  // the SHARED buildWebCollectionDefinition — the single source of truth the
+  // shape digest (#1764) also hashes, so the emitted shape and the hashed shape
+  // can never drift (a drift would let the hash under-cover a change → stale
+  // caches). See buildWebCollectionDefinition's docblock.
+  for (const entry of selectWebCollectionEntries(manifest)) {
+    definitions[entry.collection] = buildWebCollectionDefinition(
+      entry,
+      manifest,
+    );
   }
+
+  // The web-collection SHAPE digest (#1764): a deterministic, replica-stable
+  // hash of the exact `definitions` shape emitted below. Persistence keys its
+  // durable namespace on it (a contract-changing deploy drops old caches) and
+  // the generated read ETag folds it in (a shape-only deploy busts validators).
+  // Built via the shared selectors so it can never disagree with what ships.
+  const manifestHash = computeWebManifestHash(manifest);
 
   return `
 // Auto-generated web collection definitions from SMRT objects (#1761)
 // This file is generated automatically - do not edit
 
 export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
+
+// Build-time inject of the web-collection shape digest (#1764) — see
+// computeWebManifestHash. A change here means old persisted client rows may
+// mis-hydrate, so persistence namespaces and read ETags key on it.
+export const manifestHash = ${JSON.stringify(manifestHash)};
 
 export function getCollectionDefinition(name) {
   const definition = collectionDefinitions[name];
@@ -1858,6 +1868,15 @@ ${webCollectionInterface}
   export function getCollectionDefinition<
     K extends keyof SmrtWebCollectionDefinitions,
   >(name: K): SmrtWebCollectionDefinitions[K];
+  /**
+   * Build-time web-collection shape digest (#1764). A deterministic,
+   * replica-stable hash of the emitted collection definitions; a change means
+   * old persisted client rows may mis-hydrate. Consumers fold it into the
+   * durable persistence namespace and the version-awareness updateAvailable
+   * contract signal. One of three emission sites that must not drift — the
+   * runtime value, this ambient d.ts, and the physical @smrt/web d.ts.
+   */
+  export const manifestHash: string;
   export default collectionDefinitions;
 }
 

@@ -29,3 +29,8 @@ export {
   type LiveCollectionStatus,
   liveCollection,
 } from './live-collection.svelte.js';
+export {
+  type UpdateAvailableView,
+  type UseUpdateAvailableOptions,
+  useUpdateAvailable,
+} from './update-available.svelte.js';

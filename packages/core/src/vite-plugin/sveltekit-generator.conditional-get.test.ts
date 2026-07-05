@@ -90,7 +90,22 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       expect(content).toContain('getTableVersion(db, tableName)');
       expect(content).toContain("request.headers.get('if-none-match')");
       expect(content).toContain('status: 304');
+      // #1764: the build-time web-collection shape digest is baked in as a
+      // MANIFEST_HASH constant and folded into the ETag, so a shape-only deploy
+      // busts every read validator.
+      expect(content).toMatch(/const MANIFEST_HASH = '[A-Za-z0-9_-]{16}';/);
+      expect(content).toContain('MANIFEST_HASH');
     }
+    // Both routes for the same object share the SAME shape digest (deterministic
+    // per manifest) — the value the client persistence namespace also keys on.
+    const listHash = collectionRoute.match(
+      /const MANIFEST_HASH = '([A-Za-z0-9_-]{16})';/,
+    )?.[1];
+    const itemHash = itemRoute.match(
+      /const MANIFEST_HASH = '([A-Za-z0-9_-]{16})';/,
+    )?.[1];
+    expect(listHash).toBeDefined();
+    expect(itemHash).toBe(listHash);
 
     // List handler wraps its query in the version-first helper (the query
     // thunk runs only on a cache miss) and returns the payload from the thunk.

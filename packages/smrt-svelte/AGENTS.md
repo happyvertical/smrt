@@ -280,6 +280,29 @@ AdminShell core (`./workspace`) stays transport-agnostic and TanStack-free (epic
 #1766). The pure diff core is `ActivityFeedReconciler` (engine-free, unit-tested
 against a real `ShellState`). Demo: `playground/.../admin-shell-activity-feed`.
 
+### `updateAvailable` binding (`./web`, #1764)
+
+`useUpdateAvailable({ state, updated? })` (from `@happyvertical/smrt-svelte/web`)
+is the Svelte 5 reactive wrapper over smrt-web's framework-free `UpdateState`
+(from `createUpdateState()`). It surfaces `updateAvailable` / `bundle` /
+`contract` reactively (`$state`/`$derived`) for a toast or reload prompt, and
+wires SvelteKit's native `updated` store as the **bundle** signal. The
+**contract** signal (a manifest-hash change across loads, detected inside the
+smrt-web primitive under the build-time-inject decision) is surfaced as-is.
+
+`updated` is passed IN as a reactive accessor (`() => updated.current` on modern
+`$app/state`, or a `$derived` over the legacy `$updated` store) rather than
+imported here — `$app/*` only resolves inside a SvelteKit app, so a library that
+imported it could not build/test standalone; the other `./web` adapters take
+runtime input the same way. Must be called during component init (installs
+`$effect`s that subscribe to the primitive and watch `updated`); both tear down
+on unmount. Construct ONE `createUpdateState()` per app (it owns the durable
+last-seen-hash bookkeeping) and pass its `manifestHash` from
+`@happyvertical/smrt-virt-web`. Browser-safe, engine-free (no `@tanstack/*`
+type). NOTE: `.svelte.ts` runes tests may not run under the local Darwin/vite8
+toolchain (CI is the gate) — the binding is covered by typecheck + svelte-check +
+a light unit test.
+
 ### Dock availability gates (server-side)
 
 `ToolDef.gates?: string[]` declares the gates a tool must pass to be visible.

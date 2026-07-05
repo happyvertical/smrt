@@ -82,6 +82,17 @@ export type {
   SyncStateEvent,
 } from './offline.js';
 export { getOutboxHandle, offlineOutbox } from './offline.js';
+// Durable persistence capability (#1764): an opted-in collection warm-starts
+// from a durable IndexedDB snapshot on load, then revalidates in the background;
+// namespace-keyed (api/tenant/identity/manifest hash) so a contract-changing
+// deploy drops old caches and no user reads another's rows. Its own module for
+// the same reason as the seam — reviewable/testable on its own (real
+// fake-indexeddb + real engine). Engine-free public surface.
+export type { PersistCollectionConfig } from './persistence.js';
+export {
+  DEFAULT_PERSIST_DEBOUNCE_MS,
+  persistCollection,
+} from './persistence.js';
 // Live-updates subscriber (#1763-client): the ONE app-wide SSE `_events`
 // subscriber (with `_changes` polling fallback) and the thin per-collection
 // `liveInvalidation` capability that wires a collection's `ctx.invalidate()` to
@@ -99,6 +110,16 @@ export {
   createSmrtWebEventSubscriber,
   liveInvalidation,
 } from './sse-client.js';
+// Version awareness (#1764): the framework-free `updateAvailable` primitive with
+// two independent signals — `bundle` (fed by the smrt-svelte binding from
+// SvelteKit's `updated` store) and `contract` (build-time-inject manifest-hash
+// compare across loads). The reactive Svelte adapter ships in smrt-svelte.
+export type {
+  UpdateAvailableState,
+  UpdateState,
+  UpdateStateConfig,
+} from './update-state.js';
+export { createUpdateState } from './update-state.js';
 
 // ---------------------------------------------------------------------------
 // Generated definition contract (mirrors @happyvertical/smrt-virt-web)
@@ -713,6 +734,19 @@ export function createSmrtCollection<TData extends object>(
       return cacheId;
     },
     invalidate: () => invalidateRelated(),
+    // Engine-free read + subscribe surface for capabilities (#1764 persistence
+    // write-back). Both close over the engine `collection` created below and are
+    // only ever called from `onAttach` onward (after it exists), so referencing
+    // it here is safe. They mirror the public handle's `toArray` /
+    // `subscribeChanges` exactly — projecting to plain DTOs so the engine's
+    // virtual props never cross the seam.
+    snapshot: () => collection.toArray.map((row) => toPlainRow<TData>(row)),
+    subscribe: (callback) => {
+      const subscription = collection.subscribeChanges((changes: unknown) =>
+        callback(projectChanges(changes)),
+      );
+      return { unsubscribe: () => subscription.unsubscribe() };
+    },
   };
 
   // contributeCacheKey (#1755): fold each capability's returned segments into

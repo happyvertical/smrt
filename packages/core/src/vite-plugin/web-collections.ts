@@ -11,9 +11,15 @@
  *  - the physical `@smrt/web` d.ts (prebuild, for `tsc`-only consumers)
  *
  * All three import {@link selectWebCollectionEntries} from here so the value
- * emission and the type emission can never disagree.
+ * emission and the type emission can never disagree. The per-collection SHAPE
+ * (name/className/endpoint/idField/actions/fields/relationships) is built by the
+ * ONE {@link buildWebCollectionDefinition}, shared by the runtime emission AND
+ * the #1764 {@link computeWebManifestHash} shape digest — so the emitted shape
+ * and the hashed shape can never drift (a drift would let the hash under-cover a
+ * change → stale client caches).
  */
 
+import { createHash } from 'node:crypto';
 import type {
   FieldDefinition,
   SmartObjectDefinition,
@@ -163,15 +169,17 @@ function isStiChildModel(
 }
 
 /**
- * Select the manifest entries that become web collection definitions: one per
- * REST collection, STI children folding into their base model, collection
- * classes excluded, and only models that expose `list` (a read surface is
- * required to materialize a collection). Uses the canonical
- * {@link resolveApiActionSet} so the exposed-action set matches exactly what
- * the REST/SvelteKit generators actually emit.
+ * Select one entry per REST collection whose exposed action set satisfies
+ * `qualifies` — STI children folding into their base model, collection classes
+ * excluded. Uses the canonical {@link resolveApiActionSet} so the exposed-action
+ * set matches exactly what the REST/SvelteKit generators actually emit. Shared
+ * by {@link selectWebCollectionEntries} (list-qualified — materializable
+ * collections) and {@link selectWebEtagSaltEntries} (get-OR-list — every model
+ * with a read route the ETag salt must cover).
  */
-export function selectWebCollectionEntries(
+function selectEntriesQualifiedBy(
   manifest: SmartObjectManifest,
+  qualifies: (actions: ReadonlySet<string>) => boolean,
 ): WebCollectionEntry[] {
   const byCollection = new Map<
     string,
@@ -182,7 +190,7 @@ export function selectWebCollectionEntries(
     if (isWebCollectionClass(manifest, obj)) continue;
 
     const exposedActions = resolveApiActionSet(obj);
-    if (!exposedActions.has('list')) continue;
+    if (!qualifies(exposedActions)) continue;
 
     const isStiChild = isStiChildModel(manifest, obj);
     const existing = byCollection.get(obj.collection);
@@ -204,6 +212,69 @@ export function selectWebCollectionEntries(
     obj,
     actions,
   }));
+}
+
+/**
+ * Select the manifest entries that become web collection definitions: one per
+ * REST collection, STI children folding into their base model, collection
+ * classes excluded, and only models that expose `list` (a read surface is
+ * required to MATERIALIZE a client collection — that is what persists).
+ */
+export function selectWebCollectionEntries(
+  manifest: SmartObjectManifest,
+): WebCollectionEntry[] {
+  return selectEntriesQualifiedBy(manifest, (actions) => actions.has('list'));
+}
+
+/**
+ * Select the entries the ETag salt (#1764) must cover: every api-exposed model
+ * with a GENERATED READ ROUTE — `list` OR `get`. Broader than
+ * {@link selectWebCollectionEntries} on purpose: a get-only model
+ * (`api: { include: ['get'] }`) has no materializable client collection (so it
+ * never persists), but its generated GET route IS salted, so a shape-only change
+ * to it must still change the salt — otherwise a client holding the old concrete
+ * ETag would get a zero-query 304 after a shape-only deploy (the #1765 gap the
+ * salt closes). Not exported: only {@link computeWebManifestHash} consumes it.
+ */
+function selectWebEtagSaltEntries(
+  manifest: SmartObjectManifest,
+): WebCollectionEntry[] {
+  return selectEntriesQualifiedBy(
+    manifest,
+    (actions) => actions.has('list') || actions.has('get'),
+  );
+}
+
+/**
+ * Build the per-collection web-collection definition literal — the SINGLE
+ * source of truth for the shape emitted by {@link generateWebModule} and hashed
+ * by {@link computeWebManifestHash}. Building it in ONE place is a
+ * cache-coherency requirement: if the emitted shape and the hashed shape were
+ * built independently, adding a field to one and not the other would let the
+ * hash silently UNDER-cover a shape change, so persisted caches would not drop
+ * and stale rows would hydrate into new code.
+ */
+export function buildWebCollectionDefinition(
+  entry: WebCollectionEntry,
+  manifest: SmartObjectManifest,
+): {
+  name: string;
+  className: string;
+  endpoint: string;
+  idField: string;
+  actions: string[];
+  fields: Record<string, WebFieldDefinition>;
+  relationships: WebRelationship[];
+} {
+  return {
+    name: entry.collection,
+    className: entry.obj.className,
+    endpoint: `/${entry.collection}`,
+    idField: 'id',
+    actions: entry.actions,
+    fields: buildWebFieldDefinitions(entry.obj),
+    relationships: buildWebRelationships(entry.obj, manifest),
+  };
 }
 
 /**
@@ -288,4 +359,74 @@ export function buildWebRelationships(
     });
   }
   return relationships;
+}
+
+/**
+ * Recursively sort object keys so structurally-equal values serialize to the
+ * SAME JSON regardless of insertion order. Arrays keep their order (order is
+ * semantic for `actions`/`relationships`); objects are rebuilt with keys sorted.
+ * Required for {@link computeWebManifestHash} to be replica-stable: two builds
+ * that produce the same schema but visit the manifest in a different order (map
+ * insertion, scan order) must still hash identically, which a plain
+ * `JSON.stringify` of insertion-ordered objects would NOT guarantee.
+ */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => canonicalize(entry));
+  }
+  if (value && typeof value === 'object') {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * A deterministic, replica-stable digest of the web-collection SHAPE (#1764).
+ *
+ * The hash covers exactly the thing whose change means either old persisted
+ * client rows may mis-hydrate OR a stale read ETag would still 304: the same
+ * per-collection definition shape {@link generateWebModule} emits — name,
+ * className, endpoint, idField, actions, fields, relationships — built via the
+ * SHARED {@link buildWebCollectionDefinition} so the hash can never disagree
+ * with what is actually shipped. The shape is CANONICALIZED (keys recursively
+ * sorted; see {@link canonicalize}) before hashing, so the same schema always
+ * yields the same digest across builds and replicas regardless of manifest
+ * iteration order.
+ *
+ * SCOPE — get-OR-list (broader than materializable collections). Covered by
+ * {@link selectWebEtagSaltEntries}, so it includes GET-ONLY models too: those do
+ * not persist (no materializable collection), but their generated GET route IS
+ * salted with this hash, so a shape-only change to a get-only model must change
+ * it or a client holding the old concrete ETag gets a zero-query 304 after a
+ * shape-only deploy (the #1765 gap the salt closes). The two consumers both use
+ * this one value, so it stays identical between them:
+ *  - `@happyvertical/smrt-web` persistence (#1764) folds it into the durable
+ *    namespace, so a contract-changing deploy lands on a fresh namespace and old
+ *    rows are never found (dropped, not mis-hydrated). Including get-only models
+ *    here is harmless over-invalidation — only list-materializable collections
+ *    ever hold a persisted snapshot.
+ *  - the generated read ETag (#1765 salt, #1764) folds it in so a shape-only
+ *    deploy (no table write) busts every read validator, get-only routes too.
+ *
+ * Truncated to the first 16 base64url chars: 96 bits is far more than enough to
+ * make an accidental shape collision negligible, and a short constant keeps the
+ * emitted module and every persistence key compact.
+ */
+export function computeWebManifestHash(manifest: SmartObjectManifest): string {
+  const definitions: Record<string, unknown> = {};
+  for (const entry of selectWebEtagSaltEntries(manifest)) {
+    definitions[entry.collection] = buildWebCollectionDefinition(
+      entry,
+      manifest,
+    );
+  }
+  const canonicalJson = JSON.stringify(canonicalize(definitions));
+  return createHash('sha256')
+    .update(canonicalJson)
+    .digest('base64url')
+    .slice(0, 16);
 }
