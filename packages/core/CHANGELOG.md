@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.6
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: guard release publish from stale main (#1857)
+  - @happyvertical/smrt-config@0.38.6
+  - @happyvertical/smrt-types@0.38.6
+  - @happyvertical/smrt-scanner@0.38.6
+
 ## 0.38.5
 
 ### Patch Changes
