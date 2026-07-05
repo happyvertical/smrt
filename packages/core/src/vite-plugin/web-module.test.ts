@@ -137,6 +137,18 @@ export class HiddenGadget extends SmrtObject {
     });
   });
 
+  it('emits the build-time manifestHash constant (#1764)', async () => {
+    const code = (await load('\0smrt:web')) as string;
+    // The runtime module exports a stable, short base64url shape digest. This is
+    // one of the three emission sites (runtime value + two d.ts) that must not
+    // drift; the value semantics (determinism, change-on-shape-change) are
+    // covered exhaustively over computeWebManifestHash in web-collections.test.ts.
+    expect(code).toContain('export const manifestHash =');
+    const match = code.match(/export const manifestHash = "([^"]+)";/);
+    expect(match).not.toBeNull();
+    expect(match?.[1]).toMatch(/^[A-Za-z0-9_-]{16}$/);
+  });
+
   it('emits manifest-derived relationship edges to related REST collections (#1761)', async () => {
     const code = (await load('\0smrt:web')) as string;
     const definitions = extractDefinitions(code);

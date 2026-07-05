@@ -18,6 +18,7 @@ import type {
 import {
   buildWebFieldDefinitions,
   buildWebRelationships,
+  computeWebManifestHash,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -402,5 +403,177 @@ describe('buildWebRelationships', () => {
         relatedCollection: 'categories',
       },
     ]);
+  });
+});
+
+describe('computeWebManifestHash (#1764)', () => {
+  const field = (f: Partial<FieldDefinition>): FieldDefinition =>
+    ({ type: 'text', ...f }) as FieldDefinition;
+
+  it('returns a short, stable base64url string', () => {
+    const hash = computeWebManifestHash(
+      manifest(obj({ className: 'Product', collection: 'products' })),
+    );
+    // 16 base64url chars (first half of a sha256 digest) — compact + stable.
+    expect(hash).toMatch(/^[A-Za-z0-9_-]{16}$/);
+  });
+
+  it('is deterministic: the same manifest always hashes the same', () => {
+    const build = () =>
+      computeWebManifestHash(
+        manifest(
+          obj({
+            className: 'Product',
+            collection: 'products',
+            fields: {
+              name: field({ type: 'text', required: true }),
+              price: field({ type: 'decimal' }),
+            },
+          }),
+        ),
+      );
+    expect(build()).toBe(build());
+  });
+
+  it('is replica-stable: field insertion order does not change the hash', () => {
+    // Two builds visit the same schema in a DIFFERENT field order (map insertion
+    // order). Canonicalization (recursive key sort) must make them hash equal —
+    // otherwise a redeploy off a different scan order would spuriously drop every
+    // client cache.
+    const a = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: field({ type: 'text', required: true }),
+            price: field({ type: 'decimal' }),
+          },
+        }),
+      ),
+    );
+    const b = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            price: field({ type: 'decimal' }),
+            name: field({ type: 'text', required: true }),
+          },
+        }),
+      ),
+    );
+    expect(a).toBe(b);
+  });
+
+  it('is replica-stable: model/collection ordering does not change the hash', () => {
+    const a = computeWebManifestHash(
+      manifest(
+        obj({ className: 'Product', collection: 'products' }),
+        obj({ className: 'Order', collection: 'orders' }),
+      ),
+    );
+    const b = computeWebManifestHash(
+      manifest(
+        obj({ className: 'Order', collection: 'orders' }),
+        obj({ className: 'Product', collection: 'products' }),
+      ),
+    );
+    expect(a).toBe(b);
+  });
+
+  it('CHANGES when a field is added (the drop-stale-caches guarantee)', () => {
+    const before = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: { name: field({ type: 'text' }) },
+        }),
+      ),
+    );
+    const after = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: field({ type: 'text' }),
+            price: field({ type: 'decimal' }),
+          },
+        }),
+      ),
+    );
+    expect(after).not.toBe(before);
+  });
+
+  it('CHANGES when a field is removed', () => {
+    const before = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: field({ type: 'text' }),
+            price: field({ type: 'decimal' }),
+          },
+        }),
+      ),
+    );
+    const after = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: { name: field({ type: 'text' }) },
+        }),
+      ),
+    );
+    expect(after).not.toBe(before);
+  });
+
+  it('CHANGES when a field type changes (a shape-only difference)', () => {
+    const asText = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: { count: field({ type: 'text' }) },
+        }),
+      ),
+    );
+    const asInteger = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: { count: field({ type: 'integer' }) },
+        }),
+      ),
+    );
+    expect(asInteger).not.toBe(asText);
+  });
+
+  it('CHANGES when a relationship edge is added', () => {
+    const withoutEdge = computeWebManifestHash(
+      manifest(
+        obj({ className: 'Order', collection: 'orders' }),
+        obj({ className: 'Customer', collection: 'customers' }),
+      ),
+    );
+    const withEdge = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Order',
+          collection: 'orders',
+          fields: {
+            customerId: field({ type: 'foreignKey', related: 'Customer' }),
+          },
+        }),
+        obj({ className: 'Customer', collection: 'customers' }),
+      ),
+    );
+    expect(withEdge).not.toBe(withoutEdge);
   });
 });

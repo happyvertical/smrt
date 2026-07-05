@@ -14,6 +14,7 @@
  * emission and the type emission can never disagree.
  */
 
+import { createHash } from 'node:crypto';
 import type {
   FieldDefinition,
   SmartObjectDefinition,
@@ -288,4 +289,72 @@ export function buildWebRelationships(
     });
   }
   return relationships;
+}
+
+/**
+ * Recursively sort object keys so structurally-equal values serialize to the
+ * SAME JSON regardless of insertion order. Arrays keep their order (order is
+ * semantic for `actions`/`relationships`); objects are rebuilt with keys sorted.
+ * Required for {@link computeWebManifestHash} to be replica-stable: two builds
+ * that produce the same schema but visit the manifest in a different order (map
+ * insertion, scan order) must still hash identically, which a plain
+ * `JSON.stringify` of insertion-ordered objects would NOT guarantee.
+ */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => canonicalize(entry));
+  }
+  if (value && typeof value === 'object') {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
+}
+
+/**
+ * A deterministic, replica-stable digest of the web-collection SHAPE (#1764).
+ *
+ * The hash covers exactly the thing whose change means old persisted client
+ * rows may mis-hydrate into new code: the same per-collection `definitions`
+ * shape {@link generateWebModule} emits — name, className, endpoint, idField,
+ * actions, fields, relationships — built via the SAME shared selectors so the
+ * hash can never disagree with what is actually shipped. The shape is
+ * CANONICALIZED (keys recursively sorted; see {@link canonicalize}) before
+ * hashing, so the same schema always yields the same digest across builds and
+ * replicas regardless of manifest iteration order.
+ *
+ * Two consumers key on this:
+ *  - `@happyvertical/smrt-web` persistence (#1764) folds it into the durable
+ *    namespace, so a contract-changing deploy lands on a fresh namespace and old
+ *    rows are simply never found (dropped, not mis-hydrated).
+ *  - the generated read ETag (#1765 salt, #1764) folds it in so a shape-only
+ *    deploy (no table write) busts every read validator.
+ *
+ * Truncated to the first 16 base64url chars: 96 bits is far more than enough to
+ * make an accidental shape collision negligible, and a short constant keeps the
+ * emitted module and every persistence key compact.
+ */
+export function computeWebManifestHash(manifest: SmartObjectManifest): string {
+  const definitions: Record<string, unknown> = {};
+  for (const { collection, obj, actions } of selectWebCollectionEntries(
+    manifest,
+  )) {
+    definitions[collection] = {
+      name: collection,
+      className: obj.className,
+      endpoint: `/${collection}`,
+      idField: 'id',
+      actions,
+      fields: buildWebFieldDefinitions(obj),
+      relationships: buildWebRelationships(obj, manifest),
+    };
+  }
+  const canonicalJson = JSON.stringify(canonicalize(definitions));
+  return createHash('sha256')
+    .update(canonicalJson)
+    .digest('base64url')
+    .slice(0, 16);
 }

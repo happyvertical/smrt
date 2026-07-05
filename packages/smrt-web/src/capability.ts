@@ -27,6 +27,7 @@ import type {
   SmrtCrudFetchers,
   SmrtWebCollectionDefinition,
   SmrtWebRow,
+  SmrtWebSubscription,
 } from './index.js';
 
 /**
@@ -56,6 +57,25 @@ export interface SmrtWebCapabilityContext<TData extends object = object> {
    * message) without reaching into the engine.
    */
   invalidate(): void;
+  /**
+   * A snapshot of the collection's current rows as plain public DTOs — the same
+   * projection as {@link SmrtWebCollection.toArray}, so the engine's virtual
+   * props never cross the boundary. The persistence slice (#1764) reads this in
+   * its write-back to serialize the current cache to disk. Populated by the real
+   * factory from `onAttach` onward; a hand-built test context may omit it, so
+   * callers guard for its presence.
+   */
+  snapshot?(): ReadonlyArray<SmrtWebRow<TData>>;
+  /**
+   * Subscribe to the collection's change notifications — the same stream as
+   * {@link SmrtWebCollection.subscribeChanges} (plain-DTO payloads). The
+   * persistence slice (#1764) wires its debounced write-back here in `onAttach`
+   * and detaches in `teardown`. Engine-free by construction: the payload is
+   * `unknown` (the capability only needs the change SIGNAL, then re-reads via
+   * {@link snapshot}), so no engine type crosses the seam. Populated by the real
+   * factory; a hand-built test context may omit it.
+   */
+  subscribe?(callback: (changes: unknown) => void): SmrtWebSubscription;
 }
 
 /**

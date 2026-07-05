@@ -51,6 +51,17 @@ export interface APIConfig {
   ) => (req: Request) => Promise<Request | Response>;
   port?: number;
   hostname?: string;
+  /**
+   * The build's web-collection SHAPE digest (#1764) — the same value the
+   * generated `@happyvertical/smrt-virt-web` module exports. When supplied it is
+   * folded into every read ETag via {@link computeTableVersionEtag}, so a
+   * shape-only deploy (no table write) busts every read validator, closing the
+   * documented v2 staleness gap. Optional and defaulting to undefined:
+   * non-generated / test callers behave exactly as before (no salt). The
+   * generated SvelteKit routes bake the same constant in directly rather than
+   * going through this runtime server.
+   */
+  manifestHash?: string;
 }
 
 export interface APIContext {
@@ -1159,7 +1170,9 @@ export class APIGenerator {
    * version ({@link getTableVersion}) keyed by the request representation, so a
    * matching `If-None-Match` can short-circuit into a 304 BEFORE the collection
    * query runs. The representation folds in the active tenant for tenant-scoped
-   * models so one tenant's cached ETag never satisfies another's read.
+   * models so one tenant's cached ETag never satisfies another's read. When an
+   * `APIConfig.manifestHash` is configured it is folded into the digest (#1764),
+   * so a shape-only deploy busts every read validator.
    */
   private async computeReadEtag(
     collection: SmrtCollection<SmrtObject>,
@@ -1171,7 +1184,14 @@ export class APIGenerator {
       req,
       this.readTenantDiscriminator(objectName),
     );
-    return computeTableVersionEtag(version, representation);
+    // Salt the ETag with the build's web-collection shape digest (#1764) when
+    // configured, so a shape-only deploy busts every read validator. Undefined
+    // (the default) reproduces the pre-#1764 unsalted ETag exactly.
+    return computeTableVersionEtag(
+      version,
+      representation,
+      this.config.manifestHash,
+    );
   }
 
   /**

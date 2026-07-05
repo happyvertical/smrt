@@ -340,6 +340,14 @@ ${webCollectionEntries}
   export function getCollectionDefinition<
     K extends keyof SmrtWebCollectionDefinitions,
   >(name: K): SmrtWebCollectionDefinitions[K];
+  /**
+   * Build-time web-collection shape digest (#1764). A deterministic,
+   * replica-stable hash of the emitted collection definitions; a change means
+   * old persisted client rows may mis-hydrate. Consumers fold it into the
+   * durable persistence namespace and the version-awareness updateAvailable
+   * contract signal.
+   */
+  export const manifestHash: string;
   export default collectionDefinitions;
 }`;
 

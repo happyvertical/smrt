@@ -315,14 +315,29 @@ export function conditionalJsonResponse(
  * non-negative integer with no `:` — the first colon unambiguously delimits it
  * from the representation, so `(1, ':x')` and `(1, 'x')` never collide.
  * Deterministic and carrying no per-process state, so it is replica-stable.
+ *
+ * The optional `manifestHash` (#1764) salts the digest with the build's
+ * web-collection SHAPE digest, closing the documented "shape change without a
+ * table write" staleness gap (see the v2 consistency note above): a deploy that
+ * changes fields / toPublicJSON / sensitive markings WITHOUT any table write
+ * leaves the table version unchanged, so without the salt every read ETag stays
+ * identical and clients keep the stale shape until the table next changes.
+ * Folding the build-time manifest hash in makes a shape-only redeploy bust every
+ * read validator. Backward-compatible: `undefined` reproduces the pre-#1764
+ * digest input EXACTLY (`${version}:${representation}`, no trailing separator),
+ * so existing callers and their tests are byte-for-byte unaffected; only a
+ * generated route that threads the constant appends the `:${manifestHash}` salt.
  */
 export function computeTableVersionEtag(
   version: number,
   representation: string,
+  manifestHash?: string,
 ): string {
-  return `"${createHash('sha256')
-    .update(`${version}:${representation}`)
-    .digest('base64url')}"`;
+  const input =
+    manifestHash === undefined
+      ? `${version}:${representation}`
+      : `${version}:${representation}:${manifestHash}`;
+  return `"${createHash('sha256').update(input).digest('base64url')}"`;
 }
 
 /**
@@ -477,6 +492,16 @@ export interface ConditionalGetRouteHelperOptions
    * pure function of the base table, so it uses v2.
    */
   useBodyHash?: boolean;
+  /**
+   * The build's web-collection SHAPE digest (#1764), baked into the emitted v2
+   * helper as a `MANIFEST_HASH` constant and folded into every read ETag via
+   * {@link computeTableVersionEtag}. This makes a shape-only deploy (no table
+   * write) bust every read validator, closing the documented v2 staleness gap.
+   * Omitted (the default) reproduces the pre-#1764 emit exactly — no constant,
+   * no third argument — so callers that do not thread a hash are unaffected.
+   * Ignored on the v1 body-hash path, whose ETag already covers the whole body.
+   */
+  manifestHash?: string;
 }
 
 /**
@@ -594,6 +619,20 @@ function conditionalJson(request: Request, payload: unknown): Response {
     ? 'resolveTenantEtagDiscriminator()'
     : 'undefined';
 
+  // The build-time web-collection shape digest (#1764) salts the ETag so a
+  // shape-only deploy (no table write) busts every read validator — the
+  // documented v2 staleness gap. Baked in as a constant and passed as
+  // computeTableVersionEtag's third argument. When absent, the emit is the
+  // pre-#1764 shape exactly: no constant, no third argument (undefined
+  // reproduces today's digest input byte-for-byte). The value is a base64url
+  // digest (only [A-Za-z0-9_-]), so single-quote interpolation is safe.
+  const manifestHashConstant =
+    options.manifestHash === undefined
+      ? ''
+      : `\nconst MANIFEST_HASH = '${options.manifestHash}';\n`;
+  const manifestHashArg =
+    options.manifestHash === undefined ? '' : ',\n    MANIFEST_HASH';
+
   return `
 // Conditional GET (#1765): the ETag is the table's change-feed version keyed by
 // the request representation, so a CONCRETE If-None-Match returns 304 BEFORE the
@@ -606,7 +645,7 @@ import {
 } from '@happyvertical/smrt-core';
 
 const READ_CACHE_CONTROL = '${cacheControl}';
-
+${manifestHashConstant}
 async function conditionalVersionedRead(
   request: Request,
   db: Parameters<typeof getTableVersion>[0],
@@ -616,7 +655,7 @@ async function conditionalVersionedRead(
   const version = await getTableVersion(db, tableName);
   const etag = computeTableVersionEtag(
     version,
-    canonicalReadRepresentation(request, ${representationExtra}),
+    canonicalReadRepresentation(request, ${representationExtra})${manifestHashArg},
   );
   const ifNoneMatch = request.headers.get('if-none-match');
   const notModified = () =>

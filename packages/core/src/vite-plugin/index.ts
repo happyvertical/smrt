@@ -29,6 +29,7 @@ import {
 import {
   buildWebFieldDefinitions,
   buildWebRelationships,
+  computeWebManifestHash,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -1340,11 +1341,23 @@ function generateWebModule(manifest: SmartObjectManifest): string {
     };
   }
 
+  // The web-collection SHAPE digest (#1764): a deterministic, replica-stable
+  // hash of the exact `definitions` shape emitted below. Persistence keys its
+  // durable namespace on it (a contract-changing deploy drops old caches) and
+  // the generated read ETag folds it in (a shape-only deploy busts validators).
+  // Built via the shared selectors so it can never disagree with what ships.
+  const manifestHash = computeWebManifestHash(manifest);
+
   return `
 // Auto-generated web collection definitions from SMRT objects (#1761)
 // This file is generated automatically - do not edit
 
 export const collectionDefinitions = ${JSON.stringify(definitions, null, 2)};
+
+// Build-time inject of the web-collection shape digest (#1764) — see
+// computeWebManifestHash. A change here means old persisted client rows may
+// mis-hydrate, so persistence namespaces and read ETags key on it.
+export const manifestHash = ${JSON.stringify(manifestHash)};
 
 export function getCollectionDefinition(name) {
   const definition = collectionDefinitions[name];
@@ -1858,6 +1871,15 @@ ${webCollectionInterface}
   export function getCollectionDefinition<
     K extends keyof SmrtWebCollectionDefinitions,
   >(name: K): SmrtWebCollectionDefinitions[K];
+  /**
+   * Build-time web-collection shape digest (#1764). A deterministic,
+   * replica-stable hash of the emitted collection definitions; a change means
+   * old persisted client rows may mis-hydrate. Consumers fold it into the
+   * durable persistence namespace and the version-awareness updateAvailable
+   * contract signal. One of three emission sites that must not drift — the
+   * runtime value, this ambient d.ts, and the physical @smrt/web d.ts.
+   */
+  export const manifestHash: string;
   export default collectionDefinitions;
 }
 
