@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.7
+
+### Patch Changes
+
+- ### Features
+
+  - version awareness — manifest-hash keyed persistence + updateAvailable (#1764) (#1858) (smrt-web)
+  - @happyvertical/smrt-config@0.38.7
+  - @happyvertical/smrt-types@0.38.7
+  - @happyvertical/smrt-scanner@0.38.7
+
 ## 0.38.6
 
 ### Patch Changes
