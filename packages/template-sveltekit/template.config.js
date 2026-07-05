@@ -20,7 +20,7 @@ export default {
 
   // Dependencies to add to generated project
   dependencies: {
-    '@happyvertical/smrt-core': '^0.38.3',
+    '@happyvertical/smrt-core': '^0.38.4',
   },
 
   devDependencies: {

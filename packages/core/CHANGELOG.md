@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.4
+
+### Patch Changes
+
+- ### Features
+
+  - adopt WASD AdminShell as the default app chrome (#1777) (#1830) (template-sveltekit)
+  - @happyvertical/smrt-config@0.38.4
+  - @happyvertical/smrt-types@0.38.4
+  - @happyvertical/smrt-scanner@0.38.4
+
 ## 0.38.3
 
 ### Patch Changes

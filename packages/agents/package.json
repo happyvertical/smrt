@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-agents",
-  "version": "0.38.3",
+  "version": "0.38.4",
   "type": "module",
   "smrtRawPrimitives": "strict",
   "description": "Agent framework for building autonomous actors in the SMRT ecosystem",
