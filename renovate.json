@@ -3,12 +3,6 @@
   "extends": ["local>happyvertical/renovate-config:smrt"],
   "packageRules": [
     {
-      "description": "Automerge minor and patch updates on green PRs",
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true,
-      "automergeType": "pr"
-    },
-    {
       "description": "Don't let Renovate bump the monorepo's own @happyvertical/smrt-* packages where the starter templates pin them as real npmjs deps for downstream projects. Those pins are synced to the monorepo release at publish time (scripts/sync-template-versions.mjs); chasing them against npmjs only produces self-referential, perpetually-stale PRs (#1698/#1699/#1700).",
       "matchFileNames": ["packages/*/template/package.json"],
       "matchPackageNames": ["@happyvertical/smrt-*"],
