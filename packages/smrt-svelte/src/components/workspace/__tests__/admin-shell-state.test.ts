@@ -1,5 +1,42 @@
+import { flushSync, mount, unmount } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { createShellState } from '../admin-shell/state.svelte.js';
+import MutationEffectHarness from './admin-shell-mutation-effect-harness.svelte';
+
+type ShellMutationEffect = Parameters<typeof MutationEffectHarness>[0]['run'];
+
+function mountMutationEffect(
+  shell: ReturnType<typeof createShellState>,
+  run: ShellMutationEffect,
+): {
+  getRuns: () => number;
+  setActivityProgress: (progress: number) => void;
+  teardown: () => void;
+} {
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+  let getRuns = () => 0;
+  let setActivityProgress = (_progress: number) => {};
+  const component = mount(MutationEffectHarness, {
+    target,
+    props: {
+      shell,
+      run,
+      onReady: (controls) => {
+        getRuns = controls.getRuns;
+        setActivityProgress = controls.setActivityProgress;
+      },
+    },
+  });
+  return {
+    getRuns,
+    setActivityProgress,
+    teardown: () => {
+      unmount(component);
+      target.remove();
+    },
+  };
+}
 
 describe('ShellState', () => {
   it('allows panels to expand independently by default', () => {
@@ -116,5 +153,123 @@ describe('ShellState', () => {
     // A new activity is a notify-worthy "started"; a progress-only tick is an
     // upsert carrying `previous`, which the toaster filters out.
     expect(events).toEqual(['upsert:new', 'upsert:has-prev']);
+  });
+
+  it('does not leak focus-tool state reads into consumer effects', () => {
+    const shell = createShellState();
+    const harness = mountMutationEffect(shell, (state) => {
+      const unregister = state.registerFocusTool({
+        id: 'activity',
+        label: 'Activity',
+      });
+      state.openFocusTool('activity');
+      return unregister;
+    });
+
+    try {
+      flushSync();
+      expect(harness.getRuns()).toBe(1);
+
+      shell.collapsePanel('right');
+      flushSync();
+      shell.openFocusTool('activity');
+      flushSync();
+
+      expect(harness.getRuns()).toBe(1);
+      expect(shell.focusTools.map((tool) => tool.id)).toEqual(['activity']);
+    } finally {
+      harness.teardown();
+    }
+  });
+
+  it('does not leak panel state reads into consumer effects', () => {
+    const shell = createShellState();
+    const harness = mountMutationEffect(shell, (state) => {
+      state.setPanel('right', 'expanded');
+      return undefined;
+    });
+
+    try {
+      flushSync();
+      expect(harness.getRuns()).toBe(1);
+
+      shell.togglePanel('right');
+      flushSync();
+
+      expect(harness.getRuns()).toBe(1);
+      expect(shell.panels.right).toBe('collapsed');
+    } finally {
+      harness.teardown();
+    }
+  });
+
+  it('does not leak settings state reads into consumer effects', () => {
+    const shell = createShellState();
+    const harness = mountMutationEffect(shell, (state) => {
+      state.applySettings({ panels: { right: 'expanded' } });
+      return undefined;
+    });
+
+    try {
+      flushSync();
+      expect(harness.getRuns()).toBe(1);
+
+      shell.setHotkey('right', 'KeyR');
+      flushSync();
+
+      expect(harness.getRuns()).toBe(1);
+      expect(shell.settings.keymap?.right).toEqual({ code: 'KeyR' });
+    } finally {
+      harness.teardown();
+    }
+  });
+
+  it('does not leak activity state reads into consumer effects', () => {
+    const shell = createShellState();
+    const harness = mountMutationEffect(shell, (state) => {
+      state.upsertActivity({
+        id: 'sync-1',
+        label: 'Sync',
+        kind: 'sync',
+        scope: 'system',
+        status: 'running',
+      });
+      return undefined;
+    });
+
+    try {
+      flushSync();
+      expect(harness.getRuns()).toBe(1);
+
+      shell.updateActivity('sync-1', { progress: 50 });
+      flushSync();
+
+      expect(harness.getRuns()).toBe(1);
+      expect(shell.listActivities()[0]?.progress).toBe(50);
+    } finally {
+      harness.teardown();
+    }
+  });
+
+  it('keeps caller-supplied reactive activity inputs tracked', () => {
+    const shell = createShellState();
+    const harness = mountMutationEffect(shell, (state, inputs) => {
+      state.upsertActivity(inputs.activity);
+      return undefined;
+    });
+
+    try {
+      flushSync();
+      expect(harness.getRuns()).toBe(1);
+      expect(shell.listActivities()[0]?.progress).toBe(0);
+
+      harness.setActivityProgress(75);
+      flushSync();
+
+      expect(harness.getRuns()).toBe(2);
+      expect(shell.listActivities()[0]?.progress).toBe(75);
+    } finally {
+      harness.teardown();
+    }
   });
 });
