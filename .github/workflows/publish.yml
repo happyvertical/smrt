@@ -267,6 +267,9 @@ jobs:
       needs.validate-release-shards.result == 'success'
     runs-on: arc-happyvertical
     timeout-minutes: 20
+    concurrency:
+      group: release-publish-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
 
     steps:
       - name: Generate token from GitHub App
@@ -325,6 +328,12 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
+      - name: Guard release publish target
+        env:
+          RELEASE_BASE_BRANCH: main
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: node scripts/guard-release-publish.js
+
       - name: Publish validated release
         env:
           CI: true
@@ -335,58 +344,6 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           echo "🚀 Publishing validated release $RELEASE_VERSION"
-
-          node - <<'NODE'
-          const { existsSync, readFileSync, readdirSync } = require('fs');
-          const { join } = require('path');
-
-          const changesetConfig = JSON.parse(readFileSync('.changeset/config.json', 'utf8'));
-          const releasePackageNames = new Set(
-            (changesetConfig.fixed ?? []).flatMap((group) =>
-              Array.isArray(group) ? group : [],
-            ),
-          );
-
-          const packageJsonFiles = ['package.json'];
-          for (const entry of readdirSync('packages', { withFileTypes: true })) {
-            if (!entry.isDirectory()) {
-              continue;
-            }
-
-            const file = join('packages', entry.name, 'package.json');
-            if (!existsSync(file)) {
-              continue;
-            }
-
-            const packageJson = JSON.parse(readFileSync(file, 'utf8'));
-            const packageName = packageJson.name ?? entry.name;
-            const isReleasePackage = releasePackageNames.has(packageName);
-            const isExplicitlyPublishable = Boolean(packageJson.publishConfig);
-
-            if (packageJson.private === true || (!isReleasePackage && !isExplicitlyPublishable)) {
-              continue;
-            }
-
-            packageJsonFiles.push(file);
-          }
-
-          const offenders = [];
-          for (const file of packageJsonFiles) {
-            const version = JSON.parse(readFileSync(file, 'utf8')).version;
-            const major = Number.parseInt(String(version).split('.')[0] ?? '0', 10);
-            if (Number.isInteger(major) && major >= 1) {
-              offenders.push(`${file}: ${version}`);
-            }
-          }
-
-          if (offenders.length > 0) {
-            console.error('❌ Refusing to publish a major version release:');
-            for (const offender of offenders) {
-              console.error(`- ${offender}`);
-            }
-            process.exit(1);
-          }
-          NODE
 
           mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'CHANGELOG.md' -o -name 'template.config.js' \) -print | sort)
           git add package.json
