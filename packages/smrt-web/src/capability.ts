@@ -62,8 +62,14 @@ export interface SmrtWebCapabilityContext<TData extends object = object> {
    * projection as {@link SmrtWebCollection.toArray}, so the engine's virtual
    * props never cross the boundary. The persistence slice (#1764) reads this in
    * its write-back to serialize the current cache to disk. Populated by the real
-   * factory from `onAttach` onward; a hand-built test context may omit it, so
-   * callers guard for its presence.
+   * factory; a hand-built test context may omit it, so callers guard for its
+   * presence.
+   *
+   * SAFE ONLY FROM `onAttach` ONWARD. The factory's implementation closes over
+   * the engine collection, which is constructed AFTER `contributeCacheKey` and
+   * `warmStart` run — calling this from those earlier hooks would throw
+   * (temporal-dead-zone). Read rows from `onAttach`, `onSettled`, or an external
+   * trigger, never during construction.
    */
   snapshot?(): ReadonlyArray<SmrtWebRow<TData>>;
   /**
@@ -74,6 +80,9 @@ export interface SmrtWebCapabilityContext<TData extends object = object> {
    * `unknown` (the capability only needs the change SIGNAL, then re-reads via
    * {@link snapshot}), so no engine type crosses the seam. Populated by the real
    * factory; a hand-built test context may omit it.
+   *
+   * SAFE ONLY FROM `onAttach` ONWARD (same reason as {@link snapshot}): it closes
+   * over the engine collection built after the pre-construction hooks.
    */
   subscribe?(callback: (changes: unknown) => void): SmrtWebSubscription;
 }

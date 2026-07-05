@@ -27,8 +27,7 @@ import {
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
 import {
-  buildWebFieldDefinitions,
-  buildWebRelationships,
+  buildWebCollectionDefinition,
   computeWebManifestHash,
   selectWebCollectionEntries,
 } from './web-collections.js';
@@ -1319,26 +1318,24 @@ export { createClient as default };
  * API-exposed model in the manifest. This is the codegen contract consumed by
  * `@happyvertical/smrt-web` to construct client collections over the generated
  * REST surface. Deliberately data-only: no fetch code is emitted here, so the
- * runtime wrapper owns all HTTP/error semantics in one place. Selection and
- * field rules live in {@link selectWebCollectionEntries} /
- * {@link buildWebFieldDefinitions} so this value emission and the matching
- * d.ts type emission cannot drift.
+ * runtime wrapper owns all HTTP/error semantics in one place. Selection and the
+ * per-collection shape live in {@link selectWebCollectionEntries} /
+ * {@link buildWebCollectionDefinition} so this value emission, the matching d.ts
+ * type emission, and the #1764 shape digest cannot drift.
  */
 function generateWebModule(manifest: SmartObjectManifest): string {
   const definitions: Record<string, unknown> = {};
 
-  for (const { collection, obj, actions } of selectWebCollectionEntries(
-    manifest,
-  )) {
-    definitions[collection] = {
-      name: collection,
-      className: obj.className,
-      endpoint: `/${collection}`,
-      idField: 'id',
-      actions,
-      fields: buildWebFieldDefinitions(obj),
-      relationships: buildWebRelationships(obj, manifest),
-    };
+  // Emit one definition per MATERIALIZABLE collection (list-exposed), built via
+  // the SHARED buildWebCollectionDefinition — the single source of truth the
+  // shape digest (#1764) also hashes, so the emitted shape and the hashed shape
+  // can never drift (a drift would let the hash under-cover a change → stale
+  // caches). See buildWebCollectionDefinition's docblock.
+  for (const entry of selectWebCollectionEntries(manifest)) {
+    definitions[entry.collection] = buildWebCollectionDefinition(
+      entry,
+      manifest,
+    );
   }
 
   // The web-collection SHAPE digest (#1764): a deterministic, replica-stable

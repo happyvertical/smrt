@@ -33,6 +33,18 @@
 export const SNAPSHOT_STORE = 'snapshots';
 /** IndexedDB schema version. Bump only on a store/index migration. */
 export const SNAPSHOT_DB_VERSION = 1;
+/**
+ * Suffix appended to the durable-store namespace to form this store's OWN
+ * IndexedDB database name. Distinct DBs per store are REQUIRED for correctness:
+ * the merged outbox (#1762) already opens the BARE namespace as a v1 database
+ * with only its `outbox` object store. If persistence opened the same bare
+ * namespace at v1, whichever store opened SECOND would find the existing v1 DB,
+ * `onupgradeneeded` would NOT fire, and `objectStore('snapshots')` would throw
+ * `NotFoundError` — silently disabling persistence (or the outbox). A distinct
+ * DB name sidesteps the collision entirely; `wipeDurableStore` still clears both
+ * because it fans out via each registered resource's `clear()`, never by DB name.
+ */
+export const SNAPSHOT_DB_SUFFIX = '::snapshots';
 
 /** One persisted collection snapshot record. */
 export interface SnapshotRecord {
@@ -184,24 +196,30 @@ export class SnapshotStore {
 }
 
 /**
- * Open (creating/upgrading as needed) the snapshot database for `dbName` and
- * wrap it in a {@link SnapshotStore}. `dbName` MUST be a
+ * Open (creating/upgrading as needed) the snapshot database for `namespace` and
+ * wrap it in a {@link SnapshotStore}. `namespace` MUST be a
  * {@link durableStoreNamespace} string — already `encodeURIComponent`-safe and
  * carrying the api/tenant/identity/manifest isolation boundary, so two
  * identities never share one snapshot database.
+ *
+ * The actual IndexedDB database name is `${namespace}${SNAPSHOT_DB_SUFFIX}` — a
+ * DISTINCT database from the merged outbox's bare-namespace one, so persistence +
+ * outbox under a shared namespace never collide on a single-store v1 DB (see
+ * {@link SNAPSHOT_DB_SUFFIX}).
  *
  * The `onupgradeneeded` handler creates the `snapshots` store keyed by
  * `collection`. Idempotent: re-opening an existing database at the same version
  * skips the upgrade — the reload path (a new tab re-opens the same durable
  * backing and sees prior snapshots).
  */
-export function openSnapshotStore(dbName: string): Promise<SnapshotStore> {
+export function openSnapshotStore(namespace: string): Promise<SnapshotStore> {
   const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
   if (!idb) {
     return Promise.reject(
       new Error('[smrt-web] IndexedDB is unavailable in this environment'),
     );
   }
+  const dbName = `${namespace}${SNAPSHOT_DB_SUFFIX}`;
   return new Promise<SnapshotStore>((resolve, reject) => {
     const request = idb.open(dbName, SNAPSHOT_DB_VERSION);
     request.onupgradeneeded = () => {

@@ -22,6 +22,16 @@
 export const META_STORE = 'meta';
 /** IndexedDB schema version. Bump only on a store/index migration. */
 export const META_DB_VERSION = 1;
+/**
+ * Suffix appended to the durable-store namespace to form this store's OWN
+ * IndexedDB database name — DISTINCT from both the merged outbox's bare-namespace
+ * DB and the snapshot store's `::snapshots` DB. Required so persistence + outbox
+ * + version-meta under one shared namespace never collide on a single-store v1
+ * database (a second opener would find the existing v1 DB, skip
+ * `onupgradeneeded`, and throw `NotFoundError` on `objectStore('meta')`).
+ * `wipeDurableStore` still clears all three via each registered `clear()`.
+ */
+export const META_DB_SUFFIX = '::meta';
 /** The reserved key under which the last-seen manifest hash is stored. */
 export const LAST_SEEN_MANIFEST_HASH_KEY = 'lastSeenManifestHash';
 
@@ -103,12 +113,14 @@ export class VersionMetaStore {
 }
 
 /**
- * Open (creating/upgrading as needed) the version-meta database for `dbName` and
- * wrap it in a {@link VersionMetaStore}. `dbName` MUST be a
- * {@link durableStoreNamespace} string.
+ * Open (creating/upgrading as needed) the version-meta database for `namespace`
+ * and wrap it in a {@link VersionMetaStore}. `namespace` MUST be a
+ * {@link durableStoreNamespace} string. The actual IndexedDB database name is
+ * `${namespace}${META_DB_SUFFIX}` — a DISTINCT database from the outbox's and
+ * the snapshot store's, so the three never collide (see {@link META_DB_SUFFIX}).
  */
 export function openVersionMetaStore(
-  dbName: string,
+  namespace: string,
 ): Promise<VersionMetaStore> {
   const idb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
   if (!idb) {
@@ -116,6 +128,7 @@ export function openVersionMetaStore(
       new Error('[smrt-web] IndexedDB is unavailable in this environment'),
     );
   }
+  const dbName = `${namespace}${META_DB_SUFFIX}`;
   return new Promise<VersionMetaStore>((resolve, reject) => {
     const request = idb.open(dbName, META_DB_VERSION);
     request.onupgradeneeded = () => {

@@ -576,4 +576,44 @@ describe('computeWebManifestHash (#1764)', () => {
     );
     expect(withEdge).not.toBe(withoutEdge);
   });
+
+  // The salt covers get-OR-list routes, not just materializable (list) ones
+  // (#1764 / codex P2): a get-only model has a generated GET route that IS
+  // salted, so a shape-only change to it must change the hash — else a client
+  // holding the old concrete ETag gets a zero-query 304 after a shape-only deploy.
+  const getOnly = (fields: Record<string, FieldDefinition>) =>
+    obj({
+      className: 'Doc',
+      collection: 'docs',
+      fields,
+      decoratorConfig: {
+        api: { include: ['get'] },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+
+  it('INCLUDES get-only models (not materializable, but their GET route is salted)', () => {
+    // A manifest with ONLY a get-only model still produces a non-empty hash that
+    // reflects its shape — proving get-only entries are covered, not dropped
+    // (selectWebCollectionEntries would have excluded it for lacking `list`).
+    const withGetOnly = computeWebManifestHash(
+      manifest(getOnly({ title: field({ type: 'text' }) })),
+    );
+    const empty = computeWebManifestHash(manifest());
+    expect(withGetOnly).not.toBe(empty);
+  });
+
+  it('CHANGES when a GET-ONLY model shape changes (the salt covers get routes)', () => {
+    const before = computeWebManifestHash(
+      manifest(getOnly({ title: field({ type: 'text' }) })),
+    );
+    const after = computeWebManifestHash(
+      manifest(
+        getOnly({
+          title: field({ type: 'text' }),
+          author: field({ type: 'text' }),
+        }),
+      ),
+    );
+    expect(after).not.toBe(before);
+  });
 });

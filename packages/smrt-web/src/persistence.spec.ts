@@ -21,6 +21,7 @@
 import 'fake-indexeddb/auto';
 
 import { afterEach, describe, expect, it } from 'vitest';
+import type { SmrtWebCapabilityContext } from './capability.js';
 import type { DurableResource } from './durable-store.js';
 import {
   createSmrtCollection,
@@ -33,6 +34,11 @@ import {
   type SmrtWebCollectionDefinition,
   wipeDurableStore,
 } from './index.js';
+// The MERGED outbox's raw queue (#1762) — used verbatim in the collision
+// regression test to open a REAL bare-namespace outbox DB alongside the
+// suffixed snapshot DB, proving the two coexist.
+import { openDurableOutboxQueue } from './offline/durable-queue.js';
+import { openSnapshotStore } from './persistence/snapshot-store.js';
 
 interface ProductData {
   id?: string;
@@ -445,5 +451,126 @@ describe('persistCollection (#1764) — opt-in per model', () => {
     expect(server2.calls.list).toBe(1); // no snapshot from the non-persistent run
     expect(persisted.get('p1')?.name).toBe('FromServer');
     sub2.unsubscribe();
+  });
+});
+
+describe('persistCollection (#1764) — IndexedDB db-name de-collision (codex P1)', () => {
+  it('a persistence snapshot store and the merged outbox queue open under ONE namespace WITHOUT a NotFoundError, and one wipeDurableStore clears both', async () => {
+    const namespace: DurableStoreKey = {
+      ...uniqueBaseKey(),
+      manifestHash: 'shape00000000000',
+    };
+    const ns = durableStoreNamespace(namespace);
+
+    // Open the REAL merged outbox queue FIRST — it opens the BARE namespace as a
+    // v1 DB with only its `outbox` store (this is exactly the pre-fix collision
+    // trigger: if the snapshot store also opened the bare namespace at v1, the
+    // second opener would skip onupgradeneeded and throw NotFoundError).
+    const outbox = await openDurableOutboxQueue(ns);
+    // Then open the persistence snapshot store under the SAME namespace. Post-fix
+    // it lands on a DISTINCT db (`${ns}::snapshots`), so this must NOT throw.
+    const snapshots = await openSnapshotStore(ns);
+
+    // BOTH stores are fully usable (a NotFoundError would surface here).
+    await outbox.enqueue({
+      itemId: 'i1',
+      object: 'products',
+      op: 'create',
+      id: 'row-1',
+      payload: { name: 'Widget' },
+    });
+    await snapshots.save('products', [{ id: 'p1', name: 'Widget' }]);
+    expect((await outbox.all()).length).toBe(1);
+    expect((await snapshots.load('products'))?.length).toBe(1);
+
+    // Register each store's clear() as a durable resource under the shared
+    // namespace (as the capabilities do), then ONE wipe clears BOTH.
+    const unregOutbox = registerDurableResource(ns, {
+      kind: 'outbox',
+      clear: () => outbox.clear(),
+    });
+    const unregSnapshots = registerDurableResource(ns, {
+      kind: 'persisted-collection',
+      clear: () => snapshots.clear(),
+    });
+
+    await wipeDurableStore(ns);
+
+    // Both durable stores were emptied by the single wipe (clear() fans out via
+    // the registry, not by db name — so distinct dbs are fine).
+    expect((await outbox.all()).length).toBe(0);
+    expect(await snapshots.load('products')).toBeUndefined();
+
+    unregOutbox();
+    unregSnapshots();
+    outbox.close();
+    snapshots.close();
+  });
+});
+
+describe('persistCollection (#1764) — empty-snapshot overwrite guard (Copilot)', () => {
+  /**
+   * A minimal ctx WITHOUT the optional `snapshot`/`subscribe` hooks — the shape a
+   * hand-built (non-factory) ctx can take. Write-back must be a NO-OP for it, not
+   * persist an empty snapshot over a prior good one.
+   */
+  function snapshotlessCtx(
+    name: string,
+  ): SmrtWebCapabilityContext<ProductData> {
+    return {
+      definition: {
+        name,
+        className: 'Product',
+        endpoint: `/${name}`,
+        idField: 'id',
+        actions: ['create', 'update', 'delete', 'list', 'get'],
+        fields: {},
+      },
+      fetchers: {
+        list: async () => [],
+        create: async (d) => d,
+      },
+      cacheKey: ['smrt', name],
+      cacheId: `smrt:${name}`,
+      invalidate: () => {},
+      // NOTE: no `snapshot`, no `subscribe`.
+    };
+  }
+
+  it('does NOT overwrite a prior good snapshot when ctx.snapshot/subscribe are absent (write-back is a no-op)', async () => {
+    const namespace: DurableStoreKey = {
+      ...uniqueBaseKey(),
+      manifestHash: 'shape00000000000',
+    };
+    const ns = durableStoreNamespace(namespace);
+
+    // Seed a GOOD snapshot directly in the store.
+    const seeded = await openSnapshotStore(ns);
+    await seeded.save('products', [{ id: 'p1', name: 'Persisted' }]);
+    seeded.close();
+
+    // Drive the persistence capability's hooks with a snapshotless ctx. Its
+    // write-back must not fire (no ctx.snapshot to read, no ctx.subscribe to hear
+    // changes), so it cannot clobber the good snapshot with [].
+    const capability = persistCollection<ProductData>({
+      collection: 'products',
+      namespace,
+      debounceMs: 0,
+    });
+    const ctx = snapshotlessCtx('products');
+    // warmStart still READS the seed (that path needs no ctx.snapshot).
+    const warm = await capability.warmStart?.(ctx);
+    expect(warm?.map((r) => r.name)).toEqual(['Persisted']);
+    capability.onAttach?.(ctx);
+    // Give any (erroneously scheduled) flush time to run.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await capability.teardown?.(ctx);
+
+    // The good snapshot survives untouched — no empty overwrite.
+    const after = await openSnapshotStore(ns);
+    expect(await after.load('products')).toEqual([
+      { id: 'p1', name: 'Persisted' },
+    ]);
+    after.close();
   });
 });

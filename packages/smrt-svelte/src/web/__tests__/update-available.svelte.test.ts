@@ -70,25 +70,28 @@ function makeStubState(): UpdateState & {
 const mounted: Array<Record<string, unknown>> = [];
 function render(
   state: UpdateState,
-  getUpdated: () => boolean,
+  initialUpdated = false,
 ): {
   view: UpdateAvailableView;
+  setUpdated: (v: boolean) => void;
 } {
   let view!: UpdateAvailableView;
+  let setUpdated!: (v: boolean) => void;
   const target = document.createElement('div');
   const component = mount(Harness, {
     target,
     props: {
       state,
-      getUpdated,
-      onReady: (v: UpdateAvailableView) => {
+      initialUpdated,
+      onReady: (v: UpdateAvailableView, set: (value: boolean) => void) => {
         view = v;
+        setUpdated = set;
       },
     },
   });
   mounted.push(component as unknown as Record<string, unknown>);
   flushSync();
-  return { view };
+  return { view, setUpdated };
 }
 
 afterEach(() => {
@@ -101,7 +104,7 @@ afterEach(() => {
 describe('useUpdateAvailable (#1764)', () => {
   it('starts with no update available and reflects the initial state', () => {
     const state = makeStubState();
-    const { view } = render(state, () => false);
+    const { view } = render(state);
     expect(view.bundle).toBe(false);
     expect(view.contract).toBe(false);
     expect(view.updateAvailable).toBe(false);
@@ -109,7 +112,7 @@ describe('useUpdateAvailable (#1764)', () => {
 
   it('reacts to the CONTRACT signal fired by the primitive', () => {
     const state = makeStubState();
-    const { view } = render(state, () => false);
+    const { view } = render(state);
 
     state.fireContract();
     flushSync();
@@ -121,12 +124,14 @@ describe('useUpdateAvailable (#1764)', () => {
 
   it('pushes the BUNDLE signal when SvelteKit `updated` flips true', () => {
     const state = makeStubState();
-    let updated = false;
-    const { view } = render(state, () => updated);
+    // `setUpdated` mutates a REACTIVE $state in the harness (mirrors SvelteKit's
+    // reactive `updated` store) — a plain closure variable would not be tracked
+    // by the rune's $effect, so the bundle signal would never fire.
+    const { view, setUpdated } = render(state);
     expect(view.updateAvailable).toBe(false);
 
     // Simulate SvelteKit detecting a new deployment.
-    updated = true;
+    setUpdated(true);
     flushSync();
 
     expect(view.bundle).toBe(true);
@@ -135,15 +140,14 @@ describe('useUpdateAvailable (#1764)', () => {
 
   it('updateAvailable is the union: either signal alone makes it true', () => {
     const stateA = makeStubState();
-    const a = render(stateA, () => false);
+    const a = render(stateA);
     stateA.fireContract();
     flushSync();
     expect(a.view.updateAvailable).toBe(true);
 
     const stateB = makeStubState();
-    let updatedB = false;
-    const b = render(stateB, () => updatedB);
-    updatedB = true;
+    const b = render(stateB);
+    b.setUpdated(true);
     flushSync();
     expect(b.view.updateAvailable).toBe(true);
   });

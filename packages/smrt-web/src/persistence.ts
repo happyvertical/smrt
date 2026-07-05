@@ -301,7 +301,11 @@ export function persistCollection<TData extends object = object>(
       // we key on the explicit config value (the store key) for determinism.
       const acquired = acquireSnapshotEngine(namespace);
       engine = acquired;
-      readSnapshot = () => ctx.snapshot?.() ?? [];
+      // Enable write-back ONLY when the seam actually exposes a row snapshot.
+      // `ctx.snapshot` is optional (a hand-built test ctx may omit it); without
+      // it, `() => [] ` would persist an EMPTY snapshot over a prior good one, so
+      // treat write-back as a no-op instead (readSnapshot stays undefined).
+      readSnapshot = ctx.snapshot ? () => ctx.snapshot?.() ?? [] : undefined;
       const store = await acquired.ready;
       if (!store) return undefined; // non-persistent (no IndexedDB)
       const rows = await store.load(collectionName);
@@ -318,13 +322,19 @@ export function persistCollection<TData extends object = object>(
       if (!engine) {
         engine = acquireSnapshotEngine(namespace);
       }
-      if (!readSnapshot) {
+      if (!readSnapshot && ctx.snapshot) {
         readSnapshot = () => ctx.snapshot?.() ?? [];
       }
+      // Write-back requires BOTH a row snapshot to read and a change stream to
+      // trigger on. If the seam omits either (both are optional hooks), leave
+      // persistence write-back a NO-OP — never schedule a flush that would
+      // persist an empty snapshot over a prior good one (honors the optional-hook
+      // contract; the real factory always populates both, so no prod impact).
+      if (!ctx.snapshot || !ctx.subscribe || !readSnapshot) return;
       // Subscribe to changes and persist (debounced) on each. The seam's
       // `ctx.subscribe` mirrors the public handle's subscribeChanges (plain-DTO
       // payloads); we only need the SIGNAL, then re-read via ctx.snapshot.
-      subscription = ctx.subscribe?.(() => scheduleFlush());
+      subscription = ctx.subscribe(() => scheduleFlush());
       // Persist once on attach too, so a collection seeded by initialData (which
       // skipped warmStart) still writes an initial snapshot for the next load.
       scheduleFlush();
