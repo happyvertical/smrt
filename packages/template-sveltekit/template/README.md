@@ -39,8 +39,11 @@ A SvelteKit application with SMRT framework integration for rapid development of
 │   │       └── tenancy.ts     # Pluggable tenant resolver
 │   └── routes/
 │       ├── api/               # Auto-generated API routes (don't edit!)
+│       ├── +layout.server.ts  # Builds AdminShell tenant nav server-side (manifest → nav)
+│       ├── +layout.svelte     # WASD AdminShell chrome wrapping every page
+│       ├── settings/          # ShellSettingsPanel (panel layout + hotkeys)
 │       ├── +page.server.ts    # Home page server load + demo mutation (reference pattern)
-│       └── +page.svelte       # Home page
+│       └── +page.svelte       # Home page (renders inside AdminShell)
 ├── smrt.config.ts             # Root SMRT config
 ├── vite.config.ts             # Vite + SMRT plugin config
 └── svelte.config.js           # SvelteKit config
@@ -225,6 +228,84 @@ export const load: PageServerLoad = async () => {
 same REST route segment as `depends`/`invalidate`). Add
 `@happyvertical/smrt-web` and `@happyvertical/smrt-svelte` to the project's
 dependencies before using this pattern.
+
+## Workspace shell (AdminShell)
+
+This template renders every page inside the **WASD AdminShell** — a four-edge
+admin layout from `@happyvertical/smrt-svelte/workspace`. Each edge is a scope
+(top = app, left = tenant, right = focus, bottom = system) toggled with
+<kbd>W</kbd>/<kbd>A</kbd>/<kbd>S</kbd>/<kbd>D</kbd> (press <kbd>?</kbd> for the
+shortcuts). It is wired in the root layout:
+
+- `src/routes/+layout.server.ts` builds the left "tenant" nav **server-side**
+  with `tenantNavFromManifest()` from the SMRT manifest (`.smrt/manifest.json`)
+  and returns it as layout data — no client-side nav fetch.
+- `src/routes/+layout.svelte` wraps `{@render children()}` in `<AdminShell>`
+  (inside `<ThemeProvider>` — see **Theming** below), feeding that nav to
+  `<TenantNav>`, a brand/app panel on top, and a couple of status chips on the
+  bottom.
+- `src/routes/settings/+page.svelte` drops in `<ShellSettingsPanel>` so users
+  can toggle panels and remap the hotkeys; the choices persist in
+  `localStorage` under the shell's `storageKey`.
+
+**The shell preserves the server-load pattern above.** AdminShell's public core
+is SSR-safe: it renders statically on the server and only activates hotkeys /
+`localStorage` after mount. The active page still renders inside the shell's
+`<main>` and keeps its own `+page.server.ts` load and `invalidate()` refresh —
+the shell is chrome around the page, not a replacement for its data flow. The
+home page's `depends('smrt:items')` / `invalidate('smrt:items')` cycle works
+unchanged.
+
+### Theming
+
+The layout wraps the shell in **`<ThemeProvider>`** from
+`@happyvertical/smrt-ui/themes` — the standard SMRT theming wrapper (the same
+pattern the reference `@happyvertical/smrt-content` app uses):
+
+```svelte
+<script lang="ts">
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  // @font-face rules for the SMRT type stack (Space Grotesk / Inter /
+  // JetBrains Mono woff2). ThemeProvider supplies the token *variables*;
+  // this loads the font *files*. Bundled — no CDN request.
+  import '@happyvertical/smrt-ui/themes/styles/fonts.css';
+</script>
+
+<ThemeProvider colorScheme="system" persist={true}>
+  <!-- AdminShell + every page render themed inside here -->
+</ThemeProvider>
+```
+
+- ThemeProvider injects the **entire `--smrt-*` token set** (colors, typography,
+  spacing, radius, elevation, motion, z-index) as an inline style it computes
+  during render — so the tokens are present in the SSR HTML with **no unstyled
+  flash**, and it re-resolves them on the client. You do **not** need to import
+  `styles/tokens.css` or `themes/styles/*.css` separately; the provider is the
+  runtime source of truth.
+- `colorScheme="system"` follows the OS light/dark preference; `persist` saves a
+  user's explicit switch to `localStorage`. Switch presets/scheme at runtime
+  with `ThemeSwitcher` / `ColorSchemeToggle` (also from `.../themes`), or read
+  the current theme via the theme context.
+- The one thing the provider does not carry is the font **files** — hence the
+  `themes/styles/fonts.css` import above. Drop it and the type stack degrades to
+  `system-ui` / `ui-monospace` automatically.
+
+To pin a specific look instead of following the OS, set
+`colorScheme="light"` (or `"dark"`) and `preset="material"` (or `"glass"` /
+`"studio"` / `"smrt"`).
+
+The status chips ship static (`Local`, `Ready`). To make them (and the focus
+edge) live — job counts, dispatch depth, connection state — feed real values
+through `systemFeed` (`@happyvertical/smrt-svelte/workspace/live`) or
+`activityFeed` (`@happyvertical/smrt-svelte/web`).
+
+- **Migration guide** (old `WorkspaceShell`/`RoleShell` → `AdminShell`, and why
+  adoption is additive):
+  [`@happyvertical/smrt-svelte` → `src/components/workspace/MIGRATION.md`](https://github.com/happyvertical/smrt/blob/main/packages/smrt-svelte/src/components/workspace/MIGRATION.md)
+- **Four-scope demo** (all edges, focus tools, activities) and the live-feed
+  variants, in the smrt-svelte playground:
+  `playground/src/routes/admin-shell`, `admin-shell-activity-feed`, and
+  `admin-shell-system-feed`.
 
 ## Multi-tenancy
 

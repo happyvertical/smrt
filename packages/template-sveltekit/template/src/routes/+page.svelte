@@ -16,7 +16,14 @@
   <title>SMRT SvelteKit App</title>
 </svelte:head>
 
-<main>
+<!--
+  This page renders inside the root layout's <AdminShell> `<main>`
+  (`src/routes/+layout.svelte`). Its server load + `invalidate('smrt:items')`
+  refresh flow is unchanged by the shell — the shell is chrome around the
+  page, not a replacement for its data loading. A plain wrapper element (not a
+  second <main>) keeps the HTML valid.
+-->
+<div class="page">
   <h1>Welcome to SMRT + SvelteKit</h1>
 
   <section>
@@ -94,10 +101,10 @@
       <li>API routes are auto-generated in <code>src/routes/api/</code></li>
     </ul>
   </section>
-</main>
+</div>
 
 <style>
-  main {
+  .page {
     max-width: 800px;
     margin: 0 auto;
     padding: 2rem;
