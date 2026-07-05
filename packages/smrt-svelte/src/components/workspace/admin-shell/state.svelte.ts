@@ -1,3 +1,4 @@
+import { untrack } from 'svelte';
 import {
   LocalStorageShellSettingsAdapter,
   mergeShellSettingsDelta,
@@ -24,6 +25,7 @@ import type {
 import { PANEL_EDGES, SCOPE_EDGES } from './types.js';
 
 type ActivityListener = (event: ShellActivityEvent) => void;
+type ShellActivityPatch = Partial<Omit<ShellActivity, 'id'>>;
 
 export interface ShellStateOptions {
   config?: ShellPanelDefaults;
@@ -81,135 +83,166 @@ export class ShellState {
     delta: ShellSettingsDelta,
     options: { persist?: boolean } = {},
   ): void {
-    this.settings = mergeShellSettingsDelta(this.settings, delta);
-    for (const edge of PANEL_EDGES) {
-      this.panels[edge] = resolveInitialPanelState(
-        edge,
-        this.config.panels[edge],
-        this.settings,
-      );
-    }
-    this.activeFocusToolId =
-      this.settings.activeFocusToolId ?? this.activeFocusToolId;
-    if (options.persist !== false) void this.persistSettings();
+    const nextDelta = snapshotShellSettingsDelta(delta);
+    const persist = options.persist;
+    untrack(() => {
+      this.settings = mergeShellSettingsDelta(this.settings, nextDelta);
+      for (const edge of PANEL_EDGES) {
+        this.panels[edge] = resolveInitialPanelState(
+          edge,
+          this.config.panels[edge],
+          this.settings,
+        );
+      }
+      this.activeFocusToolId =
+        this.settings.activeFocusToolId ?? this.activeFocusToolId;
+      if (persist !== false) void this.persistSettings();
+    });
   }
 
   setHotkeysEnabled(enabled: boolean): void {
-    this.applySettings({ hotkeysEnabled: enabled });
+    untrack(() => this.applySettings({ hotkeysEnabled: enabled }));
   }
 
   setHotkey(edge: PanelEdge, code: string | null): void {
-    this.applySettings({
-      keymap: {
-        [edge]: code ? { code } : null,
-      },
+    untrack(() => {
+      this.applySettings({
+        keymap: {
+          [edge]: code ? { code } : null,
+        },
+      });
     });
   }
 
   setPanel(edge: PanelEdge, state: VisiblePanelState): void {
-    if (this.config.panels[edge].initial === 'hidden') {
-      this.panels[edge] = 'hidden';
-      return;
-    }
-    if (state === 'expanded') this.closeExclusivePeers(edge);
-    this.panels[edge] = state;
-    this.settings = mergeShellSettingsDelta(this.settings, {
-      panels: { [edge]: state },
+    untrack(() => {
+      if (this.config.panels[edge].initial === 'hidden') {
+        this.panels[edge] = 'hidden';
+        return;
+      }
+      if (state === 'expanded') this.closeExclusivePeers(edge);
+      this.panels[edge] = state;
+      this.settings = mergeShellSettingsDelta(this.settings, {
+        panels: { [edge]: state },
+      });
+      void this.persistSettings();
     });
-    void this.persistSettings();
   }
 
   togglePanel(edge: PanelEdge): void {
-    if (this.panels[edge] === 'hidden') return;
-    this.setPanel(
-      edge,
-      this.panels[edge] === 'expanded' ? 'collapsed' : 'expanded',
-    );
+    untrack(() => {
+      if (this.panels[edge] === 'hidden') return;
+      this.setPanel(
+        edge,
+        this.panels[edge] === 'expanded' ? 'collapsed' : 'expanded',
+      );
+    });
   }
 
   expandPanel(edge: PanelEdge): void {
-    this.setPanel(edge, 'expanded');
+    untrack(() => this.setPanel(edge, 'expanded'));
   }
 
   collapsePanel(edge: PanelEdge): void {
-    this.setPanel(edge, 'collapsed');
+    untrack(() => this.setPanel(edge, 'collapsed'));
   }
 
   closeTopmostExpanded(): boolean {
-    for (const edge of [...PANEL_EDGES].reverse()) {
-      if (this.panels[edge] === 'expanded') {
-        this.collapsePanel(edge);
-        return true;
+    return untrack(() => {
+      for (const edge of [...PANEL_EDGES].reverse()) {
+        if (this.panels[edge] === 'expanded') {
+          this.collapsePanel(edge);
+          return true;
+        }
       }
-    }
-    return false;
+      return false;
+    });
   }
 
   registerFocusTool(tool: ShellFocusTool): () => void {
-    this.focusTools = [
-      ...this.focusTools.filter((existing) => existing.id !== tool.id),
-      tool,
-    ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-    if (!this.activeFocusToolId) this.activeFocusToolId = tool.id;
-    return () => this.unregisterFocusTool(tool.id);
+    const nextTool = snapshotFocusTool(tool);
+    return untrack(() => {
+      this.focusTools = [
+        ...this.focusTools.filter((existing) => existing.id !== nextTool.id),
+        nextTool,
+      ].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      if (!this.activeFocusToolId) this.activeFocusToolId = nextTool.id;
+      return () => this.unregisterFocusTool(nextTool.id);
+    });
   }
 
   unregisterFocusTool(id: string): void {
-    this.focusTools = this.focusTools.filter((tool) => tool.id !== id);
-    if (this.activeFocusToolId === id) {
-      this.activeFocusToolId = this.focusTools[0]?.id ?? null;
-    }
+    untrack(() => {
+      this.focusTools = this.focusTools.filter((tool) => tool.id !== id);
+      if (this.activeFocusToolId === id) {
+        this.activeFocusToolId = this.focusTools[0]?.id ?? null;
+      }
+    });
   }
 
   openFocusTool(id: string): void {
-    if (!this.focusTools.some((tool) => tool.id === id)) return;
-    this.activeFocusToolId = id;
-    this.settings = mergeShellSettingsDelta(this.settings, {
-      activeFocusToolId: id,
+    untrack(() => {
+      if (!this.focusTools.some((tool) => tool.id === id)) return;
+      this.activeFocusToolId = id;
+      this.settings = mergeShellSettingsDelta(this.settings, {
+        activeFocusToolId: id,
+      });
+      this.expandPanel('right');
+      void this.persistSettings();
     });
-    this.expandPanel('right');
-    void this.persistSettings();
   }
 
   upsertActivity(activity: ShellActivity): void {
-    const now = new Date().toISOString();
-    const normalized: ShellActivity = {
-      ...activity,
-      edge: activity.edge ?? this.homeEdgeForScope(activity.scope),
-      createdAt: activity.createdAt ?? now,
-      updatedAt: activity.updatedAt ?? now,
-    };
-    const previous = this.activities.find((item) => item.id === activity.id);
-    this.activities = [
-      ...this.activities.filter((item) => item.id !== activity.id),
-      normalized,
-    ];
-    this.emitActivity({
-      type:
-        previous && previous.status !== normalized.status
-          ? 'transition'
-          : 'upsert',
-      activity: normalized,
-      previous,
+    const nextActivity = snapshotActivity(activity);
+    untrack(() => {
+      const now = new Date().toISOString();
+      const normalized: ShellActivity = {
+        ...nextActivity,
+        edge: nextActivity.edge ?? this.homeEdgeForScope(nextActivity.scope),
+        createdAt: nextActivity.createdAt ?? now,
+        updatedAt: nextActivity.updatedAt ?? now,
+      };
+      const previous = this.activities.find(
+        (item) => item.id === nextActivity.id,
+      );
+      this.activities = [
+        ...this.activities.filter((item) => item.id !== nextActivity.id),
+        normalized,
+      ];
+      this.emitActivity({
+        type:
+          previous && previous.status !== normalized.status
+            ? 'transition'
+            : 'upsert',
+        activity: normalized,
+        previous,
+      });
     });
   }
 
-  updateActivity(id: string, patch: Partial<Omit<ShellActivity, 'id'>>): void {
-    const current = this.activities.find((activity) => activity.id === id);
-    if (!current) return;
-    this.upsertActivity({
-      ...current,
-      ...patch,
-      id,
-      updatedAt: new Date().toISOString(),
+  updateActivity(id: string, patch: ShellActivityPatch): void {
+    const nextPatch = snapshotActivityPatch(patch);
+    untrack(() => {
+      const current = this.activities.find((activity) => activity.id === id);
+      if (!current) return;
+      this.upsertActivity({
+        ...current,
+        ...nextPatch,
+        id,
+        updatedAt: new Date().toISOString(),
+      });
     });
   }
 
   removeActivity(id: string): void {
-    const current = this.activities.find((activity) => activity.id === id);
-    if (!current) return;
-    this.activities = this.activities.filter((activity) => activity.id !== id);
-    this.emitActivity({ type: 'remove', activity: current });
+    untrack(() => {
+      const current = this.activities.find((activity) => activity.id === id);
+      if (!current) return;
+      this.activities = this.activities.filter(
+        (activity) => activity.id !== id,
+      );
+      this.emitActivity({ type: 'remove', activity: current });
+    });
   }
 
   watchActivities(listener: ActivityListener): () => void {
@@ -318,4 +351,62 @@ function matchesOne<T extends string>(value: T, expected: T | T[]): boolean {
 
 function isActiveStatus(status: ActivityStatus): boolean {
   return status === 'queued' || status === 'running';
+}
+
+function snapshotShellSettingsDelta(
+  delta: ShellSettingsDelta,
+): ShellSettingsDelta {
+  const snapshot: ShellSettingsDelta = { ...delta };
+  if ('keymap' in delta) {
+    snapshot.keymap = snapshotShellKeymap(delta.keymap);
+  }
+  if ('panels' in delta) {
+    snapshot.panels = delta.panels ? { ...delta.panels } : delta.panels;
+  }
+  return snapshot;
+}
+
+function snapshotShellKeymap(
+  keymap: ShellSettingsDelta['keymap'],
+): ShellSettingsDelta['keymap'] {
+  if (!keymap) return keymap;
+  const snapshot: ShellSettingsDelta['keymap'] = {};
+  for (const edge of PANEL_EDGES) {
+    if (edge in keymap) {
+      const binding = keymap[edge];
+      snapshot[edge] = binding ? { ...binding } : binding;
+    }
+  }
+  return snapshot;
+}
+
+function snapshotFocusTool(tool: ShellFocusTool): ShellFocusTool {
+  const snapshot: ShellFocusTool = { ...tool };
+  if ('subject' in tool) {
+    snapshot.subject = tool.subject ? { ...tool.subject } : tool.subject;
+  }
+  if ('activityKinds' in tool) {
+    snapshot.activityKinds = tool.activityKinds
+      ? [...tool.activityKinds]
+      : tool.activityKinds;
+  }
+  return snapshot;
+}
+
+function snapshotActivity(activity: ShellActivity): ShellActivity {
+  const snapshot: ShellActivity = { ...activity };
+  if ('subject' in activity) {
+    snapshot.subject = activity.subject
+      ? { ...activity.subject }
+      : activity.subject;
+  }
+  return snapshot;
+}
+
+function snapshotActivityPatch(patch: ShellActivityPatch): ShellActivityPatch {
+  const snapshot: ShellActivityPatch = { ...patch };
+  if ('subject' in patch) {
+    snapshot.subject = patch.subject ? { ...patch.subject } : patch.subject;
+  }
+  return snapshot;
 }
