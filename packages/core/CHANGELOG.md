@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.38.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - guard ShellState mutations from tracking (#1850) (smrt-svelte)
+
+  ### Other Changes
+
+  - chore: inherit weekly renovate strategy (#1848)
+  - @happyvertical/smrt-config@0.38.5
+  - @happyvertical/smrt-types@0.38.5
+  - @happyvertical/smrt-scanner@0.38.5
+
 ## 0.38.4
 
 ### Patch Changes
