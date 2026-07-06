@@ -107,9 +107,9 @@ export interface SmrtPluginOptions {
     /**
      * Live `_events` SSE route generation (#1763). Enabled by default (the
      * route is auth-guarded fail-closed, same-origin only); `{ enabled: false }`
-     * skips it.
+     * skips it. `maxSubscribers` caps active streams per process (#1860).
      */
-    eventsRoute?: { enabled?: boolean };
+    eventsRoute?: { enabled?: boolean; maxSubscribers?: number };
   };
   /** Domain-scoped agent/developer knowledge artifact generation. */
   knowledge?: DomainKnowledgeConfig | false;

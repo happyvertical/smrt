@@ -39,10 +39,9 @@
  *
  * ## Known gaps
  *
- * - **No max-connections cap**: the bus imposes no ceiling on concurrent
- *   subscribers (SSE connections). A deployment expecting many long-lived
- *   `_events` connections should bound them at the edge (reverse proxy /
- *   load balancer). A per-process cap is a deliberate follow-up.
+ * - **Subscriber cap lives at the route boundary**: the bus tracks subscribers,
+ *   but generated `_events` routes decide whether to reject a new connection
+ *   before opening a stream (#1860).
  * - **Raw-SQL writes are invisible**: signals originate from the framework
  *   write path (same accepted gap as the #1758 feed and #1498 cache). A
  *   `bumpChangeFeed` escape-hatch write appends a feed row but does not
@@ -340,11 +339,11 @@ export function resetChangeSignals(): void {
 }
 
 /**
- * Number of active local subscribers for a database scope (test helper).
+ * Number of active local subscribers for a database scope.
  *
- * Exposed so integration tests can assert teardown — a leaked SSE subscription
- * would keep this above 0 after a client disconnects. Not part of the public
- * API surface (kept internal to core; not re-exported from `index.ts`).
+ * Used by the `_events` route boundary to enforce the per-process subscriber
+ * cap (#1860), and by integration tests to assert teardown — a leaked SSE
+ * subscription would keep this above 0 after a client disconnects.
  */
 export function changeSignalSubscriberCount(db: DatabaseInterface): number {
   return localListeners.get(resolveDbCacheKey(db))?.size ?? 0;

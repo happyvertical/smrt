@@ -35,6 +35,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { ensureChangeFeedTable, getChangesSince } from '../change-feed.js';
 import {
   type ChangeSignal,
+  changeSignalSubscriberCount,
   subscribeToChangeSignals,
 } from '../change-signals.js';
 import {
@@ -54,6 +55,18 @@ export interface EventsRouteOptions {
   authMiddleware?: ChangesAuthMiddleware;
   /** The generator's `APIContext.db` (instance, config object, or URL string). */
   db?: unknown;
+  /**
+   * The build's web-collection shape digest (#1764). When supplied, the stream
+   * emits it in a connection-open `manifest` event so long-lived tabs can latch
+   * `updateAvailable.contract` on reconnect (#1859).
+   */
+  manifestHash?: string;
+  /**
+   * Per-process cap on active `_events` subscribers (#1860). Defaults to
+   * {@link DEFAULT_EVENTS_MAX_SUBSCRIBERS}; new over-cap connections receive a
+   * retryable 503 and existing subscribers are left untouched.
+   */
+  maxSubscribers?: number;
 }
 
 /**
@@ -64,6 +77,12 @@ export const EVENTS_ROUTE_OBJECT_NAME = '_events';
 
 /** Default heartbeat interval (ms). Overridable via stream options. */
 export const DEFAULT_EVENTS_HEARTBEAT_MS = 15000;
+
+/** Default per-process `_events` subscriber cap (#1860). */
+export const DEFAULT_EVENTS_MAX_SUBSCRIBERS = 1000;
+
+/** Retry hint for over-cap `_events` connections (#1860). */
+export const DEFAULT_EVENTS_RETRY_AFTER_SECONDS = 5;
 
 const encoder = new TextEncoder();
 
@@ -82,6 +101,49 @@ export interface ChangeEventStreamOptions {
   tenantScope: DispatchTenantScope;
   /** Heartbeat interval (ms). Defaults to {@link DEFAULT_EVENTS_HEARTBEAT_MS}. */
   heartbeatMs?: number;
+  /**
+   * Optional server manifest hash emitted once at connection open as
+   * `event: manifest`. The hash carries no tenant/user data.
+   */
+  manifestHash?: string;
+}
+
+/** Normalize an `_events` subscriber cap; invalid values fall back to default. */
+export function normalizeEventsMaxSubscribers(
+  value: number | undefined,
+): number {
+  if (value === undefined) return DEFAULT_EVENTS_MAX_SUBSCRIBERS;
+  if (!Number.isFinite(value) || value < 0) {
+    return DEFAULT_EVENTS_MAX_SUBSCRIBERS;
+  }
+  return Math.floor(value);
+}
+
+/** True when opening a new `_events` stream would exceed the configured cap. */
+export function changeEventSubscribersAtCapacity(
+  db: DatabaseInterface,
+  maxSubscribers?: number,
+): boolean {
+  return (
+    changeSignalSubscriberCount(db) >=
+    normalizeEventsMaxSubscribers(maxSubscribers)
+  );
+}
+
+/** Retryable over-cap response shared by REST and generated SvelteKit routes. */
+export function eventStreamCapacityExceededResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      error: 'Live events unavailable: subscriber capacity reached',
+    }),
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': String(DEFAULT_EVENTS_RETRY_AFTER_SECONDS),
+      },
+    },
+  );
 }
 
 /**
@@ -116,6 +178,13 @@ function encodeSseEvent(sig: ChangeSignal): Uint8Array {
   return encoder.encode(`id: ${sig.seq}\nevent: change\ndata: ${data}\n\n`);
 }
 
+/** SSE manifest frame emitted at connection open for live contract detection. */
+function encodeSseManifestEvent(manifestHash: string): Uint8Array {
+  return encoder.encode(
+    `event: manifest\ndata: ${JSON.stringify({ manifestHash })}\n\n`,
+  );
+}
+
 /** SSE resync frame. The id advances EventSource past an unservable cursor. */
 function encodeSseResyncEvent(cursor: number): Uint8Array {
   return encoder.encode(`id: ${cursor}\nevent: resync\ndata: {}\n\n`);
@@ -148,7 +217,7 @@ export function buildChangeEventStream(
   db: DatabaseInterface,
   options: ChangeEventStreamOptions,
 ): ReadableStream<Uint8Array> {
-  const { cursor, tenantScope } = options;
+  const { cursor, tenantScope, manifestHash } = options;
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_EVENTS_HEARTBEAT_MS;
 
   let unsubscribe: (() => void) | null = null;
@@ -188,6 +257,12 @@ export function buildChangeEventStream(
 
       // (b) Reconnection hint.
       controller.enqueue(encoder.encode('retry: 3000\n\n'));
+      // Advertise the server contract at connection open (#1859). A reconnect
+      // naturally replays this frame, letting a long-lived tab learn about a
+      // shape-only API deploy without a full page load.
+      if (manifestHash !== undefined) {
+        controller.enqueue(encodeSseManifestEvent(manifestHash));
+      }
 
       // (c) Catch-up replay from the cursor, if one was supplied.
       if (cursor != null) {
@@ -325,6 +400,9 @@ export async function handleEventsRoute(
   // A raw handle passed straight to the generator may not have gone through
   // framework init; the feed table backs cursor catch-up.
   await ensureChangeFeedTable(db);
+  if (changeEventSubscribersAtCapacity(db, options.maxSubscribers)) {
+    return eventStreamCapacityExceededResponse();
+  }
 
   // Cursor: Last-Event-ID (reconnection) takes precedence over ?since=.
   // Default = live-forward only (no catch-up).
@@ -334,15 +412,22 @@ export async function handleEventsRoute(
   // any tenant ALS context and must filter against this fixed value.
   const tenantScope = resolveDispatchTenantScope();
 
-  return new Response(buildChangeEventStream(db, { cursor, tenantScope }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
+  return new Response(
+    buildChangeEventStream(db, {
+      cursor,
+      tenantScope,
+      manifestHash: options.manifestHash,
+    }),
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
     },
-  });
+  );
 }
 
 /**

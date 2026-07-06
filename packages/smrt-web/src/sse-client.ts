@@ -11,8 +11,9 @@
  *   (`packages/core/src/generators/events-route.ts`): NAMED events
  *   `event: change` / `event: resync` whose `data` is `{table, operation,
  *   rowId, tenantId}`, with the cursor `seq` carried ONLY in the SSE `id:`
- *   field (mirrored by the browser to `MessageEvent.lastEventId`). Heartbeats
- *   are `: heartbeat` comment lines EventSource ignores natively.
+ *   field (mirrored by the browser to `MessageEvent.lastEventId`), plus
+ *   `event: manifest` for live contract detection. Heartbeats are
+ *   `: heartbeat` comment lines EventSource ignores natively.
  * - the pull channel — the generated `_changes` route
  *   (`packages/core/src/generators/changes-route.ts`): `GET {changesUrl}
  *   ?since=&tables=&limit=` →
@@ -51,9 +52,14 @@
  * as the `invalidate` callback each capability wires from `ctx.invalidate()`.
  * smrt-web has no logger dependency, so faults are surfaced via `console.warn`
  * (matching `warnCapability` / core's `deliverLocally` style).
+ *
+ * The server may also emit a named `manifest` event at connection open (#1859):
+ * `{ manifestHash }`. When this differs from the running build hash configured
+ * here, the subscriber latches `updateState.contract`.
  */
 
 import type { SmrtWebCapability } from './capability.js';
+import type { UpdateState } from './update-state.js';
 
 /**
  * The minimal `EventSource` surface the subscriber uses — declared here so a
@@ -116,6 +122,17 @@ export interface SmrtWebEventSubscriberConfig {
   pollIntervalMs?: number;
   /** `withCredentials` for the EventSource (cookie auth). Default true. */
   withCredentials?: boolean;
+  /**
+   * The RUNNING build's web-collection shape digest. When paired with
+   * `updateState`, a differing server hash from the `_events` manifest frame
+   * latches the contract update signal (#1859).
+   */
+  manifestHash?: string;
+  /**
+   * Optional update-state primitive from `createUpdateState()`. Only its
+   * contract signal is used here; bundle polling remains the caller's job.
+   */
+  updateState?: Pick<UpdateState, 'notifyContractUpdated'>;
 }
 
 /** Which transport a subscriber is currently using. */
@@ -194,6 +211,8 @@ export function createSmrtWebEventSubscriber(
     eventSourceFactory = defaultEventSourceFactory,
     pollIntervalMs = 5000,
     withCredentials = true,
+    manifestHash,
+    updateState,
   } = config;
 
   // table → set of invalidators. A Set so a collection registers/unregisters
@@ -307,6 +326,27 @@ export function createSmrtWebEventSubscriber(
   };
 
   /**
+   * Connection-open server contract frame (#1859). It has no cursor and carries
+   * no user data; malformed frames are dropped like malformed change frames.
+   */
+  const onManifest = (ev: { data: string; lastEventId: string }): void => {
+    if (closed || manifestHash === undefined || !updateState) return;
+    try {
+      const parsed = JSON.parse(ev.data) as { manifestHash?: unknown };
+      const serverHash = parsed.manifestHash;
+      if (typeof serverHash !== 'string' || serverHash.length === 0) {
+        warn('dropping manifest frame with no manifestHash', ev.data);
+        return;
+      }
+      if (serverHash !== manifestHash) {
+        updateState.notifyContractUpdated();
+      }
+    } catch (error) {
+      warn('dropping malformed manifest frame', error);
+    }
+  };
+
+  /**
    * Poll `_changes` once from the resume cursor. `resyncRequired` (HTTP 200)
    * invalidates everything, then resumes from the server-provided
    * `resyncCursor` horizon so a pruned `since=0` does not loop forever.
@@ -370,6 +410,7 @@ export function createSmrtWebEventSubscriber(
     eventSource = source;
     source.addEventListener('change', onChange);
     source.addEventListener('resync', onResync);
+    source.addEventListener('manifest', onManifest);
     source.onerror = () => {
       if (closed) return;
       // Only a fatal (CLOSED) error means SSE is unavailable for good — fall

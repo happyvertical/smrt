@@ -206,6 +206,25 @@ const CHANGE = (
   lastEventId: String(seq),
 });
 
+const MANIFEST = (manifestHash: string) => ({
+  data: JSON.stringify({ manifestHash }),
+  lastEventId: '',
+});
+
+function makeUpdateStateProbe() {
+  let contractSignals = 0;
+  return {
+    state: {
+      notifyContractUpdated() {
+        contractSignals += 1;
+      },
+    },
+    get contractSignals() {
+      return contractSignals;
+    },
+  };
+}
+
 function searchParamsOf(url: string): URLSearchParams {
   return new URL(url, 'http://smrt.local').searchParams;
 }
@@ -286,6 +305,31 @@ describe('createSmrtWebEventSubscriber — SSE change signal → collection refe
     const es = latestEventSource();
     expect(es.url).toBe('/api/v1/_events');
     expect(es.withCredentials).toBe(true);
+  });
+
+  it('latches contract update when the server manifest hash differs (#1859)', () => {
+    const update = makeUpdateStateProbe();
+    trackSub(
+      createSmrtWebEventSubscriber({
+        eventsUrl: '/api/v1/_events',
+        changesUrl: '/api/v1/_changes',
+        eventSourceFactory: (url, init) => new FakeEventSource(url, init),
+        manifestHash: 'client-hash',
+        updateState: update.state,
+      }),
+    );
+
+    const es = latestEventSource();
+    es.dispatch('manifest', MANIFEST('client-hash'));
+    expect(update.contractSignals).toBe(0);
+
+    es.dispatch('manifest', MANIFEST('server-hash'));
+    expect(update.contractSignals).toBe(1);
+
+    // The subscriber never clears the sticky signal, and later old-replica
+    // frames do not flap it off during a rolling deploy.
+    es.dispatch('manifest', MANIFEST('client-hash'));
+    expect(update.contractSignals).toBe(1);
   });
 });
 

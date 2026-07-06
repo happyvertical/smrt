@@ -16,13 +16,17 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { registerChangeFeedWriter } from '../change-feed';
+import { getTableVersion, registerChangeFeedWriter } from '../change-feed';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
-import { APIGenerator } from './rest';
+import {
+  canonicalReadRepresentation,
+  computeTableVersionEtag,
+} from './conditional-get';
+import { APIGenerator, computeRuntimeWebManifestHash } from './rest';
 
 // Public model with the shared-cache opt-in → public, max-age=0, s-maxage=300.
 @smrt({ api: { public: true, cache: { sMaxage: 300 } } })
@@ -444,6 +448,106 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
       );
       expect(res.status).toBe(200);
       expect(((await res.json()) as any).name).toBe('cond-put-2');
+    });
+  });
+
+  describe('runtime REST manifest-hash ETag salt (#1862)', () => {
+    it('auto-wires the runtime registry manifest hash into read ETags by default', async () => {
+      registerChangeFeedWriter();
+      const saltDb = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['CondGetPublicPlain'],
+      });
+      try {
+        const collection = await CondGetPublicPlainCollection.create({
+          db: saltDb,
+        });
+        const api = new APIGenerator({
+          basePath: '/api/v1',
+          authMiddleware: () => async (req) => req,
+        });
+        api.registerCollection('salted1862', collection);
+        const saltedHandler = api.generateHandler();
+
+        const created = await saltedHandler(
+          new Request('http://local/api/v1/salted1862', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'salted' }),
+          }),
+        );
+        expect(created.status).toBe(201);
+
+        const request = new Request('http://local/api/v1/salted1862');
+        const read = await saltedHandler(request);
+        expect(read.status).toBe(200);
+
+        const version = await getTableVersion(saltDb, collection.tableName);
+        const representation = canonicalReadRepresentation(request);
+        const autoHash = computeRuntimeWebManifestHash();
+        const expected = computeTableVersionEtag(
+          version,
+          representation,
+          autoHash,
+        );
+        const unsalted = computeTableVersionEtag(version, representation);
+
+        expect(read.headers.get('etag')).toBe(expected);
+        expect(read.headers.get('etag')).not.toBe(unsalted);
+      } finally {
+        await saltDb?.close?.();
+      }
+    });
+
+    it('still honors an explicit APIConfig.manifestHash override', async () => {
+      registerChangeFeedWriter();
+      const saltDb = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['CondGetPublicPlain'],
+      });
+      try {
+        const collection = await CondGetPublicPlainCollection.create({
+          db: saltDb,
+        });
+        const api = new APIGenerator({
+          basePath: '/api/v1',
+          authMiddleware: () => async (req) => req,
+          manifestHash: 'explicitHash1862',
+        });
+        api.registerCollection('override1862', collection);
+        const overrideHandler = api.generateHandler();
+
+        const created = await overrideHandler(
+          new Request('http://local/api/v1/override1862', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'override' }),
+          }),
+        );
+        expect(created.status).toBe(201);
+
+        const request = new Request('http://local/api/v1/override1862');
+        const read = await overrideHandler(request);
+        expect(read.status).toBe(200);
+
+        const version = await getTableVersion(saltDb, collection.tableName);
+        const representation = canonicalReadRepresentation(request);
+
+        expect(read.headers.get('etag')).toBe(
+          computeTableVersionEtag(version, representation, 'explicitHash1862'),
+        );
+        expect(read.headers.get('etag')).not.toBe(
+          computeTableVersionEtag(
+            version,
+            representation,
+            computeRuntimeWebManifestHash(),
+          ),
+        );
+      } finally {
+        await saltDb?.close?.();
+      }
     });
   });
 

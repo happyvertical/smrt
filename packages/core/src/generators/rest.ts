@@ -13,13 +13,24 @@ import {
 } from '../dispatch';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
-import type { RegisteredClass, SmrtObjectConstructor } from '../registry/types';
+import type {
+  RegisteredClass,
+  RegisteredField,
+  SmrtObjectConstructor,
+} from '../registry/types';
+import type {
+  FieldDefinition,
+  MethodDefinition,
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types';
 import {
   processSyncApplyBatch,
   SYNC_APPLY_ROUTE_SEGMENTS,
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '../sync/apply';
+import { computeWebManifestHash } from '../vite-plugin/web-collections';
 import { handleChangesRoute } from './changes-route';
 import {
   canonicalReadRepresentation,
@@ -52,14 +63,21 @@ export interface APIConfig {
   port?: number;
   hostname?: string;
   /**
+   * Live `_events` route options. `maxSubscribers` caps active SSE streams per
+   * process (#1860); over-cap connections receive a retryable 503.
+   */
+  eventsRoute?: {
+    maxSubscribers?: number;
+  };
+  /**
    * The build's web-collection SHAPE digest (#1764) — the same value the
    * generated `@happyvertical/smrt-virt-web` module exports. When supplied it is
    * folded into every read ETag via {@link computeTableVersionEtag}, so a
-   * shape-only deploy (no table write) busts every read validator, closing the
-   * documented v2 staleness gap. Optional and defaulting to undefined:
-   * non-generated / test callers behave exactly as before (no salt). The
-   * generated SvelteKit routes bake the same constant in directly rather than
-   * going through this runtime server.
+   * shape-only deploy (no table write) busts every read validator, closing
+   * the documented v2 staleness gap. When omitted, APIGenerator computes the
+   * same digest from the runtime registry on first read (#1862). The generated
+   * SvelteKit routes bake the same constant in directly rather than going
+   * through this runtime server.
    */
   manifestHash?: string;
 }
@@ -76,6 +94,78 @@ export interface APIContext {
   permissions?: Iterable<string>;
 }
 
+function registeredFieldsToManifest(
+  fields: Map<string, RegisteredField>,
+): Record<string, FieldDefinition> {
+  const result: Record<string, FieldDefinition> = {};
+  for (const [name, field] of fields) {
+    if (!field || typeof field.type !== 'string') continue;
+    result[name] = {
+      type: field.type as FieldDefinition['type'],
+      ...(field.required !== undefined ? { required: field.required } : {}),
+      ...(field.default !== undefined ? { default: field.default } : {}),
+      ...(field.related !== undefined ? { related: field.related } : {}),
+      ...(field.transient !== undefined ? { transient: field.transient } : {}),
+      ...(field.sensitive !== undefined ? { sensitive: field.sensitive } : {}),
+      ...(field.readonly !== undefined ? { readonly: field.readonly } : {}),
+      ...(field.readPermission !== undefined
+        ? { readPermission: field.readPermission }
+        : {}),
+      ...(field._meta !== undefined ? { _meta: field._meta } : {}),
+    };
+  }
+  return result;
+}
+
+function registeredMethodsToManifest(
+  methods: Map<string, MethodDefinition> | undefined,
+): Record<string, MethodDefinition> {
+  return Object.fromEntries(methods ?? []);
+}
+
+function runtimeObjectDefinition(
+  key: string,
+  info: RegisteredClass,
+): SmartObjectDefinition {
+  const className = info.name || key;
+  return {
+    className,
+    name: className.toLowerCase(),
+    collection: info.collection || `${className.toLowerCase()}s`,
+    filePath: info.sourceFilePath || '',
+    fields: registeredFieldsToManifest(info.inheritedFields || info.fields),
+    methods: registeredMethodsToManifest(info.inheritedMethods || info.methods),
+    decoratorConfig: info.config || {},
+    ...(info.qualifiedName ? { qualifiedName: info.qualifiedName } : {}),
+    ...(info.packageName ? { packageName: info.packageName } : {}),
+    ...(info.visibility ? { visibility: info.visibility } : {}),
+    ...(info.extends ? { extends: info.extends } : {}),
+    ...(info.extendsTypeArg ? { extendsTypeArg: info.extendsTypeArg } : {}),
+    ...(info.tools ? { tools: info.tools } : {}),
+  };
+}
+
+/**
+ * Compute the runtime REST web-manifest hash from the registered object graph
+ * (#1862). This mirrors the Vite/SvelteKit source (`computeWebManifestHash`)
+ * but builds the manifest from `ObjectRegistry` for APIGenerator deployments.
+ */
+export function computeRuntimeWebManifestHash(): string {
+  const objects: SmartObjectManifest['objects'] = {};
+  const seen = new Set<RegisteredClass>();
+  for (const [key, info] of ObjectRegistry.getAllClasses()) {
+    if (seen.has(info)) continue;
+    seen.add(info);
+    const manifestKey = info.qualifiedName || key;
+    objects[manifestKey] = runtimeObjectDefinition(key, info);
+  }
+  return computeWebManifestHash({
+    version: 'runtime',
+    timestamp: 0,
+    objects,
+  });
+}
+
 /**
  * High-performance API generator using native Bun
  */
@@ -83,6 +173,7 @@ export class APIGenerator {
   private config: APIConfig;
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
   private context: APIContext;
+  private runtimeManifestHash: string | undefined;
 
   constructor(config: APIConfig = {}, context: APIContext = {}) {
     this.config = {
@@ -108,6 +199,7 @@ export class APIGenerator {
     collection: SmrtCollection<SmrtObject>,
   ): void {
     this.collections.set(name, collection);
+    this.runtimeManifestHash = undefined;
   }
 
   /**
@@ -305,6 +397,8 @@ export class APIGenerator {
       return handleEventsRoute(req, {
         authMiddleware: this.config.authMiddleware,
         db: this.resolveContextDb(),
+        manifestHash: this.resolveManifestHash(),
+        maxSubscribers: this.config.eventsRoute?.maxSubscribers,
       });
     }
 
@@ -1171,8 +1265,10 @@ export class APIGenerator {
    * matching `If-None-Match` can short-circuit into a 304 BEFORE the collection
    * query runs. The representation folds in the active tenant for tenant-scoped
    * models so one tenant's cached ETag never satisfies another's read. When an
-   * `APIConfig.manifestHash` is configured it is folded into the digest (#1764),
-   * so a shape-only deploy busts every read validator.
+   * web-collection manifest hash is folded into the digest (#1764), so a
+   * shape-only deploy busts every read validator. An explicit
+   * `APIConfig.manifestHash` wins; otherwise the hash is computed from the
+   * runtime registry on first use (#1862).
    */
   private async computeReadEtag(
     collection: SmrtCollection<SmrtObject>,
@@ -1184,14 +1280,23 @@ export class APIGenerator {
       req,
       this.readTenantDiscriminator(objectName),
     );
-    // Salt the ETag with the build's web-collection shape digest (#1764) when
-    // configured, so a shape-only deploy busts every read validator. Undefined
-    // (the default) reproduces the pre-#1764 unsalted ETag exactly.
+    // Salt the ETag with the web-collection shape digest (#1764) so a
+    // shape-only deploy busts every read validator. Runtime APIGenerator
+    // deployments compute the hash from ObjectRegistry when no explicit override
+    // is configured (#1862).
     return computeTableVersionEtag(
       version,
       representation,
-      this.config.manifestHash,
+      this.resolveManifestHash(),
     );
+  }
+
+  private resolveManifestHash(): string {
+    if (this.config.manifestHash !== undefined) {
+      return this.config.manifestHash;
+    }
+    this.runtimeManifestHash ??= computeRuntimeWebManifestHash();
+    return this.runtimeManifestHash;
   }
 
   /**

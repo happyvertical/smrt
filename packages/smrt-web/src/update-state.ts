@@ -26,9 +26,8 @@
  *
  * Contract detection here fires at MOST once per load (the compare-on-init).
  * LIVE-while-open contract detection — learning mid-session that the server
- * redeployed a new contract, via an SSE deploy signal or a runtime version
- * endpoint — is an EXPLICIT follow-up, NOT this slice. It would push a second
- * `contract` signal into the same primitive; the pub/sub is shaped for that.
+ * redeployed a new contract, via the `_events` SSE manifest frame — pushes the
+ * same sticky `contract` signal through {@link UpdateState.notifyContractUpdated}.
  *
  * ## Durable last-seen storage + logout wipe
  *
@@ -104,6 +103,12 @@ export interface UpdateState {
    */
   notifyBundleUpdated(): void;
   /**
+   * Push the API CONTRACT signal — call when a live transport observes a server
+   * `manifestHash` that differs from this running build (#1859). Idempotent:
+   * once set it stays set (a contract mismatch does not un-happen).
+   */
+  notifyContractUpdated(): void;
+  /**
    * Resolves once the async contract detection has settled (compared the running
    * hash against the persisted last-seen value and fired the signal if needed).
    * Primarily for tests/SSR; UI code just subscribes.
@@ -116,8 +121,9 @@ export interface UpdateState {
 /**
  * Create the framework-free `updateAvailable` primitive. Kicks off async
  * contract detection immediately (compare running vs. persisted manifest hash);
- * {@link UpdateState.notifyBundleUpdated} feeds the bundle signal. A change to
- * EITHER signal notifies subscribers.
+ * {@link UpdateState.notifyBundleUpdated} feeds the bundle signal, and
+ * {@link UpdateState.notifyContractUpdated} feeds the live contract signal. A
+ * change to EITHER signal notifies subscribers.
  */
 export function createUpdateState(config: UpdateStateConfig): UpdateState {
   const namespace = durableStoreNamespace(config.namespace);
@@ -224,6 +230,7 @@ export function createUpdateState(config: UpdateStateConfig): UpdateState {
       };
     },
     notifyBundleUpdated: setBundle,
+    notifyContractUpdated: setContract,
     ready,
     dispose() {
       disposed = true;

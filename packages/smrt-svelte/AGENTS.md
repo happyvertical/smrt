@@ -287,8 +287,8 @@ is the Svelte 5 reactive wrapper over smrt-web's framework-free `UpdateState`
 (from `createUpdateState()`). It surfaces `updateAvailable` / `bundle` /
 `contract` reactively (`$state`/`$derived`) for a toast or reload prompt, and
 wires SvelteKit's native `updated` store as the **bundle** signal. The
-**contract** signal (a manifest-hash change across loads, detected inside the
-smrt-web primitive under the build-time-inject decision) is surfaced as-is.
+**contract** signal (a manifest-hash change across loads, or a live `_events`
+manifest-frame mismatch latched by smrt-web on reconnect) is surfaced as-is.
 
 `updated` is passed IN as a reactive accessor (`() => updated.current` on modern
 `$app/state`, or a `$derived` over the legacy `$updated` store) rather than
