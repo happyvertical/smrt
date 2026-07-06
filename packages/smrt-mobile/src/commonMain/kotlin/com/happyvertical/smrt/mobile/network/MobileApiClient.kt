@@ -7,6 +7,7 @@ import com.happyvertical.smrt.mobile.contract.MobileAuthSession
 import com.happyvertical.smrt.mobile.contract.MobileAuthStartRequest
 import com.happyvertical.smrt.mobile.contract.MobileAuthStartResponse
 import com.happyvertical.smrt.mobile.contract.MobileSessionBootstrap
+import kotlinx.coroutines.CancellationException
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.HttpTimeout
@@ -197,14 +198,25 @@ class MobileApiClient(
             configure()
         }
         if (response.status == HttpStatusCode.Unauthorized) {
-            unauthorizedHandler.onUnauthorized()
+            try {
+                unauthorizedHandler.onUnauthorized()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // A throwing hook must not reclassify the 401 — callers
+                // (HttpQueueSender) depend on AuthUnauthorizedException.
+            }
             throw AuthUnauthorizedException("401 from ${url(path)}")
         }
         return MobileApiResponse(status = response.status.value, body = response.bodyAsText())
     }
 
-    private fun url(path: String): String =
-        "${config.baseUrl.trimEnd('/')}${config.apiPath}/${path.trimStart('/')}"
+    private fun url(path: String): String {
+        val base = config.baseUrl.trimEnd('/')
+        val api = config.apiPath.trim('/')
+        val trailing = path.trimStart('/')
+        return if (api.isEmpty()) "$base/$trailing" else "$base/$api/$trailing"
+    }
 
     private fun <T> MobileApiResponse.decodeOrThrow(strategy: DeserializationStrategy<T>): T {
         if (!isSuccess) {

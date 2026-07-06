@@ -76,6 +76,34 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun apiPathVariantsComposeWellFormedUrls() = runTest {
+        for (apiPath in listOf("api/mobile", "/api/mobile/", "/api/mobile")) {
+            val engine = MockEngine { respond("{}", HttpStatusCode.OK, jsonHeaders()) }
+            val apiClient = MobileApiClient(
+                engine = engine,
+                config = MobileApiConfig(baseUrl = "https://app.example.com/", apiPath = apiPath),
+                tokenProvider = { "token-1" },
+            )
+
+            apiClient.get("session")
+
+            assertEquals(
+                "https://app.example.com/api/mobile/session",
+                engine.requestHistory.single().url.toString(),
+                "apiPath variant: $apiPath",
+            )
+        }
+    }
+
+    @Test
+    fun throwingUnauthorizedHandlerStillRaisesAuthException() = runTest {
+        val engine = MockEngine { respond("denied", HttpStatusCode.Unauthorized) }
+        val apiClient = client(engine, onUnauthorized = { error("hook exploded") })
+
+        assertFailsWith<AuthUnauthorizedException> { apiClient.get("session") }
+    }
+
+    @Test
     fun unauthorizedResponseFiresHookAndThrows() = runTest {
         val engine = MockEngine { respond("denied", HttpStatusCode.Unauthorized) }
         var hookCalls = 0
@@ -143,6 +171,9 @@ class MobileApiClientTest {
         assertTrue(contentType.startsWith("multipart/form-data"), contentType)
         val body = request.body.toByteArray().decodeToString()
         assertTrue(body.contains("name=eventId") || body.contains("name=\"eventId\""))
+        // Ktor merges the part name with our filename disposition parameter:
+        // the file part must carry BOTH form-data name= and filename=.
+        assertTrue(body.contains("name=file") || body.contains("name=\"file\""))
         assertTrue(body.contains("filename=\"asset-1.jpg\""))
         assertTrue(body.contains("jpegbytes"))
     }
