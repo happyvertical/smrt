@@ -197,6 +197,20 @@ class HttpQueueSenderTest {
     }
 
     @Test
+    fun transientClientErrorsMapToRetryable() = runTest {
+        // 408/429 are transient, not verdicts — they must not consume the
+        // entry like other 4xx rejections do.
+        for (status in listOf(HttpStatusCode.RequestTimeout, HttpStatusCode.TooManyRequests)) {
+            val engine = MockEngine { respond("busy", status) }
+
+            val outcome = sender(engine).send(entry())
+
+            assertTrue(outcome is SendOutcome.Retryable, "expected Retryable for $status")
+            assertEquals("http ${status.value}", outcome.reason)
+        }
+    }
+
+    @Test
     fun unauthorizedMapsAndFiresHook() = runTest {
         val engine = MockEngine { respond("denied", HttpStatusCode.Unauthorized) }
         var hookCalls = 0
