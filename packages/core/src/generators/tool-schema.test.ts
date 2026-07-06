@@ -78,11 +78,13 @@ describe('buildToolInputSchema', () => {
     );
   });
 
-  it('requires id (not slug) for get', () => {
+  it('accepts id OR slug for get (neither required at the schema level)', () => {
     const schema = buildToolInputSchema('get', PRODUCT_FIELDS);
-    expect(schema.required).toEqual(['id']);
     const props = schema.properties as Record<string, unknown>;
+    expect(props).toHaveProperty('id');
     expect(props).toHaveProperty('slug');
+    // Relaxed from the historical required:['id'] so a slug-only call is valid.
+    expect(schema.required).toBeUndefined();
   });
 
   it('promotes required model fields onto the create schema', () => {

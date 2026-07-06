@@ -23,9 +23,12 @@ function installModelContext(): {
   const unregistered: string[] = [];
   (globalThis as { document?: unknown }).document = {
     modelContext: {
-      registerTool(tool: CapturedTool) {
+      // WebMCP removes a tool when the signal it was registered with aborts.
+      registerTool(tool: CapturedTool, opts?: { signal?: AbortSignal }) {
         tools.push(tool);
-        return { unregister: () => unregistered.push(tool.name) };
+        opts?.signal?.addEventListener('abort', () =>
+          unregistered.push(tool.name),
+        );
       },
     },
   };
@@ -232,6 +235,27 @@ describe('registerWebMcpTools', () => {
     expect(calls[0]).toContain('limit=10');
     expect(calls[0]).toContain('offset=20');
     expect(calls[0]).toContain('status=active');
+  });
+
+  it('resolves a get tool by slug when no id is provided', async () => {
+    const registry = installModelContext();
+    const fetchers = mockFetchers();
+    const defWithGet: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      toolDescriptors: [
+        {
+          action: 'get',
+          name: 'product_get',
+          description: 'Get a specific Product by ID or slug',
+          inputSchema: { type: 'object', properties: {} },
+          readOnly: true,
+        },
+      ],
+    };
+    registerWebMcpTools([defWithGet], { resolveFetchers: () => fetchers });
+    const getTool = registry.tools.find((t) => t.name === 'product_get');
+    await getTool?.execute({ slug: 'my-widget' });
+    expect(fetchers.get).toHaveBeenCalledWith('my-widget');
   });
 });
 

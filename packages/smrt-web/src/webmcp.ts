@@ -37,16 +37,14 @@ interface WebMcpToolRegistration {
   execute: (args: Record<string, unknown>) => Promise<string> | string;
 }
 
-/** What `registerTool` returns — a handle we can later `unregister()`. */
-interface RegisteredToolHandle {
-  unregister?: () => void;
-}
-
 /** The slice of `document.modelContext` this module depends on. */
 interface ModelContextLike {
+  // WebMCP removes a tool via an AbortSignal passed as the second arg, NOT via a
+  // returned handle — see https://developer.chrome.com/docs/ai/webmcp/imperative-api.
   registerTool: (
     tool: WebMcpToolRegistration,
-  ) => RegisteredToolHandle | undefined;
+    options?: { signal?: AbortSignal },
+  ) => void;
 }
 
 /**
@@ -99,7 +97,10 @@ export function registerWebMcpTools(
   if (!ctx) return () => {};
 
   const basePath = options.basePath ?? '/api/v1';
-  const disposers: Array<() => void> = [];
+  // ONE controller deregisters every tool this call registers: WebMCP removes a
+  // tool when the signal it was registered with aborts, so the returned disposer
+  // simply aborts. Idempotent — a second call is a harmless no-op.
+  const controller = new AbortController();
 
   for (const definition of definitions) {
     const descriptors = definition.toolDescriptors;
@@ -112,28 +113,21 @@ export function registerWebMcpTools(
     for (const descriptor of descriptors) {
       if (options.filter && !options.filter(definition, descriptor)) continue;
 
-      const handle = ctx.registerTool({
-        name: descriptor.name,
-        description: descriptor.description,
-        inputSchema: descriptor.inputSchema,
-        annotations: { readOnlyHint: descriptor.readOnly },
-        execute: (args) =>
-          dispatch(fetchers, definition, descriptor.action, args ?? {}),
-      });
-
-      if (handle && typeof handle.unregister === 'function') {
-        const unregister = handle.unregister.bind(handle);
-        disposers.push(unregister);
-      }
+      ctx.registerTool(
+        {
+          name: descriptor.name,
+          description: descriptor.description,
+          inputSchema: descriptor.inputSchema,
+          annotations: { readOnlyHint: descriptor.readOnly },
+          execute: (args) =>
+            dispatch(fetchers, definition, descriptor.action, args ?? {}),
+        },
+        { signal: controller.signal },
+      );
     }
   }
 
-  return () => {
-    while (disposers.length > 0) {
-      const dispose = disposers.pop();
-      dispose?.();
-    }
-  };
+  return () => controller.abort();
 }
 
 /** Require and return a string `id` from tool args, or throw a clear error. */
@@ -143,6 +137,19 @@ function requireId(args: Record<string, unknown>, action: string): string {
     throw new Error(`WebMCP ${action} requires a string 'id' argument`);
   }
   return id;
+}
+
+/**
+ * Resolve a `get` identifier: `id`, or `slug` as a fallback. The generated REST
+ * route and `collection.get()` both resolve either, and the get tool schema
+ * advertises both, so a slug-only call must work.
+ */
+function requireIdentifier(args: Record<string, unknown>): string {
+  const value = args.id ?? args.slug;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error("WebMCP get requires a string 'id' or 'slug' argument");
+  }
+  return value;
 }
 
 /** Narrow the list-tool args to the fetcher's query params. */
@@ -180,7 +187,7 @@ async function dispatch(
       if (!fetchers.get)
         throw new Error(`${definition.name} has no get action`);
       const row = unwrapItemResult(
-        await fetchers.get(requireId(args, 'get')),
+        await fetchers.get(requireIdentifier(args)),
         `get(${definition.name})`,
       );
       return JSON.stringify(row);
