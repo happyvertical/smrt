@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-inventory",
-  "version": "0.38.7",
+  "version": "0.38.8",
   "description": "Multi-location stock tracking for the SMRT framework — Sku, InventoryLocation, StockLevel, StockMovement, and a stock-mutation service",
   "type": "module",
   "main": "./dist/index.js",

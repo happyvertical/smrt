@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.8
+
+### Patch Changes
+
+- ### Features
+
+  - WebMCP data-plane tool registration (#1812) (#1863) (smrt-web,core)
+  - @happyvertical/smrt-config@0.38.8
+  - @happyvertical/smrt-types@0.38.8
+  - @happyvertical/smrt-scanner@0.38.8
+
 ## 0.38.7
 
 ### Patch Changes
