@@ -215,6 +215,122 @@ describe('operation permission guards', () => {
     });
   });
 
+  it('resolves opt-in ancestor authority when guarding with the resource tenant id (#1866)', async () => {
+    await syncPermissionCatalog(options);
+
+    const root = await tenants.create({ name: `Network ${randomUUID()}` });
+    await root.save();
+    const child = await tenants.createChild(root.id!, {
+      name: `Publication ${randomUUID()}`,
+    });
+
+    const permission = await permissions.findBySlug(
+      'operation_permission_records.update',
+    );
+    if (!permission?.id) {
+      throw new Error('Expected synced operation permission.');
+    }
+
+    const flaggedAdminRole = await roles.create({
+      name: `Network Admin ${randomUUID()}`,
+      inheritsToDescendants: true,
+    });
+    await flaggedAdminRole.save();
+    await rolePermissions.addPermission(flaggedAdminRole.id!, permission.id);
+
+    // The unflagged role holds the SAME permission: possession at the root is
+    // not enough, the role itself must opt in to descendant inheritance.
+    const unflaggedMemberRole = await roles.create({
+      name: `Member ${randomUUID()}`,
+    });
+    await unflaggedMemberRole.save();
+    await rolePermissions.addPermission(unflaggedMemberRole.id!, permission.id);
+
+    const rootAdmin = await users.create({
+      email: `root-admin-${randomUUID()}@example.com`,
+    });
+    await rootAdmin.save();
+    await (
+      await memberships.create({
+        roleId: flaggedAdminRole.id,
+        tenantId: root.id,
+        userId: rootAdmin.id,
+      })
+    ).save();
+
+    const rootMember = await users.create({
+      email: `root-member-${randomUUID()}@example.com`,
+    });
+    await rootMember.save();
+    await (
+      await memberships.create({
+        roleId: unflaggedMemberRole.id,
+        tenantId: root.id,
+        userId: rootMember.id,
+      })
+    ).save();
+
+    const unrelatedRoot = await tenants.create({
+      name: `Unrelated Network ${randomUUID()}`,
+    });
+    await unrelatedRoot.save();
+    const unrelatedAdmin = await users.create({
+      email: `unrelated-admin-${randomUUID()}@example.com`,
+    });
+    await unrelatedAdmin.save();
+    await (
+      await memberships.create({
+        roleId: flaggedAdminRole.id,
+        tenantId: unrelatedRoot.id,
+        userId: unrelatedAdmin.id,
+      })
+    ).save();
+
+    // Flagged root admin passes for a child resource tenant even with the
+    // super-admin bypass suppressed — authority follows the hierarchy.
+    const adminDecision = await assertOperationPermission({
+      ...options,
+      action: 'update',
+      allowSuperAdminBypass: false,
+      collection: 'operation_permission_records',
+      tenantId: child.id,
+      userId: rootAdmin.id,
+    });
+    expect(adminDecision).toMatchObject({
+      allowed: true,
+      permission: 'operation_permission_records.update',
+      reason: 'permission_granted',
+    });
+
+    const memberDecision = await assertOperationPermission({
+      ...options,
+      action: 'update',
+      allowSuperAdminBypass: false,
+      collection: 'operation_permission_records',
+      onDeny: 'return',
+      tenantId: child.id,
+      userId: rootMember.id,
+    });
+    expect(memberDecision).toMatchObject({
+      allowed: false,
+      reason: 'permission_denied',
+    });
+
+    const unrelatedDecision = await assertOperationPermission({
+      ...options,
+      action: 'update',
+      allowSuperAdminBypass: false,
+      collection: 'operation_permission_records',
+      onDeny: 'return',
+      tenantId: child.id,
+      userId: unrelatedAdmin.id,
+    });
+    expect(unrelatedDecision).toMatchObject({
+      allowed: false,
+      reason: 'permission_denied',
+    });
+  });
+
   it('returns a structured deny for unknown catalog operations', async () => {
     const actor = await createActor(['operation_permission_records.update']);
 

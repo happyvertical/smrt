@@ -25,7 +25,7 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { PermissionResolver } from '../services/PermissionResolver.js';
-import { UserStatus } from '../types/index.js';
+import { MembershipStatus, UserStatus } from '../types/index.js';
 
 describe('User', () => {
   let dbPath: string;
@@ -191,6 +191,45 @@ describe('Role and Permission', () => {
     const owner = await roles.findBySlug('owner');
     expect(owner).toBeDefined();
     expect(owner?.isSystem).toBe(true);
+  });
+
+  it('seeds roles as exact-tenant only unless inheritsToDescendants opts them in', async () => {
+    // Default: no role inherits down the tenant hierarchy.
+    await roles.seedSystemRoles();
+    for (const slug of ['owner', 'admin', 'member', 'viewer']) {
+      const role = await roles.findBySlug(slug);
+      expect(role?.inheritsToDescendants).toBe(false);
+    }
+
+    // Re-seeding with the opt-in list flags existing roles additively.
+    await roles.seedSystemRoles({ inheritsToDescendants: ['owner', 'admin'] });
+    expect((await roles.findBySlug('owner'))?.inheritsToDescendants).toBe(true);
+    expect((await roles.findBySlug('admin'))?.inheritsToDescendants).toBe(true);
+    expect((await roles.findBySlug('member'))?.inheritsToDescendants).toBe(
+      false,
+    );
+    expect((await roles.findBySlug('viewer'))?.inheritsToDescendants).toBe(
+      false,
+    );
+
+    // Omitting a previously flagged slug never unsets it (additive-only).
+    await roles.seedSystemRoles({ inheritsToDescendants: [] });
+    expect((await roles.findBySlug('owner'))?.inheritsToDescendants).toBe(true);
+    expect((await roles.findBySlug('admin'))?.inheritsToDescendants).toBe(true);
+  });
+
+  it('seeds fresh roles with the inheritsToDescendants flag applied', async () => {
+    await roles.seedSystemRoles({ inheritsToDescendants: ['owner'] });
+    expect((await roles.findBySlug('owner'))?.inheritsToDescendants).toBe(true);
+    expect((await roles.findBySlug('admin'))?.inheritsToDescendants).toBe(
+      false,
+    );
+  });
+
+  it('rejects unknown slugs in inheritsToDescendants', async () => {
+    await expect(
+      roles.seedSystemRoles({ inheritsToDescendants: ['amdin'] }),
+    ).rejects.toThrow(/Unknown system role slug 'amdin'/);
   });
 
   it('should assign permission to role', async () => {
@@ -1197,5 +1236,468 @@ describe('PermissionResolver', () => {
         'another',
       ]),
     ).toBe(false);
+  });
+});
+
+describe('PermissionResolver hierarchical membership inheritance (#1866)', () => {
+  let dbPath: string;
+  let users: UserCollection;
+  let tenants: TenantCollection;
+  let roles: RoleCollection;
+  let permissions: PermissionCollection;
+  let memberships: MembershipCollection;
+  let rolePermissions: RolePermissionCollection;
+  let groups: GroupCollection;
+  let groupMembers: GroupMemberCollection;
+  let groupRoles: GroupRoleCollection;
+  let membershipOverrides: MembershipOverrideCollection;
+  let tenantOverrides: TenantPermissionOverrideCollection;
+  let resolver: PermissionResolver;
+
+  beforeEach(async () => {
+    dbPath = join(
+      tmpdir(),
+      `smrt-inherit-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
+    );
+    const options = { db: { type: 'sqlite' as const, url: dbPath } };
+
+    users = await UserCollection.create(options);
+    tenants = await TenantCollection.create(options);
+    roles = await RoleCollection.create(options);
+    permissions = await PermissionCollection.create(options);
+    memberships = await MembershipCollection.create(options);
+    rolePermissions = await RolePermissionCollection.create(options);
+    groups = await GroupCollection.create(options);
+    groupMembers = await GroupMemberCollection.create(options);
+    groupRoles = await GroupRoleCollection.create(options);
+    membershipOverrides = await MembershipOverrideCollection.create(options);
+    tenantOverrides = await TenantPermissionOverrideCollection.create(options);
+    resolver = await PermissionResolver.create(options);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch (err) {
+        console.warn(`Test cleanup warning: failed to remove ${dbPath}:`, err);
+      }
+    }
+  });
+
+  /** root -> child -> grandchild tenant chain. */
+  async function createTenantChain() {
+    const root = await tenants.create({ name: 'Network Root' });
+    await root.save();
+    const child = await tenants.createChild(root.id!, { name: 'Child Org' });
+    const grandchild = await tenants.createChild(child.id!, {
+      name: 'Grandchild Org',
+    });
+    return { root, child, grandchild };
+  }
+
+  /** A role granting the given permission slugs (created on the fly). */
+  async function createRoleGranting(
+    name: string,
+    slugs: string[],
+    roleOptions: { inheritsToDescendants?: boolean } = {},
+  ) {
+    const role = await roles.create({
+      name,
+      inheritsToDescendants: roleOptions.inheritsToDescendants ?? false,
+    });
+    await role.save();
+    for (const slug of slugs) {
+      let permission = await permissions.list({ where: { slug }, limit: 1 });
+      let permissionRecord = permission[0];
+      if (!permissionRecord) {
+        permissionRecord = await permissions.create({ slug, name: slug });
+        await permissionRecord.save();
+      }
+      await rolePermissions.addPermission(role.id!, permissionRecord.id!);
+    }
+    return role;
+  }
+
+  async function createMember(tenantId: string, roleId: string, email: string) {
+    const user = await users.create({ email });
+    await user.save();
+    const membership = await memberships.create({
+      userId: user.id,
+      tenantId,
+      roleId,
+    });
+    await membership.save();
+    return { user, membership };
+  }
+
+  it('resolves a flagged root membership in a grandchild tenant (nearest-ancestor inheritance)', async () => {
+    const { root, child, grandchild } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const { user, membership } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'network-admin@example.com',
+    );
+
+    const grandchildResult = await resolver.resolvePermissions(
+      user.id!,
+      grandchild.id!,
+    );
+    expect(grandchildResult.permissions.has('articles.update')).toBe(true);
+    expect(grandchildResult.inheritedFromTenantId).toBe(root.id);
+    expect(grandchildResult.membershipId).toBe(membership.id);
+    expect(grandchildResult.roleId).toBe(adminRole.id);
+
+    const childResult = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(childResult.permissions.has('articles.update')).toBe(true);
+    expect(childResult.inheritedFromTenantId).toBe(root.id);
+
+    // hasPermission delegates to the same resolution path.
+    expect(
+      await resolver.hasPermission(user.id!, grandchild.id!, 'articles.update'),
+    ).toBe(true);
+  });
+
+  it('does not inherit when the ancestor role is unflagged (regression: exact-tenant only)', async () => {
+    const { root, grandchild } = await createTenantChain();
+    const unflaggedAdmin = await createRoleGranting(
+      'Unflagged Admin',
+      ['articles.update'],
+      { inheritsToDescendants: false },
+    );
+    const { user } = await createMember(
+      root.id!,
+      unflaggedAdmin.id!,
+      'plain-admin@example.com',
+    );
+
+    const result = await resolver.resolvePermissions(user.id!, grandchild.id!);
+    expect(result.permissions.size).toBe(0);
+    expect(result.membershipId).toBeNull();
+    expect(result.inheritedFromTenantId).toBeNull();
+  });
+
+  it('resolves empty for a user with no memberships anywhere', async () => {
+    const { grandchild } = await createTenantChain();
+    const user = await users.create({ email: 'nobody@example.com' });
+    await user.save();
+
+    const result = await resolver.resolvePermissions(user.id!, grandchild.id!);
+    expect(result.permissions.size).toBe(0);
+    expect(result.inheritedFromTenantId).toBeNull();
+  });
+
+  it('child tenant-level DENY subtracts an inherited role grant', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update', 'articles.delete'],
+      { inheritsToDescendants: true },
+    );
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'denied-in-child@example.com',
+    );
+
+    const deletePerm = (
+      await permissions.list({ where: { slug: 'articles.delete' }, limit: 1 })
+    )[0];
+    await tenantOverrides.denyPermission(child.id!, deletePerm.id!);
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.has('articles.update')).toBe(true);
+    expect(result.permissions.has('articles.delete')).toBe(false);
+    expect(result.inheritedFromTenantId).toBe(root.id);
+  });
+
+  it('membership DENY override on the ancestor membership stays absolute', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const { user, membership } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'override-deny@example.com',
+    );
+
+    const updatePerm = (
+      await permissions.list({ where: { slug: 'articles.update' }, limit: 1 })
+    )[0];
+    await membershipOverrides.denyPermission(membership.id!, updatePerm.id!);
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.has('articles.update')).toBe(false);
+    expect(result.deniedPermissionIds).toContain(updatePerm.id);
+  });
+
+  it('membership GRANT override travels with the ancestor membership', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting('Network Admin', [], {
+      inheritsToDescendants: true,
+    });
+    const { user, membership } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'override-grant@example.com',
+    );
+
+    const extraPerm = await permissions.create({
+      slug: 'special.grant',
+      name: 'Special Grant',
+    });
+    await extraPerm.save();
+    await membershipOverrides.grantPermission(membership.id!, extraPerm.id!);
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.has('special.grant')).toBe(true);
+    expect(result.inheritedFromTenantId).toBe(root.id);
+  });
+
+  it('a direct membership in the child attenuates: the lesser direct role wins over inheritance', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update', 'articles.delete'],
+      { inheritsToDescendants: true },
+    );
+    const viewerRole = await createRoleGranting('Viewer', ['articles.read']);
+
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'attenuated@example.com',
+    );
+    const childMembership = await memberships.create({
+      userId: user.id,
+      tenantId: child.id,
+      roleId: viewerRole.id,
+    });
+    await childMembership.save();
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.has('articles.read')).toBe(true);
+    expect(result.permissions.has('articles.update')).toBe(false);
+    expect(result.permissions.has('articles.delete')).toBe(false);
+    expect(result.membershipId).toBe(childMembership.id);
+    expect(result.inheritedFromTenantId).toBeNull();
+  });
+
+  it('an inactive direct membership pins resolution to the empty set (no inheritance bypass)', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'suspended-in-child@example.com',
+    );
+
+    const suspended = await memberships.create({
+      userId: user.id,
+      tenantId: child.id,
+      roleId: adminRole.id,
+      status: MembershipStatus.INACTIVE,
+    });
+    await suspended.save();
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.size).toBe(0);
+    expect(result.membershipId).toBeNull();
+    expect(result.inheritedFromTenantId).toBeNull();
+  });
+
+  it('skips an active unflagged intermediate membership and resolves through a higher flagged one', async () => {
+    const { root, child, grandchild } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const memberRole = await createRoleGranting('Member', ['articles.read']);
+
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'skip-mid@example.com',
+    );
+    const midMembership = await memberships.create({
+      userId: user.id,
+      tenantId: child.id,
+      roleId: memberRole.id,
+    });
+    await midMembership.save();
+
+    const result = await resolver.resolvePermissions(user.id!, grandchild.id!);
+    expect(result.permissions.has('articles.update')).toBe(true);
+    // Only the flagged ancestor role resolves; the unflagged mid role's grants
+    // do not union in.
+    expect(result.permissions.has('articles.read')).toBe(false);
+    expect(result.inheritedFromTenantId).toBe(root.id);
+  });
+
+  it('the nearest flagged ancestor membership wins (no union across the chain)', async () => {
+    const { root, child, grandchild } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.delete'],
+      { inheritsToDescendants: true },
+    );
+    const editorRole = await createRoleGranting(
+      'Regional Editor',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'nearest-wins@example.com',
+    );
+    const childMembership = await memberships.create({
+      userId: user.id,
+      tenantId: child.id,
+      roleId: editorRole.id,
+    });
+    await childMembership.save();
+
+    const result = await resolver.resolvePermissions(user.id!, grandchild.id!);
+    expect(result.permissions.has('articles.update')).toBe(true);
+    expect(result.permissions.has('articles.delete')).toBe(false);
+    expect(result.inheritedFromTenantId).toBe(child.id);
+    expect(result.membershipId).toBe(childMembership.id);
+  });
+
+  it('target-tenant group roles still contribute when resolution is inherited', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const groupRole = await createRoleGranting('Child Group Role', [
+      'special.child-access',
+    ]);
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'group-in-child@example.com',
+    );
+
+    const group = await groups.create({
+      tenantId: child.id,
+      name: 'Child Special Group',
+    });
+    await group.save();
+    await groupRoles.addRole(group.id!, groupRole.id!);
+    await groupMembers.addMember(group.id!, user.id!);
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.has('articles.update')).toBe(true);
+    expect(result.permissions.has('special.child-access')).toBe(true);
+    expect(result.groupIds).toContain(group.id);
+  });
+
+  it('honors an explicit `membership: null` option by applying inheritance', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'null-membership-option@example.com',
+    );
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!, {
+      membership: null,
+    });
+    expect(result.permissions.has('articles.update')).toBe(true);
+    expect(result.inheritedFromTenantId).toBe(root.id);
+  });
+
+  it('fails closed on malformed hierarchy paths', async () => {
+    const { root, child } = await createTenantChain();
+    const adminRole = await createRoleGranting(
+      'Network Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const { user } = await createMember(
+      root.id!,
+      adminRole.id!,
+      'malformed-path@example.com',
+    );
+
+    // Self-referential path: the tenant appears in its own ancestor chain.
+    child.hierarchyPath = `${root.id}/${child.id}`;
+    await child.save();
+    let result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.size).toBe(0);
+
+    // Duplicate ancestor ids.
+    child.hierarchyPath = `${root.id}/${root.id}`;
+    await child.save();
+    result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.size).toBe(0);
+
+    // Deeper than MAX_TENANT_HIERARCHY_DEPTH.
+    const fakeAncestors = Array.from(
+      { length: 10 },
+      (_, index) => `fake-ancestor-${index}`,
+    );
+    child.hierarchyPath = [root.id, ...fakeAncestors].join('/');
+    await child.save();
+    result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.size).toBe(0);
+
+    // Sanity: restoring the real path restores inheritance.
+    child.hierarchyPath = root.id!;
+    await child.save();
+    result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.has('articles.update')).toBe(true);
+  });
+
+  it('fails closed when hierarchyPath disagrees with the actual parent chain', async () => {
+    const { root, child } = await createTenantChain();
+
+    // The user's flagged authority lives on an UNRELATED tenant...
+    const unrelated = await tenants.create({ name: 'Unrelated Network' });
+    await unrelated.save();
+    const adminRole = await createRoleGranting(
+      'Unrelated Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const { user } = await createMember(
+      unrelated.id!,
+      adminRole.id!,
+      'stale-path@example.com',
+    );
+
+    // ...and a stale materialized path on the child claims that tenant as an
+    // ancestor while parentTenantId still points at the real root. The path
+    // passes the structural guards (short, no dupes, not self-referential)
+    // but must not be trusted as an authorization source.
+    child.hierarchyPath = unrelated.id!;
+    await child.save();
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.size).toBe(0);
+    expect(result.inheritedFromTenantId).toBeNull();
   });
 });
