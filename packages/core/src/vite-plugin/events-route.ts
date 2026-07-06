@@ -127,9 +127,9 @@ function establishTenantContext(locals: unknown): void {
 import { error } from '@sveltejs/kit';
 import {
   buildChangeEventStream,
-  changeEventSubscribersAtCapacity,
   eventStreamCapacityExceededResponse,
   resolveDispatchTenantScope,
+  tryReserveChangeEventSubscriberSlot,
 } from '@happyvertical/smrt-core';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
@@ -186,7 +186,8 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
   // The feed lives in the project's database; anchor on the
   // ${anchorClassName} collection to reuse its configured connection.
   const collection = await getCollection('${anchorClassName}');
-  if (changeEventSubscribersAtCapacity(collection.db${maxSubscribersArg})) {
+  const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db${maxSubscribersArg});
+  if (!releaseSubscriberSlot) {
     return eventStreamCapacityExceededResponse();
   }
   return new Response(
@@ -194,6 +195,7 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
       cursor,
       tenantScope,
       manifestHash: MANIFEST_HASH,
+      releaseSubscriberSlot,
     }),
     {
       status: 200,

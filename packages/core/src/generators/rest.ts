@@ -64,7 +64,8 @@ export interface APIConfig {
   hostname?: string;
   /**
    * Live `_events` route options. `maxSubscribers` caps active SSE streams per
-   * process (#1860); over-cap connections receive a retryable 503.
+   * process (#1860); over-cap connections receive a retryable 503. Set to 0
+   * for no cap.
    */
   eventsRoute?: {
     maxSubscribers?: number;
@@ -100,10 +101,12 @@ function registeredFieldsToManifest(
   const result: Record<string, FieldDefinition> = {};
   for (const [name, field] of fields) {
     if (!field || typeof field.type !== 'string') continue;
+    const defaultValue =
+      field.default !== undefined ? field.default : field._meta?.default;
     result[name] = {
       type: field.type as FieldDefinition['type'],
       ...(field.required !== undefined ? { required: field.required } : {}),
-      ...(field.default !== undefined ? { default: field.default } : {}),
+      ...(defaultValue !== undefined ? { default: defaultValue } : {}),
       ...(field.related !== undefined ? { related: field.related } : {}),
       ...(field.transient !== undefined ? { transient: field.transient } : {}),
       ...(field.sensitive !== undefined ? { sensitive: field.sensitive } : {}),
@@ -123,6 +126,16 @@ function registeredMethodsToManifest(
   return Object.fromEntries(methods ?? []);
 }
 
+function pluralizeRuntimeCollectionName(className: string): string {
+  const lower = className.toLowerCase();
+  if (lower.endsWith('y')) return `${lower.slice(0, -1)}ies`;
+  if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
+    return `${lower}es`;
+  }
+  if (lower.endsWith('ch') || lower.endsWith('sh')) return `${lower}es`;
+  return `${lower}s`;
+}
+
 function runtimeObjectDefinition(
   key: string,
   info: RegisteredClass,
@@ -131,7 +144,7 @@ function runtimeObjectDefinition(
   return {
     className,
     name: className.toLowerCase(),
-    collection: info.collection || `${className.toLowerCase()}s`,
+    collection: info.collection || pluralizeRuntimeCollectionName(className),
     filePath: info.sourceFilePath || '',
     fields: registeredFieldsToManifest(info.inheritedFields || info.fields),
     methods: registeredMethodsToManifest(info.inheritedMethods || info.methods),
@@ -150,10 +163,12 @@ function runtimeObjectDefinition(
  * (#1862). This mirrors the Vite/SvelteKit source (`computeWebManifestHash`)
  * but builds the manifest from `ObjectRegistry` for APIGenerator deployments.
  */
-export function computeRuntimeWebManifestHash(): string {
+export function computeRuntimeWebManifestHash(
+  classes: Iterable<[string, RegisteredClass]> = ObjectRegistry.getAllClasses(),
+): string {
   const objects: SmartObjectManifest['objects'] = {};
   const seen = new Set<RegisteredClass>();
-  for (const [key, info] of ObjectRegistry.getAllClasses()) {
+  for (const [key, info] of classes) {
     if (seen.has(info)) continue;
     seen.add(info);
     const manifestKey = info.qualifiedName || key;

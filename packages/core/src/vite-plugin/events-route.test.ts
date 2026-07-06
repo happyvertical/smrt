@@ -121,14 +121,14 @@ describe('generateEventsRoute (#1763)', () => {
 
     // The stream lifecycle lives in core — the route imports and delegates.
     expect(content).toContain(
-      "import {\n  buildChangeEventStream,\n  changeEventSubscribersAtCapacity,\n  eventStreamCapacityExceededResponse,\n  resolveDispatchTenantScope,\n} from '@happyvertical/smrt-core'",
+      "import {\n  buildChangeEventStream,\n  eventStreamCapacityExceededResponse,\n  resolveDispatchTenantScope,\n  tryReserveChangeEventSubscriberSlot,\n} from '@happyvertical/smrt-core'",
     );
     expect(content).toContain('const MANIFEST_HASH = undefined;');
     expect(content).toContain(
-      'changeEventSubscribersAtCapacity(collection.db)',
+      'const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db)',
     );
     expect(content).toContain(
-      'buildChangeEventStream(collection.db, {\n      cursor,\n      tenantScope,\n      manifestHash: MANIFEST_HASH,\n    })',
+      'buildChangeEventStream(collection.db, {\n      cursor,\n      tenantScope,\n      manifestHash: MANIFEST_HASH,\n      releaseSubscriberSlot,\n    })',
     );
     // It streams over an event-stream response.
     expect(content).toContain("'Content-Type': 'text/event-stream'");
@@ -158,7 +158,7 @@ describe('generateEventsRoute (#1763)', () => {
 
     const content = writtenRouteContent();
     expect(content).toContain(
-      'changeEventSubscribersAtCapacity(collection.db, 42)',
+      'tryReserveChangeEventSubscriberSlot(collection.db, 42)',
     );
     expect(content).toContain('eventStreamCapacityExceededResponse()');
   });

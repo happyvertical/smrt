@@ -37,6 +37,7 @@ import {
   type ChangeSignal,
   changeSignalSubscriberCount,
   subscribeToChangeSignals,
+  tryReserveChangeSignalSubscriberSlot,
 } from '../change-signals.js';
 import {
   type DispatchTenantScope,
@@ -64,7 +65,8 @@ export interface EventsRouteOptions {
   /**
    * Per-process cap on active `_events` subscribers (#1860). Defaults to
    * {@link DEFAULT_EVENTS_MAX_SUBSCRIBERS}; new over-cap connections receive a
-   * retryable 503 and existing subscribers are left untouched.
+   * retryable 503 and existing subscribers are left untouched. Set to 0 for no
+   * cap.
    */
   maxSubscribers?: number;
 }
@@ -106,13 +108,25 @@ export interface ChangeEventStreamOptions {
    * `event: manifest`. The hash carries no tenant/user data.
    */
   manifestHash?: string;
+  /**
+   * Reservation claimed at the route boundary before the streaming response was
+   * returned. Released when the stream subscribes, or during teardown if the
+   * stream never reaches `start()`.
+   */
+  releaseSubscriberSlot?: () => void;
 }
 
-/** Normalize an `_events` subscriber cap; invalid values fall back to default. */
+/**
+ * Normalize an `_events` subscriber cap.
+ *
+ * `0` means unlimited rather than reject-all, matching common limit semantics.
+ * Invalid values fall back to the default operational cap.
+ */
 export function normalizeEventsMaxSubscribers(
   value: number | undefined,
-): number {
+): number | null {
   if (value === undefined) return DEFAULT_EVENTS_MAX_SUBSCRIBERS;
+  if (value === 0) return null;
   if (!Number.isFinite(value) || value < 0) {
     return DEFAULT_EVENTS_MAX_SUBSCRIBERS;
   }
@@ -124,9 +138,25 @@ export function changeEventSubscribersAtCapacity(
   db: DatabaseInterface,
   maxSubscribers?: number,
 ): boolean {
+  const normalizedMaxSubscribers =
+    normalizeEventsMaxSubscribers(maxSubscribers);
   return (
-    changeSignalSubscriberCount(db) >=
-    normalizeEventsMaxSubscribers(maxSubscribers)
+    normalizedMaxSubscribers !== null &&
+    changeSignalSubscriberCount(db) >= normalizedMaxSubscribers
+  );
+}
+
+/**
+ * Atomically claim one `_events` subscriber slot at the route boundary.
+ * Returns null when the configured cap is already reached.
+ */
+export function tryReserveChangeEventSubscriberSlot(
+  db: DatabaseInterface,
+  maxSubscribers?: number,
+): (() => void) | null {
+  return tryReserveChangeSignalSubscriberSlot(
+    db,
+    normalizeEventsMaxSubscribers(maxSubscribers),
   );
 }
 
@@ -221,6 +251,7 @@ export function buildChangeEventStream(
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_EVENTS_HEARTBEAT_MS;
 
   let unsubscribe: (() => void) | null = null;
+  let releaseSubscriberSlot = options.releaseSubscriberSlot ?? null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let closed = false;
 
@@ -234,6 +265,10 @@ export function buildChangeEventStream(
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
+    }
+    if (releaseSubscriberSlot) {
+      releaseSubscriberSlot();
+      releaseSubscriberSlot = null;
     }
   };
 
@@ -254,6 +289,10 @@ export function buildChangeEventStream(
           teardown();
         }
       });
+      if (releaseSubscriberSlot) {
+        releaseSubscriberSlot();
+        releaseSubscriberSlot = null;
+      }
 
       // (b) Reconnection hint.
       controller.enqueue(encoder.encode('retry: 3000\n\n'));
@@ -400,7 +439,11 @@ export async function handleEventsRoute(
   // A raw handle passed straight to the generator may not have gone through
   // framework init; the feed table backs cursor catch-up.
   await ensureChangeFeedTable(db);
-  if (changeEventSubscribersAtCapacity(db, options.maxSubscribers)) {
+  const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(
+    db,
+    options.maxSubscribers,
+  );
+  if (!releaseSubscriberSlot) {
     return eventStreamCapacityExceededResponse();
   }
 
@@ -417,6 +460,7 @@ export async function handleEventsRoute(
       cursor,
       tenantScope,
       manifestHash: options.manifestHash,
+      releaseSubscriberSlot,
     }),
     {
       status: 200,

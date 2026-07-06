@@ -53,7 +53,8 @@ export interface SvelteKitOptions {
   /**
    * Live `_events` SSE route generation (#1763). Enabled by default (the route
    * is auth-guarded fail-closed, same-origin only); set `enabled: false` to
-   * skip. `maxSubscribers` caps active streams per process (#1860).
+   * skip. `maxSubscribers` caps active streams per process (#1860); 0 means
+   * unlimited.
    */
   eventsRoute?: { enabled?: boolean; maxSubscribers?: number };
 }

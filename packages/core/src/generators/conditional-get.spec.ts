@@ -21,7 +21,10 @@ import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
+import type { RegisteredClass } from '../registry/types';
+import type { SmartObjectManifest } from '../scanner/types';
 import { getTestDatabase } from '../testing/database';
+import { computeWebManifestHash } from '../vite-plugin/web-collections';
 import {
   canonicalReadRepresentation,
   computeTableVersionEtag,
@@ -452,6 +455,144 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
   });
 
   describe('runtime REST manifest-hash ETag salt (#1862)', () => {
+    it('matches the build-time web manifest hash for the same schema shape', () => {
+      const scannerManifest: SmartObjectManifest = {
+        objects: {
+          ParityCity: {
+            className: 'ParityCity',
+            collection: 'paritycities',
+            fields: {
+              id: { type: 'uuid' },
+              name: { type: 'text', default: 'Untitled' },
+              tenantId: { type: 'text', required: false },
+            },
+            methods: {},
+            decoratorConfig: {
+              api: { public: true },
+              tenantScoped: { mode: 'optional' },
+            },
+          },
+          ParityVenue: {
+            className: 'ParityVenue',
+            collection: 'parityvenues_custom',
+            fields: {
+              id: { type: 'uuid' },
+              cityId: { type: 'foreignKey', related: 'ParityCity' },
+              displayName: { type: 'text', default: 'Venue' },
+            },
+            methods: {},
+            decoratorConfig: {
+              api: { public: true },
+            },
+          },
+          ParityContent: {
+            className: 'ParityContent',
+            collection: 'paritycontents',
+            fields: {
+              id: { type: 'uuid' },
+              title: { type: 'text', default: 'Draft' },
+            },
+            methods: {},
+            decoratorConfig: {
+              api: { public: true },
+              tableStrategy: 'sti',
+            },
+          },
+          ParityArticle: {
+            className: 'ParityArticle',
+            collection: 'paritycontents',
+            extends: 'ParityContent',
+            fields: {
+              id: { type: 'uuid' },
+              title: { type: 'text', default: 'Draft' },
+              body: { type: 'text' },
+            },
+            methods: {},
+            decoratorConfig: {
+              api: { public: true },
+              tableStrategy: 'sti',
+            },
+          },
+        },
+      };
+
+      const runtimeEntries: Array<[string, RegisteredClass]> = [
+        [
+          'ParityCity',
+          {
+            name: 'ParityCity',
+            fields: new Map([
+              ['id', { type: 'uuid' }],
+              // Runtime decorator registration keeps defaults under `_meta`;
+              // scanner manifests expose them at top level. The runtime hash
+              // must hoist `_meta.default` before hashing.
+              ['name', { type: 'text', _meta: { default: 'Untitled' } }],
+              ['tenantId', { type: 'text', required: false }],
+            ]),
+            methods: new Map(),
+            config: {
+              api: { public: true },
+              tenantScoped: { mode: 'optional' },
+            },
+          } as RegisteredClass,
+        ],
+        [
+          'ParityVenue',
+          {
+            name: 'ParityVenue',
+            collection: 'parityvenues_custom',
+            fields: new Map([
+              ['id', { type: 'uuid' }],
+              ['cityId', { type: 'foreignKey', related: 'ParityCity' }],
+              ['displayName', { type: 'text', _meta: { default: 'Venue' } }],
+            ]),
+            methods: new Map(),
+            config: {
+              api: { public: true },
+            },
+          } as RegisteredClass,
+        ],
+        [
+          'ParityContent',
+          {
+            name: 'ParityContent',
+            collection: 'paritycontents',
+            fields: new Map([
+              ['id', { type: 'uuid' }],
+              ['title', { type: 'text', _meta: { default: 'Draft' } }],
+            ]),
+            methods: new Map(),
+            config: {
+              api: { public: true },
+              tableStrategy: 'sti',
+            },
+          } as RegisteredClass,
+        ],
+        [
+          'ParityArticle',
+          {
+            name: 'ParityArticle',
+            collection: 'paritycontents',
+            extends: 'ParityContent',
+            fields: new Map([
+              ['id', { type: 'uuid' }],
+              ['title', { type: 'text', _meta: { default: 'Draft' } }],
+              ['body', { type: 'text' }],
+            ]),
+            methods: new Map(),
+            config: {
+              api: { public: true },
+              tableStrategy: 'sti',
+            },
+          } as RegisteredClass,
+        ],
+      ];
+
+      expect(computeRuntimeWebManifestHash(runtimeEntries)).toBe(
+        computeWebManifestHash(scannerManifest),
+      );
+    });
+
     it('auto-wires the runtime registry manifest hash into read ETags by default', async () => {
       registerChangeFeedWriter();
       const saltDb = await getTestDatabase({

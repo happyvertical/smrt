@@ -561,8 +561,8 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
         { authMiddleware: allowAuth, db, maxSubscribers: 1 },
       );
       expect(first.status).toBe(200);
-      const reader = (first.body as ReadableStream<Uint8Array>).getReader();
-      await reader.read(); // start the stream and install the subscriber
+      // The slot is claimed before the response is consumed, closing the
+      // check-then-subscribe race between concurrent connection opens.
       expect(activeSubscriberCount(db)).toBe(1);
 
       const second = await handleEventsRoute(
@@ -572,7 +572,7 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       expect(second.status).toBe(503);
       expect(second.headers.get('Retry-After')).toBe('5');
 
-      await reader.cancel();
+      await first.body?.cancel();
       await waitFor(() => activeSubscriberCount(db) === 0);
 
       const third = await handleEventsRoute(
@@ -581,6 +581,24 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       );
       expect(third.status).toBe(200);
       await third.body?.cancel();
+    });
+
+    it('treats maxSubscribers: 0 as unlimited instead of reject-all', async () => {
+      const first = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: allowAuth, db, maxSubscribers: 0 },
+      );
+      const second = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: allowAuth, db, maxSubscribers: 0 },
+      );
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(activeSubscriberCount(db)).toBe(2);
+
+      await first.body?.cancel();
+      await second.body?.cancel();
     });
   });
 

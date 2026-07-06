@@ -35,6 +35,7 @@ export {
   eventStreamCapacityExceededResponse,
   normalizeEventsMaxSubscribers,
   signalVisibleToTenant,
+  tryReserveChangeEventSubscriberSlot,
 } from './events-route';
 export type {
   MCPConfig,

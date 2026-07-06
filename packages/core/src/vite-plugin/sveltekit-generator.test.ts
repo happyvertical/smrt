@@ -2373,7 +2373,7 @@ describe('SvelteKit Route Generator', () => {
         .mocked(writeFileSync)
         .mock.calls.find((call) => call[0].toString() === eventsServerPath);
       expect(String(eventsWrite?.[1])).toContain(
-        'changeEventSubscribersAtCapacity(collection.db, 12)',
+        'tryReserveChangeEventSubscriberSlot(collection.db, 12)',
       );
     });
   });
