@@ -11,7 +11,7 @@ Multi-tenant user management with RBAC, hierarchical tenants, session handling, 
 | Tenant | **STI** + hierarchical parent-child. `hierarchyPath` (materialized path), `hierarchyLevel`. Max depth 10. |
 | Session | Server-side. Secure UUID. TTL in **seconds** (not ms). Status auto-updates to EXPIRED on access. |
 | MagicLinkToken | Single-use email login token. Backed by `MagicLinkService`. |
-| Role | `tenantId = null` → system role (available to all tenants). `isSystem: true` blocks deletion. |
+| Role | `tenantId = null` → system role (available to all tenants). `isSystem: true` blocks deletion. `inheritsToDescendants: true` (default false) opts the role's membership authority into descendant tenants. |
 | Permission | Slug format: `resource.action`. Parsed by PermissionResolver. |
 | Membership | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
 | Group | Team within a tenant. Multiple roles via GroupRole. |
@@ -44,6 +44,46 @@ The hard block reflects the tenant cascade's **net** resolution, not an
 unconditional union of every DENY in the chain — so a more-specific tenant GRANT
 (e.g. a child sub-tenant re-granting a permission its parent DENYs) still wins.
 
+### Membership selection — hierarchical inheritance (opt-in, #1866)
+
+Which membership feeds step 2 above:
+
+1. **A direct membership row in the target tenant always pins resolution to
+   itself** — active rows resolve normally; an inactive (pending/suspended)
+   row resolves to the **empty set**. A direct row therefore *attenuates*
+   rather than unions: "viewer here, despite being network admin" gives
+   viewer, and a suspension in the child is effective even for users holding
+   inheritable authority on an ancestor.
+2. **No direct row** → the resolver walks the tenant's ancestors (nearest
+   first, from `hierarchyPath`) and resolves through the **nearest ACTIVE
+   ancestor membership whose role has `inheritsToDescendants: true`**.
+   Unflagged or inactive ancestor memberships are skipped (they neither confer
+   nor block); there is **no union across the chain** — the nearest flagged
+   membership alone is used. To attenuate a specific descendant, create a
+   direct membership there or use a tenant-level DENY.
+3. **No qualifying ancestor** → empty set (byte-identical to the
+   pre-inheritance resolver; with no role flagged, nothing changes).
+
+All later layers run unchanged against the **target** tenant: the tenant
+cascade and tenant-DENY hard block come from the target tenant (a child can
+carve authority out of an inherited role), group roles stay exact-tenant (only
+target-tenant groups contribute; ancestor groups never flow down), and
+membership GRANT/DENY overrides travel with the ancestor membership used.
+`PermissionResolutionResult.inheritedFromTenantId` reports the ancestor tenant
+when inheritance was used (`null` for direct resolution).
+
+Safety: resolution is bounded by `MAX_TENANT_HIERARCHY_DEPTH`; malformed
+`hierarchyPath` values (too deep, self-referential, duplicate ancestors) fail
+closed to the empty set. Tenant `status` is not consulted (parity with direct
+resolution). Caching: a long-lived `(user, tenant)` permission cache must also
+invalidate on ancestor-membership changes and on `Role.inheritsToDescendants`
+flips — request-scoped caches (the common pattern) are unaffected.
+
+Flag roles at seed time with
+`seedSystemRoles({ inheritsToDescendants: ['owner', 'admin'] })` (additive:
+listed slugs are flagged, omitted slugs are never unflagged; unknown slugs
+throw). The default seed leaves every role exact-tenant.
+
 ## Operation Permission Guards
 
 - Use `assertOperationPermission()` for hand-written mutations in SvelteKit form
@@ -54,9 +94,25 @@ unconditional union of every DENY in the chain — so a more-specific tenant GRA
 - `assertOperationPermission()` throws fail-closed by default. Use
   `{ onDeny: 'return' }`, `checkOperationPermission()`, or
   `hasOperationPermission()` when a structured/boolean result is needed.
+- **Resource-tenant calling convention**: for resource-anchored authorization,
+  pass the **resource's** tenant id — `tenantId: resourceTenantId` — not the
+  session's current tenant. With `Role.inheritsToDescendants` flagged, a
+  root-tenant admin then passes for any descendant resource with no app-side
+  authority logic (and no membership fan-out), while per-child delegation and
+  DENY precedence keep working. Do NOT pass a session-scoped `membership`
+  alongside a different resource `tenantId` — a membership/tenant mismatch
+  fails closed by design; omit `membership` and let the resolver look it up.
 - System context and super-admin bypass context are honored for parity with
   Postgres RLS. Pass `{ allowSuperAdminBypass: false }` on money-class or
   separation-of-duties operations that must require an explicit permission grant.
+- **Postgres RLS and membership inheritance**: RLS policies check the
+  session-injected `smrt.permissions` list (resolved app-side by
+  `PermissionResolver`), so a session whose `smrt.tenant_id` IS the child
+  tenant gets inherited authority in RLS automatically. But RLS row filtering
+  stays bound to the session's tenant setting — a root-tenant session acting
+  on child-tenant rows is authorized by the app-level guard (resource-tenant
+  convention above), not by RLS. This is a documented divergence, mirroring
+  how #1829 handled bypass parity.
 - Seed role mappings with `RolePermissionCollection.seedRolePermissions()` or
   `RoleCollection.seedSystemRoles({ seedPermissions: true })`. The default
   matrix maps owner/admin to all catalog permissions, member to read/create for
@@ -74,6 +130,11 @@ unconditional union of every DENY in the chain — so a more-specific tenant GRA
 - `moveToParent()` updates tenant + ALL descendants' paths/levels
 - `cascadePermissions` (parent pushes down) + `inheritPermissions` (child accepts) — both must be true
 - `getTree(rootId?)` returns nested structure for UI
+- Two independent downward flows: the `TenantPermissionOverride` **cascade**
+  (tenant-level permission config, flags above) and **membership-role
+  inheritance** (`Role.inheritsToDescendants`, per-role opt-in — see
+  "Membership selection" above). The cascade flags do not gate membership
+  inheritance.
 
 ## SvelteKit Integration
 

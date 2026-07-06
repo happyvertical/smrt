@@ -70,6 +70,12 @@ export interface Role extends SmrtEntityFields {
   name: string;
   description: string;
   isSystem: boolean;
+  /**
+   * Opt-in hierarchical inheritance: when `true`, an ACTIVE membership holding
+   * this role also resolves permissions in descendant tenants where the user
+   * has no direct membership. Default `false` (authority is exact-tenant only).
+   */
+  inheritsToDescendants: boolean;
 }
 
 /** User↔Tenant↔Role junction. Runtime class: `@happyvertical/smrt-users:Membership`. */

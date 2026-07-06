@@ -19,6 +19,7 @@ export interface RoleOptions extends SmrtObjectOptions {
   name?: string;
   description?: string;
   isSystem?: boolean;
+  inheritsToDescendants?: boolean;
 }
 
 /**
@@ -76,6 +77,17 @@ export class Role extends SmrtObject implements RoleContract {
    */
   isSystem: boolean = false;
 
+  /**
+   * Opt-in hierarchical inheritance: when true, an ACTIVE membership holding
+   * this role also resolves permissions in descendant tenants where the user
+   * has no direct membership (nearest flagged ancestor membership wins).
+   *
+   * Default false: the role's authority is exact-tenant only, which is the
+   * pre-existing resolver behavior. Flag structural roles like a network-level
+   * owner/admin; leave per-tenant roles like member/viewer unflagged.
+   */
+  inheritsToDescendants: boolean = false;
+
   constructor(options: RoleOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -83,6 +95,8 @@ export class Role extends SmrtObject implements RoleContract {
     if (options.description !== undefined)
       this.description = options.description;
     if (options.isSystem !== undefined) this.isSystem = options.isSystem;
+    if (options.inheritsToDescendants !== undefined)
+      this.inheritsToDescendants = options.inheritsToDescendants;
   }
 
   /**

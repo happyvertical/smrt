@@ -168,10 +168,13 @@ export class SessionService {
         );
       membership = resolvedMembership?.isActive() ? resolvedMembership : null;
 
+      // Pass the RAW row: an inactive direct membership pins resolution to
+      // the empty set, while a missing row (null) lets the resolver apply
+      // opt-in ancestor-membership inheritance (`Role.inheritsToDescendants`).
       const result = await this.permissionResolver.resolvePermissions(
         session.userId,
         session.tenantId,
-        { membership },
+        { membership: resolvedMembership },
       );
       permissions = Array.from(result.permissions);
     }

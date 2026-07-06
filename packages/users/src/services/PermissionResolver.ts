@@ -9,11 +9,12 @@ import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { MembershipOverrideCollection } from '../collections/MembershipOverrideCollection.js';
 import { PermissionCollection } from '../collections/PermissionCollection.js';
+import { RoleCollection } from '../collections/RoleCollection.js';
 import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import type { Membership } from '../models/Membership.js';
-import type { Tenant } from '../models/Tenant.js';
+import { MAX_TENANT_HIERARCHY_DEPTH, type Tenant } from '../models/Tenant.js';
 
 /**
  * Permission resolution result
@@ -29,13 +30,26 @@ export interface PermissionResolutionResult {
   groupIds: string[];
   /** Permission IDs explicitly denied */
   deniedPermissionIds: string[];
+  /**
+   * Ancestor tenant id the resolving membership belongs to, when resolution
+   * used opt-in hierarchical inheritance (no direct membership in the target
+   * tenant; nearest ACTIVE ancestor membership whose role has
+   * `inheritsToDescendants: true`). `null` for direct-membership resolution.
+   */
+  inheritedFromTenantId: string | null;
 }
 
 export interface PermissionResolutionOptions {
   /**
-   * Active membership already resolved by the caller for this user/tenant.
+   * Membership row already resolved by the caller for this user/tenant.
    * Passing this lets request-scoped session loaders avoid re-querying the
    * same membership row before resolving permissions.
+   *
+   * Pass the RAW lookup result: an inactive row pins resolution to the empty
+   * set (a suspended/pending direct membership stays effective), while an
+   * explicit `null` asserts "no direct membership row exists" and makes the
+   * resolver consider opt-in ancestor-membership inheritance. Leaving it
+   * `undefined` lets the resolver perform its own lookup.
    */
   membership?: Membership | null;
 }
@@ -88,6 +102,17 @@ export interface TenantPermissionInheritanceResult {
  * - GRANT: Explicitly grant at this level
  * - DENY: Explicitly block (even if parent grants)
  *
+ * ## Hierarchical Membership-Role Inheritance (opt-in)
+ *
+ * Independent of the tenant-level cascade above, membership-role authority
+ * can follow the hierarchy DOWN when a role is explicitly flagged
+ * `inheritsToDescendants: true`: a user with no direct membership in the
+ * target tenant resolves through the nearest ACTIVE ancestor membership
+ * holding such a role. A direct membership row in the target tenant always
+ * wins (including inactive rows, which resolve empty), child tenant-DENY
+ * overrides still subtract from inherited grants, and with no flagged role
+ * the resolver behaves exactly as before. See `resolvePermissions`.
+ *
  * @example
  * ```typescript
  * const resolver = new PermissionResolver(options);
@@ -107,6 +132,7 @@ export interface TenantPermissionInheritanceResult {
 export class PermissionResolver {
   private options: SmrtClassOptions;
   private membershipCollection!: MembershipCollection;
+  private roleCollection!: RoleCollection;
   private rolePermissionCollection!: RolePermissionCollection;
   private membershipOverrideCollection!: MembershipOverrideCollection;
   private groupMemberCollection!: GroupMemberCollection;
@@ -127,6 +153,7 @@ export class PermissionResolver {
    */
   async initialize(): Promise<void> {
     this.membershipCollection = await MembershipCollection.create(this.options);
+    this.roleCollection = await RoleCollection.create(this.options);
     this.rolePermissionCollection = await RolePermissionCollection.create(
       this.options,
     );
@@ -343,8 +370,29 @@ export class PermissionResolver {
    *     -> membership GRANT (re-adds; most specific, can win over a tenant-DENY)
    *     -> membership DENY  (absolute; always wins)
    *
+   * ## Membership selection
+   *
+   * A direct membership row in the target tenant always pins resolution to
+   * itself: active rows resolve normally, inactive (pending/suspended) rows
+   * resolve to the empty set — an explicit direct membership is authoritative
+   * even when it attenuates or suspends a user who holds broader authority on
+   * an ancestor tenant.
+   *
+   * Only when NO direct membership row exists does the resolver consider
+   * opt-in hierarchical inheritance: it walks the tenant's ancestors (nearest
+   * first) and resolves through the nearest ACTIVE ancestor membership whose
+   * role has `inheritsToDescendants: true`. All later layers then run
+   * unchanged against the TARGET tenant — the tenant cascade and tenant-DENY
+   * block come from the target tenant (so a child tenant can still carve
+   * authority out of an inherited role), group roles remain exact-tenant
+   * (only groups the user belongs to in the target tenant contribute), and
+   * membership GRANT/DENY overrides travel with the ancestor membership used.
+   * With no role flagged `inheritsToDescendants`, resolution is identical to
+   * the pre-inheritance behavior.
+   *
    * Algorithm:
-   * 1. Get membership and collect all permission IDs from all sources
+   * 1. Get membership (direct, or nearest inheritable ancestor membership)
+   *    and collect all permission IDs from all sources
    * 2. Batch fetch all permissions in a single query
    * 3. Apply permissions from role, then groups
    * 4. Subtract tenant-level DENY'd slugs (hard tenant-wide block)
@@ -362,19 +410,34 @@ export class PermissionResolver {
       roleId: null,
       groupIds: [],
       deniedPermissionIds: [],
+      inheritedFromTenantId: null,
     };
 
     // 1. Get membership, reusing a request-scoped row when the caller already
     // resolved it for this exact user/tenant.
-    const membership =
+    let membership =
       options.membership === undefined
         ? await this.membershipCollection.findByUserAndTenant(userId, tenantId)
         : options.membership;
-    if (!membership?.isActive()) {
-      return result;
-    }
-    if (membership.userId !== userId || membership.tenantId !== tenantId) {
-      return result;
+
+    if (membership) {
+      // A direct membership row pins resolution to itself: a mismatched
+      // caller-provided row is rejected, and an inactive row resolves empty
+      // (suspension/pending in the target tenant is effective even for users
+      // holding inheritable authority on an ancestor).
+      if (membership.userId !== userId || membership.tenantId !== tenantId) {
+        return result;
+      }
+      if (!membership.isActive()) {
+        return result;
+      }
+    } else {
+      // No direct membership row: opt-in nearest-ancestor inheritance.
+      membership = await this.resolveInheritedMembership(userId, tenantId);
+      if (!membership) {
+        return result;
+      }
+      result.inheritedFromTenantId = membership.tenantId ?? null;
     }
 
     result.membershipId = membership.id ?? null;
@@ -504,6 +567,99 @@ export class PermissionResolver {
     }
 
     return result;
+  }
+
+  /**
+   * Find the membership to resolve through when the user has no direct
+   * membership row in the target tenant.
+   *
+   * Walks the target tenant's ancestor chain (from the materialized
+   * `hierarchyPath`, nearest ancestor first) and returns the nearest ACTIVE
+   * ancestor membership whose role is explicitly flagged
+   * `inheritsToDescendants: true`. Ancestor memberships that are inactive or
+   * hold an unflagged role are skipped — they neither confer nor block
+   * inheritance from higher ancestors. Attenuating a user in a specific
+   * tenant is expressed with a direct membership row there (which pins
+   * resolution) or a tenant-level DENY, not with an intermediate unflagged
+   * membership.
+   *
+   * Fails closed (returns null, resolving to the empty set) when the tenant
+   * is missing or its `hierarchyPath` is malformed: deeper than
+   * `MAX_TENANT_HIERARCHY_DEPTH`, self-referential, or containing duplicate
+   * ancestor ids.
+   */
+  private async resolveInheritedMembership(
+    userId: string,
+    tenantId: string,
+  ): Promise<Membership | null> {
+    const tenant = await this.tenantCollection.get({ id: tenantId });
+    if (!tenant?.id) {
+      return null;
+    }
+
+    // Ordered root -> immediate parent, per the materialized path.
+    const ancestorIds = tenant.getAncestorIds();
+    if (ancestorIds.length === 0) {
+      return null;
+    }
+
+    // Malformed hierarchy paths fail closed: a well-formed path is bounded by
+    // MAX_TENANT_HIERARCHY_DEPTH (at most MAX-1 ancestors), never contains the
+    // tenant itself, and never repeats an ancestor.
+    if (
+      ancestorIds.length >= MAX_TENANT_HIERARCHY_DEPTH ||
+      ancestorIds.includes(tenant.id) ||
+      new Set(ancestorIds).size !== ancestorIds.length
+    ) {
+      return null;
+    }
+
+    // One query for the user's ACTIVE memberships, intersected with the
+    // ancestor chain. UNIQUE(userId, tenantId) guarantees at most one row per
+    // ancestor.
+    const activeMemberships =
+      await this.membershipCollection.findActiveByUser(userId);
+    if (activeMemberships.length === 0) {
+      return null;
+    }
+    const membershipByTenantId = new Map<string, Membership>();
+    for (const row of activeMemberships) {
+      if (row.tenantId && row.userId === userId) {
+        membershipByTenantId.set(row.tenantId, row);
+      }
+    }
+
+    // Candidates ordered nearest ancestor first.
+    const candidates: Membership[] = [];
+    for (let i = ancestorIds.length - 1; i >= 0; i--) {
+      const candidate = membershipByTenantId.get(ancestorIds[i]);
+      if (candidate?.roleId) {
+        candidates.push(candidate);
+      }
+    }
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    // Batch load candidate roles; only an explicit `inheritsToDescendants:
+    // true` role confers inheritance, and the nearest such membership wins.
+    const roleIds = [
+      ...new Set(candidates.map((candidate) => candidate.roleId as string)),
+    ];
+    const roles = await this.roleCollection.listByIds(roleIds);
+    const inheritableRoleIds = new Set<string>();
+    for (const role of roles) {
+      if (role.id && role.inheritsToDescendants === true) {
+        inheritableRoleIds.add(role.id);
+      }
+    }
+
+    for (const candidate of candidates) {
+      if (candidate.roleId && inheritableRoleIds.has(candidate.roleId)) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   /**

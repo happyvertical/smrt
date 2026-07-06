@@ -15,6 +15,16 @@ export interface SeedSystemRolesOptions
   extends Omit<SeedRolePermissionsOptions, 'catalog'> {
   permissionMatrix?: RolePermissionPatternMatrix;
   seedPermissions?: boolean;
+  /**
+   * System role slugs to flag `inheritsToDescendants: true` (opt-in
+   * hierarchical membership inheritance, e.g. `['owner', 'admin']` for
+   * organizational hierarchies). Additive and idempotent: listed slugs are
+   * flagged on create and on already-seeded roles, but omitting a slug never
+   * unsets a previously flagged role — unflag explicitly via a role update.
+   * Unknown slugs throw (a typo here would silently withhold intended
+   * authority). Default: no role inherits.
+   */
+  inheritsToDescendants?: string[];
 }
 
 /**
@@ -84,10 +94,28 @@ export class RoleCollection extends SmrtCollection<Role> {
   async seedSystemRoles(options: SeedSystemRolesOptions = {}): Promise<Role[]> {
     const roles: Role[] = [];
 
+    const inheritableSlugs = new Set(options.inheritsToDescendants ?? []);
+    const knownSlugs = new Set<string>(DEFAULT_ROLES.map((def) => def.slug));
+    for (const slug of inheritableSlugs) {
+      if (!knownSlugs.has(slug)) {
+        throw new Error(
+          `Unknown system role slug '${slug}' in inheritsToDescendants. ` +
+            `Valid slugs: ${[...knownSlugs].join(', ')}.`,
+        );
+      }
+    }
+
     for (const roleDef of DEFAULT_ROLES) {
+      const inheritable = inheritableSlugs.has(roleDef.slug);
+
       // Check if role already exists
       const existing = await this.findBySlug(roleDef.slug);
       if (existing) {
+        // Additive-only convergence: flag a listed slug, never unset one.
+        if (inheritable && !existing.inheritsToDescendants) {
+          existing.inheritsToDescendants = true;
+          await existing.save();
+        }
         roles.push(existing);
         continue;
       }
@@ -99,6 +127,7 @@ export class RoleCollection extends SmrtCollection<Role> {
         description: roleDef.description,
         tenantId: null,
         isSystem: true,
+        inheritsToDescendants: inheritable,
       });
       await role.save();
       roles.push(role);
