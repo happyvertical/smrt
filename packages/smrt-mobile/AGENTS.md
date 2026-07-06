@@ -5,14 +5,14 @@ non-TypeScript package in the monorepo. Design: **ADR 0001**
 (`docs/content/adr/0001-kmp-mobile-foundation.md`) + extraction plan; epic
 #1745. Decision record: `README.md` here and issue #1737.
 
-**Status: Phase 3.** Present: framework contract types, pack i18n resolver,
-pack integrity/snapshot model, evidence-capture model, shell state, platform
-seams, the **durable SQLDelight-backed offline write-queue + pack store**
-(Phase 2, #1739), and the **PKCE auth/session module** (Phase 3, #1740).
-NOT here yet (later phases — do not add ad hoc): Ktor networking (Phase 4,
-#1741 — `AuthTransport`/`QueueSender` are its seams), platform adapters
-(Phases 5–6). **Productionize, don't lift** governs all porting from the
-seed apps.
+**Status: Phases 1–4 complete** — the shared-logic core. Present: framework
+contract types, pack i18n resolver, pack integrity/snapshot model,
+evidence-capture model, shell state, the **durable SQLDelight write-queue +
+pack store** (Phase 2, #1739), the **PKCE auth/session module** (Phase 3,
+#1740), and the **shared Ktor client** (Phase 4, #1741) implementing the
+`AuthTransport`/`QueueSender` seams. NOT here: platform adapters, engines,
+and secure-storage impls — those land with smrt-android/smrt-ios (Phases
+5–6). **Productionize, don't lift** governs all porting from the seed apps.
 
 ## Layout
 
@@ -36,6 +36,20 @@ consumers use Gradle `includeBuild`).
   `AuthTransport` (Phase 4 Ktor), `ExternalAuthLauncher` (custom tab /
   ASWebAuthenticationSession). `onUnauthorized()` is the networking client's
   401 hook: clears the session; the write-queue keeps its entries.
+- `src/commonMain/kotlin/.../network/` — `MobileApiClient`: engine-agnostic
+  Ktor client for the `/api/mobile` contract (apps supply okhttp/darwin
+  engines; tests use MockEngine). Bearer on every authenticated request;
+  multipart evidence upload; `Idempotency-Key` from the queue entry id;
+  401 → `UnauthorizedHandler` (wire to `MobileSessionManager.onUnauthorized`)
+  then `AuthUnauthorizedException`. `HttpQueueSender` maps HTTP outcomes to
+  the queue's `SendOutcome` semantics **for the hand-written `/api/mobile`
+  single-item endpoints only** (4xx permanent except 408/429; the handlers
+  dedupe on `Idempotency-Key`). Framework-model writes need the planned
+  batch `sync/apply` sender instead (per-item statuses inside HTTP 200,
+  non-2xx retryable, dedupe by construction — see
+  `docs/content/architecture/sync-apply-contract.md`). Request routing per
+  entry kind is app policy. No auto-retry — queued writes retry via flush
+  triggers (reporter parity).
 - `src/commonMain/kotlin/.../i18n/` — `PackTextResolver`: requested →
   fallback → source locale chain with review-state/safety-critical
   provenance.
@@ -102,8 +116,9 @@ wrapper is checked in — always invoke via `./gradlew`.
   renovate keeps these current; bump deliberately in
   `gradle/libs.versions.toml`.
 - commonMain dependencies stay minimal (kotlinx-serialization,
-  kotlinx-datetime, kotlinx-coroutines, SQLDelight runtime). Ktor arrives in
-  Phase 4. No other deps without an ADR note.
+  kotlinx-datetime, kotlinx-coroutines, SQLDelight runtime, ktor-client-core
+  as `api`). No engine deps here — consumers pick okhttp/darwin. No other
+  deps without an ADR note.
 - Adapter seams are plain Kotlin interfaces (amaru precedent), not
   `expect`/`actual`.
 - Wire DTO fields default-initialize (safe partial deserialization); decimals
