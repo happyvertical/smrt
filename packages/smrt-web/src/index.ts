@@ -320,6 +320,61 @@ export function unwrapItemResult(
   );
 }
 
+/** SMRT WHERE operator → the generated REST route's `field[op]=value` token. */
+const SMRT_TO_REST_OPERATOR: Record<string, string> = {
+  '>': 'gt',
+  '>=': 'gte',
+  '<': 'lt',
+  '<=': 'lte',
+  '!=': 'ne',
+  in: 'in',
+  like: 'like',
+};
+
+/**
+ * Serialize `list` query params into the query string the generated REST list
+ * route parses (`handleList` in `core/src/generators/rest.ts`): `limit`,
+ * `offset`, `orderBy` as scalars, and `where` entries as `field=value`
+ * (equality) or `field[op]=value` for a `{ op, value }` condition (`in` joins an
+ * array with commas). Called with no params (the collection runtime's argument-
+ * free `list()`) it returns `''`, so the bare-URL behavior is unchanged.
+ */
+export function buildListQuery(params?: Record<string, unknown>): string {
+  if (!params) return '';
+  const search = new URLSearchParams();
+  const { limit, offset, orderBy, where } = params;
+  if (limit !== undefined) search.set('limit', String(limit));
+  if (offset !== undefined) search.set('offset', String(offset));
+  if (orderBy !== undefined) {
+    search.set(
+      'orderBy',
+      Array.isArray(orderBy) ? orderBy.join(', ') : String(orderBy),
+    );
+  }
+  if (where && typeof where === 'object') {
+    for (const [field, condition] of Object.entries(
+      where as Record<string, unknown>,
+    )) {
+      if (
+        condition &&
+        typeof condition === 'object' &&
+        !Array.isArray(condition) &&
+        'op' in condition &&
+        'value' in condition
+      ) {
+        const { op, value } = condition as { op: string; value: unknown };
+        const restOp = SMRT_TO_REST_OPERATOR[op];
+        const token = Array.isArray(value) ? value.join(',') : String(value);
+        search.set(restOp ? `${field}[${restOp}]` : field, token);
+      } else if (condition !== undefined && condition !== null) {
+        search.set(field, String(condition));
+      }
+    }
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : '';
+}
+
 /**
  * Build CRUD fetchers from a generated collection definition — the same URL
  * scheme and payload handling as the generated REST client
@@ -352,7 +407,10 @@ export function createDefinitionFetchers(
   };
 
   return {
-    list: async () => parse(await fetchFn(collectionUrl, { headers })),
+    list: async (params) =>
+      parse(
+        await fetchFn(`${collectionUrl}${buildListQuery(params)}`, { headers }),
+      ),
     get: async (id) =>
       parse(await fetchFn(`${collectionUrl}/${id}`, { headers })),
     create: async (data) =>
@@ -1149,6 +1207,6 @@ export function createSmrtCollection<TData extends object>(
 // ---------------------------------------------------------------------------
 
 export {
-  registerWebMcpTools,
   type RegisterWebMcpToolsOptions,
+  registerWebMcpTools,
 } from './webmcp.js';

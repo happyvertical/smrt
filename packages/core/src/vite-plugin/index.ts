@@ -28,6 +28,7 @@ import {
 } from './sveltekit-generator.js';
 import {
   buildWebCollectionDefinition,
+  buildWebToolDescriptors,
   computeWebManifestHash,
   selectWebCollectionEntries,
 } from './web-collections.js';
@@ -1332,10 +1333,13 @@ function generateWebModule(manifest: SmartObjectManifest): string {
   // can never drift (a drift would let the hash under-cover a change → stale
   // caches). See buildWebCollectionDefinition's docblock.
   for (const entry of selectWebCollectionEntries(manifest)) {
-    definitions[entry.collection] = buildWebCollectionDefinition(
-      entry,
-      manifest,
-    );
+    definitions[entry.collection] = {
+      ...buildWebCollectionDefinition(entry, manifest),
+      // WebMCP/MCP tool descriptors (#1812) — layered ON TOP of the shared shape
+      // so the #1764 shape digest (computeWebManifestHash, which calls
+      // buildWebCollectionDefinition directly) keeps hashing only the row shape.
+      toolDescriptors: buildWebToolDescriptors(entry),
+    };
   }
 
   // The web-collection SHAPE digest (#1764): a deterministic, replica-stable
@@ -1847,6 +1851,15 @@ declare module '@happyvertical/smrt-virt-web' {
     relatedCollection: string;
   }
 
+  /** A WebMCP/MCP tool descriptor for one collection action (#1812). */
+  export interface WebToolDescriptor {
+    action: string;
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    readOnly: boolean;
+  }
+
   export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
     name: string;
     className: string;
@@ -1856,6 +1869,8 @@ declare module '@happyvertical/smrt-virt-web' {
     fields: Record<string, SmrtWebFieldDefinition>;
     /** Manifest-derived relationship edges to sibling REST collections. */
     relationships: SmrtWebRelationship[];
+    /** WebMCP/MCP tool descriptors for the exposed actions (#1812). */
+    toolDescriptors: WebToolDescriptor[];
     /** Phantom row-type carrier for inference — never present at runtime. */
     _row?: TData;
   }

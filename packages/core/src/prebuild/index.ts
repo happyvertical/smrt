@@ -319,6 +319,15 @@ declare module '@smrt/web' {
     relatedCollection: string;
   }
 
+  /** A WebMCP/MCP tool descriptor for one collection action (#1812). */
+  export interface WebToolDescriptor {
+    action: string;
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    readOnly: boolean;
+  }
+
   export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
     name: string;
     className: string;
@@ -328,6 +337,8 @@ declare module '@smrt/web' {
     fields: Record<string, SmrtWebFieldDefinition>;
     /** Manifest-derived relationship edges to sibling REST collections. */
     relationships: SmrtWebRelationship[];
+    /** WebMCP/MCP tool descriptors for the exposed actions (#1812). */
+    toolDescriptors: WebToolDescriptor[];
     /** Phantom row-type carrier for inference — never present at runtime. */
     _row?: TData;
   }

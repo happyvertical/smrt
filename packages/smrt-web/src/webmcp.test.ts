@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SmrtCrudFetchers, SmrtWebCollectionDefinition } from './index.js';
+import { buildListQuery } from './index.js';
 import { registerWebMcpTools } from './webmcp.js';
 
 // ---------------------------------------------------------------------------
@@ -203,5 +204,70 @@ describe('registerWebMcpTools', () => {
     };
     registerWebMcpTools([bare], { resolveFetchers: () => mockFetchers() });
     expect(registry.tools).toHaveLength(0);
+  });
+
+  it('serializes list query params into the REST URL on the default fetcher path', async () => {
+    const registry = installModelContext();
+    const calls: string[] = [];
+    const fetchFn = (async (url: string | URL) => {
+      calls.push(String(url));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [{ id: 'p1' }],
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    // No resolveFetchers → exercises the real createDefinitionFetchers path.
+    registerWebMcpTools([PRODUCT_DEF], { basePath: '/api/v1', fetchFn });
+    const listTool = registry.tools.find((t) => t.name === 'product_list');
+    await listTool?.execute({
+      limit: 10,
+      offset: 20,
+      where: { status: 'active' },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain('/api/v1/products?');
+    expect(calls[0]).toContain('limit=10');
+    expect(calls[0]).toContain('offset=20');
+    expect(calls[0]).toContain('status=active');
+  });
+});
+
+describe('buildListQuery', () => {
+  const parse = (qs: string) => new URLSearchParams(qs.replace(/^\?/, ''));
+
+  it('is empty for no params (the collection runtime bare list())', () => {
+    expect(buildListQuery()).toBe('');
+    expect(buildListQuery({})).toBe('');
+  });
+
+  it('serializes limit/offset/orderBy as scalars', () => {
+    const p = parse(
+      buildListQuery({ limit: 10, offset: 5, orderBy: 'name ASC' }),
+    );
+    expect(p.get('limit')).toBe('10');
+    expect(p.get('offset')).toBe('5');
+    expect(p.get('orderBy')).toBe('name ASC');
+  });
+
+  it('serializes an equality where as field=value', () => {
+    const p = parse(buildListQuery({ where: { status: 'active' } }));
+    expect(p.get('status')).toBe('active');
+  });
+
+  it('maps a SMRT operator condition to the REST field[op]=value token', () => {
+    const p = parse(
+      buildListQuery({ where: { price: { op: '>', value: 10 } } }),
+    );
+    expect(p.get('price[gt]')).toBe('10');
+  });
+
+  it('joins an in-array with commas', () => {
+    const p = parse(
+      buildListQuery({ where: { id: { op: 'in', value: ['a', 'b'] } } }),
+    );
+    expect(p.get('id[in]')).toBe('a,b');
   });
 });

@@ -20,6 +20,11 @@
  */
 
 import { createHash } from 'node:crypto';
+import {
+  buildToolDescriptors,
+  type ToolDescriptor,
+  type ToolFieldMeta,
+} from '../generators/tool-schema.js';
 import type {
   FieldDefinition,
   SmartObjectDefinition,
@@ -359,6 +364,39 @@ export function buildWebRelationships(
     });
   }
   return relationships;
+}
+
+/**
+ * Build the WebMCP / MCP tool descriptors for a web collection (#1812): one
+ * descriptor per exposed action, over the SAME public-DTO fields the definition
+ * already exposes (`buildWebFieldDefinitions`). The tool ids match the Node MCP
+ * surface (`<class>_<action>`), so a page's WebMCP tools and its MCP-server
+ * tools share one vocabulary.
+ *
+ * Deliberately NOT part of {@link buildWebCollectionDefinition}: descriptors are
+ * layered onto the emitted value by {@link generateWebModule} instead, so the
+ * #1764 {@link computeWebManifestHash} shape digest keeps hashing ONLY the row
+ * shape. That is safe because a descriptor is a pure function of
+ * className/actions/fields — all already in the hash — so excluding it never
+ * lets the digest under-cover a real shape change.
+ */
+export function buildWebToolDescriptors(
+  entry: WebCollectionEntry,
+): ToolDescriptor[] {
+  const webFields = buildWebFieldDefinitions(entry.obj);
+  const fields: ToolFieldMeta[] = Object.entries(webFields).map(
+    ([name, def]) => ({
+      name,
+      type: def.type,
+      ...(def.required !== undefined ? { required: def.required } : {}),
+      ...(def.default !== undefined ? { default: def.default } : {}),
+    }),
+  );
+  return buildToolDescriptors({
+    className: entry.obj.className,
+    fields,
+    actions: entry.actions,
+  });
 }
 
 /**
