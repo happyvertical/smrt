@@ -39,10 +39,9 @@
  *
  * ## Known gaps
  *
- * - **No max-connections cap**: the bus imposes no ceiling on concurrent
- *   subscribers (SSE connections). A deployment expecting many long-lived
- *   `_events` connections should bound them at the edge (reverse proxy /
- *   load balancer). A per-process cap is a deliberate follow-up.
+ * - **Subscriber cap lives at the route boundary**: the bus tracks subscribers,
+ *   but generated `_events` routes decide whether to reject a new connection
+ *   before opening a stream (#1860).
  * - **Raw-SQL writes are invisible**: signals originate from the framework
  *   write path (same accepted gap as the #1758 feed and #1498 cache). A
  *   `bumpChangeFeed` escape-hatch write appends a feed row but does not
@@ -118,6 +117,14 @@ export const CHANGE_SIGNAL_CHANNEL = 'smrt_change_signals';
  */
 const localListeners = new Map<string, Set<ChangeSignalListener>>();
 
+/**
+ * dbKey -> pending subscriber slots claimed by `_events` before a stream has
+ * reached its `start()` callback. This closes the check-then-subscribe race for
+ * concurrent connection opens: capacity considers active listeners plus these
+ * in-flight claims.
+ */
+const reservedListenerSlots = new Map<string, number>();
+
 interface ListenerHandle {
   iterator: AsyncIterator<unknown> | null;
   stopped: boolean;
@@ -171,6 +178,44 @@ export function subscribeToChangeSignals(
       // Last local subscriber gone — retract the cross-replica listener so its
       // refcount reaches 0 (mirrors collection-cache's finally-retract).
       retractChangeSignalListener(dbKey);
+    }
+  };
+}
+
+/**
+ * Atomically reserve one local subscriber slot for a database scope.
+ *
+ * The `_events` route calls this before returning a streaming response so
+ * concurrent opens cannot all pass a stale count and exceed the configured cap.
+ * The returned release function is idempotent; callers must release it when the
+ * stream either converts the reservation into a real subscription or tears down
+ * before subscribing. `maxSubscribers === null` means unlimited and returns a
+ * no-op reservation.
+ */
+export function tryReserveChangeSignalSubscriberSlot(
+  db: DatabaseInterface,
+  maxSubscribers: number | null,
+): (() => void) | null {
+  if (maxSubscribers === null) {
+    return () => {};
+  }
+
+  const dbKey = resolveDbCacheKey(db);
+  if (changeSignalSubscriberCountForKey(dbKey) >= maxSubscribers) {
+    return null;
+  }
+
+  reservedListenerSlots.set(dbKey, (reservedListenerSlots.get(dbKey) ?? 0) + 1);
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const current = reservedListenerSlots.get(dbKey) ?? 0;
+    if (current <= 1) {
+      reservedListenerSlots.delete(dbKey);
+    } else {
+      reservedListenerSlots.set(dbKey, current - 1);
     }
   };
 }
@@ -336,18 +381,27 @@ export function stopChangeSignalListeners(): void {
  */
 export function resetChangeSignals(): void {
   localListeners.clear();
+  reservedListenerSlots.clear();
   stopChangeSignalListeners();
 }
 
 /**
- * Number of active local subscribers for a database scope (test helper).
+ * Number of active or reserved local subscribers for a database scope.
  *
- * Exposed so integration tests can assert teardown — a leaked SSE subscription
- * would keep this above 0 after a client disconnects. Not part of the public
- * API surface (kept internal to core; not re-exported from `index.ts`).
+ * Used by the `_events` route boundary to enforce the per-process subscriber
+ * cap (#1860), and by integration tests to assert teardown — a leaked SSE
+ * subscription or stale reservation would keep this above 0 after a client
+ * disconnects.
  */
 export function changeSignalSubscriberCount(db: DatabaseInterface): number {
-  return localListeners.get(resolveDbCacheKey(db))?.size ?? 0;
+  return changeSignalSubscriberCountForKey(resolveDbCacheKey(db));
+}
+
+function changeSignalSubscriberCountForKey(dbKey: string): number {
+  return (
+    (localListeners.get(dbKey)?.size ?? 0) +
+    (reservedListenerSlots.get(dbKey) ?? 0)
+  );
 }
 
 function warnOnceNoNotifications(dbKey: string): void {

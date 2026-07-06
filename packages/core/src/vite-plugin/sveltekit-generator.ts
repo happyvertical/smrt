@@ -14,7 +14,6 @@ import {
 import { join, relative } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
-import { computeWebManifestHash } from './web-collections.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -30,6 +29,7 @@ import { generateChangesRoute } from './changes-route.js';
 import { generateEventsRoute } from './events-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateSyncApplyRoute } from './sync-apply-route.js';
+import { computeWebManifestHash } from './web-collections.js';
 
 export interface SvelteKitOptions {
   enabled: boolean;
@@ -53,9 +53,10 @@ export interface SvelteKitOptions {
   /**
    * Live `_events` SSE route generation (#1763). Enabled by default (the route
    * is auth-guarded fail-closed, same-origin only); set `enabled: false` to
-   * skip.
+   * skip. `maxSubscribers` caps active streams per process (#1860); 0 means
+   * unlimited.
    */
-  eventsRoute?: { enabled?: boolean };
+  eventsRoute?: { enabled?: boolean; maxSubscribers?: number };
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -1161,7 +1162,12 @@ export async function generateSvelteKitRoutes(
   // Change-feed route (#1758) — cleanup rides clearGeneratedRouteFiles above.
   generateChangesRoute(projectRoot, manifest, options);
   // Live change-signal SSE route (#1763) — cleanup rides the sweep above.
-  generateEventsRoute(projectRoot, manifest, options);
+  generateEventsRoute(
+    projectRoot,
+    manifest,
+    options,
+    computeWebManifestHash(manifest),
+  );
 
   // Update .gitignore to exclude generated routes
   updateGitignore(projectRoot, options);

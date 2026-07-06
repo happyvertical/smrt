@@ -55,6 +55,11 @@ function makeStubState(): UpdateState & {
       bundle = true;
       notify();
     },
+    notifyContractUpdated() {
+      if (contract) return;
+      contract = true;
+      notify();
+    },
     ready: Promise.resolve(),
     dispose() {
       subs.clear();

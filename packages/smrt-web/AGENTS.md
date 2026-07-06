@@ -223,7 +223,9 @@ external trigger, `teardown` unregisters); it never touches the engine —
   `createSmrtWebClient`: construct once, pass to every collection; NOT
   auto-derived per collection — one EventSource / one poll loop feeds all).
   Config: `{ eventsUrl, changesUrl, fetchFn?, eventSourceFactory?,
-  pollIntervalMs?=5000, withCredentials?=true }`. Public surface:
+  pollIntervalMs?=5000, withCredentials?=true, manifestHash?, updateState? }`.
+  `manifestHash` + `updateState` enable live contract detection from the
+  server's connection-open `manifest` SSE frame (#1859). Public surface:
   `{ transport: 'sse'|'polling'|'idle', registerTable(table, invalidate) →
   unregister, invalidateAll(), close() }`.
 - `liveInvalidation({ subscriber, tableName })` — the thin per-collection
@@ -238,15 +240,17 @@ half in `packages/core/src/generators/`):
 - Push — the `_events` SSE route (`events-route.ts`): **NAMED** events
   `event: change` / `event: resync`, `data` is `{table, operation, rowId,
   tenantId}`, and the cursor `seq` is carried **only** in the SSE `id:` field
-  (the browser mirrors it to `MessageEvent.lastEventId`). `resync` uses that
-  `id:` as the fresh horizon for any later polling downgrade. Heartbeats are
-  `: heartbeat` comment lines EventSource ignores natively.
+  (the browser mirrors it to `MessageEvent.lastEventId`). `event: manifest`
+  carries `{ manifestHash }` at connection open so a reconnect can latch the
+  contract update signal. `resync` uses its `id:` as the fresh horizon for any
+  later polling downgrade. Heartbeats are `: heartbeat` comment lines
+  EventSource ignores natively.
 - Pull — the `_changes` route (`changes-route.ts`): `GET {changesUrl}?since=
   &tables=` → `{changes, cursor, resyncRequired?, resyncCursor?}`, the full
   fallback.
 
 **The NAMED-event gotcha.** The frames are named, so the subscriber wires
-`es.addEventListener('change', …)` / `('resync', …)` — **`onmessage` never
+`es.addEventListener('change', …)` / `('resync', …)` / `('manifest', …)` — **`onmessage` never
 fires** for a named event and would silently receive nothing. A `change` frame's
 `data` is JSON-parsed **defensively**: malformed input is logged + dropped, never
 thrown back into the EventSource message loop (a throw there breaks later
@@ -348,7 +352,8 @@ A tiny pub/sub (`update-state.ts`) with TWO INDEPENDENT signals; `updateAvailabl
   `manifestHash` (passed in by the consumer, imported from
   `@happyvertical/smrt-virt-web`) against a persisted "last-seen manifestHash" in
   durable storage; if they differ → fire `contract` + store the new value. First
-  run (no baseline) records without firing.
+  run (no baseline) records without firing. The live `_events` manifest frame
+  can also push the same sticky signal via `notifyContractUpdated()` (#1859).
 
 The last-seen hash lives in `update-state/meta-store.ts` (a tiny IDB key/value
 store) under the durable namespace, registered as a durable resource so
@@ -356,12 +361,11 @@ store) under the durable namespace, registered as a durable resource so
 AC). Degrades gracefully if IndexedDB is absent (bundle-only) or no running hash
 is supplied.
 
-> **Trade-off / documented follow-up:** contract detection under build-time
-> inject fires at most once **per load** (compare-on-init). LIVE-while-open
-> contract detection — learning mid-session that the server redeployed (an SSE
-> deploy signal / runtime version endpoint) — is an EXPLICIT follow-up, not this
-> slice; it would push a second `contract` signal into the same primitive, which
-> is shaped for it.
+> **Trade-off:** live contract detection is reconnect-based. The server hash is
+> advertised when the `_events` stream opens, so a deploy surfaces when the tab
+> reconnects (instant when the deploy drops old SSE connections, otherwise on
+> the next natural reconnect). Reconnect-independent fan-out remains a later
+> enhancement.
 
 The reactive Svelte binding (`useUpdateAvailable`) ships in
 `@happyvertical/smrt-svelte/web` — it wires SvelteKit's `updated` store into the

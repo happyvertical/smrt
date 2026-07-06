@@ -148,6 +148,28 @@ describe('createUpdateState (#1764) — contract signal (build-time inject)', ()
     state.notifyBundleUpdated();
     expect(state.get().updateAvailable).toBe(true);
   });
+
+  it('latches the contract signal when pushed by live transport (#1859)', async () => {
+    const state = track(
+      createUpdateState({
+        namespace: stableNamespace(),
+        manifestHash: 'hashA',
+      }),
+    );
+    await state.ready;
+    let notifications = 0;
+    state.subscribe(() => {
+      notifications += 1;
+    });
+    const afterSubscribe = notifications;
+
+    state.notifyContractUpdated();
+    state.notifyContractUpdated();
+
+    expect(state.get().contract).toBe(true);
+    expect(state.get().updateAvailable).toBe(true);
+    expect(notifications).toBe(afterSubscribe + 1);
+  });
 });
 
 describe('createUpdateState (#1764) — logout wipe clears the last-seen hash', () => {

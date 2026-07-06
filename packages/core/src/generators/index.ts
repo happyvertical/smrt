@@ -28,8 +28,14 @@ export {
 export {
   buildChangeEventStream,
   type ChangeEventStreamOptions,
+  changeEventSubscribersAtCapacity,
   DEFAULT_EVENTS_HEARTBEAT_MS,
+  DEFAULT_EVENTS_MAX_SUBSCRIBERS,
+  DEFAULT_EVENTS_RETRY_AFTER_SECONDS,
+  eventStreamCapacityExceededResponse,
+  normalizeEventsMaxSubscribers,
   signalVisibleToTenant,
+  tryReserveChangeEventSubscriberSlot,
 } from './events-route';
 export type {
   MCPConfig,
@@ -42,7 +48,12 @@ export type {
 export { MCPGenerator } from './mcp';
 export type { APIConfig, APIContext, RestServerConfig } from './rest';
 // REST API Generator and server utilities
-export { APIGenerator, createRestServer, startRestServer } from './rest';
+export {
+  APIGenerator,
+  computeRuntimeWebManifestHash,
+  createRestServer,
+  startRestServer,
+} from './rest';
 export type { OpenAPIConfig } from './swagger';
 // Swagger/OpenAPI documentation utilities
 export {

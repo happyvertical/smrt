@@ -554,6 +554,52 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       // Don't leave the stream hanging.
       await res.body?.cancel();
     });
+
+    it('rejects new subscribers over the configured per-process cap (#1860)', async () => {
+      const first = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: allowAuth, db, maxSubscribers: 1 },
+      );
+      expect(first.status).toBe(200);
+      // The slot is claimed before the response is consumed, closing the
+      // check-then-subscribe race between concurrent connection opens.
+      expect(activeSubscriberCount(db)).toBe(1);
+
+      const second = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: allowAuth, db, maxSubscribers: 1 },
+      );
+      expect(second.status).toBe(503);
+      expect(second.headers.get('Retry-After')).toBe('5');
+
+      await first.body?.cancel();
+      await waitFor(() => activeSubscriberCount(db) === 0);
+
+      const third = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: allowAuth, db, maxSubscribers: 1 },
+      );
+      expect(third.status).toBe(200);
+      await third.body?.cancel();
+    });
+
+    it('treats maxSubscribers: 0 as unlimited instead of reject-all', async () => {
+      const first = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: allowAuth, db, maxSubscribers: 0 },
+      );
+      const second = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: allowAuth, db, maxSubscribers: 0 },
+      );
+
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(activeSubscriberCount(db)).toBe(2);
+
+      await first.body?.cancel();
+      await second.body?.cancel();
+    });
   });
 
   // ==========================================================================
@@ -643,6 +689,19 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       });
       const text = await readStreamText(stream, 80);
       expect(text).toContain(': heartbeat');
+      await stream.cancel().catch(() => {});
+    });
+
+    it('emits a connection-open manifest frame when configured (#1859)', async () => {
+      const stream = buildChangeEventStream(db, {
+        cursor: null,
+        tenantScope: { enforced: false, tenantId: null },
+        manifestHash: 'shapeHash0000000',
+      });
+      const text = await readStreamText(stream, 60);
+      expect(text).toContain('retry: 3000');
+      expect(text).toContain('event: manifest');
+      expect(text).toContain('"manifestHash":"shapeHash0000000"');
       await stream.cancel().catch(() => {});
     });
   });
@@ -755,13 +814,14 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       const w1 = await widgets.create({ name: 'pre-existing' });
       const res = await handleEventsRoute(
         new Request('http://x/api/v1/_events'),
-        { authMiddleware: allowAuth, db },
+        { authMiddleware: allowAuth, db, manifestHash: 'runtimeHash00000' },
       );
       const text = await readStreamText(
         res.body as ReadableStream<Uint8Array>,
         50,
       );
       expect(text).toContain('retry: 3000');
+      expect(text).toContain('"manifestHash":"runtimeHash00000"');
       expect(text).not.toContain(w1.id); // no replay of the pre-existing change
       await res.body?.cancel().catch(() => {});
     });
@@ -795,8 +855,12 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       const decoder = new TextDecoder();
       await reader.read(); // preamble
       publishChangeSignal(db, signal({ seq: 3, rowId: 'e2e' }));
-      const chunk = await reader.read();
-      expect(decoder.decode(chunk.value)).toContain('e2e');
+      let text = '';
+      for (let i = 0; i < 3 && !text.includes('e2e'); i++) {
+        const chunk = await reader.read();
+        text += decoder.decode(chunk.value);
+      }
+      expect(text).toContain('e2e');
       await reader.cancel();
     });
 

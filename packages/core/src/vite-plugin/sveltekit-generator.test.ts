@@ -2342,6 +2342,9 @@ describe('SvelteKit Route Generator', () => {
       expect(eventsWrite).toBeDefined();
       // The emitted route delegates to core's stream builder.
       expect(String(eventsWrite?.[1])).toContain('buildChangeEventStream');
+      expect(String(eventsWrite?.[1])).toMatch(
+        /const MANIFEST_HASH = "[A-Za-z0-9_-]{16}";/,
+      );
     });
 
     it('skips the _events route when eventsRoute.enabled is false', async () => {
@@ -2356,6 +2359,22 @@ describe('SvelteKit Route Generator', () => {
         .mocked(writeFileSync)
         .mock.calls.find((call) => call[0].toString() === eventsServerPath);
       expect(eventsWrite).toBeUndefined();
+    });
+
+    it('forwards eventsRoute.maxSubscribers into the generated _events route', async () => {
+      await generateSvelteKitRoutes(projectRoot, eventsManifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        eventsRoute: { maxSubscribers: 12 },
+      });
+
+      const eventsWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString() === eventsServerPath);
+      expect(String(eventsWrite?.[1])).toContain(
+        'tryReserveChangeEventSubscriberSlot(collection.db, 12)',
+      );
     });
   });
 });

@@ -46,6 +46,7 @@ export function generateEventsRoute(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  webManifestHash?: string,
 ): boolean {
   if (options.eventsRoute?.enabled === false) {
     return false;
@@ -63,6 +64,8 @@ export function generateEventsRoute(
   const content = generateEventsRouteTemplate(
     anchorClassName,
     manifestHasTenantScopedObject(manifest),
+    webManifestHash,
+    options.eventsRoute?.maxSubscribers,
   );
 
   if (!existsSync(routeDir)) {
@@ -77,7 +80,21 @@ export function generateEventsRoute(
 function generateEventsRouteTemplate(
   anchorClassName: string,
   tenantScoped: boolean,
+  manifestHash: string | undefined,
+  maxSubscribers?: number,
 ): string {
+  const configuredMaxSubscribers =
+    maxSubscribers !== undefined &&
+    Number.isFinite(maxSubscribers) &&
+    maxSubscribers >= 0
+      ? Math.floor(maxSubscribers)
+      : undefined;
+  const maxSubscribersArg =
+    configuredMaxSubscribers === undefined
+      ? ''
+      : `, ${JSON.stringify(configuredMaxSubscribers)}`;
+  const manifestHashLiteral =
+    manifestHash === undefined ? 'undefined' : JSON.stringify(manifestHash);
   const tenantHelper = tenantScoped
     ? `
 import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
@@ -110,10 +127,14 @@ function establishTenantContext(locals: unknown): void {
 import { error } from '@sveltejs/kit';
 import {
   buildChangeEventStream,
+  eventStreamCapacityExceededResponse,
   resolveDispatchTenantScope,
+  tryReserveChangeEventSubscriberSlot,
 } from '@happyvertical/smrt-core';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
+
+const MANIFEST_HASH = ${manifestHashLiteral};
 
 // Fail-closed authorization (#1540): the signal stream spans every table, so
 // it is never public — an authenticated principal on \`locals\` is required.
@@ -165,8 +186,17 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
   // The feed lives in the project's database; anchor on the
   // ${anchorClassName} collection to reuse its configured connection.
   const collection = await getCollection('${anchorClassName}');
+  const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db${maxSubscribersArg});
+  if (!releaseSubscriberSlot) {
+    return eventStreamCapacityExceededResponse();
+  }
   return new Response(
-    buildChangeEventStream(collection.db, { cursor, tenantScope }),
+    buildChangeEventStream(collection.db, {
+      cursor,
+      tenantScope,
+      manifestHash: MANIFEST_HASH,
+      releaseSubscriberSlot,
+    }),
     {
       status: 200,
       headers: {

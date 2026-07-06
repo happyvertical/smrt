@@ -121,10 +121,14 @@ describe('generateEventsRoute (#1763)', () => {
 
     // The stream lifecycle lives in core — the route imports and delegates.
     expect(content).toContain(
-      "import {\n  buildChangeEventStream,\n  resolveDispatchTenantScope,\n} from '@happyvertical/smrt-core'",
+      "import {\n  buildChangeEventStream,\n  eventStreamCapacityExceededResponse,\n  resolveDispatchTenantScope,\n  tryReserveChangeEventSubscriberSlot,\n} from '@happyvertical/smrt-core'",
+    );
+    expect(content).toContain('const MANIFEST_HASH = undefined;');
+    expect(content).toContain(
+      'const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db)',
     );
     expect(content).toContain(
-      'buildChangeEventStream(collection.db, { cursor, tenantScope })',
+      'buildChangeEventStream(collection.db, {\n      cursor,\n      tenantScope,\n      manifestHash: MANIFEST_HASH,\n      releaseSubscriberSlot,\n    })',
     );
     // It streams over an event-stream response.
     expect(content).toContain("'Content-Type': 'text/event-stream'");
@@ -135,6 +139,28 @@ describe('generateEventsRoute (#1763)', () => {
     // GET only — the stream is read-only over HTTP.
     expect(content).toContain('export const GET: RequestHandler');
     expect(content).not.toContain('export const POST');
+  });
+
+  it('threads a configured per-process subscriber cap into the emitted route', () => {
+    generateEventsRoute(
+      projectRoot,
+      buildManifest({
+        Doc: {
+          className: 'Doc',
+          collection: 'docs',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: true },
+        },
+      }),
+      { ...baseOptions, eventsRoute: { maxSubscribers: 42 } },
+    );
+
+    const content = writtenRouteContent();
+    expect(content).toContain(
+      'tryReserveChangeEventSubscriberSlot(collection.db, 42)',
+    );
+    expect(content).toContain('eventStreamCapacityExceededResponse()');
   });
 
   it('honors Last-Event-ID precedence over ?since= in the emitted cursor parse', () => {
