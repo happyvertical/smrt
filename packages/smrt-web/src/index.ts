@@ -167,6 +167,25 @@ export interface SmrtWebRelationship {
  * type carrier threaded through codegen — it never exists at runtime, it only
  * lets factories infer the row type from a definition.
  */
+/**
+ * One WebMCP / MCP tool descriptor for a collection action (#1812). Emitted by
+ * the core web-collections codegen as PLAIN DATA (this package has no smrt
+ * dependency), shaped to match Chrome's `document.modelContext.registerTool`
+ * input — see https://developer.chrome.com/docs/ai/webmcp. Consumed by
+ * {@link registerWebMcpTools} in `./webmcp`.
+ */
+export interface WebToolDescriptor {
+  /** The action this tool performs (`list` | `get` | … | a custom method name). */
+  action: string;
+  /** Tool id, `${className.toLowerCase()}_${action}` (e.g. `product_list`). */
+  name: string;
+  description: string;
+  /** JSON Schema for the tool's arguments. */
+  inputSchema: Record<string, unknown>;
+  /** True for non-mutating reads → WebMCP `annotations.readOnlyHint`. */
+  readOnly: boolean;
+}
+
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
   /** REST collection name (e.g. `products`). */
   name: string;
@@ -178,6 +197,12 @@ export interface SmrtWebCollectionDefinition<TData extends object = object> {
   idField: string;
   /** CRUD + custom actions exposed by the api decorator config. */
   actions: string[];
+  /**
+   * WebMCP/MCP tool descriptors for the exposed actions (#1812). Optional so
+   * hand-built definitions (older codegen, tests) still satisfy the type; a
+   * missing value means "no WebMCP tools to register".
+   */
+  toolDescriptors?: WebToolDescriptor[];
   /** Persisted field metadata keyed by field name. */
   fields: Record<string, SmrtWebFieldDefinition>;
   /**
@@ -1118,3 +1143,12 @@ export function createSmrtCollection<TData extends object>(
 
   return handle;
 }
+
+// ---------------------------------------------------------------------------
+// WebMCP browser tool registration (#1812)
+// ---------------------------------------------------------------------------
+
+export {
+  registerWebMcpTools,
+  type RegisterWebMcpToolsOptions,
+} from './webmcp.js';
