@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.38.10
+
+### Patch Changes
+
+- ### Features
+
+  - Phase 4 — shared KMP Ktor client (bearer + multipart + 401 hook) (#1868) (mobile)
+  - Phase 3 — provider-agnostic PKCE auth/session module (#1752) (mobile)
+  - Phase 2 — durable SQLDelight offline write-queue + pack store (#1751) (mobile)
+
+  ### Merged Changes
+
+  - Implement events manifest cap and runtime ETag salt
+  - @happyvertical/smrt-config@0.38.10
+  - @happyvertical/smrt-types@0.38.10
+  - @happyvertical/smrt-scanner@0.38.10
+
 ## 0.38.9
 
 ### Patch Changes
