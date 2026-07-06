@@ -40,8 +40,14 @@ import kotlinx.datetime.Clock
  * - **Guarded transitions**: every post-send write applies only while the
  *   row is still the claimed in-flight version, so re-enqueueing an id
  *   (replace semantics) during its send never loses the replacement.
- * - **Idempotency**: the entry id is the idempotency key; servers dedupe on
- *   it (`clientCaptureId` / `Idempotency-Key`), so a re-sent POST is safe.
+ * - **Idempotency**: the entry id is the client-side idempotency key (the
+ *   analog of smrt-web's outbox `itemId`). Server-side dedupe depends on the
+ *   transport: framework-model writes ride core's `sync/apply` batch
+ *   contract (docs/content/architecture/sync-apply-contract.md), where
+ *   idempotency is by construction (entity row UUID + insert-only create) —
+ *   the entity id travels in the payload; hand-written `/api/mobile`
+ *   handlers (anytown reference; issue #1748) dedupe re-sent POSTs via
+ *   `clientCaptureId` / `Idempotency-Key`.
  * - Queue order is insertion order.
  *
  * One `DurableWriteQueue` instance must own a given database's queue table —

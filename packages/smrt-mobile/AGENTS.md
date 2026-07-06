@@ -40,6 +40,15 @@ consumers use Gradle `includeBuild`).
   **One queue instance per database**; transport is the `QueueSender` seam
   until Phase 4; flush *triggers* (foreground, connectivity, manual) are
   platform callbacks that just call `flush()`.
+  Framework-model writes ride core's **`sync/apply` batch contract**
+  (`docs/content/architecture/sync-apply-contract.md` — it names this queue
+  as a consumer): such entry payloads carry the item fields
+  (`object`/`op`/entity `id`/`baseUpdatedAt`), `entry.id` is the `itemId`
+  analog, and the Phase-4 sender maps its per-item statuses (per-item
+  results arrive inside HTTP 200; a non-2xx batch response is retryable).
+  The attempt cap (5, reporter seed) is a deliberate divergence from
+  smrt-web's uncapped exponential backoff — revisit as a cross-client
+  decision.
 - `src/commonMain/sqldelight/.../db/` — `.sq` schema (SmrtMobileDatabase).
   All DB work runs on the injectable `context` (default
   `Dispatchers.Default`) so queue/store calls are main-safe. Queue/store
