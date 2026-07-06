@@ -20,10 +20,10 @@
     "vite": "^8.1.3"
   },
   "dependencies": {
-    "@happyvertical/smrt-core": "^0.38.8",
-    "@happyvertical/smrt-svelte": "^0.38.8",
-    "@happyvertical/smrt-tenancy": "^0.38.8",
-    "@happyvertical/smrt-ui": "^0.38.8",
-    "@happyvertical/smrt-users": "^0.38.8"
+    "@happyvertical/smrt-core": "^0.38.9",
+    "@happyvertical/smrt-svelte": "^0.38.9",
+    "@happyvertical/smrt-tenancy": "^0.38.9",
+    "@happyvertical/smrt-ui": "^0.38.9",
+    "@happyvertical/smrt-users": "^0.38.9"
   }
 }

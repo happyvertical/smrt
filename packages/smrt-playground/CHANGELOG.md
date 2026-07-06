@@ -1,5 +1,11 @@
 # @happyvertical/smrt-playground
 
+## 0.38.9
+
+### Patch Changes
+
+- @happyvertical/smrt-ui@0.38.9
+
 ## 0.38.8
 
 ### Patch Changes

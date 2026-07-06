@@ -1,5 +1,14 @@
 # @happyvertical/smrt-svelte
 
+## 0.38.9
+
+### Patch Changes
+
+- @happyvertical/smrt-languages@0.38.9
+- @happyvertical/smrt-types@0.38.9
+- @happyvertical/smrt-ui@0.38.9
+- @happyvertical/smrt-web@0.38.9
+
 ## 0.38.8
 
 ### Patch Changes

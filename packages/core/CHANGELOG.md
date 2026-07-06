@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.9
+
+### Patch Changes
+
+- ### Features
+
+  - opt-in hierarchical membership-role inheritance in PermissionResolver (#1866) (#1867) (users,types)
+  - @happyvertical/smrt-config@0.38.9
+  - @happyvertical/smrt-types@0.38.9
+  - @happyvertical/smrt-scanner@0.38.9
+
 ## 0.38.8
 
 ### Patch Changes
