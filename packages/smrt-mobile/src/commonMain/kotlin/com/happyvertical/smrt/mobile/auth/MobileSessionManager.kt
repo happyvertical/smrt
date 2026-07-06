@@ -65,6 +65,7 @@ class MobileSessionManager(
      * Starts the handshake: persists the pending `state`/`codeVerifier` and
      * hands the authorization URL to the platform launcher.
      */
+    @Throws(CancellationException::class, Exception::class)
     suspend fun beginSignIn(loginHint: String? = null): MobileAuthStartResponse {
         val response = transport.start(
             MobileAuthStartRequest(
@@ -95,6 +96,7 @@ class MobileSessionManager(
      * mismatch or provider error the pending handshake is kept — a correct
      * redirect for it can still arrive.
      */
+    @Throws(CancellationException::class, Exception::class)
     suspend fun handleRedirect(url: String): MobileAuthSession {
         val params = parseQueryParameters(url)
         params["error"]?.let { code ->
@@ -137,6 +139,7 @@ class MobileSessionManager(
      * Loads the session bootstrap with the stored bearer. A 401 clears the
      * stored session before rethrowing so callers re-enter sign-in.
      */
+    @Throws(CancellationException::class, Exception::class)
     suspend fun bootstrap(): MobileSessionBootstrap {
         val token = accessToken() ?: throw AuthUnauthorizedException("no stored session")
         return try {
@@ -153,6 +156,7 @@ class MobileSessionManager(
     }
 
     /** Best-effort server logout, then clears session + pending handshake. */
+    @Throws(CancellationException::class, Exception::class)
     suspend fun signOut() {
         accessToken()?.let { token ->
             try {
@@ -214,10 +218,21 @@ internal fun percentDecode(value: String): String {
                 }
             }
             else -> {
-                for (byte in char.toString().encodeToByteArray()) {
+                // Encode whole code points: a surrogate pair split into two
+                // single-char encodes would produce replacement bytes.
+                val end = if (
+                    char.isHighSurrogate() &&
+                    i + 1 < value.length &&
+                    value[i + 1].isLowSurrogate()
+                ) {
+                    i + 2
+                } else {
+                    i + 1
+                }
+                for (byte in value.substring(i, end).encodeToByteArray()) {
                     bytes.add(byte)
                 }
-                i++
+                i = end
             }
         }
     }

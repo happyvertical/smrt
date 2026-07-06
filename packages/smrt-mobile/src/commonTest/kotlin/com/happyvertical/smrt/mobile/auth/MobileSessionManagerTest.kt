@@ -1,3 +1,5 @@
+@file:OptIn(InsecureAuthStorageApi::class)
+
 package com.happyvertical.smrt.mobile.auth
 
 import com.happyvertical.smrt.mobile.contract.MobileAuthCompleteRequest
@@ -246,5 +248,12 @@ class RedirectParsingTest {
         assertEquals("User cancelled sign-in", percentDecode("User%20cancelled+sign-in"))
         assertEquals("café", percentDecode("caf%C3%A9"))
         assertEquals("100%", percentDecode("100%"))
+    }
+
+    @Test
+    fun preservesSurrogatePairsInUnescapedInput() {
+        // Non-BMP characters (emoji) must survive undecoded passthrough.
+        assertEquals("🎉 done", percentDecode("🎉+done"))
+        assertEquals("ok 🚀", percentDecode("ok%20🚀"))
     }
 }

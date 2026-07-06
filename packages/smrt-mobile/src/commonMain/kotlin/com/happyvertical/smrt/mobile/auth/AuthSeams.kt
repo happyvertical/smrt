@@ -36,7 +36,21 @@ interface AuthStorage {
     suspend fun clearPendingAuth()
 }
 
+/**
+ * Marks auth storage that is NOT secure and NOT durable. Consumers must
+ * opt in, which keeps [InMemoryAuthStorage] from silently shipping in a
+ * production wiring — apps use a Keystore/Keychain-backed [AuthStorage]
+ * (Phases 5–6).
+ */
+@RequiresOptIn(
+    message = "InMemoryAuthStorage is not secure and not durable — tests/previews " +
+        "only. Apps must use a Keystore/Keychain-backed AuthStorage.",
+    level = RequiresOptIn.Level.WARNING,
+)
+annotation class InsecureAuthStorageApi
+
 /** Non-durable [AuthStorage] for tests and previews only. */
+@InsecureAuthStorageApi
 class InMemoryAuthStorage : AuthStorage {
     private var session: String? = null
     private var pendingAuth: String? = null
