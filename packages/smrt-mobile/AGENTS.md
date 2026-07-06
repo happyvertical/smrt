@@ -42,9 +42,14 @@ consumers use Gradle `includeBuild`).
   multipart evidence upload; `Idempotency-Key` from the queue entry id;
   401 → `UnauthorizedHandler` (wire to `MobileSessionManager.onUnauthorized`)
   then `AuthUnauthorizedException`. `HttpQueueSender` maps HTTP outcomes to
-  the queue's `SendOutcome` semantics; request routing per entry kind is app
-  policy. No auto-retry — queued writes retry via flush triggers (reporter
-  parity).
+  the queue's `SendOutcome` semantics **for the hand-written `/api/mobile`
+  single-item endpoints only** (4xx permanent except 408/429; the handlers
+  dedupe on `Idempotency-Key`). Framework-model writes need the planned
+  batch `sync/apply` sender instead (per-item statuses inside HTTP 200,
+  non-2xx retryable, dedupe by construction — see
+  `docs/content/architecture/sync-apply-contract.md`). Request routing per
+  entry kind is app policy. No auto-retry — queued writes retry via flush
+  triggers (reporter parity).
 - `src/commonMain/kotlin/.../i18n/` — `PackTextResolver`: requested →
   fallback → source locale chain with review-state/safety-critical
   provenance.
