@@ -16,8 +16,10 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import {
+  buildWebCollectionDefinition,
   buildWebFieldDefinitions,
   buildWebRelationships,
+  buildWebToolDescriptors,
   computeWebManifestHash,
   selectWebCollectionEntries,
 } from './web-collections.js';
@@ -50,6 +52,70 @@ function manifest(...objects: SmartObjectDefinition[]): SmartObjectManifest {
     ),
   } as SmartObjectManifest;
 }
+
+describe('buildWebToolDescriptors', () => {
+  const field = (f: Partial<FieldDefinition>): FieldDefinition =>
+    ({ type: 'text', ...f }) as FieldDefinition;
+
+  const productEntry = () =>
+    selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: field({ type: 'text', required: true }),
+            price: field({ type: 'decimal' }),
+          },
+        }),
+      ),
+    )[0];
+
+  it('emits one WebMCP descriptor per exposed action, named <class>_<action>', () => {
+    const names = buildWebToolDescriptors(productEntry()).map((d) => d.name);
+    // default (omitted) api config = full CRUD
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'product_list',
+        'product_get',
+        'product_create',
+        'product_update',
+        'product_delete',
+      ]),
+    );
+  });
+
+  it('marks only reads read-only and builds create inputs from public fields', () => {
+    const descriptors = buildWebToolDescriptors(productEntry());
+    expect(descriptors.find((d) => d.action === 'list')?.readOnly).toBe(true);
+    const create = descriptors.find((d) => d.action === 'create');
+    expect(create?.readOnly).toBe(false);
+    const props = (create?.inputSchema.properties ?? {}) as Record<
+      string,
+      unknown
+    >;
+    expect(props).toHaveProperty('name');
+    expect(props).toHaveProperty('price');
+    expect(create?.inputSchema.required).toContain('name');
+  });
+
+  it('stays OUT of buildWebCollectionDefinition, so the #1764 shape digest never covers it', () => {
+    const m = manifest(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        fields: { name: field({ type: 'text' }) },
+      }),
+    );
+    const def = buildWebCollectionDefinition(
+      selectWebCollectionEntries(m)[0],
+      m,
+    );
+    // Descriptors are layered on in generateWebModule, NOT here — that is what
+    // keeps computeWebManifestHash (which hashes this shape) row-shape-only.
+    expect(def).not.toHaveProperty('toolDescriptors');
+  });
+});
 
 describe('selectWebCollectionEntries', () => {
   it('includes a model with the default (omitted) api config as full CRUD', () => {

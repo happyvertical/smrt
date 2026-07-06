@@ -135,6 +135,26 @@ export class HiddenGadget extends SmrtObject {
       price: { type: 'decimal' },
       inStock: { type: 'boolean' },
     });
+
+    // WebMCP tool descriptors (#1812) are emitted alongside the row shape: one
+    // per exposed action, named <class>_<action>, read-only for reads. This is
+    // what makes registerWebMcpTools non-inert for real generated definitions.
+    const toolDescriptors = widgets.toolDescriptors as Array<{
+      name: string;
+      action: string;
+      readOnly: boolean;
+    }>;
+    expect(toolDescriptors.map((t) => t.name).sort()).toEqual([
+      'widget_create',
+      'widget_get',
+      'widget_list',
+    ]);
+    expect(toolDescriptors.find((t) => t.action === 'list')?.readOnly).toBe(
+      true,
+    );
+    expect(toolDescriptors.find((t) => t.action === 'create')?.readOnly).toBe(
+      false,
+    );
   });
 
   it('emits the build-time manifestHash constant (#1764)', async () => {

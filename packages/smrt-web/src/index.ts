@@ -167,6 +167,25 @@ export interface SmrtWebRelationship {
  * type carrier threaded through codegen — it never exists at runtime, it only
  * lets factories infer the row type from a definition.
  */
+/**
+ * One WebMCP / MCP tool descriptor for a collection action (#1812). Emitted by
+ * the core web-collections codegen as PLAIN DATA (this package has no smrt
+ * dependency), shaped to match Chrome's `document.modelContext.registerTool`
+ * input — see https://developer.chrome.com/docs/ai/webmcp. Consumed by
+ * {@link registerWebMcpTools} in `./webmcp`.
+ */
+export interface WebToolDescriptor {
+  /** The action this tool performs (`list` | `get` | … | a custom method name). */
+  action: string;
+  /** Tool id, `${className.toLowerCase()}_${action}` (e.g. `product_list`). */
+  name: string;
+  description: string;
+  /** JSON Schema for the tool's arguments. */
+  inputSchema: Record<string, unknown>;
+  /** True for non-mutating reads → WebMCP `annotations.readOnlyHint`. */
+  readOnly: boolean;
+}
+
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
   /** REST collection name (e.g. `products`). */
   name: string;
@@ -178,6 +197,12 @@ export interface SmrtWebCollectionDefinition<TData extends object = object> {
   idField: string;
   /** CRUD + custom actions exposed by the api decorator config. */
   actions: string[];
+  /**
+   * WebMCP/MCP tool descriptors for the exposed actions (#1812). Optional so
+   * hand-built definitions (older codegen, tests) still satisfy the type; a
+   * missing value means "no WebMCP tools to register".
+   */
+  toolDescriptors?: WebToolDescriptor[];
   /** Persisted field metadata keyed by field name. */
   fields: Record<string, SmrtWebFieldDefinition>;
   /**
@@ -295,6 +320,61 @@ export function unwrapItemResult(
   );
 }
 
+/** SMRT WHERE operator → the generated REST route's `field[op]=value` token. */
+const SMRT_TO_REST_OPERATOR: Record<string, string> = {
+  '>': 'gt',
+  '>=': 'gte',
+  '<': 'lt',
+  '<=': 'lte',
+  '!=': 'ne',
+  in: 'in',
+  like: 'like',
+};
+
+/**
+ * Serialize `list` query params into the query string the generated REST list
+ * route parses (`handleList` in `core/src/generators/rest.ts`): `limit`,
+ * `offset`, `orderBy` as scalars, and `where` entries as `field=value`
+ * (equality) or `field[op]=value` for a `{ op, value }` condition (`in` joins an
+ * array with commas). Called with no params (the collection runtime's argument-
+ * free `list()`) it returns `''`, so the bare-URL behavior is unchanged.
+ */
+export function buildListQuery(params?: Record<string, unknown>): string {
+  if (!params) return '';
+  const search = new URLSearchParams();
+  const { limit, offset, orderBy, where } = params;
+  if (limit !== undefined) search.set('limit', String(limit));
+  if (offset !== undefined) search.set('offset', String(offset));
+  if (orderBy !== undefined) {
+    search.set(
+      'orderBy',
+      Array.isArray(orderBy) ? orderBy.join(', ') : String(orderBy),
+    );
+  }
+  if (where && typeof where === 'object') {
+    for (const [field, condition] of Object.entries(
+      where as Record<string, unknown>,
+    )) {
+      if (
+        condition &&
+        typeof condition === 'object' &&
+        !Array.isArray(condition) &&
+        'op' in condition &&
+        'value' in condition
+      ) {
+        const { op, value } = condition as { op: string; value: unknown };
+        const restOp = SMRT_TO_REST_OPERATOR[op];
+        const token = Array.isArray(value) ? value.join(',') : String(value);
+        search.set(restOp ? `${field}[${restOp}]` : field, token);
+      } else if (condition !== undefined && condition !== null) {
+        search.set(field, String(condition));
+      }
+    }
+  }
+  const qs = search.toString();
+  return qs ? `?${qs}` : '';
+}
+
 /**
  * Build CRUD fetchers from a generated collection definition — the same URL
  * scheme and payload handling as the generated REST client
@@ -327,7 +407,10 @@ export function createDefinitionFetchers(
   };
 
   return {
-    list: async () => parse(await fetchFn(collectionUrl, { headers })),
+    list: async (params) =>
+      parse(
+        await fetchFn(`${collectionUrl}${buildListQuery(params)}`, { headers }),
+      ),
     get: async (id) =>
       parse(await fetchFn(`${collectionUrl}/${id}`, { headers })),
     create: async (data) =>
@@ -1118,3 +1201,12 @@ export function createSmrtCollection<TData extends object>(
 
   return handle;
 }
+
+// ---------------------------------------------------------------------------
+// WebMCP browser tool registration (#1812)
+// ---------------------------------------------------------------------------
+
+export {
+  type RegisterWebMcpToolsOptions,
+  registerWebMcpTools,
+} from './webmcp.js';
