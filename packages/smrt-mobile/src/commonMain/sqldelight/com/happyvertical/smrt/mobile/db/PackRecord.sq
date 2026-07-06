@@ -1,0 +1,24 @@
+-- Durable offline pack store (ADR 0001 Phase 2) — replaces amaru's
+-- InMemoryOfflinePackStore. The pack's domain manifest is app-defined and
+-- stored as its serialized payload; identity/integrity columns are framework.
+
+CREATE TABLE pack_record (
+  pack_id TEXT NOT NULL PRIMARY KEY,
+  version INTEGER NOT NULL DEFAULT 1,
+  manifest_hash TEXT NOT NULL DEFAULT '',
+  payload TEXT NOT NULL,
+  stored_at_epoch_ms INTEGER NOT NULL
+);
+
+upsert:
+INSERT OR REPLACE INTO pack_record(pack_id, version, manifest_hash, payload, stored_at_epoch_ms)
+VALUES (?, ?, ?, ?, ?);
+
+selectById:
+SELECT * FROM pack_record WHERE pack_id = ?;
+
+selectAll:
+SELECT * FROM pack_record ORDER BY stored_at_epoch_ms DESC, rowid DESC;
+
+deleteById:
+DELETE FROM pack_record WHERE pack_id = ?;

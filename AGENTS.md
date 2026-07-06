@@ -63,7 +63,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Mobile
 | Package | Purpose |
 |---------|---------|
-| smrt-mobile | KMP shared mobile foundation (offline packs, evidence, i18n, shell state; queue/auth/networking in later phases) — first non-TS package, Gradle behind a package.json wrapper (ADR 0001) |
+| smrt-mobile | KMP shared mobile foundation (offline packs + durable SQLDelight write-queue, evidence, i18n, shell state; auth/networking in later phases) — first non-TS package, Gradle behind a package.json wrapper (ADR 0001) |
 | smrt-mobile-contract | TS codegen: SMRT manifest + allowlist → Kotlin/Swift mobile DTOs + smrt-mobile's generated framework contract |
 
 ### Tooling

@@ -186,3 +186,7 @@ bin/
 !packages/*/bin/*.js
 !packages/*/src/bin/
 !packages/*/src/bin/*.ts
+
+# SQLDelight schema snapshots are checked in — they back verifyMigrations
+# (packages/smrt-mobile/AGENTS.md § Schema changes).
+!packages/*/src/commonMain/sqldelight/databases/*.db

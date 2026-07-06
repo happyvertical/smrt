@@ -5,12 +5,12 @@ non-TypeScript package in the monorepo. Design: **ADR 0001**
 (`docs/content/adr/0001-kmp-mobile-foundation.md`) + extraction plan; epic
 #1745. Decision record: `README.md` here and issue #1737.
 
-**Status: Phase 1 skeleton.** Present: framework contract types, pack i18n
-resolver, pack integrity/snapshot model, evidence-capture model, shell state,
-platform seams. NOT here yet (later phases — do not add ad hoc): durable
-offline queue (Phase 2, #1739 — SQLDelight), auth/session (Phase 3, #1740),
-Ktor networking (Phase 4, #1741). **Productionize, don't lift** governs all
-porting from the seed apps.
+**Status: Phase 2.** Present: framework contract types, pack i18n resolver,
+pack integrity/snapshot model, evidence-capture model, shell state, platform
+seams, and the **durable SQLDelight-backed offline write-queue + pack store**
+(Phase 2, #1739). NOT here yet (later phases — do not add ad hoc):
+auth/session (Phase 3, #1740), Ktor networking (Phase 4, #1741).
+**Productionize, don't lift** governs all porting from the seed apps.
 
 ## Layout
 
@@ -29,7 +29,32 @@ consumers use Gradle `includeBuild`).
   fallback → source locale chain with review-state/safety-critical
   provenance.
 - `src/commonMain/kotlin/.../packs/` — pack snapshot identity + integrity
-  seal (`PackIntegrityCheck`). Hashing itself is a platform seam.
+  seal (`PackIntegrityCheck`); `DurableOfflinePackStore` persists pack
+  records (framework identity columns + the app's serialized manifest
+  payload). Hashing itself is a platform seam.
+- `src/commonMain/kotlin/.../sync/` — `DurableWriteQueue`: the reporter-seeded
+  crash-safe write-queue on SQLDelight. The full contract (state machine,
+  trigger-preserving single-flight flush, attempt cap with 401 refund,
+  crash/cancel recovery, guarded transitions, insertion ordering) is
+  canonical in the class KDoc — read it there, don't trust prose copies.
+  **One queue instance per database**; transport is the `QueueSender` seam
+  until Phase 4; flush *triggers* (foreground, connectivity, manual) are
+  platform callbacks that just call `flush()`.
+  Framework-model writes ride core's **`sync/apply` batch contract**
+  (`docs/content/architecture/sync-apply-contract.md` — it names this queue
+  as a consumer): such entry payloads carry the item fields
+  (`object`/`op`/entity `id`/`baseUpdatedAt`), `entry.id` is the `itemId`
+  analog, and the Phase-4 sender maps its per-item statuses (per-item
+  results arrive inside HTTP 200; a non-2xx batch response is retryable).
+  The attempt cap (5, reporter seed) is a deliberate divergence from
+  smrt-web's uncapped exponential backoff — revisit as a cross-client
+  decision.
+- `src/commonMain/sqldelight/.../db/` — `.sq` schema (SmrtMobileDatabase).
+  All DB work runs on the injectable `context` (default
+  `Dispatchers.Default`) so queue/store calls are main-safe. Queue/store
+  tests live in `src/jvmTest/` against real SQLite (JVM driver — fast and
+  Android-SDK-free on CI); platform driver factories arrive with
+  smrt-android / smrt-ios (Phases 5–6).
 - `src/commonMain/kotlin/.../evidence/` — evidence asset refs (SHA-256
   pins), geo **sidecar** metadata (never EXIF — recompression strips it),
   permission state, `EvidenceCapturePlatformAdapter` seam. Domain identity
@@ -64,12 +89,24 @@ wrapper (8.14.4) is checked in — always invoke via `./gradlew`.
 - Kotlin 2.2.21 / AGP 8.13.1 / compileSdk 36 / minSdk 26 / JVM toolchain 21 /
   iOS deployment 17.0 — reporter-proven set; bump deliberately in
   `gradle/libs.versions.toml`.
-- commonMain dependencies stay minimal (kotlinx-serialization, kotlinx-datetime).
-  SQLDelight arrives in Phase 2; Ktor in Phase 4. No other deps without an ADR note.
+- commonMain dependencies stay minimal (kotlinx-serialization,
+  kotlinx-datetime, kotlinx-coroutines, SQLDelight runtime). Ktor arrives in
+  Phase 4. No other deps without an ADR note.
 - Adapter seams are plain Kotlin interfaces (amaru precedent), not
   `expect`/`actual`.
 - Wire DTO fields default-initialize (safe partial deserialization); decimals
   cross the wire as `DecimalString`.
+
+## Schema changes (SQLDelight)
+
+`src/commonMain/sqldelight/databases/1.db` is the checked-in snapshot of
+schema version 1 and `verifyMigrations` is on: once devices hold durable
+data, editing a `.sq` file in place is NOT enough. The protocol for any
+schema change: bump the schema by adding a numbered `.sqm` migration next to
+the `.sq` files, regenerate the snapshot
+(`./gradlew generateCommonMainSmrtMobileDatabaseSchema`), and keep
+`./gradlew verifySqlDelightMigration` green — it runs as part of `build`.
+Fresh installs run the CREATE statements; existing devices run migrations.
 
 ## Standards exemptions (documented per scripts/check-standards.mjs)
 
