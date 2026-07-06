@@ -78,6 +78,23 @@ const SPEC = [
     mustContain: [GENERATED_HEADER],
   })),
   {
+    path: `${KOTLIN_ROOT}/auth/AuthSeams.kt`,
+    mustContain: [
+      'interface AuthStorage',
+      'interface AuthTransport',
+      'fun interface ExternalAuthLauncher',
+    ],
+  },
+  {
+    path: `${KOTLIN_ROOT}/auth/MobileSessionManager.kt`,
+    mustContain: [
+      'class MobileSessionManager(',
+      'suspend fun beginSignIn(',
+      'suspend fun handleRedirect(',
+      'suspend fun onUnauthorized()',
+    ],
+  },
+  {
     path: `${KOTLIN_ROOT}/i18n/PackTextResolver.kt`,
     mustContain: ['class PackTextResolver(', 'fun resolve(key: String'],
   },
@@ -123,6 +140,7 @@ const SPEC = [
   // Schema snapshot backing verifyMigrations — deleting it disables the
   // schema-evolution guardrail (see AGENTS.md § Schema changes).
   { path: 'src/commonMain/sqldelight/databases/1.db' },
+  { path: `${TEST_ROOT}/auth/MobileSessionManagerTest.kt` },
   { path: `${TEST_ROOT}/i18n/PackTextResolverTest.kt` },
   { path: `${TEST_ROOT}/packs/PackIntegrityCheckTest.kt` },
   { path: `${TEST_ROOT}/shell/MobileShellStateTest.kt` },
