@@ -133,9 +133,14 @@ class MobileApiClient(
         execute(HttpMethod.Delete, path, bearer = tokenProvider.accessToken())
 
     /**
-     * Streams a multipart/form-data submission (evidence upload): plain
+     * Sends a multipart/form-data submission (evidence upload): plain
      * fields plus file parts, with the entry id as `Idempotency-Key` so the
      * server dedupes re-sent queue entries.
+     *
+     * v0 buffers each part as a [ByteArray] — sized for reporter-parity
+     * photo evidence. True streamed parts (kotlinx-io sources fed by
+     * platform file handles) land with the platform file seams in
+     * Phases 5-6; don't push video-scale uploads through this until then.
      */
     suspend fun submitMultipart(
         path: String,
