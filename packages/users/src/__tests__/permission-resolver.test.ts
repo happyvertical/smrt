@@ -1671,4 +1671,33 @@ describe('PermissionResolver hierarchical membership inheritance (#1866)', () =>
     result = await resolver.resolvePermissions(user.id!, child.id!);
     expect(result.permissions.has('articles.update')).toBe(true);
   });
+
+  it('fails closed when hierarchyPath disagrees with the actual parent chain', async () => {
+    const { root, child } = await createTenantChain();
+
+    // The user's flagged authority lives on an UNRELATED tenant...
+    const unrelated = await tenants.create({ name: 'Unrelated Network' });
+    await unrelated.save();
+    const adminRole = await createRoleGranting(
+      'Unrelated Admin',
+      ['articles.update'],
+      { inheritsToDescendants: true },
+    );
+    const { user } = await createMember(
+      unrelated.id!,
+      adminRole.id!,
+      'stale-path@example.com',
+    );
+
+    // ...and a stale materialized path on the child claims that tenant as an
+    // ancestor while parentTenantId still points at the real root. The path
+    // passes the structural guards (short, no dupes, not self-referential)
+    // but must not be trusted as an authorization source.
+    child.hierarchyPath = unrelated.id!;
+    await child.save();
+
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+    expect(result.permissions.size).toBe(0);
+    expect(result.inheritedFromTenantId).toBeNull();
+  });
 });

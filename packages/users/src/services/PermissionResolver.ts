@@ -585,8 +585,9 @@ export class PermissionResolver {
    *
    * Fails closed (returns null, resolving to the empty set) when the tenant
    * is missing or its `hierarchyPath` is malformed: deeper than
-   * `MAX_TENANT_HIERARCHY_DEPTH`, self-referential, or containing duplicate
-   * ancestor ids.
+   * `MAX_TENANT_HIERARCHY_DEPTH`, self-referential, containing duplicate
+   * ancestor ids, or inconsistent with the actual `parentTenantId` chain
+   * (e.g. a stale path naming an unrelated tenant).
    */
   private async resolveInheritedMembership(
     userId: string,
@@ -611,6 +612,30 @@ export class PermissionResolver {
       ancestorIds.includes(tenant.id) ||
       new Set(ancestorIds).size !== ancestorIds.length
     ) {
+      return null;
+    }
+
+    // The materialized path is an authorization source here, so verify it
+    // against the actual parent chain before trusting it: batch-load the
+    // ancestors and require an unbroken parentTenantId link
+    // root -> ... -> immediate parent -> target. A stale or inconsistent path
+    // (e.g. naming a tenant that is not really an ancestor) fails closed.
+    const ancestors = await this.tenantCollection.listByIds(ancestorIds);
+    const ancestorsById = new Map(
+      ancestors.map((ancestor) => [ancestor.id, ancestor]),
+    );
+    let expectedParentId: string | null = null;
+    for (const ancestorId of ancestorIds) {
+      const ancestor = ancestorsById.get(ancestorId);
+      if (!ancestor?.id) {
+        return null;
+      }
+      if ((ancestor.parentTenantId ?? null) !== expectedParentId) {
+        return null;
+      }
+      expectedParentId = ancestor.id;
+    }
+    if ((tenant.parentTenantId ?? null) !== expectedParentId) {
       return null;
     }
 

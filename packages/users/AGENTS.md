@@ -73,8 +73,10 @@ membership GRANT/DENY overrides travel with the ancestor membership used.
 when inheritance was used (`null` for direct resolution).
 
 Safety: resolution is bounded by `MAX_TENANT_HIERARCHY_DEPTH`; malformed
-`hierarchyPath` values (too deep, self-referential, duplicate ancestors) fail
-closed to the empty set. Tenant `status` is not consulted (parity with direct
+`hierarchyPath` values fail closed to the empty set — too deep,
+self-referential, duplicate ancestors, or inconsistent with the actual
+`parentTenantId` chain (the path is verified link-by-link against the loaded
+ancestor rows before it is trusted as an authorization source). Tenant `status` is not consulted (parity with direct
 resolution). Caching: a long-lived `(user, tenant)` permission cache must also
 invalidate on ancestor-membership changes and on `Role.inheritsToDescendants`
 flips — request-scoped caches (the common pattern) are unaffected.
