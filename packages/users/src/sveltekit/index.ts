@@ -52,6 +52,28 @@ import {
 } from '../services/TerminalAuthService.js';
 
 export {
+  MobileAuthError,
+  type MobileAuthErrorCode,
+  MobileAuthService,
+  type MobileAuthServiceOptions,
+  type MobileBootstrapContext,
+  type MobileLoginContext,
+  type MobileLogoutResult,
+  type MobileRequestMeta,
+  type MobileResolvedUser,
+  type MobileTenantContext,
+  readMobileBearerToken,
+  validateMobileRedirectUri,
+} from '../services/MobileAuthService.js';
+export {
+  type CreateMobileAuthHandlersOptions,
+  createMobileAuthHandlers,
+  type MobileAuthHandlers,
+  type MobileRequestEvent,
+  type MobileRequestHandler,
+  resolveMobileUploadDedupKey,
+} from './mobile-handlers.js';
+export {
   type CliResource,
   type CommandDefinition,
   type CommandKind,

@@ -3,10 +3,12 @@
 TypeScript codegen bridging the SMRT manifest to the KMP mobile foundation
 (ADR 0001, epic #1745). Generalizes amaru's `amaru-mobile-contract`
 (manifest → allowlist → contract → Kotlin) and reporter's Swift emission.
-Zero runtime dependencies by design — it reads `manifest.json` files
-directly, so it stays out of the smrt package DAG.
+Zero *external* runtime dependencies by design — it reads `manifest.json`
+files directly. It is a leaf that other smrt packages may depend ON (e.g.
+`@happyvertical/smrt-users` imports the server wire types below); it never
+depends on another smrt package, so the DAG stays acyclic.
 
-## Two generation surfaces
+## Generation surfaces
 
 1. **Framework contract** (`frameworkKotlinFiles()` / `frameworkSwiftFiles()`)
    — the stable files checked into `@happyvertical/smrt-mobile` under
@@ -32,6 +34,14 @@ directly, so it stays out of the smrt package DAG.
    with `defaultValue` (amaru-era) as fallback. Decimals emit as
    `DecimalString` (string-encoded — no float precision loss); field names
    stay manifest-faithful (wire-format names, including `created_at`).
+3. **Server wire types** (`framework-types.ts`) — the TypeScript mirror of
+   the `/api/mobile` auth+session DTOs, imported by the SMRT-shipped server
+   handlers (`@happyvertical/smrt-users` `MobileAuthService`, #1748) so the
+   wire contract has one owning package across Kotlin, Swift, AND TypeScript.
+   Each interface has a compile-checked `MobileWireShape<T>` descriptor, and
+   `__tests__/framework-auth-types.test.ts` parses the Kotlin literal from
+   surface 1 and asserts field-for-field parity — editing either side alone
+   fails the suite.
 
 ## Conventions
 
