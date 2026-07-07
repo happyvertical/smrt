@@ -21,26 +21,26 @@ overrides:
   '@happyvertical/smrt-types': workspace:*
   '@happyvertical/smrt-config': workspace:*
   '@happyvertical/smrt-core': workspace:*
-  '@happyvertical/ai': ^0.76.2
-  '@happyvertical/cache': ^0.76.2
-  '@happyvertical/documents': ^0.76.2
-  '@happyvertical/email': ^0.76.2
-  '@happyvertical/encryption': ^0.76.2
-  '@happyvertical/files': ^0.76.2
-  '@happyvertical/geo': ^0.76.2
-  '@happyvertical/images': ^0.76.2
-  '@happyvertical/jobs': ^0.76.2
-  '@happyvertical/json': ^0.76.2
-  '@happyvertical/logger': ^0.76.2
-  '@happyvertical/messages': ^0.76.2
+  '@happyvertical/ai': ^0.77.0
+  '@happyvertical/cache': ^0.77.0
+  '@happyvertical/documents': ^0.77.0
+  '@happyvertical/email': ^0.77.0
+  '@happyvertical/encryption': ^0.77.0
+  '@happyvertical/files': ^0.77.0
+  '@happyvertical/geo': ^0.77.0
+  '@happyvertical/images': ^0.77.0
+  '@happyvertical/jobs': ^0.77.0
+  '@happyvertical/json': ^0.77.0
+  '@happyvertical/logger': ^0.77.0
+  '@happyvertical/messages': ^0.77.0
   '@happyvertical/ocr': ^0.60.55
   '@happyvertical/pdf': ^0.65.3
-  '@happyvertical/projects': ^0.76.2
-  '@happyvertical/repos': ^0.76.2
-  '@happyvertical/secrets': ^0.76.2
+  '@happyvertical/projects': ^0.77.0
+  '@happyvertical/repos': ^0.77.0
+  '@happyvertical/secrets': ^0.77.0
   '@happyvertical/spider': ^1.1.10
-  '@happyvertical/sql': ^0.76.2
-  '@happyvertical/utils': ^0.76.2
+  '@happyvertical/sql': ^0.77.0
+  '@happyvertical/utils': ^0.77.0
   '@grpc/grpc-js@>=1.14.0 <1.14.4': 1.14.4
   minimatch@>=10.0.0 <10.2.3: 10.2.5
   undici@>=7.0.0 <7.28.0: 7.28.0
@@ -160,8 +160,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -188,8 +188,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -209,11 +209,11 @@ importers:
   packages/agents:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -236,18 +236,18 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sentry/node':
         specifier: 'catalog:'
         version: 10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))
@@ -307,8 +307,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.56.4)(typescript@5.9.3)
@@ -365,14 +365,14 @@ importers:
   packages/assets:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -389,11 +389,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
@@ -445,8 +445,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -470,8 +470,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -537,14 +537,14 @@ importers:
   packages/cli:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -564,11 +564,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       acorn:
         specifier: ^8.17.0
         version: 8.17.0
@@ -675,23 +675,23 @@ importers:
   packages/content:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/documents':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/geo':
-        specifier: ^0.76.2
-        version: 0.76.2(@opentelemetry/api@1.9.1)
+        specifier: ^0.77.0
+        version: 0.77.0(@opentelemetry/api@1.9.1)
       '@happyvertical/images':
-        specifier: ^0.76.2
-        version: 0.76.2(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))
+        specifier: ^0.77.0
+        version: 0.77.0(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/ocr':
         specifier: ^0.60.55
         version: 0.60.55(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
@@ -735,11 +735,11 @@ importers:
         specifier: ^1.1.10
         version: 1.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       fast-xml-parser:
         specifier: ^5.9.3
         version: 5.9.3
@@ -787,17 +787,17 @@ importers:
   packages/core:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/json':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -808,11 +808,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)
@@ -869,14 +869,14 @@ importers:
   packages/events:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -899,11 +899,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -939,14 +939,14 @@ importers:
   packages/facts:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -957,11 +957,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1010,23 +1010,23 @@ importers:
   packages/gnode:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@types/node':
         specifier: 24.13.2
@@ -1044,11 +1044,11 @@ importers:
   packages/images:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/images':
-        specifier: ^0.76.2
-        version: 0.76.2(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))
+        specifier: ^0.77.0
+        version: 0.77.0(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1068,8 +1068,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       jimp:
         specifier: 'catalog:'
         version: 1.6.1
@@ -1084,8 +1084,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/kit':
         specifier: ^2.69.1
         version: 2.69.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4)(vite@8.1.3(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)))(svelte@5.56.4)(typescript@5.9.3)(vite@8.1.3(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))
@@ -1117,8 +1117,8 @@ importers:
   packages/inventory:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1126,8 +1126,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1148,11 +1148,11 @@ importers:
   packages/jobs:
     dependencies:
       '@happyvertical/jobs':
-        specifier: ^0.76.2
-        version: 0.76.2(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5)(bullmq@5.76.4)
+        specifier: ^0.77.0
+        version: 0.77.0(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5)(bullmq@5.76.4)
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1169,11 +1169,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1206,11 +1206,11 @@ importers:
   packages/languages:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1230,8 +1230,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -1286,8 +1286,8 @@ importers:
   packages/manufacturing:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1298,8 +1298,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1320,23 +1320,23 @@ importers:
   packages/messages:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/email':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/encryption':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(typescript@5.9.3)
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(typescript@5.9.3)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/messages':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1353,11 +1353,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1390,20 +1390,20 @@ importers:
   packages/places:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/cache':
-        specifier: ^0.76.2
-        version: 0.76.2(@opentelemetry/api@1.9.1)
+        specifier: ^0.77.0
+        version: 0.77.0(@opentelemetry/api@1.9.1)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/geo':
-        specifier: ^0.76.2
-        version: 0.76.2(@opentelemetry/api@1.9.1)
+        specifier: ^0.77.0
+        version: 0.77.0(@opentelemetry/api@1.9.1)
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1414,11 +1414,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1442,14 +1442,14 @@ importers:
   packages/products:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1472,11 +1472,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-web
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       cors:
         specifier: ^2.8.6
         version: 2.8.6
@@ -1527,14 +1527,14 @@ importers:
   packages/profiles:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1548,11 +1548,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@noble/curves':
         specifier: ^1.9.7
         version: 1.9.7
@@ -1585,17 +1585,17 @@ importers:
   packages/projects:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/projects':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/repos':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1615,11 +1615,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -1667,8 +1667,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1705,8 +1705,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -1735,8 +1735,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1785,11 +1785,11 @@ importers:
   packages/secrets:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/secrets':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1797,11 +1797,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1835,8 +1835,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -1981,8 +1981,8 @@ importers:
   packages/smrt-svelte:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-languages':
         specifier: workspace:*
         version: link:../languages
@@ -2155,18 +2155,18 @@ importers:
         specifier: workspace:*
         version: link:../video
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.56.4)(typescript@5.9.3)
@@ -2201,8 +2201,8 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2232,14 +2232,14 @@ importers:
   packages/tags:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.76.2
-        version: 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2247,11 +2247,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@types/node':
         specifier: 24.13.2
@@ -2288,8 +2288,8 @@ importers:
   packages/tenancy:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2300,11 +2300,11 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -2352,8 +2352,8 @@ importers:
   packages/users:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -2383,8 +2383,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.56.4)(typescript@5.9.3)
@@ -2416,8 +2416,8 @@ importers:
   packages/video:
     dependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -2440,8 +2440,8 @@ importers:
         specifier: workspace:*
         version: link:../voice
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -2450,8 +2450,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -2471,8 +2471,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -2523,21 +2523,21 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/utils':
-        specifier: ^0.76.2
-        version: 0.76.2
+        specifier: ^0.77.0
+        version: 0.77.0
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.76.2
-        version: 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+        specifier: ^0.77.0
+        version: 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.76.2
-        version: 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
@@ -2661,10 +2661,6 @@ packages:
     resolution: {integrity: sha512-tGJ131fvczx8+79Kbs6mfeRBqnSzuDOIqS/3es9iRTE6ohHqQ2phUjBCLGlfwBkhsp0chOa+i5nvJssTZ3dCUQ==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/core@3.974.20':
-    resolution: {integrity: sha512-7sDi2B2N3mc3nf1nz6FyEx/FCrJ1N1QnBmraHHQNabFaeAh2IaOOLml48/rHOD1bICHgTRkbBgNTvUzEr5Z35g==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/core@3.974.27':
     resolution: {integrity: sha512-WRWEgIq6vx+NU6ot3VrRu4Jovj9MIObitSi6of/GV5THDDPccBhivCRNkWJutMM+m3GvdeI3l/UbGNcoOobxOA==}
     engines: {node: '>=20.0.0'}
@@ -2673,64 +2669,32 @@ packages:
     resolution: {integrity: sha512-4L/REssieLON1hVsTzZucP1p2u5jmPNejyh/9BCGZXr93IalBbhRPCrtKIKwMTu9yRGr/bcKzhrQocByKLSzLQ==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/credential-provider-env@3.972.46':
-    resolution: {integrity: sha512-+GPXVS2srMOlH74S+SmC1gVuP2TvUZ0siuC0onKO93q+udP+M72dmY8wJfVQ5CX9z/9X5A1HHwz5yRIGBtskvQ==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/credential-provider-env@3.972.53':
     resolution: {integrity: sha512-+KDA3uc/HZ1vIneGu5QMQb0gAXDYrm2vOE60+BJ7lS0YinMQ5i2oV4PR1A16XkF6K1IbSwjEHd1hQIIgMsK48w==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/credential-provider-http@3.972.48':
-    resolution: {integrity: sha512-fA5loSdlocacRxyUXtpoHSMuk5rsIKRDzQYVMnMxjcmFeZshaJlJ8lymy/hYKji6sne/UmNGj5pxuEs6kq/Qcg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-http@3.972.55':
     resolution: {integrity: sha512-1gBfkWY3RWeBlCoB9lIJjXMx45/54wxcgfzv6BY9otTmMrZPcNPi1v+MwZxxaCUg441NV3jsr1efnFNCXiW70g==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/credential-provider-ini@3.972.53':
-    resolution: {integrity: sha512-ZfdhIOR41q8TcWEnUac+gCOb+O2LBWdHLmjedXpXz4IEFW2ppNuFcm6p0sMTavpM+zD5TYfpH5Gp7guRyqSgsQ==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/credential-provider-ini@3.972.60':
     resolution: {integrity: sha512-CV2md+PXvABwRjApWGhQ0wACy9WSFIhnUGrovLcjnjBCd/46TbuivLADtkF8IWNjtCQmQ+2IagSaxqBYqXBNAQ==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/credential-provider-login@3.972.52':
-    resolution: {integrity: sha512-9hu2oR0qH7Fst5Tzdx+UWxm+w5zCXtErTLtOOW5hwwQc170CLwOeniRxyFY6s9mHfGEfC5zFukNBdKBwJR8mhQ==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-login@3.972.59':
     resolution: {integrity: sha512-JG4S9yyA1GFzJdJXqLKrUzZbyK+VDp2QIsJD7YOicJHAhqymfHpDJIok2dLnhOdVB0I37RjdC53uOwCMVS00gw==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/credential-provider-node@3.972.55':
-    resolution: {integrity: sha512-zMGLa/dhESVqmCD7mmIFFKSwSFrJGScvCXcjvBZEVOOMauFS5JRQvLTMukFpMEFWiV6dTAlsen2ATDBulLPtbg==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/credential-provider-node@3.972.62':
     resolution: {integrity: sha512-S6Slq3Tx7bvFk5yc34XNADyZYTX2HUXvaFAnowGRQnhjBO8J/mP62Fn7lxvJwjaDyYm/7gh9h6HEHaltRyMFXw==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/credential-provider-process@3.972.46':
-    resolution: {integrity: sha512-VUoNFBIjWrUN8NbFiQiuxQEgFjvziAlBRPK+ddh27aj65gk0BYu6bLZnrdrNZwpW6vAihtSUtEMQ1PUJ32QRPA==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-process@3.972.53':
     resolution: {integrity: sha512-EhfH+MQlqOMCkXIVa8MMObPzAQqwTTtxA7KhEJiyPeuNVA8PLOOUpgK7nBrgaDaGiIDLN/9LpGdaHuDjomeRTw==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/credential-provider-sso@3.972.52':
-    resolution: {integrity: sha512-nb2/n4o/HQf+FVpVbZe9vCTFngmuDoIsltMgLAtjixaKzvzhB4J8WSDFyWgnErgLHk55ctWH+I4PU+LIHhyffg==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/credential-provider-sso@3.972.59':
     resolution: {integrity: sha512-h8793pOjcImx0SB+VcLONcaQQ57VAvKVuqyewQMRKqqH+CSXsG2dwOeLMUJPMxLdNvL7dXOM0ueTukyNUnu5mA==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/credential-provider-web-identity@3.972.52':
-    resolution: {integrity: sha512-lKj6aRSGbqLmpYmM24bY7a1Xmfcq2vkE3hv8CSPYfc1yCu0BPu/XEJ1L4Fm61MsU6ULLNSG8UGsffNoFUBjESA==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/credential-provider-web-identity@3.972.59':
@@ -2761,10 +2725,6 @@ packages:
     resolution: {integrity: sha512-OaIhub+3yTgfFWPzKO8OzOZFIMUoJaiS5v67y3spQg7SoULGoMx4jKVBbE+uhnzkiZXQ+rEDS0RqrK4/aD1yJw==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/middleware-host-header@3.972.21':
-    resolution: {integrity: sha512-+SRZL54/T9Ryxa/NmHM7WZAliU6wnfzeosT/+4IVuTgq0zSCpPx2j3yaEP4JFZlvWvoOCbKgr+4tBqSAG/dl5Q==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/middleware-host-header@3.972.28':
     resolution: {integrity: sha512-2w4cKugljxKCgBPL5LQJLj+1kUBkWG8HO7C+7GYTS7UNATMijEK+MCEktnCpfA2koBZFcf7Ioe5YhNZ5vh5ruw==}
     engines: {node: '>=20.0.0'}
@@ -2773,16 +2733,8 @@ packages:
     resolution: {integrity: sha512-DYCppgVKrKRuS+bVJsgQ0N6uARd9YoF1H1rVeTnhHsCp2Ppru9BXb4LdvDQzoKc4fK+MABl3Fz9ck40WBrUsWA==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/middleware-logger@3.972.20':
-    resolution: {integrity: sha512-8oOvo7XNDeOlwa5ys2Q0UTLCKmtvRiqf8rOU63lKniPmP3dnI5lnoy9dteZ79lxb9hmXCrO28aZMqds6C5AEoA==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/middleware-logger@3.972.27':
     resolution: {integrity: sha512-Qia7FsijpSh+LL9H6i9HQ3JZQsN9qdOQjwCAIi4Zi9Xqc62N7c3udBOfliavqn40FKZlgpgV/Js+NpKguyXfiA==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/middleware-recursion-detection@3.972.22':
-    resolution: {integrity: sha512-q4H/CoOYrTbyAW0d9RrHf9kTYKVXpAwoK0VEy3UT2Asad+6aa6vzQgz35dh20tRA7zlEo/Nsyjy9PVlHgdq0Vg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/middleware-recursion-detection@3.972.29':
@@ -2801,10 +2753,6 @@ packages:
     resolution: {integrity: sha512-LGpxxtMv/8cQnLeUiZqubqlzSA5ebv+yx+651dq7Sf+KxErRFaj6bdz7Rl9sO8ixvm5+ROfHeZDdNUprVz1etg==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/middleware-user-agent@3.972.50':
-    resolution: {integrity: sha512-5JIDcDFWy3DUW95sOlXLbeb7RkGFUcNh1QidKsznqtlm5YGsXP0EGWaqzxBTvVmOhqKs2RmNmI6w9V/5dS3CLQ==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/middleware-user-agent@3.972.57':
     resolution: {integrity: sha512-4gstakrfAVK7CAQ8Rar4Sig7Ztjxdp+Xt/A48VwTxwPVVNs+lAWs1+ZTGF+zlT65qWbnihUsX7uzBdPEllzLSA==}
     engines: {node: '>=20.0.0'}
@@ -2813,24 +2761,12 @@ packages:
     resolution: {integrity: sha512-SCW06Zjugn86pq7+dxGnFcyWJuEWHT753HTU/Vj/OzVxP+NoShwdAr4ynxAcvWL883OgRVbSqW3ohnjIxwXjjw==}
     engines: {node: '>= 14.0.0'}
 
-  '@aws-sdk/nested-clients@3.997.20':
-    resolution: {integrity: sha512-IYJuLpXp2DEILVQpQOy0PMpkftv0AHEOCn52o0atyOaumA0CdWQ3klPyXdViGYLbNpESsVFMVybvHUeZAuiGxA==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/nested-clients@3.997.27':
     resolution: {integrity: sha512-A8PIePF9NIIOJ/4Lg1rl9xm/+QaKkHGetq+Z9wb5B+3Da31YYXRo8n7IDMh5C+HQI5eyEmjrwkGWVdYtnLtbXQ==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/region-config-resolver@3.972.24':
-    resolution: {integrity: sha512-WY6uVMsq0EvxY4BcYhZmG2Ivd1EzNvZAqsXFlL3pTPMG0P4J83TYVQIs8P0nd5lc+Bp3llrYwggruvXzrfUtsQ==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/region-config-resolver@3.972.31':
     resolution: {integrity: sha512-5qLGtfKWyPK/eSLxIzsrNRfHVYZliXxe5mXYldmVB1Ca5VCpz0TjZhIb9otq1eUER8m2AQ1Jy0EBeR6qC65wvg==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/signature-v4-multi-region@3.996.34':
-    resolution: {integrity: sha512-mx1L5qlumSOt/nKM3BFaHE2HVkWwz0i4Bw0pyYO42FfX/FeLlo8YI6csC0gSPprEk6fTIqI+CZN9RwUwKd5krQ==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/signature-v4-multi-region@3.996.38':
@@ -2841,24 +2777,12 @@ packages:
     resolution: {integrity: sha512-8E+KGcD4ET0H9FXJ2/ZWbfFnQNYEkTZZYJxAs1lkdJlve1AYuqaydInIFfvNgoz5GbYtzbK8/ugsSMu5wPm6kA==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/token-providers@3.1066.0':
-    resolution: {integrity: sha512-UqEUJq7dqa44hneLDUcX7UJy95cg8YqEWyakRpvIPnrNS3Mq+UlQHgCDGu5pvwAPtlIW4qcYbvW6reG6++FyvA==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/token-providers@3.1079.0':
     resolution: {integrity: sha512-cbietrLlHPhhmbnMPTuDS4Zj/KNGhY+3vVhn6dwjO6Dqzrwothzg2srtcY34T9mlICsTXn34avDoWLHSntP54A==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/types@3.973.12':
-    resolution: {integrity: sha512-43ajd1NF0RMgX5k0hxCNUyEdrtFUsb2aHT2QvpktSC/2Eyb2Jr/JPVqdp0XIoaHWikZJq5tNWSLO6kB5q2eMCA==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/types@3.973.15':
     resolution: {integrity: sha512-IULn8uBV/SMtmOIANsm4WHXIOtVPBWfOWs3WGL0j/sI+KhaYehvOw0ET+9urnn8MBpiijuU/0JOpuwKOE451PQ==}
-    engines: {node: '>=20.0.0'}
-
-  '@aws-sdk/util-endpoints@3.996.19':
-    resolution: {integrity: sha512-W79LutZYmCV1WGe0UVGALMna3xLGP3wv2zLzrBEgc73CtzxKBxb5IpMedbS6Ej80LCknSgqFjsTtECG0IInckw==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/util-endpoints@3.996.26':
@@ -2869,31 +2793,16 @@ packages:
     resolution: {integrity: sha512-M0D6oIpohdNHjc7udzTHEQyot0+0iuA36jc2I9Hps+f/GtKi2HO/pyijQnCnNcwZqLB5+rtn81z3eZK/GyjAmA==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/util-user-agent-browser@3.972.21':
-    resolution: {integrity: sha512-Y9MPH4VZaIebwxiVK6dMzSt5L04oyNiK3NNwFe4qP5B2Hfo+pmEVpSJSa+gARPtcJeRyehUMPu5/I9DLdW0cBg==}
-
   '@aws-sdk/util-user-agent-browser@3.972.28':
     resolution: {integrity: sha512-qr0fi8bkpkALaVPQzPinjAlWYR9/gswh4JUXHMoCBKS9YnoHCX+1qHROYGxWRI13BRg+OD4Wpl2NcuM0eFPyUA==}
-
-  '@aws-sdk/util-user-agent-node@3.973.36':
-    resolution: {integrity: sha512-wsmSmHTrK9lV+5SKBekp1J7W6PufdZE08X0xv5Lz1OdgYRmyuYDy/++SslKdXhcVQjxLtzMTZaLqqLZmTx6OaQ==}
-    engines: {node: '>=20.0.0'}
 
   '@aws-sdk/util-user-agent-node@3.973.43':
     resolution: {integrity: sha512-sM+qbPrMr3kLDSJi6J93On74p9IFNzI2Jx4JyO/8TvYB9sn2e0EbBt2z7pES+NCfKI+ITSqixY8pM+RZdT0Qow==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/xml-builder@3.972.29':
-    resolution: {integrity: sha512-fk0niuGFxfi8yIJuMVM4mhwObkiQSuwZFj3tAPrLVx64Pk3BkrEIpqjzHKY4hKoEBUD6Jg/S74Zj9jy+5F3DnQ==}
-    engines: {node: '>=20.0.0'}
-
   '@aws-sdk/xml-builder@3.972.33':
     resolution: {integrity: sha512-ezbwz9WpuLctm6o7P2t2naDhVVPI5jFGrVefVybhcKGjU57VIyT46pQVO0RI2RYkUdhdj2Z9uSIlAzGZE9NW9A==}
     engines: {node: '>=20.0.0'}
-
-  '@aws/lambda-invoke-store@0.2.4':
-    resolution: {integrity: sha512-iY8yvjE0y651BixKNPgmv1WrQc+GZ142sb0z4gYnChDDY2YqI4P/jsSopBWrKfAt7LOJAkOXt7rC/hms+WclQQ==}
-    engines: {node: '>=18.0.0'}
 
   '@aws/lambda-invoke-store@0.3.0':
     resolution: {integrity: sha512-sl4Bm6yiMNYrZKkqqDFWN0UfnWhlS8ivKxrYl+6t0gCLrqr8y3B2IqZZbFRkfaVVp7C/baApyh71P+LeE1A2sQ==}
@@ -3539,40 +3448,40 @@ packages:
   '@gutenye/ocr-node@1.4.8':
     resolution: {integrity: sha512-Ej6hHQSrBLCY74Qb2rRYZ0v97kp3h1Q8obLdQDM208ft9BOyqj+aUN2yTYQ/1c/BO695OWDgufRSiWiLB92KLw==}
 
-  '@happyvertical/ai@0.76.2':
-    resolution: {integrity: sha512-yp5ZWR5k7hHcy5uXsXi2ppoq5b34D8zTUnHyTUFyDU8rBBisu0fta+/nW3Nw3uuVxBjzlqcVJU/BrXIrLXcaoA==}
+  '@happyvertical/ai@0.77.0':
+    resolution: {integrity: sha512-8smSdNrBqMhGcjyCqus8Fwu6eW9tRn9LpKCfDouI6WfPYd9DkDW2AwstJk6NyZ10fMN0sHioi4WQHEHWJKSnvA==}
     hasBin: true
 
-  '@happyvertical/cache@0.76.2':
-    resolution: {integrity: sha512-PDSugIC7Srzq5bR0tC3fRsb5FRs9DIUJEMt+PZi6fyBXvNjS8I6MpwnY2Gpo0TChq/Ijrlmu9Jb6Fhju0jW7YQ==}
+  '@happyvertical/cache@0.77.0':
+    resolution: {integrity: sha512-AnNsdQvn0wiYszmnnN2VE7szkBmUEb6RWhYsBrauPGLivbgcKEdhR38E06m5XvdAWaQC/+/LE3Yfe4glbdnpyw==}
     hasBin: true
 
-  '@happyvertical/documents@0.76.2':
-    resolution: {integrity: sha512-0stupdMeLsY1K0pwS12dzObppGMV3Xj6CBMXsidhmAhl6wW0gB7k58MShRt4ACDlc34ENwn7oaCfqiuazUeKzA==}
+  '@happyvertical/documents@0.77.0':
+    resolution: {integrity: sha512-OZqNz16goGaBz/PIzn3XNpoHSDuRixBJt2sllog+X7Nmm1EJ0TpvhoOLUJAeqZXWWV9ABxk0glLX7E3DRRrUTA==}
     hasBin: true
 
-  '@happyvertical/email@0.76.2':
-    resolution: {integrity: sha512-2H62Nns4Hv/+AS6j05a8yy8Y9jhkV0cr4gYyvrAQnE6wdjADoGlZSCovk+16mDpI27FcmRgitSd4HFiD1mlJsQ==}
+  '@happyvertical/email@0.77.0':
+    resolution: {integrity: sha512-WTMaJY8BMyL3cW3vEfsC/fWBjH2lxe46OGKDS5j5HB+FQ9v6hm2oMBBkv1xOnBZxXxC8sBsY2YbA4kd0J+nYCg==}
     hasBin: true
 
-  '@happyvertical/encryption@0.76.2':
-    resolution: {integrity: sha512-EVUoIq73jg1PQ+yOea7xaLrjX6Dl6dX8FZvZ23D7lgyY6F+lGY9T8yWQ73EFbmwQmOUe21gHmCFtTSHZoDepiQ==}
+  '@happyvertical/encryption@0.77.0':
+    resolution: {integrity: sha512-LDkLzvGbyOpMlFM4myB7hoIULmk/Q9BGk08XdH2SsJiF1oB7xOouriJ+EbUscqhJaCtLaX87/XxXYiHokT6VOg==}
     hasBin: true
 
-  '@happyvertical/files@0.76.2':
-    resolution: {integrity: sha512-G/1SEdskfWLZ7pCaj7fbHG8WRJ0ZvPkUcnFlCxS91rkLgweJTv06NSLZbwyZwx/PGATUVkr3jM6NUb21moKX6A==}
+  '@happyvertical/files@0.77.0':
+    resolution: {integrity: sha512-J1O07kv3GLCW/xnOUg5hOEeUGKRdwfidabIH49qkejxmDpp8hUEijf6rtsdVNxxHr43pGK1Gz3DfNuFEwF/iwA==}
     hasBin: true
 
-  '@happyvertical/geo@0.76.2':
-    resolution: {integrity: sha512-9ftykc/QoWaEfeqBfhqSFjfxOm3fGAKtrSlp4ecawO2XUxNi/oy/55otyjz7PvE1xJxuj7mio1LKmznZn/bqUA==}
+  '@happyvertical/geo@0.77.0':
+    resolution: {integrity: sha512-R8c5Pg7ioFPhRyWUNIW8N6hzBr26axbPYcQV8IQri4jNbvueNNVJtNT7x9JEjDkyewZzPfksQT1eMDDYP1Xy/g==}
     hasBin: true
 
-  '@happyvertical/graphql@0.76.2':
-    resolution: {integrity: sha512-QDXZy6Fxfg0YXrMAnD7JVvlGIHaiahR9J6zzaQ6IDX7e8ar4b1uHbULBUerzbA7SZUlBb7Py2LN3zuOSLpkJfA==}
+  '@happyvertical/graphql@0.77.0':
+    resolution: {integrity: sha512-IWCfaw6e8xC7pobw/0a4B9g601B9p1tHoUTI3SwvKuzNlNaS0ZsmwDiFGZIGXOiwqg/7IUCYDOnnFD58776GHQ==}
     hasBin: true
 
-  '@happyvertical/images@0.76.2':
-    resolution: {integrity: sha512-CPWMgFP7SpyKLKFI/g2yqA1EszTviftyCPQZuGgJVwv4/v7LQn2K3zVisOMlejvcN6rce1dgAKjW1+ktrQAwhw==}
+  '@happyvertical/images@0.77.0':
+    resolution: {integrity: sha512-TOT5xfxSLliItoVEDCv4hiHH4s9AWox/5TPYe2Xe0jVDC68wPt8djFCmzcKzCvXMJLooY8smH6vEEVbqgAZ4uA==}
     hasBin: true
     peerDependencies:
       jimp: '>=1.6.1'
@@ -3583,8 +3492,8 @@ packages:
       sharp:
         optional: true
 
-  '@happyvertical/jobs@0.76.2':
-    resolution: {integrity: sha512-mu79OTBQtI2JKsdLRoDU82rB3LU6EBoNzELmEuuQgKw1hER6b48H3+PVPsXHZYM1D+9c0Z1FRWfRYgOZ7tYDcQ==}
+  '@happyvertical/jobs@0.77.0':
+    resolution: {integrity: sha512-Ug96pCs5a0Of3kai7gASwGDhvd/n+95GZWhFEcipPBcrxg3lwuaOG0RRyF0GtG+f0HN9sMNDVbFCjY0xpvEKPw==}
     hasBin: true
     peerDependencies:
       '@aws-sdk/client-sqs': '>=3.1034.0'
@@ -3601,11 +3510,11 @@ packages:
       bullmq:
         optional: true
 
-  '@happyvertical/json@0.76.2':
-    resolution: {integrity: sha512-+5z/DeR9yspvEXBxjraSxn8jD2WjNXEl+Y4CVld4bKcOkevOOrAUDM9X+50CfdcUEf7LEXUuIlTktMnV+RqZSg==}
+  '@happyvertical/json@0.77.0':
+    resolution: {integrity: sha512-oHeceZk5/fFkiWsvfDI9F6Qmsuz9nCFN4coH3CwvyVOrTPVrwf6/lJzY/nrHzONIe+SNgTN3drWy2D1vABx3KA==}
 
-  '@happyvertical/logger@0.76.2':
-    resolution: {integrity: sha512-1qtLW6rjV5lF0/2AuRoEWU6unjMGQGSOKT8FJo7H8e8OwVyeshUM+I/R3cBcpWzjPpUzwIVv6hNF1OUwkfTWMA==}
+  '@happyvertical/logger@0.77.0':
+    resolution: {integrity: sha512-H+X9GxI6bMWElkE6GPnuPSIhXTy1F17teGvhZDbnADna8DPsQ0pyrpV13YiwlAJlOy42A1N+6yIKT522WvMr1Q==}
     hasBin: true
     peerDependencies:
       '@sentry/node': '>=10.49.0'
@@ -3613,8 +3522,8 @@ packages:
       '@sentry/node':
         optional: true
 
-  '@happyvertical/messages@0.76.2':
-    resolution: {integrity: sha512-IXfCkmROR/x2xzgWT4zlFKdSziCwkKibeH31EK5YrrVPChYrIxwn0Q4bHc1M0/q2jorsE9FOsOaPkuD3AT+FdQ==}
+  '@happyvertical/messages@0.77.0':
+    resolution: {integrity: sha512-hs6kN0V3UwKk+4850Nq4EEYXSeJ6cbKs9ONn/27A2zjoh1BMR5m3/6KUPpBQ5p7cDymkqJrbdX7Wz0gz6sHN8A==}
 
   '@happyvertical/ocr@0.60.55':
     resolution: {integrity: sha512-IGpUZc2G+7W+kwFQ0dKmjX9IzjGvKabQ0RMViEf1CQPmhYS0XwuKhKsiSu3WwzqRGvpOuz7HSNUG3hy5zCskjA==}
@@ -3624,16 +3533,16 @@ packages:
     resolution: {integrity: sha512-kxsONlwyMFRLe28VpffoRwiB1VBKlLX3R5FxBL6NO+ItNdfIL5/TtGfmWVrPSswQ6kq9smgeLUujUUvRz60T3g==}
     engines: {node: '>=24', pnpm: '>=9'}
 
-  '@happyvertical/projects@0.76.2':
-    resolution: {integrity: sha512-BrHVXPBft0OMfj5/BoJx404dIORfbrUmW1vEIwaluEn9tjOnnkm9Gglq0LUK4K9pojXu6mbSUs0l0lyb1gFlpA==}
+  '@happyvertical/projects@0.77.0':
+    resolution: {integrity: sha512-bEZA8UTPMmaNWX+TBTKJW/APCDkcbdHhfyIQSRiHsrJFCrCl05ELkQE21KTFFAitYY8TrdhFa8WSR025XkQC5A==}
     hasBin: true
 
-  '@happyvertical/repos@0.76.2':
-    resolution: {integrity: sha512-9BF2XwAm5Lku31ta2g0r28abHoTt38j3CeIBLMcmx9Oy4LEntE3Eyzq+dv7Y1ZSii06FhPjUxjNIG1XN7TKUaw==}
+  '@happyvertical/repos@0.77.0':
+    resolution: {integrity: sha512-fQqqIKP7yon8xsRcZQu7EXpC8CmqtJnB5T8000/EpGUMGkUJPOeUxy/TCaZrojArotg4LVfCkAg5jSzne6O2Iw==}
     hasBin: true
 
-  '@happyvertical/secrets@0.76.2':
-    resolution: {integrity: sha512-esR2Es5lAfOCVLxYeWMUqsGUZcjDlZjYnC2S8Bvmrb5EUHHdkFV481gBw48fV0Q556PmMWtouU5OAybxWENbJQ==}
+  '@happyvertical/secrets@0.77.0':
+    resolution: {integrity: sha512-T9c6NanYKOvBq2lkWabUp2u+FQDH0ktSImiF5/ti+qO0TKeGo48V57HGnXLw+qqxiX/BfMel+H+A8E82S6QLnA==}
     hasBin: true
 
   '@happyvertical/spider@1.1.10':
@@ -3645,8 +3554,8 @@ packages:
       cloakbrowser:
         optional: true
 
-  '@happyvertical/sql@0.76.2':
-    resolution: {integrity: sha512-YaZEDsyC4zpqvoGogFmwPMTQ4hvfNHOiVIUlxkaiYRNY5b7LRuRjY+qVCVNPcfGYJTIByNaC/ToFqdTmxJHoeg==}
+  '@happyvertical/sql@0.77.0':
+    resolution: {integrity: sha512-ZSqQ7rNoSijZiUtxDbJaM1c3ETIEw0XfEoQMQmKb+rqn7sF4yUwSkqgrC35Dy8W47k6vul2D5/xTP1xkmAlAlQ==}
     hasBin: true
     peerDependencies:
       '@russellthehippo/honker-node': ^0.3.3
@@ -3657,8 +3566,8 @@ packages:
       '@sqliteai/sqlite-vector':
         optional: true
 
-  '@happyvertical/utils@0.76.2':
-    resolution: {integrity: sha512-yKRHGGKsO9JG81g5ig3Vh/IAah1RY+s6dFhyqVQxlR1AbTSgJe0kPY9158+q/oyHTal9NQgvnkHipvzsfkdGFQ==}
+  '@happyvertical/utils@0.77.0':
+    resolution: {integrity: sha512-8IuRyXV/RhTAr0wDafTJg1JWbJ7SL7jB30GdSVfRdHOOyBCc2rFQDrgX5dORHkSU4bciVaT522BwH0MC06W0NQ==}
     hasBin: true
 
   '@hono/node-server@1.19.14':
@@ -5426,24 +5335,12 @@ packages:
     resolution: {integrity: sha512-68SAV77uuGKuhyyaRytX8UijVnqSLsTSKslGXw17cjQYXn+jtNl7gbaEjHgC5x2rhCuFdahBrEC2VCLppbzReg==}
     engines: {node: '>= 18', npm: '>= 8.6.0'}
 
-  '@smithy/config-resolver@4.5.6':
-    resolution: {integrity: sha512-AXbvUX9aNY2qCLOMCikpl1Df5w2CNFEqbEb6XafG81FJbAbB8avIT7BOx1KDqiO86J/38qKQ3YuakfAfY3iBkQ==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/config-resolver@4.6.6':
     resolution: {integrity: sha512-yI8StAYGQKiI+DxT0xkLhHSzxcIFSZTTWi0c4Lk3WLgmbe2QfLpR/Roo81ZF3VYwfwqH4IQVTKsy3FLZiVRaTQ==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/core@3.24.6':
-    resolution: {integrity: sha512-wBXDRup6UU97VKyaiRo8AssnfStPtG0oAAfpq/bC0a1YYau8pM86YB4kM6ccoVi1mS8l/UHbn9oDM+7uozr/ug==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/core@3.29.1':
     resolution: {integrity: sha512-qoiY4nrk5OCu1+eIR1VB8l5DmON/oKiqrd5zZFAhXJXjJlLWQusKEW/SkBDAtGDcPaz86m9kfcE1lngU0GlM6A==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/credential-provider-imds@4.3.8':
-    resolution: {integrity: sha512-5cAM+KZC02sTqDt6NaLXyu50M/GNMd1eTzDVR8Lb0BBsVtu7RWHo47VPPEEv1vt3Yub6uzr+M5FHC+GtoT0USg==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/credential-provider-imds@4.4.6':
@@ -5462,20 +5359,12 @@ packages:
     resolution: {integrity: sha512-M6FeKRMi3oecpTy4EL5n1hLPWydw+xInFYQIzjbGYGBnFtW7IlJjnXrKr/Ev1GpMtmw44QCmrl8+ACEFPmRsIg==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/fetch-http-handler@5.4.6':
-    resolution: {integrity: sha512-FEwEYJ1jlBKdhe9TPzfghEi1bP55ZeEImlDkEa62bBBYzUcnB6RUCyuiS2mqKt6ZVjUbBgcNhzfIctH+Hevx9g==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/fetch-http-handler@5.6.3':
     resolution: {integrity: sha512-CwCc/7SMTj45y97MUnDTbTaxvtAsiNNRm81z3abROIuMbMsC2Iy5EKfkkVdsKrz8WExQAAMx1EJapq+9j4fFTQ==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/hash-blob-browser@4.3.6':
     resolution: {integrity: sha512-/8D8rOFs2VEwvHwsx68sb6nE7XfVr2wbJTbC1YuKBHPhHeMnOt7IHxr7CoT5wBWujdV4fjVoLPn1BXXP4Ijlow==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/hash-node@4.3.6':
-    resolution: {integrity: sha512-lIZyQ7gDxURrnfkjalM0lKmDnfZYuPzNBYlkza3czPTQNVYsg4e0o90Zx/RpxhamKKOGsQGCsopp0ULsJqltNQ==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/hash-node@4.4.6':
@@ -5486,10 +5375,6 @@ packages:
     resolution: {integrity: sha512-Ziap41FoxpKqmlO9IE68NeFwPKhUJD4PVNcCQ2tl6IUCPSj0KykIuAPnJNWIQbWXvApwCauhRNlAFdt9KRvDpw==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/invalid-dependency@4.3.6':
-    resolution: {integrity: sha512-jUH1Eth7Sgn4KPBX5OKYDRpNjzul7AzsIhxKXT1rHXPTSfY00/7Kb9RtNil5SDAlPPsxaUiesR/rql2wjackmw==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/invalid-dependency@4.4.6':
     resolution: {integrity: sha512-M2NNf2yB5pDYQiMyW3q6kD/aQyEfQlVFtFNR+LCnRKS/sg9xqOrOqkIZNP94B2aTwf+pwX3Qgp6foKw2ls9vIg==}
     engines: {node: '>=18.0.0'}
@@ -5498,64 +5383,32 @@ packages:
     resolution: {integrity: sha512-GGP3O9QFD24uGeAXYUjwSTXARoqpZykHadOmA8G5vfJPK0/DC67qa//0qvqrJzL1xc8WQWX7/yc7fwudjPHPhA==}
     engines: {node: '>=14.0.0'}
 
-  '@smithy/md5-js@4.3.6':
-    resolution: {integrity: sha512-LYcuBrO9oiajdRFHyFx3FJAWNKrP89s0grI6mcfpwTAeX2ZJ/9Xyi7Imghh9LT6CIcAy6/k6/MpoUiPNjXr1/w==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/md5-js@4.4.6':
     resolution: {integrity: sha512-iF/3959r6gxyhaMA8ZO1dAknRe5znpRJX8KGp9zh3YhkFX7XYRJXxR1vM5pV4rTHfCAEKZRTR5wqYnfNLBvlBw==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/middleware-content-length@4.3.6':
-    resolution: {integrity: sha512-nfpYCrzSFAgfIXmIHFTjOGNeTV3DVF5E5rfi3ZuNfsOjKSpePBOJF3rjyXlWYND0anvxVoqioIwClWCNdKt4Og==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/middleware-content-length@4.4.6':
     resolution: {integrity: sha512-kMXyfLgm2iqC3objUiElh1fp0AI33PxiAmPX+C0z7H8v4sfae2I2V9N62MlwO/LVPf+MlXpmfCYCHouetbecGg==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/middleware-endpoint@4.5.6':
-    resolution: {integrity: sha512-zdG5bJZOiM2PRgL2lwcgui6uwZ+s5y6Qsk/rk05Q69sZJT6oi1x+v8Kn++V/q9VY94EgOtEe5kivpu+eGau0wQ==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/middleware-endpoint@4.6.6':
     resolution: {integrity: sha512-d7L894W4LE9HL2MkpWi0+KJG6/VCcuoxkquVaXYMMsrqK7PLT83GZsUBYL+ixxpEfwnlSE5hBotsB1A/qfWO9A==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/middleware-retry@4.6.6':
-    resolution: {integrity: sha512-MWppaYUlc+W4cU2JZnYuMFeOxCWbKO4A57BWti6aCb7hRBK3+CL6llADGpX084hjImsqr3EvCGewArOj7G81eA==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/middleware-retry@4.7.6':
     resolution: {integrity: sha512-zUF+liYyzSiPcz8vQhGCjUlykg521Y3shrsyzJ37Y3nkpz20KujcVXcOvgZb6e68n7Unl/Pb2RG0jrkx73AE+Q==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/middleware-serde@4.3.6':
-    resolution: {integrity: sha512-I3fPVYKKEog3a3qdqt1nttP1NBuQOAlNoQxEp6j5pMogSx0HHfid63difhcDgslV6p1XsTXG6D6ieTe13ycJtQ==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/middleware-serde@4.4.6':
     resolution: {integrity: sha512-h9JBsYQBiltcbe5EJECXoJy+ZJSmnJKhc9UXyoWvEB1BIUkE8inxQ614dpeb+yydm2cq4YXqMXQLQB0QUBE6rA==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/middleware-stack@4.3.6':
-    resolution: {integrity: sha512-QhNiWfg47Kl4SJHmuQvnlzCtlD1eX1J7d/vuuttIE17Ra2YUKp9Srv5lCwa3OvoYaSNWMKYn0PjGIsfCLMJsEA==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/middleware-stack@4.4.6':
     resolution: {integrity: sha512-LUO+XAQP381sbiZ0QHOSLKPpS2I0/wXTh44rH/kP4/751Ogscn5JUsAWvUH+rYJWLupmiEsdHZT3Bn4Dvd4J/Q==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/node-config-provider@4.4.6':
-    resolution: {integrity: sha512-M+gG6eQ0y073mSmNB+erRXJvwpsqsN72ol2w6vcd8FEKeG7pqYK0JvzfVqONkPj2ElBB2pg+cU13I850b//Wag==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/node-config-provider@4.5.6':
     resolution: {integrity: sha512-3fFpVGK28z1UhbDIPY6pujmnGwDhcD70NqJ8wJJwdQES5EYBe3mdOojSZdXtL0jfQE9BAbZSBi73WQ6VEOLRgQ==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/node-http-handler@4.7.7':
-    resolution: {integrity: sha512-ZAFvHXrEk6K180EVhmZVg8GU5pUH5BSFqRs27JW3j1qEFx9YyYwWFx17x/MHcjALYimGAji7qEOlF1++be+G5A==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/node-http-handler@4.9.3':
@@ -5566,10 +5419,6 @@ packages:
     resolution: {integrity: sha512-0rhHv1Ww27kajF6qewme2aRtJmKFtSwE6EZ2dj5KxdX/R3ANsUugqTnH0tvpZwGiQ3MOMhetuCGFAeKVv3/Onw==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/protocol-http@5.4.6':
-    resolution: {integrity: sha512-H6S7NyaaL+7qO8kIL7VQ7KyrGnKXdllGzJqvtp3hvDen25UOydKV51qGDVK0UciW125jV3CoLJQy/ihc0OEC6A==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/protocol-http@5.5.6':
     resolution: {integrity: sha512-ezPS1foOBPU+uv0da16sLF/7fMBXxeo7hFKitn/2gOxHd8HaQ7qK6DT8l0f1dUGoUS1lZC2s7mEkCwJ44QLCJg==}
     engines: {node: '>=18.0.0'}
@@ -5578,56 +5427,28 @@ packages:
     resolution: {integrity: sha512-In8gYD2R66EKlGAq9QrNKVrMOGaGBD7LUNp2kUjeQ4V9zNktFIXBPmrCySr4YYo+jVeVL6CnWj26sOamcF0qIg==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/signature-v4@5.4.6':
-    resolution: {integrity: sha512-Ojg4B6oIDlIr1R86xCDJt1zJWnYa0VINmqdjfe9qxWjdRivHalZ3iSlQgVqYbW0MdpFOC5XfHEWsnbmdnpIILQ==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/signature-v4@5.6.2':
     resolution: {integrity: sha512-QgHflghMoPxCJ9axiCVh8KZfbC9fuP6vkXXyK//E3cq7nLaSSyyLj0GAoqVWezYeDQmXIZhmlRvLE16jsqDK6g==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/smithy-client@4.13.6':
-    resolution: {integrity: sha512-tAf35/JW/DvMlACcazcoIOKOV0JBqyOvxjPTEME9W+m9wLcE0G1rwADc7Ntu38rY5C9OH8jZjpo4tbtjmIjEBQ==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/smithy-client@4.14.6':
     resolution: {integrity: sha512-Nr6u0buDP8iprqxAJ83pSFu2RavKHa/OG8n/ReWTYHg1OS3GLoDoa8F+2zoWoYkvwUawTa/dFugJ7NS0CuPcYg==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/types@4.14.3':
-    resolution: {integrity: sha512-YupL0ZWmFtJexUN2cHzkvvF/b9pKrtAIfT1o7/oY/Ppu8IYeZ+lDPM5vZdQJaSeA132dJCqojjGC9NhXeF71VQ==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/types@4.15.1':
     resolution: {integrity: sha512-x3L0XSACF6UYzKpa9biqiRMgvH5+wnFFew9Tm/grFYqgaupPwx/+ojDPpPJM8dZON3S9tjz5U+PQYsCBd1Mw5Q==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/url-parser@4.3.6':
-    resolution: {integrity: sha512-9MRJzwUrlswwHogOR7raDcykuzojZn74qGdQdbEQLVaixlvJuMiIT0g/CejKcmAIgrUVs8brBrnGtmYmBc0iuA==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/url-parser@4.4.6':
     resolution: {integrity: sha512-bR6Te2/feLMCLiyEFqnZpM5AqkXlBGr7A5jHQn+WSVLk0X53NvPq1KF8jh5TJIv56RzDv3oKEW3t0DysRNLZdw==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/util-base64@4.4.6':
-    resolution: {integrity: sha512-V6ApAGvCQnb7Wy1Sy60AQc+7UOEaNQxvAXBLdMi5Zzm66cmX0srvfAxDmg7BGuJ+9H9ez0PPWS/AeFgWxwGavA==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/util-base64@4.5.6':
     resolution: {integrity: sha512-N3hAANIKhtewRYICJjHscGtqQmAWISV+6Re5kbh8mOMiGKn6CvM252zocDdh9YWCmE/x9S1XAbe+5lzw+zjEZQ==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/util-body-length-browser@4.3.6':
-    resolution: {integrity: sha512-+3vGcNHuvzuFLVWL9/wJgucOuQWufhuGhb3oxVDj9SWFGtwkOmtC2nFUwVC2IJoPe45uhs6TAb8bgE4IXDSPzA==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/util-body-length-browser@4.4.6':
     resolution: {integrity: sha512-oCVUok1wVnObl1nvtuj3DrVDtsgFNSmvVFc5VstnXKusqGKycKKPTtQHdlUMCklpB4g8pOp0jUOt7l7aAJlksg==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/util-body-length-node@4.3.6':
-    resolution: {integrity: sha512-T15zTQJ/xKYdS0/3CFckhz1QBbhxmhk/xjL6FKvHKgkJPN4E985If2FI9CcV2kh2v0sfiWMfXVEOKFbqgw4m4w==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/util-body-length-node@4.4.6':
@@ -5638,40 +5459,20 @@ packages:
     resolution: {integrity: sha512-IJdWBbTcMQ6DA0gdNhh/BwrLkDR+ADW5Kr1aZmd4k3DIF6ezMV4R2NIAmT08wQJ3yUK82thHWmC/TnK/wpMMIA==}
     engines: {node: '>=14.0.0'}
 
-  '@smithy/util-defaults-mode-browser@4.4.6':
-    resolution: {integrity: sha512-dRCZKu05AL7KQWrVuRJPotfjCRnvGkCjV56XNP067CRfyTtvgi/Ygu44qrBKb814Hsa52bWwDJ+Vt3pd04BjPA==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/util-defaults-mode-browser@4.5.6':
     resolution: {integrity: sha512-lsApK6dpDK9LY49GMHEsNQV2XpT/Y9WxKy8CmfbN6oLqPMCXlCYVLeIhedtdJmgbi0Mg09ZIjbhYVEg+V/wK0Q==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/util-defaults-mode-node@4.3.6':
-    resolution: {integrity: sha512-tTR8tayMoa0WeRhtMH7j3WpHUtggBXjh7rBdf7j6POYI69R85gpWBW6B32kaJRnlQU8+0gOGAzJj50S7SU1Egw==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/util-defaults-mode-node@4.4.6':
     resolution: {integrity: sha512-lKt5zA8YVx5SXanQ1t1iVZuaCuQcoJxUEh9BEpW64y5qKo3asCua7PiYsKkCv2RctwWZQqeEquB6WMostXBI4w==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/util-endpoints@3.5.6':
-    resolution: {integrity: sha512-kaB41eVUYC7ajVWUsZRqagxwRaa3VupjQ/Z2Z2v/Vffh/gJ/fFOS25s6mTyR2Lw1FrnBbRWo1iShR9BhekpPeQ==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/util-endpoints@3.6.6':
     resolution: {integrity: sha512-IIgVh4W8OwBP3WL17RROPs7EWkaRdygli4I3vnhEK+zkVvMFagoKN7KbDCitTafQ7GSM3ev0ZawYehN+cFzd+A==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/util-middleware@4.3.6':
-    resolution: {integrity: sha512-TrAgOcL63TRi7G92arTzq0n+VDrmZifwP1I1T9y2xU3lJpybsHdm33S2d3xaFfG0c8zJNIF9yYRqLSe6rbhH/A==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/util-middleware@4.4.6':
     resolution: {integrity: sha512-13aBkHIs4auNrqDwGE40rbkF/gXZQ/qNtufQKDHxYjc1juSAzY0ol0Kbv8Md5oaUovnNpTp2cXLQXZn3eAEnlA==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/util-retry@4.4.6':
-    resolution: {integrity: sha512-E/kFnvWQL6rIPr0Ucjk8oDgJSkKx2bv0nJkJ/cB3ywys7xCqeL1AXP9liHjgYONdQ+MKw/xT06IQK3vgbtu2Ww==}
     engines: {node: '>=18.0.0'}
 
   '@smithy/util-retry@4.5.6':
@@ -5685,10 +5486,6 @@ packages:
   '@smithy/util-utf8@2.3.0':
     resolution: {integrity: sha512-R8Rdn8Hy72KKcebgLiv8jQcQkXoLMOGGv5uI1/k0l+snqkOzQ1R0ChUBCxWMlBsFMekWjq0wRudIweFs7sKT5A==}
     engines: {node: '>=14.0.0'}
-
-  '@smithy/util-utf8@4.3.6':
-    resolution: {integrity: sha512-tAa4sePYB7mlJzdYbdBqdv37KwFKWixmM/r3ihcI0HFOVjf+a5oGvtcLXcGm4S1bY4DFsLAIOHgjubtp+oRufw==}
-    engines: {node: '>=18.0.0'}
 
   '@smithy/util-utf8@4.4.6':
     resolution: {integrity: sha512-gncTZwzB/RTzm29VvK1nZhCHdPjBkR8pNaFtUMbQpkG6vFMjPHe/RsnmMXfrYj8Qs5s6QH5f1Mp9CBXFOHxqlQ==}
@@ -7019,10 +6816,6 @@ packages:
 
   fast-xml-builder@1.2.0:
     resolution: {integrity: sha512-00aAWieqff+ZJhsXA4g1g7M8k+7AYoMUUHF+/zFb5U6Uv/P0Vl4QZo84/IcufzYalLuEj9928bXN9PbbFzMF0Q==}
-
-  fast-xml-parser@5.7.3:
-    resolution: {integrity: sha512-C0AaNuC+mscy6vrAQKAc/rMq+zAPHodfHGZu4sGVehvAQt/JLG1O5zEcYcXSY5zSqr4YVgxsB+pHXTq0i7eDlg==}
-    hasBin: true
 
   fast-xml-parser@5.9.3:
     resolution: {integrity: sha512-brCNCeScma/kqa54J4PIDriSSSLssRkuYaUCpvHJulGc3HGI/xxKUCTDcYkAdqJsyb//ydpbxecjC3hB9+tb/g==}
@@ -9984,20 +9777,20 @@ snapshots:
   '@aws-crypto/crc32@5.2.0':
     dependencies:
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.973.12
+      '@aws-sdk/types': 3.973.15
       tslib: 2.8.1
 
   '@aws-crypto/crc32c@5.2.0':
     dependencies:
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.973.12
+      '@aws-sdk/types': 3.973.15
       tslib: 2.8.1
 
   '@aws-crypto/sha1-browser@5.2.0':
     dependencies:
       '@aws-crypto/supports-web-crypto': 5.2.0
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.973.12
+      '@aws-sdk/types': 3.973.15
       '@aws-sdk/util-locate-window': 3.965.7
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
@@ -10007,7 +9800,7 @@ snapshots:
       '@aws-crypto/sha256-js': 5.2.0
       '@aws-crypto/supports-web-crypto': 5.2.0
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.973.12
+      '@aws-sdk/types': 3.973.15
       '@aws-sdk/util-locate-window': 3.965.7
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
@@ -10015,7 +9808,7 @@ snapshots:
   '@aws-crypto/sha256-js@5.2.0':
     dependencies:
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.973.12
+      '@aws-sdk/types': 3.973.15
       tslib: 2.8.1
 
   '@aws-crypto/supports-web-crypto@5.2.0':
@@ -10024,7 +9817,7 @@ snapshots:
 
   '@aws-crypto/util@5.2.0':
     dependencies:
-      '@aws-sdk/types': 3.973.12
+      '@aws-sdk/types': 3.973.15
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
 
@@ -10033,102 +9826,102 @@ snapshots:
       '@aws-crypto/crc32': 5.2.0
       '@aws-crypto/crc32c': 5.2.0
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/types': 3.973.15
+      '@smithy/core': 3.29.1
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/client-bedrock-runtime@3.1034.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/credential-provider-node': 3.972.55
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/credential-provider-node': 3.972.62
       '@aws-sdk/eventstream-handler-node': 3.972.21
       '@aws-sdk/middleware-eventstream': 3.972.17
-      '@aws-sdk/middleware-host-header': 3.972.21
-      '@aws-sdk/middleware-logger': 3.972.20
-      '@aws-sdk/middleware-recursion-detection': 3.972.22
-      '@aws-sdk/middleware-user-agent': 3.972.50
+      '@aws-sdk/middleware-host-header': 3.972.28
+      '@aws-sdk/middleware-logger': 3.972.27
+      '@aws-sdk/middleware-recursion-detection': 3.972.29
+      '@aws-sdk/middleware-user-agent': 3.972.57
       '@aws-sdk/middleware-websocket': 3.972.28
-      '@aws-sdk/region-config-resolver': 3.972.24
+      '@aws-sdk/region-config-resolver': 3.972.31
       '@aws-sdk/token-providers': 3.1034.0
-      '@aws-sdk/types': 3.973.12
-      '@aws-sdk/util-endpoints': 3.996.19
-      '@aws-sdk/util-user-agent-browser': 3.972.21
-      '@aws-sdk/util-user-agent-node': 3.973.36
-      '@smithy/config-resolver': 4.5.6
-      '@smithy/core': 3.24.6
+      '@aws-sdk/types': 3.973.15
+      '@aws-sdk/util-endpoints': 3.996.26
+      '@aws-sdk/util-user-agent-browser': 3.972.28
+      '@aws-sdk/util-user-agent-node': 3.973.43
+      '@smithy/config-resolver': 4.6.6
+      '@smithy/core': 3.29.1
       '@smithy/eventstream-serde-browser': 4.3.6
       '@smithy/eventstream-serde-config-resolver': 4.4.6
       '@smithy/eventstream-serde-node': 4.3.6
-      '@smithy/fetch-http-handler': 5.4.6
-      '@smithy/hash-node': 4.3.6
-      '@smithy/invalid-dependency': 4.3.6
-      '@smithy/middleware-content-length': 4.3.6
-      '@smithy/middleware-endpoint': 4.5.6
-      '@smithy/middleware-retry': 4.6.6
-      '@smithy/middleware-serde': 4.3.6
-      '@smithy/middleware-stack': 4.3.6
-      '@smithy/node-config-provider': 4.4.6
-      '@smithy/node-http-handler': 4.7.7
-      '@smithy/protocol-http': 5.4.6
-      '@smithy/smithy-client': 4.13.6
-      '@smithy/types': 4.14.3
-      '@smithy/url-parser': 4.3.6
-      '@smithy/util-base64': 4.4.6
-      '@smithy/util-body-length-browser': 4.3.6
-      '@smithy/util-body-length-node': 4.3.6
-      '@smithy/util-defaults-mode-browser': 4.4.6
-      '@smithy/util-defaults-mode-node': 4.3.6
-      '@smithy/util-endpoints': 3.5.6
-      '@smithy/util-middleware': 4.3.6
-      '@smithy/util-retry': 4.4.6
+      '@smithy/fetch-http-handler': 5.6.3
+      '@smithy/hash-node': 4.4.6
+      '@smithy/invalid-dependency': 4.4.6
+      '@smithy/middleware-content-length': 4.4.6
+      '@smithy/middleware-endpoint': 4.6.6
+      '@smithy/middleware-retry': 4.7.6
+      '@smithy/middleware-serde': 4.4.6
+      '@smithy/middleware-stack': 4.4.6
+      '@smithy/node-config-provider': 4.5.6
+      '@smithy/node-http-handler': 4.9.3
+      '@smithy/protocol-http': 5.5.6
+      '@smithy/smithy-client': 4.14.6
+      '@smithy/types': 4.15.1
+      '@smithy/url-parser': 4.4.6
+      '@smithy/util-base64': 4.5.6
+      '@smithy/util-body-length-browser': 4.4.6
+      '@smithy/util-body-length-node': 4.4.6
+      '@smithy/util-defaults-mode-browser': 4.5.6
+      '@smithy/util-defaults-mode-node': 4.4.6
+      '@smithy/util-endpoints': 3.6.6
+      '@smithy/util-middleware': 4.4.6
+      '@smithy/util-retry': 4.5.6
       '@smithy/util-stream': 4.6.6
-      '@smithy/util-utf8': 4.3.6
+      '@smithy/util-utf8': 4.4.6
       tslib: 2.8.1
 
   '@aws-sdk/client-cognito-identity@3.1034.0':
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/credential-provider-node': 3.972.55
-      '@aws-sdk/middleware-host-header': 3.972.21
-      '@aws-sdk/middleware-logger': 3.972.20
-      '@aws-sdk/middleware-recursion-detection': 3.972.22
-      '@aws-sdk/middleware-user-agent': 3.972.50
-      '@aws-sdk/region-config-resolver': 3.972.24
-      '@aws-sdk/types': 3.973.12
-      '@aws-sdk/util-endpoints': 3.996.19
-      '@aws-sdk/util-user-agent-browser': 3.972.21
-      '@aws-sdk/util-user-agent-node': 3.973.36
-      '@smithy/config-resolver': 4.5.6
-      '@smithy/core': 3.24.6
-      '@smithy/fetch-http-handler': 5.4.6
-      '@smithy/hash-node': 4.3.6
-      '@smithy/invalid-dependency': 4.3.6
-      '@smithy/middleware-content-length': 4.3.6
-      '@smithy/middleware-endpoint': 4.5.6
-      '@smithy/middleware-retry': 4.6.6
-      '@smithy/middleware-serde': 4.3.6
-      '@smithy/middleware-stack': 4.3.6
-      '@smithy/node-config-provider': 4.4.6
-      '@smithy/node-http-handler': 4.7.7
-      '@smithy/protocol-http': 5.4.6
-      '@smithy/smithy-client': 4.13.6
-      '@smithy/types': 4.14.3
-      '@smithy/url-parser': 4.3.6
-      '@smithy/util-base64': 4.4.6
-      '@smithy/util-body-length-browser': 4.3.6
-      '@smithy/util-body-length-node': 4.3.6
-      '@smithy/util-defaults-mode-browser': 4.4.6
-      '@smithy/util-defaults-mode-node': 4.3.6
-      '@smithy/util-endpoints': 3.5.6
-      '@smithy/util-middleware': 4.3.6
-      '@smithy/util-retry': 4.4.6
-      '@smithy/util-utf8': 4.3.6
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/credential-provider-node': 3.972.62
+      '@aws-sdk/middleware-host-header': 3.972.28
+      '@aws-sdk/middleware-logger': 3.972.27
+      '@aws-sdk/middleware-recursion-detection': 3.972.29
+      '@aws-sdk/middleware-user-agent': 3.972.57
+      '@aws-sdk/region-config-resolver': 3.972.31
+      '@aws-sdk/types': 3.973.15
+      '@aws-sdk/util-endpoints': 3.996.26
+      '@aws-sdk/util-user-agent-browser': 3.972.28
+      '@aws-sdk/util-user-agent-node': 3.973.43
+      '@smithy/config-resolver': 4.6.6
+      '@smithy/core': 3.29.1
+      '@smithy/fetch-http-handler': 5.6.3
+      '@smithy/hash-node': 4.4.6
+      '@smithy/invalid-dependency': 4.4.6
+      '@smithy/middleware-content-length': 4.4.6
+      '@smithy/middleware-endpoint': 4.6.6
+      '@smithy/middleware-retry': 4.7.6
+      '@smithy/middleware-serde': 4.4.6
+      '@smithy/middleware-stack': 4.4.6
+      '@smithy/node-config-provider': 4.5.6
+      '@smithy/node-http-handler': 4.9.3
+      '@smithy/protocol-http': 5.5.6
+      '@smithy/smithy-client': 4.14.6
+      '@smithy/types': 4.15.1
+      '@smithy/url-parser': 4.4.6
+      '@smithy/util-base64': 4.5.6
+      '@smithy/util-body-length-browser': 4.4.6
+      '@smithy/util-body-length-node': 4.4.6
+      '@smithy/util-defaults-mode-browser': 4.5.6
+      '@smithy/util-defaults-mode-node': 4.4.6
+      '@smithy/util-endpoints': 3.6.6
+      '@smithy/util-middleware': 4.4.6
+      '@smithy/util-retry': 4.5.6
+      '@smithy/util-utf8': 4.4.6
       tslib: 2.8.1
 
   '@aws-sdk/client-s3@3.1034.0':
@@ -10136,56 +9929,56 @@ snapshots:
       '@aws-crypto/sha1-browser': 5.2.0
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/credential-provider-node': 3.972.55
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/credential-provider-node': 3.972.62
       '@aws-sdk/middleware-bucket-endpoint': 3.972.24
       '@aws-sdk/middleware-expect-continue': 3.972.20
       '@aws-sdk/middleware-flexible-checksums': 3.974.30
-      '@aws-sdk/middleware-host-header': 3.972.21
+      '@aws-sdk/middleware-host-header': 3.972.28
       '@aws-sdk/middleware-location-constraint': 3.972.17
-      '@aws-sdk/middleware-logger': 3.972.20
-      '@aws-sdk/middleware-recursion-detection': 3.972.22
+      '@aws-sdk/middleware-logger': 3.972.27
+      '@aws-sdk/middleware-recursion-detection': 3.972.29
       '@aws-sdk/middleware-sdk-s3': 3.972.51
       '@aws-sdk/middleware-ssec': 3.972.17
-      '@aws-sdk/middleware-user-agent': 3.972.50
-      '@aws-sdk/region-config-resolver': 3.972.24
-      '@aws-sdk/signature-v4-multi-region': 3.996.34
-      '@aws-sdk/types': 3.973.12
-      '@aws-sdk/util-endpoints': 3.996.19
-      '@aws-sdk/util-user-agent-browser': 3.972.21
-      '@aws-sdk/util-user-agent-node': 3.973.36
-      '@smithy/config-resolver': 4.5.6
-      '@smithy/core': 3.24.6
+      '@aws-sdk/middleware-user-agent': 3.972.57
+      '@aws-sdk/region-config-resolver': 3.972.31
+      '@aws-sdk/signature-v4-multi-region': 3.996.38
+      '@aws-sdk/types': 3.973.15
+      '@aws-sdk/util-endpoints': 3.996.26
+      '@aws-sdk/util-user-agent-browser': 3.972.28
+      '@aws-sdk/util-user-agent-node': 3.973.43
+      '@smithy/config-resolver': 4.6.6
+      '@smithy/core': 3.29.1
       '@smithy/eventstream-serde-browser': 4.3.6
       '@smithy/eventstream-serde-config-resolver': 4.4.6
       '@smithy/eventstream-serde-node': 4.3.6
-      '@smithy/fetch-http-handler': 5.4.6
+      '@smithy/fetch-http-handler': 5.6.3
       '@smithy/hash-blob-browser': 4.3.6
-      '@smithy/hash-node': 4.3.6
+      '@smithy/hash-node': 4.4.6
       '@smithy/hash-stream-node': 4.3.6
-      '@smithy/invalid-dependency': 4.3.6
-      '@smithy/md5-js': 4.3.6
-      '@smithy/middleware-content-length': 4.3.6
-      '@smithy/middleware-endpoint': 4.5.6
-      '@smithy/middleware-retry': 4.6.6
-      '@smithy/middleware-serde': 4.3.6
-      '@smithy/middleware-stack': 4.3.6
-      '@smithy/node-config-provider': 4.4.6
-      '@smithy/node-http-handler': 4.7.7
-      '@smithy/protocol-http': 5.4.6
-      '@smithy/smithy-client': 4.13.6
-      '@smithy/types': 4.14.3
-      '@smithy/url-parser': 4.3.6
-      '@smithy/util-base64': 4.4.6
-      '@smithy/util-body-length-browser': 4.3.6
-      '@smithy/util-body-length-node': 4.3.6
-      '@smithy/util-defaults-mode-browser': 4.4.6
-      '@smithy/util-defaults-mode-node': 4.3.6
-      '@smithy/util-endpoints': 3.5.6
-      '@smithy/util-middleware': 4.3.6
-      '@smithy/util-retry': 4.4.6
+      '@smithy/invalid-dependency': 4.4.6
+      '@smithy/md5-js': 4.4.6
+      '@smithy/middleware-content-length': 4.4.6
+      '@smithy/middleware-endpoint': 4.6.6
+      '@smithy/middleware-retry': 4.7.6
+      '@smithy/middleware-serde': 4.4.6
+      '@smithy/middleware-stack': 4.4.6
+      '@smithy/node-config-provider': 4.5.6
+      '@smithy/node-http-handler': 4.9.3
+      '@smithy/protocol-http': 5.5.6
+      '@smithy/smithy-client': 4.14.6
+      '@smithy/types': 4.15.1
+      '@smithy/url-parser': 4.4.6
+      '@smithy/util-base64': 4.5.6
+      '@smithy/util-body-length-browser': 4.4.6
+      '@smithy/util-body-length-node': 4.4.6
+      '@smithy/util-defaults-mode-browser': 4.5.6
+      '@smithy/util-defaults-mode-node': 4.4.6
+      '@smithy/util-endpoints': 3.6.6
+      '@smithy/util-middleware': 4.4.6
+      '@smithy/util-retry': 4.5.6
       '@smithy/util-stream': 4.6.6
-      '@smithy/util-utf8': 4.3.6
+      '@smithy/util-utf8': 4.4.6
       '@smithy/util-waiter': 4.4.6
       tslib: 2.8.1
 
@@ -10194,16 +9987,16 @@ snapshots:
       '@aws-crypto/sha1-browser': 5.2.0
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/credential-provider-node': 3.972.55
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/credential-provider-node': 3.972.62
       '@aws-sdk/middleware-flexible-checksums': 3.974.30
       '@aws-sdk/middleware-sdk-s3': 3.972.51
-      '@aws-sdk/signature-v4-multi-region': 3.996.34
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/fetch-http-handler': 5.4.6
-      '@smithy/node-http-handler': 4.7.7
-      '@smithy/types': 4.14.3
+      '@aws-sdk/signature-v4-multi-region': 3.996.38
+      '@aws-sdk/types': 3.973.15
+      '@smithy/core': 3.29.1
+      '@smithy/fetch-http-handler': 5.6.3
+      '@smithy/node-http-handler': 4.9.3
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/client-sqs@3.1038.0':
@@ -10251,17 +10044,6 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@aws-sdk/core@3.974.20':
-    dependencies:
-      '@aws-sdk/types': 3.973.12
-      '@aws-sdk/xml-builder': 3.972.29
-      '@aws/lambda-invoke-store': 0.2.4
-      '@smithy/core': 3.24.6
-      '@smithy/signature-v4': 5.4.6
-      '@smithy/types': 4.14.3
-      bowser: 2.14.1
-      tslib: 2.8.1
-
   '@aws-sdk/core@3.974.27':
     dependencies:
       '@aws-sdk/types': 3.973.15
@@ -10272,22 +10054,13 @@ snapshots:
       '@smithy/types': 4.15.1
       bowser: 2.14.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/credential-provider-cognito-identity@3.972.45':
     dependencies:
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
-
-  '@aws-sdk/credential-provider-env@3.972.46':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@aws-sdk/nested-clients': 3.997.27
+      '@aws-sdk/types': 3.973.15
+      '@smithy/core': 3.29.1
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/credential-provider-env@3.972.53':
@@ -10296,17 +10069,6 @@ snapshots:
       '@aws-sdk/types': 3.973.15
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/credential-provider-http@3.972.48':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/fetch-http-handler': 5.4.6
-      '@smithy/node-http-handler': 4.7.7
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@aws-sdk/credential-provider-http@3.972.55':
@@ -10317,23 +10079,6 @@ snapshots:
       '@smithy/fetch-http-handler': 5.6.3
       '@smithy/node-http-handler': 4.9.3
       '@smithy/types': 4.15.1
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/credential-provider-ini@3.972.53':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/credential-provider-env': 3.972.46
-      '@aws-sdk/credential-provider-http': 3.972.48
-      '@aws-sdk/credential-provider-login': 3.972.52
-      '@aws-sdk/credential-provider-process': 3.972.46
-      '@aws-sdk/credential-provider-sso': 3.972.52
-      '@aws-sdk/credential-provider-web-identity': 3.972.52
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/credential-provider-imds': 4.3.8
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@aws-sdk/credential-provider-ini@3.972.60':
@@ -10351,16 +10096,6 @@ snapshots:
       '@smithy/credential-provider-imds': 4.4.6
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/credential-provider-login@3.972.52':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
 
   '@aws-sdk/credential-provider-login@3.972.59':
     dependencies:
@@ -10369,21 +10104,6 @@ snapshots:
       '@aws-sdk/types': 3.973.15
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/credential-provider-node@3.972.55':
-    dependencies:
-      '@aws-sdk/credential-provider-env': 3.972.46
-      '@aws-sdk/credential-provider-http': 3.972.48
-      '@aws-sdk/credential-provider-ini': 3.972.53
-      '@aws-sdk/credential-provider-process': 3.972.46
-      '@aws-sdk/credential-provider-sso': 3.972.52
-      '@aws-sdk/credential-provider-web-identity': 3.972.52
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/credential-provider-imds': 4.3.8
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@aws-sdk/credential-provider-node@3.972.62':
@@ -10399,15 +10119,6 @@ snapshots:
       '@smithy/credential-provider-imds': 4.4.6
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/credential-provider-process@3.972.46':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
 
   '@aws-sdk/credential-provider-process@3.972.53':
     dependencies:
@@ -10415,17 +10126,6 @@ snapshots:
       '@aws-sdk/types': 3.973.15
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/credential-provider-sso@3.972.52':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/token-providers': 3.1066.0
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@aws-sdk/credential-provider-sso@3.972.59':
@@ -10437,16 +10137,6 @@ snapshots:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/credential-provider-web-identity@3.972.52':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
 
   '@aws-sdk/credential-provider-web-identity@3.972.59':
     dependencies:
@@ -10456,36 +10146,35 @@ snapshots:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/credential-providers@3.1034.0':
     dependencies:
       '@aws-sdk/client-cognito-identity': 3.1034.0
-      '@aws-sdk/core': 3.974.20
+      '@aws-sdk/core': 3.974.27
       '@aws-sdk/credential-provider-cognito-identity': 3.972.45
-      '@aws-sdk/credential-provider-env': 3.972.46
-      '@aws-sdk/credential-provider-http': 3.972.48
-      '@aws-sdk/credential-provider-ini': 3.972.53
-      '@aws-sdk/credential-provider-login': 3.972.52
-      '@aws-sdk/credential-provider-node': 3.972.55
-      '@aws-sdk/credential-provider-process': 3.972.46
-      '@aws-sdk/credential-provider-sso': 3.972.52
-      '@aws-sdk/credential-provider-web-identity': 3.972.52
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/config-resolver': 4.5.6
-      '@smithy/core': 3.24.6
-      '@smithy/credential-provider-imds': 4.3.8
-      '@smithy/node-config-provider': 4.4.6
+      '@aws-sdk/credential-provider-env': 3.972.53
+      '@aws-sdk/credential-provider-http': 3.972.55
+      '@aws-sdk/credential-provider-ini': 3.972.60
+      '@aws-sdk/credential-provider-login': 3.972.59
+      '@aws-sdk/credential-provider-node': 3.972.62
+      '@aws-sdk/credential-provider-process': 3.972.53
+      '@aws-sdk/credential-provider-sso': 3.972.59
+      '@aws-sdk/credential-provider-web-identity': 3.972.59
+      '@aws-sdk/nested-clients': 3.997.27
+      '@aws-sdk/types': 3.973.15
+      '@smithy/config-resolver': 4.6.6
+      '@smithy/core': 3.29.1
+      '@smithy/credential-provider-imds': 4.4.6
+      '@smithy/node-config-provider': 4.5.6
       '@smithy/property-provider': 4.3.6
-      '@smithy/types': 4.14.3
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/eventstream-handler-node@3.972.21':
     dependencies:
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@aws-sdk/types': 3.973.15
+      '@smithy/core': 3.29.1
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/middleware-bucket-endpoint@3.972.24':
@@ -10495,9 +10184,9 @@ snapshots:
 
   '@aws-sdk/middleware-eventstream@3.972.17':
     dependencies:
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@aws-sdk/types': 3.973.15
+      '@smithy/core': 3.29.1
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/middleware-expect-continue@3.972.20':
@@ -10510,51 +10199,33 @@ snapshots:
       '@aws-sdk/checksums': 3.1000.5
       tslib: 2.8.1
 
-  '@aws-sdk/middleware-host-header@3.972.21':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      tslib: 2.8.1
-
   '@aws-sdk/middleware-host-header@3.972.28':
     dependencies:
       '@aws-sdk/core': 3.974.27
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/middleware-location-constraint@3.972.17':
     dependencies:
       '@aws-sdk/middleware-sdk-s3': 3.972.51
       tslib: 2.8.1
 
-  '@aws-sdk/middleware-logger@3.972.20':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      tslib: 2.8.1
-
   '@aws-sdk/middleware-logger@3.972.27':
     dependencies:
       '@aws-sdk/core': 3.974.27
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/middleware-recursion-detection@3.972.22':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
       tslib: 2.8.1
 
   '@aws-sdk/middleware-recursion-detection@3.972.29':
     dependencies:
       '@aws-sdk/core': 3.974.27
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/middleware-sdk-s3@3.972.51':
     dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/signature-v4-multi-region': 3.996.34
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/signature-v4-multi-region': 3.996.38
+      '@aws-sdk/types': 3.973.15
+      '@smithy/core': 3.29.1
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/middleware-sdk-sqs@3.972.34':
@@ -10570,38 +10241,19 @@ snapshots:
       '@aws-sdk/middleware-sdk-s3': 3.972.51
       tslib: 2.8.1
 
-  '@aws-sdk/middleware-user-agent@3.972.50':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      tslib: 2.8.1
-
   '@aws-sdk/middleware-user-agent@3.972.57':
     dependencies:
       '@aws-sdk/core': 3.974.27
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/middleware-websocket@3.972.28':
     dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/fetch-http-handler': 5.4.6
-      '@smithy/signature-v4': 5.4.6
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
-
-  '@aws-sdk/nested-clients@3.997.20':
-    dependencies:
-      '@aws-crypto/sha256-browser': 5.2.0
-      '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/signature-v4-multi-region': 3.996.34
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/fetch-http-handler': 5.4.6
-      '@smithy/node-http-handler': 4.7.7
-      '@smithy/types': 4.14.3
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/types': 3.973.15
+      '@smithy/core': 3.29.1
+      '@smithy/fetch-http-handler': 5.6.3
+      '@smithy/signature-v4': 5.6.2
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/nested-clients@3.997.27':
@@ -10614,24 +10266,10 @@ snapshots:
       '@smithy/node-http-handler': 4.9.3
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/region-config-resolver@3.972.24':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      tslib: 2.8.1
 
   '@aws-sdk/region-config-resolver@3.972.31':
     dependencies:
       '@aws-sdk/core': 3.974.27
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/signature-v4-multi-region@3.996.34':
-    dependencies:
-      '@aws-sdk/types': 3.973.12
-      '@smithy/signature-v4': 5.4.6
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@aws-sdk/signature-v4-multi-region@3.996.38':
@@ -10640,25 +10278,15 @@ snapshots:
       '@smithy/signature-v4': 5.6.2
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/token-providers@3.1034.0':
     dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/types': 3.973.12
+      '@aws-sdk/core': 3.974.27
+      '@aws-sdk/nested-clients': 3.997.27
+      '@aws-sdk/types': 3.973.15
       '@smithy/property-provider': 4.3.6
       '@smithy/shared-ini-file-loader': 4.5.6
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
-
-  '@aws-sdk/token-providers@3.1066.0':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@aws-sdk/nested-clients': 3.997.20
-      '@aws-sdk/types': 3.973.12
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@smithy/types': 4.15.1
       tslib: 2.8.1
 
   '@aws-sdk/token-providers@3.1079.0':
@@ -10669,23 +10297,10 @@ snapshots:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/types@3.973.12':
-    dependencies:
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
 
   '@aws-sdk/types@3.973.15':
     dependencies:
       '@smithy/types': 4.15.1
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/util-endpoints@3.996.19':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@aws-sdk/util-endpoints@3.996.26':
@@ -10693,50 +10308,27 @@ snapshots:
       '@aws-sdk/core': 3.974.27
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
 
   '@aws-sdk/util-locate-window@3.965.7':
     dependencies:
-      tslib: 2.8.1
-
-  '@aws-sdk/util-user-agent-browser@3.972.21':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
       tslib: 2.8.1
 
   '@aws-sdk/util-user-agent-browser@3.972.28':
     dependencies:
       '@aws-sdk/core': 3.974.27
       tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/util-user-agent-node@3.973.36':
-    dependencies:
-      '@aws-sdk/core': 3.974.20
-      tslib: 2.8.1
 
   '@aws-sdk/util-user-agent-node@3.973.43':
     dependencies:
       '@aws-sdk/core': 3.974.27
-      tslib: 2.8.1
-    optional: true
-
-  '@aws-sdk/xml-builder@3.972.29':
-    dependencies:
-      '@smithy/types': 4.14.3
-      fast-xml-parser: 5.7.3
       tslib: 2.8.1
 
   '@aws-sdk/xml-builder@3.972.33':
     dependencies:
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
 
-  '@aws/lambda-invoke-store@0.2.4': {}
-
-  '@aws/lambda-invoke-store@0.3.0':
-    optional: true
+  '@aws/lambda-invoke-store@0.3.0': {}
 
   '@babel/code-frame@7.29.0':
     dependencies:
@@ -11562,12 +11154,12 @@ snapshots:
       onnxruntime-node: 1.26.0
       sharp: 0.33.5
 
-  '@happyvertical/ai@0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/ai@0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.90.0(zod@4.3.6)
       '@aws-sdk/client-bedrock-runtime': 3.1034.0
       '@google/genai': 1.50.1(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/utils': 0.77.0
       openai: 6.34.0(ws@8.21.0)(zod@4.3.6)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -11577,23 +11169,23 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/cache@0.76.2(@opentelemetry/api@1.9.1)':
+  '@happyvertical/cache@0.77.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@aws-sdk/client-s3': 3.1034.0
       '@aws-sdk/credential-providers': 3.1034.0
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/utils': 0.77.0
       redis: 5.12.1(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - '@node-rs/xxhash'
       - '@opentelemetry/api'
 
-  '@happyvertical/documents@0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)':
+  '@happyvertical/documents@0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)':
     dependencies:
-      '@happyvertical/files': 0.76.2
+      '@happyvertical/files': 0.77.0
       '@happyvertical/ocr': 0.60.55(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/pdf': 0.65.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@happyvertical/spider': 1.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/utils': 0.77.0
       uuid: 13.0.2
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -11612,10 +11204,10 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/email@0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
+  '@happyvertical/email@0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
     dependencies:
-      '@happyvertical/logger': 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/logger': 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+      '@happyvertical/utils': 0.77.0
       google-auth-library: 10.7.0
       googleapis: 170.1.0
       imapflow: 1.4.0
@@ -11626,10 +11218,10 @@ snapshots:
       - '@sentry/node'
       - supports-color
 
-  '@happyvertical/encryption@0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(typescript@5.9.3)':
+  '@happyvertical/encryption@0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))(@types/node@24.13.2)(typescript@5.9.3)':
     dependencies:
-      '@happyvertical/logger': 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/logger': 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+      '@happyvertical/utils': 0.77.0
       '@openpgp/web-stream-tools': 0.3.1(@types/node@24.13.2)(typescript@5.9.3)
       openpgp: 6.3.0
       tweetnacl: 1.0.3
@@ -11639,30 +11231,30 @@ snapshots:
       - '@types/node'
       - typescript
 
-  '@happyvertical/files@0.76.2':
+  '@happyvertical/files@0.77.0':
     dependencies:
       '@aws-sdk/client-s3': 3.1066.0
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/utils': 0.77.0
       google-auth-library: 9.15.1
       googleapis: 144.0.0
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  '@happyvertical/geo@0.76.2(@opentelemetry/api@1.9.1)':
+  '@happyvertical/geo@0.77.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@googlemaps/google-maps-services-js': 3.4.2
-      '@happyvertical/cache': 0.76.2(@opentelemetry/api@1.9.1)
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/cache': 0.77.0(@opentelemetry/api@1.9.1)
+      '@happyvertical/utils': 0.77.0
     transitivePeerDependencies:
       - '@node-rs/xxhash'
       - '@opentelemetry/api'
       - debug
       - supports-color
 
-  '@happyvertical/graphql@0.76.2': {}
+  '@happyvertical/graphql@0.77.0': {}
 
-  '@happyvertical/images@0.76.2(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))':
+  '@happyvertical/images@0.77.0(jimp@1.6.1)(sharp@0.35.3(@types/node@24.13.2))':
     dependencies:
       '@resvg/resvg-js': 2.6.2
       satori: 0.26.0
@@ -11670,10 +11262,10 @@ snapshots:
       jimp: 1.6.1
       sharp: 0.35.3(@types/node@24.13.2)
 
-  '@happyvertical/jobs@0.76.2(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5)(bullmq@5.76.4)':
+  '@happyvertical/jobs@0.77.0(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5)(bullmq@5.76.4)':
     dependencies:
-      '@happyvertical/sql': 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/sql': 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@happyvertical/utils': 0.77.0
     optionalDependencies:
       '@aws-sdk/client-sqs': 3.1038.0
       '@google-cloud/tasks': 6.2.1
@@ -11687,19 +11279,19 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/json@0.76.2': {}
+  '@happyvertical/json@0.77.0': {}
 
-  '@happyvertical/logger@0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
+  '@happyvertical/logger@0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
     dependencies:
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/utils': 0.77.0
     optionalDependencies:
       '@sentry/node': 10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1))
 
-  '@happyvertical/messages@0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
+  '@happyvertical/messages@0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))':
     dependencies:
-      '@happyvertical/email': 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
-      '@happyvertical/logger': 0.76.2(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/email': 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+      '@happyvertical/logger': 0.77.0(@sentry/node@10.63.0(@opentelemetry/core@2.7.0(@opentelemetry/api@1.9.1)))
+      '@happyvertical/utils': 0.77.0
       '@slack/web-api': 7.16.0
     transitivePeerDependencies:
       - '@sentry/node'
@@ -11709,8 +11301,8 @@ snapshots:
   '@happyvertical/ocr@0.60.55(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@gutenye/ocr-node': 1.4.8
-      '@happyvertical/ai': 0.76.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/ai': 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/utils': 0.77.0
       jpeg-js: 0.4.4
       pngjs: 7.0.0
       tesseract.js: 6.0.1
@@ -11726,7 +11318,7 @@ snapshots:
   '@happyvertical/pdf@0.65.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@happyvertical/ocr': 0.60.55(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/utils': 0.77.0
       '@napi-rs/canvas': 0.1.99
       marked: 14.1.4
       pdf-lib: 1.17.1
@@ -11745,20 +11337,20 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/projects@0.76.2':
+  '@happyvertical/projects@0.77.0':
     dependencies:
-      '@happyvertical/graphql': 0.76.2
-      '@happyvertical/repos': 0.76.2
+      '@happyvertical/graphql': 0.77.0
+      '@happyvertical/repos': 0.77.0
 
-  '@happyvertical/repos@0.76.2':
+  '@happyvertical/repos@0.77.0':
     dependencies:
-      '@happyvertical/graphql': 0.76.2
+      '@happyvertical/graphql': 0.77.0
       js-yaml: 4.3.0
 
-  '@happyvertical/secrets@0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
+  '@happyvertical/secrets@0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
     dependencies:
-      '@happyvertical/sql': 0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/sql': 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@happyvertical/utils': 0.77.0
     transitivePeerDependencies:
       - '@russellthehippo/honker-node'
       - '@sqliteai/sqlite-vector'
@@ -11769,8 +11361,8 @@ snapshots:
 
   '@happyvertical/spider@1.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)':
     dependencies:
-      '@happyvertical/cache': 0.76.2(@opentelemetry/api@1.9.1)
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/cache': 0.77.0(@opentelemetry/api@1.9.1)
+      '@happyvertical/utils': 0.77.0
       cheerio: 1.2.0
       crawlee: 3.17.0(@types/node@24.13.2)(playwright@1.61.0)
       happy-dom: 20.10.6
@@ -11787,10 +11379,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/sql@0.76.2(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
+  '@happyvertical/sql@0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
     dependencies:
       '@duckdb/node-api': 1.4.3-r.3
-      '@happyvertical/utils': 0.76.2
+      '@happyvertical/utils': 0.77.0
       '@libsql/client': 0.17.2
       pg: 8.21.0
       sqlite-vss: 0.1.2
@@ -11803,7 +11395,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/utils@0.76.2':
+  '@happyvertical/utils@0.77.0':
     dependencies:
       '@paralleldrive/cuid2': 3.3.0
       date-fns: 4.4.0
@@ -13264,33 +12856,14 @@ snapshots:
       - debug
       - supports-color
 
-  '@smithy/config-resolver@4.5.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
   '@smithy/config-resolver@4.6.6':
     dependencies:
       '@smithy/core': 3.29.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/core@3.24.6':
-    dependencies:
-      '@aws-crypto/crc32': 5.2.0
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@smithy/core@3.29.1':
     dependencies:
       '@smithy/types': 4.15.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/credential-provider-imds@4.3.8':
-    dependencies:
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@smithy/credential-provider-imds@4.4.6':
@@ -13298,27 +12871,20 @@ snapshots:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/eventstream-serde-browser@4.3.6':
     dependencies:
-      '@smithy/core': 3.24.6
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/eventstream-serde-config-resolver@4.4.6':
     dependencies:
-      '@smithy/core': 3.24.6
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/eventstream-serde-node@4.3.6':
     dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
-  '@smithy/fetch-http-handler@5.4.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/fetch-http-handler@5.6.3':
@@ -13326,125 +12892,64 @@ snapshots:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/hash-blob-browser@4.3.6':
     dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
-  '@smithy/hash-node@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/hash-node@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/hash-stream-node@4.3.6':
     dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
-  '@smithy/invalid-dependency@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/invalid-dependency@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/is-array-buffer@2.2.0':
     dependencies:
-      tslib: 2.8.1
-
-  '@smithy/md5-js@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@smithy/md5-js@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/middleware-content-length@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/middleware-content-length@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/middleware-endpoint@4.5.6':
-    dependencies:
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@smithy/middleware-endpoint@4.6.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/middleware-retry@4.6.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/middleware-retry@4.7.6':
     dependencies:
       '@smithy/core': 3.29.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/middleware-serde@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@smithy/middleware-serde@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/middleware-stack@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/middleware-stack@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/node-config-provider@4.4.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/node-config-provider@4.5.6':
     dependencies:
       '@smithy/core': 3.29.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/node-http-handler@4.7.7':
-    dependencies:
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
       tslib: 2.8.1
 
   '@smithy/node-http-handler@4.9.3':
@@ -13452,33 +12957,20 @@ snapshots:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/property-provider@4.3.6':
     dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
-  '@smithy/protocol-http@5.4.6':
-    dependencies:
-      '@smithy/core': 3.24.6
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/protocol-http@5.5.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/shared-ini-file-loader@4.5.6':
     dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
-  '@smithy/signature-v4@5.4.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/signature-v4@5.6.2':
@@ -13486,137 +12978,70 @@ snapshots:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/smithy-client@4.13.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      '@smithy/types': 4.14.3
-      tslib: 2.8.1
 
   '@smithy/smithy-client@4.14.6':
     dependencies:
       '@smithy/core': 3.29.1
       '@smithy/types': 4.15.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/types@4.14.3':
-    dependencies:
-      tslib: 2.8.1
 
   '@smithy/types@4.15.1':
     dependencies:
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/url-parser@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@smithy/url-parser@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/util-base64@4.4.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/util-base64@4.5.6':
     dependencies:
       '@smithy/core': 3.29.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/util-body-length-browser@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@smithy/util-body-length-browser@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/util-body-length-node@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/util-body-length-node@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-buffer-from@2.2.0':
     dependencies:
       '@smithy/is-array-buffer': 2.2.0
       tslib: 2.8.1
 
-  '@smithy/util-defaults-mode-browser@4.4.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
   '@smithy/util-defaults-mode-browser@4.5.6':
     dependencies:
       '@smithy/core': 3.29.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/util-defaults-mode-node@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@smithy/util-defaults-mode-node@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/util-endpoints@3.5.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/util-endpoints@3.6.6':
     dependencies:
       '@smithy/core': 3.29.1
-      tslib: 2.8.1
-    optional: true
-
-  '@smithy/util-middleware@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
       tslib: 2.8.1
 
   '@smithy/util-middleware@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
-
-  '@smithy/util-retry@4.4.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
 
   '@smithy/util-retry@4.5.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-stream@4.6.6':
     dependencies:
-      '@smithy/core': 3.24.6
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@smithy/util-utf8@2.3.0':
@@ -13624,20 +13049,14 @@ snapshots:
       '@smithy/util-buffer-from': 2.2.0
       tslib: 2.8.1
 
-  '@smithy/util-utf8@4.3.6':
-    dependencies:
-      '@smithy/core': 3.24.6
-      tslib: 2.8.1
-
   '@smithy/util-utf8@4.4.6':
     dependencies:
       '@smithy/core': 3.29.1
       tslib: 2.8.1
-    optional: true
 
   '@smithy/util-waiter@4.4.6':
     dependencies:
-      '@smithy/core': 3.24.6
+      '@smithy/core': 3.29.1
       tslib: 2.8.1
 
   '@sqliteai/sqlite-vector-darwin-arm64@1.0.0':
@@ -15009,13 +14428,6 @@ snapshots:
     dependencies:
       path-expression-matcher: 1.5.0
       xml-naming: 0.1.0
-
-  fast-xml-parser@5.7.3:
-    dependencies:
-      '@nodable/entities': 2.2.0
-      fast-xml-builder: 1.2.0
-      path-expression-matcher: 1.5.0
-      strnum: 2.4.1
 
   fast-xml-parser@5.9.3:
     dependencies:
