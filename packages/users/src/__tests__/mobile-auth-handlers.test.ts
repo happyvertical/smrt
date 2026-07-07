@@ -469,6 +469,29 @@ describe('mobile auth handlers (/api/mobile)', () => {
     expect(ok.status).toBe(200);
   });
 
+  it('rejects path traversal past a prefix allow-list entry (regression)', async () => {
+    const handlers = makeHandlers();
+    // The allow list has the prefix entry 'http://127.0.0.1/cb/'. A raw
+    // string startsWith would accept '/cb/../evil/', but it normalizes to
+    // '/evil/' — outside the registered callback subtree — so the code must
+    // never be sent there.
+    for (const redirectUri of [
+      'http://127.0.0.1/cb/../evil/',
+      'http://127.0.0.1/cb/../../evil',
+      'http://127.0.0.1/cbsomethingelse',
+    ]) {
+      const response = await handlers.authStart(postEvent({ redirectUri }));
+      expect(response.status).toBe(400);
+      expect((await readJson(response)).code).toBe('invalid_redirect_uri');
+    }
+
+    // A genuine sub-path of the prefix still resolves within it and is allowed.
+    const ok = await handlers.authStart(
+      postEvent({ redirectUri: 'http://127.0.0.1/cb/sub/native' }),
+    );
+    expect(ok.status).toBe(200);
+  });
+
   it('validateMobileRedirectUri allows app schemes and loopback without an allow list', () => {
     expect(validateMobileRedirectUri(APP_REDIRECT)).toBe(APP_REDIRECT);
     expect(validateMobileRedirectUri('http://localhost:8080/cb')).toBe(
@@ -666,6 +689,226 @@ describe('mobile auth handlers (/api/mobile)', () => {
     expect(context.user.id).toBe(world.user.id);
     expect(context.tenantId).toBe(world.beta.id);
     expect(Array.isArray(context.permissions)).toBe(true);
+  });
+
+  it('accepts a case-insensitive bearer scheme', async () => {
+    const handlers = makeHandlers();
+    const { completeResponse } = await signIn(handlers);
+    const token = (await readJson(completeResponse)).accessToken as string;
+
+    const lower = {
+      request: new Request('http://app.local/api/mobile/session', {
+        headers: { authorization: `bearer ${token}` },
+      }),
+      locals: {},
+    } satisfies MobileRequestEvent;
+    const response = await handlers.session.GET(lower);
+    expect(response.status).toBe(200);
+    expect((await readJson(response)).user).toBeTruthy();
+  });
+
+  it('drops non-string scopes rather than failing', async () => {
+    const handlers = makeHandlers();
+    const response = await handlers.authStart(
+      postEvent({
+        redirectUri: APP_REDIRECT,
+        scopes: [123, 'openid', null, { x: 1 }, 'groups'],
+      }),
+    );
+    expect(response.status).toBe(200);
+    const url = new URL((await readJson(response)).authorizationUrl as string);
+    expect(url.searchParams.get('scope')).toBe('openid groups');
+  });
+
+  it('omits extras when the buildExtras hook returns null', async () => {
+    const handlers = makeHandlers({ buildExtras: async () => null });
+    const { completeResponse } = await signIn(handlers);
+    const token = (await readJson(completeResponse)).accessToken as string;
+    const bootstrap = await readJson(
+      await handlers.session.GET(bearerEvent(token)),
+    );
+    expect('extras' in bootstrap).toBe(false);
+  });
+
+  it('502s when the provider is unavailable at start', async () => {
+    const handlers = makeHandlers({
+      // Discovery fails → createAuthorizationUrl throws → provider_unavailable.
+      fetch: async () =>
+        new Response('unavailable', {
+          status: 503,
+          headers: { 'content-type': 'text/plain' },
+        }),
+    });
+    const response = await handlers.authStart(
+      postEvent({ redirectUri: APP_REDIRECT }),
+    );
+    expect(response.status).toBe(502);
+    expect((await readJson(response)).code).toBe('provider_unavailable');
+  });
+
+  it('maps a token-endpoint error to exchange_failed (401)', async () => {
+    const realFetch = globalThis.fetch;
+    const handlers = makeHandlers({
+      // Everything reaches the live test IdP except the token exchange, which
+      // fails as if the code were already used / invalid_grant.
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.endsWith('/token')) {
+          return new Response(
+            JSON.stringify({
+              error: 'invalid_grant',
+              error_description: 'code already used',
+            }),
+            { status: 400, headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return realFetch(input, init);
+      }) as typeof fetch,
+    });
+
+    const start = await readJson(
+      await handlers.authStart(postEvent({ redirectUri: APP_REDIRECT })),
+    );
+    const response = await handlers.authComplete(
+      postEvent({
+        code: 'authorization-code',
+        state: start.state,
+        codeVerifier: start.codeVerifier,
+        redirectUri: APP_REDIRECT,
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect((await readJson(response)).code).toBe('exchange_failed');
+  });
+
+  it('defaults guarded successes to no-store but keeps an app Cache-Control', async () => {
+    const handlers = makeHandlers();
+    const token = await (await handlers.getService())
+      .getSessionService()
+      .createSession(world.user.id as string, world.beta.id as string);
+
+    const bare = handlers.guard(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const bareResponse = await bare(bearerEvent(token));
+    expect(bareResponse.status).toBe(200);
+    expect(bareResponse.headers.get('cache-control')).toBe('private, no-store');
+
+    const cached = handlers.guard(
+      async () =>
+        new Response(JSON.stringify({ ok: true }), {
+          headers: {
+            'content-type': 'application/json',
+            'cache-control': 'public, max-age=60',
+          },
+        }),
+    );
+    const cachedResponse = await cached(bearerEvent(token));
+    expect(cachedResponse.headers.get('cache-control')).toBe(
+      'public, max-age=60',
+    );
+  });
+});
+
+describe('mobile auth state-token signing modes', () => {
+  let dbPath: string;
+  let db: { type: 'sqlite'; url: string };
+  let server: OidcTestServer;
+  let userId: string;
+
+  beforeEach(async () => {
+    dbPath = join(
+      tmpdir(),
+      `smrt-mobile-signing-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
+    );
+    db = { type: 'sqlite', url: dbPath };
+    server = await startOidcServer();
+    const users = await UserCollection.create({ db });
+    const user = await users.create({ email: 'signer@example.com' });
+    await user.save();
+    userId = user.id as string;
+  });
+
+  afterEach(async () => {
+    await server.close();
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // best-effort temp cleanup
+      }
+    }
+  });
+
+  afterAll(async () => {
+    await closeAllOidcServers();
+  });
+
+  /** A public OIDC client: no clientSecret configured. */
+  function publicClientHandlers(
+    overrides: Record<string, unknown> = {},
+  ): MobileAuthHandlers {
+    return createMobileAuthHandlers({
+      db,
+      defaultProvider: 'kanidm',
+      providers: {
+        kanidm: { issuer: server.issuer, clientId: 'smrt-client' },
+      },
+      redirectUris: [APP_REDIRECT],
+      resolveUser: async () => ({ id: userId }),
+      ...overrides,
+    });
+  }
+
+  it('fails closed (500 server_misconfigured) when no signing secret is available', async () => {
+    const handlers = publicClientHandlers();
+    const response = await handlers.authStart(
+      postEvent({ redirectUri: APP_REDIRECT }),
+    );
+    expect(response.status).toBe(500);
+    expect((await readJson(response)).code).toBe('server_misconfigured');
+  });
+
+  it('signs with an explicit stateSecret even for a secret-less provider', async () => {
+    const handlers = publicClientHandlers({ stateSecret: 'server-hmac-key' });
+    const start = await readJson(
+      await handlers.authStart(postEvent({ redirectUri: APP_REDIRECT })),
+    );
+    // A signed state carries an HMAC segment after a '.'.
+    expect((start.state as string).includes('.')).toBe(true);
+    server.setNonce(start.nonce as string);
+    const completeResponse = await handlers.authComplete(
+      postEvent({
+        code: 'authorization-code',
+        state: start.state,
+        codeVerifier: start.codeVerifier,
+        redirectUri: APP_REDIRECT,
+      }),
+    );
+    expect(completeResponse.status).toBe(200);
+  });
+
+  it('round-trips unsigned tokens only when allowUnsignedState is opted in', async () => {
+    const handlers = publicClientHandlers({ allowUnsignedState: true });
+    const start = await readJson(
+      await handlers.authStart(postEvent({ redirectUri: APP_REDIRECT })),
+    );
+    // Unsigned state is bare base64url — no HMAC segment.
+    expect((start.state as string).includes('.')).toBe(false);
+    server.setNonce(start.nonce as string);
+    const completeResponse = await handlers.authComplete(
+      postEvent({
+        code: 'authorization-code',
+        state: start.state,
+        codeVerifier: start.codeVerifier,
+        redirectUri: APP_REDIRECT,
+      }),
+    );
+    expect(completeResponse.status).toBe(200);
+    expect((await readJson(completeResponse)).tokenType).toBe('Bearer');
   });
 });
 

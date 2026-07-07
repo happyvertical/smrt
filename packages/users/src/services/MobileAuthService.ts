@@ -77,6 +77,8 @@ const STATE_TOKEN_CLOCK_SKEW_MS = 60 * 1000;
 const MAX_CLIENT_STATE_LENGTH = 512;
 /** Cap for the per-(provider, redirectUri) OIDC service cache. */
 const MAX_OIDC_SERVICE_CACHE = 16;
+/** Cap for IdP-sourced strings persisted in the session data blob. */
+const MAX_STORED_CLAIM_LENGTH = 1024;
 
 /**
  * Machine-readable error codes carried on {@link MobileAuthError} and in the
@@ -93,7 +95,8 @@ export type MobileAuthErrorCode =
   | 'signin_not_permitted'
   | 'missing_bearer_token'
   | 'invalid_bearer_token'
-  | 'provider_unavailable';
+  | 'provider_unavailable'
+  | 'server_misconfigured';
 
 /**
  * HTTP-mapped mobile-auth failure. `status` drives the response code; `code`
@@ -177,11 +180,26 @@ export interface MobileAuthServiceOptions
   transactionTtl?: number;
   /**
    * HMAC secret for state-token integrity. Defaults to the resolved
-   * provider's `clientSecret`. Without either, state tokens are unsigned
-   * (public-client setups) — TTL and provider binding then rely on the
-   * token's own contents.
+   * provider's `clientSecret`.
+   *
+   * State signing binds the `nonce`/provider/createdAt in the OAuth `state`
+   * so they cannot be forged, so it is REQUIRED by default: if neither
+   * `stateSecret` nor the provider's `clientSecret` is available, sign-in
+   * fails closed (500 `server_misconfigured`). A public OIDC client (no
+   * client secret — the PKCE case) just supplies a `stateSecret`; it is a
+   * server-side HMAC key unrelated to OAuth client authentication, so any
+   * deployment can set one. Set {@link allowUnsignedState} to opt into
+   * unsigned tokens (NOT recommended — then `redirectUris` is the only
+   * defense against state forgery).
    */
   stateSecret?: string;
+  /**
+   * Permit unsigned state tokens when no `stateSecret`/`clientSecret` is
+   * configured. Default false (fail closed). Only enable for local
+   * development or a deployment that accepts the state-forgery risk;
+   * production should configure a `stateSecret` instead.
+   */
+  allowUnsignedState?: boolean;
   /**
    * Include descendant tenants reachable through ACTIVE memberships whose
    * role has `inheritsToDescendants: true` (#1867) in the bootstrap tenant
@@ -198,7 +216,10 @@ export interface MobileAuthServiceOptions
    * resolves) the user via `UserCollection.getOrCreateFromOidc`. Return
    * `null`/`undefined` to REFUSE sign-in (403 `signin_not_permitted`) —
    * invite-gated apps resolve against their own membership rules here
-   * without any user row being created.
+   * without any user row being created. THROWING (vs returning null) is
+   * treated as an unexpected server error and surfaces as a generic 500;
+   * translate expected denials into a `null` return or a thrown
+   * {@link MobileAuthError}.
    */
   resolveUser?: (
     context: MobileLoginContext,
@@ -460,9 +481,7 @@ export function validateMobileRedirectUri(
   const entries = allowList.map((entry) => entry.trim()).filter(Boolean);
   if (entries.length > 0) {
     const allowed = entries.some((entry) =>
-      entry.endsWith('/')
-        ? redirectUri.startsWith(entry)
-        : redirectUri === entry,
+      redirectUriMatchesAllowEntry(parsed, redirectUri, entry),
     );
     if (!allowed) {
       throw new MobileAuthError(
@@ -474,6 +493,39 @@ export function validateMobileRedirectUri(
   }
 
   return redirectUri;
+}
+
+/**
+ * Does a validated redirect URI match one allow-list entry?
+ *
+ * - A NON-prefix entry (no trailing `/`) is an exact string match.
+ * - A prefix entry (trailing `/`) matches on the PARSED URL — same protocol,
+ *   same host (incl. port), and the candidate's NORMALIZED pathname starting
+ *   with the entry's pathname. Comparing normalized pathnames is what defeats
+ *   path traversal: `http://127.0.0.1/cb/../evil/` parses to pathname
+ *   `/evil/`, which does not start with `/cb/`, so a raw-string
+ *   `startsWith('http://127.0.0.1/cb/')` false-positive can't slip a code to
+ *   an unregistered path.
+ */
+function redirectUriMatchesAllowEntry(
+  parsedCandidate: URL,
+  candidate: string,
+  entry: string,
+): boolean {
+  if (!entry.endsWith('/')) {
+    return candidate === entry;
+  }
+  let parsedEntry: URL;
+  try {
+    parsedEntry = new URL(entry);
+  } catch {
+    return false;
+  }
+  return (
+    parsedCandidate.protocol === parsedEntry.protocol &&
+    parsedCandidate.host === parsedEntry.host &&
+    parsedCandidate.pathname.startsWith(parsedEntry.pathname)
+  );
 }
 
 function isModuleNotFoundError(error: unknown): boolean {
@@ -538,6 +590,7 @@ export class MobileAuthService {
       sessionTtl,
       transactionTtl,
       stateSecret: _stateSecret,
+      allowUnsignedState: _allowUnsignedState,
       includeInheritedTenants: _includeInheritedTenants,
       allowUnverifiedEmail: _allowUnverifiedEmail,
       resolveUser: _resolveUser,
@@ -609,7 +662,13 @@ export class MobileAuthService {
   ): OidcLoginService {
     const key = `${providerName}\n${redirectUri}`;
     const cached = this.oidcServices.get(key);
-    if (cached) return cached;
+    if (cached) {
+      // LRU: re-insert so the hot entry moves to the newest slot and eviction
+      // drops a genuinely-cold provider rather than the one in active use.
+      this.oidcServices.delete(key);
+      this.oidcServices.set(key, cached);
+      return cached;
+    }
 
     const { provider } = this.resolveProvider(providerName);
     const service = new OidcLoginService({
@@ -622,19 +681,38 @@ export class MobileAuthService {
 
     // Bounded cache: redirect URIs are allow-list validated before we get
     // here, but a no-allow-list dev setup must not grow this unboundedly.
+    // Map iteration is insertion-order, so with re-insert-on-hit above the
+    // first key is the least-recently-used entry.
     if (this.oidcServices.size >= MAX_OIDC_SERVICE_CACHE) {
-      const oldest = this.oidcServices.keys().next().value;
-      if (oldest !== undefined) this.oidcServices.delete(oldest);
+      const lru = this.oidcServices.keys().next().value;
+      if (lru !== undefined) this.oidcServices.delete(lru);
     }
     this.oidcServices.set(key, service);
     return service;
   }
 
+  /**
+   * The HMAC secret for state signing, or `undefined` when unsigned tokens
+   * are explicitly permitted via {@link MobileAuthServiceOptions.allowUnsignedState}.
+   * Fails closed (throws → 500 `server_misconfigured`) when no secret is
+   * available and unsigned tokens are not opted in, so a deployment can never
+   * silently fall back to forgeable state tokens.
+   */
   private stateSecretFor(provider: {
     clientSecret?: string;
   }): string | undefined {
     const secret = this.options.stateSecret ?? provider.clientSecret;
-    return secret && secret.length > 0 ? secret : undefined;
+    if (secret && secret.length > 0) {
+      return secret;
+    }
+    if (this.options.allowUnsignedState === true) {
+      return undefined;
+    }
+    throw new MobileAuthError(
+      500,
+      'server_misconfigured',
+      'Mobile auth is not configured for signed state. Set a stateSecret (or provider clientSecret), or opt into allowUnsignedState.',
+    );
   }
 
   /**
@@ -826,8 +904,11 @@ export class MobileAuthService {
         data: {
           source: 'mobile',
           oidcProvider: probe.providerName,
-          oidcIssuer: claims.iss,
-          oidcSubject: claims.sub,
+          // Cap the stored IdP-sourced strings so a hostile/misbehaving IdP
+          // cannot bloat every session row (iss is already constrained to the
+          // configured issuer; sub is bounded defensively).
+          oidcIssuer: claims.iss.slice(0, MAX_STORED_CLAIM_LENGTH),
+          oidcSubject: claims.sub.slice(0, MAX_STORED_CLAIM_LENGTH),
         },
       },
     );
@@ -972,14 +1053,26 @@ export class MobileAuthService {
    * malformed hierarchy paths.
    */
   async listTenantOptions(userId: string): Promise<MobileTenantOption[]> {
-    const sources = await runWithSystemContext(() =>
-      this.loadTenantOptionSources(userId),
-    );
-    const { memberships, tenantById, roleById } = sources;
+    // One system-context entry for the whole cross-tenant computation (session
+    // resolution and tenant enumeration span tenants, so a single-tenant
+    // context would be wrong); the nested reads below inherit it.
+    return runWithSystemContext(() => this.buildTenantOptions(userId));
+  }
+
+  private async buildTenantOptions(
+    userId: string,
+  ): Promise<MobileTenantOption[]> {
+    const { memberships, tenantById, roleById } =
+      await this.loadTenantOptionSources(userId);
 
     const active = memberships.filter(
       (membership) => membership.isActive() && membership.tenantId,
     );
+    // Pin from ALL rows (any status), NOT just active ones: a direct
+    // membership row always pins its tenant in the resolver, and an INACTIVE
+    // direct row pins to the empty set. So an inactive direct row on a
+    // descendant must EXCLUDE that descendant from the inherited list (below)
+    // — narrowing this to active-only would wrongly surface it as inherited.
     const pinnedTenantIds = new Set(
       memberships
         .map((membership) => membership.tenantId)
@@ -1008,12 +1101,19 @@ export class MobileAuthService {
         return role?.inheritsToDescendants === true;
       };
 
+      // Batch the descendant reads across all flagged memberships instead of
+      // awaiting one per membership in series.
+      const flaggedTenantIds = active
+        .filter(isFlagged)
+        .map((membership) => membership.tenantId as string);
+      const descendantLists = await Promise.all(
+        flaggedTenantIds.map((tenantId) =>
+          this.tenantCollection.getDescendants(tenantId),
+        ),
+      );
+
       const candidates = new Map<string, Tenant>();
-      for (const membership of active) {
-        if (!isFlagged(membership)) continue;
-        const descendants = await runWithSystemContext(() =>
-          this.tenantCollection.getDescendants(membership.tenantId as string),
-        );
+      for (const descendants of descendantLists) {
         for (const descendant of descendants) {
           if (!descendant.id) continue;
           if (pinnedTenantIds.has(descendant.id)) continue;

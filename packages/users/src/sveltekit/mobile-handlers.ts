@@ -26,11 +26,12 @@
  * //   export const GET = mobile.session.GET;
  * //   export const DELETE = mobile.session.DELETE;
  *
- * // src/routes/api/mobile/captures/+server.ts — an app route behind the guard
+ * // src/routes/api/mobile/captures/+server.ts — an app route behind the guard.
+ * // `db` is the app's own database config (the same one passed to
+ * // createMobileAuthHandlers); the guard resolves ctx.userId/ctx.tenantId.
  * // export const POST = mobile.guard(async (event, ctx) => {
  * //   await assertOperationPermission({
- * //     collection: 'captures', action: 'create',
- * //     db: options.db, tenantId: ctx.tenantId, userId: ctx.userId,
+ * //     db, collection: 'captures', action: 'create',
  * //   });
  * //   ... // domain ingestion stays app-side
  * // });
@@ -140,6 +141,26 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
+ * Apply the no-store cache policy to a guarded app-route response UNLESS it
+ * already declares its own `Cache-Control`. Re-wraps the response (headers are
+ * otherwise immutable once constructed) preserving status, body, and headers.
+ */
+function withNoStoreDefault(response: Response): Response {
+  if (response.headers.has('cache-control')) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(NO_STORE_HEADERS)) {
+    headers.set(name, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
  * Map a thrown error to the mobile wire error shape `{ error, code?, … }`.
  * Unexpected errors are logged and returned as a generic 500 so internal
  * details never reach the client (and the mobile write queue treats them as
@@ -147,6 +168,15 @@ function jsonResponse(body: unknown, status = 200): Response {
  */
 function errorResponse(error: unknown): Response {
   if (error instanceof MobileAuthError) {
+    // Server-fault mobile errors (e.g. server_misconfigured) still carry a
+    // client-safe message, but log them so operators see the misconfiguration
+    // rather than only the client seeing a 500.
+    if (error.status >= 500) {
+      logger.error('Mobile handler server error', {
+        code: error.code,
+        message: error.message,
+      });
+    }
     return jsonResponse(
       { error: error.message, code: error.code },
       error.status,
@@ -339,7 +369,14 @@ export function createMobileAuthHandlers(
             );
           }
           populateLocals(event, context);
-          return fn(event, context);
+          const response = await fn(event, context);
+          // Guarded routes serve per-user authenticated data. Default it to
+          // non-cacheable — matching the built-in auth/session responses — so
+          // an app handler that forgets cache headers can't leave a user's
+          // data cacheable by a browser or intermediary. An app that sets its
+          // own Cache-Control (e.g. a deliberately public sub-resource) keeps
+          // it.
+          return withNoStoreDefault(response);
         },
       );
     } catch (error) {
