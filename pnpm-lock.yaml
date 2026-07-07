@@ -2360,6 +2360,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-mobile-contract':
+        specifier: workspace:*
+        version: link:../smrt-mobile-contract
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles

@@ -34,6 +34,20 @@ export {
   type MagicLinkVerifyResult,
 } from './MagicLinkService.js';
 export {
+  MobileAuthError,
+  type MobileAuthErrorCode,
+  MobileAuthService,
+  type MobileAuthServiceOptions,
+  type MobileBootstrapContext,
+  type MobileLoginContext,
+  type MobileLogoutResult,
+  type MobileRequestMeta,
+  type MobileResolvedUser,
+  type MobileTenantContext,
+  readMobileBearerToken,
+  validateMobileRedirectUri,
+} from './MobileAuthService.js';
+export {
   type CreateAuthorizationUrlOptions,
   decodeOidcTransaction,
   encodeOidcTransaction,
