@@ -45,6 +45,7 @@ export {
   TenantCollection,
   TenantHierarchyError,
 } from './TenantCollection.js';
+export { TenantIntegrationCollection } from './TenantIntegrationCollection.js';
 export {
   TenantPermissionOverrideCollection,
   type TenantPermissionOverrideResult,
