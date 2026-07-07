@@ -4,6 +4,12 @@
     "baseUrl": ".",
     "types": ["node", "svelte"],
     "paths": {
+      "@happyvertical/smrt-mobile-contract": [
+        "packages/smrt-mobile-contract/src/index.ts"
+      ],
+      "@happyvertical/smrt-mobile-contract/*": [
+        "packages/smrt-mobile-contract/src/*"
+      ],
       "@happyvertical/smrt-*": ["packages/*/src/index.ts"],
       "@happyvertical/smrt-types": ["packages/types/src/index.ts"],
       "@happyvertical/smrt-types/*": ["packages/types/src/*"],
