@@ -415,6 +415,24 @@ const DANGEROUS_REDIRECT_SCHEMES = new Set([
   'about:',
 ]);
 
+// Well-known IANA schemes that are neither `https`, loopback `http`, nor a
+// private-use app scheme (RFC 8252 §7.1). A mobile OAuth redirect would never
+// legitimately use one of these, so reject them even when no `redirectUris`
+// allow list is configured — an app-owned custom scheme (e.g.
+// `com.example.app://`) still passes.
+const NON_APP_REDIRECT_SCHEMES = new Set([
+  'ftp:',
+  'ftps:',
+  'ws:',
+  'wss:',
+  'mailto:',
+  'tel:',
+  'sms:',
+  'gopher:',
+  'ldap:',
+  'ldaps:',
+]);
+
 function isLoopbackHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   return (
@@ -461,7 +479,10 @@ export function validateMobileRedirectUri(
   }
 
   const scheme = parsed.protocol.toLowerCase();
-  if (DANGEROUS_REDIRECT_SCHEMES.has(scheme)) {
+  if (
+    DANGEROUS_REDIRECT_SCHEMES.has(scheme) ||
+    NON_APP_REDIRECT_SCHEMES.has(scheme)
+  ) {
     throw new MobileAuthError(
       400,
       'invalid_redirect_uri',

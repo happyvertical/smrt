@@ -503,6 +503,17 @@ describe('mobile auth handlers (/api/mobile)', () => {
     expect(() => validateMobileRedirectUri('data:text/html,x')).toThrow(
       /unsupported scheme/iu,
     );
+    // Standard non-app remote schemes are rejected even without an allow list.
+    for (const bad of [
+      'ftp://host/cb',
+      'mailto:x@example.com',
+      'ws://host/cb',
+      'tel:+15551234',
+    ]) {
+      expect(() => validateMobileRedirectUri(bad)).toThrow(
+        /unsupported scheme/iu,
+      );
+    }
   });
 
   it('caps the client-supplied correlation state', async () => {
