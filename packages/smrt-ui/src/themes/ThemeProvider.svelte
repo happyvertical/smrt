@@ -47,7 +47,7 @@ let {
 // defaultThemeConfig) rather than the defaults directly, so the FIRST render
 // reflects the requested preset. The prop-sync $effect below only runs on the
 // client, so seeding from defaults made SSR / first paint / JS-disabled emit
-// the default (material) theme regardless of `preset` (happyvertical/smrt).
+// the default preset regardless of the `preset` prop.
 let config = $state<ThemeConfig>(
   // untrack: intentionally capture the props' initial values here; the
   // "Sync props to state" $effect below keeps config reactive to later changes.
