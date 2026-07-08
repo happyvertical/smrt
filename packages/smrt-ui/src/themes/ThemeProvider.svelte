@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
-import { onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { generateThemeVariables } from './css-generator.js';
 import { getTheme } from './registry.js';
@@ -43,16 +43,24 @@ let {
   children,
 }: Props = $props();
 
-// Internal state
-let config = $state<ThemeConfig>({
-  preset: defaultThemeConfig.preset,
-  colorScheme: defaultThemeConfig.colorScheme,
-  primaryColor: undefined,
-  borderRadius: defaultThemeConfig.borderRadius,
-  overrides: {},
-  persist: defaultThemeConfig.persist,
-  storageKey: defaultThemeConfig.storageKey,
-});
+// Internal state — seed from the props (which already default to
+// defaultThemeConfig) rather than the defaults directly, so the FIRST render
+// reflects the requested preset. The prop-sync $effect below only runs on the
+// client, so seeding from defaults made SSR / first paint / JS-disabled emit
+// the default (material) theme regardless of `preset` (happyvertical/smrt).
+let config = $state<ThemeConfig>(
+  // untrack: intentionally capture the props' initial values here; the
+  // "Sync props to state" $effect below keeps config reactive to later changes.
+  untrack(() => ({
+    preset,
+    colorScheme,
+    primaryColor,
+    borderRadius,
+    overrides,
+    persist,
+    storageKey,
+  })),
+);
 
 let systemPrefersDark = $state(false);
 let mounted = $state(false);
