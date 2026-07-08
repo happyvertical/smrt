@@ -28,7 +28,7 @@ import UniformTypeIdentifiers
 /// platform-neutral `app_private`.
 public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformAdapter,
     UIImagePickerControllerDelegate, UINavigationControllerDelegate,
-    PHPickerViewControllerDelegate {
+    PHPickerViewControllerDelegate, CLLocationManagerDelegate {
 
     /// Resolves the view controller to present from; defaults to the key
     /// window's top-most controller. Injectable for hosts that manage their own
@@ -36,13 +36,16 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
     private let presenter: () -> UIViewController?
     private let locationManager = CLLocationManager()
 
-    // Touched only on the main thread (present setup + UIKit delegate callbacks).
+    // Touched only on the main thread (present setup + UIKit/CoreLocation callbacks).
     private var pendingContinuation: CheckedContinuation<URL?, Error>?
     private var pendingSegment: String = "evidence"
+    private var authContinuation: CheckedContinuation<Void, Never>?
+    private var fixContinuation: CheckedContinuation<CLLocation?, Never>?
 
     public init(presenter: (() -> UIViewController?)? = nil) {
         self.presenter = presenter ?? { IOSEvidenceCaptureAdapter.topViewController() }
         super.init()
+        locationManager.delegate = self
     }
 
     // MARK: - EvidenceCapturePlatformAdapter
@@ -51,11 +54,19 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
         let segment = Self.evidenceCaptureSegment(request: request)
         let location = try await currentLocationMetadata()
 
-        let cameraAvailable = UIImagePickerController.isSourceTypeAvailable(.camera)
+        // Camera hardware presence is not permission: isSourceTypeAvailable(.camera)
+        // stays true even when the user denied access, so gate the camera path on
+        // authorization (requesting it if undetermined) and fall back to the photo
+        // picker on denial — otherwise the camera UI cannot complete a capture.
+        let cameraHardware = UIImagePickerController.isSourceTypeAvailable(.camera)
+        let wantsCameraSource =
+            request.preferredSource == EvidenceCaptureSource.shared.CAMERA && cameraHardware
+        let cameraAuthorized = wantsCameraSource ? await resolveCameraAuthorization() : false
+
         let permissions = EvidenceNativePermissionState(
             cameraStatus: Self.evidenceCameraStatus(
                 AVCaptureDevice.authorizationStatus(for: .video),
-                cameraAvailable: cameraAvailable
+                cameraAvailable: cameraHardware
             ),
             photoLibraryStatus: Self.evidencePhotoStatus(
                 PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -63,13 +74,11 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
             locationStatus: location.permissionStatus
         )
 
-        let wantsCamera =
-            request.preferredSource == EvidenceCaptureSource.shared.CAMERA && cameraAvailable
-        let source = wantsCamera
+        let source = cameraAuthorized
             ? EvidenceCaptureSource.shared.CAMERA
             : EvidenceCaptureSource.shared.NATIVE_PICKER
 
-        let capturedURL = wantsCamera
+        let capturedURL = cameraAuthorized
             ? try await presentCamera(segment: segment)
             : try await presentPhotoPicker(segment: segment)
 
@@ -93,15 +102,93 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
     }
 
     public func currentLocationMetadata() async throws -> EvidenceLocationMetadata {
-        let status = locationManager.authorizationStatus
-        // Request once if undetermined so later captures can carry a fix.
+        var status = locationManager.authorizationStatus
+        // Await the user's decision so the sidecar reflects the resolved status,
+        // not the stale `notDetermined` — otherwise a first-use grant is missed.
         if status == .notDetermined {
-            await MainActor.run { self.locationManager.requestWhenInUseAuthorization() }
+            await awaitAuthorizationDecision()
+            status = locationManager.authorizationStatus
+        }
+        let mapping = Self.mapLocationAuthorization(status)
+        var location = locationManager.location
+        // No cached fix yet (common right after a first-use grant): request one.
+        if mapping == .granted, location == nil {
+            location = await requestOneShotFix()
         }
         return Self.evidenceLocationMetadata(
-            authorization: Self.mapLocationAuthorization(status),
-            snapshot: locationManager.location.map(Self.snapshot(from:))
+            authorization: mapping,
+            snapshot: location.map(Self.snapshot(from:))
         )
+    }
+
+    // MARK: - Permission + location resolution
+
+    /// Camera authorization → whether the camera path can proceed. Requests
+    /// access when undetermined; denied/restricted routes to the photo picker.
+    private func resolveCameraAuthorization() async -> Bool {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return true
+        case .notDetermined: return await AVCaptureDevice.requestAccess(for: .video)
+        default: return false
+        }
+    }
+
+    /// Awaits the location authorization prompt's resolution (or a safety-net
+    /// timeout if the app is backgrounded mid-prompt).
+    private func awaitAuthorizationDecision() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            Task { @MainActor in
+                self.authContinuation = continuation
+                self.locationManager.requestWhenInUseAuthorization()
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                await MainActor.run { self.resumeAuth() }
+            }
+        }
+    }
+
+    /// Requests a single live fix (bounded), for the common first-use case where
+    /// no cached last-known location exists yet.
+    private func requestOneShotFix() async -> CLLocation? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<CLLocation?, Never>) in
+            Task { @MainActor in
+                self.fixContinuation = continuation
+                self.locationManager.requestLocation()
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                await MainActor.run { self.resumeFix(nil) }
+            }
+        }
+    }
+
+    private func resumeAuth() {
+        let continuation = authContinuation
+        authContinuation = nil
+        continuation?.resume()
+    }
+
+    private func resumeFix(_ location: CLLocation?) {
+        let continuation = fixContinuation
+        fixContinuation = nil
+        continuation?.resume(returning: location)
+    }
+
+    // MARK: - CLLocationManagerDelegate
+
+    public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // Ignore the initial/undetermined callback; resume only on a real decision.
+        guard manager.authorizationStatus != .notDetermined else { return }
+        resumeAuth()
+    }
+
+    public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        resumeFix(locations.last)
+    }
+
+    public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        resumeFix(nil)
     }
 
     // MARK: - Presentation (delegate → async bridge)
@@ -109,6 +196,10 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
     private func presentCamera(segment: String) async throws -> URL? {
         try await withCheckedThrowingContinuation { continuation in
             Task { @MainActor in
+                guard self.pendingContinuation == nil else {
+                    continuation.resume(throwing: EvidenceCaptureError.captureInProgress)
+                    return
+                }
                 guard let host = self.presenter() else {
                     continuation.resume(throwing: EvidenceCaptureError.noPresenter)
                     return
@@ -126,6 +217,10 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
     private func presentPhotoPicker(segment: String) async throws -> URL? {
         try await withCheckedThrowingContinuation { continuation in
             Task { @MainActor in
+                guard self.pendingContinuation == nil else {
+                    continuation.resume(throwing: EvidenceCaptureError.captureInProgress)
+                    return
+                }
                 guard let host = self.presenter() else {
                     continuation.resume(throwing: EvidenceCaptureError.noPresenter)
                     return
@@ -242,29 +337,32 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
     /// Reads the stored file and pins it (size + sha256), mapping to a
     /// `stored_offline` or `missing_local_file` asset.
     private func finalize(url: URL, source: String) -> EvidenceAssetRef {
-        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let size = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
-        let stored = FileManager.default.fileExists(atPath: url.path) && size > 0
-        let sha = stored
-            ? CryptoKitSha256Hasher.sha256Hex(data: (try? Data(contentsOf: url)) ?? Data())
-            : ""
+        let attributeSize = (try? FileManager.default.attributesOfItem(atPath: url.path))
+            .flatMap { ($0[.size] as? NSNumber)?.int64Value }
+        // Verify by reading the bytes we hash: a read failure must NOT mark the
+        // asset stored with the sha256 of empty data (a false-positive pin). Carry
+        // the on-disk size (if any) for telemetry, but stay `missing_local_file`.
+        let data = try? Data(contentsOf: url)
+        let verified = data.map { !$0.isEmpty } ?? false
+        let sizeBytes: Int64? = verified ? Int64(data?.count ?? 0) : attributeSize
+        let sha = verified ? CryptoKitSha256Hasher.sha256Hex(data: data ?? Data()) : ""
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         return EvidenceAssetRef(
             assetId: url.deletingPathExtension().lastPathComponent,
             localUri: url.absoluteString,
             fileName: url.lastPathComponent,
             contentType: Self.contentType(forExtension: url.pathExtension),
-            sizeBytes: stored ? KotlinLong(longLong: size) : nil,
+            sizeBytes: sizeBytes.map { KotlinLong(longLong: $0) },
             sha256: sha,
             captureSource: source,
             originalUri: "",
             storageRoot: "app_private",
             relativePath: "Evidence/\(url.lastPathComponent)",
-            storageState: stored
+            storageState: verified
                 ? EvidenceAssetStorageState.shared.STORED_OFFLINE
                 : EvidenceAssetStorageState.shared.MISSING_LOCAL_FILE,
-            offlineSafe: stored,
-            persistedAt: stored ? SmrtMobileIos.shared.instantFromEpochMillis(epochMillis: nowMillis) : nil
+            offlineSafe: verified,
+            persistedAt: verified ? SmrtMobileIos.shared.instantFromEpochMillis(epochMillis: nowMillis) : nil
         )
     }
 
@@ -421,4 +519,5 @@ public final class IOSEvidenceCaptureAdapter: NSObject, EvidenceCapturePlatformA
 enum EvidenceCaptureError: Error {
     case noPresenter
     case imageEncodingFailed
+    case captureInProgress
 }

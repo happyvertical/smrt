@@ -14,6 +14,9 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.location.LocationManagerCompat
+import androidx.core.os.CancellationSignal
+import androidx.core.util.Consumer
 import com.happyvertical.smrt.mobile.evidence.EvidenceAssetRef
 import com.happyvertical.smrt.mobile.evidence.EvidenceAssetStorageState
 import com.happyvertical.smrt.mobile.evidence.EvidenceCapturePlatformAdapter
@@ -26,12 +29,14 @@ import com.happyvertical.smrt.mobile.evidence.EvidencePermissionStatus
 import com.happyvertical.smrt.mobile.platform.Sha256Hasher
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 
@@ -127,19 +132,46 @@ class AndroidEvidenceCaptureAdapter(
         }
     }
 
-    override suspend fun currentLocationMetadata(): EvidenceLocationMetadata =
-        withContext(Dispatchers.IO) {
-            val granted = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
-                hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
-            if (!granted) {
-                return@withContext evidenceLocationMetadata(false, false, null)
-            }
-            val manager = activity.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-                ?: return@withContext evidenceLocationMetadata(true, false, null)
-            val location = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+    override suspend fun currentLocationMetadata(): EvidenceLocationMetadata {
+        val granted = hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+            hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (!granted) return evidenceLocationMetadata(false, false, null)
+        val manager = activity.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+            ?: return evidenceLocationMetadata(true, false, null)
+        val cached = withContext(Dispatchers.IO) {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
                 .firstNotNullOfOrNull { provider -> lastKnownLocation(manager, provider) }
-            evidenceLocationMetadata(true, true, location?.toSnapshot())
         }
+        // No cached last-known fix (common on first use): request one live fix.
+        val location = cached ?: requestSingleFix(manager)
+        return evidenceLocationMetadata(true, true, location?.toSnapshot())
+    }
+
+    /**
+     * Requests a single live fix, bounded by [FIX_TIMEOUT_MS], for the first-use
+     * case where no cached last-known location exists yet.
+     * [LocationManagerCompat.getCurrentLocation] handles the API-level split.
+     */
+    @SuppressLint("MissingPermission")
+    private suspend fun requestSingleFix(manager: LocationManager): Location? {
+        val provider = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            .firstOrNull { provider ->
+                runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false)
+            } ?: return null
+        return withTimeoutOrNull(FIX_TIMEOUT_MS) {
+            suspendCancellableCoroutine { continuation ->
+                val signal = CancellationSignal()
+                continuation.invokeOnCancellation { signal.cancel() }
+                LocationManagerCompat.getCurrentLocation(
+                    manager,
+                    provider,
+                    signal,
+                    Executor { it.run() },
+                    Consumer { location -> if (continuation.isActive) continuation.resume(location) },
+                )
+            }
+        }
+    }
 
     private suspend fun captureFromCamera(
         request: EvidenceCaptureRequest,
@@ -310,6 +342,7 @@ class AndroidEvidenceCaptureAdapter(
 
     private companion object {
         const val STORAGE_ROOT = "app_private"
+        const val FIX_TIMEOUT_MS = 8_000L
     }
 }
 
