@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.38.11
+
+### Patch Changes
+
+- ### Features
+
+  - Phase 3.5 — reusable /api/mobile auth + session handlers (#1748) (#1873) (users)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.77.0 (#1876) (deps)
+  - @happyvertical/smrt-config@0.38.11
+  - @happyvertical/smrt-types@0.38.11
+  - @happyvertical/smrt-scanner@0.38.11
+
 ## 0.38.10
 
 ### Patch Changes
