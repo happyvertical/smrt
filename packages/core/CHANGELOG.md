@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.17
+
+### Patch Changes
+
+- ### Features
+
+  - evidence-capture adapters for iOS + Android (#1880) (#1884) (mobile)
+  - @happyvertical/smrt-config@0.38.17
+  - @happyvertical/smrt-types@0.38.17
+  - @happyvertical/smrt-scanner@0.38.17
+
 ## 0.38.16
 
 ### Patch Changes

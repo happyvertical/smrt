@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-android",
-  "version": "0.38.16",
+  "version": "0.38.17",
   "description": "Android Compose foundation for SMRT mobile apps: MobileTheme design tokens, the bottom-tab shell scaffold bound to smrt-mobile's MobileShellState, and the native platform adapters (ML Kit barcode, speech transcription, Gemini Nano on-device LLM, device capabilities, SQLDelight driver, Keystore auth storage, Custom Tabs auth launcher)",
   "author": "HappyVertical",
   "license": "MIT",
