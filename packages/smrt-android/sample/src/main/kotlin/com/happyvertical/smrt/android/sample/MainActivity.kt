@@ -110,6 +110,14 @@ private fun SampleShell() {
             ),
         )
     }
+    // One queue per database (the queue contract) — created once at shell
+    // level, not per tab visit.
+    val context = LocalContext.current
+    val queue = remember {
+        DurableWriteQueue(
+            SmrtMobileDatabase(AndroidSqlDriverFactory(context).createDriver()),
+        )
+    }
 
     MobileShellScaffold(
         state = shellState,
@@ -126,20 +134,14 @@ private fun SampleShell() {
             SampleTabs.SCAN -> ScanTab(tabModifier)
             SampleTabs.TALK -> TalkTab(tabModifier)
             SampleTabs.SETTINGS -> SettingsTab(tabModifier)
-            else -> HomeTab(tabModifier, brandName = shellState.brandName)
+            else -> HomeTab(tabModifier, brandName = shellState.brandName, queue = queue)
         }
     }
 }
 
 @Composable
-private fun HomeTab(modifier: Modifier, brandName: String) {
-    val context = LocalContext.current
+private fun HomeTab(modifier: Modifier, brandName: String, queue: DurableWriteQueue) {
     val scope = rememberCoroutineScope()
-    val queue = remember {
-        DurableWriteQueue(
-            SmrtMobileDatabase(AndroidSqlDriverFactory(context).createDriver()),
-        )
-    }
     var stats by remember { mutableStateOf<QueueStats?>(null) }
 
     LaunchedEffect(queue) {

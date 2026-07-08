@@ -5,14 +5,17 @@ non-TypeScript package in the monorepo. Design: **ADR 0001**
 (`docs/content/adr/0001-kmp-mobile-foundation.md`) + extraction plan; epic
 #1745. Decision record: `README.md` here and issue #1737.
 
-**Status: Phases 1–4 complete** — the shared-logic core. Present: framework
+**Status: Phases 1–5 complete** — the shared-logic core. Present: framework
 contract types, pack i18n resolver, pack integrity/snapshot model,
 evidence-capture model, shell state, the **durable SQLDelight write-queue +
 pack store** (Phase 2, #1739), the **PKCE auth/session module** (Phase 3,
-#1740), and the **shared Ktor client** (Phase 4, #1741) implementing the
-`AuthTransport`/`QueueSender` seams. NOT here: platform adapters, engines,
-and secure-storage impls — those land with smrt-android/smrt-ios (Phases
-5–6). **Productionize, don't lift** governs all porting from the seed apps.
+#1740), the **shared Ktor client** (Phase 4, #1741) implementing the
+`AuthTransport`/`QueueSender` seams, and the **barcode/speech/LLM/device
+seam interfaces** (Phase 5, #1742). NOT here: platform adapters, engines,
+and secure-storage impls — the Android halves live in
+`packages/smrt-android` (Phase 5); the iOS halves land with smrt-ios
+(Phase 6). **Productionize, don't lift** governs all porting from the seed
+apps.
 
 ## Layout
 
