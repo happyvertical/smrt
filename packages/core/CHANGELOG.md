@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.38.15
+
+### Patch Changes
+
+- ### Features
+
+  - Phase 5 smrt-android — Compose theme + shell + native adapters (#1881) (mobile)
+
+  ### Bug Fixes
+
+  - stabilize admin shell dock rails (#1882) (smrt-svelte)
+  - @happyvertical/smrt-config@0.38.15
+  - @happyvertical/smrt-types@0.38.15
+  - @happyvertical/smrt-scanner@0.38.15
+
 ## 0.38.14
 
 ### Patch Changes
