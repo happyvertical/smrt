@@ -221,6 +221,12 @@ record lives as a comment on the issue.
 
 ## Phase 6 — `smrt-ios`
 
+**Landed** (issue #1743): `packages/smrt-ios` — the locked design
+record lives as a comment on the issue. smrt-mobile gained a first `iosMain`
+(`SmrtMobileIos` factories) so Swift can obtain the durable store + Ktor client
+it cannot construct itself. The iOS evidence-capture adapter is deferred (joint
+design pass with the Android half, #1880).
+
 **Goal:** SwiftUI design system + adapters **actually consuming the exported KMP
 framework**. Riskiest phase.
 

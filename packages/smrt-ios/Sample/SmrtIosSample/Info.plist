@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>SMRT iOS</string>
+  <key>UILaunchScreen</key>
+  <dict/>
+  <key>NSCameraUsageDescription</key>
+  <string>Scans barcodes and captures field photos.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Captures voice input for on-device transcription.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>Transcribes speech on device.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Adds location metadata to captured evidence.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>Attaches photos from your library to reports.</string>
+</dict>
+</plist>

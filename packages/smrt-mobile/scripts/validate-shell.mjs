@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 const PKG = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const KOTLIN_ROOT = 'src/commonMain/kotlin/com/happyvertical/smrt/mobile';
+const IOS_ROOT = 'src/iosMain/kotlin/com/happyvertical/smrt/mobile';
 const TEST_ROOT = 'src/commonTest/kotlin/com/happyvertical/smrt/mobile';
 const JVM_TEST_ROOT = 'src/jvmTest/kotlin/com/happyvertical/smrt/mobile';
 const SQL_ROOT = 'src/commonMain/sqldelight/com/happyvertical/smrt/mobile/db';
@@ -159,6 +160,12 @@ const SPEC = [
   {
     path: `${KOTLIN_ROOT}/platform/DeviceCapabilities.kt`,
     mustContain: ['fun interface DeviceCapabilityAdapter'],
+  },
+  // iOS platform factories the exported framework hands to Swift (Phase 6):
+  // the durable store + Ktor client Swift cannot construct itself.
+  {
+    path: `${IOS_ROOT}/platform/SmrtMobileIos.kt`,
+    mustContain: ['object SmrtMobileIos', 'NativeSqliteDriver', 'fun createDatabase('],
   },
   {
     path: `${SQL_ROOT}/QueueEntry.sq`,

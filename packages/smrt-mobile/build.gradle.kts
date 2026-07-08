@@ -47,6 +47,15 @@ kotlin {
             api(libs.ktor.client.core)
             implementation(libs.sqldelight.runtime)
         }
+        // iOS-only engine + driver (Phase 6). The exported framework hands a
+        // wired MobileApiClient and SmrtMobileDatabase to Swift through
+        // SmrtMobileIos — Swift cannot construct these Kotlin/Native types
+        // itself (smrt-android, being Kotlin, builds its own). Kept out of
+        // commonMain so the "no engine deps in commonMain" rule holds.
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
+            implementation(libs.sqldelight.native.driver)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)

@@ -105,6 +105,14 @@ Targets: `androidTarget` + `jvm` + `iosX64`/`iosArm64`/`iosSimulatorArm64`
 (static framework `SmrtMobile`). The `jvm` target exists so common tests run
 without an Android SDK.
 
+- `src/iosMain/kotlin/.../platform/SmrtMobileIos.kt` — the iOS platform
+  factories the exported framework hands to Swift (Phase 6, #1743):
+  `createDatabase` / `createApiClient` / `createOfflinePackStore` /
+  `createWriteQueue`. These build Kotlin/Native types Swift cannot instantiate
+  itself (`NativeSqliteDriver`, the Ktor `Darwin` engine); smrt-android, being
+  Kotlin, builds its own. This is the only `iosMain` code — everything else is
+  `commonMain`.
+
 ## Commands
 
 ```bash
@@ -129,7 +137,10 @@ wrapper is checked in — always invoke via `./gradlew`.
 - commonMain dependencies stay minimal (kotlinx-serialization,
   kotlinx-datetime, kotlinx-coroutines, SQLDelight runtime, ktor-client-core
   as `api`). No engine deps here — consumers pick okhttp/darwin. No other
-  deps without an ADR note.
+  deps without an ADR note. `iosMain` is the one exception (Phase 6, #1743):
+  it adds `ktor-client-darwin` + `sqldelight:native-driver` so the framework
+  hands Swift a wired client/store (Swift can't build those Kotlin/Native
+  types) — kept out of commonMain to preserve the engine-free rule.
 - Adapter seams are plain Kotlin interfaces (amaru precedent), not
   `expect`/`actual`.
 - Wire DTO fields default-initialize (safe partial deserialization); decimals
