@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-assets-ergot",
-  "version": "0.38.13",
+  "version": "0.38.14",
   "description": "Ergot-backed processing, search, and workflow adapter for SMRT assets",
   "type": "module",
   "main": "./dist/index.js",

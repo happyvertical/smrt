@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.14
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - republish missing smrt-dev-mcp tarball (release)
+  - @happyvertical/smrt-config@0.38.14
+  - @happyvertical/smrt-types@0.38.14
+  - @happyvertical/smrt-scanner@0.38.14
+
 ## 0.38.13
 
 ### Patch Changes
