@@ -28,6 +28,7 @@ final class SampleModel: ObservableObject {
     let barcodeScanner = DataScannerBarcodeScanner()
     let deviceAdapter = IOSDeviceCapabilityAdapter()
     let languageModel = FoundationModelsLanguageModel()
+    let evidenceAdapter = IOSEvidenceCaptureAdapter()
     private let hasher = CryptoKitSha256Hasher.shared
 
     @Published var shell: MobileShellState
@@ -36,6 +37,9 @@ final class SampleModel: ObservableObject {
     @Published var lastBarcode: String = "—"
     @Published var capabilities: MobileDeviceCapabilities?
     @Published var llm: LanguageModelAvailability?
+    @Published var lastCapture: EvidenceCaptureResult?
+    @Published var captureStatus: String = "Capture a full-resolution evidence photo — SHA-256 pinned, geo sidecar."
+    @Published var capturing = false
     @Published var status: String = ""
 
     init() {
@@ -47,6 +51,7 @@ final class SampleModel: ObservableObject {
             tabs: [
                 MobileTab(id: "packs", label: "Packs"),
                 MobileTab(id: "scan", label: "Scan"),
+                MobileTab(id: "capture", label: "Capture"),
                 MobileTab(id: "device", label: "Device"),
             ],
             selectedTabId: "packs",
@@ -120,6 +125,28 @@ final class SampleModel: ObservableObject {
 
     func stopScanning() {
         barcodeScanner.stopScanning()
+    }
+
+    /// Drives a real capture: present camera/picker, verify + hash + geo-tag,
+    /// then publish the `EvidenceCaptureResult`.
+    func captureEvidence() async {
+        capturing = true
+        captureStatus = "Capturing…"
+        do {
+            let result = try await evidenceAdapter.captureOrPickPhoto(
+                request: EvidenceCaptureRequest(
+                    tenantId: "",
+                    contextIds: ["checklistItemId": "sample-capture"],
+                    preferredSource: EvidenceCaptureSource.shared.CAMERA
+                )
+            )
+            lastCapture = result
+            captureStatus = result.userMessage
+        } catch {
+            lastCapture = nil
+            captureStatus = "capture failed: \(error.localizedDescription)"
+        }
+        capturing = false
     }
 }
 

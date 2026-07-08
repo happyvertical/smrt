@@ -59,6 +59,10 @@ targets:
       - sdk: AuthenticationServices.framework
       - sdk: VisionKit.framework
       - sdk: Speech.framework
+      # Evidence capture: photo picker (PhotosUI/Photos) + geo sidecar (CoreLocation).
+      - sdk: CoreLocation.framework
+      - sdk: Photos.framework
+      - sdk: PhotosUI.framework
 
   SmrtIosTests:
     type: bundle.unit-test

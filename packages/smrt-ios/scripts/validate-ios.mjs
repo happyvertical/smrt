@@ -83,12 +83,36 @@ const SPEC = [
     mustContain: ['SmrtMobile.SpeechTranscriber', 'SFSpeechRecognizer'],
   },
   {
-    path: `${SAMPLE}/SmrtIosSampleApp.swift`,
-    mustContain: ['@main', 'MobileShellState', 'createOfflinePackStore'],
+    path: `${PLATFORM}/IOSEvidenceCaptureAdapter.swift`,
+    mustContain: [
+      ', EvidenceCapturePlatformAdapter',
+      'captureOrPickPhoto',
+      'startAccessingSecurityScopedResource',
+      'PHPickerViewController',
+    ],
   },
-  { path: `${SAMPLE}/SampleScreens.swift`, mustContain: ['MobileShellScaffold', 'MobileTheme'] },
-  { path: `${SAMPLE}/Info.plist`, mustContain: ['NSCameraUsageDescription', 'NSSpeechRecognitionUsageDescription'] },
+  {
+    path: `${SAMPLE}/SmrtIosSampleApp.swift`,
+    mustContain: ['@main', 'MobileShellState', 'createOfflinePackStore', 'IOSEvidenceCaptureAdapter'],
+  },
+  {
+    path: `${SAMPLE}/SampleScreens.swift`,
+    mustContain: ['MobileShellScaffold', 'MobileTheme', 'CaptureScreen'],
+  },
+  {
+    path: `${SAMPLE}/Info.plist`,
+    mustContain: [
+      'NSCameraUsageDescription',
+      'NSSpeechRecognitionUsageDescription',
+      'NSLocationWhenInUseUsageDescription',
+      'NSPhotoLibraryUsageDescription',
+    ],
+  },
   { path: 'Tests/SmrtIosTests/AdapterMappingTests.swift', mustContain: ['XCTest', '@testable import SmrtIos'] },
+  {
+    path: 'Tests/SmrtIosTests/EvidenceCaptureMappingTests.swift',
+    mustContain: ['XCTest', '@testable import SmrtIos', 'evidenceLocationMetadata'],
+  },
 ];
 
 const failures = [];

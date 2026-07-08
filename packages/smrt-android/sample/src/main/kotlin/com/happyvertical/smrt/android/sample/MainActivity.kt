@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
@@ -41,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.happyvertical.smrt.android.platform.AndroidDeviceCapabilityAdapter
+import com.happyvertical.smrt.android.platform.AndroidEvidenceCaptureAdapter
 import com.happyvertical.smrt.android.platform.AndroidSqlDriverFactory
 import com.happyvertical.smrt.android.platform.AndroidSpeechTranscriber
 import com.happyvertical.smrt.android.platform.GeminiNanoLanguageModel
@@ -53,6 +56,9 @@ import com.happyvertical.smrt.android.ui.MobileStatusPill
 import com.happyvertical.smrt.android.ui.MobileTabHeader
 import com.happyvertical.smrt.android.ui.MobileTheme
 import com.happyvertical.smrt.mobile.db.SmrtMobileDatabase
+import com.happyvertical.smrt.mobile.evidence.EvidenceCaptureRequest
+import com.happyvertical.smrt.mobile.evidence.EvidenceCaptureResult
+import com.happyvertical.smrt.mobile.evidence.EvidenceCaptureSource
 import com.happyvertical.smrt.mobile.platform.BarcodeScan
 import com.happyvertical.smrt.mobile.platform.BarcodeScanListener
 import com.happyvertical.smrt.mobile.platform.BarcodeScanRequest
@@ -70,18 +76,21 @@ import kotlinx.coroutines.launch
 private object SampleTabs {
     const val HOME = "home"
     const val SCAN = "scan"
+    const val CAPTURE = "capture"
     const val TALK = "talk"
     const val SETTINGS = "settings"
 
     val all = listOf(
         MobileTab(id = HOME, label = "Home"),
         MobileTab(id = SCAN, label = "Scan"),
+        MobileTab(id = CAPTURE, label = "Capture"),
         MobileTab(id = TALK, label = "Talk"),
         MobileTab(id = SETTINGS, label = "Settings"),
     )
 
     fun icon(tabId: String): ImageVector = when (tabId) {
         SCAN -> Icons.Outlined.QrCodeScanner
+        CAPTURE -> Icons.Outlined.PhotoCamera
         TALK -> Icons.Outlined.Mic
         SETTINGS -> Icons.Outlined.Settings
         else -> Icons.Outlined.Home
@@ -132,6 +141,7 @@ private fun SampleShell() {
 
         when (selected.id) {
             SampleTabs.SCAN -> ScanTab(tabModifier)
+            SampleTabs.CAPTURE -> CaptureTab(tabModifier)
             SampleTabs.TALK -> TalkTab(tabModifier)
             SampleTabs.SETTINGS -> SettingsTab(tabModifier)
             else -> HomeTab(tabModifier, brandName = shellState.brandName, queue = queue)
@@ -287,6 +297,131 @@ private fun ScanTab(modifier: Modifier) {
             }
         }
     }
+}
+
+@Composable
+private fun CaptureTab(modifier: Modifier) {
+    val activity = LocalActivity.current as ComponentActivity
+    val adapter = remember { AndroidEvidenceCaptureAdapter(activity) }
+    val scope = rememberCoroutineScope()
+    var capturing by remember { mutableStateOf(false) }
+    var status by remember {
+        mutableStateOf(
+            "Capture a full-resolution evidence photo (or pick one) — SHA-256 pinned, " +
+                "with a geo sidecar.",
+        )
+    }
+    var result by remember { mutableStateOf<EvidenceCaptureResult?>(null) }
+
+    Column(
+        modifier = modifier
+            .verticalScroll(rememberScrollState())
+            .padding(MobileTheme.spacing.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(MobileTheme.spacing.sectionGap),
+    ) {
+        MobileTabHeader(
+            title = "Capture",
+            subtitle = "AndroidEvidenceCaptureAdapter → EvidenceCaptureResult",
+        )
+
+        Button(
+            enabled = !capturing,
+            onClick = {
+                capturing = true
+                status = "Capturing…"
+                scope.launch {
+                    runCatching {
+                        adapter.captureOrPickPhoto(
+                            EvidenceCaptureRequest(
+                                contextIds = mapOf("checklistItemId" to "sample-capture"),
+                                preferredSource = EvidenceCaptureSource.CAMERA,
+                            ),
+                        )
+                    }.onSuccess { captured ->
+                        result = captured
+                        status = captured.userMessage
+                    }.onFailure { error ->
+                        result = null
+                        status = "[${error.message}]"
+                    }
+                    capturing = false
+                }
+            },
+        ) {
+            Text(if (capturing) "Capturing…" else "Capture evidence")
+        }
+
+        MobileResultCard(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                status,
+                modifier = Modifier.padding(MobileTheme.spacing.itemGap),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        result?.localAsset?.let { asset ->
+            MobileSectionLabel("Stored asset", trailing = asset.storageState)
+            MobileResultCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(MobileTheme.spacing.itemGap),
+                    verticalArrangement = Arrangement.spacedBy(MobileTheme.spacing.tightGap),
+                ) {
+                    Text(asset.fileName, style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "${asset.sizeBytes ?: 0L} bytes · ${asset.captureSource} · ${asset.storageRoot}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (asset.sha256.isNotBlank()) {
+                        Text(
+                            "sha256 ${asset.sha256.take(16)}…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+
+        result?.let { captured ->
+            MobileSectionLabel("Geo sidecar", trailing = captured.location.gpsStatus)
+            MobileResultCard(modifier = Modifier.fillMaxWidth()) {
+                val location = captured.location
+                Text(
+                    if (location.gpsStatus == "available") {
+                        "${location.latitude}, ${location.longitude} (±${location.accuracyMeters}m)"
+                    } else {
+                        location.unavailableReason.ifBlank { "unavailable" }
+                    },
+                    modifier = Modifier.padding(MobileTheme.spacing.itemGap),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+
+            MobileSectionLabel("Permissions")
+            MobileResultCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.padding(MobileTheme.spacing.itemGap),
+                    horizontalArrangement = Arrangement.spacedBy(MobileTheme.spacing.tightGap),
+                ) {
+                    EvidencePermissionPill("Camera", captured.permissions.cameraStatus)
+                    EvidencePermissionPill("Photos", captured.permissions.photoLibraryStatus)
+                    EvidencePermissionPill("Location", captured.permissions.locationStatus)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EvidencePermissionPill(label: String, status: String) {
+    val color = when (status) {
+        "granted" -> MobileTheme.statusColors.go
+        "not_determined" -> MobileTheme.statusColors.info
+        "denied" -> MobileTheme.statusColors.caution
+        else -> MobileTheme.statusColors.neutral
+    }
+    MobileStatusPill("$label: $status", color)
 }
 
 @Composable

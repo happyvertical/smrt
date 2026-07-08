@@ -108,10 +108,11 @@ without an Android SDK.
 - `src/iosMain/kotlin/.../platform/SmrtMobileIos.kt` — the iOS platform
   factories the exported framework hands to Swift (Phase 6, #1743):
   `createDatabase` / `createApiClient` / `createOfflinePackStore` /
-  `createWriteQueue`. These build Kotlin/Native types Swift cannot instantiate
-  itself (`NativeSqliteDriver`, the Ktor `Darwin` engine); smrt-android, being
-  Kotlin, builds its own. This is the only `iosMain` code — everything else is
-  `commonMain`.
+  `createWriteQueue`, plus `instantFromEpochMillis` (a `kotlinx.datetime.Instant`
+  the iOS evidence adapter needs for `persistedAt`/`capturedAt`; #1880). These
+  build Kotlin/Native types Swift cannot instantiate itself (`NativeSqliteDriver`,
+  the Ktor `Darwin` engine, `Instant`); smrt-android, being Kotlin, builds its
+  own. This is the only `iosMain` code — everything else is `commonMain`.
 
 ## Commands
 

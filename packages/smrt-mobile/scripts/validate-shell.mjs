@@ -165,7 +165,12 @@ const SPEC = [
   // the durable store + Ktor client Swift cannot construct itself.
   {
     path: `${IOS_ROOT}/platform/SmrtMobileIos.kt`,
-    mustContain: ['object SmrtMobileIos', 'NativeSqliteDriver', 'fun createDatabase('],
+    mustContain: [
+      'object SmrtMobileIos',
+      'NativeSqliteDriver',
+      'fun createDatabase(',
+      'fun instantFromEpochMillis(',
+    ],
   },
   {
     path: `${SQL_ROOT}/QueueEntry.sq`,

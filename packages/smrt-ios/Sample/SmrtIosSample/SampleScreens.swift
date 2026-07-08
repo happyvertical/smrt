@@ -27,6 +27,7 @@ struct RootView: View {
         switch id {
         case "packs": return "shippingbox"
         case "scan": return "barcode.viewfinder"
+        case "capture": return "camera"
         case "device": return "iphone.gen3"
         default: return "circle"
         }
@@ -37,6 +38,7 @@ struct RootView: View {
         switch id {
         case "packs": PacksScreen(model: model)
         case "scan": ScanScreen(model: model)
+        case "capture": CaptureScreen(model: model)
         case "device": DeviceScreen(model: model)
         default: EmptyView()
         }
@@ -126,6 +128,85 @@ struct ScanScreen: View {
             }
             MobileSectionLabel("Last scan")
             MobileStatusPill(model.lastBarcode, color: status.info)
+        }
+    }
+}
+
+struct CaptureScreen: View {
+    @ObservedObject var model: SampleModel
+    @Environment(\.mobileSpacing) private var spacing
+    @Environment(\.mobileStatusColors) private var status
+
+    var body: some View {
+        ScreenScaffold(title: "Evidence Capture", subtitle: "IOSEvidenceCaptureAdapter → EvidenceCaptureResult") {
+            Button(model.capturing ? "Capturing…" : "Capture evidence") {
+                Task { await model.captureEvidence() }
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity)
+            .disabled(model.capturing)
+
+            MobileResultCard {
+                Text(model.captureStatus)
+                    .font(MobileTypography.bodyMedium)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            }
+
+            if let asset = model.lastCapture?.localAsset {
+                MobileSectionLabel("Stored asset", trailing: asset.storageState)
+                MobileResultCard {
+                    VStack(alignment: .leading, spacing: spacing.tightGap) {
+                        Text(asset.fileName).font(MobileTypography.bodyLarge)
+                        Text("\(asset.sizeBytes?.int64Value ?? 0) bytes · \(asset.captureSource) · \(asset.storageRoot)")
+                            .font(MobileTypography.bodySmall)
+                        if !asset.sha256.isEmpty {
+                            Text("sha256 \(asset.sha256.prefix(16))…")
+                                .font(MobileTypography.bodySmall.monospaced())
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                }
+            }
+
+            if let capture = model.lastCapture {
+                MobileSectionLabel("Geo sidecar", trailing: capture.location.gpsStatus)
+                MobileResultCard {
+                    Text(geoText(capture.location))
+                        .font(MobileTypography.bodyMedium)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                }
+
+                MobileSectionLabel("Permissions")
+                HStack(spacing: spacing.tightGap) {
+                    permissionPill("Camera", capture.permissions.cameraStatus)
+                    permissionPill("Photos", capture.permissions.photoLibraryStatus)
+                    permissionPill("Location", capture.permissions.locationStatus)
+                }
+            }
+        }
+    }
+
+    private func geoText(_ location: EvidenceLocationMetadata) -> String {
+        if location.gpsStatus == "available" {
+            return "\(location.latitude), \(location.longitude) (±\(location.accuracyMeters)m)"
+        }
+        return location.unavailableReason.isEmpty ? "unavailable" : location.unavailableReason
+    }
+
+    @ViewBuilder
+    private func permissionPill(_ label: String, _ value: String) -> some View {
+        MobileStatusPill("\(label): \(value)", color: color(for: value))
+    }
+
+    private func color(for permissionStatus: String) -> Color {
+        switch permissionStatus {
+        case EvidencePermissionStatus.shared.GRANTED: return status.go
+        case EvidencePermissionStatus.shared.DENIED: return status.stop
+        case EvidencePermissionStatus.shared.NOT_DETERMINED: return status.caution
+        default: return status.neutral
         }
     }
 }

@@ -41,16 +41,25 @@ publishing deferred, consumers are local-fs).
   `AndroidSha256Hasher` (`Sha256Hasher`), `AndroidSqlDriverFactory`
   (SQLDelight android-driver for `SmrtMobileDatabase`),
   `KeystoreAuthStorage` (`AuthStorage`; AES/GCM via Android Keystore — the
-  named upgrade over the reporter's plain SharedPreferences), and
-  `CustomTabAuthLauncher` (`ExternalAuthLauncher`).
+  named upgrade over the reporter's plain SharedPreferences),
+  `CustomTabAuthLauncher` (`ExternalAuthLauncher`), and
+  `AndroidEvidenceCaptureAdapter` (`EvidenceCapturePlatformAdapter`;
+  drive-to-completion `captureOrPickPhoto` — full-res `TakePicture` into a
+  library-shipped `FileProvider` URI, or the system photo picker — app-private
+  storage, sha256 pin, `LocationManager` geo sidecar; #1880). The evidence
+  FileProvider (`SmrtEvidenceFileProvider`) ships in the library manifest with a
+  `${applicationId}.evidence.files` authority (per-consumer via manifest merge,
+  overridable via the constructor + `tools:replace`).
 - `library/src/test/` — local JVM unit tests for the pure
   platform-to-shared mappings (barcode formats, speech error codes,
-  FeatureStatus→availability, sha256 vector). Camera/recognizer/AICore
-  behavior needs a device: the sample app is the manual acceptance surface.
-- `sample/` — four tabs exercising shell+theme (Home, incl. a live
-  `DurableWriteQueue` on the Android driver), barcode preview (Scan),
-  speech + Gemini Nano round-trip (Talk), and the capability probe
-  (Settings).
+  FeatureStatus→availability, sha256 vector, evidence
+  segment/content-type/permission/location/verify projections).
+  Camera/recognizer/AICore/capture behavior needs a device: the sample app is
+  the manual acceptance surface.
+- `sample/` — five tabs exercising shell+theme (Home, incl. a live
+  `DurableWriteQueue` on the Android driver), barcode preview (Scan), evidence
+  capture (Capture), speech + Gemini Nano round-trip (Talk), and the capability
+  probe (Settings).
 
 ## Commands
 

@@ -117,14 +117,44 @@ const SPEC = [
     path: `${LIB_ROOT}/platform/CustomTabAuthLauncher.kt`,
     mustContain: ['class CustomTabAuthLauncher(', ': ExternalAuthLauncher'],
   },
+  {
+    path: `${LIB_ROOT}/platform/AndroidEvidenceCaptureAdapter.kt`,
+    mustContain: [
+      'class AndroidEvidenceCaptureAdapter(',
+      ': EvidenceCapturePlatformAdapter',
+      'suspend fun captureOrPickPhoto(',
+      'FileProvider.getUriForFile(',
+    ],
+  },
+  {
+    path: `${LIB_ROOT}/platform/SmrtEvidenceFileProvider.kt`,
+    mustContain: ['class SmrtEvidenceFileProvider : FileProvider('],
+  },
+  {
+    // Library-shipped FileProvider: manifest-merge authority + paths resource.
+    path: 'library/src/main/AndroidManifest.xml',
+    mustContain: [
+      'com.happyvertical.smrt.android.platform.SmrtEvidenceFileProvider',
+      '${applicationId}.evidence.files',
+    ],
+  },
+  {
+    path: 'library/src/main/res/xml/smrt_evidence_file_paths.xml',
+    mustContain: ['<files-path', 'evidence/'],
+  },
   { path: `${LIB_TEST_ROOT}/platform/AdapterMappingTest.kt` },
+  { path: `${LIB_TEST_ROOT}/platform/EvidenceCaptureMappingTest.kt` },
   {
     path: `${SAMPLE_ROOT}/AndroidManifest.xml`,
-    mustContain: ['android.permission.CAMERA', 'android.permission.RECORD_AUDIO'],
+    mustContain: [
+      'android.permission.CAMERA',
+      'android.permission.RECORD_AUDIO',
+      'android.permission.ACCESS_FINE_LOCATION',
+    ],
   },
   {
     path: `${SAMPLE_ROOT}/kotlin/com/happyvertical/smrt/android/sample/MainActivity.kt`,
-    mustContain: ['MobileShellScaffold(', 'MobileTheme {'],
+    mustContain: ['MobileShellScaffold(', 'MobileTheme {', 'CaptureTab('],
   },
 ];
 

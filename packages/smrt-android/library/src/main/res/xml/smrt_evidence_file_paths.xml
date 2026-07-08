@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Grants the external camera app write access to the app-private evidence
+  directory (filesDir/evidence/) so ActivityResultContracts.TakePicture can
+  write a full-resolution photo directly into it. App-private internal storage:
+  not shared media, offline-safe, cleared with the app.
+-->
+<paths>
+    <files-path
+        name="evidence"
+        path="evidence/" />
+</paths>
