@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.38.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - seed ThemeProvider config from props for SSR (#1878) (smrt-ui)
+  - resolve nested runtime manifest dependencies (cli)
+  - @happyvertical/smrt-config@0.38.13
+  - @happyvertical/smrt-types@0.38.13
+  - @happyvertical/smrt-scanner@0.38.13
+
 ## 0.38.12
 
 ### Patch Changes
