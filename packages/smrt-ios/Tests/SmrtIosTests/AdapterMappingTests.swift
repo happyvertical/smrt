@@ -95,6 +95,19 @@ final class AdapterMappingTests: XCTestCase {
         XCTAssertTrue(DataScannerBarcodeScanner.visionSymbologies(for: ["not_a_format"]).isEmpty)
     }
 
+    func testPlannedSymbologiesRejectsUnsupportedFilterInsteadOfWidening() {
+        // A non-empty filter that maps to no supported symbology must return nil
+        // (do not scan) — VisionKit would treat [] as scan-everything.
+        let scanner = DataScannerBarcodeScanner()
+        scanner.startScanning(request: BarcodeScanRequest(formats: ["not_a_format"]), listener: NoopBarcodeListener())
+        XCTAssertNil(scanner.plannedSymbologies())
+    }
+
+    func testPlannedSymbologiesEmptyRequestScansAllSupported() {
+        let scanner = DataScannerBarcodeScanner()
+        scanner.startScanning(request: BarcodeScanRequest(formats: []), listener: NoopBarcodeListener())
+        XCTAssertEqual(scanner.plannedSymbologies()?.isEmpty, false)
+    }
     // MARK: Speech error codes
 
     func testSpeechErrorCodesMatchSharedVocabulary() {
@@ -104,4 +117,9 @@ final class AdapterMappingTests: XCTestCase {
         XCTAssertEqual(IOSSpeechTranscriber.speechErrorCode(for: .audio), c.AUDIO_ERROR)
         XCTAssertEqual(IOSSpeechTranscriber.speechErrorCode(for: .other(99)), c.unknown(nativeCode: 99))
     }
+}
+
+private final class NoopBarcodeListener: NSObject, BarcodeScanListener {
+    func onBarcode(scan: BarcodeScan) {}
+    func onError(code: String) {}
 }

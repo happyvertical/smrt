@@ -29,13 +29,29 @@ public final class IOSSpeechTranscriber: NSObject, SmrtMobile.SpeechTranscriber 
         self.listener = listener
 
         switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            beginRecognition(request: listenRequest, listener: listener)
+        case .notDetermined:
+            // SFSpeechRecognizer does not prompt automatically — request first,
+            // then begin (or surface permission_denied) back on the main thread.
+            SFSpeechRecognizer.requestAuthorization { [weak self] status in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if status == .authorized {
+                        self.beginRecognition(request: listenRequest, listener: listener)
+                    } else {
+                        listener.onError(code: Self.speechErrorCode(for: .permissionDenied))
+                    }
+                }
+            }
         case .denied, .restricted:
             listener.onError(code: Self.speechErrorCode(for: .permissionDenied))
-            return
-        default:
-            break
+        @unknown default:
+            listener.onError(code: Self.speechErrorCode(for: .permissionDenied))
         }
+    }
 
+    private func beginRecognition(request listenRequest: SpeechListenRequest, listener: SpeechTranscriptListener) {
         guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: listenRequest.locale)),
               recognizer.isAvailable else {
             listener.onError(code: Self.speechErrorCode(for: .recognizerUnavailable))
@@ -105,9 +121,14 @@ public final class IOSSpeechTranscriber: NSObject, SmrtMobile.SpeechTranscriber 
     }
 
     private func teardownAudio() {
+        // Remove the tap unconditionally — if audioEngine.start() threw after
+        // installTap, the engine is not running but the tap is still installed;
+        // leaving it would make the next startListening install a second tap on
+        // the same bus, which AVAudioEngine raises as an exception. removeTap is a
+        // no-op when no tap is present.
+        audioEngine.inputNode.removeTap(onBus: 0)
         if audioEngine.isRunning {
             audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
         }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         request = nil

@@ -41,14 +41,17 @@ public final class DataScannerBarcodeScanner: NSObject, BarcodeScanner {
 
     // MARK: Preview wiring (called by BarcodeScannerPreview)
 
-    /// Symbologies for this scan session. Empty request → all supported; a
-    /// non-empty request that maps to nothing is a caller bug (reports an error
-    /// rather than silently widening to scan-everything, matching the Android seam).
-    func resolvedSymbologies() -> [VNBarcodeSymbology] {
+    /// Symbologies for this scan session, or `nil` if the request is invalid — a
+    /// non-empty filter that maps to no supported symbology. The preview must NOT
+    /// start in that case: VisionKit treats `.barcode(symbologies: [])` as
+    /// "scan everything", which would silently widen the caller's filter (the
+    /// Android seam rejects this outright). Empty request → all supported formats.
+    func plannedSymbologies() -> [VNBarcodeSymbology]? {
         if requestedFormats.isEmpty { return Self.defaultSymbologies }
         let symbologies = Self.visionSymbologies(for: requestedFormats)
         if symbologies.isEmpty {
             listener?.onError(code: "unsupported_formats")
+            return nil
         }
         return symbologies
     }
@@ -120,8 +123,11 @@ public final class DataScannerBarcodeScanner: NSObject, BarcodeScanner {
 }
 
 /// SwiftUI host for the live barcode camera — the iOS analog of Android's
-/// `BarcodeScannerPreview`. Drive it with a `DataScannerBarcodeScanner` whose
-/// `startScanning(request:listener:)` was already called.
+/// `BarcodeScannerPreview`. Call `scanner.startScanning(request:listener:)`
+/// **before** presenting so the requested formats + listener are in place; the
+/// camera starts on present and stops when the view is removed. `isScanning`
+/// gates the listener callbacks (not the camera), so it is a plain flag rather
+/// than SwiftUI state.
 public struct BarcodeScannerPreview: UIViewControllerRepresentable {
     private let scanner: DataScannerBarcodeScanner
 
@@ -132,24 +138,27 @@ public struct BarcodeScannerPreview: UIViewControllerRepresentable {
     public func makeCoordinator() -> Coordinator { Coordinator(scanner: scanner) }
 
     public func makeUIViewController(context: Context) -> DataScannerViewController {
-        let symbologies = scanner.resolvedSymbologies()
+        let planned = scanner.plannedSymbologies()
         let controller = DataScannerViewController(
-            recognizedDataTypes: [.barcode(symbologies: symbologies)],
+            recognizedDataTypes: [.barcode(symbologies: planned ?? DataScannerBarcodeScanner.defaultSymbologies)],
             qualityLevel: .balanced,
             isHighFrameRateTrackingEnabled: false,
             isPinchToZoomEnabled: true,
             isHighlightingEnabled: true
         )
         controller.delegate = context.coordinator
+        // Start on present. `isScanning` is not SwiftUI state, so updateUIViewController
+        // cannot react to it — the camera lifecycle is driven by make/dismantle, and
+        // handleRecognized() gates callbacks on isScanning. Skip the invalid-filter case.
+        if planned != nil {
+            try? controller.startScanning()
+        }
         return controller
     }
 
     public func updateUIViewController(_ controller: DataScannerViewController, context: Context) {
-        if scanner.isScanning {
-            try? controller.startScanning()
-        } else {
-            controller.stopScanning()
-        }
+        // No-op: the camera lifecycle is driven by make/dismantle (isScanning is a
+        // plain flag, not observable state, so it cannot drive updates here).
     }
 
     public static func dismantleUIViewController(_ controller: DataScannerViewController, coordinator: Coordinator) {

@@ -35,6 +35,16 @@ object SmrtMobileIos {
         SmrtMobileDatabase(NativeSqliteDriver(SmrtMobileDatabase.Schema, name))
 
     /**
+     * Builds the shared [MobileApiClient] over Ktor's Darwin engine with a no-op
+     * unauthorized handler. Explicit overload (not a default arg) because
+     * Kotlin/Native default arguments are not omittable from Swift.
+     */
+    fun createApiClient(
+        config: MobileApiConfig,
+        tokenProvider: BearerTokenProvider,
+    ): MobileApiClient = createApiClient(config, tokenProvider, UnauthorizedHandler {})
+
+    /**
      * Builds the shared [MobileApiClient] over Ktor's Darwin engine, hiding the
      * engine from Swift. Wire [tokenProvider] to `MobileSessionManager.accessToken`
      * and [unauthorizedHandler] to `MobileSessionManager.onUnauthorized`.
@@ -42,7 +52,7 @@ object SmrtMobileIos {
     fun createApiClient(
         config: MobileApiConfig,
         tokenProvider: BearerTokenProvider,
-        unauthorizedHandler: UnauthorizedHandler = UnauthorizedHandler {},
+        unauthorizedHandler: UnauthorizedHandler,
     ): MobileApiClient = MobileApiClient(
         engine = Darwin.create(),
         config = config,
