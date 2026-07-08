@@ -86,9 +86,17 @@ consumers use Gradle `includeBuild`).
   travels in `contextIds` so the model stays trade-neutral.
 - `src/commonMain/kotlin/.../shell/` — `MobileShellState` manual-tab nav
   state (no androidx.navigation); apps provide the tab list.
-- `src/commonMain/kotlin/.../platform/` — adapter seams (`Sha256Hasher`).
-  Barcode/speech/on-device-LLM interfaces arrive with their first concrete
-  implementations (Phases 5–6).
+- `src/commonMain/kotlin/.../platform/` — adapter seams: `Sha256Hasher`,
+  and the Phase 5 shared contracts (ADR 0001 Correction 4 — net-new, the
+  seed apps had none): `BarcodeScanner` (+ `BarcodeScan`/`BarcodeFormat`),
+  `SpeechTranscriber` (+ `SpeechErrorCode`), `OnDeviceLanguageModel`
+  (+ `LanguageModelAvailability` — amaru's status/provider vocabulary kept
+  verbatim; prompt building and output parsing stay app-side), and the
+  reporter-seeded `DeviceCapabilityAdapter` (tri-state permission model;
+  DTOs live in the generated contract). Concrete implementations are the
+  platform libraries' job: smrt-android (Phase 5) ships ML Kit barcode,
+  `android.speech`, Gemini Nano, and the capability probe; smrt-ios
+  (Phase 6) ships the Foundation Models + net-new barcode counterparts.
 
 Targets: `androidTarget` + `jvm` + `iosX64`/`iosArm64`/`iosSimulatorArm64`
 (static framework `SmrtMobile`). The `jvm` target exists so common tests run

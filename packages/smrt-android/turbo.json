@@ -1,0 +1,26 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "library/src/**",
+        "library/*.gradle.kts",
+        "sample/src/**",
+        "sample/*.gradle.kts",
+        "scripts/**",
+        "*.gradle.kts",
+        "gradle.properties",
+        "gradle/**",
+        "gradlew",
+        "gradlew.bat",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "README.md",
+        "package.json"
+      ],
+      "outputs": []
+    }
+  }
+}

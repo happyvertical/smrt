@@ -1,0 +1,25 @@
+{
+  "name": "@happyvertical/smrt-android",
+  "version": "0.38.14",
+  "description": "Android Compose foundation for SMRT mobile apps: MobileTheme design tokens, the bottom-tab shell scaffold bound to smrt-mobile's MobileShellState, and the native platform adapters (ML Kit barcode, speech transcription, Gemini Nano on-device LLM, device capabilities, SQLDelight driver, Keystore auth storage, Custom Tabs auth launcher)",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "files": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "scripts": {
+    "build": "node scripts/validate-android.mjs",
+    "validate:android": "node scripts/validate-android.mjs",
+    "build:gradle": "./gradlew build",
+    "test:gradle": "./gradlew test",
+    "clean": "rm -rf build library/build sample/build .gradle .kotlin"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-android"
+  }
+}

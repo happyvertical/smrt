@@ -63,7 +63,8 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Mobile
 | Package | Purpose |
 |---------|---------|
-| smrt-mobile | KMP shared mobile foundation (offline packs + durable SQLDelight write-queue, evidence, i18n, shell state; auth/networking in later phases) — first non-TS package, Gradle behind a package.json wrapper (ADR 0001) |
+| smrt-mobile | KMP shared mobile foundation (offline packs + durable SQLDelight write-queue, evidence, i18n, shell state, PKCE auth/session, Ktor client, platform seams incl. barcode/speech/on-device-LLM) — first non-TS package, Gradle behind a package.json wrapper (ADR 0001) |
+| smrt-android | Android Compose foundation: MobileTheme design tokens, bottom-tab shell bound to MobileShellState, native adapters (ML Kit barcode, speech, Gemini Nano, device capabilities, SQLDelight driver, Keystore auth storage) — consumes smrt-mobile via Gradle composite build |
 | smrt-mobile-contract | TS codegen: SMRT manifest + allowlist → Kotlin/Swift mobile DTOs + smrt-mobile's generated framework contract |
 
 ### Tooling

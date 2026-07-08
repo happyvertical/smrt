@@ -25,9 +25,9 @@ const PKGS = join(ROOT, 'packages');
 
 // Non-TypeScript packages (Kotlin Multiplatform/Gradle — ADR 0001, see
 // docs/content/standards.md §1 "Non-TypeScript packages"). Exempt from every
-// TS-shape check: vitest config, typecheck script, dist in files. Phases 5-6
-// add smrt-android / smrt-ios here.
-const NON_TYPESCRIPT_PACKAGES = new Set(['smrt-mobile']);
+// TS-shape check: vitest config, typecheck script, dist in files. Phase 6
+// adds smrt-ios here.
+const NON_TYPESCRIPT_PACKAGES = new Set(['smrt-mobile', 'smrt-android']);
 
 // Exemption tables — packages that have a documented reason to skip a check.
 // Keep narrow; expand only when adding the comment to docs/content/standards.md
