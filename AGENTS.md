@@ -9,7 +9,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Foundation
 | Package | Purpose |
 |---------|---------|
-| core | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI |
+| core | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI, object context memory (`remember`/`recall`) + semantic search |
 | config | cosmiconfig loader, secret sanitization, SSG export |
 | cli | Developer CLI: `smrt db:*`, `smrt docs:agents`, `smrt dev:knowledge-*`, introspection, code generation |
 | types | Shared TypeScript types/enums — zero runtime code |
@@ -22,7 +22,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 |---------|---------|
 | agents | Agent lifecycle, DispatchBus inter-agent messaging, interests-based discovery, scheduling |
 | jobs | Background execution: TaskRunner, ScheduleRunner, fluent JobBuilder, `withBackgroundJobs()` |
-| users | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks |
+| users | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks; manifest-derived per-operation permissions + Postgres RLS |
 | profiles | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships, audit logging, owned asset joins via `profile_assets` |
 
 ### Content & Media

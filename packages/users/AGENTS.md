@@ -88,6 +88,8 @@ throw). The default seed leaves every role exact-tenant.
 
 ## Operation Permission Guards
 
+SMRT derives a fine-grained, per-`<collection>.<action>` permission catalog **from the manifest** (`PermissionCatalogService`, including custom `@smrt` actions — not just CRUD) and enforces it two ways: app-side via `assertOperationPermission()` / `PermissionResolver`, and at the database via generated **Postgres RLS** policies (`PostgresPermissionPolicies`) that read the session's `smrt.permissions` / `smrt.tenant_id` (injected by `withSessionPermissionContext` via `set_config`). Because the RLS teeth are at the data layer, enforcement is door-agnostic — REST, MCP, and in-process callers are all bounded once the principal's context is set. Setup: README → *Manifest-derived permission catalog* and *Postgres RLS enforcement*.
+
 - Use `assertOperationPermission()` for hand-written mutations in SvelteKit form
   actions, custom endpoints, CLI scripts, and jobs. It derives the same
   `<collection>.<action>` slugs as `PermissionCatalogService` (`list`/`get` →

@@ -35,6 +35,13 @@ await collection.list({
 
 STI child collections auto-filter by `_meta_type`.
 
+## Object Memory & Semantic Search
+
+Two persistence primitives every `SmrtObject`/`SmrtCollection` inherits — load-bearing for learning agents, usable by any object. Full guide: `docs/content/core.md` → "Context Memory System".
+
+- **Context memory** (`remember`/`recall`/`recallAll`/`forget`/`forgetScope`, table `_smrt_contexts`): stores any JSON value keyed by `(owner_class, owner_id, scope, key, version)` with a `confidence` score (0–1) and optional `expiresAt`. `recall()` returns the highest-confidence match with an optional `minConfidence` floor and **hierarchical scope fallback** (`'a/b/c' → 'a/b' → 'a' → 'global'`); `recallAll()` returns a `Map`. Typical use: cache a learned strategy (e.g. a working selector per host) and reuse it across sessions. `success_count`/`failure_count` columns exist for outcome-weighting but are not auto-updated by the framework.
+- **Semantic search** (on `SmrtCollection`, table `_smrt_embeddings`): `semanticSearch(query)`, `findSimilar(object)`, `findSimilarToEmbedding(vector)` — cosine ranking over embeddings of the fields declared in `@smrt({ embeddings })`. Native pgvector/HNSW when configured, in-memory `CosineSimilarity` fallback otherwise; default local model `Xenova/bge-base-en-v1.5` (768-dim) or AI `text-embedding-3-small`. Hits hydrate via `list({ 'id in': … })`, so `@TenantScoped` isolation applies to results.
+
 ## @smrt() Decorator Options
 
 Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`.

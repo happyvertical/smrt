@@ -169,6 +169,10 @@ file has run.
 | `CosineSimilarity` | Ranks results by vector similarity |
 | `ContentHasher` | Content hashing for change detection |
 
+### Context Memory
+
+Every `SmrtObject`/`SmrtCollection` can persist learned knowledge via `remember()` / `recall()` / `recallAll()` / `forget()` (system table `_smrt_contexts`) — confidence-scored, versioned, with hierarchical scope fallback and expiry. Pairs with semantic search (above) for retrieval. Full guide: `docs/content/core.md` → "Context Memory System".
+
 ### Signals (Observability)
 
 | Export | Description |
