@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.12
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - Add tenant integration provisioning state to smrt-users
+  - @happyvertical/smrt-config@0.38.12
+  - @happyvertical/smrt-types@0.38.12
+  - @happyvertical/smrt-scanner@0.38.12
+
 ## 0.38.11
 
 ### Patch Changes

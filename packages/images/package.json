@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-images",
-  "version": "0.38.11",
+  "version": "0.38.12",
   "description": "Image asset management with AI-powered categorization, search, editing, and metadata extraction for SMRT framework",
   "type": "module",
   "smrtRawPrimitives": "strict",

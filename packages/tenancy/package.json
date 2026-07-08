@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-tenancy",
-  "version": "0.38.11",
+  "version": "0.38.12",
   "description": "Production-ready multi-tenancy framework for SMRT with automatic tenant isolation and enforcement",
   "type": "module",
   "smrtRawPrimitives": "strict",
