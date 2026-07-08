@@ -40,6 +40,13 @@ export {
   Session,
 } from './Session.js';
 export { MAX_TENANT_HIERARCHY_DEPTH, Tenant } from './Tenant.js';
+export {
+  TenantIntegration,
+  type TenantIntegrationCheckSummary,
+  type TenantIntegrationOptions,
+  type TenantIntegrationProvider,
+  type TenantIntegrationStatus,
+} from './TenantIntegration.js';
 export { TenantPermissionOverride } from './TenantPermissionOverride.js';
 // Core entities
 export { isValidEmail, normalizeEmail, User } from './User.js';
