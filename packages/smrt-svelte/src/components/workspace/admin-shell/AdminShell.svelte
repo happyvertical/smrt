@@ -15,12 +15,19 @@ function expandedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
   return shell.config.panels[edge].expandedSize;
 }
 
+function collapsedSize(shell: ModuleShellState, edge: ModulePanelEdge): string {
+  if (shell.panels[edge] === 'hidden') return '0rem';
+  return shell.config.panels[edge].collapsedSize;
+}
+
 function buildLayoutStyle(shell: ModuleShellState): string {
   return [
     `--smrt-admin-shell-left-track: ${trackFor(shell, 'left')}`,
     `--smrt-admin-shell-right-track: ${trackFor(shell, 'right')}`,
     `--smrt-admin-shell-top-track: ${trackFor(shell, 'top')}`,
     `--smrt-admin-shell-bottom-track: ${trackFor(shell, 'bottom')}`,
+    `--smrt-admin-shell-left-collapsed: ${collapsedSize(shell, 'left')}`,
+    `--smrt-admin-shell-right-collapsed: ${collapsedSize(shell, 'right')}`,
     `--smrt-admin-shell-left-expanded: ${expandedSize(shell, 'left')}`,
     `--smrt-admin-shell-right-expanded: ${expandedSize(shell, 'right')}`,
     `--smrt-admin-shell-top-expanded: ${expandedSize(shell, 'top')}`,
@@ -334,14 +341,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       aria-label={labelFor('right')}
     >
       <div class="smrt-admin-shell__rail">
-        {#if edgeExpanded('right')}
-          {@render focusContent(activeFocusTool)}
-        {:else if focusRail}
+        {#if focusRail}
           {@render focusRail()}
         {:else}
           {@render edgeToggle('right')}
         {/if}
       </div>
+      {#if edgeExpanded('right')}
+        <div class="smrt-admin-shell__panel smrt-admin-shell__panel--right">
+          {@render focusContent(activeFocusTool)}
+        </div>
+      {/if}
     </aside>
   {/if}
 
@@ -465,8 +475,8 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-row: 1;
     display: grid;
     grid-template-columns:
-      var(--smrt-admin-shell-left-track) minmax(0, 1fr)
-      var(--smrt-admin-shell-right-track);
+      var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
+      var(--smrt-admin-shell-right-collapsed);
     border-block-end: 1px solid var(--smrt-color-outline-variant);
     z-index: 30;
   }
@@ -485,13 +495,20 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     z-index: 20;
   }
 
+  .smrt-admin-shell__edge--right[data-state='expanded'] {
+    display: grid;
+    grid-template-columns:
+      minmax(0, 1fr)
+      min(var(--smrt-admin-shell-right-collapsed), 100%);
+  }
+
   .smrt-admin-shell__edge--bottom {
     grid-column: 1 / -1;
     grid-row: 3;
     display: grid;
     grid-template-columns:
-      var(--smrt-admin-shell-left-track) minmax(0, 1fr)
-      var(--smrt-admin-shell-right-track);
+      var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
+      var(--smrt-admin-shell-right-collapsed);
     border-block-start: 1px solid var(--smrt-color-outline-variant);
     z-index: 30;
   }
@@ -542,6 +559,25 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     block-size: 100%;
     overflow: auto;
     padding: var(--smrt-spacing-3);
+  }
+
+  .smrt-admin-shell__edge--right[data-state='expanded']
+    .smrt-admin-shell__rail {
+    grid-column: 2;
+    border-inline-start: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .smrt-admin-shell__panel {
+    min-width: 0;
+    min-height: 0;
+    block-size: 100%;
+    overflow: auto;
+    padding: var(--smrt-spacing-3);
+  }
+
+  .smrt-admin-shell__panel--right {
+    grid-column: 1;
+    grid-row: 1;
   }
 
   .smrt-admin-shell__edge-toggle-kbd {

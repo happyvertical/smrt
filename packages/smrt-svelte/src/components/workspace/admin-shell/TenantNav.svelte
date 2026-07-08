@@ -1,42 +1,68 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import type { Component } from 'svelte';
 import { M } from '../../../i18n/strings.workspace.js';
 import type { ShellNavItem } from './types.js';
 
 interface Props {
   items: ShellNavItem[];
   currentHref?: string;
+  iconComponent?: Component<{ name: string; size?: number }>;
+  collapsed?: boolean;
   onNavigate?: () => void;
 }
 
-let { items, currentHref = '', onNavigate }: Props = $props();
+let {
+  items,
+  currentHref = '',
+  iconComponent: IconComponent,
+  collapsed = false,
+  onNavigate,
+}: Props = $props();
 const { t } = useI18n();
 
 function isActive(item: ShellNavItem): boolean {
   return item.href === currentHref || currentHref.startsWith(`${item.href}/`);
 }
+
+function isVisibleActive(item: ShellNavItem): boolean {
+  if (isActive(item)) return true;
+  return collapsed && !!item.children?.some((child) => isActive(child));
+}
 </script>
 
 <nav
   class="smrt-tenant-nav"
+  class:smrt-tenant-nav--collapsed={collapsed}
   aria-label={t(M['ui.tenant_nav.tenant_navigation'])}
 >
   {#each items as item (item.href)}
     <div class="smrt-tenant-nav__section">
       <a
         href={item.href}
-        aria-current={isActive(item) ? 'page' : undefined}
+        aria-current={isVisibleActive(item) ? 'page' : undefined}
+        title={collapsed ? item.label : item.description}
         onclick={onNavigate}
       >
         {#if item.icon}
-          <span aria-hidden="true">{item.icon}</span>
+          <span class="smrt-tenant-nav__icon" aria-hidden="true">
+            {#if IconComponent}
+              <IconComponent name={item.icon} size={18} />
+            {:else}
+              {item.icon}
+            {/if}
+          </span>
         {/if}
-        <strong>{item.label}</strong>
-        {#if item.badge !== null && item.badge !== undefined}
-          <small>{item.badge}</small>
+        {#if collapsed}
+          <span class="smrt-tenant-nav__sr-only">{item.label}</span>
+        {:else}
+          <strong>{item.label}</strong>
+          {#if item.badge !== null && item.badge !== undefined}
+            <small>{item.badge}</small>
+          {/if}
         {/if}
       </a>
-      {#if item.children?.length}
+      {#if item.children?.length && !collapsed}
         <div class="smrt-tenant-nav__children">
           {#each item.children as child (child.href)}
             <a
@@ -45,7 +71,13 @@ function isActive(item: ShellNavItem): boolean {
               onclick={onNavigate}
             >
               {#if child.icon}
-                <span aria-hidden="true">{child.icon}</span>
+                <span class="smrt-tenant-nav__icon" aria-hidden="true">
+                  {#if IconComponent}
+                    <IconComponent name={child.icon} size={16} />
+                  {:else}
+                    {child.icon}
+                  {/if}
+                </span>
               {/if}
               <span>{child.label}</span>
               {#if child.badge !== null && child.badge !== undefined}
@@ -79,9 +111,30 @@ function isActive(item: ShellNavItem): boolean {
     text-decoration: none;
   }
 
+  .smrt-tenant-nav--collapsed,
+  .smrt-tenant-nav--collapsed .smrt-tenant-nav__section {
+    justify-items: center;
+  }
+
+  .smrt-tenant-nav--collapsed a {
+    grid-template-columns: minmax(0, 1fr);
+    place-items: center;
+    inline-size: 2.25rem;
+    block-size: 2.25rem;
+    padding: 0;
+  }
+
   .smrt-tenant-nav a:hover,
   .smrt-tenant-nav a[aria-current='page'] {
     background: var(--smrt-color-surface-container-high);
+  }
+
+  .smrt-tenant-nav__icon {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    min-inline-size: 1.25rem;
   }
 
   .smrt-tenant-nav strong,
@@ -97,5 +150,17 @@ function isActive(item: ShellNavItem): boolean {
 
   .smrt-tenant-nav__children {
     padding-inline-start: var(--smrt-spacing-4);
+  }
+
+  .smrt-tenant-nav__sr-only {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 </style>
