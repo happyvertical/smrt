@@ -142,6 +142,25 @@ const SPEC = [
     mustContain: ['fun interface Sha256Hasher'],
   },
   {
+    path: `${KOTLIN_ROOT}/platform/BarcodeScanning.kt`,
+    mustContain: ['interface BarcodeScanner', 'data class BarcodeScan('],
+  },
+  {
+    path: `${KOTLIN_ROOT}/platform/SpeechTranscription.kt`,
+    mustContain: ['interface SpeechTranscriber', 'object SpeechErrorCode'],
+  },
+  {
+    path: `${KOTLIN_ROOT}/platform/OnDeviceLanguageModel.kt`,
+    mustContain: [
+      'interface OnDeviceLanguageModel',
+      'data class LanguageModelAvailability(',
+    ],
+  },
+  {
+    path: `${KOTLIN_ROOT}/platform/DeviceCapabilities.kt`,
+    mustContain: ['fun interface DeviceCapabilityAdapter'],
+  },
+  {
     path: `${SQL_ROOT}/QueueEntry.sq`,
     mustContain: ['CREATE TABLE queue_entry', 'recoverInterrupted:'],
   },
@@ -158,6 +177,7 @@ const SPEC = [
   { path: `${TEST_ROOT}/packs/PackIntegrityCheckTest.kt` },
   { path: `${TEST_ROOT}/shell/MobileShellStateTest.kt` },
   { path: `${TEST_ROOT}/evidence/EvidenceCaptureTest.kt` },
+  { path: `${TEST_ROOT}/platform/PlatformSeamsTest.kt` },
   { path: `${JVM_TEST_ROOT}/sync/DurableWriteQueueTest.kt` },
   { path: `${JVM_TEST_ROOT}/packs/DurableOfflinePackStoreTest.kt` },
   { path: `${JVM_TEST_ROOT}/network/QueueFlushIntegrationTest.kt` },

@@ -10,7 +10,9 @@ kotlin = "2.4.0"
 kotlinx-coroutines = "1.10.2"
 kotlinx-datetime = "0.8.0-0.6.x-compat"
 kotlinx-serialization = "1.11.0"
-ktor = "3.2.0"
+# 3.2.0 cannot be dexed into Android apps (a `use streaming syntax` field
+# name breaks D8 below DEX 040 — fixed upstream); keep ≥3.3.
+ktor = "3.5.1"
 sqldelight = "2.1.0"
 
 [libraries]

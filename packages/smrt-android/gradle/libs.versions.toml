@@ -1,0 +1,58 @@
+# Toolchain pinned to smrt-mobile's set (ADR 0001 Phase 0, renovate keeps
+# both catalogs current): Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1,
+# compileSdk 36 / minSdk 26 / JVM 21. UI/adapter artifacts are this
+# package's own surface (Compose BOM, CameraX, ML Kit).
+[versions]
+android-compile-sdk = "36"
+android-min-sdk = "26"
+android-target-sdk = "36"
+agp = "9.2.1"
+kotlin = "2.4.0"
+kotlinx-coroutines = "1.10.2"
+kotlinx-datetime = "0.8.0-0.6.x-compat"
+sqldelight = "2.1.0"
+compose-bom = "2026.06.01"
+activity-compose = "1.13.0"
+camerax = "1.6.1"
+# 1.18+ requires compileSdk 37; the toolchain pin is compileSdk 36.
+core-ktx = "1.17.0"
+# 2.11+ requires compileSdk 37; the toolchain pin is compileSdk 36.
+lifecycle = "2.10.0"
+browser = "1.10.0"
+mlkit-barcode-scanning = "17.3.0"
+mlkit-genai-prompt = "1.0.0-beta2"
+junit = "4.13.2"
+
+[libraries]
+# Substituted by includeBuild("../smrt-mobile") — versionless on purpose.
+smrt-mobile = { module = "com.happyvertical.smrt:smrt-mobile" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core-ktx" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
+androidx-browser = { module = "androidx.browser:browser", version.ref = "browser" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkit-barcode-scanning" }
+mlkit-genai-prompt = { module = "com.google.mlkit:genai-prompt", version.ref = "mlkit-genai-prompt" }
+sqldelight-android-driver = { module = "app.cash.sqldelight:android-driver", version.ref = "sqldelight" }
+junit = { module = "junit:junit", version.ref = "junit" }
+# Explicit because AGP built-in Kotlin has no kotlin("test") accessor wiring.
+kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
+
+[plugins]
+# AGP 9 built-in Kotlin: no org.jetbrains.kotlin.android; the kotlin version
+# below only pins the compose/serialization compiler plugins.
+androidLibrary = { id = "com.android.library", version.ref = "agp" }
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

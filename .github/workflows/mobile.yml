@@ -1,13 +1,17 @@
 # =============================================================================
 # Mobile (KMP) — CI lanes (b) and (c) from the ADR 0001 Phase 0 decisions
 # =============================================================================
-# Lane (a) — the SDK-free `validate:shell` structural gate — runs on every PR
-# via the turbo Build job (it is packages/smrt-mobile's `build` script).
+# Lane (a) — the SDK-free structural gates (`validate:shell` for smrt-mobile,
+# `validate:android` for smrt-android) — run on every PR via the turbo Build
+# job (they are the packages' `build` scripts).
 #
 # Lane (b) — this workflow's `gradle-linux` job: a REAL Gradle compile + KMP
-# unit tests (androidTarget + jvm), path-filtered to run only when the mobile
-# package changes. GitHub-hosted ubuntu runners ship a JDK and the Android
-# SDK; iOS targets are skipped off-macOS by the Kotlin plugin.
+# unit tests (androidTarget + jvm), plus `gradle-android` for the
+# smrt-android library + sample app; path-filtered to run only when the
+# mobile packages change. GitHub-hosted ubuntu runners ship a JDK and the
+# Android SDK; iOS targets are skipped off-macOS by the Kotlin plugin.
+# smrt-android consumes smrt-mobile via includeBuild, so its job also runs
+# on smrt-mobile changes (shared path filter).
 #
 # Lane (c) — `gradle-macos`: the full lane including iOS-target compilation
 # (Kotlin/Native requires a macOS host), nightly and on-demand only.
@@ -19,6 +23,7 @@ on:
   pull_request:
     paths:
       - 'packages/smrt-mobile/**'
+      - 'packages/smrt-android/**'
       - '.github/workflows/mobile.yml'
   schedule:
     - cron: '17 9 * * *'  # nightly full lane
@@ -54,6 +59,30 @@ jobs:
 
       - name: Build and test (androidTarget + jvm)
         working-directory: packages/smrt-mobile
+        run: ./gradlew build --stacktrace
+
+  gradle-android:
+    name: smrt-android library + sample
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Build and test (library + sample + unit tests + lint)
+        working-directory: packages/smrt-android
         run: ./gradlew build --stacktrace
 
   gradle-macos:

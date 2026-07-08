@@ -5,14 +5,17 @@ non-TypeScript package in the monorepo. Design: **ADR 0001**
 (`docs/content/adr/0001-kmp-mobile-foundation.md`) + extraction plan; epic
 #1745. Decision record: `README.md` here and issue #1737.
 
-**Status: Phases 1–4 complete** — the shared-logic core. Present: framework
+**Status: Phases 1–5 complete** — the shared-logic core. Present: framework
 contract types, pack i18n resolver, pack integrity/snapshot model,
 evidence-capture model, shell state, the **durable SQLDelight write-queue +
 pack store** (Phase 2, #1739), the **PKCE auth/session module** (Phase 3,
-#1740), and the **shared Ktor client** (Phase 4, #1741) implementing the
-`AuthTransport`/`QueueSender` seams. NOT here: platform adapters, engines,
-and secure-storage impls — those land with smrt-android/smrt-ios (Phases
-5–6). **Productionize, don't lift** governs all porting from the seed apps.
+#1740), the **shared Ktor client** (Phase 4, #1741) implementing the
+`AuthTransport`/`QueueSender` seams, and the **barcode/speech/LLM/device
+seam interfaces** (Phase 5, #1742). NOT here: platform adapters, engines,
+and secure-storage impls — the Android halves live in
+`packages/smrt-android` (Phase 5); the iOS halves land with smrt-ios
+(Phase 6). **Productionize, don't lift** governs all porting from the seed
+apps.
 
 ## Layout
 
@@ -86,9 +89,17 @@ consumers use Gradle `includeBuild`).
   travels in `contextIds` so the model stays trade-neutral.
 - `src/commonMain/kotlin/.../shell/` — `MobileShellState` manual-tab nav
   state (no androidx.navigation); apps provide the tab list.
-- `src/commonMain/kotlin/.../platform/` — adapter seams (`Sha256Hasher`).
-  Barcode/speech/on-device-LLM interfaces arrive with their first concrete
-  implementations (Phases 5–6).
+- `src/commonMain/kotlin/.../platform/` — adapter seams: `Sha256Hasher`,
+  and the Phase 5 shared contracts (ADR 0001 Correction 4 — net-new, the
+  seed apps had none): `BarcodeScanner` (+ `BarcodeScan`/`BarcodeFormat`),
+  `SpeechTranscriber` (+ `SpeechErrorCode`), `OnDeviceLanguageModel`
+  (+ `LanguageModelAvailability` — amaru's status/provider vocabulary kept
+  verbatim; prompt building and output parsing stay app-side), and the
+  reporter-seeded `DeviceCapabilityAdapter` (tri-state permission model;
+  DTOs live in the generated contract). Concrete implementations are the
+  platform libraries' job: smrt-android (Phase 5) ships ML Kit barcode,
+  `android.speech`, Gemini Nano, and the capability probe; smrt-ios
+  (Phase 6) ships the Foundation Models + net-new barcode counterparts.
 
 Targets: `androidTarget` + `jvm` + `iosX64`/`iosArm64`/`iosSimulatorArm64`
 (static framework `SmrtMobile`). The `jvm` target exists so common tests run

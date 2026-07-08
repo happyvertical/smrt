@@ -199,6 +199,9 @@ the Ktor client end-to-end.
 
 ## Phase 5 — `smrt-android`
 
+**Landed** (issue #1742): `packages/smrt-android` — the locked design
+record lives as a comment on the issue.
+
 **Goal:** the Compose design system + native adapters.
 
 **Seed:** amaru `FieldOpsTheme.kt` (generic tokens), shell widgets,
