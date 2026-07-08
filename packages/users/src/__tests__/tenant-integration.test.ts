@@ -6,7 +6,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantIntegrationCollection } from '../collections/TenantIntegrationCollection.js';
 import { TenantIntegration } from '../models/TenantIntegration.js';
 
@@ -60,7 +60,7 @@ describe('TenantIntegration', () => {
       integrations.findFor(tenantId, 'aws'),
     );
     expect(found?.status).toBe('active');
-    expect(found?.lastCheckSummary).toEqual([
+    expect(found?.getLastCheckSummary()).toEqual([
       { name: 'account exists', ok: true },
     ]);
     expect(found?.lastError).toBeNull();
@@ -80,6 +80,42 @@ describe('TenantIntegration', () => {
     expect(second.status).toBe('unprovisioned');
   });
 
+  it('findOrInit re-reads the winner after a strict insert conflict', async () => {
+    const tenantId = randomUUID();
+    const existing = await withTenant({ tenantId }, () =>
+      integrations.create({
+        tenantId,
+        provider: 'aws',
+        externalIds: { accountId: '123456789012' },
+        status: 'active',
+      }),
+    );
+    const originalFindFor = integrations.findFor.bind(integrations);
+    let findForCalls = 0;
+    const findForSpy = vi
+      .spyOn(integrations, 'findFor')
+      .mockImplementation(async (tenantIdArg, providerArg) => {
+        findForCalls += 1;
+        if (findForCalls === 1) {
+          return null;
+        }
+
+        return originalFindFor(tenantIdArg, providerArg);
+      });
+
+    try {
+      const winner = await withTenant({ tenantId }, () =>
+        integrations.findOrInit(tenantId, 'aws'),
+      );
+
+      expect(winner.id).toBe(existing.id);
+      expect(winner.status).toBe('active');
+      expect(winner.getExternalId('accountId')).toBe('123456789012');
+    } finally {
+      findForSpy.mockRestore();
+    }
+  });
+
   it('supports setting and clearing external IDs', () => {
     const integration = new TenantIntegration({
       tenantId: randomUUID(),
@@ -87,10 +123,37 @@ describe('TenantIntegration', () => {
     });
 
     integration.setExternalId('accountId', '123456789012');
-    expect(integration.externalIds).toEqual({ accountId: '123456789012' });
+    expect(integration.getExternalIds()).toEqual({
+      accountId: '123456789012',
+    });
 
     integration.setExternalId('accountId', undefined);
-    expect(integration.externalIds).toEqual({});
+    expect(integration.getExternalIds()).toEqual({});
+  });
+
+  it('rejects non-string external ID values on set', () => {
+    const integration = new TenantIntegration({
+      tenantId: randomUUID(),
+      provider: 'aws',
+    });
+
+    expect(() =>
+      integration.setExternalIds({
+        accountId: 123,
+      } as unknown as Record<string, string>),
+    ).toThrow("TenantIntegration external id 'accountId' must be a string");
+  });
+
+  it('gracefully handles malformed stored JSON fields', () => {
+    const integration = new TenantIntegration({
+      tenantId: randomUUID(),
+      provider: 'aws',
+      externalIds: '{malformed',
+      lastCheckSummary: '{malformed',
+    });
+
+    expect(integration.getExternalIds()).toEqual({});
+    expect(integration.getLastCheckSummary()).toEqual([]);
   });
 
   it('filters rows by active tenant context', async () => {

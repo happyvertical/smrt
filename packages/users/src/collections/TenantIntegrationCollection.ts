@@ -7,7 +7,6 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import {
   TenantIntegration,
-  type TenantIntegrationOptions,
   type TenantIntegrationProvider,
 } from '../models/TenantIntegration.js';
 
@@ -44,6 +43,7 @@ export class TenantIntegrationCollection extends SmrtCollection<TenantIntegratio
         tenantId,
         provider,
         status: 'unprovisioned',
+        _insertOnly: true,
       });
     } catch (err) {
       if (!isDuplicateKeyError(err)) {
@@ -58,10 +58,6 @@ export class TenantIntegrationCollection extends SmrtCollection<TenantIntegratio
       throw err;
     }
   }
-
-  async create(options: TenantIntegrationOptions): Promise<TenantIntegration> {
-    return super.create(options) as Promise<TenantIntegration>;
-  }
 }
 
 function isDuplicateKeyError(err: unknown): boolean {
@@ -71,7 +67,7 @@ function isDuplicateKeyError(err: unknown): boolean {
   while (cur && typeof cur === 'object' && !seen.has(cur)) {
     seen.add(cur);
     const e = cur as { code?: unknown; message?: unknown; cause?: unknown };
-    if (e.code === '23505') {
+    if (e.code === '23505' || e.code === 'VALIDATION_UNIQUE_CONSTRAINT') {
       return true;
     }
 
