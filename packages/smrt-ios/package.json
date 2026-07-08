@@ -1,0 +1,24 @@
+{
+  "name": "@happyvertical/smrt-ios",
+  "version": "0.38.14",
+  "description": "SwiftUI foundation for SMRT mobile apps: MobileTheme design tokens, the tab shell scaffold bound to smrt-mobile's MobileShellState, and the native platform adapters (VisionKit barcode, Speech transcription, Foundation Models on-device LLM, device capabilities, SQLDelight native driver, Keychain auth storage, ASWebAuthenticationSession auth launcher) — actually consuming the exported SmrtMobile KMP framework",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "files": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "scripts": {
+    "build": "node scripts/validate-ios.mjs",
+    "validate:ios": "node scripts/validate-ios.mjs",
+    "validate:ios:native": "node scripts/validate-ios.mjs --native",
+    "clean": "rm -rf build DerivedData SmrtIos.xcodeproj"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-ios"
+  }
+}

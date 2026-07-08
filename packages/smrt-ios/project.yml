@@ -1,0 +1,81 @@
+name: SmrtIos
+options:
+  bundleIdPrefix: com.happyvertical.smrt
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+# `SmrtMobile.framework` (the exported KMP static framework) is staged into
+# Frameworks/ by scripts/validate-ios.mjs --native (from smrt-mobile's Gradle
+# build). Local-path consumption per the ADR 0001 Phase 0 decision — no remote
+# SPM. Everything links it once, at the app/test target (SmrtIos is a static
+# library compiled against the module), so there are no duplicate static symbols.
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    # SmrtMobile is an arm64-only simulator framework (iosSimulatorArm64), so the
+    # simulator build must be arm64-only too — exclude x86_64 (Apple Silicon hosts
+    # only, which is CI's macos-latest and local dev).
+    "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+    FRAMEWORK_SEARCH_PATHS:
+      - "$(inherited)"
+      - "$(SRCROOT)/Frameworks"
+    # SQLiter's cinterop (SQLDelight native-driver) references sqlite3
+    # extension-loading symbols that Apple's iOS libsqlite3 stub omits; resolve
+    # them dynamically at runtime (they exist in the shipped dylib). Without this
+    # the app fails to link. See AGENTS.md § Gotchas.
+    OTHER_LDFLAGS:
+      - "$(inherited)"
+      - "-lsqlite3"
+      - "-Wl,-U,_sqlite3_load_extension"
+      - "-Wl,-U,_sqlite3_enable_load_extension"
+
+targets:
+  SmrtIos:
+    type: library.static
+    platform: iOS
+    sources:
+      - Sources/SmrtIos
+    settings:
+      base:
+        PRODUCT_MODULE_NAME: SmrtIos
+        DEFINES_MODULE: "YES"
+
+  SmrtIosSample:
+    type: application
+    platform: iOS
+    sources:
+      - Sample/SmrtIosSample
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.happyvertical.smrt.ios.sample
+        INFOPLIST_FILE: Sample/SmrtIosSample/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
+    dependencies:
+      - target: SmrtIos
+      - framework: Frameworks/SmrtMobile.framework
+        embed: false
+      - sdk: AuthenticationServices.framework
+      - sdk: VisionKit.framework
+      - sdk: Speech.framework
+
+  SmrtIosTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Tests/SmrtIosTests
+    dependencies:
+      - target: SmrtIos
+      - framework: Frameworks/SmrtMobile.framework
+        embed: false
+
+schemes:
+  SmrtIosSample:
+    build:
+      targets:
+        SmrtIosSample: all
+        SmrtIosTests: [test]
+    test:
+      targets:
+        - SmrtIosTests

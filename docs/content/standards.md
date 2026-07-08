@@ -61,19 +61,20 @@ packages/<name>/
 
 ### Non-TypeScript packages
 
-`packages/smrt-mobile` (Kotlin Multiplatform) and `packages/smrt-android`
-(Android/Compose) are the monorepo's non-TypeScript packages (ADR 0001;
-Phase 6 adds `smrt-ios`). They keep the workspace wrapper surface
+`packages/smrt-mobile` (Kotlin Multiplatform), `packages/smrt-android`
+(Android/Compose), and `packages/smrt-ios` (SwiftUI/XcodeGen) are the monorepo's
+non-TypeScript packages (ADR 0001). They keep the workspace wrapper surface
 (`package.json`, `AGENTS.md`, `CLAUDE.md` shim, `README.md`) but are exempt —
 via the `NON_TYPESCRIPT_PACKAGES` set in `scripts/check-standards.mjs` — from
 the TypeScript-specific requirements: no `vitest.config.ts` and no vitest
-`test`/`test:watch` scripts (their tests are Gradle/kotlin.test, run by the
-`.github/workflows/mobile.yml` lane), no `typecheck` script (the Kotlin
-compiler typechecks), and no `dist` in `files` (nothing publishes to npm:
-`private: true`, Maven publishing deferred per the ADR 0001 Phase 0 decision
-record; both stay in the changesets fixed group so their versions ride the
-release train). Their always-on structural gates are `validate:shell` /
-`validate:android`, wired as each package's `build` script.
+`test`/`test:watch` scripts (their tests are Gradle/kotlin.test and Swift
+XCTest, run by the `.github/workflows/mobile.yml` lane), no `typecheck` script
+(the Kotlin/Swift compilers typecheck), and no `dist` in `files` (nothing
+publishes to npm: `private: true`, Maven/SPM publishing deferred per the ADR
+0001 Phase 0 decision record; all stay in the changesets fixed group so their
+versions ride the release train). Their always-on structural gates are
+`validate:shell` / `validate:android` / `validate:ios`, wired as each package's
+`build` script.
 
 ### Forbidden at any package root or src
 
