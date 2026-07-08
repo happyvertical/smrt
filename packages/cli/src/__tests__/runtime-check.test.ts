@@ -17,7 +17,11 @@ async function createExternalPackage(
   projectRoot: string,
   packageName: string,
   manifest: SmartObjectManifest,
-  options: { version?: string; baseDir?: string } = {},
+  options: {
+    version?: string;
+    baseDir?: string;
+    exports?: Record<string, unknown>;
+  } = {},
 ): Promise<void> {
   const packageDir = resolve(
     options.baseDir || resolve(projectRoot, 'node_modules'),
@@ -28,7 +32,7 @@ async function createExternalPackage(
     name: packageName,
     version: options.version || '0.0.0-test',
     type: 'module',
-    exports: {
+    exports: options.exports || {
       '.': './dist/index.js',
       './manifest': './dist/manifest.json',
       './manifest.json': './dist/manifest.json',
@@ -266,6 +270,119 @@ describe('runRuntimeCheck', () => {
         }),
       ]),
     );
+  });
+
+  it('warns and skips missing nested SMRT dependency manifests', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(projectRoot, '@fixture/users', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/users',
+      smrtDependencies: ['@fixture/mobile-contract'],
+      objects: {
+        '@fixture/users:User': {
+          className: 'User',
+          qualifiedName: '@fixture/users:User',
+          packageName: '@fixture/users',
+          collection: 'users',
+          fields: {
+            email: { type: 'text', required: true },
+          },
+        },
+      },
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/users'],
+      objects: {},
+    });
+    await createRegisterFile(projectRoot);
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(
+      result.findings.some(
+        (finding) => finding.code === 'missing-dependency-manifest',
+      ),
+    ).toBe(false);
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'warning',
+          code: 'missing-nested-dependency-manifest',
+          message: expect.stringContaining('@fixture/mobile-contract'),
+        }),
+      ]),
+    );
+  });
+
+  it('loads nested import-only packages from their manifest file', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(
+      projectRoot,
+      '@fixture/mobile-contract',
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        packageName: '@fixture/mobile-contract',
+        objects: {},
+      },
+      {
+        exports: {
+          '.': {
+            types: './dist/index.d.ts',
+            import: './dist/index.js',
+          },
+        },
+      },
+    );
+    await createExternalPackage(projectRoot, '@fixture/users', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/users',
+      smrtDependencies: ['@fixture/mobile-contract'],
+      objects: {
+        '@fixture/users:User': {
+          className: 'User',
+          qualifiedName: '@fixture/users:User',
+          packageName: '@fixture/users',
+          collection: 'users',
+          fields: {
+            email: { type: 'text', required: true },
+          },
+        },
+      },
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/users'],
+      objects: {},
+    });
+    await createRegisterFile(projectRoot);
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(
+      result.findings.filter((finding) =>
+        finding.code.includes('dependency-manifest'),
+      ),
+    ).toEqual([]);
   });
 
   it('reports malformed dependency manifests as missing findings instead of crashing', async () => {

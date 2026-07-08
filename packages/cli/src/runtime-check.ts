@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
@@ -45,6 +45,12 @@ interface ManifestEntryRef {
 interface LoadedDependencyManifest {
   manifest: SmartObjectManifest;
   resolverPath: string;
+}
+
+interface DependencyQueueEntry {
+  dependency: string;
+  issuerResolverPath: string;
+  parentDependency?: string;
 }
 
 type EntryLookupResult =
@@ -311,7 +317,9 @@ async function loadDependencyManifests(
   findings: RuntimeCheckFinding[],
 ): Promise<SmartObjectManifest[]> {
   const loaded = new Map<string, LoadedDependencyManifest>();
-  const queue = (rootManifest.smrtDependencies || []).map((dependency) => ({
+  const queue: DependencyQueueEntry[] = (
+    rootManifest.smrtDependencies || []
+  ).map((dependency) => ({
     dependency,
     issuerResolverPath: resolve(projectRoot, 'package.json'),
   }));
@@ -328,6 +336,16 @@ async function loadDependencyManifests(
     );
 
     if (!loadedDependency) {
+      if (next.parentDependency) {
+        addFinding(
+          findings,
+          'warning',
+          'missing-nested-dependency-manifest',
+          `Nested SMRT dependency "${next.dependency}" declared by "${next.parentDependency}" does not expose a runtime manifest; skipping it.`,
+        );
+        continue;
+      }
+
       addFinding(
         findings,
         'error',
@@ -344,6 +362,7 @@ async function loadDependencyManifests(
         queue.push({
           dependency: nestedDependency,
           issuerResolverPath: loadedDependency.resolverPath,
+          parentDependency: next.dependency,
         });
       }
     }
@@ -386,10 +405,58 @@ function resolvePackageJsonPath(
       );
 
       if (packageJsonPath) {
-        return packageJsonPath;
+        return realpathSync(packageJsonPath);
       }
     } catch {
       // Keep trying the next candidate.
+    }
+  }
+
+  return findPackageJsonFromNodeModules(packageName, issuerResolverPath);
+}
+
+function findPackageJsonFromNodeModules(
+  packageName: string,
+  issuerResolverPath: string,
+): string | null {
+  const packageParts = packageName.split('/');
+  const startDirs = new Set<string>([dirname(issuerResolverPath)]);
+
+  try {
+    startDirs.add(dirname(realpathSync(issuerResolverPath)));
+  } catch {
+    // Keep the lexical issuer path if the real path cannot be resolved.
+  }
+
+  for (const startDir of startDirs) {
+    let currentDir = startDir;
+
+    for (let index = 0; index < MAX_PACKAGE_JSON_ASCENTS; index += 1) {
+      const packageJsonPath = join(
+        currentDir,
+        'node_modules',
+        ...packageParts,
+        'package.json',
+      );
+
+      if (existsSync(packageJsonPath)) {
+        try {
+          const packageJson = JSON.parse(
+            readFileSync(packageJsonPath, 'utf-8'),
+          );
+          if (packageJson?.name === packageName) {
+            return realpathSync(packageJsonPath);
+          }
+        } catch {
+          // Keep walking upward.
+        }
+      }
+
+      const parentDir = dirname(currentDir);
+      if (parentDir === currentDir) {
+        break;
+      }
+      currentDir = parentDir;
     }
   }
 
