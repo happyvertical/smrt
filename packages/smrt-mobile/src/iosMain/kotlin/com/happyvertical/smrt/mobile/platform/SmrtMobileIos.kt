@@ -9,6 +9,7 @@ import com.happyvertical.smrt.mobile.network.UnauthorizedHandler
 import com.happyvertical.smrt.mobile.packs.DurableOfflinePackStore
 import com.happyvertical.smrt.mobile.sync.DurableWriteQueue
 import io.ktor.client.engine.darwin.Darwin
+import kotlinx.datetime.Instant
 
 /**
  * iOS platform factories the exported `SmrtMobile` framework hands to Swift
@@ -73,6 +74,17 @@ object SmrtMobileIos {
      */
     fun createWriteQueue(database: SmrtMobileDatabase): DurableWriteQueue =
         DurableWriteQueue(database)
+
+    /**
+     * Builds a [kotlinx.datetime.Instant] from epoch milliseconds for Swift.
+     * Kotlin/Native does not surface a Swift-constructible `Instant`, so the
+     * iOS evidence-capture adapter (`IOSEvidenceCaptureAdapter`) defers the
+     * `EvidenceAssetRef.persistedAt` / `EvidenceLocationMetadata.capturedAt`
+     * timestamps here — the same "types Swift can't construct" rationale as
+     * the store/client factories above. iOS-only; Android builds its own.
+     */
+    fun instantFromEpochMillis(epochMillis: Long): Instant =
+        Instant.fromEpochMilliseconds(epochMillis)
 
     const val DEFAULT_DATABASE_NAME: String = "smrt_mobile.db"
 }

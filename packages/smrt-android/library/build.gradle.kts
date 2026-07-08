@@ -55,6 +55,9 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
 
     implementation(libs.androidx.core.ktx)
+    // ComponentActivity + ActivityResultContracts/Registry drive the evidence
+    // camera/picker capture; only activity-compose (sample) had this before.
+    implementation(libs.androidx.activity)
     implementation(libs.androidx.browser)
     // Directly imported (LocalLifecycleOwner) — declared, not left to a
     // compose-ui transitive.

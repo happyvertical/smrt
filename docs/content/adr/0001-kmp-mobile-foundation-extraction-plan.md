@@ -224,8 +224,18 @@ record lives as a comment on the issue.
 **Landed** (issue #1743): `packages/smrt-ios` — the locked design
 record lives as a comment on the issue. smrt-mobile gained a first `iosMain`
 (`SmrtMobileIos` factories) so Swift can obtain the durable store + Ktor client
-it cannot construct itself. The iOS evidence-capture adapter is deferred (joint
-design pass with the Android half, #1880).
+it cannot construct itself.
+
+**Landed** (issue #1880): the **joint iOS + Android evidence-capture adapters**
+(deferred from Phase 5 D9 and Phase 6 D9 for a single cross-platform design
+pass — locked record on the issue). `EvidenceCapturePlatformAdapter` impls on
+**both** platforms, resolving the shared contract once: **drive-to-completion**
+`captureOrPickPhoto` (Android full-res `TakePicture` into a library-shipped
+`FileProvider`; iOS `UIImagePickerController`/`PHPickerViewController` →
+`Documents/Evidence/` with security-scoped-resource handling), a unified
+`app_private` `storageRoot`, sha256 pins, and a `LocationManager`/
+`CLLocationManager` geo sidecar (never EXIF). smrt-mobile's `iosMain` gained
+`instantFromEpochMillis` for the iOS DTO timestamps.
 
 **Goal:** SwiftUI design system + adapters **actually consuming the exported KMP
 framework**. Riskiest phase.

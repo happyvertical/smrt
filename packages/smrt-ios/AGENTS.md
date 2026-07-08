@@ -35,9 +35,14 @@ point for the KMP framework, so there are no duplicate static symbols.
   `IOSDeviceCapabilityAdapter` (`DeviceCapabilityAdapter`),
   `DataScannerBarcodeScanner` (`BarcodeScanner`, **net-new** + `BarcodeScannerPreview`),
   `FoundationModelsLanguageModel` (`OnDeviceLanguageModel`), `IOSSpeechTranscriber`
-  (`SpeechTranscriber`).
+  (`SpeechTranscriber`), and `IOSEvidenceCaptureAdapter`
+  (`EvidenceCapturePlatformAdapter`; drive-to-completion `captureOrPickPhoto` —
+  presents `UIImagePickerController`/`PHPickerViewController`, bridges the
+  delegate into `async`, copies into `Documents/Evidence/` with
+  security-scoped-resource handling, CryptoKit sha256 pin, `CLLocationManager`
+  geo sidecar; simulator falls back to the photo picker; #1880).
 - `Sample/SmrtIosSample/` — the demo app proving real shared logic (durable pack
-  store + write-queue, adapters, theme/shell). Never published.
+  store + write-queue, adapters, evidence capture, theme/shell). Never published.
 - `Tests/SmrtIosTests/` — XCTest over the pure seam-vocabulary mappings.
 - `project.yml` — XcodeGen spec. `Frameworks/SmrtMobile.framework` is staged by
   the validator; both are git-ignored.
