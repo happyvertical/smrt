@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.16
+
+### Patch Changes
+
+- ### Features
+
+  - Phase 6 smrt-ios — SwiftUI theme + shell + KMP-framework adapters (#1883) (mobile)
+  - @happyvertical/smrt-config@0.38.16
+  - @happyvertical/smrt-types@0.38.16
+  - @happyvertical/smrt-scanner@0.38.16
+
 ## 0.38.15
 
 ### Patch Changes
