@@ -213,7 +213,7 @@ private fun HomeTab(modifier: Modifier, brandName: String, queue: DurableWriteQu
 @Composable
 private fun ScanTab(modifier: Modifier) {
     val context = LocalContext.current
-    val scanner = remember { MlKitBarcodeScanner(context) }
+    val scanner = remember { MlKitBarcodeScanner(context.applicationContext) }
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -292,7 +292,7 @@ private fun ScanTab(modifier: Modifier) {
 @Composable
 private fun TalkTab(modifier: Modifier) {
     val context = LocalContext.current
-    val transcriber = remember { AndroidSpeechTranscriber(context) }
+    val transcriber = remember { AndroidSpeechTranscriber(context.applicationContext) }
     val model = remember { GeminiNanoLanguageModel() }
     val scope = rememberCoroutineScope()
 
@@ -427,12 +427,22 @@ private fun TalkTab(modifier: Modifier) {
 private fun SettingsTab(modifier: Modifier) {
     val context = LocalContext.current
     var probeVersion by remember { mutableIntStateOf(0) }
+    // Feeds the adapter's tri-state model: permissions we have fired a
+    // system dialog for report `denied` (not `not_determined`) afterwards.
+    // In-memory is enough for the sample; real apps persist this.
+    val requestedPermissions = remember { mutableSetOf<String>() }
     val capabilities = remember(probeVersion) {
-        AndroidDeviceCapabilityAdapter(context).currentCapabilities()
+        AndroidDeviceCapabilityAdapter(
+            context,
+            permissionRequestHistory = { permission -> permission in requestedPermissions },
+        ).currentCapabilities()
     }
     val requestPermissions = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
-    ) { probeVersion += 1 }
+    ) { results ->
+        requestedPermissions.addAll(results.keys)
+        probeVersion += 1
+    }
 
     Column(
         modifier = modifier

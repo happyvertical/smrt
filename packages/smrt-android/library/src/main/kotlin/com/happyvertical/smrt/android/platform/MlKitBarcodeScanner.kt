@@ -44,6 +44,11 @@ class MlKitBarcodeScanner(private val context: Context) : BarcodeScanner {
     override fun startScanning(request: BarcodeScanRequest, listener: BarcodeScanListener) {
         stopScanning()
         val formats = mlKitBarcodeFormats(request.formats)
+        // A filter that matches nothing must not silently widen to
+        // scan-everything — that is a caller bug.
+        require(request.formats.isEmpty() || formats.isNotEmpty()) {
+            "no supported barcode formats in request: ${request.formats}"
+        }
         val client = if (formats.isEmpty()) {
             BarcodeScanning.getClient()
         } else {

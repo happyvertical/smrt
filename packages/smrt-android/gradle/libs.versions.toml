@@ -16,6 +16,8 @@ activity-compose = "1.13.0"
 camerax = "1.6.1"
 # 1.18+ requires compileSdk 37; the toolchain pin is compileSdk 36.
 core-ktx = "1.17.0"
+# 2.11+ requires compileSdk 37; the toolchain pin is compileSdk 36.
+lifecycle = "2.10.0"
 browser = "1.10.0"
 mlkit-barcode-scanning = "17.3.0"
 mlkit-genai-prompt = "1.0.0-beta2"
@@ -30,6 +32,7 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core-ktx" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
 androidx-browser = { module = "androidx.browser:browser", version.ref = "browser" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-ui = { module = "androidx.compose.ui:ui" }

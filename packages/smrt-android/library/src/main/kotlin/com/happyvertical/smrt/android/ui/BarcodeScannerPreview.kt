@@ -54,27 +54,37 @@ fun BarcodeScannerPreview(
     }
 
     DisposableEffect(context, lifecycleOwner, previewView, scanner) {
+        // Set on the main thread in onDispose and read on the main thread in
+        // the listener below: a provider future resolving after departure
+        // must not bind the camera (nothing would ever unbind it) or touch
+        // the shut-down analyzer executor.
+        var disposed = false
         val executor = Executors.newSingleThreadExecutor()
         val mainExecutor = ContextCompat.getMainExecutor(context)
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener(
             {
-                val cameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder()
-                    .build()
-                    .also { cameraPreview ->
-                        cameraPreview.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-                val imageCapture = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .build()
-                val analysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { imageAnalysis ->
-                        imageAnalysis.setAnalyzer(executor, scanner.analyzer)
-                    }
+                if (disposed) {
+                    return@addListener
+                }
+                // runCatching covers the future itself too — provider init
+                // can fail (no camera service) and this runs on main.
                 runCatching {
+                    val cameraProvider = cameraProviderFuture.get()
+                    val preview = Preview.Builder()
+                        .build()
+                        .also { cameraPreview ->
+                            cameraPreview.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                    val imageCapture = ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .build()
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { imageAnalysis ->
+                            imageAnalysis.setAnalyzer(executor, scanner.analyzer)
+                        }
                     cameraProvider.unbindAll()
                     cameraProvider.bindToLifecycle(
                         lifecycleOwner,
@@ -92,6 +102,7 @@ fun BarcodeScannerPreview(
         )
 
         onDispose {
+            disposed = true
             currentOnImageCaptureReady(null)
             runCatching {
                 if (cameraProviderFuture.isDone) {

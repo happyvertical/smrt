@@ -46,20 +46,24 @@ class KeystoreAuthStorage(
 
     override suspend fun clearPendingAuth() = clear(KEY_PENDING_AUTH)
 
+    // Writes use commit(), not apply(): the session manager awaits these
+    // before handing off to the browser, and the pending-auth slot must be
+    // durable if the process dies during the Custom Tab round-trip. The
+    // blocking write is already off the main thread (Dispatchers.IO).
     private suspend fun read(key: String): String? = withContext(Dispatchers.IO) {
         val stored = preferences.getString(key, null) ?: return@withContext null
         runCatching { decrypt(stored) }.getOrElse {
-            preferences.edit().remove(key).apply()
+            preferences.edit().remove(key).commit()
             null
         }
     }
 
-    private suspend fun write(key: String, value: String) = withContext(Dispatchers.IO) {
-        preferences.edit().putString(key, encrypt(value)).apply()
+    private suspend fun write(key: String, value: String): Unit = withContext(Dispatchers.IO) {
+        preferences.edit().putString(key, encrypt(value)).commit()
     }
 
-    private suspend fun clear(key: String) = withContext(Dispatchers.IO) {
-        preferences.edit().remove(key).apply()
+    private suspend fun clear(key: String): Unit = withContext(Dispatchers.IO) {
+        preferences.edit().remove(key).commit()
     }
 
     private fun encrypt(plaintext: String): String {

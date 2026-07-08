@@ -56,15 +56,21 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.browser)
+    // Directly imported (LocalLifecycleOwner) — declared, not left to a
+    // compose-ui transitive.
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
-    implementation(libs.camera.core)
+    // api: these types appear in the library's public signatures
+    // (ImageCapture/ImageAnalysis.Analyzer on the barcode surface, SqlDriver
+    // from the driver factory) — consumers must compile against them.
+    api(libs.camera.core)
     implementation(libs.camera.camera2)
     implementation(libs.camera.lifecycle)
     implementation(libs.camera.view)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.mlkit.genai.prompt)
 
-    implementation(libs.sqldelight.android.driver)
+    api(libs.sqldelight.android.driver)
 
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.junit)
