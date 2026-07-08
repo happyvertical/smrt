@@ -29,6 +29,10 @@ function isVisibleActive(item: ShellNavItem): boolean {
   if (isActive(item)) return true;
   return collapsed && !!item.children?.some((child) => isActive(child));
 }
+
+function fallbackIcon(label: string): string {
+  return label.trim().charAt(0).toLocaleUpperCase() || '?';
+}
 </script>
 
 <nav
@@ -40,7 +44,8 @@ function isVisibleActive(item: ShellNavItem): boolean {
     <div class="smrt-tenant-nav__section">
       <a
         href={item.href}
-        aria-current={isVisibleActive(item) ? 'page' : undefined}
+        class:smrt-tenant-nav__link--visible-active={isVisibleActive(item)}
+        aria-current={isActive(item) ? 'page' : undefined}
         title={collapsed ? item.label : item.description}
         onclick={onNavigate}
       >
@@ -51,6 +56,13 @@ function isVisibleActive(item: ShellNavItem): boolean {
             {:else}
               {item.icon}
             {/if}
+          </span>
+        {:else if collapsed}
+          <span
+            class="smrt-tenant-nav__icon smrt-tenant-nav__icon--fallback"
+            aria-hidden="true"
+          >
+            {fallbackIcon(item.label)}
           </span>
         {/if}
         {#if collapsed}
@@ -125,7 +137,8 @@ function isVisibleActive(item: ShellNavItem): boolean {
   }
 
   .smrt-tenant-nav a:hover,
-  .smrt-tenant-nav a[aria-current='page'] {
+  .smrt-tenant-nav a[aria-current='page'],
+  .smrt-tenant-nav a.smrt-tenant-nav__link--visible-active {
     background: var(--smrt-color-surface-container-high);
   }
 
@@ -135,6 +148,14 @@ function isVisibleActive(item: ShellNavItem): boolean {
     inline-size: 1.25rem;
     block-size: 1.25rem;
     min-inline-size: 1.25rem;
+  }
+
+  .smrt-tenant-nav__icon--fallback {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-surface-container-high);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-small-size);
+    font-weight: var(--smrt-typography-weight-semibold);
   }
 
   .smrt-tenant-nav strong,

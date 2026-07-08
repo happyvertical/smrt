@@ -76,12 +76,33 @@ describe('TenantNav', () => {
         container.querySelectorAll('[data-testid="custom-icon"]'),
       ).toHaveLength(1);
       expect(container.querySelector('a[href="/admin/experience"]')).toBeNull();
-      expect(
-        container.querySelector('a[href="/admin/resume"]'),
-      ).toHaveAttribute('aria-current', 'page');
+      const parentLink = container.querySelector('a[href="/admin/resume"]');
+      expect(parentLink).not.toHaveAttribute('aria-current');
+      expect(parentLink).toHaveClass('smrt-tenant-nav__link--visible-active');
       expect(
         container.querySelector('a[href="/admin/resume"]'),
       ).toHaveAttribute('title', 'Career');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders a visible fallback glyph for iconless collapsed items', () => {
+    const component = mount(TenantNav, {
+      target: container,
+      props: {
+        collapsed: true,
+        currentHref: '/admin/memory',
+        items: [{ href: '/admin/memory', label: 'Memory' }],
+      },
+    });
+
+    try {
+      const link = container.querySelector('a[href="/admin/memory"]');
+      const fallback = link?.querySelector('.smrt-tenant-nav__icon--fallback');
+
+      expect(fallback?.textContent?.trim()).toBe('M');
+      expect(link).toHaveAttribute('aria-current', 'page');
     } finally {
       unmount(component);
     }
