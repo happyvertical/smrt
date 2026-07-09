@@ -77,8 +77,16 @@ class LearningSampleAgent extends Agent {
     }
     this.lastStrategy = strategy;
 
-    // Stage the episode so the lifecycle reinforces it after run().
-    this.stageLearning({ scope: this.learningScope(), key, value: strategy });
+    // Stage the episode so the lifecycle reinforces it after run(). When the
+    // strategy was freshly generated (e.g. after the previous one decayed),
+    // `updateValue` replaces the stored value so a superseded/failed strategy
+    // is not later recalled at rising confidence.
+    this.stageLearning({
+      scope: this.learningScope(),
+      key,
+      value: strategy,
+      updateValue: this.lastStrategySource === 'generated',
+    });
 
     // A validated failure decays the memory without throwing.
     if (!this.strategyValid) {
@@ -188,6 +196,17 @@ describe('Learning trait — end-to-end learn → recall → adapt (#1886)', () 
     await agent.execute();
     expect(agent.lastStrategySource).toBe('generated');
     expect(agent.aiCalls).toBe(2);
+
+    // The regenerated strategy supersedes the failed one in storage, so a
+    // later run recalls the new strategy — never the one that stopped working.
+    const regenerated = await readMemoryRow(
+      db,
+      agent.id as string,
+      'sample/invoice',
+      'invoice',
+    );
+    expect(JSON.parse(String(regenerated?.value))).toBe('strategy:invoice:v2');
+    expect(Number(regenerated?.confidence)).toBeGreaterThanOrEqual(0.7);
   });
 
   it('isolates memory by owner — a distinct agent instance starts cold', async () => {
