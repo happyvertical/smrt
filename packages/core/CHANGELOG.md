@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.23
+
+### Patch Changes
+
+- ### Features
+
+  - close Phase 7 foundation gaps (#1913) (mobile)
+  - @happyvertical/smrt-config@0.38.23
+  - @happyvertical/smrt-types@0.38.23
+  - @happyvertical/smrt-scanner@0.38.23
+
 ## 0.38.22
 
 ### Patch Changes
