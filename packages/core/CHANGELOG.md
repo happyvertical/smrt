@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.21
+
+### Patch Changes
+
+- ### Features
+
+  - conversational harness — tool-loop + persona-bound conversation + feedback (#1909) (chat)
+  - @happyvertical/smrt-config@0.38.21
+  - @happyvertical/smrt-types@0.38.21
+  - @happyvertical/smrt-scanner@0.38.21
+
 ## 0.38.20
 
 ### Patch Changes
