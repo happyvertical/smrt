@@ -11,6 +11,7 @@ ORM, code generation, AI integration, and the DispatchBus. Everything else build
 | ObjectRegistry | `src/registry.ts` | Global singleton (globalThis) — class metadata, fields, STI chains, manifests |
 | DispatchBus | `src/dispatch/bus.ts` | Inter-agent messaging — emit, subscribe (persistent), process |
 | GlobalInterceptors | `src/interceptors.ts` | Plugin system — beforeList/Get/Save/Delete hooks (used by tenancy) |
+| LearningMemory | `src/learning/memory.ts` | Confidence-scored recall/capture over `_smrt_contexts` + embeddings (#1886) |
 
 ## SmrtObject Lifecycle
 
@@ -21,6 +22,25 @@ ORM, code generation, AI integration, and the DispatchBus. Everything else build
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
+
+## LearningMemory (#1886)
+
+Confidence-scored, self-correcting memory over the existing `_smrt_contexts` (keyed recall) and `_smrt_embeddings` (semantic recall) substrate. Wires the reinforcement columns that ship on `_smrt_contexts` but were never written (`success_count`, `failure_count`, and a `last_used_at` that recall now refreshes). This is L1 of the tenant-learning-agents epic; the opt-in `Learning` trait in `@happyvertical/smrt-agents` composes it into the agent lifecycle.
+
+```typescript
+const memory = new LearningMemory({ db: obj.systemDb, ownerClass: 'InvoiceAgent', ownerId: obj.id, tenantId });
+
+// recall — union of keyed-context lookup + (optional) semantic search, confidence-filtered
+const [hit] = await memory.recall('parser/acme', { key: docUrl }); // or { query } with a wired semanticSearch
+const strategy = hit?.value ?? (await generate());
+
+// capture — reinforce the outcome
+await memory.capture({ scope: 'parser/acme', key: docUrl, value: strategy }, { success: ok });
+```
+
+- **`capture(episode, outcome)`**: success strengthens `confidence` toward 1.0 + increments `success_count`; failure decays toward `failureConfidence` (default 0.3) + increments `failure_count`. Defaults (`minConfidence` 0.7, `successConfidence` 0.9, `reinforcement` 0.5) mean a single failure drops a confident memory below the reuse floor. Seeds a new row when none exists and the episode carries a `value` (a failed first attempt is retained at low confidence for self-correction).
+- **`recall(scope, opts)`**: owner-scoped keyed lookup (thus tenant-isolated) filtered by the confidence floor, expiry, and optional time-decay, with hierarchical scope fallback; unions an injected `semanticSearch` arm when a `query` is given (tenant-scoped via its `where`). Refreshes `last_used_at` on returned rows.
+- Injected `semanticSearch` matches `SmrtCollection.semanticSearch`, so `LearningMemory` never reaches into a collection's internals.
 
 ## SmrtCollection Query
 

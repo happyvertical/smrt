@@ -106,6 +106,14 @@ export type {
   QueryFn,
 } from './interests.js';
 export { mergeFilters, normalizeSort } from './interests.js';
+// Opt-in Learning trait config (#1886). The underlying LearningMemory + its
+// records/outcomes live in @happyvertical/smrt-core.
+export {
+  type AgentLearningConfig,
+  type AgentLearningDeclaration,
+  type ResolvedAgentLearning,
+  resolveAgentLearning,
+} from './learning.js';
 export {
   AgentSchedule,
   AgentScheduleCollection,
