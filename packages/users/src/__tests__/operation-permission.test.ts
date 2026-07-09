@@ -168,6 +168,51 @@ describe('operation permission guards', () => {
     );
   });
 
+  it('authorizes against an explicit permissionSet instead of re-resolving live RBAC', async () => {
+    // Live RBAC grants update for this actor.
+    const holder = await createActor(['operation_permission_records.update']);
+
+    // In-set → allowed (no live resolve needed).
+    const allowed = await assertOperationPermission({
+      ...options,
+      action: 'update',
+      collection: 'operation_permission_records',
+      tenantId: holder.tenant.id,
+      userId: holder.user.id,
+      permissionSet: new Set(['operation_permission_records.update']),
+    });
+    expect(allowed).toMatchObject({
+      allowed: true,
+      reason: 'permission_granted',
+    });
+
+    // Not in the (empty) published set → DENIED, even though live RBAC grants
+    // it. The published snapshot is authoritative, so an RLS-off gate matches
+    // what the RLS session would enforce for the same context.
+    await expect(
+      assertOperationPermission({
+        ...options,
+        action: 'update',
+        collection: 'operation_permission_records',
+        tenantId: holder.tenant.id,
+        userId: holder.user.id,
+        permissionSet: new Set<string>(),
+      }),
+    ).rejects.toThrow(OperationPermissionError);
+
+    // A readonly array is accepted too.
+    await expect(
+      assertOperationPermission({
+        ...options,
+        action: 'update',
+        collection: 'operation_permission_records',
+        tenantId: holder.tenant.id,
+        userId: holder.user.id,
+        permissionSet: [] as readonly string[],
+      }),
+    ).rejects.toThrow(OperationPermissionError);
+  });
+
   it('allows holders and denies non-holders fail-closed', async () => {
     const holder = await createActor(['operation_permission_records.update']);
     const nonHolder = await createActor([]);

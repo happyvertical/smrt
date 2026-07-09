@@ -54,9 +54,12 @@ export interface PrincipalBinding {
   /** Tenant the principal acts within. */
   tenantId: string | null;
   /**
-   * Tool identifiers the persona may invoke (already capped by the agent-class
-   * ceiling). `undefined` means "no tool ceiling declared" — every tool passes.
-   * An empty array means "no tools permitted".
+   * The persona's tool allow-list (already capped by the agent-class ceiling).
+   * This is a **fail-closed** whitelist, mirroring
+   * `@happyvertical/smrt-chat`'s `AgentSession.isToolAllowed()` (S5 #1392): an
+   * absent (`undefined`) or empty allow-list permits **NO** tools, never all of
+   * them, so forgetting to pass it can only tighten authority. Resolved personas
+   * always provide a concrete `string[]`.
    */
   allowedTools?: string[];
   /** Optional acting `Bot` profile id, recorded in the audit entry. */
@@ -151,19 +154,27 @@ export class PrincipalToolNotAllowedError extends Error {
 export interface PrincipalRun {
   /** The published session-permission runtime context for the principal. */
   context: SessionPermissionRuntimeContext;
-  /** The principal's live-resolved permission slugs. */
+  /** The principal's published (snapshot) permission slugs. */
   permissions: string[];
-  /** The persona's tool ceiling (`undefined` when no ceiling was declared). */
-  allowedTools: string[] | undefined;
-  /** Whether `tool` is within the persona's `allowedTools`. */
+  /**
+   * The effective, fail-closed tool allow-list — always a concrete array (an
+   * absent binding allow-list normalizes to `[]`, i.e. no tools).
+   */
+  allowedTools: string[];
+  /**
+   * Whether `tool` is within the fail-closed allow-list. An empty allow-list,
+   * or an empty/non-string tool name, permits nothing.
+   */
   isToolAllowed(tool: string): boolean;
   /** Throw {@link PrincipalToolNotAllowedError} unless `tool` is allowed. */
   assertToolAllowed(tool: string): void;
   /**
    * Assert the principal holds the catalog permission for `(collection,
-   * action)`. This is the door-agnostic teeth for the RLS-off adapters — it
-   * re-resolves the principal live and throws `OperationPermissionError` on
-   * denial. Under Postgres RLS it is a redundant (but harmless) second gate.
+   * action)`, authorizing against the **published** principal set
+   * (`context.permissionSet`) — the same snapshot the RLS session enforces — so
+   * the bound is adapter-independent. This is the door-agnostic teeth for the
+   * RLS-off adapters; under Postgres RLS it is a redundant (but harmless)
+   * second gate. Throws `OperationPermissionError` on denial.
    */
   assertOperation(
     collection: OperationPermissionCollectionInput,
@@ -235,12 +246,16 @@ export async function executeAsPrincipal<T>(
     ...smrtOptions
   } = options;
 
-  const {
-    runAsUserId,
-    tenantId,
-    allowedTools,
-    actsAsProfileId = null,
-  } = principal;
+  const { runAsUserId, tenantId, actsAsProfileId = null } = principal;
+
+  // Fail-closed tool allow-list (mirrors chat's AgentSession, S5 #1392): an
+  // absent or non-array binding allow-list normalizes to `[]` — no tools — so a
+  // missing ceiling can only tighten authority, never open it up.
+  const toolWhitelist = Array.isArray(principal.allowedTools)
+    ? principal.allowedTools
+    : [];
+  const isToolAllowed = (tool: string): boolean =>
+    typeof tool === 'string' && tool.length > 0 && toolWhitelist.includes(tool);
 
   await emitAudit(
     {
@@ -270,12 +285,10 @@ export async function executeAsPrincipal<T>(
       const run: PrincipalRun = {
         context,
         permissions: context.permissions,
-        allowedTools,
-        isToolAllowed(tool: string): boolean {
-          return allowedTools == null || allowedTools.includes(tool);
-        },
+        allowedTools: toolWhitelist,
+        isToolAllowed,
         assertToolAllowed(tool: string): void {
-          if (allowedTools != null && !allowedTools.includes(tool)) {
+          if (!isToolAllowed(tool)) {
             throw new PrincipalToolNotAllowedError(tool);
           }
         },
@@ -289,6 +302,10 @@ export async function executeAsPrincipal<T>(
             ...extraOptions,
             collection,
             action: operationAction,
+            // Authorize against the PUBLISHED principal set (the same snapshot
+            // Postgres RLS enforces for this context), not a fresh live
+            // re-resolve — keeps the RLS-off gate adapter-independent.
+            permissionSet: context.permissionSet,
           });
         },
       };

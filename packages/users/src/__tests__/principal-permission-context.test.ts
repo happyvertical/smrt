@@ -160,6 +160,32 @@ describe('withPrincipalPermissionContext (SQLite logic)', () => {
     expect(resolveSpy).not.toHaveBeenCalled();
   });
 
+  it('honors an explicit EMPTY permission set as zero permissions, not "resolve live"', async () => {
+    const { userId, tenantId, grant } = await seed();
+    await grant('articles.read');
+    const resolveSpy = vi.spyOn(
+      PermissionResolver.prototype,
+      'resolvePermissions',
+    );
+
+    // `[]` is truthy but must be honored as "run with ZERO permissions" (a
+    // truthy test would fail open by resolving live).
+    await withPrincipalPermissionContext(
+      {
+        db: { type: 'sqlite', url: dbPath },
+        userId,
+        tenantId,
+        permissions: [],
+      },
+      async (context) => {
+        expect(context.permissions).toEqual([]);
+        expect(context.permissionSet.size).toBe(0);
+      },
+    );
+
+    expect(resolveSpy).not.toHaveBeenCalled();
+  });
+
   it('fails closed to no permissions when the principal has no tenant', async () => {
     const { userId } = await seed();
 

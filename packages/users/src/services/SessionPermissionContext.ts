@@ -420,9 +420,12 @@ export async function withPrincipalPermissionContext<T>(
   const baseDatabase = sessionService.getDatabase() as QueryableDatabase;
 
   // Resolve the bound principal's LIVE permission set unless the caller passed
-  // one explicitly. A missing tenant resolves to no permissions (fail closed).
+  // one explicitly. Distinguish "not provided" (`undefined` → resolve live)
+  // from "explicitly empty" (`[]` → run with ZERO permissions): a truthy test
+  // would treat an intentional empty set as "not provided" and fail open. A
+  // missing tenant likewise resolves to no permissions (fail closed).
   let permissions: string[];
-  if (providedPermissions) {
+  if (providedPermissions !== undefined) {
     permissions = providedPermissions;
   } else if (tenantId) {
     const resolver =

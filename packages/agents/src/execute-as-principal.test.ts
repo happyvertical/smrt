@@ -139,12 +139,32 @@ describe('executeAsPrincipal', () => {
     );
   });
 
-  it('treats an undefined tool ceiling as "no ceiling" (all tools pass)', async () => {
+  it('fails closed when no tool allow-list is provided (permits NOTHING)', async () => {
     await executeAsPrincipal(
       { db, principal: { runAsUserId: userId, tenantId }, audit: () => {} },
       async (run) => {
-        expect(run.isToolAllowed('anything')).toBe(true);
-        expect(() => run.assertToolAllowed('anything')).not.toThrow();
+        expect(run.allowedTools).toEqual([]);
+        expect(run.isToolAllowed('anything')).toBe(false);
+        expect(() => run.assertToolAllowed('anything')).toThrow(
+          PrincipalToolNotAllowedError,
+        );
+      },
+    );
+  });
+
+  it('fails closed for an empty allow-list and for empty/blank tool names', async () => {
+    await executeAsPrincipal(
+      {
+        db,
+        principal: { runAsUserId: userId, tenantId, allowedTools: [] },
+        audit: () => {},
+      },
+      async (run) => {
+        expect(run.isToolAllowed('publish')).toBe(false);
+        expect(run.isToolAllowed('')).toBe(false);
+        expect(() => run.assertToolAllowed('publish')).toThrow(
+          PrincipalToolNotAllowedError,
+        );
       },
     );
   });
@@ -180,6 +200,53 @@ describe('executeAsPrincipal', () => {
       async (run) => {
         const permitted = await run.assertOperation('widgets', 'create');
         expect(permitted.allowed).toBe(true);
+      },
+    );
+  });
+
+  it('enforces the published snapshot within a run — a mid-run grant is not honored', async () => {
+    await executeAsPrincipal(
+      { db, principal: { runAsUserId: userId, tenantId }, audit: () => {} },
+      async (run) => {
+        // Snapshot holds widgets.read but not widgets.create.
+        expect((await run.assertOperation('widgets', 'read')).allowed).toBe(
+          true,
+        );
+        await expect(run.assertOperation('widgets', 'create')).rejects.toThrow(
+          OperationPermissionError,
+        );
+
+        // Granting widgets.create DURING the run must NOT change the authority
+        // bound — the seam authorizes against the published snapshot, matching
+        // what Postgres RLS enforces for the same context (adapter-independent).
+        await grant('widgets.create');
+        await expect(run.assertOperation('widgets', 'create')).rejects.toThrow(
+          OperationPermissionError,
+        );
+      },
+    );
+  });
+
+  it('honors a reduced pre-resolved permission set consistently at the seam', async () => {
+    await grant('widgets.create');
+    // Live RBAC now grants both read and create, but the caller narrows the
+    // published set to read-only; the RLS-off seam must enforce that narrower
+    // snapshot, not the broader live set.
+    await executeAsPrincipal(
+      {
+        db,
+        principal: { runAsUserId: userId, tenantId },
+        permissions: ['widgets.read'],
+        audit: () => {},
+      },
+      async (run) => {
+        expect(run.permissions).toEqual(['widgets.read']);
+        expect((await run.assertOperation('widgets', 'read')).allowed).toBe(
+          true,
+        );
+        await expect(run.assertOperation('widgets', 'create')).rejects.toThrow(
+          OperationPermissionError,
+        );
       },
     );
   });
