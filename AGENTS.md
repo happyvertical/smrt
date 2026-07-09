@@ -24,7 +24,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | jobs | Background execution: TaskRunner, ScheduleRunner, fluent JobBuilder, `withBackgroundJobs()` |
 | users | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks |
 | profiles | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships, audit logging, owned asset joins via `profile_assets` |
-| personas | Tenant-owned, context-scoped `AgentPersona` + `PersonaResolver`; layers over `smrt-agents` `TenantAgent` (availability/ceiling gate) with tenant-hierarchy inheritance and priority ordering |
+| personas | Tenant-owned, context-scoped `AgentPersona` + `PersonaResolver` (layers over `smrt-agents` `TenantAgent` availability/ceiling gate); persona learning loop — `Feedback` reinforcement, scheduled `ReflectionRunner` → pending `DirectiveProposal`, HITL activation gated by the `personas.activate-directive` permission split |
 
 ### Content & Media
 | Package | Purpose |
