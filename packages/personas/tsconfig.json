@@ -1,13 +1,12 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "../../tsconfig.ui-package.json",
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "types": ["node"],
-    "lib": ["ES2023"]
+    "baseUrl": ".",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "include": ["src/**/*"],
-  "exclude": ["**/*.test.ts", "**/*.spec.ts"]
+  "include": ["ambient.d.ts", "src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }
