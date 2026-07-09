@@ -180,6 +180,9 @@ the package root).
 - **Hooks**: `resolveUser` (invite-gating; default provisions via
   `getOrCreateFromOidc`), `resolveTenantId`, `buildExtras` (bootstrap
   `extras`; model JSON must use `toPublicJSON({ permissions })` — #1822).
+  `buildExtras` is the only app-domain bootstrap extension point. Never emit
+  app fields such as `dashboard` at the response top level: they are outside
+  `MobileSessionBootstrap` and the Kotlin decoder ignores them.
 - **Guard** wraps `withSessionPermissionContext`, so
   `assertOperationPermission`, tenancy context, and Postgres RLS all see the
   bearer caller; `OperationPermissionError` maps to 403 with a

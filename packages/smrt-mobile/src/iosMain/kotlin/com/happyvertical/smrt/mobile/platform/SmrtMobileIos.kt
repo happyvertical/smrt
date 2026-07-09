@@ -9,7 +9,12 @@ import com.happyvertical.smrt.mobile.network.UnauthorizedHandler
 import com.happyvertical.smrt.mobile.packs.DurableOfflinePackStore
 import com.happyvertical.smrt.mobile.sync.DurableWriteQueue
 import io.ktor.client.engine.darwin.Darwin
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import kotlinx.datetime.Instant
+import platform.Foundation.NSData
+import platform.posix.memcpy
 
 /**
  * iOS platform factories the exported `SmrtMobile` framework hands to Swift
@@ -85,6 +90,25 @@ object SmrtMobileIos {
      */
     fun instantFromEpochMillis(epochMillis: Long): Instant =
         Instant.fromEpochMilliseconds(epochMillis)
+
+    /**
+     * Copies Foundation data into a Kotlin byte array with one native memcpy.
+     * Swift evidence byte sources use this instead of setting KotlinByteArray
+     * one element at a time across the Objective-C bridge.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    fun byteArray(data: NSData): ByteArray {
+        require(data.length <= Int.MAX_VALUE.toULong()) {
+            "Evidence file is too large for an in-memory multipart request"
+        }
+        val result = ByteArray(data.length.toInt())
+        if (result.isNotEmpty()) {
+            result.usePinned { pinned ->
+                memcpy(pinned.addressOf(0), data.bytes, data.length)
+            }
+        }
+        return result
+    }
 
     const val DEFAULT_DATABASE_NAME: String = "smrt_mobile.db"
 }

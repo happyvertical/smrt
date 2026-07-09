@@ -4,8 +4,8 @@
  * These are the SAME shapes the framework Kotlin contract ships to mobile
  * clients (`MOBILE_AUTH_CONTRACT_KT` in `emit-framework.ts`, checked into
  * `@happyvertical/smrt-mobile` as `MobileAuthContract.kt`). Server-side
- * implementations — the reusable SvelteKit handlers in
- * `@happyvertical/smrt-users` (issue #1748) — import them from here so the
+ * implementations -- the reusable SvelteKit handlers in
+ * `@happyvertical/smrt-users` (issue #1748) -- import them from here so the
  * wire contract has one owning package on both sides.
  *
  * Two sync guarantees keep the three representations locked together:
@@ -129,9 +129,11 @@ export interface MobileAuthSession {
 }
 
 /**
- * Response of `GET /api/mobile/session` — the app-boot payload for a stored
- * bearer. `extras` is an app-defined JSON object escape hatch (must remain a
- * JSON object; the Kotlin side decodes it as `JsonObject`).
+ * Response of `GET /api/mobile/session` -- the app-boot payload for a stored
+ * bearer. `extras` is the only app-defined extension point and must remain a
+ * JSON object (the Kotlin side decodes it as `JsonObject`). App-domain fields
+ * placed at the top level are outside the contract and are ignored by the
+ * Kotlin decoder.
  */
 export interface MobileSessionBootstrap {
   user: MobileUserSummary;

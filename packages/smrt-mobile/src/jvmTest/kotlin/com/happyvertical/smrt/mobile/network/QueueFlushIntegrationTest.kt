@@ -2,15 +2,22 @@ package com.happyvertical.smrt.mobile.network
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.happyvertical.smrt.mobile.db.SmrtMobileDatabase
+import com.happyvertical.smrt.mobile.evidence.EvidenceAssetRef
+import com.happyvertical.smrt.mobile.evidence.EvidenceByteSource
+import com.happyvertical.smrt.mobile.evidence.EvidenceMultipartAsset
+import com.happyvertical.smrt.mobile.evidence.EvidenceMultipartUpload
 import com.happyvertical.smrt.mobile.sync.DurableWriteQueue
 import com.happyvertical.smrt.mobile.sync.NewQueueEntry
 import com.happyvertical.smrt.mobile.sync.QueueEntryState
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -27,7 +34,10 @@ class QueueFlushIntegrationTest {
         return DurableWriteQueue(SmrtMobileDatabase(driver))
     }
 
-    private fun sender(engine: MockEngine): HttpQueueSender {
+    private fun sender(
+        engine: MockEngine,
+        byteSource: EvidenceByteSource = EvidenceByteSource { "img".encodeToByteArray() },
+    ): HttpQueueSender {
         val client = MobileApiClient(
             engine = engine,
             config = MobileApiConfig(baseUrl = "https://app.example.com"),
@@ -35,17 +45,8 @@ class QueueFlushIntegrationTest {
         )
         return HttpQueueSender(client) { entry ->
             if (entry.kind == "evidence") {
-                QueueHttpRequest.Multipart(
-                    path = "contributions",
-                    fields = mapOf("eventId" to "event-1"),
-                    files = listOf(
-                        MobileUploadPart(
-                            fileName = "asset.jpg",
-                            contentType = "image/jpeg",
-                            bytes = "img".encodeToByteArray(),
-                        ),
-                    ),
-                )
+                Json.decodeFromString<EvidenceMultipartUpload>(entry.payload)
+                    .toQueueHttpRequest(byteSource)
             } else {
                 QueueHttpRequest.JsonPost("plays")
             }
@@ -58,10 +59,32 @@ class QueueFlushIntegrationTest {
             respond("""{"id":"c1"}""", HttpStatusCode.Created, headersOf(HttpHeaders.ContentType, "application/json"))
         }
         val queue = newQueue()
+        val asset = EvidenceAssetRef(
+            assetId = "asset-1",
+            localUri = "file:///data/evidence/asset.jpg",
+            fileName = "asset.jpg",
+            contentType = "image/jpeg",
+        )
+        val evidencePayload = Json.encodeToString(
+            EvidenceMultipartUpload(
+                path = "contributions",
+                fields = mapOf("eventId" to "event-1"),
+                assets = listOf(EvidenceMultipartAsset(asset)),
+            ),
+        )
+        var loadedAssetId: String? = null
         queue.enqueue(NewQueueEntry(id = "e1", kind = "play", payload = """{"statKey":"goal"}"""))
-        queue.enqueue(NewQueueEntry(id = "e2", kind = "evidence", payload = """{"eventId":"event-1"}"""))
+        queue.enqueue(NewQueueEntry(id = "e2", kind = "evidence", payload = evidencePayload))
 
-        val summary = queue.flush(sender(engine))
+        val summary = queue.flush(
+            sender(
+                engine,
+                EvidenceByteSource { requested ->
+                    loadedAssetId = requested.assetId
+                    "bytes-loaded-at-flush".encodeToByteArray()
+                },
+            ),
+        )
 
         assertEquals(2, summary.sent)
         assertTrue(queue.all().isEmpty())
@@ -71,6 +94,10 @@ class QueueFlushIntegrationTest {
         assertTrue(
             engine.requestHistory[1].body.contentType.toString().startsWith("multipart/form-data"),
         )
+        assertEquals("asset-1", loadedAssetId)
+        val multipartBody = engine.requestHistory[1].body.toByteArray().decodeToString()
+        assertTrue(multipartBody.contains("filename=\"asset.jpg\""))
+        assertTrue(multipartBody.contains("bytes-loaded-at-flush"))
     }
 
     @Test

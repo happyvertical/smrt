@@ -46,7 +46,9 @@ publishing deferred, consumers are local-fs).
   `AndroidEvidenceCaptureAdapter` (`EvidenceCapturePlatformAdapter`;
   drive-to-completion `captureOrPickPhoto` — full-res `TakePicture` into a
   library-shipped `FileProvider` URI, or the system photo picker — app-private
-  storage, sha256 pin, `LocationManager` geo sidecar; #1880). The evidence
+  storage, sha256 pin, `LocationManager` geo sidecar; #1880), and
+  `AndroidEvidenceByteSource`, which resolves file/content URIs on
+  `Dispatchers.IO` when durable multipart entries flush (#1896). The evidence
   FileProvider (`SmrtEvidenceFileProvider`) ships in the library manifest with a
   `${applicationId}.evidence.files` authority (per-consumer via manifest merge,
   overridable via the constructor + `tools:replace`).

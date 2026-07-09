@@ -127,6 +127,14 @@ const SPEC = [
     ],
   },
   {
+    path: `${LIB_ROOT}/platform/AndroidEvidenceByteSource.kt`,
+    mustContain: [
+      'class AndroidEvidenceByteSource(',
+      ': EvidenceByteSource',
+      'withContext(Dispatchers.IO)',
+    ],
+  },
+  {
     path: `${LIB_ROOT}/platform/SmrtEvidenceFileProvider.kt`,
     mustContain: ['class SmrtEvidenceFileProvider : FileProvider('],
   },

@@ -1,9 +1,10 @@
 # @happyvertical/smrt-mobile
 
 Kotlin Multiplatform shared mobile foundation for SMRT apps: offline pack
-model + integrity, pack i18n resolution, evidence-capture model, app-shell
-state, and platform adapter contracts. Android consumes the module directly;
-iOS consumes the exported `SmrtMobile` framework.
+model + integrity, pack i18n resolution, durable evidence uploads, shared
+presenter state, app-shell state, and platform adapter contracts. Android
+consumes the module directly; iOS consumes the exported `SmrtMobile`
+framework.
 
 Design and rationale: [ADR 0001](../../docs/content/adr/0001-kmp-mobile-foundation.md)
 and its [extraction plan](../../docs/content/adr/0001-kmp-mobile-foundation-extraction-plan.md).
@@ -31,11 +32,11 @@ Codegen companion: [`@happyvertical/smrt-mobile-contract`](../smrt-mobile-contra
 5. **Server contract** — `/api/mobile` (server-brokered PKCE, session
    bootstrap, multipart upload with `clientCaptureId`/`Idempotency-Key`
    dedup) is part of the foundation: SMRT ships reusable handlers in
-   `smrt-users` (issue #1748); anytown's dashboard is the reference
-   implementation until then.
-6. **Toolchain** — Kotlin 2.2.21 / AGP 8.13.1 / compileSdk 36 / minSdk 26 /
-   JVM 21 / iOS deployment target 17.0 (reporter-proven set, amaru catalog
-   structure).
+   `smrt-users` (issue #1748); app-owned bootstrap data is nested under the
+   contract's `extras` field.
+6. **Toolchain** — Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1 / compileSdk 36 /
+   minSdk 26 / JVM 21 / iOS deployment target 17.0. The Compose package pins
+   Compose BOM 2026.06.01 and Activity Compose 1.13.0.
 
 ## Building
 
@@ -47,7 +48,7 @@ pnpm validate:shell     # structure checks (what CI runs on every PR)
 ```
 
 Toolchain requirements: run Gradle on a JDK between 17 and 24 (the module's
-language/toolchain level is 21 — `jvmToolchain(21)`); Gradle 8.14.4 ships via
+language/toolchain level is 21 -- `jvmToolchain(21)`); Gradle 9.6.1 ships via
 the checked-in wrapper, so always invoke `./gradlew`. `androidTarget` needs an
 Android SDK (`ANDROID_HOME`); the `jvm` target exists precisely so common
 logic tests run without one. iOS targets require a macOS host with Xcode.
@@ -55,16 +56,75 @@ logic tests run without one. iOS targets require a macOS host with Xcode.
 ## Consuming (v0, local filesystem)
 
 Distribution is deferred (decision 2). Android/KMP consumers use a Gradle
-composite build from a sibling checkout:
+composite build. Resolve the SMRT checkout from a Gradle property first, an
+environment variable second, and a sibling checkout as the local default:
 
 ```kotlin
 // settings.gradle.kts of the consuming app
-includeBuild("../smrt/packages/smrt-mobile")
+val smrtFoundationDir = providers.gradleProperty("smrtFoundationDir")
+    .orElse(providers.environmentVariable("SMRT_FOUNDATION_DIR"))
+    .orElse("../smrt")
+    .get()
+val smrtFoundation = file(smrtFoundationDir)
+
+includeBuild(smrtFoundation.resolve("packages/smrt-mobile"))
+// Include this only when consuming the Compose package.
+includeBuild(smrtFoundation.resolve("packages/smrt-android"))
 ```
 
-then depend on `com.happyvertical.smrt:smrt-mobile`. iOS apps link the
-`SmrtMobile` static framework produced by the iOS targets (wired end-to-end
-in Phase 6, #1743).
+Then depend on `com.happyvertical.smrt:smrt-mobile` and, when needed,
+`com.happyvertical.smrt:smrt-android`. Do not hard-code workstation-absolute
+paths in a consuming repository. AGP 9 provides built-in Kotlin, so Android
+consumers must not apply `org.jetbrains.kotlin.android`; they must also request
+`TargetJvmEnvironment.ANDROID` on resolvable configurations. The complete
+snippet is in [`smrt-android`'s README](../smrt-android/README.md).
+
+CI checks out both repositories and points Gradle at the foundation checkout:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: actions/checkout@v4
+  with:
+    repository: happyvertical/smrt
+    ref: ${{ vars.SMRT_FOUNDATION_REF }} # Set to an immutable release tag.
+    path: smrt-foundation
+    token: ${{ secrets.FOUNDATION_REPO_TOKEN }}
+- run: ./gradlew test
+  env:
+    SMRT_FOUNDATION_DIR: ${{ github.workspace }}/smrt-foundation
+```
+
+For a private cross-organization checkout, `FOUNDATION_REPO_TOKEN` must be a
+GitHub App token or fine-grained PAT with read access to `happyvertical/smrt`.
+Set the `SMRT_FOUNDATION_REF` repository variable to the exact release tag the
+consumer has validated.
+iOS apps link the `SmrtMobile` static framework produced by the iOS targets
+(wired end-to-end in Phase 6, #1743).
+
+## Shared presenter state
+
+Put cross-platform orchestration in a KMP presenter derived from
+`MobileStatePresenter<T>`. Compose collects `presenter.state` as a normal
+`StateFlow`; SwiftUI owns a `MobileObservableState(holder:)` from `SmrtIos`
+and reads its published `value`. Close presenters when their owning scope is
+destroyed, and call `close()` on an adapter when observation must end early.
+
+## Durable evidence multipart
+
+Queue an encoded `EvidenceMultipartUpload`, which stores form fields and
+`EvidenceAssetRef` metadata without copying media bytes into the SQLDelight
+row. Decode it inside the suspend `HttpQueueSender` mapper and call
+`toQueueHttpRequest(EvidenceByteSource { ... })`; the platform byte source
+loads each local file when the queue actually flushes. `smrt-android` ships
+`AndroidEvidenceByteSource`; `smrt-ios` ships `FoundationEvidenceByteSource`,
+whose Kotlin/Native bridge uses one bulk copy rather than per-byte calls.
+
+## Session bootstrap extensions
+
+App-domain bootstrap payloads belong inside `MobileSessionBootstrap.extras`.
+Configure them with `createMobileAuthHandlers({ buildExtras })` on the server.
+Unknown top-level fields such as `dashboard` are outside the contract and are
+ignored by the Kotlin decoder, so they cannot be used as an extension point.
 
 ## Layout
 
@@ -74,7 +134,10 @@ in Phase 6, #1743).
   `pnpm --filter @happyvertical/smrt-mobile-contract generate:framework`.
 - `.../i18n/` — `PackTextResolver` (requested → fallback → source locale).
 - `.../packs/` — pack snapshot identity + SHA-256 integrity seal.
-- `.../evidence/` — evidence asset refs, geo sidecar, capture adapter seam.
+- `.../evidence/` — evidence asset refs, geo sidecar, capture adapter seam,
+  and durable multipart payload/byte-source helpers.
+- `.../state/` — shared `StateFlow` holder and presenter base for Compose and
+  SwiftUI observation.
 - `.../shell/` — `MobileShellState` manual-tab navigation state.
 - `.../platform/` — platform seams (`Sha256Hasher`).
 
@@ -85,11 +148,12 @@ in Phase 6, #1743).
   attempt cap, `uploading → pending` crash recovery, idempotency keys.
 - Phase 3 (#1740) — **landed**: PKCE/OIDC session module (`MobileSessionManager`)
   with platform browser/deep-link/secure-storage seams.
-- Phase 3.5 (#1748): `/api/mobile` server handlers in `smrt-users`.
+- Phase 3.5 (#1748) — **landed**: `/api/mobile` server handlers in
+  `smrt-users`.
 - Phase 4 (#1741) — **landed**: shared Ktor client (`MobileApiClient` +
   `HttpQueueSender`): bearer everywhere, multipart with idempotency keys,
   401 hook, queue flush end-to-end.
-- Phases 5–6 (#1742/#1743): `smrt-android` (Compose) and `smrt-ios` (SwiftUI +
-  real KMP framework wiring).
+- Phases 5–6 (#1742/#1743) — **landed**: `smrt-android` (Compose) and
+  `smrt-ios` (SwiftUI + real KMP framework wiring).
 - Phase 7 (#1744): rebuild amaru FieldOps and anytown reporter on the
   foundation — the trade-neutrality acceptance test.

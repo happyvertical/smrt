@@ -48,7 +48,7 @@ sealed interface QueueHttpRequest {
  */
 class HttpQueueSender(
     private val client: MobileApiClient,
-    private val requestForEntry: (QueueEntry) -> QueueHttpRequest,
+    private val requestForEntry: suspend (QueueEntry) -> QueueHttpRequest,
 ) : QueueSender {
     override suspend fun send(entry: QueueEntry): SendOutcome {
         val response = try {
