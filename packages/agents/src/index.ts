@@ -94,6 +94,21 @@ export {
   resolveAgentAIOptions,
 } from './ai-config.js';
 export { AgentConfig, AgentConfigCollection } from './config.js';
+// Principal delegation for agent orchestration (#1892): the immutable-principal,
+// bounded-depth delegation envelope.
+export {
+  assertPrincipalNotWidened,
+  assertWithinDelegationDepth,
+  DelegationDepthExceededError,
+  type DelegationEnvelope,
+  type DeriveDelegationEnvelopeOptions,
+  deriveDelegationEnvelope,
+  MAX_DELEGATION_DEPTH,
+  PrincipalWideningError,
+  type RequestedPrincipal,
+  type RootDelegationEnvelopeOptions,
+  rootDelegationEnvelope,
+} from './delegation.js';
 export {
   type ExecuteAsPrincipalOptions,
   executeAsPrincipal,
@@ -119,6 +134,31 @@ export type {
   QueryFn,
 } from './interests.js';
 export { mergeFilters, normalizeSort } from './interests.js';
+// Agent orchestration (#1892): the standard invoke-agent tool + completion
+// dispatch convention, built on executeAsPrincipal + the DispatchBus.
+export {
+  AGENT_COMPLETED_SIGNAL,
+  AGENT_INVOKE_SIGNAL,
+  type AgentCompletion,
+  agentInvokeSignalType,
+  type CreateInvokeAgentToolOptions,
+  createDispatchInvokeTransport,
+  createInvokeAgentTool,
+  emitAgentCompletion,
+  executeDelegatedInvocation,
+  INVOKE_AGENT_FUNCTION_NAME,
+  INVOKE_AGENT_TOOL_SLUG,
+  type InvokeAgentDelivery,
+  type InvokeAgentResult,
+  type InvokeAgentTransport,
+  inlineInvokeAgentTransport,
+  type PrincipalTool,
+  type PrincipalToolContext,
+  processAgentInvocations,
+  surfaceAgentCompletions,
+  type WorkerInvocation,
+  type WorkerRunner,
+} from './invoke-agent.js';
 // Opt-in Learning trait config (#1886). The underlying LearningMemory + its
 // records/outcomes live in @happyvertical/smrt-core.
 export {

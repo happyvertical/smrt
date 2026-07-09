@@ -27,6 +27,13 @@
  * rounds it disables tools for one final completion, guaranteeing termination
  * with a text answer.
  *
+ * Beyond manifest operations, the loop accepts a small set of **extra tools**
+ * ({@link ToolLoopOptions.extraTools}) — non-CRUD `PrincipalTool`s such as the
+ * agent-orchestration `invoke-agent` tool (#1892). Each is gated by the *same*
+ * fail-closed allow-list (the caller only passes an allow-listed tool, and the
+ * tool's `execute` re-asserts `assertToolAllowed`), so the closed-universe,
+ * fail-closed property holds for them too.
+ *
  * @module
  */
 
@@ -42,6 +49,7 @@ import {
   type PrincipalAuditSink,
   type PrincipalBinding,
   type PrincipalRun,
+  type PrincipalTool,
   PrincipalToolNotAllowedError,
 } from '@happyvertical/smrt-agents';
 import {
@@ -144,6 +152,14 @@ export interface ToolLoopOptions {
   messages: AIMessage[];
   /** The manifest operations available this turn (already allow-list-filtered). */
   tools: ManifestTool[];
+  /**
+   * Non-manifest tools offered alongside the manifest operations — e.g. the
+   * agent-orchestration `invoke-agent` tool (#1892). Each is gated by the same
+   * fail-closed allow-list: only pass a tool whose `slug` is on the persona's
+   * `allowedTools`, and its `execute` re-asserts the gate. Offered to the model
+   * with its own `aiTool` definition and routed to its own handler.
+   */
+  extraTools?: PrincipalTool[];
   /** The persona principal every tool call runs as. */
   principal: PrincipalBinding;
   /** Database handle the side-door operations run against. */
@@ -498,6 +514,7 @@ export async function runToolLoop(
     ai,
     messages,
     tools,
+    extraTools = [],
     principal,
     db,
     maxSteps = DEFAULT_MAX_STEPS,
@@ -513,7 +530,10 @@ export async function runToolLoop(
     postgresRls,
   } = options;
 
-  const aiTools = tools.map(manifestToolToAITool);
+  const aiTools = [
+    ...tools.map(manifestToolToAITool),
+    ...extraTools.map((tool) => tool.aiTool),
+  ];
   // Resolve the tool by EITHER the internal slug (a mock/pass-through provider)
   // OR the provider-safe function name the model actually receives, so the offer
   // gate holds regardless of how the provider renders the name.
@@ -521,6 +541,13 @@ export async function runToolLoop(
   for (const tool of tools) {
     offered.set(tool.slug, tool);
     offered.set(toolFunctionName(tool.slug), tool);
+  }
+  // Extra (non-manifest) tools resolve by their slug OR the function name their
+  // own `aiTool` definition advertises to the model.
+  const offeredExtra = new Map<string, PrincipalTool>();
+  for (const tool of extraTools) {
+    offeredExtra.set(tool.slug, tool);
+    offeredExtra.set(tool.aiTool.function.name, tool);
   }
 
   return executeAsPrincipal(
@@ -582,12 +609,14 @@ export async function runToolLoop(
           const requestedName = call.function.name;
           const args = parseToolArguments(call.function.arguments);
           const tool = offered.get(requestedName);
+          // An extra (non-manifest) tool only when no manifest tool matched.
+          const extraTool = tool ? undefined : offeredExtra.get(requestedName);
           // Record the canonical slug (the permission id) for a resolved tool;
           // for a rejected/hallucinated call, echo whatever the model named.
-          const slug = tool?.slug ?? requestedName;
+          const slug = tool?.slug ?? extraTool?.slug ?? requestedName;
 
           let invocation: ToolInvocation;
-          if (!tool) {
+          if (!tool && !extraTool) {
             // Offer gate: a tool the persona was not offered (not on the
             // allow-list, or hallucinated) is rejected without execution.
             invocation = {
@@ -602,9 +631,12 @@ export async function runToolLoop(
             };
           } else {
             try {
-              const observation = await (executeTool
-                ? executeTool({ run, tool, args, db })
-                : invokeManifestTool(run, tool, args, { db }));
+              const observation = await (tool
+                ? executeTool
+                  ? executeTool({ run, tool, args, db })
+                  : invokeManifestTool(run, tool, args, { db })
+                : // biome-ignore lint/style/noNonNullAssertion: extraTool is defined in this branch (tool is falsy).
+                  extraTool!.execute({ run, args, db }));
               invocation = {
                 slug,
                 args,
