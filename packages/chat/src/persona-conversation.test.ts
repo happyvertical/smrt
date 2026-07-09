@@ -35,6 +35,7 @@ import {
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
+import { toolFunctionName } from './tool-loop.js';
 
 @smrt({
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
@@ -193,11 +194,13 @@ describe('persona-bound conversation', () => {
     expect(String(systemMessage?.content)).toContain('lead with the citation');
     expect(turn.recalled.map((r) => r.key)).toContain('style');
 
-    // Exactly the persona's tools were offered.
+    // Exactly the persona's tools were offered (as provider-safe names).
     const offeredNames = (captured[0]?.options?.tools ?? []).map(
       (t) => t.function.name,
     );
-    expect(offeredNames.sort()).toEqual([...CONV_TOOLS].sort());
+    expect(offeredNames.sort()).toEqual(
+      CONV_TOOLS.map(toolFunctionName).sort(),
+    );
 
     // The turn ran AS the persona's bound user, on behalf of the originator.
     expect(audits[0]).toMatchObject({
@@ -216,6 +219,47 @@ describe('persona-bound conversation', () => {
 
     expect(turn.result.content).toBe('Added your note.');
     expect(turn.correlationId).toBeTruthy();
+  });
+
+  it('fails fast when the persona has no bound run-as user', async () => {
+    const unbound: ConversationPersona = { ...persona, runAsUserId: '' };
+    const { ai } = makeAI(
+      () => ({ content: 'x', finishReason: 'stop' }) as AIResponse,
+    );
+    await expect(
+      runPersonaConversationTurn({
+        ai,
+        db,
+        persona: unbound,
+        tenantId,
+        userMessage: 'hi',
+        recall: false,
+      }),
+    ).rejects.toThrow(/run-as user/);
+  });
+
+  it('does not duplicate the instruction block already on the session prompt', async () => {
+    const { ai, captured } = makeAI(
+      () => ({ content: 'ok', finishReason: 'stop' }) as AIResponse,
+    );
+    // The bound session already carries the persona instructions.
+    await runPersonaConversationTurn({
+      ai,
+      db,
+      persona,
+      tenantId,
+      userMessage: 'hi',
+      recall: false,
+      session: {
+        id: 's1',
+        chatRoomId: 'r1',
+        systemPrompt: persona.instructions,
+      },
+    });
+    const system = captured[0]?.messages.find((m) => m.role === 'system');
+    const occurrences =
+      String(system?.content).split('Always cite sources first.').length - 1;
+    expect(occurrences).toBe(1);
   });
 
   it('offers no tools for a persona with an empty allow-list (fail-closed)', async () => {

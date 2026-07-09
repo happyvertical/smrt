@@ -58,6 +58,13 @@ import {
 export const DEFAULT_MAX_STEPS = 8;
 
 /**
+ * A transcript message that may carry an OpenAI-style `tool_call_id` on a tool
+ * observation. A structural superset of {@link AIMessage}, so the working
+ * transcript stays assignable to `AIMessage[]` for `ai.chat()`.
+ */
+type LoopMessage = AIMessage & { tool_call_id?: string };
+
+/**
  * A single manifest operation the loop can offer and execute. Its {@link slug}
  * is simultaneously the tool's stable name AND its permission-catalog slug — one
  * source of truth for both what the model may call and what the principal must
@@ -215,12 +222,19 @@ function actionFromDefinition(def: PermissionDefinition): string | null {
  * resolvable backing class). Pass `allowedTools` to narrow the catalog to a
  * persona's least-privilege allow-list — this is the **offer gate**: a slug not
  * in `allowedTools` is never returned, so it is neither offered to the model nor
- * executed. A missing or empty `allowedTools` yields **no tools** (fail-closed).
+ * executed. A missing, `null`, or empty `allowedTools` yields **no tools**
+ * (fail-closed) — the same whitelist semantics as `AgentSession`/
+ * `PrincipalBinding` (S5 #1392), so forgetting the allow-list can only tighten,
+ * never widen, the offered surface. Pass `all: true` to deliberately enumerate
+ * the full manifest operation surface (e.g. an admin tool picker) — that is the
+ * one explicit escape hatch, never the default.
  */
 export function buildManifestToolCatalog(
   options: SmrtClassOptions & {
     /** Least-privilege allow-list to narrow the catalog by (fail-closed). */
     allowedTools?: string[] | null;
+    /** Explicitly enumerate the ENTIRE manifest operation surface (no narrowing). */
+    all?: boolean;
     /** Supply a pre-built catalog (skips the manifest walk). */
     catalog?: PermissionDefinition[];
   } = {},
@@ -229,14 +243,11 @@ export function buildManifestToolCatalog(
     options.catalog ??
     PermissionCatalogService.create(options).getCatalog().permissions;
 
-  // Fail-closed: `undefined`/`null` allow-list permits nothing (matches the
-  // AgentSession + PrincipalBinding whitelist semantics, S5 #1392). Passing no
-  // `allowedTools` key at all disables filtering (full catalog) — used to
-  // enumerate the surface; the resolved-persona path always passes an array.
+  // Fail-closed: an absent / `null` / empty allow-list permits NOTHING. Only an
+  // explicit `all: true` disables the narrowing and returns the full surface, so
+  // a caller that forgets `allowedTools` gets zero tools rather than every one.
   const filter =
-    options.allowedTools === undefined
-      ? null
-      : new Set(options.allowedTools ?? []);
+    options.all === true ? null : new Set(options.allowedTools ?? []);
 
   const tools: ManifestTool[] = [];
   for (const def of definitions) {
@@ -325,14 +336,29 @@ function toolParameters(tool: ManifestTool): Record<string, unknown> {
 }
 
 /**
+ * A provider-safe function name for a catalog slug.
+ *
+ * Catalog slugs are `collection.action` and routinely contain a `.`, but many
+ * providers (OpenAI) restrict function names to `[A-Za-z0-9_-]{1,64}`. This maps
+ * the slug into that charset (dots → `-`) for the wire; {@link runToolLoop} maps
+ * the returned name back to the tool, and `tool.slug` remains the internal
+ * permission id. Distinct slugs stay distinct (the only substituted char is the
+ * single `.` separator).
+ */
+export function toolFunctionName(slug: string): string {
+  return slug.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 64);
+}
+
+/**
  * Project a manifest operation into an AI function-tool definition. The function
- * name is the catalog slug, so the model can only ever name a real operation.
+ * name is the provider-safe rendering of the catalog slug
+ * ({@link toolFunctionName}), so the model can only ever name a real operation.
  */
 export function manifestToolToAITool(tool: ManifestTool): AITool {
   return {
     type: 'function',
     function: {
-      name: tool.slug,
+      name: toolFunctionName(tool.slug),
       description:
         tool.description ??
         `Manifest operation '${tool.action}' on '${tool.collection}'.`,
@@ -488,7 +514,14 @@ export async function runToolLoop(
   } = options;
 
   const aiTools = tools.map(manifestToolToAITool);
-  const offered = new Map(tools.map((tool) => [tool.slug, tool]));
+  // Resolve the tool by EITHER the internal slug (a mock/pass-through provider)
+  // OR the provider-safe function name the model actually receives, so the offer
+  // gate holds regardless of how the provider renders the name.
+  const offered = new Map<string, ManifestTool>();
+  for (const tool of tools) {
+    offered.set(tool.slug, tool);
+    offered.set(toolFunctionName(tool.slug), tool);
+  }
 
   return executeAsPrincipal(
     {
@@ -501,7 +534,10 @@ export async function runToolLoop(
       audit,
     },
     async (run): Promise<ToolLoopResult> => {
-      const working: AIMessage[] = [...messages];
+      // `LoopMessage` carries `tool_call_id` on tool observations (OpenAI's tool
+      // message shape needs it to correlate an observation to its call); it is a
+      // structural superset of `AIMessage`, so the transcript stays chat-compatible.
+      const working: LoopMessage[] = [...messages];
       const invocations: ToolInvocation[] = [];
       let executedRounds = 0;
       let totalTokens = 0;
@@ -543,9 +579,12 @@ export async function runToolLoop(
         });
 
         for (const call of toolCalls) {
-          const slug = call.function.name;
+          const requestedName = call.function.name;
           const args = parseToolArguments(call.function.arguments);
-          const tool = offered.get(slug);
+          const tool = offered.get(requestedName);
+          // Record the canonical slug (the permission id) for a resolved tool;
+          // for a rejected/hallucinated call, echo whatever the model named.
+          const slug = tool?.slug ?? requestedName;
 
           let invocation: ToolInvocation;
           if (!tool) {
@@ -594,7 +633,11 @@ export async function runToolLoop(
           await onInvocation?.(invocation);
           working.push({
             role: 'tool',
-            name: slug,
+            name: requestedName,
+            // Correlate the observation to the exact call the model made — many
+            // providers (OpenAI) require `tool_call_id` on a tool message and
+            // mis-associate observations without it when several calls occur.
+            tool_call_id: call.id,
             content: JSON.stringify(invocation.observation),
           });
         }

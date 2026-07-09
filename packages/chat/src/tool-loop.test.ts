@@ -137,6 +137,20 @@ describe('buildManifestToolCatalog (offer gate)', () => {
     expect(buildManifestToolCatalog({ catalog, allowedTools: [] })).toEqual([]);
   });
 
+  it('fails closed: an omitted allow-list offers no tools', () => {
+    expect(buildManifestToolCatalog({ catalog })).toEqual([]);
+  });
+
+  it('offers the full surface only with the explicit all flag', () => {
+    const tools = buildManifestToolCatalog({ catalog, all: true });
+    expect(tools.map((t) => t.slug).sort()).toEqual([
+      'articles.create',
+      'articles.publish',
+      'articles.read',
+      'orders.read',
+    ]);
+  });
+
   it('never offers a tool outside the allow-list', () => {
     const tools = buildManifestToolCatalog({
       catalog,
@@ -277,6 +291,38 @@ describe('runToolLoop', () => {
     expect(result.stoppedReason).toBe('stop');
     expect(result.invocations).toHaveLength(1);
     expect(result.invocations[0]).toMatchObject({ ok: true, rejected: false });
+  });
+
+  it('correlates each tool observation to its call via tool_call_id', async () => {
+    const ai = makeAI((_m, options, call) =>
+      call === 0 && toolsOffered(options)
+        ? toolCall('tool_loop_notes.read', {})
+        : textResponse('done'),
+    );
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'list' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      executeTool: async () => ({ ok: true }),
+      audit: () => {},
+    });
+    const assistant = result.messages.find(
+      (
+        m,
+      ): m is (typeof result.messages)[number] & {
+        tool_calls?: Array<{ id: string }>;
+      } =>
+        m.role === 'assistant' &&
+        Array.isArray((m as { tool_calls?: unknown[] }).tool_calls),
+    );
+    const callId = assistant?.tool_calls?.[0]?.id;
+    const toolMessage = result.messages.find((m) => m.role === 'tool') as
+      | { tool_call_id?: string }
+      | undefined;
+    expect(callId).toBeTruthy();
+    expect(toolMessage?.tool_call_id).toBe(callId);
   });
 
   it('rejects a tool the persona was not offered — never executed', async () => {

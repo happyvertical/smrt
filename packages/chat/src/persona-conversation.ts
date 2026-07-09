@@ -292,10 +292,14 @@ function assembleSystemPrompt(
   memoryBlock: string,
   sessionPrompt: string | undefined,
 ): string {
-  return [sessionPrompt, instructions, memoryBlock]
+  // De-duplicate identical blocks: `bindPersonaToSession()` sets
+  // `session.systemPrompt` to the persona instructions, so without this the
+  // instruction block would appear twice (wasted tokens + confusion) once a
+  // conversation runs on a bound session.
+  const blocks = [sessionPrompt, instructions, memoryBlock]
     .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join('\n\n');
+    .filter((part): part is string => Boolean(part));
+  return [...new Set(blocks)].join('\n\n');
 }
 
 /**
@@ -313,6 +317,16 @@ export async function runPersonaConversationTurn(
   options: PersonaConversationTurnOptions,
 ): Promise<PersonaConversationTurnResult> {
   const { ai, db, persona, userMessage, tenantId } = options;
+  // A conversation must run as a concrete principal. A default/unbound persona
+  // (e.g. a `PersonaResolver` default fallback) has no `runAsUserId`; fail fast
+  // with a clear error rather than building an empty-string PrincipalBinding
+  // that would silently resolve to zero permissions downstream.
+  if (!persona.runAsUserId) {
+    throw new Error(
+      'runPersonaConversationTurn requires a persona bound to a run-as user ' +
+        '(runAsUserId); an unbound/default persona cannot operate the app.',
+    );
+  }
   const correlationId = options.correlationId ?? crypto.randomUUID();
 
   const recalled =
