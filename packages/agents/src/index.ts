@@ -94,6 +94,10 @@ export {
   resolveAgentAIOptions,
 } from './ai-config.js';
 export { AgentConfig, AgentConfigCollection } from './config.js';
+// Per-instance dispatch subscriber composition (#1890). Exported so
+// `@happyvertical/smrt-personas` can derive the same identity for a persona
+// without reconstructing an agent.
+export { instanceScopedSubscriber } from './identity.js';
 export type {
   AgentWithInterestsOptions,
   AsyncQualifierFn,

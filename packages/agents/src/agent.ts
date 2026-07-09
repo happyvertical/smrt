@@ -27,6 +27,7 @@ import {
 import { type AgentAIOptions, resolveAgentAIOptions } from './ai-config.js';
 import { AgentConfig } from './config.js';
 import {
+  instanceScopedSubscriber,
   getAgentClassName as resolveAgentClassName,
   getAgentTypeName as resolveAgentTypeName,
 } from './identity.js';
@@ -35,6 +36,7 @@ import type {
   InterestFilter,
   InterestOptions,
   InterestResult,
+  ObjectFilter,
   ObjectInterestConfig,
 } from './interests.js';
 import { mergeFilters, normalizeSort } from './interests.js';
@@ -72,6 +74,19 @@ export interface AgentOptions
    * shutdown itself; the first handler to finish exits the process.
    */
   manageProcessSignals?: boolean;
+
+  /**
+   * Durable per-instance key for multi-instance agents (#1890).
+   *
+   * Only honored when the agent class opts into multi-instance
+   * (`static multiInstance = true`); a singleton agent (the default) ignores it,
+   * so passing a key can never change a non-opted agent's behavior. When honored
+   * it becomes the per-instance dispatch subscriber suffix and memory partition
+   * (see {@link Agent.getDispatchSubscriber} / {@link Agent.learningScope}) so N
+   * instances of one class run independently. Typically the persona id from
+   * `@happyvertical/smrt-personas` (a persona is a durable instance).
+   */
+  instanceKey?: string | null;
 }
 
 /**
@@ -282,6 +297,27 @@ export abstract class Agent extends SmrtObject {
   static learning: AgentLearningDeclaration = false;
 
   /**
+   * Opt into multiple durable instances of this agent class per tenant (#1890).
+   *
+   * **Off by default** — a non-opted class is a **singleton** (the N=1 case) and
+   * behaves byte-for-byte as it does today: one dispatch subscriber keyed by the
+   * agent type, one memory scope, class-wide interests. Setting this to `true`
+   * lets N configured instances (personas, from `@happyvertical/smrt-personas`)
+   * run independently: each is constructed with its own {@link AgentOptions.instanceKey},
+   * which the framework folds into a per-instance dispatch subscriber
+   * ({@link getDispatchSubscriber}), memory partition ({@link learningScope}),
+   * and interest/subscription scoping seams ({@link instanceInterestFilter} /
+   * {@link resolveSignalSubscriptions}) so two instances never double-process
+   * each other's dispatches or interests.
+   *
+   * The framework provides the per-instance *identity*; a package scopes its own
+   * dispatch/interests to the instance's config by overriding the seams. The
+   * `default` persona reuses the singleton identity (null key), which makes the
+   * singleton→multi upgrade non-destructive.
+   */
+  static multiInstance: boolean = false;
+
+  /**
    * Current agent status
    */
   status: AgentStatusType = 'idle';
@@ -385,6 +421,81 @@ export abstract class Agent extends SmrtObject {
    */
   protected getAgentClassName(): string {
     return resolveAgentClassName(this.getAgentTypeName());
+  }
+
+  // ============================================================================
+  // Multi-instance identity (#1890) — opt-in; singleton (null key) by default
+  // ============================================================================
+
+  /**
+   * Whether this agent class opted into multiple durable instances per tenant.
+   */
+  protected isMultiInstance(): boolean {
+    return (this.constructor as typeof Agent).multiInstance === true;
+  }
+
+  /**
+   * The durable per-instance key for this agent, or `null` for a singleton.
+   *
+   * Returns `null` unless the class opts in (`static multiInstance = true`) AND a
+   * non-empty {@link AgentOptions.instanceKey} was supplied — so a non-opted
+   * agent is always singleton-identified even if a key is passed. This is the
+   * anchor the framework folds into the dispatch subscriber, memory scope, and
+   * scoping seams below.
+   */
+  getInstanceKey(): string | null {
+    if (!this.isMultiInstance()) {
+      return null;
+    }
+    const key = (this.options as AgentOptions).instanceKey;
+    return typeof key === 'string' && key.length > 0 ? key : null;
+  }
+
+  /**
+   * Canonical dispatch subscriber identity for this agent.
+   *
+   * A singleton (no instance key) is the bare agent type — **unchanged** from the
+   * class-keyed behavior. A multi-instance agent is `` `${agentType}#${key}` ``,
+   * giving each instance its own subscription rows and its own pending-dispatch
+   * queue so instances don't compete for or double-process each other's
+   * dispatches. Used everywhere the agent subscribes, seeds, and processes.
+   */
+  getDispatchSubscriber(): string {
+    return instanceScopedSubscriber(
+      this.getAgentTypeName(),
+      this.getInstanceKey(),
+    );
+  }
+
+  /**
+   * The signal types this instance should seed as dispatch subscriptions.
+   *
+   * Defaults to the class's static {@link Agent.signalSubscriptions} unchanged.
+   * A multi-instance package overrides this to derive **instance-scoped** signal
+   * types from the persona/instance config (e.g. append the instance key or a
+   * routing dimension), so an emit meant for one instance only matches that
+   * instance's subscription and the other never processes it.
+   */
+  protected resolveSignalSubscriptions(): string[] {
+    return (this.constructor as typeof Agent).signalSubscriptions;
+  }
+
+  /**
+   * An optional filter AND-merged (as the base layer) into every
+   * {@link interesting} query for this instance.
+   *
+   * `undefined` by default (no scoping — singleton behavior unchanged). A
+   * multi-instance package overrides it to return an instance-discriminating
+   * filter derived from the persona/instance config, so two instances of one
+   * class partition the objects they process and never double-handle the same
+   * row. Global and per-object interest filters layer on top (and win on key
+   * collision), so choose a dedicated discriminator key here.
+   *
+   * Applies to the standard filter path; custom `query` interest filters own
+   * their SQL and should incorporate {@link getInstanceKey} themselves.
+   */
+  protected instanceInterestFilter(): ObjectFilter | undefined {
+    return undefined;
   }
 
   /**
@@ -624,7 +735,7 @@ export abstract class Agent extends SmrtObject {
   async processDispatches(): Promise<number> {
     const dispatch = await this.getDispatch();
     return dispatch.process(
-      this.getAgentTypeName(),
+      this.getDispatchSubscriber(),
       this.handleDispatch.bind(this),
     );
   }
@@ -645,7 +756,11 @@ export abstract class Agent extends SmrtObject {
     const resolved = resolveAgentLearning(
       (this.constructor as typeof Agent).learning,
     );
-    return resolved.scope ?? `agent/${this.getAgentTypeName()}`;
+    const base = resolved.scope ?? `agent/${this.getAgentTypeName()}`;
+    // Partition memory per durable instance so two multi-instance personas learn
+    // independently. Null key (singleton) leaves the scope unchanged.
+    const instanceKey = this.getInstanceKey();
+    return instanceKey ? `${base}#${instanceKey}` : base;
   }
 
   /**
@@ -858,9 +973,9 @@ export abstract class Agent extends SmrtObject {
       const dispatch = await this.getDispatch();
       await this.migrateLegacyDispatchSubscriptions(dispatch);
 
-      const subs = (this.constructor as typeof Agent).signalSubscriptions;
+      const subs = this.resolveSignalSubscriptions();
       if (subs.length > 0) {
-        const subscriber = this.getAgentTypeName();
+        const subscriber = this.getDispatchSubscriber();
         const existing = await dispatch.listSubscriptions(subscriber);
         const existingTypes = new Set(existing.map((s) => s.signalType));
         for (const signalType of subs) {
@@ -1100,7 +1215,9 @@ export abstract class Agent extends SmrtObject {
       // Auto-process pending dispatches for agents with signal subscriptions
       if (this._db) {
         const dispatch = await this.getDispatch();
-        const subs = await dispatch.listSubscriptions(this.getAgentTypeName());
+        const subs = await dispatch.listSubscriptions(
+          this.getDispatchSubscriber(),
+        );
         if (subs.length > 0) {
           const count = await this.processDispatches();
           if (count > 0) {
@@ -1382,8 +1499,14 @@ export abstract class Agent extends SmrtObject {
       return items;
     }
 
-    // Standard filter path - uses collection.list() with SDK filters
-    const mergedFilter = mergeFilters(this.interests?.filter, filter.filter);
+    // Standard filter path - uses collection.list() with SDK filters.
+    // Layer the per-instance scope (#1890) as the base so multi-instance agents
+    // partition what they process; the global then per-object filters layer on
+    // top (winning on key collision). Undefined for singletons → unchanged.
+    const mergedFilter = mergeFilters(
+      mergeFilters(this.instanceInterestFilter(), this.interests?.filter),
+      filter.filter,
+    );
 
     const queryOptions: {
       where?: Record<string, unknown>;

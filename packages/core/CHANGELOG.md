@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.19
+
+### Patch Changes
+
+- ### Features
+
+  - opt-in Learning trait + LearningMemory (#1886) (#1900) (agents)
+  - @happyvertical/smrt-config@0.38.19
+  - @happyvertical/smrt-types@0.38.19
+  - @happyvertical/smrt-scanner@0.38.19
+
 ## 0.38.18
 
 ### Patch Changes

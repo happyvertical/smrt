@@ -77,6 +77,25 @@ export {
   upsertPromptTemplateOverride,
 } from './persona-prompt.js';
 export {
+  type AddPersonaInstanceOptions,
+  addPersonaInstance,
+  agentOptionsForPersona,
+  type BuildPersonaInstanceAdminOptions,
+  buildPersonaInstanceAdmin,
+  DEFAULT_PERSONA_NAME,
+  isDefaultPersona,
+  type PersonaAgentOptions,
+  type PersonaInstanceAdminView,
+  type PersonaInstanceView,
+  personaInstanceKey,
+  removePersonaInstance,
+  type SchedulePersonaInstanceOptions,
+  schedulePersonaInstance,
+  type UpgradeSingletonOptions,
+  type UpgradeSingletonResult,
+  upgradeSingletonToDefaultPersona,
+} from './persona-instance.js';
+export {
   availabilityFromResolvedAgent,
   type ManifestPersonaDefaults,
   type PersonaAvailabilityGate,

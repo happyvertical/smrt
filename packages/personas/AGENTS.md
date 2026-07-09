@@ -5,13 +5,13 @@ Tenant-owned, context-scoped agent personas and their resolution. Layers over
 *how* an agent behaves for a given tenant and context (its `TenantAgent` binding
 decides *whether* it runs and caps its capabilities).
 
-This is the L2 layer of the "learning agents" epic (#1885). It carries both the
-persona foundation (`AgentPersona` + `PersonaResolver`) and the **persona
-learning & adaptation loop** (#1889): feedback → confidence-scored reinforcement
-→ a scheduled reflection runner that emits pending directive proposals → a
-permission-gated approval surface that activates an approved rewrite as a
-tenant/persona-scoped prompt override. `ExecuteAsPrincipal` and multi-instance
-routing remain separate issues (#1888/#1890).
+This is the L2 layer of the "learning agents" epic (#1885): the persona foundation
+(`AgentPersona` + `PersonaResolver`), the **persona learning & adaptation loop**
+(#1889) — feedback → confidence-scored reinforcement → a scheduled reflection
+runner that emits pending directive proposals → a permission-gated approval
+surface that activates an approved rewrite as a tenant/persona-scoped prompt
+override — and the persona-as-durable-instance / multi-instance helpers (#1890,
+below). `ExecuteAsPrincipal` remains a separate issue (#1888).
 
 ## Models
 
@@ -128,12 +128,42 @@ Because the walk reads personas across tenants, `resolve()` is intended for a
 system/admin path where cross-tenant reads are allowed — not inside a strict
 per-tenant interceptor context (same expectation as `resolveForTenant`).
 
+## Persona as Durable Instance (#1890)
+
+A persona is a **durable instance** of an agent class — N per tenant, each
+independently scheduled, memory-scoped, and permission-scoped. `persona-instance.ts`
+wires that to the `@happyvertical/smrt-agents` multi-instance primitives (which are
+per-package opt-in via `static multiInstance`, singleton by default):
+
+- **Identity** — `personaInstanceKey(persona)` returns the persona id, or `null`
+  for the `default` persona (`DEFAULT_PERSONA_NAME`). A `null` key reuses the
+  **singleton** runtime identity (class-keyed dispatch subscriber + un-suffixed
+  memory scope). `agentOptionsForPersona(persona)` projects `{ instanceKey,
+  tenantId }` to spread into the agent constructor.
+- **Scheduling** — `schedulePersonaInstance(schedules, persona, { cron, … })`
+  creates an `AgentSchedule` for the instance. The instance key rides in
+  `agentConfig` (which the scheduler spreads into the agent constructor →
+  `AgentOptions.instanceKey`); `agentId` is left **null** on purpose, because the
+  scheduler copies `agentId`→`SmrtJob.objectId` and the `TaskRunner`
+  `loadFromId()`s it against the agent's STI table — a persona id is not a row
+  there. The default persona carries no key → runs the singleton.
+- **Admin** — `buildPersonaInstanceAdmin(personas, { tenantId, agentClass,
+  manifest })` renders the class's `uiSlots`/`adminRoutes` **once per instance**
+  (with the per-instance dispatch subscriber); `addPersonaInstance()` /
+  `removePersonaInstance(personaId)` are the add/remove affordances.
+- **Non-destructive upgrade** — `upgradeSingletonToDefaultPersona(personas, {
+  tenantId, agentClass, runAsUserId, … })` maps an existing singleton to a single
+  `default` persona. It's null-keyed, so the running agent's dispatch subscriber,
+  memory, and config are untouched; idempotent (a second call returns the
+  existing default with `created: false` and never overwrites it).
+
 ## Dependencies
 
 Leaf package (acyclic by construction — nothing depends back on it):
 
 - Runtime: `@happyvertical/smrt-core`, `@happyvertical/smrt-tenancy`,
-  `@happyvertical/smrt-agents` (the `TenantAgent` type it bridges),
+  `@happyvertical/smrt-agents` (the `TenantAgent` type it bridges, plus the
+  `AgentSchedule`/multi-instance surface `persona-instance.ts` builds on),
   `@happyvertical/smrt-prompts` (persona instructions via `PromptOverride` +
   `resolvePrompt`), `@happyvertical/smrt-users` (the permission catalog slug +
   `PermissionResolver` principal), and `@happyvertical/sql` (`DatabaseInterface`
