@@ -69,6 +69,7 @@ export interface ListOptions {
   orderBy?: string | string[];
   limit?: number;
   offset?: number;
+  select?: readonly string[];
   include?: string[];
   [key: string]: unknown;
 }
@@ -109,7 +110,7 @@ export interface CollectionInterceptor {
   /**
    * Called before list() operations
    * @param className - Name of the class being listed
-   * @param options - List options (where, orderBy, limit, etc.)
+   * @param options - List options (where, orderBy, limit, select, etc.)
    * @param context - Operation context
    * @returns Modified options or void to pass through
    */
