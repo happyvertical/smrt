@@ -216,6 +216,7 @@ export {
   type PostgresPermissionPolicyReportItem,
   type PostgresPermissionPolicyTarget,
   type ResolvedOidcProviderConfig,
+  type PrincipalPermissionRuntimeOptions,
   readMobileBearerToken,
   registerPermissionDefinitions,
   resolveOidcProviderConfig,
@@ -236,6 +237,7 @@ export {
   type UsersConfig,
   type UsersOidcConfig,
   validateMobileRedirectUri,
+  withPrincipalPermissionContext,
   withSessionPermissionContext,
 } from './services/index.js';
 
