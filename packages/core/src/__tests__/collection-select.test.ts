@@ -4,10 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SmrtCollection } from '../collection.js';
-import { foreignKey, SmrtObject, smrt } from '../index.js';
+import { SmrtCollection, type SmrtSelectedRow } from '../collection.js';
+import { field, foreignKey, SmrtObject, smrt } from '../index.js';
 import { GlobalInterceptors } from '../interceptors.js';
 import { getTestDatabase } from '../testing/database.js';
+
+type Assert<T extends true> = T;
+type Equal<Left, Right> =
+  (<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2
+    ? true
+    : false;
 
 @smrt()
 class ProjectionAccount extends SmrtObject {
@@ -30,6 +36,43 @@ class ProjectionOpportunity extends SmrtObject {
 
 class ProjectionOpportunityCollection extends SmrtCollection<ProjectionOpportunity> {
   static readonly _itemClass = ProjectionOpportunity;
+}
+
+type ProjectionCoreRow = SmrtSelectedRow<
+  ProjectionOpportunity,
+  readonly ['id', 'slug', 'context', 'created_at', 'updated_at', '_meta_type']
+>;
+type _ProjectionCoreTypeChecks = [
+  Assert<Equal<ProjectionCoreRow['id'], string | null | undefined>>,
+  Assert<Equal<ProjectionCoreRow['slug'], string | null | undefined>>,
+  Assert<Equal<ProjectionCoreRow['context'], string>>,
+  Assert<Equal<ProjectionCoreRow['created_at'], Date | null | undefined>>,
+  Assert<Equal<ProjectionCoreRow['updated_at'], Date | null | undefined>>,
+  Assert<Equal<ProjectionCoreRow['_meta_type'], string>>,
+];
+
+@smrt()
+class ProjectionSecret extends SmrtObject {
+  label: string = '';
+
+  @field({ type: 'text', sensitive: true })
+  apiSecret: string = '';
+}
+
+class ProjectionSecretCollection extends SmrtCollection<ProjectionSecret> {
+  static readonly _itemClass = ProjectionSecret;
+}
+
+@smrt()
+class ProjectionExternalRecord extends SmrtObject {
+  @field({ type: 'text', required: true, primaryKey: true })
+  externalId: string = '';
+
+  label: string = '';
+}
+
+class ProjectionExternalRecordCollection extends SmrtCollection<ProjectionExternalRecord> {
+  static readonly _itemClass = ProjectionExternalRecord;
 }
 
 const adapterConfigs = [
@@ -228,6 +271,46 @@ describe('SmrtCollection.list({ select })', () => {
           }),
         ).rejects.toThrow('cannot eager-load relationships');
       });
+    });
+  });
+
+  describe('projection validation', () => {
+    let db: DatabaseInterface;
+
+    afterEach(async () => {
+      if (db && typeof db.close === 'function') {
+        await db.close();
+      }
+    });
+
+    it('rejects sensitive fields before building projection SQL', async () => {
+      db = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['ProjectionSecret'],
+      });
+      const secrets = await ProjectionSecretCollection.create({ db });
+
+      await expect(
+        secrets.list({ select: ['apiSecret'] as const }),
+      ).rejects.toThrow(/sensitive/i);
+    });
+
+    it('rejects omitted synthetic core fields on custom-primary-key tables', async () => {
+      db = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['ProjectionExternalRecord'],
+      });
+      const records = await ProjectionExternalRecordCollection.create({ db });
+
+      await expect(records.list({ select: ['id'] as const })).rejects.toThrow(
+        "Invalid select field: 'id'",
+      );
+
+      await expect(
+        records.list({ select: ['externalId'] as const }),
+      ).resolves.toEqual([]);
     });
   });
 });

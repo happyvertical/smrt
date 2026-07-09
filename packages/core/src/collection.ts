@@ -178,6 +178,15 @@ export type SmrtSelectField<T extends SmrtObject> =
   | 'updated_at'
   | '_meta_type';
 
+type SmrtCoreSelectedFieldData = {
+  id: string | null | undefined;
+  slug: string | null | undefined;
+  context: string;
+  created_at: Date | null | undefined;
+  updated_at: Date | null | undefined;
+  _meta_type: string;
+};
+
 /**
  * Plain row shape returned by `collection.list({ select })`.
  */
@@ -185,11 +194,12 @@ export type SmrtSelectedRow<
   T extends SmrtObject,
   Select extends readonly SmrtSelectField<T>[],
 > = {
-  [Field in Extract<
-    Select[number],
-    keyof SmrtModelData<T>
-  >]: SmrtModelData<T>[Field];
-} & Partial<Record<Exclude<Select[number], keyof SmrtModelData<T>>, unknown>>;
+  [Field in Select[number]]: Field extends keyof SmrtCoreSelectedFieldData
+    ? SmrtCoreSelectedFieldData[Field]
+    : Field extends keyof SmrtModelData<T>
+      ? SmrtModelData<T>[Field]
+      : unknown;
+};
 
 export interface SmrtListOptions<ModelType extends SmrtObject> {
   where?: SmrtWhereClause<ModelType>;
@@ -222,12 +232,15 @@ export interface SmrtListOptions<ModelType extends SmrtObject> {
  */
 interface CollectionFieldDefinition {
   type?: string;
+  primaryKey?: boolean;
   transient?: boolean;
   sensitive?: boolean;
-  _meta?: { sensitive?: boolean; transient?: boolean } & Record<
-    string,
-    unknown
-  >;
+  _meta?: {
+    sensitive?: boolean;
+    transient?: boolean;
+    primaryKey?: boolean;
+    __smrtSystemField?: boolean;
+  } & Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -358,27 +371,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // secret column turns the generated REST/MCP `where` surface into a value
     // oracle (e.g. `apiSecret[like]=sk-%`), exfiltrating the secret one
     // character at a time even though it's excluded from serialization.
-    const sensitiveFieldNames = new Set<string>();
-    const collectSensitive = (
-      fieldMap: Record<string, unknown> | Map<string, unknown>,
-    ) => {
-      const entries =
-        fieldMap instanceof Map ? fieldMap.entries() : Object.entries(fieldMap);
-      for (const [fieldName, rawDef] of entries) {
-        const def = rawDef as
-          | { sensitive?: boolean; _meta?: { sensitive?: boolean } }
-          | null
-          | undefined;
-        if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
-          // Store both the snake_case column form and the raw property name so
-          // STI `@meta` fields probed via `_meta_data.<prop>` JSON paths (which
-          // keep the camelCase key) are also rejected.
-          sensitiveFieldNames.add(toSnakeCase(fieldName));
-          sensitiveFieldNames.add(fieldName);
-        }
-      }
-    };
-    collectSensitive(fields);
+    const sensitiveFieldNames = this.collectSensitiveFieldNames(fields);
 
     // Add standard SMRT fields that are always valid
     validFieldNames.add('id');
@@ -424,7 +417,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         for (const fieldName of ancestorFields.keys()) {
           validFieldNames.add(toSnakeCase(fieldName));
         }
-        collectSensitive(ancestorFields);
+        this.collectSensitiveFieldNames(ancestorFields, sensitiveFieldNames);
       }
 
       // Security (#1540): a base collection serializes (and so must protect)
@@ -434,7 +427,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase) {
         for (const descendant of ObjectRegistry.getDescendants(stiBase)) {
-          collectSensitive(ObjectRegistry.getFields(descendant));
+          this.collectSensitiveFieldNames(
+            ObjectRegistry.getFields(descendant),
+            sensitiveFieldNames,
+          );
         }
       }
     }
@@ -650,6 +646,55 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return `"${identifier.replace(/"/g, '""')}"`;
   }
 
+  private isSensitiveFieldDefinition(
+    fieldDef: CollectionFieldDefinition | null | undefined,
+  ): boolean {
+    return fieldDef?.sensitive === true || fieldDef?._meta?.sensitive === true;
+  }
+
+  private collectSensitiveFieldNames(
+    fieldMap:
+      | Record<string, CollectionFieldDefinition>
+      | Map<string, CollectionFieldDefinition>,
+    target = new Set<string>(),
+  ): Set<string> {
+    const entries =
+      fieldMap instanceof Map ? fieldMap.entries() : Object.entries(fieldMap);
+
+    for (const [fieldName, fieldDef] of entries) {
+      if (this.isSensitiveFieldDefinition(fieldDef)) {
+        // Store both the snake_case column form and the raw property name so
+        // STI `@meta` fields probed via `_meta_data.<prop>` JSON paths (which
+        // keep the camelCase key) are also rejected.
+        target.add(toSnakeCase(fieldName));
+        target.add(fieldName);
+      }
+    }
+
+    return target;
+  }
+
+  private hasCustomPrimaryKey(
+    fields: Record<string, CollectionFieldDefinition>,
+  ): boolean {
+    return Object.values(fields).some(
+      (fieldDef) =>
+        fieldDef.primaryKey === true || fieldDef._meta?.primaryKey === true,
+    );
+  }
+
+  private isOmittedCustomPrimaryKeySystemField(
+    fieldName: string,
+    hasCustomPrimaryKey: boolean,
+    explicitFieldNames: ReadonlySet<string>,
+  ): boolean {
+    return (
+      hasCustomPrimaryKey &&
+      !explicitFieldNames.has(fieldName) &&
+      (fieldName === 'id' || fieldName === 'slug' || fieldName === 'context')
+    );
+  }
+
   private resolveProjectionSelect(
     select: readonly string[],
     fields: Record<string, CollectionFieldDefinition>,
@@ -666,22 +711,43 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    const standardFields = new Set([
-      'id',
-      'slug',
-      'context',
-      'created_at',
-      'updated_at',
-    ]);
-    const validFieldNames = new Set([
-      ...Object.keys(fields),
-      ...standardFields,
-    ]);
-    if (isSTI) {
+    const customPrimaryKey = this.hasCustomPrimaryKey(fields);
+    const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const schema =
+      ObjectRegistry.getSchema(itemQualifiedName) ??
+      ObjectRegistry.getSchema(itemClassName);
+    const schemaColumnNames = schema?.columns
+      ? new Set(Object.keys(schema.columns))
+      : undefined;
+    const registeredFields = ObjectRegistry.getFields(itemQualifiedName);
+    const explicitFields =
+      registeredFields.size > 0
+        ? registeredFields
+        : ObjectRegistry.getFields(itemClassName);
+    const explicitFieldNames = new Set(explicitFields.keys());
+
+    const validFieldNames = new Set<string>();
+    for (const [fieldName, fieldDef] of Object.entries(fields)) {
+      if (
+        this.isOmittedCustomPrimaryKeySystemField(
+          fieldName,
+          customPrimaryKey,
+          explicitFieldNames,
+        )
+      ) {
+        continue;
+      }
+      const columnName = this.toDbColumnName(fieldName);
+      if (schemaColumnNames && !schemaColumnNames.has(columnName)) {
+        continue;
+      }
+      validFieldNames.add(fieldName);
+    }
+    if (isSTI && (!schemaColumnNames || schemaColumnNames.has('_meta_type'))) {
       validFieldNames.add('_meta_type');
     }
 
-    const itemClassName = this.getResolvedItemClassName();
     const seen = new Set<string>();
     const outputFields: string[] = [];
     const selectExpressions: string[] = [];
@@ -710,6 +776,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       const fieldDef = fields[fieldName];
       const fieldType = fieldDef?.type;
+      if (this.isSensitiveFieldDefinition(fieldDef)) {
+        throw new Error(
+          `Invalid select field: '${fieldName}' is sensitive and cannot be projected by collection.list({ select }).`,
+        );
+      }
+
       const isTransient =
         fieldDef?.transient === true || fieldDef?._meta?.transient === true;
       const isRelationshipOnly =
