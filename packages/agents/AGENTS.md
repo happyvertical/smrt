@@ -130,11 +130,39 @@ The framework provides only the per-instance **identity**; a package scopes its 
 
 The **`default` persona reuses the singleton identity** (a `null` key), which is what makes the singleton→multi upgrade non-destructive — see `@happyvertical/smrt-personas` (`personaInstanceKey`, `upgradeSingletonToDefaultPersona`).
 
+## Principal Execution (issue #1888)
+
+`executeAsPrincipal(options, fn)` runs agent work **AS a persona's bound user**, reusing the existing RBAC cascade with no snapshotting. It publishes `(user_id, tenant_id, permissions[])` onto the DB session (Postgres RLS then bounds every query per-`(table, action)` and per-tenant) and hands `fn` a `PrincipalRun` whose `assertToolAllowed()` / `assertOperation()` enforce the persona tool ceiling and the RLS-off catalog gate. Effective authority = **bound-user RBAC ∩ agent-class ceiling ∩ persona `allowedTools`**. Actions audit as on-behalf-of the originating user via a `PrincipalAuditSink`.
+
+## Agent Orchestration (issue #1892) — invoke-agent + principal delegation
+
+A conversational (orchestrator) agent can invoke worker agents with **principal delegation**. This is *not* a new engine — it is a standard `invoke-agent` tool plus a completion-dispatch convention on top of `executeAsPrincipal` + the DispatchBus.
+
+```typescript
+import { createInvokeAgentTool, rootDelegationEnvelope } from '@happyvertical/smrt-agents';
+
+const tool = createInvokeAgentTool({
+  db,
+  parentEnvelope: rootDelegationEnvelope({ runAsUserId, tenantId, onBehalfOfUserId }),
+  worker: async ({ run, agentClass, task }) => runWorker(run, agentClass, task),
+});
+// Offered through the chat tool loop as an `extraTools` entry, gated by the
+// persona's allowedTools like any other tool (slug: 'agents.invoke').
+```
+
+- **`DelegationEnvelope`** carries the **immutable principal** (`runAsUserId` + `tenantId` + originating `onBehalfOfUserId`) and a bounded `depth`. `deriveDelegationEnvelope()` copies the principal verbatim and asserts `depth <= MAX_DELEGATION_DEPTH` (3) — a worker cannot invoke a further worker under a broader principal (`PrincipalWideningError` / `DelegationDepthExceededError`).
+- **`createInvokeAgentTool()`** → a `PrincipalTool` whose handler derives the child envelope with the principal taken **from the live run context, never the tool args**, so the invoke-agent tool is structurally immune to principal widening.
+- **`executeDelegatedInvocation()`** runs the worker via `executeAsPrincipal` under that same principal and emits a correlated `agent.completed` dispatch; **`surfaceAgentCompletions(bus, correlationId)`** reads it back into the conversation.
+- **Transports** (pluggable): the default `inlineInvokeAgentTransport` runs the worker in-process (completion surfaces in the same turn); `createDispatchInvokeTransport(bus)` emits an `agent.invoke` signal a worker processes via `processAgentInvocations()` (async). A job-queue transport (enqueue on the `agents` queue) is a consumer-supplied `InvokeAgentTransport` — orchestration never hard-depends on `@happyvertical/smrt-jobs`, which sits *below* agents in the dependency graph.
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait, multi-instance identity |
+| `src/execute-as-principal.ts` | `executeAsPrincipal` / `PrincipalRun` — run agent work as a persona's bound user (#1888) |
+| `src/delegation.ts` | `DelegationEnvelope` — immutable principal + bounded delegation depth (#1892) |
+| `src/invoke-agent.ts` | `invoke-agent` tool, worker executor, completion-dispatch convention, transports (#1892) |
 | `src/learning.ts` | `AgentLearningConfig` + `resolveAgentLearning()` declaration normalisation |
 | `src/schedule.ts` | AgentSchedule model — cron, execution tracking |
 | `src/tenant-agent.ts` | TenantAgent — junction table, hierarchical resolution |

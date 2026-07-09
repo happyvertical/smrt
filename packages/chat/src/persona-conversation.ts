@@ -22,6 +22,7 @@ import type { AIInterface, AIMessage } from '@happyvertical/ai';
 import type {
   PrincipalAuditSink,
   PrincipalBinding,
+  PrincipalTool,
 } from '@happyvertical/smrt-agents';
 import type {
   LearningMemoryRecord,
@@ -257,6 +258,14 @@ export interface PersonaConversationTurnOptions {
   recall?: PersonaRecallOptions | false;
   /** Pre-built tool catalog (else derived from the persona's `allowedTools`). */
   tools?: ManifestTool[];
+  /**
+   * Non-manifest tools to offer this turn — e.g. the agent-orchestration
+   * `invoke-agent` tool (#1892). Each is filtered by the persona's
+   * `allowedTools` before being offered, so orchestration is gated exactly like
+   * any other tool: a persona that does not allow-list `agents.invoke` never
+   * sees it.
+   */
+  extraTools?: PrincipalTool[];
   /** Max tool-executing rounds. */
   maxSteps?: number;
   /** Model id. */
@@ -355,10 +364,18 @@ export async function runPersonaConversationTurn(
     options.tools ??
     buildManifestToolCatalog({ db, allowedTools: persona.allowedTools });
 
+  // Offer gate for non-manifest tools: only those the persona allow-lists (e.g.
+  // `agents.invoke`) are offered, mirroring how the manifest catalog is
+  // narrowed by `allowedTools`.
+  const extraTools = (options.extraTools ?? []).filter((tool) =>
+    persona.allowedTools.includes(tool.slug),
+  );
+
   const result = await runToolLoop({
     ai,
     messages,
     tools,
+    extraTools,
     principal: principalBindingFor(persona),
     db,
     maxSteps: options.maxSteps,
