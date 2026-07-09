@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.18
+
+### Patch Changes
+
+- ### Features
+
+  - new smrt-personas package — AgentPersona + PersonaResolver (#1887) (#1899) (personas)
+  - @happyvertical/smrt-config@0.38.18
+  - @happyvertical/smrt-types@0.38.18
+  - @happyvertical/smrt-scanner@0.38.18
+
 ## 0.38.17
 
 ### Patch Changes
