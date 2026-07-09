@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.38.24
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: sync sdk packages to v0.78.0 (#1914) (deps)
+  - docs: surface context memory, semantic search, and fine-grained RBAC/RLS (#1898)
+  - @happyvertical/smrt-config@0.38.24
+  - @happyvertical/smrt-types@0.38.24
+  - @happyvertical/smrt-scanner@0.38.24
+
 ## 0.38.23
 
 ### Patch Changes
