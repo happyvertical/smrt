@@ -484,9 +484,18 @@ importers:
 
   packages/chat:
     dependencies:
+      '@happyvertical/ai':
+        specifier: ^0.77.0
+        version: 0.77.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-personas':
+        specifier: workspace:*
+        version: link:../personas
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -496,10 +505,13 @@ importers:
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
-    devDependencies:
-      '@happyvertical/smrt-agents':
+      '@happyvertical/smrt-users':
         specifier: workspace:*
-        version: link:../agents
+        version: link:../users
+      '@happyvertical/sql':
+        specifier: ^0.77.0
+        version: 0.77.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+    devDependencies:
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles

@@ -56,6 +56,21 @@ import './__smrt-register__.js';
 // methods (getAgentSession, findActiveAgentSessions, getThread, listRoomThreads,
 // getThreadMessages, getRoomMessages, getRoomForMember, ...).
 
+// Conversational harness (L3, #1891): the persona-bound agentic tool-loop and
+// in-chat feedback capture. `chat → personas` is the new acyclic edge.
+export {
+  acceptAppliedChange,
+  type CaptureChatFeedbackOptions,
+  type ChatFeedbackBase,
+  type ChatFeedbackPersona,
+  type ChatFeedbackResult,
+  captureChatFeedback,
+  correctResponse,
+  rateResponse,
+  rejectAppliedChange,
+  thumbsDown,
+  thumbsUp,
+} from './chat-feedback.js';
 // Models
 export {
   AgentSession,
@@ -65,9 +80,37 @@ export {
   ChatRoom,
   ChatThread,
 } from './models/index.js';
-
+export {
+  type BindPersonaToSessionOptions,
+  bindPersonaToSession,
+  type ConversationPersona,
+  type ConversationReplyService,
+  conversationPersonaFromAgentPersona,
+  conversationPersonaFromResolved,
+  formatRecalledMemory,
+  type PersonaConversationTurnOptions,
+  type PersonaConversationTurnResult,
+  type PersonaRecallOptions,
+  principalBindingFor,
+  recallPersonaMemory,
+  resolveConversationInstructions,
+  runPersonaConversationTurn,
+} from './persona-conversation.js';
 // Services
 export { ChatService } from './services/index.js';
+export {
+  buildManifestToolCatalog,
+  DEFAULT_MAX_STEPS,
+  invokeManifestTool,
+  type ManifestTool,
+  manifestToolToAITool,
+  runToolLoop,
+  type ToolExecutionContext,
+  type ToolInvocation,
+  type ToolLoopOptions,
+  type ToolLoopResult,
+  type ToolLoopStopReason,
+} from './tool-loop.js';
 
 // Types
 export type {
