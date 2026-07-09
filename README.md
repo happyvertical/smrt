@@ -74,7 +74,7 @@ All packages are published under `@happyvertical/smrt-*`. 40 packages total.
 
 | Package | Description |
 |---------|-------------|
-| `smrt-core` | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI |
+| `smrt-core` | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI, object context memory (`remember`/`recall`) + semantic search |
 | `smrt-config` | cosmiconfig loader, secret sanitization, SSG export |
 | `smrt-cli` | Developer CLI: `smrt db:*`, `smrt docs:agents`, `smrt dev:knowledge-*`, introspection, code generation |
 | `smrt-types` | Shared TypeScript types/enums (zero runtime code except enums) |
@@ -88,7 +88,7 @@ All packages are published under `@happyvertical/smrt-*`. 40 packages total.
 |---------|-------------|
 | `smrt-agents` | Agent lifecycle, DispatchBus inter-agent messaging, interests-based discovery, scheduling |
 | `smrt-jobs` | Background execution: TaskRunner, ScheduleRunner, fluent JobBuilder, `withBackgroundJobs()` |
-| `smrt-users` | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks |
+| `smrt-users` | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks; manifest-derived per-operation permissions + Postgres RLS |
 | `smrt-profiles` | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships, audit logging |
 
 ### Content & Media
