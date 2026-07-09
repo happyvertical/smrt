@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.22
+
+### Patch Changes
+
+- ### Features
+
+  - agent orchestration via invoke-agent tool + principal delegation (#1911) (agents)
+  - @happyvertical/smrt-config@0.38.22
+  - @happyvertical/smrt-types@0.38.22
+  - @happyvertical/smrt-scanner@0.38.22
+
 ## 0.38.21
 
 ### Patch Changes
