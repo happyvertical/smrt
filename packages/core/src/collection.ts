@@ -226,17 +226,19 @@ export interface SmrtListOptions<ModelType extends SmrtObject> {
  * query/hydration helpers (`getFieldsSync()`, `convertWhereKeys()`,
  * `formatDataJs()`). These come from `fieldsFromClass()` /
  * `ObjectRegistry.getFields()` and only a few members are read here: `type`
- * (for `formatDataJs` value coercion) and the `sensitive` markers (for the
- * `@field({ sensitive: true })` WHERE guard, #1540). The index signature keeps
- * the bag open for the other registry-attached members without forcing `any`.
+ * (for `formatDataJs` value coercion) and the field-level access markers. The
+ * index signature keeps the bag open for the other registry-attached members
+ * without forcing `any`.
  */
 interface CollectionFieldDefinition {
   type?: string;
   primaryKey?: boolean;
   transient?: boolean;
   sensitive?: boolean;
+  readPermission?: string;
   _meta?: {
     sensitive?: boolean;
+    readPermission?: string;
     transient?: boolean;
     primaryKey?: boolean;
     __smrtSystemField?: boolean;
@@ -652,6 +654,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return fieldDef?.sensitive === true || fieldDef?._meta?.sensitive === true;
   }
 
+  private getReadPermissionFieldDefinition(
+    fieldDef: CollectionFieldDefinition | null | undefined,
+  ): string | undefined {
+    if (typeof fieldDef?.readPermission === 'string') {
+      return fieldDef.readPermission;
+    }
+    if (typeof fieldDef?._meta?.readPermission === 'string') {
+      return fieldDef._meta.readPermission;
+    }
+    return undefined;
+  }
+
   private collectSensitiveFieldNames(
     fieldMap:
       | Record<string, CollectionFieldDefinition>
@@ -779,6 +793,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (this.isSensitiveFieldDefinition(fieldDef)) {
         throw new Error(
           `Invalid select field: '${fieldName}' is sensitive and cannot be projected by collection.list({ select }).`,
+        );
+      }
+      const readPermission = this.getReadPermissionFieldDefinition(fieldDef);
+      if (readPermission) {
+        throw new Error(
+          `Invalid select field: '${fieldName}' is gated by readPermission '${readPermission}' and cannot be projected by collection.list({ select }).`,
         );
       }
 

@@ -64,6 +64,18 @@ class ProjectionSecretCollection extends SmrtCollection<ProjectionSecret> {
 }
 
 @smrt()
+class ProjectionRestricted extends SmrtObject {
+  label: string = '';
+
+  @field({ type: 'text', readPermission: 'projection.restricted.read' })
+  internalNote: string = '';
+}
+
+class ProjectionRestrictedCollection extends SmrtCollection<ProjectionRestricted> {
+  static readonly _itemClass = ProjectionRestricted;
+}
+
+@smrt()
 class ProjectionExternalRecord extends SmrtObject {
   @field({ type: 'text', required: true, primaryKey: true })
   externalId: string = '';
@@ -294,6 +306,19 @@ describe('SmrtCollection.list({ select })', () => {
       await expect(
         secrets.list({ select: ['apiSecret'] as const }),
       ).rejects.toThrow(/sensitive/i);
+    });
+
+    it('rejects readPermission-gated fields before building projection SQL', async () => {
+      db = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['ProjectionRestricted'],
+      });
+      const restricted = await ProjectionRestrictedCollection.create({ db });
+
+      await expect(
+        restricted.list({ select: ['internalNote'] as const }),
+      ).rejects.toThrow(/readPermission 'projection\.restricted\.read'/);
     });
 
     it('rejects omitted synthetic core fields on custom-primary-key tables', async () => {
