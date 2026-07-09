@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.38.20
+
+### Patch Changes
+
+- ### Features
+
+  - add collection projection selects (#1908) (core)
+  - persona learning & adaptation loop with HITL gate (#1907) (personas)
+  - ExecuteAsPrincipal — run agent work as a persona's bound user (#1906) (agents)
+  - opt-in multi-instance agents + persona durable instances (#1890) (#1901) (agents)
+  - @happyvertical/smrt-config@0.38.20
+  - @happyvertical/smrt-types@0.38.20
+  - @happyvertical/smrt-scanner@0.38.20
+
 ## 0.38.19
 
 ### Patch Changes
