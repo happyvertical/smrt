@@ -129,15 +129,22 @@ export class PrincipalWideningError extends Error {
 }
 
 /**
- * Assert a delegation depth is within the ceiling.
+ * Assert a delegation depth is a valid, in-bounds depth.
  *
- * @throws {@link DelegationDepthExceededError} when `depth > maxDepth`.
+ * Rejects a non-integer, negative, or non-finite depth as well as one past the
+ * ceiling. This matters for the untrusted-payload path: an envelope
+ * reconstructed from a persisted dispatch/job could carry `NaN`, a negative, or
+ * a string-coerced value, and `NaN > maxDepth` is `false` — so a bare
+ * upper-bound check would let it silently bypass the bound and make delegation
+ * effectively unbounded.
+ *
+ * @throws {@link DelegationDepthExceededError} when `depth` is not an integer in `[0, maxDepth]`.
  */
 export function assertWithinDelegationDepth(
   depth: number,
   maxDepth: number = MAX_DELEGATION_DEPTH,
 ): void {
-  if (depth > maxDepth) {
+  if (!Number.isInteger(depth) || depth < 0 || depth > maxDepth) {
     throw new DelegationDepthExceededError(depth, maxDepth);
   }
 }
@@ -205,7 +212,11 @@ export interface RootDelegationEnvelopeOptions {
   onBehalfOfUserId?: string;
   /** Correlation id. A fresh UUID is generated when omitted. */
   correlationId?: string;
-  /** The orchestrator's tool ceiling, inherited by workers that don't narrow. */
+  /**
+   * The orchestrator's own tool ceiling. Carried for completeness; workers do
+   * **not** inherit it — a worker's ceiling comes from trusted per-worker policy
+   * (`resolveWorkerAllowedTools`) and is fail-closed (no tools) when absent.
+   */
   allowedTools?: string[];
 }
 

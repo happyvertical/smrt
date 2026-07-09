@@ -58,11 +58,28 @@ export const INVOKE_AGENT_TOOL_SLUG = 'agents.invoke';
  */
 export const INVOKE_AGENT_FUNCTION_NAME = 'agents-invoke';
 
-/** DispatchBus signal a worker is invoked through in the async transport. */
+/** DispatchBus signal prefix a worker is invoked through in the async transport. */
 export const AGENT_INVOKE_SIGNAL = 'agent.invoke';
 
 /** DispatchBus signal a worker emits to report completion, correlated by id. */
 export const AGENT_COMPLETED_SIGNAL = 'agent.completed';
+
+/**
+ * The **per-worker** signal type an async invocation is emitted on, so a
+ * processor only ever claims invocations for the worker class it serves.
+ *
+ * The async transport emits `agent.invoke.<agentClass>` (the class rendered as a
+ * single, provider-safe signal segment) rather than the bare `agent.invoke`.
+ * DispatchBus `process()` claims pending rows by *subscribed signal type* before
+ * a handler can inspect the payload, so a processor targeting worker A
+ * (subscribed to `agent.invoke.<A>`) can never claim a worker-B invocation
+ * (`agent.invoke.<B>`). A generic processor that handles every class subscribes
+ * to the single-segment wildcard `agent.invoke.*`.
+ */
+export function agentInvokeSignalType(agentClass: string): string {
+  const segment = agentClass.replace(/[^A-Za-z0-9_-]/g, '-') || 'unknown';
+  return `${AGENT_INVOKE_SIGNAL}.${segment}`;
+}
 
 /**
  * A tool executed under a {@link PrincipalRun} that is not a manifest CRUD
@@ -188,12 +205,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function asStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
+/**
+ * Whether a value is a structurally-valid {@link DelegationEnvelope} — a
+ * concrete principal (`runAsUserId`), a `string | null` tenant, an originating
+ * `onBehalfOfUserId`, and an integer `depth`. Used to reject a malformed
+ * envelope arriving from a persisted (untrusted) dispatch payload before it
+ * drives a worker.
+ */
+function isValidDelegationEnvelope(
+  value: unknown,
+): value is DelegationEnvelope {
+  if (!isRecord(value)) {
+    return false;
   }
-  const strings = value.filter((v): v is string => typeof v === 'string');
-  return strings.length > 0 ? strings : undefined;
+  return (
+    typeof value.runAsUserId === 'string' &&
+    value.runAsUserId.length > 0 &&
+    (value.tenantId === null || typeof value.tenantId === 'string') &&
+    typeof value.onBehalfOfUserId === 'string' &&
+    value.onBehalfOfUserId.length > 0 &&
+    Number.isInteger(value.depth) &&
+    typeof value.correlationId === 'string'
+  );
 }
 
 /**
@@ -363,11 +396,15 @@ export const inlineInvokeAgentTransport: InvokeAgentTransport = {
 };
 
 /**
- * An async transport that emits a correlated `agent.invoke` DispatchBus signal
- * for a worker to process out of band ({@link processAgentInvocations}). The
- * tool returns `enqueued`; the worker's completion is surfaced later via
- * {@link surfaceAgentCompletions}. The worker runner is *not* used here — it is
- * reconstructed on the processing side.
+ * An async transport that emits a correlated, **per-worker** `agent.invoke.<class>`
+ * DispatchBus signal for a worker to process out of band
+ * ({@link processAgentInvocations}). The tool returns `enqueued`; the worker's
+ * completion is surfaced later via {@link surfaceAgentCompletions}. The worker
+ * runner is *not* used here — it is reconstructed on the processing side.
+ *
+ * Emitting on the per-worker signal type (see {@link agentInvokeSignalType})
+ * means a processor for worker A never claims an invocation targeted at worker
+ * B, even under compete delivery.
  */
 export function createDispatchInvokeTransport(
   dispatchBus: DispatchBus,
@@ -376,7 +413,7 @@ export function createDispatchInvokeTransport(
   return {
     async deliver(delivery): Promise<InvokeAgentResult> {
       await dispatchBus.emit(
-        AGENT_INVOKE_SIGNAL,
+        agentInvokeSignalType(delivery.agentClass),
         {
           envelope: delivery.envelope,
           agentClass: delivery.agentClass,
@@ -398,13 +435,20 @@ export function createDispatchInvokeTransport(
 }
 
 /**
- * Process pending `agent.invoke` signals for a subscriber, running each worker
- * as its delegated principal and emitting the correlated completion. This is the
- * worker side of {@link createDispatchInvokeTransport}.
+ * Process pending `agent.invoke` signals, running each worker as its delegated
+ * principal and emitting the correlated completion. This is the worker side of
+ * {@link createDispatchInvokeTransport}.
+ *
+ * Pass `agentClass` to target a single worker class — the processor subscribes
+ * to `agent.invoke.<class>` and can only ever claim that class's invocations, so
+ * running one processor per worker class never cross-claims. Omit it for a
+ * generic processor that handles every class (subscribes to the wildcard
+ * `agent.invoke.*` and dispatches on the payload's `agentClass`).
  *
  * The envelope arrives from a (persisted, thus untrusted) dispatch payload, so
- * its depth is re-asserted before the worker runs — a tampered envelope cannot
- * drive the chain past {@link MAX_DELEGATION_DEPTH}.
+ * it is validated ({@link isValidDelegationEnvelope}) and its depth re-asserted
+ * before the worker runs — a malformed or tampered envelope cannot drive the
+ * chain past {@link MAX_DELEGATION_DEPTH}.
  *
  * @returns The number of invocations processed.
  */
@@ -412,6 +456,8 @@ export async function processAgentInvocations(options: {
   dispatchBus: DispatchBus;
   subscriber: string;
   worker: WorkerRunner;
+  /** Target a single worker class; omit for a handle-every-class processor. */
+  agentClass?: string;
   db?: SmrtClassOptions['db'];
   audit?: PrincipalAuditSink;
   postgresRls?: boolean;
@@ -421,25 +467,31 @@ export async function processAgentInvocations(options: {
   const { dispatchBus, subscriber, worker, db, audit, postgresRls, logger } =
     options;
   const log = logger ?? createLogger({ level: 'info' });
-  await dispatchBus.subscribe({
-    signalType: AGENT_INVOKE_SIGNAL,
-    subscriber,
-  });
+  // Targeted processors subscribe to their own class's signal; a generic
+  // processor uses the single-segment wildcard to handle every class.
+  const signalType = options.agentClass
+    ? agentInvokeSignalType(options.agentClass)
+    : `${AGENT_INVOKE_SIGNAL}.*`;
+  await dispatchBus.subscribe({ signalType, subscriber });
   return dispatchBus.process(
     subscriber,
     async (payload) => {
       const record = isRecord(payload) ? payload : {};
-      const envelope = record.envelope as DelegationEnvelope | undefined;
+      const envelope = record.envelope;
       const agentClass =
         typeof record.agentClass === 'string' ? record.agentClass : '';
-      if (!envelope || !agentClass) {
-        log.warn('agent.invoke dispatch missing envelope or agentClass', {
-          agentClass,
-        });
+      // Reject a malformed/tampered payload before it drives a worker.
+      if (!isValidDelegationEnvelope(envelope) || !agentClass) {
+        log.warn(
+          'agent.invoke dispatch has an invalid envelope or agentClass',
+          {
+            agentClass,
+          },
+        );
         return;
       }
       // Defense in depth: a persisted (tamperable) envelope cannot exceed the
-      // depth ceiling.
+      // depth ceiling (or carry a NaN/negative depth that bypasses it).
       assertWithinDelegationDepth(envelope.depth);
       await executeDelegatedInvocation({
         envelope,
@@ -523,6 +575,9 @@ export function createInvokeAgentTool(
           'Delegate a task to a worker agent. The worker runs under YOUR ' +
             'principal (the originating user) — it cannot exceed your ' +
             'permissions — and returns its completion.',
+        // Note: the tool deliberately exposes NO `allowedTools` / principal
+        // parameters — a worker's tool ceiling and principal are never taken
+        // from model-controlled arguments (see below).
         parameters: {
           type: 'object',
           required: ['agentClass'],
@@ -534,12 +589,6 @@ export function createInvokeAgentTool(
             task: {
               type: 'object',
               description: 'The task payload handed to the worker.',
-            },
-            allowedTools: {
-              type: 'array',
-              items: { type: 'string' },
-              description:
-                "The worker's tool ceiling (fail-closed). Cannot widen your principal.",
             },
           },
         },
@@ -567,11 +616,13 @@ export function createInvokeAgentTool(
         tenantId: run.context.tenantId ?? options.parentEnvelope.tenantId,
       };
 
-      // The worker's own tool ceiling (its persona's tools, else the requested
-      // list). Never inherits the orchestrator's tools implicitly.
+      // The worker's tool ceiling comes ONLY from trusted server-side policy
+      // (`resolveWorkerAllowedTools`), never from the model-controlled tool
+      // arguments — otherwise the model could hand the worker an arbitrary tool
+      // set. Absent a resolver the worker gets NO tools (fail-closed); its
+      // authority is still bounded by the originating user's RBAC regardless.
       const requestedAllowedTools =
-        options.resolveWorkerAllowedTools?.(agentClass) ??
-        asStringArray(args.allowedTools);
+        options.resolveWorkerAllowedTools?.(agentClass);
 
       const childEnvelope = deriveDelegationEnvelope(parent, {
         allowedTools: requestedAllowedTools,

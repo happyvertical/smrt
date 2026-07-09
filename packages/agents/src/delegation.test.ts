@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertPrincipalNotWidened,
+  assertWithinDelegationDepth,
   DelegationDepthExceededError,
   type DelegationEnvelope,
   deriveDelegationEnvelope,
@@ -17,6 +18,37 @@ import {
   PrincipalWideningError,
   rootDelegationEnvelope,
 } from './delegation.js';
+
+describe('assertWithinDelegationDepth', () => {
+  it('accepts an in-bounds integer depth', () => {
+    expect(() => assertWithinDelegationDepth(0)).not.toThrow();
+    expect(() =>
+      assertWithinDelegationDepth(MAX_DELEGATION_DEPTH),
+    ).not.toThrow();
+  });
+
+  it('rejects a depth past the ceiling', () => {
+    expect(() => assertWithinDelegationDepth(MAX_DELEGATION_DEPTH + 1)).toThrow(
+      DelegationDepthExceededError,
+    );
+  });
+
+  it('rejects a NaN / negative / non-integer depth (untrusted payload)', () => {
+    // `NaN > maxDepth` is false — a bare upper-bound check would let it bypass.
+    expect(() => assertWithinDelegationDepth(Number.NaN)).toThrow(
+      DelegationDepthExceededError,
+    );
+    expect(() => assertWithinDelegationDepth(-1)).toThrow(
+      DelegationDepthExceededError,
+    );
+    expect(() => assertWithinDelegationDepth(1.5)).toThrow(
+      DelegationDepthExceededError,
+    );
+    expect(() => assertWithinDelegationDepth('2' as unknown as number)).toThrow(
+      DelegationDepthExceededError,
+    );
+  });
+});
 
 describe('rootDelegationEnvelope', () => {
   it('seeds a depth-0 envelope for the orchestrator', () => {

@@ -140,6 +140,7 @@ export {
   AGENT_COMPLETED_SIGNAL,
   AGENT_INVOKE_SIGNAL,
   type AgentCompletion,
+  agentInvokeSignalType,
   type CreateInvokeAgentToolOptions,
   createDispatchInvokeTransport,
   createInvokeAgentTool,

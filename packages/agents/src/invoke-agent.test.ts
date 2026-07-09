@@ -273,6 +273,72 @@ describe('invoke-agent orchestration', () => {
     );
   });
 
+  it('derives the worker tool ceiling from trusted state, ignoring model args', async () => {
+    let capturedEnvelope: DelegationEnvelope | undefined;
+    const recordingTransport: InvokeAgentTransport = {
+      async deliver(delivery) {
+        capturedEnvelope = delivery.envelope;
+        return {
+          status: 'enqueued',
+          correlationId: delivery.envelope.correlationId,
+          agentClass: delivery.agentClass,
+          depth: delivery.envelope.depth,
+        };
+      },
+    };
+
+    await executeAsPrincipal(
+      {
+        db,
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['agents.invoke'],
+        },
+        onBehalfOfUserId: ORIGINATOR,
+        audit: () => {},
+      },
+      async (run) => {
+        // With a trusted resolver, the worker ceiling is the resolver's — the
+        // model-supplied `allowedTools` arg is ignored entirely.
+        const withResolver = createInvokeAgentTool({
+          db,
+          parentEnvelope: rootEnvelope(),
+          worker: noopWorker,
+          transport: recordingTransport,
+          resolveWorkerAllowedTools: () => ['trusted.tool'],
+        });
+        await withResolver.execute({
+          run,
+          args: {
+            agentClass: '@happyvertical/smrt-agents:Sub',
+            allowedTools: ['evil.tool'],
+          },
+          db,
+        });
+        expect(capturedEnvelope?.allowedTools).toEqual(['trusted.tool']);
+
+        // Without a resolver, the worker gets NO tools (fail-closed) — the model
+        // arg is never trusted as the ceiling.
+        const noResolver = createInvokeAgentTool({
+          db,
+          parentEnvelope: rootEnvelope(),
+          worker: noopWorker,
+          transport: recordingTransport,
+        });
+        await noResolver.execute({
+          run,
+          args: {
+            agentClass: '@happyvertical/smrt-agents:Sub',
+            allowedTools: ['evil.tool'],
+          },
+          db,
+        });
+        expect(capturedEnvelope?.allowedTools).toBeUndefined();
+      },
+    );
+  });
+
   it('audits every action on-behalf-of the originating user, preserved along the chain', async () => {
     const entries: PrincipalAuditEntry[] = [];
     const audit = (entry: PrincipalAuditEntry) => {
@@ -380,5 +446,44 @@ describe('invoke-agent orchestration', () => {
 
     const surfaced = await surfaceAgentCompletions(bus, 'corr-async');
     expect(surfaced.some((c) => c.ok)).toBe(true);
+  });
+
+  it('targets async invocations so a processor never claims another worker class', async () => {
+    const bus = await createDispatchBus({ db });
+    const transport = createDispatchInvokeTransport(bus);
+    const envelope = deriveDelegationEnvelope(rootEnvelope(), {
+      correlationId: 'corr-target',
+    });
+
+    // Enqueue an invocation targeted at worker class A.
+    await transport.deliver({
+      envelope,
+      agentClass: '@happyvertical/smrt-agents:WorkerA',
+      task: {},
+      worker: noopWorker,
+      dispatchBus: bus,
+    });
+
+    // A processor for a DIFFERENT class (B) must not claim class-A's invocation.
+    const claimedByB = await processAgentInvocations({
+      dispatchBus: bus,
+      subscriber: 'WorkerB',
+      agentClass: '@happyvertical/smrt-agents:WorkerB',
+      worker: noopWorker,
+      db,
+      audit: () => {},
+    });
+    expect(claimedByB).toBe(0);
+
+    // The class-A processor claims it.
+    const claimedByA = await processAgentInvocations({
+      dispatchBus: bus,
+      subscriber: 'WorkerA',
+      agentClass: '@happyvertical/smrt-agents:WorkerA',
+      worker: noopWorker,
+      db,
+      audit: () => {},
+    });
+    expect(claimedByA).toBe(1);
   });
 });
