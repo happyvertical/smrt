@@ -77,16 +77,10 @@ class LearningSampleAgent extends Agent {
     }
     this.lastStrategy = strategy;
 
-    // Stage the episode so the lifecycle reinforces it after run(). When the
-    // strategy was freshly generated (e.g. after the previous one decayed),
-    // `updateValue` replaces the stored value so a superseded/failed strategy
-    // is not later recalled at rising confidence.
-    this.stageLearning({
-      scope: this.learningScope(),
-      key,
-      value: strategy,
-      updateValue: this.lastStrategySource === 'generated',
-    });
+    // Stage the strategy this run acted on; the lifecycle reinforces it after
+    // run(). capture() reflects the staged value in storage, so a regenerated
+    // strategy (after the previous one decayed) supersedes the stale one.
+    this.stageLearning({ scope: this.learningScope(), key, value: strategy });
 
     // A validated failure decays the memory without throwing.
     if (!this.strategyValid) {

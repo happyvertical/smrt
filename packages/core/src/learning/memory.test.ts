@@ -366,6 +366,31 @@ describe('LearningMemory', () => {
       expect(searcher).not.toHaveBeenCalled();
     });
 
+    it('applies the confidence floor to the semantic arm by default', async () => {
+      const searcher = vi.fn(
+        async () => [],
+      ) as unknown as LearningSemanticSearch;
+      const memory = makeMemory('owner-1', {
+        semanticSearch: searcher,
+        config: { minConfidence: 0.75 },
+      });
+
+      // No explicit minSimilarity → the reuse floor is applied to semantic hits
+      // too, so a low-similarity hit can't be reused below the confidence floor.
+      await memory.recall('notes', { query: 'q' });
+      expect(searcher).toHaveBeenCalledWith(
+        'q',
+        expect.objectContaining({ minSimilarity: 0.75 }),
+      );
+
+      // An explicit minSimilarity still overrides the floor.
+      await memory.recall('notes', { query: 'q', minSimilarity: 0.4 });
+      expect(searcher).toHaveBeenLastCalledWith(
+        'q',
+        expect.objectContaining({ minSimilarity: 0.4 }),
+      );
+    });
+
     it('filters semantic hits by minSimilarity', async () => {
       const searcher = vi.fn(
         async (

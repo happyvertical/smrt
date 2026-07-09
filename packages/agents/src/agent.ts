@@ -255,7 +255,9 @@ export abstract class Agent extends SmrtObject {
    * lifecycle, backed by {@link LearningMemory}. A non-opted agent behaves
    * byte-for-byte as it does today — the learning branches are never entered.
    *
-   * When enabled, `execute()`:
+   * When enabled, the loop wraps `run()` itself (in {@link initialize}), so it
+   * fires whether the agent runs via {@link execute} or the background/scheduled
+   * path (which calls `run()` directly). Each run:
    * 1. recalls confident memories for {@link learningScope} before `run()`,
    *    exposing them via {@link recalledMemories};
    * 2. captures the run outcome after `run()` — a clean completion reinforces
@@ -315,10 +317,16 @@ export abstract class Agent extends SmrtObject {
   private _dispatch: DispatchBus | null = null;
 
   /**
-   * Cached LearningMemory binding. `undefined` = not yet resolved,
-   * `null` = learning disabled (resolved once, cheaply).
+   * Cached LearningMemory binding, once successfully built. Not cached when
+   * learning is disabled or the DB isn't ready yet, so an early call can't
+   * permanently stick the agent in a learning-disabled state.
    */
-  private _learningMemory?: LearningMemory | null;
+  private _learningMemory?: LearningMemory;
+
+  /**
+   * Whether `run()` has been wrapped with the learning loop (idempotency guard).
+   */
+  private _runWrappedForLearning = false;
 
   /**
    * The episode the current run acted on, staged via {@link stageLearning} so
@@ -667,15 +675,17 @@ export abstract class Agent extends SmrtObject {
    * single static-flag check), which keeps non-opted agents unchanged.
    */
   getLearningMemory(): LearningMemory | null {
-    if (this._learningMemory !== undefined) {
+    if (this._learningMemory) {
       return this._learningMemory;
     }
 
     const resolved = resolveAgentLearning(
       (this.constructor as typeof Agent).learning,
     );
+    // Disabled is a stable answer (cheap static check, no need to cache). When
+    // enabled but the DB isn't wired yet, return null WITHOUT caching so a later
+    // call (after initialize()) can build the binding.
     if (!resolved.enabled || !this._db) {
-      this._learningMemory = null;
       return null;
     }
 
@@ -693,6 +703,64 @@ export abstract class Agent extends SmrtObject {
       config: resolved.memoryConfig,
     });
     return this._learningMemory;
+  }
+
+  /**
+   * Wrap `run()` with the recall-before / capture-after learning loop when the
+   * trait is enabled, so it fires **however run() is invoked** — via
+   * {@link execute} OR directly by the background/scheduled path
+   * (`ScheduleRunner` → `TaskRunner` calls the agent's configured method, which
+   * defaults to `run` and never goes through `execute()`). Both paths call
+   * {@link initialize}, so wrapping here covers them. Idempotent, and a no-op
+   * for non-opted agents (their `run()` is left untouched).
+   */
+  private wrapRunForLearning(): void {
+    if (this._runWrappedForLearning) return;
+    if (
+      !resolveAgentLearning((this.constructor as typeof Agent).learning).enabled
+    ) {
+      return;
+    }
+    this._runWrappedForLearning = true;
+
+    const originalRun = this.run.bind(this);
+    (this as { run: () => Promise<void> }).run = async (): Promise<void> => {
+      const memory = this.getLearningMemory();
+      if (!memory) {
+        await originalRun();
+        return;
+      }
+
+      // Clear per-run learning state up front so a throw in recallForRun()
+      // can't leave stale recalled memories from a previous run.
+      this.recalledMemories = [];
+      this._learningEpisode = null;
+      this._learningOutcome = null;
+      try {
+        this.recalledMemories = await this.recallForRun(memory);
+        await originalRun();
+        await this.captureForRun(
+          memory,
+          this._learningOutcome ?? { success: true },
+        );
+      } catch (error) {
+        // Capture the failure, but never mask the original error.
+        try {
+          await this.captureForRun(memory, {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } catch (captureError) {
+          this.logger.warn('Learning capture failed during error handling', {
+            error: captureError,
+          });
+        }
+        throw error;
+      } finally {
+        this._learningEpisode = null;
+        this._learningOutcome = null;
+      }
+    };
   }
 
   /**
@@ -805,6 +873,11 @@ export abstract class Agent extends SmrtObject {
         }
       }
     }
+
+    // Engage the learning loop around run() (opt-in; no-op otherwise). Done
+    // here — not only in execute() — so the background/scheduled path, which
+    // calls initialize() then run() directly, learns too.
+    this.wrapRunForLearning();
 
     return this;
   }
@@ -1018,9 +1091,6 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   async execute(): Promise<void> {
-    // Learning trait (#1886): resolves to null for non-opted agents, so every
-    // guarded branch below is skipped and behaviour is unchanged.
-    let learning: LearningMemory | null = null;
     try {
       await this.initialize();
       await this.validate();
@@ -1039,46 +1109,17 @@ export abstract class Agent extends SmrtObject {
         }
       }
 
-      // Learning: recall-before-run
-      learning = this.getLearningMemory();
-      if (learning) {
-        this.recalledMemories = await this.recallForRun(learning);
-      }
-
+      // The learning loop (#1886) is wrapped around run() in initialize(), so
+      // recall-before / capture-after fires here and on the scheduled path
+      // alike — nothing learning-specific is needed in execute() itself.
       await this.run();
-
-      // Learning: capture-after-run (success unless run reported otherwise)
-      if (learning) {
-        await this.captureForRun(
-          learning,
-          this._learningOutcome ?? { success: true },
-        );
-      }
-
       this.status = 'idle';
 
       this.logger.info('Agent execution completed');
     } catch (error) {
-      // Learning: capture the failure, but never mask the original error.
-      if (learning) {
-        try {
-          await this.captureForRun(learning, {
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        } catch (captureError) {
-          this.logger.warn('Learning capture failed during error handling', {
-            error: captureError,
-          });
-        }
-      }
       this.status = 'error';
       this.logger.error('Agent execution failed', { error });
       throw error;
-    } finally {
-      // Reset per-run learning state so a reused instance starts clean.
-      this._learningEpisode = null;
-      this._learningOutcome = null;
     }
   }
 

@@ -71,17 +71,12 @@ export interface LearningEpisode {
   /** Lookup key within the scope. */
   key: string;
   /**
-   * Value to persist when no memory exists yet for `(scope, key)`. Ignored
-   * when a memory already exists unless {@link LearningEpisode.updateValue} is
-   * set — a captured outcome never silently rewrites a stored strategy.
+   * The value (strategy) this outcome pertains to. Seeds a new memory when none
+   * exists for `(scope, key)`, and refreshes the stored value when one does — so
+   * a regenerated strategy supersedes a decayed one. Omit to reinforce an
+   * existing memory's confidence without touching its stored value.
    */
   value?: unknown;
-  /**
-   * When `true`, overwrite the stored value with {@link LearningEpisode.value}
-   * even if a memory already exists (used to feed a corrected/failed attempt
-   * back in for self-correction context).
-   */
-  updateValue?: boolean;
   /** Optional metadata to persist on a first capture. */
   metadata?: Record<string, unknown>;
   /** Optional expiry after which recall ignores the memory. */
@@ -180,6 +175,11 @@ export interface LearningMemoryOptions {
 
 const CONTEXTS_TABLE = '_smrt_contexts';
 const CONFLICT_COLUMNS = ['owner_class', 'owner_id', 'scope', 'key', 'version'];
+/**
+ * The single `_smrt_contexts` version LearningMemory reads and writes. Kept
+ * explicit so capture and recall agree on the row identity.
+ */
+const MEMORY_VERSION = 1;
 
 function clamp01(value: number): number {
   if (Number.isNaN(value)) return 0;
@@ -297,8 +297,13 @@ export class LearningMemory {
 
     let semanticRecords: LearningMemoryRecord[] = [];
     if (options.query && this.semanticSearch) {
+      // Semantic hits carry `confidence = _similarity`, so the reuse floor must
+      // apply to them too: default `minSimilarity` to the resolved confidence
+      // floor unless the caller explicitly overrides it. Otherwise a
+      // low-similarity hit could be reused while a context memory at the same
+      // confidence is filtered out.
       semanticRecords = await this.recallSemantic(options.query, {
-        floor: options.minSimilarity ?? 0,
+        floor: options.minSimilarity ?? floor,
         limit: options.semanticLimit ?? 10,
       });
     }
@@ -319,7 +324,9 @@ export class LearningMemory {
    * - Adjusts `confidence`: success strengthens toward 1.0; failure decays
    *   toward `failureConfidence` (default 0.3), dropping a confident memory
    *   below the reuse floor in a single step.
-   * - Refreshes `last_used_at` and `updated_at`.
+   * - Refreshes `last_used_at` and `updated_at`, and (when the episode carries a
+   *   `value`) the stored value — so a regenerated strategy supersedes a decayed
+   *   one instead of the old value resurfacing on the next success.
    * - Seeds a new memory when none exists for `(scope, key)` and the episode
    *   carries a `value` (a failed first attempt is retained at low confidence
    *   for self-correction context).
@@ -339,7 +346,7 @@ export class LearningMemory {
       owner_id: this.ownerId,
       scope: episode.scope,
       key: episode.key,
-      version: 1,
+      version: MEMORY_VERSION,
     });
 
     if (existing) {
@@ -357,7 +364,11 @@ export class LearningMemory {
         last_used_at: now,
         updated_at: now,
       };
-      if (episode.updateValue && episode.value !== undefined) {
+      // The episode's value is the strategy this outcome pertains to, so always
+      // reflect it in storage. Without this, a regenerated strategy (staged
+      // after the previous one decayed below the floor) would be discarded and
+      // the next successful capture would resurrect the stale failed value.
+      if (episode.value !== undefined) {
         data.value = JSON.stringify(episode.value);
       }
       if (episode.metadata !== undefined) {
@@ -380,7 +391,7 @@ export class LearningMemory {
         scope: episode.scope,
         key: episode.key,
         value:
-          episode.updateValue && episode.value !== undefined
+          episode.value !== undefined
             ? episode.value
             : parseValue(existing.value),
         confidence: nextConfidence,
@@ -416,7 +427,7 @@ export class LearningMemory {
       key: episode.key,
       value: JSON.stringify(episode.value),
       metadata,
-      version: 1,
+      version: MEMORY_VERSION,
       confidence,
       success_count: success ? 1 : 0,
       failure_count: success ? 0 : 1,
@@ -478,23 +489,29 @@ export class LearningMemory {
     scope: string,
     key?: string,
   ): Promise<Record<string, unknown>[]> {
+    // Row identity is (owner_class, owner_id, scope, key, version); `capture()`
+    // only ever writes version 1, so recall filters to it — otherwise a future
+    // multi-version write would surface stale versions here.
     if (key !== undefined) {
       const { rows } = await this.db.query(
         `SELECT * FROM ${CONTEXTS_TABLE}
-         WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?`,
+         WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?
+           AND version = ?`,
         this.ownerClass,
         this.ownerId,
         scope,
         key,
+        MEMORY_VERSION,
       );
       return rows;
     }
     const { rows } = await this.db.query(
       `SELECT * FROM ${CONTEXTS_TABLE}
-       WHERE owner_class = ? AND owner_id = ? AND scope = ?`,
+       WHERE owner_class = ? AND owner_id = ? AND scope = ? AND version = ?`,
       this.ownerClass,
       this.ownerId,
       scope,
+      MEMORY_VERSION,
     );
     return rows;
   }
@@ -532,7 +549,7 @@ export class LearningMemory {
       });
     }
 
-    // Highest confidence first; break ties on the higher version.
+    // Highest effective confidence first.
     return records.sort((a, b) => b.confidence - a.confidence);
   }
 
@@ -580,9 +597,16 @@ export class LearningMemory {
   }
 
   private async touch(ids: string[], now: Date): Promise<void> {
-    for (const id of ids) {
-      await this.db.update(CONTEXTS_TABLE, { id }, { last_used_at: now });
-    }
+    if (ids.length === 0) return;
+    // Single batched UPDATE rather than one per row (avoids an N+1 on large
+    // recalls). Raw parameterised queries don't coerce Date bind params the way
+    // db.update() does, so serialise to ISO first.
+    const placeholders = ids.map(() => '?').join(', ');
+    await this.db.query(
+      `UPDATE ${CONTEXTS_TABLE} SET last_used_at = ? WHERE id IN (${placeholders})`,
+      now.toISOString(),
+      ...ids,
+    );
   }
 
   private scopeChain(scope: string): string[] {

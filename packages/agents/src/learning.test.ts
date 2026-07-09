@@ -161,6 +161,28 @@ describe('Learning trait — lifecycle seams', () => {
     expect(agent.recalledCountAtRun).toBe(1);
   });
 
+  it('learns on the scheduled path — recall/capture fire when run() is called directly (not execute)', async () => {
+    // ScheduleRunner → TaskRunner constructs the agent, calls initialize(), then
+    // invokes its configured method (default 'run') DIRECTLY, bypassing
+    // execute(). The learning loop must still fire on this path.
+    const agent = new WiringAgent({ name: 'scheduled', db });
+    await agent.initialize();
+    await agent.run(); // direct invocation, no execute()
+
+    // capture-after fired: the staged episode was persisted.
+    const row = await db.get('_smrt_contexts', {
+      owner_id: agent.id as string,
+      key: 'strategy',
+      version: 1,
+    });
+    expect(row).not.toBeNull();
+    expect(Number(row?.success_count)).toBe(1);
+
+    // recall-before fired on the next direct run: the prior memory is recalled.
+    await agent.run();
+    expect(agent.recalledCountAtRun).toBe(1);
+  });
+
   it('captures a reported failure so the memory decays', async () => {
     const agent = new WiringAgent({ name: 'wiring-fail', db });
     agent.fail = true;
