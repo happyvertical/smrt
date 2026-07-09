@@ -131,7 +131,7 @@ describe('persona-as-instance (#1890)', () => {
   });
 
   describe('schedulePersonaInstance', () => {
-    it('binds an AgentSchedule to a non-default instance via agentId', async () => {
+    it('carries the instance key in agentConfig (not agentId, which loadFromId-s the STI table)', async () => {
       const schedules = await AgentScheduleCollection.create({ db });
       const persona = await addPersonaInstance(personas, {
         tenantId: 'tenant-a',
@@ -144,14 +144,18 @@ describe('persona-as-instance (#1890)', () => {
         cron: '0 2 * * *',
       });
 
-      expect(schedule.agentId).toBe(persona.id);
+      // agentId stays null so the runner constructs a fresh instance instead of
+      // loadFromId-ing the persona id against the agents STI table; the identity
+      // reaches AgentOptions.instanceKey via agentConfig.
+      expect(schedule.agentId).toBeNull();
+      expect(schedule.agentConfig.instanceKey).toBe(persona.id);
       expect(schedule.agentType).toBe(PRAECO);
       expect(schedule.tenantId).toBe('tenant-a');
       expect(schedule.cron).toBe('0 2 * * *');
       expect(schedule.enabled).toBe(true);
     });
 
-    it('schedules the default instance as the singleton (null agentId)', async () => {
+    it('schedules the default instance as the singleton (no instance key)', async () => {
       const schedules = await AgentScheduleCollection.create({ db });
       const { persona } = await upgradeSingletonToDefaultPersona(personas, {
         tenantId: 'tenant-a',
@@ -163,7 +167,25 @@ describe('persona-as-instance (#1890)', () => {
         cron: '*/5 * * * *',
       });
       expect(schedule.agentId).toBeNull();
+      expect(schedule.agentConfig.instanceKey).toBeUndefined();
       expect(schedule.agentType).toBe(PRAECO);
+    });
+
+    it('preserves caller agentConfig alongside the instance key', async () => {
+      const schedules = await AgentScheduleCollection.create({ db });
+      const persona = await addPersonaInstance(personas, {
+        tenantId: 'tenant-a',
+        agentClass: PRAECO,
+        name: 'Support',
+        runAsUserId: 'user-1',
+      });
+
+      const schedule = await schedulePersonaInstance(schedules, persona, {
+        cron: '0 2 * * *',
+        agentConfig: { region: 'eu' },
+      });
+      expect(schedule.agentConfig.region).toBe('eu');
+      expect(schedule.agentConfig.instanceKey).toBe(persona.id);
     });
 
     it('supports many independent schedules for one class', async () => {
@@ -188,7 +210,7 @@ describe('persona-as-instance (#1890)', () => {
         cron: '0 2 * * *',
       });
 
-      expect(s1.agentId).not.toBe(s2.agentId);
+      expect(s1.agentConfig.instanceKey).not.toBe(s2.agentConfig.instanceKey);
       const forClass = await schedules.listByAgentType(PRAECO);
       expect(forClass).toHaveLength(2);
     });

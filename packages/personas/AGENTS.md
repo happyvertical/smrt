@@ -77,8 +77,12 @@ per-package opt-in via `static multiInstance`, singleton by default):
   memory scope). `agentOptionsForPersona(persona)` projects `{ instanceKey,
   tenantId }` to spread into the agent constructor.
 - **Scheduling** — `schedulePersonaInstance(schedules, persona, { cron, … })`
-  creates an `AgentSchedule` bound to the instance: `agentId` = the instance key
-  (`null` for the default → runs the singleton), `agentType` = the persona class.
+  creates an `AgentSchedule` for the instance. The instance key rides in
+  `agentConfig` (which the scheduler spreads into the agent constructor →
+  `AgentOptions.instanceKey`); `agentId` is left **null** on purpose, because the
+  scheduler copies `agentId`→`SmrtJob.objectId` and the `TaskRunner`
+  `loadFromId()`s it against the agent's STI table — a persona id is not a row
+  there. The default persona carries no key → runs the singleton.
 - **Admin** — `buildPersonaInstanceAdmin(personas, { tenantId, agentClass,
   manifest })` renders the class's `uiSlots`/`adminRoutes` **once per instance**
   (with the per-instance dispatch subscriber); `addPersonaInstance()` /

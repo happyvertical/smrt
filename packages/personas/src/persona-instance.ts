@@ -12,7 +12,8 @@
  *   `default` persona reuses the **singleton** identity (a `null` key), which is
  *   what makes the singleton→multi upgrade non-destructive.
  * - **Scheduling** — {@link schedulePersonaInstance} binds an `AgentSchedule` to
- *   a persona instance (the schedule already carries `agentId`).
+ *   a persona instance, routing the instance key through `agentConfig` so it
+ *   reaches the constructed agent as `AgentOptions.instanceKey`.
  * - **Admin** — {@link buildPersonaInstanceAdmin} renders the agent class's
  *   `uiSlots`/`adminRoutes` once per instance, with {@link addPersonaInstance} /
  *   {@link removePersonaInstance} affordances.
@@ -130,11 +131,19 @@ export interface SchedulePersonaInstanceOptions {
 /**
  * Create an `AgentSchedule` bound to a persona **instance**.
  *
- * The schedule's `agentType` is the persona's agent class and its `agentId` is
- * the persona instance key ({@link personaInstanceKey}) — `null` for the default
- * (so it runs the singleton), the persona id otherwise (so the runtime
- * constructs that specific instance). This is the per-instance scheduling the
- * issue calls for: many schedules for one class, one per instance.
+ * The schedule's `agentType` is the persona's agent class. The persona instance
+ * key ({@link personaInstanceKey}) must reach the constructed agent as
+ * `AgentOptions.instanceKey`, so it is carried in `agentConfig` — which the
+ * scheduler (`smrt-jobs`) spreads into the agent constructor options — and
+ * `agentId` is left **null**.
+ *
+ * This is deliberate: the scheduler copies `AgentSchedule.agentId` to
+ * `SmrtJob.objectId`, and the `TaskRunner` `loadFromId()`s a non-null
+ * `objectId` against the agent's STI table. A persona id lives in
+ * `agent_personas`, not that table, so putting it in `agentId` would fail to
+ * load (or load the wrong row). Leaving `agentId` null makes the runner
+ * construct a fresh instance and pick up `instanceKey` from `agentConfig`. The
+ * default persona (null key) carries no key → runs the singleton.
  *
  * @param schedules - The `AgentScheduleCollection` to create into.
  * @param persona - The persona instance to schedule (must be saved).
@@ -146,14 +155,20 @@ export async function schedulePersonaInstance(
   options: SchedulePersonaInstanceOptions,
 ): Promise<AgentSchedule> {
   const instanceKey = personaInstanceKey(persona);
+  const agentConfig: Record<string, unknown> = {
+    ...(options.agentConfig ?? {}),
+  };
+  if (instanceKey) {
+    agentConfig.instanceKey = instanceKey;
+  }
   const schedule = await schedules.create({
     tenantId: persona.tenantId,
     agentType: persona.agentClass,
-    agentId: instanceKey,
+    agentId: null,
     cron: options.cron,
     timezone: options.timezone ?? 'UTC',
     method: options.method ?? 'run',
-    agentConfig: options.agentConfig ?? {},
+    agentConfig,
     methodArgs: options.methodArgs ?? {},
     enabled: options.enabled ?? true,
   });
