@@ -53,6 +53,21 @@ class MobileStateHolderTest {
     }
 
     @Test
+    fun skipInitialObservationDoesNotDropImmediateUpdate() = runTest {
+        val holder = MobileStateHolder("initial", StandardTestDispatcher(testScheduler))
+        val seen = mutableListOf<String>()
+
+        holder.observe(
+            MobileStateObserver { value -> seen.add(value as String) },
+            emitCurrent = false,
+        )
+        holder.set("next")
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(listOf("next"), seen)
+    }
+
+    @Test
     fun parentCancellationStopsObservation() = runTest {
         val parent = Job()
         val holder = MobileStateHolder(

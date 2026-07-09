@@ -38,6 +38,15 @@ class AndroidEvidenceByteSource(
         require(asset.relativePath.isNotBlank()) {
             "Evidence asset ${asset.assetId} has no readable local file location"
         }
-        return baseDirectory.resolve(asset.relativePath)
+        return resolveEvidenceRelativeFile(baseDirectory, asset.relativePath)
     }
+}
+
+internal fun resolveEvidenceRelativeFile(baseDirectory: File, relativePath: String): File {
+    val canonicalBase = baseDirectory.canonicalFile
+    val candidate = canonicalBase.resolve(relativePath).canonicalFile
+    require(candidate.toPath().startsWith(canonicalBase.toPath())) {
+        "Evidence relative path escapes the configured base directory"
+    }
+    return candidate
 }

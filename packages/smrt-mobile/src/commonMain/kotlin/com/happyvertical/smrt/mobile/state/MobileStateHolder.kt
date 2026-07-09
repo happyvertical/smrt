@@ -3,6 +3,7 @@ package com.happyvertical.smrt.mobile.state
 import kotlin.concurrent.Volatile
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -59,7 +60,7 @@ open class MobileStateHolder<T : Any>(
     ): MobileStateSubscription {
         ensureOpen()
         val flow = if (emitCurrent) state else state.drop(1)
-        val job = scope.launch {
+        val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             flow.collect { next -> observer.onState(next) }
         }
         return MobileStateSubscription(job)

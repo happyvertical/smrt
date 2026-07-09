@@ -33,17 +33,22 @@ data class EvidenceMultipartUpload(
     val fields: Map<String, String> = emptyMap(),
     val assets: List<EvidenceMultipartAsset> = emptyList(),
 ) {
-    suspend fun toQueueHttpRequest(byteSource: EvidenceByteSource): QueueHttpRequest.Multipart =
-        QueueHttpRequest.Multipart(
-            path = path,
-            fields = fields,
-            files = assets.map { part ->
+    suspend fun toQueueHttpRequest(byteSource: EvidenceByteSource): QueueHttpRequest.Multipart {
+        val files = mutableListOf<MobileUploadPart>()
+        for (part in assets) {
+            files.add(
                 part.asset.toMobileUploadPart(
                     fieldName = part.fieldName,
                     bytes = byteSource.readBytes(part.asset),
                 )
-            },
+            )
+        }
+        return QueueHttpRequest.Multipart(
+            path = path,
+            fields = fields,
+            files = files,
         )
+    }
 }
 
 fun EvidenceAssetRef.toMobileUploadPart(

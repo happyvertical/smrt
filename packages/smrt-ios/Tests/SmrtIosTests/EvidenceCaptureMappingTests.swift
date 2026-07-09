@@ -47,6 +47,41 @@ final class EvidenceCaptureMappingTests: XCTestCase {
         )
     }
 
+    func testFoundationEvidenceByteSourceRejectsRelativePathOutsideBaseDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let directory = root.appendingPathComponent("evidence", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let asset = EvidenceAssetRef(
+            assetId: "asset-outside",
+            localUri: "",
+            fileName: "outside.jpg",
+            contentType: "image/jpeg",
+            sizeBytes: nil,
+            sha256: "",
+            captureSource: EvidenceCaptureSource.shared.NATIVE_PICKER,
+            originalUri: "",
+            storageRoot: "app_private",
+            relativePath: "../outside.jpg",
+            storageState: EvidenceAssetStorageState.shared.STORED_OFFLINE,
+            offlineSafe: true,
+            persistedAt: nil
+        )
+
+        do {
+            _ = try await FoundationEvidenceByteSource(baseDirectory: directory)
+                .readBytes(asset: asset)
+            XCTFail("Expected traversal outside the base directory to be rejected")
+        } catch let error as FoundationEvidenceByteSourceError {
+            guard case let .pathOutsideBaseDirectory(assetId) = error else {
+                return XCTFail("Unexpected evidence byte-source error: \(error)")
+            }
+            XCTAssertEqual(assetId, "asset-outside")
+        }
+    }
+
     func testCaptureSegmentPicksFirstNonBlankBySortedKey() {
         XCTAssertEqual(
             IOSEvidenceCaptureAdapter.evidenceCaptureSegment(

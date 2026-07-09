@@ -5,8 +5,10 @@ import com.happyvertical.smrt.mobile.evidence.EvidenceAssetStorageState
 import com.happyvertical.smrt.mobile.evidence.EvidenceCaptureRequest
 import com.happyvertical.smrt.mobile.evidence.EvidenceCaptureSource
 import com.happyvertical.smrt.mobile.evidence.EvidencePermissionStatus
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -18,6 +20,22 @@ import kotlinx.datetime.Instant
  * drive itself needs an Activity + on-device UI and is exercised by the sample.
  */
 class EvidenceCaptureMappingTest {
+    @Test
+    fun relativeEvidenceFileMustStayWithinBaseDirectory() {
+        val baseDirectory = createTempDirectory("smrt-evidence").toFile()
+        try {
+            assertEquals(
+                baseDirectory.resolve("evidence/asset.jpg").canonicalFile,
+                resolveEvidenceRelativeFile(baseDirectory, "evidence/asset.jpg"),
+            )
+            assertFailsWith<IllegalArgumentException> {
+                resolveEvidenceRelativeFile(baseDirectory, "../outside.jpg")
+            }
+        } finally {
+            baseDirectory.deleteRecursively()
+        }
+    }
+
     @Test
     fun captureSegmentTakesFirstNonBlankContextIdBySortedKey() {
         assertEquals(
