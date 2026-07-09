@@ -152,6 +152,65 @@ export type SmrtCreateInput<T extends SmrtObject> = Partial<
  */
 export type SmrtWhereClause<T extends SmrtObject> = Record<string, unknown>;
 
+type SmrtModelData<T extends SmrtObject> = Omit<
+  {
+    [K in keyof T as T[K] extends (...args: never[]) => unknown
+      ? never
+      : K]: T[K];
+  },
+  SmrtInternalKeys
+>;
+
+/**
+ * Logical field names accepted by `collection.list({ select })`.
+ *
+ * `select` is intentionally a column-backed projection primitive: callers pass
+ * SMRT field names such as `parentId`, and the collection maps them to database
+ * columns such as `parent_id` while returning rows keyed by the original SMRT
+ * field names.
+ */
+export type SmrtSelectField<T extends SmrtObject> =
+  | Extract<keyof SmrtModelData<T>, string>
+  | 'id'
+  | 'slug'
+  | 'context'
+  | 'created_at'
+  | 'updated_at'
+  | '_meta_type';
+
+/**
+ * Plain row shape returned by `collection.list({ select })`.
+ */
+export type SmrtSelectedRow<
+  T extends SmrtObject,
+  Select extends readonly SmrtSelectField<T>[],
+> = {
+  [Field in Extract<
+    Select[number],
+    keyof SmrtModelData<T>
+  >]: SmrtModelData<T>[Field];
+} & Partial<Record<Exclude<Select[number], keyof SmrtModelData<T>>, unknown>>;
+
+export interface SmrtListOptions<ModelType extends SmrtObject> {
+  where?: SmrtWhereClause<ModelType>;
+  offset?: number;
+  limit?: number;
+  orderBy?: string | string[];
+  /**
+   * Column-backed field projection. When present, `list()` returns plain rows
+   * instead of hydrated model instances.
+   */
+  select?: readonly SmrtSelectField<ModelType>[];
+  /**
+   * Relationships to eagerly load. Only supported for hydrated list() calls.
+   */
+  include?: string[];
+  /**
+   * Opt-in read-through cache for this call (issue #1498).
+   */
+  cache?: CollectionCacheConfig | false;
+}
+
 /**
  * Minimal runtime shape of a field definition as consumed by the collection's
  * query/hydration helpers (`getFieldsSync()`, `convertWhereKeys()`,
@@ -163,8 +222,12 @@ export type SmrtWhereClause<T extends SmrtObject> = Record<string, unknown>;
  */
 interface CollectionFieldDefinition {
   type?: string;
+  transient?: boolean;
   sensitive?: boolean;
-  _meta?: { sensitive?: boolean } & Record<string, unknown>;
+  _meta?: { sensitive?: boolean; transient?: boolean } & Record<
+    string,
+    unknown
+  >;
   [key: string]: unknown;
 }
 
@@ -558,6 +621,135 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return converted;
   }
 
+  private toDbColumnName(fieldName: string): string {
+    return fieldName.startsWith('_')
+      ? `_${toSnakeCase(fieldName.slice(1))}`
+      : toSnakeCase(fieldName);
+  }
+
+  private assertSafeProjectionFieldName(fieldName: string): void {
+    if (
+      fieldName === '__proto__' ||
+      fieldName === 'constructor' ||
+      fieldName === 'prototype'
+    ) {
+      throw new Error(
+        `Invalid select field: '${fieldName}'. Prototype pollution attempts are not allowed.`,
+      );
+    }
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(fieldName)) {
+      throw new Error(
+        `Invalid select field: '${fieldName}'. Field names must be identifiers (letters, digits, underscore).`,
+      );
+    }
+  }
+
+  private quoteProjectionIdentifier(identifier: string): string {
+    this.assertSafeProjectionFieldName(identifier);
+    return `"${identifier.replace(/"/g, '""')}"`;
+  }
+
+  private resolveProjectionSelect(
+    select: readonly string[],
+    fields: Record<string, CollectionFieldDefinition>,
+    isSTI: boolean,
+  ): { sql: string; outputFields: string[] } {
+    if (!Array.isArray(select)) {
+      throw new Error(
+        'Invalid select option: expected an array of field names.',
+      );
+    }
+    if (select.length === 0) {
+      throw new Error(
+        'Invalid select option: at least one field name is required.',
+      );
+    }
+
+    const standardFields = new Set([
+      'id',
+      'slug',
+      'context',
+      'created_at',
+      'updated_at',
+    ]);
+    const validFieldNames = new Set([
+      ...Object.keys(fields),
+      ...standardFields,
+    ]);
+    if (isSTI) {
+      validFieldNames.add('_meta_type');
+    }
+
+    const itemClassName = this.getResolvedItemClassName();
+    const seen = new Set<string>();
+    const outputFields: string[] = [];
+    const selectExpressions: string[] = [];
+
+    for (const fieldName of select) {
+      if (typeof fieldName !== 'string') {
+        throw new Error(
+          `Invalid select field: expected a string field name, got ${typeof fieldName}.`,
+        );
+      }
+      this.assertSafeProjectionFieldName(fieldName);
+
+      if (seen.has(fieldName)) {
+        throw new Error(
+          `Invalid select field: '${fieldName}' was requested more than once.`,
+        );
+      }
+      seen.add(fieldName);
+
+      if (!validFieldNames.has(fieldName)) {
+        throw new Error(
+          `Invalid select field: '${fieldName}'. Field does not exist on ${itemClassName}. ` +
+            `Valid fields: ${Array.from(validFieldNames).sort().join(', ')}`,
+        );
+      }
+
+      const fieldDef = fields[fieldName];
+      const fieldType = fieldDef?.type;
+      const isTransient =
+        fieldDef?.transient === true || fieldDef?._meta?.transient === true;
+      const isRelationshipOnly =
+        fieldType === 'oneToMany' || fieldType === 'manyToMany';
+      if (fieldType === 'meta' || isTransient || isRelationshipOnly) {
+        throw new Error(
+          `Invalid select field: '${fieldName}' is not a column-backed field on ${itemClassName}.`,
+        );
+      }
+
+      const columnName = this.toDbColumnName(fieldName);
+      selectExpressions.push(
+        `${this.quoteProjectionIdentifier(columnName)} AS ${this.quoteProjectionIdentifier(fieldName)}`,
+      );
+      outputFields.push(fieldName);
+    }
+
+    return {
+      sql: selectExpressions.join(', '),
+      outputFields,
+    };
+  }
+
+  private formatProjectionRow(
+    row: Record<string, unknown>,
+    fields: Record<string, CollectionFieldDefinition>,
+    outputFields: readonly string[],
+  ): Record<string, unknown> {
+    const formattedData = this.withHydratedCoreFields(
+      formatDataJs(row, fields),
+    );
+    const projected: Record<string, unknown> = {};
+
+    for (const fieldName of outputFields) {
+      projected[fieldName] = formattedData[fieldName];
+    }
+
+    return projected;
+  }
+
   /**
    * Gets the class constructor for items in this collection
    */
@@ -930,7 +1122,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * The cache key is the final SQL + bound parameters — computed after
    * interceptors (tenancy filters) and STI discriminators are applied, so
    * differently-scoped queries can never share an entry. Cached values are
-   * raw rows; hydration and read interceptors still run on every call.
+   * raw rows; callers still run their normal post-query formatting path.
    */
   private async queryRowsWithCache(
     sql: string,
@@ -1102,6 +1294,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @param options.offset - Number of records to skip
    * @param options.limit - Maximum number of records to return
    * @param options.orderBy - Field(s) to order results by, with optional direction
+   * @param options.select - Column-backed fields to return as plain rows without hydrating model instances
    *
    * @example
    * ```typescript
@@ -1128,49 +1321,32 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *     'last_login <': lastMonth
    *   }
    * });
+   *
+   * // Fetch compact page-key rows without constructing full objects
+   * await collection.list({
+   *   select: ['id', 'title', 'accountId'],
+   *   where: { status: 'open' },
+   *   orderBy: 'created_at DESC',
+   *   limit: 50,
+   * });
    * ```
    *
-   * @returns Promise resolving to an array of model instances
+   * @returns Promise resolving to an array of model instances, or plain selected rows when `select` is present
    */
+  public async list<const Select extends readonly SmrtSelectField<ModelType>[]>(
+    options: SmrtListOptions<ModelType> & {
+      select: Select;
+      include?: never;
+    },
+  ): Promise<SmrtSelectedRow<ModelType, Select>[]>;
   public async list(
-    options: {
-      where?: SmrtWhereClause<ModelType>;
-      offset?: number;
-      limit?: number;
-      orderBy?: string | string[];
-      /**
-       * Relationships to eagerly load (avoids N+1 query problem)
-       * @example
-       * ```typescript
-       * // Load orders with their customers pre-loaded
-       * const orders = await orderCollection.list({
-       *   include: ['customerId']
-       * });
-       * // Access customer without additional query
-       * orders[0].getRelated('customerId');
-       * ```
-       */
-      include?: string[];
-      /**
-       * Opt-in read-through cache for this call (issue #1498).
-       *
-       * Pass `{ ttl }` (milliseconds) to memoize the result rows keyed by
-       * the final query shape. Mutations through SMRT invalidate the
-       * table's entries automatically. Pass `false` to force a fresh read
-       * when the model opted in via `@smrt({ cache })`. Defaults to the
-       * model-level config; uncached when neither is set.
-       *
-       * @example
-       * ```typescript
-       * const published = await resumes.list({
-       *   where: { status: 'published' },
-       *   cache: { ttl: 60_000 },
-       * });
-       * ```
-       */
-      cache?: CollectionCacheConfig | false;
-    } = {},
-  ): Promise<ModelType[]> {
+    options?: Omit<SmrtListOptions<ModelType>, 'select'> & {
+      select?: undefined;
+    },
+  ): Promise<ModelType[]>;
+  public async list(
+    options: SmrtListOptions<ModelType> = {},
+  ): Promise<ModelType[] | Record<string, unknown>[]> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
@@ -1190,7 +1366,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (options as InterceptorListOptions | undefined) ??
       {};
 
-    let { where, offset, limit, orderBy } = interceptedOptions;
+    let { where, offset, limit, orderBy, select } =
+      interceptedOptions as SmrtListOptions<ModelType>;
 
     // STI: Child collections should automatically filter by _meta_type.
     // R5-canon: qualified-key lookup so a same-simple-name class in
@@ -1214,6 +1391,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // convertWhereKeys is now sync (issue #663) - no await needed
     const convertedWhere = this.convertWhereKeys(where || {});
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
+
+    const fields = this.getFieldsSync();
+    const projection =
+      select !== undefined
+        ? this.resolveProjectionSelect(select, fields, isSTI)
+        : undefined;
+    if (
+      projection &&
+      interceptedOptions.include &&
+      interceptedOptions.include.length > 0
+    ) {
+      throw new Error(
+        'collection.list({ select }) returns plain projection rows and cannot eager-load relationships. Remove include or omit select.',
+      );
+    }
 
     let orderBySql = '';
     if (orderBy) {
@@ -1258,7 +1450,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       limitOffsetValues.push(offset);
     }
 
-    const sql = `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
+    const selectSql = projection ? projection.sql : '*';
+    const sql = `SELECT ${selectSql} FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
     const params = [...whereValues, ...limitOffsetValues];
 
     // Resolve the cache preference from the post-interceptor options —
@@ -1271,7 +1464,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         (interceptedOptions as { cache?: CollectionCacheConfig | false }).cache,
       ),
     );
-    const fields = this.getFieldsSync();
+
+    if (projection) {
+      // Projection is the no-hydration path. beforeList interceptors still ran
+      // above, but afterList hooks are intentionally skipped because they are
+      // defined around hydrated SmrtObject instances.
+      return rows.map((item) =>
+        this.formatProjectionRow(item, fields, projection.outputFields),
+      );
+    }
 
     // STI: Hydrate instances polymorphically based on _meta_type
     // Reuse tableStrategy and isSTI from earlier in the function

@@ -56,6 +56,7 @@ export interface CollectionInterface {
     orderBy?: string | string[];
     limit?: number;
     offset?: number;
+    select?: readonly string[];
   }): Promise<unknown[]>;
 
   get(id: string): Promise<unknown | null>;

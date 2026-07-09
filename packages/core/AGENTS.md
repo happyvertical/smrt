@@ -51,6 +51,14 @@ await collection.list({
 });
 ```
 
+Projection primitive (#1902): pass `select: ['id', 'title', 'tenantId']` to
+`list()` when an admin/list workflow needs compact rows. `select` uses SMRT
+field names, maps them to DB columns internally, and returns plain objects keyed
+by the same SMRT field names without hydrating `SmrtObject` instances. It
+composes with `where`, `orderBy`, `limit`, and `offset`; `beforeList`
+interceptors still run. It is for column-backed fields only and cannot combine
+with `include`/relationship eager loading.
+
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`, `is null`, `is not null`. Arrays auto-detect `IN`. Dot notation for JSON paths: `metadata.userId`.
 
 STI child collections auto-filter by `_meta_type`.

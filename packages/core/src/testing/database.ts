@@ -168,8 +168,9 @@ export interface TestDatabaseOptions {
    * Database type (default: 'sqlite')
    * - 'sqlite': SQLite database
    * - 'json': JSON adapter (stores data as JSON files with DuckDB for querying)
+   * - 'duckdb': Native DuckDB database
    */
-  type?: 'sqlite' | 'json';
+  type?: 'sqlite' | 'json' | 'duckdb';
 
   /**
    * Database URL (default: ':memory:')
@@ -261,6 +262,9 @@ function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
  * // JSON adapter instead of SQLite
  * const db = await getTestDatabase({ type: 'json' });
  *
+ * // Native DuckDB adapter
+ * const db = await getTestDatabase({ type: 'duckdb', url: ':memory:' });
+ *
  * // File-based database for persistent tests
  * const db = await getTestDatabase({ type: 'sqlite', url: '/tmp/test.db' });
  *
@@ -313,7 +317,9 @@ export async function getTestDatabase(
     type === 'json' ||
     typeof (db as { exportTable?: unknown }).exportTable === 'function'
       ? 'json'
-      : 'sqlite';
+      : type === 'duckdb'
+        ? 'duckdb'
+        : 'sqlite';
 
   // Track created tables to avoid duplicates (STI base classes)
   const createdTables = new Set<string>();
