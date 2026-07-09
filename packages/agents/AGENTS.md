@@ -85,11 +85,41 @@ Persisted `agent_config` snapshots env-derived values at sync time, so rotated e
 
 The TaskRunner calls `resolveLazyConfig()` immediately before constructing the agent, so live values always win over snapshotted ones. Re-exported from `@happyvertical/smrt-core` (`resolveLazyConfig`, `registerConfigResolver`, `getClassConfigResolvers`, …) for cases where agents isn't on the import path.
 
+## Learning Trait (issue #1886) — opt-in
+
+Any agent can opt into a confidence-scored **recall-before / capture-after** loop backed by core's `LearningMemory` (over `_smrt_contexts` + `_smrt_embeddings`). **Off by default** — a non-opted agent behaves byte-for-byte as today; the lifecycle's learning branches are never entered.
+
+```typescript
+@smrt()
+class InvoiceAgent extends Agent {
+  static override learning = true; // or { minConfidence: 0.8, scope: 'invoices', ... }
+  protected config = {};
+
+  async run() {
+    // recall-before-run already populated `recalledMemories` (confidence >= floor)
+    const cached = this.recalledMemories.find((m) => m.key === this.docUrl);
+    const strategy = cached?.value ?? (await this.generateStrategy());
+
+    // stage the episode; the lifecycle reinforces it after run()
+    this.stageLearning({ scope: this.learningScope(), key: this.docUrl, value: strategy });
+
+    // a validated failure decays the memory without throwing
+    if (!ok) this.reportLearningOutcome({ success: false, error: 'no match' });
+  }
+}
+```
+
+- **`capture` semantics** (`LearningMemory`): success strengthens `confidence` toward 1.0 and increments `success_count`; failure decays toward `failureConfidence` (0.3) and increments `failure_count`. A single failure drops a confident memory below the reuse floor (0.7), so recall stops returning it. Refreshes `last_used_at`; honours `expires_at` and optional time-decay.
+- **Memory isolation**: bound to `(agentType, agentInstanceId)` as `(owner_class, owner_id)`, so two tenants on the same agent class never share memory. `tenantId` is threaded into the optional semantic-search `where`.
+- **Seams to override**: `learningScope()`, `recallForRun(memory)`, `captureForRun(memory, outcome)`, `getLearningSemanticSearch()`. Helpers for `run()`: `stageLearning(episode)`, `reportLearningOutcome(outcome)`, `getLearningMemory()`, and the `recalledMemories` field.
+- **Config**: `static learning: boolean | AgentLearningConfig` — `{ enabled?, scope?, minConfidence?, successConfidence?, failureConfidence?, reinforcement?, decayHalfLifeMs? }`. `LearningMemory` and its types are re-exported from `@happyvertical/smrt-core`.
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config |
+| `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait |
+| `src/learning.ts` | `AgentLearningConfig` + `resolveAgentLearning()` declaration normalisation |
 | `src/schedule.ts` | AgentSchedule model — cron, execution tracking |
 | `src/tenant-agent.ts` | TenantAgent — junction table, hierarchical resolution |
 | `src/interests.ts` | Interest filter types and configuration |

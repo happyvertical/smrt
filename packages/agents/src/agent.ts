@@ -7,6 +7,11 @@ import {
   type DispatchBus,
   type DispatchMetadata,
   type DispatchTenantScope,
+  type LearningEpisode,
+  LearningMemory,
+  type LearningMemoryRecord,
+  type LearningOutcome,
+  type LearningSemanticSearch,
   ObjectRegistry,
   resolveDispatchTenantScope,
   type SmrtCollection,
@@ -33,6 +38,10 @@ import type {
   ObjectInterestConfig,
 } from './interests.js';
 import { mergeFilters, normalizeSort } from './interests.js';
+import {
+  type AgentLearningDeclaration,
+  resolveAgentLearning,
+} from './learning.js';
 import type { AgentStatusType } from './types.js';
 import type { AgentAdminRoute, AgentUISlots } from './ui.js';
 
@@ -239,6 +248,38 @@ export abstract class Agent extends SmrtObject {
   static configResolvers: Record<string, ConfigResolver> = {};
 
   /**
+   * Opt-in learning trait declaration (#1886).
+   *
+   * **Off by default.** Set to `true` (or a config object) on a subclass to
+   * wire a confidence-scored recall-before / capture-after loop into the agent
+   * lifecycle, backed by {@link LearningMemory}. A non-opted agent behaves
+   * byte-for-byte as it does today — the learning branches are never entered.
+   *
+   * When enabled, `execute()`:
+   * 1. recalls confident memories for {@link learningScope} before `run()`,
+   *    exposing them via {@link recalledMemories};
+   * 2. captures the run outcome after `run()` — a clean completion reinforces
+   *    the staged memory (see {@link stageLearning}); a thrown error or an
+   *    explicit {@link reportLearningOutcome} failure decays it.
+   *
+   * @example
+   * ```typescript
+   * @smrt()
+   * class InvoiceAgent extends Agent {
+   *   static override learning = true; // reuse floor 0.7, success 0.9, fail 0.3
+   *   // or: static override learning = { minConfidence: 0.8, scope: 'invoices' };
+   *   protected config = {};
+   *   async run() {
+   *     const [cached] = this.recalledMemories;
+   *     const strategy = cached?.value ?? (await this.generateStrategy());
+   *     this.stageLearning({ scope: this.learningScope(), key: 'default', value: strategy });
+   *   }
+   * }
+   * ```
+   */
+  static learning: AgentLearningDeclaration = false;
+
+  /**
    * Current agent status
    */
   status: AgentStatusType = 'idle';
@@ -272,6 +313,33 @@ export abstract class Agent extends SmrtObject {
    * Cached DispatchBus instance for inter-agent communication
    */
   private _dispatch: DispatchBus | null = null;
+
+  /**
+   * Cached LearningMemory binding. `undefined` = not yet resolved,
+   * `null` = learning disabled (resolved once, cheaply).
+   */
+  private _learningMemory?: LearningMemory | null;
+
+  /**
+   * The episode the current run acted on, staged via {@link stageLearning} so
+   * the lifecycle can reinforce it after `run()`.
+   */
+  private _learningEpisode: LearningEpisode | null = null;
+
+  /**
+   * Explicit outcome for the current run, set via
+   * {@link reportLearningOutcome}. When unset, a clean `run()` is treated as a
+   * success and a thrown error as a failure.
+   */
+  private _learningOutcome: LearningOutcome | null = null;
+
+  /**
+   * Memories recalled before `run()` when the learning trait is enabled.
+   *
+   * Empty for non-opted agents. Populated by the lifecycle (see
+   * {@link recallForRun}); read from `run()` to reuse prior knowledge.
+   */
+  protected recalledMemories: LearningMemoryRecord[] = [];
 
   /**
    * Creates a new Agent instance
@@ -551,6 +619,130 @@ export abstract class Agent extends SmrtObject {
       this.getAgentTypeName(),
       this.handleDispatch.bind(this),
     );
+  }
+
+  // ============================================================================
+  // Learning Trait (#1886) — opt-in; inert unless `static learning` is set
+  // ============================================================================
+
+  /**
+   * Base memory scope for this agent's learning.
+   *
+   * Defaults to the configured `scope` (if any) or `agent/<agentType>`.
+   * Override to shape how memories are filed (e.g. per task type). Recall and
+   * capture are additionally isolated by the agent instance id (owner), so
+   * memory never bleeds across tenants running the same agent class.
+   */
+  protected learningScope(): string {
+    const resolved = resolveAgentLearning(
+      (this.constructor as typeof Agent).learning,
+    );
+    return resolved.scope ?? `agent/${this.getAgentTypeName()}`;
+  }
+
+  /**
+   * Whether the learning trait is enabled for this agent.
+   */
+  protected isLearningEnabled(): boolean {
+    return resolveAgentLearning((this.constructor as typeof Agent).learning)
+      .enabled;
+  }
+
+  /**
+   * Optional semantic-search arm for {@link LearningMemory}.
+   *
+   * Returns `undefined` by default (keyed-context recall only). Override to
+   * wire embedding search — e.g. return a bound `collection.semanticSearch`.
+   */
+  protected getLearningSemanticSearch(): LearningSemanticSearch | undefined {
+    return undefined;
+  }
+
+  /**
+   * Resolve the tenant id used for the learning scope and semantic filtering.
+   */
+  private resolveLearningTenantId(): string | null {
+    const contextTenant = getCurrentTenant()?.tenantId;
+    if (typeof contextTenant === 'string') return contextTenant;
+    return typeof this.tenantId === 'string' ? this.tenantId : null;
+  }
+
+  /**
+   * Get this agent's {@link LearningMemory} binding, or `null` when learning is
+   * disabled or no database is configured.
+   *
+   * Cheap and side-effect-free when the trait is off (returns `null` after a
+   * single static-flag check), which keeps non-opted agents unchanged.
+   */
+  getLearningMemory(): LearningMemory | null {
+    if (this._learningMemory !== undefined) {
+      return this._learningMemory;
+    }
+
+    const resolved = resolveAgentLearning(
+      (this.constructor as typeof Agent).learning,
+    );
+    if (!resolved.enabled || !this._db) {
+      this._learningMemory = null;
+      return null;
+    }
+
+    // Ensure a stable owner id so memory is bound to this instance.
+    if (!this.id) {
+      this.id = crypto.randomUUID();
+    }
+
+    this._learningMemory = new LearningMemory({
+      db: this.systemDb,
+      ownerClass: this.getAgentTypeName(),
+      ownerId: this.id as string,
+      tenantId: this.resolveLearningTenantId(),
+      semanticSearch: this.getLearningSemanticSearch(),
+      config: resolved.memoryConfig,
+    });
+    return this._learningMemory;
+  }
+
+  /**
+   * Recall relevant memories before `run()`.
+   *
+   * Default: a scope-wide, confidence-filtered recall of {@link learningScope}.
+   * Override to shape the recall (e.g. a keyed lookup or a semantic query).
+   */
+  protected async recallForRun(
+    memory: LearningMemory,
+  ): Promise<LearningMemoryRecord[]> {
+    return memory.recall(this.learningScope());
+  }
+
+  /**
+   * Capture the run outcome after `run()`.
+   *
+   * Default: reinforce the memory staged via {@link stageLearning}. A no-op
+   * when nothing was staged. Override for bespoke capture logic.
+   */
+  protected async captureForRun(
+    memory: LearningMemory,
+    outcome: LearningOutcome,
+  ): Promise<void> {
+    if (!this._learningEpisode) return;
+    await memory.capture(this._learningEpisode, outcome);
+  }
+
+  /**
+   * Stage the memory episode the current run acted on, so the lifecycle
+   * reinforces it after `run()` completes. Call from `run()`.
+   */
+  protected stageLearning(episode: LearningEpisode): void {
+    this._learningEpisode = episode;
+  }
+
+  /**
+   * Report an explicit outcome for the current run (e.g. a validated failure
+   * that did not throw). Overrides the default success/throw inference.
+   */
+  protected reportLearningOutcome(outcome: LearningOutcome): void {
+    this._learningOutcome = outcome;
   }
 
   /**
@@ -834,6 +1026,9 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   async execute(): Promise<void> {
+    // Learning trait (#1886): resolves to null for non-opted agents, so every
+    // guarded branch below is skipped and behaviour is unchanged.
+    let learning: LearningMemory | null = null;
     try {
       await this.initialize();
       await this.validate();
@@ -852,14 +1047,46 @@ export abstract class Agent extends SmrtObject {
         }
       }
 
+      // Learning: recall-before-run
+      learning = this.getLearningMemory();
+      if (learning) {
+        this.recalledMemories = await this.recallForRun(learning);
+      }
+
       await this.run();
+
+      // Learning: capture-after-run (success unless run reported otherwise)
+      if (learning) {
+        await this.captureForRun(
+          learning,
+          this._learningOutcome ?? { success: true },
+        );
+      }
+
       this.status = 'idle';
 
       this.logger.info('Agent execution completed');
     } catch (error) {
+      // Learning: capture the failure, but never mask the original error.
+      if (learning) {
+        try {
+          await this.captureForRun(learning, {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } catch (captureError) {
+          this.logger.warn('Learning capture failed during error handling', {
+            error: captureError,
+          });
+        }
+      }
       this.status = 'error';
       this.logger.error('Agent execution failed', { error });
       throw error;
+    } finally {
+      // Reset per-run learning state so a reused instance starts clean.
+      this._learningEpisode = null;
+      this._learningOutcome = null;
     }
   }
 

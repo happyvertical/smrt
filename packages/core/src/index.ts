@@ -145,6 +145,18 @@ export {
   resolveLazyConfig,
   unregisterConfigResolver,
 } from './lazy-config';
+// Learning memory — confidence-scored, self-correcting recall/capture (#1886)
+export {
+  DEFAULT_LEARNING_CONFIG,
+  type LearningEpisode,
+  LearningMemory,
+  type LearningMemoryConfig,
+  type LearningMemoryOptions,
+  type LearningMemoryRecord,
+  type LearningOutcome,
+  type LearningRecallOptions,
+  type LearningSemanticSearch,
+} from './learning/index';
 // Static manifest (generated at build time)
 export * from './manifest/index';
 export type { DiffOptions } from './migrations/differ';
