@@ -114,11 +114,27 @@ class InvoiceAgent extends Agent {
 - **Seams to override**: `learningScope()`, `recallForRun(memory)`, `captureForRun(memory, outcome)`, `getLearningSemanticSearch()`. Helpers for `run()`: `stageLearning(episode)`, `reportLearningOutcome(outcome)`, `getLearningMemory()`, and the `recalledMemories` field.
 - **Config**: `static learning: boolean | AgentLearningConfig` — `{ enabled?, scope?, minConfidence?, successConfidence?, failureConfidence?, reinforcement?, decayHalfLifeMs? }`. `LearningMemory` and its types are re-exported from `@happyvertical/smrt-core`.
 
+## Multi-Instance Agents (issue #1890) — opt-in
+
+`static multiInstance = false` by default: a class is a **singleton** (the N=1 case) and is byte-for-byte unchanged — one dispatch subscriber keyed by the agent type, one memory scope, class-wide interests. Set `static multiInstance = true` to run N durable instances (personas, from `@happyvertical/smrt-personas`) of one class per tenant, each independent.
+
+The framework provides only the per-instance **identity**; a package scopes its own dispatch/interests to the instance's config by overriding the seams.
+
+- **`AgentOptions.instanceKey`** — the durable per-instance key (typically the persona id). Honored **only** when `multiInstance` is true, so passing it to a non-opted agent is a no-op.
+- **`getInstanceKey()`** → the key, or `null` for a singleton (opt-in off, or no key).
+- **`getDispatchSubscriber()`** → `` `${agentType}#${key}` `` for a multi-instance agent, the bare `agentType` for a singleton. Used everywhere the agent subscribes/seeds/processes, so each instance has its own subscription rows and pending-dispatch queue — two instances never compete for or double-process each other's dispatches. Composed by the exported `instanceScopedSubscriber(agentType, key)`.
+- **`learningScope()`** — suffixed with `#<key>` for a multi-instance agent, so instances learn independently (singleton scope unchanged).
+- **Seams to override** (both default to singleton behavior):
+  - `resolveSignalSubscriptions()` — derive **instance-scoped** signal types from the instance config so an emit meant for one instance only matches its subscription.
+  - `instanceInterestFilter()` — an `ObjectFilter` AND-merged (as the base layer) into every `interesting()` query so instances partition the objects they process.
+
+The **`default` persona reuses the singleton identity** (a `null` key), which is what makes the singleton→multi upgrade non-destructive — see `@happyvertical/smrt-personas` (`personaInstanceKey`, `upgradeSingletonToDefaultPersona`).
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait |
+| `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait, multi-instance identity |
 | `src/learning.ts` | `AgentLearningConfig` + `resolveAgentLearning()` declaration normalisation |
 | `src/schedule.ts` | AgentSchedule model — cron, execution tracking |
 | `src/tenant-agent.ts` | TenantAgent — junction table, hierarchical resolution |
