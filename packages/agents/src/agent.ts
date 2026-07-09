@@ -641,14 +641,6 @@ export abstract class Agent extends SmrtObject {
   }
 
   /**
-   * Whether the learning trait is enabled for this agent.
-   */
-  protected isLearningEnabled(): boolean {
-    return resolveAgentLearning((this.constructor as typeof Agent).learning)
-      .enabled;
-  }
-
-  /**
    * Optional semantic-search arm for {@link LearningMemory}.
    *
    * Returns `undefined` by default (keyed-context recall only). Override to
