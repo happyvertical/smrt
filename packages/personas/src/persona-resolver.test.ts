@@ -9,10 +9,14 @@
  * run with the tenancy interceptor disabled and seed `tenantId` explicitly.
  */
 
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { disableTenancy } from '@happyvertical/smrt-tenancy';
 import { createIsolatedTestDbFromManifest } from '@happyvertical/smrt-vitest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AgentPersonaCollection } from './agent-persona.js';
+import {
+  AgentPersonaCollection,
+  canonicalAgentClass,
+} from './agent-persona.js';
 import {
   availabilityFromResolvedAgent,
   type ManifestPersonaDefaults,
@@ -20,6 +24,13 @@ import {
 } from './persona-resolver.js';
 
 const PRAECO = '@happyvertical/smrt-agents:Praeco';
+
+// A decorator-registered agent class so its simple name canonicalizes to a
+// distinct qualified name — the alias mismatch codex flagged. (Manifest-loaded
+// classes do not populate a qualified name under a simple-name lookup in this
+// test env, so a locally-declared @smrt() class is what actually exercises it.)
+@smrt()
+class DemoResolverAgent extends SmrtObject {}
 
 interface SeedOptions {
   tenantId: string;
@@ -149,12 +160,27 @@ describe('PersonaResolver', () => {
       expect(resolved.instructions).toBe('Manifest instructions.');
     });
 
-    it('accepts a non-canonical agent class and resolves the same persona', async () => {
-      await seed({ tenantId: 'tenant-a', name: 'Support', agentClass: PRAECO });
-      // Unregistered simple name falls through canonicalization unchanged, so
-      // seed with the same string the resolver will look up.
-      const resolved = await resolver.resolve('tenant-a', PRAECO);
-      expect(resolved.name).toBe('Support');
+    it('resolves a persona stored under a simple class name via canonical lookup', async () => {
+      const simple = 'DemoResolverAgent';
+      const canonical = canonicalAgentClass(simple);
+      // Precondition: registration canonicalizes the simple name to a distinct
+      // qualified name, so this genuinely exercises the alias bridge.
+      expect(canonical).not.toBe(simple);
+      expect(canonical.endsWith(':DemoResolverAgent')).toBe(true);
+
+      // Persisted under the SIMPLE name (as an un-normalized generated write
+      // would store it).
+      await seed({
+        tenantId: 'tenant-a',
+        name: 'SimpleStored',
+        agentClass: simple,
+      });
+
+      // Looked up by the canonical qualified name — the alias-aware lookup
+      // still finds the simple-named row.
+      const resolved = await resolver.resolve('tenant-a', canonical);
+      expect(resolved.source).toBe('persona');
+      expect(resolved.name).toBe('SimpleStored');
     });
   });
 

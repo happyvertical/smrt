@@ -162,7 +162,10 @@ export function availabilityFromResolvedAgent(
   if (toolPermissionPrefix) {
     toolCeiling = Object.entries(resolved.permissions ?? {})
       .filter(([id, granted]) => granted && id.startsWith(toolPermissionPrefix))
-      .map(([id]) => id.slice(toolPermissionPrefix.length));
+      .map(([id]) => id.slice(toolPermissionPrefix.length))
+      // Sort for a stable, order-independent ceiling regardless of how the
+      // permissions map was produced.
+      .sort();
   }
 
   return {

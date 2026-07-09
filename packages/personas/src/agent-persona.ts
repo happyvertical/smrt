@@ -19,6 +19,7 @@
 import {
   crossPackageRef,
   field,
+  getClassName,
   ObjectRegistry,
   SmrtCollection,
   SmrtObject,
@@ -38,6 +39,23 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 export function canonicalAgentClass(name: string): string {
   const registered = ObjectRegistry.getClass(name);
   return registered?.qualifiedName || registered?.name || name;
+}
+
+/**
+ * Return the meaningful aliases for an agent class — the canonical qualified
+ * name plus the simple class name — deduplicated.
+ *
+ * Lookups match against both so a persona persisted under a simple name (e.g.
+ * `Praeco`, when written through the generated create API without
+ * normalization) is still found when resolving under the canonical qualified
+ * name, and vice versa. Mirrors `getAgentTypeAliases()` in
+ * `@happyvertical/smrt-agents`.
+ */
+export function agentClassAliases(name: string): string[] {
+  const registered = ObjectRegistry.getClass(name);
+  const canonical = registered?.qualifiedName || registered?.name || name;
+  const simple = registered?.name || getClassName(name);
+  return Array.from(new Set([canonical, simple].filter(Boolean)));
 }
 
 /**
@@ -121,10 +139,11 @@ export class AgentPersona extends SmrtObject {
 
   /**
    * The user whose principal this persona runs as (cross-package reference to
-   * `@happyvertical/smrt-users:User`). Stored as a plain id column; no DDL FK
-   * constraint is emitted (cross-package).
+   * `@happyvertical/smrt-users:User`). Required — a persona always runs as a
+   * concrete principal. Stored as a plain id column; no DDL FK constraint is
+   * emitted (cross-package).
    */
-  @crossPackageRef('@happyvertical/smrt-users:User')
+  @crossPackageRef('@happyvertical/smrt-users:User', { required: true })
   runAsUserId: string = '';
 
   /**
@@ -177,7 +196,30 @@ export class AgentPersonaCollection extends SmrtCollection<AgentPersona> {
   static readonly _itemClass = AgentPersona;
 
   /**
-   * List every persona bound to a tenant + agent class (canonicalized).
+   * List personas for a tenant + agent class, matching either the canonical
+   * qualified name or the simple class name (see {@link agentClassAliases}).
+   *
+   * Ordered by descending priority then name.
+   *
+   * @param extraWhere - Additional equality filters merged into the query
+   *   (e.g. `{ enabled: true }`).
+   */
+  private async listForClass(
+    tenantId: string,
+    agentClass: string,
+    extraWhere: Record<string, unknown> = {},
+  ): Promise<AgentPersona[]> {
+    const aliases = agentClassAliases(agentClass);
+    const where =
+      aliases.length > 1
+        ? { tenantId, 'agentClass in': aliases, ...extraWhere }
+        : { tenantId, agentClass: aliases[0], ...extraWhere };
+    const personas = await this.list({ where });
+    return sortByPriorityThenName(personas);
+  }
+
+  /**
+   * List every persona bound to a tenant + agent class.
    *
    * Ordered by descending priority then name so callers that don't need the
    * full resolver still get a deterministic, priority-first ordering.
@@ -186,19 +228,18 @@ export class AgentPersonaCollection extends SmrtCollection<AgentPersona> {
     tenantId: string,
     agentClass: string,
   ): Promise<AgentPersona[]> {
-    const personas = await this.list({
-      where: { tenantId, agentClass: canonicalAgentClass(agentClass) },
-    });
-    return sortByPriorityThenName(personas);
+    return this.listForClass(tenantId, agentClass);
   }
 
   /**
-   * List the enabled personas for a tenant + agent class, optionally filtered
-   * to those applicable to a context.
+   * List the enabled personas for a tenant + agent class, filtered to those
+   * applicable to a context.
    *
-   * A persona is applicable when it is a tenant-wide default (no `contextType`)
-   * or its context matches the requested one. Ordered by descending priority
-   * then name.
+   * `enabled` is filtered in the query; the context predicate (tenant-wide vs
+   * type-scoped vs exact) is applied in memory since it is an OR over several
+   * columns. A persona is applicable when it is a tenant-wide default (no
+   * `contextType`) or its context matches the requested one. Ordered by
+   * descending priority then name.
    *
    * @param context - Optional `{ contextType, contextId }` to filter by.
    */
@@ -207,9 +248,11 @@ export class AgentPersonaCollection extends SmrtCollection<AgentPersona> {
     agentClass: string,
     context: { contextType?: string | null; contextId?: string | null } = {},
   ): Promise<AgentPersona[]> {
-    const personas = await this.byTenantAndClass(tenantId, agentClass);
-    return personas.filter(
-      (persona) => persona.enabled && personaAppliesToContext(persona, context),
+    const personas = await this.listForClass(tenantId, agentClass, {
+      enabled: true,
+    });
+    return personas.filter((persona) =>
+      personaAppliesToContext(persona, context),
     );
   }
 }
