@@ -56,6 +56,15 @@ const SPEC = [
     path: `${SRC}/Shell/MobileShellScaffold.swift`,
     mustContain: ['struct MobileShellScaffold', 'MobileShellState', 'struct MobileTabHeader'],
   },
+  {
+    path: `${SRC}/State/MobileObservableState.swift`,
+    mustContain: [
+      'final class MobileObservableState',
+      'MobileStateHolder',
+      'MobileStateObserver',
+      'MobileStateSubscription',
+    ],
+  },
   { path: `${PLATFORM}/CryptoKitSha256Hasher.swift`, mustContain: [', Sha256Hasher', 'CryptoKit'] },
   {
     path: `${PLATFORM}/KeychainAuthStorage.swift`,
@@ -90,6 +99,10 @@ const SPEC = [
       'startAccessingSecurityScopedResource',
       'PHPickerViewController',
     ],
+  },
+  {
+    path: `${PLATFORM}/FoundationEvidenceByteSource.swift`,
+    mustContain: [', EvidenceByteSource', 'Data(contentsOf:', 'SmrtMobileIos.shared.byteArray'],
   },
   {
     path: `${SAMPLE}/SmrtIosSampleApp.swift`,

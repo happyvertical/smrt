@@ -12,6 +12,76 @@ import SmrtMobile
 /// drive itself needs an on-device UI and is verified by the sample app.
 final class EvidenceCaptureMappingTests: XCTestCase {
 
+    func testFoundationEvidenceByteSourceBulkLoadsLocalFile() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let file = directory.appendingPathComponent("asset.jpg")
+        let expected = Data("bulk-evidence-bytes".utf8)
+        try expected.write(to: file)
+        let asset = EvidenceAssetRef(
+            assetId: "asset-1",
+            localUri: file.absoluteString,
+            fileName: file.lastPathComponent,
+            contentType: "image/jpeg",
+            sizeBytes: KotlinLong(longLong: Int64(expected.count)),
+            sha256: "",
+            captureSource: EvidenceCaptureSource.shared.NATIVE_PICKER,
+            originalUri: "",
+            storageRoot: "app_private",
+            relativePath: file.lastPathComponent,
+            storageState: EvidenceAssetStorageState.shared.STORED_OFFLINE,
+            offlineSafe: true,
+            persistedAt: nil
+        )
+
+        let bytes = try await FoundationEvidenceByteSource(baseDirectory: directory)
+            .readBytes(asset: asset)
+
+        XCTAssertEqual(bytes.size, Int32(expected.count))
+        XCTAssertEqual(
+            Data((0..<bytes.size).map { UInt8(bitPattern: bytes.get(index: $0)) }),
+            expected
+        )
+    }
+
+    func testFoundationEvidenceByteSourceRejectsRelativePathOutsideBaseDirectory() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let directory = root.appendingPathComponent("evidence", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let asset = EvidenceAssetRef(
+            assetId: "asset-outside",
+            localUri: "",
+            fileName: "outside.jpg",
+            contentType: "image/jpeg",
+            sizeBytes: nil,
+            sha256: "",
+            captureSource: EvidenceCaptureSource.shared.NATIVE_PICKER,
+            originalUri: "",
+            storageRoot: "app_private",
+            relativePath: "../outside.jpg",
+            storageState: EvidenceAssetStorageState.shared.STORED_OFFLINE,
+            offlineSafe: true,
+            persistedAt: nil
+        )
+
+        do {
+            _ = try await FoundationEvidenceByteSource(baseDirectory: directory)
+                .readBytes(asset: asset)
+            XCTFail("Expected traversal outside the base directory to be rejected")
+        } catch let error as FoundationEvidenceByteSourceError {
+            guard case let .pathOutsideBaseDirectory(assetId) = error else {
+                return XCTFail("Unexpected evidence byte-source error: \(error)")
+            }
+            XCTAssertEqual(assetId, "asset-outside")
+        }
+    }
+
     func testCaptureSegmentPicksFirstNonBlankBySortedKey() {
         XCTAssertEqual(
             IOSEvidenceCaptureAdapter.evidenceCaptureSegment(

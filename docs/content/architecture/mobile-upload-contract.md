@@ -28,6 +28,19 @@ The shared KMP client (`MobileApiClient.submitMultipart`, Phase 4) sends:
 - `Idempotency-Key: <queue entry id>` when the upload is re-sent by the
   durable write queue.
 
+## Durable client payload
+
+Queue an encoded `EvidenceMultipartUpload`, not a `QueueHttpRequest.Multipart`:
+the durable payload stores fields and `EvidenceAssetRef` metadata, while the
+request type contains in-memory bytes. In the suspend `HttpQueueSender`
+entry mapper, decode the payload and call
+`toQueueHttpRequest(EvidenceByteSource { asset -> ... })`. The platform byte
+source reads `asset.localUri` or `asset.relativePath` when connectivity returns
+and the queue flushes, so retries carry the actual media without duplicating
+it in the SQLDelight queue row. Use `AndroidEvidenceByteSource` on Android or
+`FoundationEvidenceByteSource` on iOS; the latter bulk-copies Foundation data
+into Kotlin memory instead of crossing the Swift bridge once per byte.
+
 ## Dedup semantics (`clientCaptureId` / `Idempotency-Key`)
 
 Retries are NORMAL: the mobile queue re-POSTs after dropped connections and
@@ -106,6 +119,7 @@ is fail-closed (#1822).
   rejects larger bodies with an opaque 413 BEFORE your handler executes —
   deployments must raise it to at least the app's max upload size, and that
   size should stay modest precisely because of the buffering.
-- The Phase-4 client buffers each part as a `ByteArray` (photo-scale).
+- The Phase-4 client loads and buffers each part as a `ByteArray` at flush
+  time (photo-scale); the durable row stores only evidence metadata.
   Streamed multipart is tracked in #1871 — do not size this contract for
   video until it lands.

@@ -7,7 +7,7 @@ non-TypeScript package in the monorepo. Design: **ADR 0001**
 
 **Status: Phases 1–5 complete** — the shared-logic core. Present: framework
 contract types, pack i18n resolver, pack integrity/snapshot model,
-evidence-capture model, shell state, the **durable SQLDelight write-queue +
+evidence-capture model, shared presenter state, shell state, the **durable SQLDelight write-queue +
 pack store** (Phase 2, #1739), the **PKCE auth/session module** (Phase 3,
 #1740), the **shared Ktor client** (Phase 4, #1741) implementing the
 `AuthTransport`/`QueueSender` seams, and the **barcode/speech/LLM/device
@@ -44,7 +44,9 @@ consumers use Gradle `includeBuild`).
   engines; tests use MockEngine). Bearer on every authenticated request;
   multipart evidence upload; `Idempotency-Key` from the queue entry id;
   401 → `UnauthorizedHandler` (wire to `MobileSessionManager.onUnauthorized`)
-  then `AuthUnauthorizedException`. `HttpQueueSender` maps HTTP outcomes to
+  then `AuthUnauthorizedException`. `HttpQueueSender`'s entry mapper is
+  suspend so platform byte sources can load queued evidence at flush time.
+  It maps HTTP outcomes to
   the queue's `SendOutcome` semantics **for the hand-written `/api/mobile`
   single-item endpoints only** (4xx permanent except 408/429; the handlers
   dedupe on `Idempotency-Key`). Framework-model writes need the planned
@@ -85,8 +87,13 @@ consumers use Gradle `includeBuild`).
   smrt-android / smrt-ios (Phases 5–6).
 - `src/commonMain/kotlin/.../evidence/` — evidence asset refs (SHA-256
   pins), geo **sidecar** metadata (never EXIF — recompression strips it),
-  permission state, `EvidenceCapturePlatformAdapter` seam. Domain identity
-  travels in `contextIds` so the model stays trade-neutral.
+  permission state, `EvidenceCapturePlatformAdapter` seam, and
+  `EvidenceMultipartUpload`/`EvidenceByteSource` for durable uploads that
+  resolve file bytes at flush time. Domain identity travels in `contextIds`
+  so the model stays trade-neutral.
+- `src/commonMain/kotlin/.../state/` — `MobileStateHolder` and
+  `MobileStatePresenter` expose shared `StateFlow` state to Compose and the
+  smrt-ios SwiftUI observation adapter.
 - `src/commonMain/kotlin/.../shell/` — `MobileShellState` manual-tab nav
   state (no androidx.navigation); apps provide the tab list.
 - `src/commonMain/kotlin/.../platform/` — adapter seams: `Sha256Hasher`,
@@ -112,7 +119,9 @@ without an Android SDK.
   the iOS evidence adapter needs for `persistedAt`/`capturedAt`; #1880). These
   build Kotlin/Native types Swift cannot instantiate itself (`NativeSqliteDriver`,
   the Ktor `Darwin` engine, `Instant`); smrt-android, being Kotlin, builds its
-  own. This is the only `iosMain` code — everything else is `commonMain`.
+  own. `byteArray(NSData)` gives smrt-ios evidence loading one native bulk copy
+  instead of per-byte Objective-C bridging. This is the only `iosMain` code —
+  everything else is `commonMain`.
 
 ## Commands
 

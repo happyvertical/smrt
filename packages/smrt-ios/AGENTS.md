@@ -28,6 +28,9 @@ point for the KMP framework, so there are no duplicate static symbols.
   Values are **identical to smrt-android's `MobileTheme.kt`** — one design system.
 - `Sources/SmrtIos/Shell/MobileShellScaffold.swift` — the tab shell bound to
   smrt-mobile's shared `MobileShellState` (not an unbound `TabView`), + `MobileTabHeader`.
+- `Sources/SmrtIos/State/MobileObservableState.swift` — the `ObservableObject`
+  bridge for exported `MobileStateHolder` instances. It owns and closes the
+  Kotlin observation subscription and publishes updates on the main actor.
 - `Sources/SmrtIos/Platform/` — the adapters, each conforming to a smrt-mobile
   exported seam: `CryptoKitSha256Hasher` (`Sha256Hasher`), `KeychainAuthStorage`
   (`AuthStorage`), `WebAuthSessionLauncher` (`ExternalAuthLauncher`),
@@ -40,7 +43,10 @@ point for the KMP framework, so there are no duplicate static symbols.
   presents `UIImagePickerController`/`PHPickerViewController`, bridges the
   delegate into `async`, copies into `Documents/Evidence/` with
   security-scoped-resource handling, CryptoKit sha256 pin, `CLLocationManager`
-  geo sidecar; simulator falls back to the photo picker; #1880).
+  geo sidecar; simulator falls back to the photo picker; #1880), plus
+  `FoundationEvidenceByteSource`, which loads those app-private files at queue
+  flush time and uses `SmrtMobileIos.byteArray(NSData)` for one native bulk copy
+  into Kotlin memory (#1896).
 - `Sample/SmrtIosSample/` — the demo app proving real shared logic (durable pack
   store + write-queue, adapters, evidence capture, theme/shell). Never published.
 - `Tests/SmrtIosTests/` — XCTest over the pure seam-vocabulary mappings.

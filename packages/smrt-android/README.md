@@ -14,14 +14,47 @@ Publishing is deferred; consumers use Gradle composite builds:
 
 ```kotlin
 // settings.gradle.kts
-includeBuild("<path-to-smrt>/packages/smrt-mobile")
-includeBuild("<path-to-smrt>/packages/smrt-android")
+val smrtFoundationDir = providers.gradleProperty("smrtFoundationDir")
+    .orElse(providers.environmentVariable("SMRT_FOUNDATION_DIR"))
+    .orElse("../smrt")
+    .get()
+val smrtFoundation = file(smrtFoundationDir)
+
+includeBuild(smrtFoundation.resolve("packages/smrt-mobile"))
+includeBuild(smrtFoundation.resolve("packages/smrt-android"))
 
 // module build.gradle.kts
 dependencies {
     implementation("com.happyvertical.smrt:smrt-android")
 }
 ```
+
+CI should check out `happyvertical/smrt` at a pinned release tag and set
+`SMRT_FOUNDATION_DIR` to that checkout. Private cross-organization checkouts
+need a GitHub App token or fine-grained PAT with repository read access; see
+the complete workflow in [`smrt-mobile`'s README](../smrt-mobile/README.md).
+
+AGP 9 provides built-in Kotlin, so consumers must not apply
+`org.jetbrains.kotlin.android`. AGP 9 may otherwise select standard JVM
+variants for transitive KMP dependencies; Android modules consuming this
+foundation should explicitly request the Android JVM environment:
+
+```kotlin
+import org.gradle.api.attributes.java.TargetJvmEnvironment
+
+configurations.configureEach {
+    if (isCanBeResolved) {
+        attributes.attribute(
+            TargetJvmEnvironment.TARGET_JVM_ENVIRONMENT_ATTRIBUTE,
+            objects.named(TargetJvmEnvironment.ANDROID),
+        )
+    }
+}
+```
+
+For durable media queues, pass `AndroidEvidenceByteSource(context)` to
+`EvidenceMultipartUpload.toQueueHttpRequest(...)`; it reads file and content
+URIs on `Dispatchers.IO` when the queue flushes.
 
 ## Development
 

@@ -105,8 +105,10 @@ import kotlinx.serialization.json.JsonObject
  *
  * The server owns the OIDC/PKCE exchange: \`auth/start\` returns the
  * authorization URL plus the \`state\`/\`codeVerifier\` the client must persist
- * and echo back on \`auth/complete\`. Reference implementation: anytown
- * dashboard; SMRT-shipped handlers are tracked in issue #1748.
+ * and echo back on \`auth/complete\`. SMRT ships the SvelteKit handlers in
+ * @happyvertical/smrt-users (issue #1748). App-defined session bootstrap data
+ * belongs under MobileSessionBootstrap.extras; unknown top-level fields are
+ * outside this contract and are ignored by the Kotlin client.
  */
 
 @Serializable

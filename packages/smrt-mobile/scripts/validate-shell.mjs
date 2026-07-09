@@ -105,7 +105,7 @@ const SPEC = [
   },
   {
     path: `${KOTLIN_ROOT}/network/HttpQueueSender.kt`,
-    mustContain: ['class HttpQueueSender(', 'SendOutcome.Unauthorized'],
+    mustContain: ['class HttpQueueSender(', 'suspend (QueueEntry) -> QueueHttpRequest', 'SendOutcome.Unauthorized'],
   },
   {
     path: `${KOTLIN_ROOT}/i18n/PackTextResolver.kt`,
@@ -135,8 +135,25 @@ const SPEC = [
     ],
   },
   {
+    path: `${KOTLIN_ROOT}/evidence/EvidenceMultipartUpload.kt`,
+    mustContain: [
+      'fun interface EvidenceByteSource',
+      'data class EvidenceMultipartUpload(',
+      'toQueueHttpRequest',
+    ],
+  },
+  {
     path: `${KOTLIN_ROOT}/shell/MobileShell.kt`,
     mustContain: ['data class MobileShellState('],
+  },
+  {
+    path: `${KOTLIN_ROOT}/state/MobileStateHolder.kt`,
+    mustContain: [
+      'class MobileStateHolder',
+      'StateFlow',
+      'fun observe(',
+      'abstract class MobileStatePresenter',
+    ],
   },
   {
     path: `${KOTLIN_ROOT}/platform/Hashing.kt`,
@@ -170,6 +187,7 @@ const SPEC = [
       'NativeSqliteDriver',
       'fun createDatabase(',
       'fun instantFromEpochMillis(',
+      'fun byteArray(data: NSData)',
     ],
   },
   {
@@ -189,6 +207,7 @@ const SPEC = [
   { path: `${TEST_ROOT}/packs/PackIntegrityCheckTest.kt` },
   { path: `${TEST_ROOT}/shell/MobileShellStateTest.kt` },
   { path: `${TEST_ROOT}/evidence/EvidenceCaptureTest.kt` },
+  { path: `${TEST_ROOT}/state/MobileStateHolderTest.kt` },
   { path: `${TEST_ROOT}/platform/PlatformSeamsTest.kt` },
   { path: `${JVM_TEST_ROOT}/sync/DurableWriteQueueTest.kt` },
   { path: `${JVM_TEST_ROOT}/packs/DurableOfflinePackStoreTest.kt` },

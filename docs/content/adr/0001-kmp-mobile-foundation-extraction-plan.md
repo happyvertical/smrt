@@ -71,8 +71,12 @@ Locked with the framework owner (issue #1737 has the full record):
    (server-brokered PKCE on smrt-users OIDC/session infra; verified). Owner
    decision: **SMRT ships the server side in this epic** — Phase 3.5
    (#1748), reusable handlers in `smrt-users`.
-6. **Toolchain** — Kotlin 2.2.21 / AGP 8.13.1 / compileSdk 36 / minSdk 26 /
-   JVM 21 / iOS 17.0 (reporter-proven set, amaru catalog structure).
+6. **Toolchain** — Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1 / compileSdk 36 /
+   minSdk 26 / JVM 21 / iOS 17.0. Updated 2026-07-09 after the shipped
+   packages advanced beyond the original reporter-proven pins (#1897).
+   AGP 9 consumers use built-in Kotlin (no `org.jetbrains.kotlin.android`) and
+   request `TargetJvmEnvironment.ANDROID` for resolvable configurations so
+   transitive KMP dependencies select Android variants.
 
 ## Phase 1 — `smrt-mobile` skeleton
 

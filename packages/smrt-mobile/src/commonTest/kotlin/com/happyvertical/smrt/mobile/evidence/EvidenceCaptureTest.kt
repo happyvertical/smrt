@@ -5,6 +5,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 class EvidenceCaptureTest {
     @Test
@@ -63,5 +64,34 @@ class EvidenceCaptureTest {
 
         assertEquals("p-1", request.contextIds["projectId"])
         assertEquals(EvidenceCaptureSource.CAMERA, request.preferredSource)
+    }
+
+    @Test
+    fun multipartUploadLoadsEvidenceBytesAtFlushTime() = runTest {
+        val asset = EvidenceAssetRef(
+            assetId = "asset-1",
+            localUri = "file:///data/evidence/asset-1.jpg",
+            fileName = "asset-1.jpg",
+            contentType = "image/jpeg",
+            sha256 = "deadbeef",
+        )
+        val upload = EvidenceMultipartUpload(
+            path = "captures",
+            fields = mapOf("clientCaptureId" to "capture-1"),
+            assets = listOf(EvidenceMultipartAsset(asset, fieldName = "photo")),
+        )
+
+        val request = upload.toQueueHttpRequest(
+            EvidenceByteSource { requested ->
+                assertEquals(asset.localUri, requested.localUri)
+                "image-bytes".encodeToByteArray()
+            },
+        )
+
+        assertEquals("captures", request.path)
+        assertEquals("capture-1", request.fields["clientCaptureId"])
+        assertEquals("photo", request.files.single().fieldName)
+        assertEquals("asset-1.jpg", request.files.single().fileName)
+        assertTrue(request.files.single().bytes.contentEquals("image-bytes".encodeToByteArray()))
     }
 }

@@ -495,7 +495,16 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `switchSessionTenant` | Change tenant context for current session |
 | `beginOidcLogin`, `completeOidcLogin` | Low-level SvelteKit helpers for custom OIDC login routes |
 | `createOidcLoginHandler`, `createOidcCallbackHandler` | Ready-to-use SvelteKit route handlers for OIDC login and callback |
+| `createMobileAuthHandlers` | Mountable `/api/mobile` PKCE, bearer session, bootstrap, logout, and route-guard handlers |
+| `resolveMobileUploadDedupKey` | Resolves `clientCaptureId` with `Idempotency-Key` fallback for app-owned multipart routes |
 | `SessionLocals` | Type for `event.locals` (extend in `app.d.ts`) |
+
+`createMobileAuthHandlers({ buildExtras })` places app-domain bootstrap data
+under `MobileSessionBootstrap.extras`. Do not add app fields at the response
+top level: they are outside the shared contract and the Kotlin client ignores
+unknown top-level keys. Multipart ingestion remains app-owned; follow
+[`mobile-upload-contract.md`](../../docs/content/architecture/mobile-upload-contract.md)
+for authentication, deduplication, and status semantics.
 
 ### Types & Constants
 
