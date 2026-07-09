@@ -76,7 +76,11 @@ export function ensurePersonaInstructionsPrompt(
 ): PromptDefinition {
   const key = personaInstructionsPromptKey(persona);
   const existing = PromptRegistry.get(key);
-  if (existing) {
+  // Fast path only when the caller does not assert a specific editability. When
+  // `editable` IS given, always go through definePrompt so a conflicting
+  // re-registration (e.g. trying to lock `template: false` over an already
+  // editable key) is rejected loudly rather than silently ignored.
+  if (existing && options.editable === undefined) {
     return existing;
   }
   return definePrompt({

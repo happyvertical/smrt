@@ -44,6 +44,15 @@ export const DIRECTIVE_ACTIVATION_PERMISSION_DEF: PermissionDefinition = {
 export interface DirectivePrincipal {
   /** Optional stable id (recorded as the reviewer on approve/reject). */
   readonly id?: string;
+  /**
+   * The tenant this principal's authority was resolved for. Permissions are
+   * resolved per tenant (`PermissionResolver.resolvePermissions(userId, tenantId)`),
+   * so a principal authorised in one tenant must not activate another tenant's
+   * directive. When set, the approval service enforces
+   * `principal.tenantId === proposal.tenantId`. `undefined` skips the check
+   * (e.g. a system/global actor or a hand-built principal).
+   */
+  readonly tenantId?: string;
   /** Whether this actor holds the given permission slug. */
   can(slug: string): boolean;
 }
@@ -53,11 +62,12 @@ export interface DirectivePrincipal {
  */
 export function principalFromPermissions(
   permissions: Iterable<string>,
-  options: { id?: string } = {},
+  options: { id?: string; tenantId?: string } = {},
 ): DirectivePrincipal {
   const granted = new Set(permissions);
   return {
     id: options.id,
+    tenantId: options.tenantId,
     can: (slug: string) => granted.has(slug),
   };
 }
@@ -76,7 +86,12 @@ export async function resolveDirectivePrincipal(options: {
     options.userId,
     options.tenantId,
   );
-  return principalFromPermissions(permissions, { id: options.userId });
+  // Carry the resolved tenant so the approval service can refuse a directive
+  // from a different tenant (permissions were resolved for this tenant only).
+  return principalFromPermissions(permissions, {
+    id: options.userId,
+    tenantId: options.tenantId,
+  });
 }
 
 let personaPermissionsRegistered = false;

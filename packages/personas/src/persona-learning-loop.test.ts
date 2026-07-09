@@ -205,6 +205,13 @@ describe('persona learning & adaptation loop (#1889)', () => {
     expect(proposal.getEvidence().feedbackIds?.length).toBeGreaterThan(0);
     expect(proposal.proposedBy).toBe('reflection-bot');
 
+    // `confidence` round-trips from the DB (plain `= 0.0` persists as decimal).
+    const queueForConfidence = await DirectiveProposalCollection.create({ db });
+    const reloaded = await queueForConfidence.get({
+      id: proposal.id as string,
+    });
+    expect(reloaded?.confidence).toBeCloseTo(0.82, 5);
+
     const approval = new DirectiveApprovalService({ db });
 
     // The reflection principal lacks the permission → it can only propose.
@@ -226,6 +233,11 @@ describe('persona learning & adaptation loop (#1889)', () => {
     expect(await resolvePersonaInstructions({ persona, db })).toBe(
       'Be terse and cite sources.',
     );
+
+    // The persona's own `instructions` field is synced too, so the field-based
+    // PersonaResolver path reflects the approved directive (not just the override).
+    const refreshed = await personas.get({ id: persona.id as string });
+    expect(refreshed?.instructions).toBe('Be terse and cite sources.');
 
     // The approval was recorded as a human accept signal correlated to the proposal.
     const signals = await feedback.byCorrelation(proposal.id as string);
@@ -339,5 +351,116 @@ describe('persona learning & adaptation loop (#1889)', () => {
     // Nothing was activated: the proposal remains pending.
     const queue = await DirectiveProposalCollection.create({ db });
     expect(await queue.pending()).toHaveLength(1);
+  });
+
+  it('refuses a reviewer whose resolved tenant differs from the proposal', async () => {
+    // A persona (and its proposal) in tenant-b.
+    const persona = await personas.create({
+      tenantId: 'tenant-b',
+      agentClass: AGENT,
+      name: 'OtherTenant',
+      instructions: 'Base.',
+      runAsUserId: 'user-runas',
+      memoryScope: 'praeco:other',
+    });
+    await applyPersonaInstructions({ persona, db });
+    const reflect: DirectiveReflector = async () => ({
+      instructions: 'Cross-tenant rewrite.',
+      rationale: 'r',
+      confidence: 0.6,
+    });
+    const runner = new ReflectionRunner({
+      db,
+      principal: reflectionPrincipal,
+      reflect,
+    });
+    const { proposals } = await runner.run({
+      persona,
+      memory: personaLearningMemory({ db, persona }),
+    });
+    expect(proposals[0].tenantId).toBe('tenant-b');
+
+    // A reviewer authorised for tenant-a — holds the slug, wrong tenant.
+    const tenantAReviewer = principalFromPermissions(
+      [ACTIVATE_DIRECTIVE_PERMISSION],
+      { id: 'reviewer-a', tenantId: 'tenant-a' },
+    );
+    const approval = new DirectiveApprovalService({ db });
+    await expect(
+      approval.approve(proposals[0], tenantAReviewer),
+    ).rejects.toBeInstanceOf(DirectiveActivationDeniedError);
+
+    // A reviewer authorised for tenant-b can activate it.
+    const tenantBReviewer = principalFromPermissions(
+      [ACTIVATE_DIRECTIVE_PERMISSION],
+      { id: 'reviewer-b', tenantId: 'tenant-b' },
+    );
+    const { override } = await approval.approve(proposals[0], tenantBReviewer);
+    expect(override.template).toBe('Cross-tenant rewrite.');
+  });
+
+  it('applies a feedback signal to memory exactly once across repeated runs', async () => {
+    const persona = await createPersona('Once', 'Base.', 'praeco:once');
+    await applyPersonaInstructions({ persona, db });
+
+    const memory = personaLearningMemory({ db, persona });
+    // Seed a confident memory the feedback will decay.
+    await memory.capture(
+      { scope: 'task', key: 'k', value: 'strategy' },
+      { success: true },
+    ); // 0.9
+
+    const feedback = await FeedbackCollection.create({ db });
+    await feedback.create({
+      tenantId: TENANT,
+      personaId: persona.id,
+      agentClass: AGENT,
+      memoryScope: personaMemoryScope(persona),
+      scope: 'task',
+      key: 'k',
+      signalType: 'outcome',
+      source: 'autonomous',
+      correlationId: 'job-1',
+      success: false,
+    });
+
+    // Reflector proposes nothing so the run is reinforcement-only.
+    const runner = new ReflectionRunner({
+      db,
+      principal: reflectionPrincipal,
+      reflect: async () => null,
+    });
+
+    const first = await runner.run({ persona, memory });
+    expect(first.reinforced).toBe(1);
+    const afterFirst = await memory.recall('task', {
+      key: 'k',
+      minConfidence: 0,
+    });
+    // 0.9 -> 0.6 after one failure.
+    expect(afterFirst[0].confidence).toBeCloseTo(0.6, 5);
+    expect(afterFirst[0].failureCount).toBe(1);
+
+    // A second run must NOT re-apply the already-consumed signal.
+    const second = await runner.run({ persona, memory });
+    expect(second.reinforced).toBe(0);
+    const afterSecond = await memory.recall('task', {
+      key: 'k',
+      minConfidence: 0,
+    });
+    expect(afterSecond[0].confidence).toBeCloseTo(0.6, 5);
+    expect(afterSecond[0].failureCount).toBe(1);
+  });
+
+  it('rejects a conflicting editability re-registration for a persona prompt', async () => {
+    const persona = await createPersona('Editability', 'Base.', 'praeco:edit2');
+    // First registration: template editable (the default).
+    ensurePersonaInstructionsPrompt(persona);
+    // A later attempt to lock the same key must fail loudly, not be ignored.
+    expect(() =>
+      ensurePersonaInstructionsPrompt(persona, {
+        editable: { template: false },
+      }),
+    ).toThrow(/different definition/);
   });
 });

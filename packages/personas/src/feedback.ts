@@ -180,6 +180,15 @@ export class Feedback extends SmrtObject {
   @field({ type: 'text' })
   metadata: string = '{}';
 
+  /**
+   * When this signal was applied to memory as reinforcement. `null` until a
+   * reflection pass consumes it. Gates exactly-once reinforcement so a scheduled
+   * runner never re-applies the same signal (which would amplify a single
+   * accept/reject into many outcomes).
+   */
+  @field({ type: 'datetime', nullable: true })
+  reinforcedAt: Date | null = null;
+
   /** Whether this is a human-authored signal. */
   isHuman(): boolean {
     return this.source === 'human';

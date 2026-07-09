@@ -21,6 +21,7 @@
 
 import type { PromptOverride } from '@happyvertical/smrt-prompts';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { AgentPersonaCollection } from './agent-persona.js';
 import {
   ACTIVATE_DIRECTIVE_PERMISSION,
   type DirectivePrincipal,
@@ -55,6 +56,7 @@ export interface DirectiveApprovalServiceOptions {
   db: DatabaseInterface;
   proposals?: DirectiveProposalCollection;
   feedback?: FeedbackCollection;
+  personas?: AgentPersonaCollection;
 }
 
 /** Result of approving a proposal. */
@@ -83,11 +85,13 @@ export class DirectiveApprovalService {
   private readonly db: DatabaseInterface;
   private proposals?: DirectiveProposalCollection;
   private feedback?: FeedbackCollection;
+  private personas?: AgentPersonaCollection;
 
   constructor(options: DirectiveApprovalServiceOptions) {
     this.db = options.db;
     this.proposals = options.proposals;
     this.feedback = options.feedback;
+    this.personas = options.personas;
   }
 
   /**
@@ -99,6 +103,28 @@ export class DirectiveApprovalService {
   assertCanActivate(principal: DirectivePrincipal): void {
     if (!principal.can(ACTIVATE_DIRECTIVE_PERMISSION)) {
       throw new DirectiveActivationDeniedError();
+    }
+  }
+
+  /**
+   * Assert a principal may review a specific proposal: its resolved tenant, when
+   * bound, must match the proposal's tenant. Permissions are resolved per
+   * tenant, so holding the slug in one tenant must not authorise activating
+   * another tenant's directive.
+   *
+   * @throws {DirectiveActivationDeniedError} on a cross-tenant attempt.
+   */
+  private assertTenantMatch(
+    principal: DirectivePrincipal,
+    proposal: DirectiveProposal,
+  ): void {
+    if (
+      principal.tenantId !== undefined &&
+      principal.tenantId !== proposal.tenantId
+    ) {
+      throw new DirectiveActivationDeniedError(
+        `Principal (tenant '${principal.tenantId}') cannot review a directive for tenant '${proposal.tenantId}'`,
+      );
     }
   }
 
@@ -118,6 +144,7 @@ export class DirectiveApprovalService {
   ): Promise<DirectiveApprovalResult> {
     this.assertCanActivate(principal);
     const proposal = await this.loadPending(ref);
+    this.assertTenantMatch(principal, proposal);
 
     const template =
       options.editedInstructions ?? proposal.proposedInstructions;
@@ -131,6 +158,13 @@ export class DirectiveApprovalService {
       tenantId: proposal.tenantId,
       template,
     });
+
+    // Keep the persona's own `instructions` field in sync with the activated
+    // text, so the field-based `PersonaResolver.resolve()` path reflects the
+    // approved directive too — not only the prompt-override path. Best effort:
+    // the override is the authoritative application; a missing persona (e.g.
+    // deleted) does not fail the activation.
+    await this.syncPersonaInstructions(proposal.personaId, template);
 
     proposal.status = 'approved';
     proposal.reviewedBy = principal.id ?? null;
@@ -161,6 +195,7 @@ export class DirectiveApprovalService {
   ): Promise<DirectiveRejectionResult> {
     this.assertCanActivate(principal);
     const proposal = await this.loadPending(ref);
+    this.assertTenantMatch(principal, proposal);
 
     proposal.status = 'rejected';
     proposal.reviewedBy = principal.id ?? null;
@@ -215,6 +250,26 @@ export class DirectiveApprovalService {
       comment: options.note ?? null,
       metadata: JSON.stringify({ edited: options.edited ?? false }),
     });
+  }
+
+  private async syncPersonaInstructions(
+    personaId: string,
+    instructions: string,
+  ): Promise<void> {
+    const personas = await this.personasCollection();
+    const persona = await personas.get({ id: personaId });
+    if (!persona) {
+      return;
+    }
+    persona.instructions = instructions;
+    await persona.save();
+  }
+
+  private async personasCollection(): Promise<AgentPersonaCollection> {
+    if (!this.personas) {
+      this.personas = await AgentPersonaCollection.create({ db: this.db });
+    }
+    return this.personas;
   }
 
   private async proposalsCollection(): Promise<DirectiveProposalCollection> {

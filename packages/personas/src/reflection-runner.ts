@@ -213,20 +213,27 @@ export class ReflectionRunner {
       });
     }
 
-    // 2. Automatic, confidence-only reinforcement from episode-level feedback.
-    //    Directive review signals (accept/reject of a proposal) are excluded —
-    //    they judge a proposal, not a strategy episode.
+    // 2. Automatic, confidence-only reinforcement — applied EXACTLY ONCE per
+    //    signal. A signal already consumed (`reinforcedAt` set) is skipped, so a
+    //    scheduled runner never re-applies it and amplifies one accept/reject
+    //    into many outcomes. Directive review signals (accept/reject of a
+    //    proposal) judge a proposal, not an episode, so they are marked consumed
+    //    without reinforcing.
     let reinforced = 0;
     for (const signal of feedback) {
-      if (signal.correlationType === 'directive_proposal') {
+      if (signal.reinforcedAt) {
         continue;
       }
-      const record = await reinforceFromFeedback(memory, signal, {
-        ratingNeutral: options.ratingNeutral,
-      });
-      if (record) {
-        reinforced += 1;
+      if (signal.correlationType !== 'directive_proposal') {
+        const record = await reinforceFromFeedback(memory, signal, {
+          ratingNeutral: options.ratingNeutral,
+        });
+        if (record) {
+          reinforced += 1;
+        }
       }
+      signal.reinforcedAt = this.now();
+      await signal.save();
     }
 
     // 3. Gather episodes as evidence (all confidences, including decayed ones).
