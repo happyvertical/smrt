@@ -94,6 +94,15 @@ export {
   resolveAgentAIOptions,
 } from './ai-config.js';
 export { AgentConfig, AgentConfigCollection } from './config.js';
+export {
+  type ExecuteAsPrincipalOptions,
+  executeAsPrincipal,
+  type PrincipalAuditEntry,
+  type PrincipalAuditSink,
+  type PrincipalBinding,
+  type PrincipalRun,
+  PrincipalToolNotAllowedError,
+} from './execute-as-principal.js';
 // Per-instance dispatch subscriber composition (#1890). Exported so
 // `@happyvertical/smrt-personas` can derive the same identity for a persona
 // without reconstructing an agent.

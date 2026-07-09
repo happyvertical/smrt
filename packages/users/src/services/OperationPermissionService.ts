@@ -60,6 +60,16 @@ export interface OperationPermissionOptions
   resolver?: PermissionResolver;
   tenantId?: string | null;
   userId?: string | null;
+  /**
+   * When provided, authorize against THIS exact permission set instead of
+   * re-resolving live RBAC. Pass the published principal set
+   * (`context.permissionSet`) so an RLS-off catalog gate enforces the same
+   * snapshot authority the RLS-on session published — keeping the authority
+   * bound adapter-independent. Without it a mid-run role grant, or a reduced
+   * pre-resolved `permissions` set, could let SQLite/dev allow an operation the
+   * Postgres RLS path for the same principal context would deny.
+   */
+  permissionSet?: ReadonlySet<string> | readonly string[];
 }
 
 export class OperationPermissionError extends Error {
@@ -188,6 +198,18 @@ export async function checkOperationPermission(
   const tenantId = options.tenantId ?? sessionContext?.tenantId ?? null;
   if (!userId || !tenantId) {
     return deny(permission, 'missing_principal');
+  }
+
+  // Explicit set wins over a live re-resolve: authorize against the exact
+  // published principal set so the gate matches what an RLS session enforces
+  // for the same context (adapter-independent, snapshot-consistent).
+  if (options.permissionSet !== undefined) {
+    const granted = Array.isArray(options.permissionSet)
+      ? options.permissionSet.includes(permission)
+      : (options.permissionSet as ReadonlySet<string>).has(permission);
+    return granted
+      ? allow(permission, 'permission_granted')
+      : deny(permission, 'permission_denied');
   }
 
   try {

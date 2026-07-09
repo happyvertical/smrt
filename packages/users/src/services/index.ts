@@ -111,8 +111,10 @@ export {
 export {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
+  type PrincipalPermissionRuntimeOptions,
   type SessionPermissionRuntimeContext,
   type SessionPermissionRuntimeOptions,
+  withPrincipalPermissionContext,
   withSessionPermissionContext,
 } from './SessionPermissionContext.js';
 export {
