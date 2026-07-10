@@ -43,6 +43,29 @@ async function closeDatabase(database: unknown): Promise<void> {
   }
 }
 
+async function seedWithSystemContext(
+  db: DatabaseInterface,
+  sql: string,
+  ...values: unknown[]
+): Promise<void> {
+  const factory = db as DatabaseInterface & {
+    beginTransaction?: () => Promise<TransactionHandle>;
+  };
+  if (!factory.beginTransaction) {
+    throw new Error('Postgres test database does not support transactions.');
+  }
+
+  const tx = await factory.beginTransaction();
+  try {
+    await tx.query("SELECT set_config('smrt.system_context', 'true', true)");
+    await tx.query(sql, ...values);
+    await tx.commit();
+  } catch (error) {
+    if (tx.isActive()) await tx.rollback();
+    throw error;
+  }
+}
+
 async function setSessionContext(
   tx: TransactionHandle,
   permissions: string[],
@@ -95,7 +118,8 @@ describePostgres('Postgres permission RLS', () => {
     tenantCId = randomUUID();
 
     await adminDb.query('TRUNCATE TABLE public.permission_rls_records');
-    await adminDb.query(
+    await seedWithSystemContext(
+      adminDb,
       `INSERT INTO public.permission_rls_records
         (id, slug, context, tenant_id, title)
       VALUES
