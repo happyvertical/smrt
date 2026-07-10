@@ -12,11 +12,26 @@ name: Publish
 
 on:
   workflow_call:  # Called by standard workflows
-  workflow_dispatch:  # Allow manual triggering
+    inputs:
+      publish-mode:
+        description: 'Artifact publisher by default; changesets is an emergency fallback'
+        required: false
+        type: string
+        default: artifacts
+  workflow_dispatch:
+    inputs:
+      publish-mode:
+        description: 'Publishing implementation'
+        required: true
+        type: choice
+        default: artifacts
+        options:
+          - artifacts
+          - changesets
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  PUBLISH_PACK_SHARD_COUNT: '4'
+  PUBLISH_PACK_SHARD_COUNT: '2'
 
 permissions:
   contents: write
@@ -29,7 +44,7 @@ permissions:
 jobs:
   prepare-release:
     name: Prepare Release
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 20
     outputs:
       previous-version: ${{ steps.prepare.outputs.previous_version }}
@@ -207,7 +222,7 @@ jobs:
     name: Release Pack Validation (Shard ${{ matrix.shard-label }})
     needs: prepare-release
     if: needs.prepare-release.outputs.should-publish == 'true'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -215,13 +230,9 @@ jobs:
       matrix:
         include:
           - shard-index: 1
-            shard-label: 1/4
+            shard-label: 1/2
           - shard-index: 2
-            shard-label: 2/4
-          - shard-index: 3
-            shard-label: 3/4
-          - shard-index: 4
-            shard-label: 4/4
+            shard-label: 2/2
 
     steps:
       - name: Checkout repository
@@ -255,7 +266,16 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
           PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
+          PUBLISH_PACK_OUTPUT_DIR: publish-pack-output
         run: node scripts/validate-publish-packages.js
+
+      - name: Upload verified package artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: publish-release-pack-${{ matrix.shard-index }}
+          retention-days: 1
+          if-no-files-found: error
+          path: publish-pack-output/
 
   publish-release:
     name: Publish Release
@@ -265,7 +285,7 @@ jobs:
     if: |
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 20
     concurrency:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
@@ -303,6 +323,13 @@ jobs:
       - name: Extract versioned workspace and build outputs
         run: tar -xf release-artifacts/publish-release-workspace.tar
 
+      - name: Download verified package artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: publish-release-pack-*
+          path: publish-pack-output
+          merge-multiple: true
+
       - name: Verify npm publish token
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -334,6 +361,9 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: node scripts/guard-release-publish.js
 
+      - name: Verify complete release artifact set
+        run: node scripts/verify-publish-artifacts.mjs publish-pack-output
+
       - name: Publish validated release
         env:
           CI: true
@@ -342,6 +372,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
         run: |
           echo "🚀 Publishing validated release $RELEASE_VERSION"
 
@@ -353,30 +384,22 @@ jobs:
           fi
           git commit -m "chore(release): v$RELEASE_VERSION [skip ci]"
 
-          # Route @happyvertical/smrt-* publishes to npmjs.org (each package's
-          # publishConfig.registry target). The repo .npmrc maps the whole
-          # @happyvertical scope to GitHub Packages so CI can *install* the SDK
-          # deps (@happyvertical/ai, …); during `pnpm publish` that scope mapping
-          # overrides each package's publishConfig.registry and sends the smrt
-          # packages to npm.pkg.github.com (E403 — wrong registry, npm token can't
-          # write there). The SDK is already installed by this point, so re-point
-          # the scope to npmjs for publishing only (project + user .npmrc, so it
-          # wins regardless of which pnpm reads first). Publishing only packs and
-          # uploads — it does not re-resolve the SDK deps — so npmjs is safe here.
-          for rc in .npmrc "${HOME}/.npmrc"; do
-            if [ -f "$rc" ]; then
-              # `-i.bak` + rm is the portable in-place form (GNU and BSD sed);
-              # editing in place avoids any redirect-clobber of the auth lines.
-              sed -i.bak '/^@happyvertical:registry=/d' "$rc"
-              rm -f "$rc.bak"
-            fi
-            # Re-point in BOTH files so the npmjs mapping wins regardless of
-            # which .npmrc pnpm consults first.
-            printf '%s\n' "@happyvertical:registry=https://registry.npmjs.org" >> "$rc"
-          done
-          echo "✓ Re-pointed @happyvertical scope to npmjs.org for publish"
-
-          pnpm run changeset:publish
+          if [ "$PUBLISH_MODE" = "artifacts" ]; then
+            node scripts/publish-validated-artifacts.mjs publish-pack-output
+          elif [ "$PUBLISH_MODE" = "changesets" ]; then
+            echo "⚠️ Using temporary emergency Changesets publishing fallback"
+            for rc in .npmrc "${HOME}/.npmrc"; do
+              if [ -f "$rc" ]; then
+                sed -i.bak '/^@happyvertical:registry=/d' "$rc"
+                rm -f "$rc.bak"
+              fi
+              printf '%s\n' "@happyvertical:registry=https://registry.npmjs.org" >> "$rc"
+            done
+            pnpm run changeset:publish
+          else
+            echo "Unsupported publish mode: $PUBLISH_MODE"
+            exit 1
+          fi
 
           git tag -f "v$RELEASE_VERSION"
           # Skip developer hooks in CI. Release builds can generate source
@@ -405,7 +428,7 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 15
     permissions:
       contents: read

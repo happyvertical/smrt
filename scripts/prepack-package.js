@@ -68,7 +68,10 @@ if (!buildScript) {
   fail(`No build script found for ${packageName}`);
 }
 
-const verifyScripts = ['verify:pack', 'verify:exports'].filter(
+// Never run verify:pack from prepack: verify:pack itself creates a tarball, so
+// invoking it from npm pack recursively packed every package. CI verifies the
+// one tarball produced by the outer pack operation instead.
+const verifyScripts = ['verify:exports'].filter(
   (scriptName) => typeof scripts[scriptName] === 'string',
 );
 const buildScriptCommand =
@@ -80,7 +83,7 @@ const verifyScriptsHandledByBuild = new Set(
 const runningInCi = process.env.CI === 'true' || process.env.CI === '1';
 const hasDistArtifacts = existsSync(resolve('dist'));
 
-if (runningInCi && hasDistArtifacts && verifyScripts.length > 0) {
+if (runningInCi && hasDistArtifacts) {
   console.log(
     `[smrt-prepack] Reusing existing CI build artifacts for ${packageName} when verification succeeds.`,
   );

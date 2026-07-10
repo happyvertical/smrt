@@ -19,7 +19,10 @@ import {
 interface Props {
   state: UpdateState;
   initialUpdated?: boolean;
-  onReady: (view: UpdateAvailableView, setUpdated: (v: boolean) => void) => void;
+  onReady: (
+    view: UpdateAvailableView,
+    setUpdated: (v: boolean) => void,
+  ) => void;
 }
 
 const props: Props = $props();

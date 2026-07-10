@@ -464,7 +464,19 @@ function collectMissingTypeImports(packageRoot, typeEntryFiles) {
   return missing;
 }
 
-const packageDir = resolve(process.cwd(), process.argv[2] ?? '.');
+const args = process.argv.slice(2);
+const tarballFlagIndex = args.indexOf('--tarball');
+const suppliedTarball =
+  tarballFlagIndex === -1 ? undefined : args[tarballFlagIndex + 1];
+if (tarballFlagIndex !== -1 && !suppliedTarball) {
+  fail('--tarball requires a path');
+}
+const packageArgument = args.find(
+  (arg, index) =>
+    !arg.startsWith('-') &&
+    (tarballFlagIndex === -1 || index !== tarballFlagIndex + 1),
+);
+const packageDir = resolve(process.cwd(), packageArgument ?? '.');
 const packageJsonPath = join(packageDir, 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 const typePaths = collectTypePaths(packageJson);
@@ -482,26 +494,36 @@ if (typePaths.length === 0 && runtimePaths.length === 0) {
 const tempDir = mkdtempSync(join(tmpdir(), 'smrt-pack-'));
 
 try {
-  const packOutput = run(
-    'npm',
-    ['pack', '--json', '--ignore-scripts', '--pack-destination', tempDir],
-    {
-      cwd: packageDir,
-      env: {
-        ...process.env,
-        [npmConfigDryRunKey]: 'false',
-        [npmConfigDryRunUpperKey]: 'false',
+  let tarballPath;
+  if (suppliedTarball) {
+    tarballPath = resolve(process.cwd(), suppliedTarball);
+    if (!existsSync(tarballPath)) {
+      fail(`Supplied tarball does not exist: ${tarballPath}`);
+    }
+  } else {
+    const packOutput = run(
+      'npm',
+      ['pack', '--json', '--ignore-scripts', '--pack-destination', tempDir],
+      {
+        cwd: packageDir,
+        env: {
+          ...process.env,
+          [npmConfigDryRunKey]: 'false',
+          [npmConfigDryRunUpperKey]: 'false',
+        },
       },
-    },
-  );
-  const packResult = JSON.parse(packOutput);
-  const tarballName = packResult[0]?.filename;
+    );
+    const packResult = JSON.parse(packOutput);
+    const tarballName = packResult[0]?.filename;
 
-  if (!tarballName) {
-    fail(`npm pack did not return a tarball filename for ${packageJson.name}`);
+    if (!tarballName) {
+      fail(
+        `npm pack did not return a tarball filename for ${packageJson.name}`,
+      );
+    }
+    tarballPath = join(tempDir, tarballName);
   }
 
-  const tarballPath = join(tempDir, tarballName);
   const archiveListing = run('tar', ['-tf', tarballPath]);
   const archiveEntries = new Set(
     archiveListing

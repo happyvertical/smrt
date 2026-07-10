@@ -6,7 +6,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  PUBLISH_PACK_SHARD_COUNT: '4'
+  PUBLISH_PACK_SHARD_COUNT: '2'
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ permissions:
 jobs:
   prepare-publish:
     name: Prepare Publish Validation
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 20
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
@@ -32,16 +32,14 @@ jobs:
           node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
-          registry-url: 'https://registry.npmjs.org'
-          auth-token: ${{ secrets.NPM_TOKEN }}
-          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate release lifecycle without publishing
         id: prepare
         env:
           CI: true
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "🧪 Running publish dry-run validation..."
 
@@ -137,7 +135,7 @@ jobs:
     name: Pack Validation (Shard ${{ matrix.shard-label }})
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -145,13 +143,9 @@ jobs:
       matrix:
         include:
           - shard-index: 1
-            shard-label: 1/4
+            shard-label: 1/2
           - shard-index: 2
-            shard-label: 2/4
-          - shard-index: 3
-            shard-label: 3/4
-          - shard-index: 4
-            shard-label: 4/4
+            shard-label: 2/2
 
     steps:
       - name: Checkout repository
@@ -174,19 +168,26 @@ jobs:
           node-version: '24.18.0'
           install-deps: 'true'
           setup-playwright: 'false'
-          registry-url: 'https://registry.npmjs.org'
-          auth-token: ${{ secrets.NPM_TOKEN }}
-          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate publish pack shard
         env:
           CI: true
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
           PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
+          PUBLISH_PACK_OUTPUT_DIR: publish-pack-output
         run: |
           node scripts/validate-publish-packages.js
+
+      - name: Upload verified package artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: publish-dry-run-pack-${{ matrix.shard-index }}
+          retention-days: 1
+          if-no-files-found: error
+          path: publish-pack-output/
 
   publish-dry-run-summary:
     name: Version And Pack Validation
@@ -198,6 +199,22 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      - name: Checkout repository
+        if: needs.prepare-publish.outputs.should-validate == 'true'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Download verified package artifacts
+        if: needs.prepare-publish.outputs.should-validate == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: publish-dry-run-pack-*
+          path: publish-pack-output
+          merge-multiple: true
+
+      - name: Verify complete artifact set
+        if: needs.prepare-publish.outputs.should-validate == 'true'
+        run: node scripts/verify-publish-artifacts.mjs publish-pack-output
+
       - name: Finalize publish dry-run status
         env:
           PREPARE_RESULT: ${{ needs.prepare-publish.result }}

@@ -2,14 +2,48 @@ name: Test Suite
 
 on:
   workflow_call:
+    inputs:
+      mode:
+        description: 'full for exhaustive validation; affected for PR feedback'
+        required: false
+        type: string
+        default: full
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  affected-scope:
+    name: Detect Affected Validation Scope
+    if: inputs.mode == 'affected'
+    runs-on: ubuntu-latest
+    outputs:
+      knowledge: ${{ steps.filter.outputs.knowledge }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Detect knowledge-sensitive changes
+        id: filter
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+        with:
+          filters: |
+            knowledge:
+              - 'AGENTS.md'
+              - 'docs/**'
+              - 'package.json'
+              - 'packages/*/AGENTS.md'
+              - 'packages/*/package.json'
+              - 'packages/cli/src/commands/docs-claude.ts'
+              - 'packages/core/src/scanner/**'
+              - 'packages/core/src/schema/**'
+              - 'packages/smrt-dev-mcp/**'
+              - 'scripts/check-knowledge.ts'
+
   build:
     name: Build
-    runs-on: arc-happyvertical
+    if: inputs.mode == 'full'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 15
 
     steps:
@@ -27,26 +61,18 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build BEFORE the version-bump preview so the populated turbo cache reflects
+      # Build BEFORE the version-bump preview so the remote Turbo cache reflects
       # the committed tree that dependent jobs check out (the preview rewrites
-      # package.json versions, which would otherwise change turbo's task hashes).
-      # TURBO_FORCE: the SEED build never trusts a restored cache, so it always
+      # package.json versions, which would otherwise change Turbo's task hashes).
+      # TURBO_FORCE: the seed build never trusts a restored result, so it always
       # exercises the current commit even for inputs Turbo doesn't hash (e.g.
-      # per-package build helper scripts). It then saves a correct cache that the
-      # dependent jobs restore — they get the speed-up without the staleness risk.
+      # per-package build helper scripts). Dependent jobs then use the internal
+      # remote cache without transferring an Actions cache archive per job.
       - name: Build packages
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TURBO_FORCE: 'true'
-
-      # Only the build job saves the turbo cache (setup-environment restores only),
-      # under the same per-SHA key, computed from the still-committed package.json.
-      - name: Save Turbo cache
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: .turbo/cache
-          key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
 
       - name: Preview changeset version bump
         run: |
@@ -85,7 +111,8 @@ jobs:
   typecheck:
     name: Typecheck
     needs: build
-    runs-on: arc-happyvertical
+    if: inputs.mode == 'full'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 15
 
     steps:
@@ -101,11 +128,6 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore build from cache
-        run: pnpm run build
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # Blocking gate (Sweep S3, #1375). Every package ships a `typecheck` script
       # and the whole repo — products included — typechecks clean under root
       # `strict: true`. No package is filtered out; a type error anywhere fails
@@ -117,10 +139,55 @@ jobs:
 
   lint:
     name: Lint
-    needs: build
-    runs-on: arc-happyvertical
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: '24.18.0'
+
+      - name: Run Biome lint and format checks
+        run: npx --yes @biomejs/biome@2.5.2 ci --diagnostic-level=error .
+
+  affected-validation:
+    name: Affected Build, Typecheck, and Tests
+    needs: affected-scope
+    if: inputs.mode == 'affected'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run affected dependency closures
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+        run: pnpm turbo run typecheck test --filter="...[$BASE_SHA]" --concurrency=2
+
+  affected-knowledge:
+    name: Affected Knowledge Freshness
+    needs: affected-scope
+    if: inputs.mode == 'affected' && needs.affected-scope.outputs.knowledge == 'true'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -134,23 +201,21 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore build from cache
+      - name: Build knowledge artifacts
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run lint
-        run: pnpm turbo run lint
+      - name: Check knowledge freshness
+        run: pnpm run check:mcp-config && pnpm knowledge:check --strict --format markdown
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Format check
-        run: pnpm run format-check
 
   knowledge:
     name: Knowledge Freshness
     needs: build
-    runs-on: arc-happyvertical
+    if: inputs.mode == 'full'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 10
 
     steps:
@@ -170,7 +235,7 @@ jobs:
       # (.smrt/ or dist/smrt-knowledge.json) exist with source hashes matching
       # this commit; the freshness check compares those hashes against the
       # current package.json / AGENTS.md / manifest.
-      - name: Restore build from cache
+      - name: Build knowledge artifacts
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -188,7 +253,8 @@ jobs:
   coverage-gate:
     name: Coverage Gate
     needs: build
-    runs-on: arc-happyvertical
+    if: always() && (inputs.mode == 'affected' || needs.build.result == 'success')
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 25
 
     steps:
@@ -208,11 +274,6 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore build from cache
-        run: pnpm run build
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # Sweep S6 (#1411): per-tier line-coverage floors (T1 80 / T2 70 / T3 50)
       # on the packages this PR touches. Blocks regressions below the floor
       # without forcing repo-wide uplift (that uplift is Wave 3). Floors + tier
@@ -226,7 +287,8 @@ jobs:
   test-core:
     name: Test Core (${{ matrix.shard }})
     needs: build
-    runs-on: arc-happyvertical
+    if: inputs.mode == 'full'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -247,8 +309,8 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore build from cache
-        run: pnpm run build
+      - name: Build core dependency closure
+        run: pnpm turbo run build --filter='@happyvertical/smrt-core...'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -272,7 +334,8 @@ jobs:
   test-integration:
     name: Test Integration
     needs: build
-    runs-on: arc-happyvertical
+    if: inputs.mode == 'full'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
     timeout-minutes: 10
 
     steps:
@@ -288,7 +351,10 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore build from cache
+      # This suite discovers every packages/*/dist/manifest.json and asserts
+      # full-registry scale, so it is the one validation lane that requires all
+      # package manifests rather than only the core dependency closure.
+      - name: Build all package manifests
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -303,9 +369,10 @@ jobs:
   test-packages:
     name: Test Packages (${{ matrix.shard }})
     needs: build
-    runs-on: arc-happyvertical
-    # Each shard does a full build + ~1/3 of the package tests; 15m was too tight
-    # under self-hosted runner-pool contention (shards timed out at ~15m20s).
+    if: inputs.mode == 'full'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    # Each shard runs ~1/3 of package tests and lets Turbo build only their
+    # dependency closures. Keep the wider timeout for runner-pool contention.
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -326,16 +393,11 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Restore build from cache
-        run: pnpm run build
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # Each shard runs ~1/3 of the non-core packages (scripts/test-packages-shard.mjs
       # round-robins by name), keeping per-runner load low so transient
       # resource-pressure timing flakes stay rare.
       - name: Run package tests (shard ${{ matrix.shard }}, excluding core)
-        run: node scripts/test-packages-shard.mjs '${{ matrix.shard }}' | xargs -r pnpm turbo run test
+        run: node scripts/test-packages-shard.mjs '${{ matrix.shard }}' | xargs -r pnpm turbo run test --concurrency=2
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
@@ -356,8 +418,8 @@ jobs:
   test-packages-result:
     name: Test Packages
     needs: test-packages
-    runs-on: arc-happyvertical
-    if: always()
+    runs-on: ubuntu-latest
+    if: always() && inputs.mode == 'full'
     steps:
       - name: Verify all Test Packages shards passed
         run: |

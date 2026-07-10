@@ -383,12 +383,14 @@ never disable the scan.
   non-blocking.
 - **Remediation first.** Prefer fixing over ignoring: most advisories are stale
   transitive deps with a published patch, fixable by a version-range-scoped entry
-  in `pnpm.overrides` (e.g. `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
+  in `pnpm-workspace.yaml` under `overrides` (e.g.
+  `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
   to the vulnerable range so unrelated majors aren't force-bumped.
 - **Accept-with-justification.** Only when an advisory can't be remediated without
   breaking a pinned API (e.g. `protobufjs` 6.x held by `onnx-proto` under the
   deprecated `@xenova/transformers` v2 fallback) add its GHSA to
-  `pnpm.auditConfig.ignoreGhsas` — with a justification recorded in the PR.
+  `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml` — with a justification
+  recorded in the PR.
   Revisit baselined advisories when their blocker is removed.
 
 ---

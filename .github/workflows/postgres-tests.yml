@@ -1,0 +1,39 @@
+name: PostgreSQL Tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * *'
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  postgres:
+    name: Registered PostgreSQL Suites
+    if: github.event_name == 'workflow_dispatch' || vars.CI_POSTGRES_ENABLED == 'true'
+    runs-on: arc-happyvertical-node
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run registered PostgreSQL suites
+        run: pnpm turbo run test:postgres --concurrency=2
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
