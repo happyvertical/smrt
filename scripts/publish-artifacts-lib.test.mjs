@@ -82,14 +82,22 @@ test('finds unresolved workspace and catalog dependency protocols', () => {
         '@happyvertical/smrt-core': 'workspace:*',
         zod: '^4.0.0',
       },
+      optionalDependencies: {
+        sharp: 'catalog:sharp',
+      },
       peerDependencies: {
         svelte: 'workspace:^',
+      },
+      devDependencies: {
+        vitest: 'catalog:',
       },
     }),
     [
       'dependencies.@happyvertical/jobs=catalog:',
       'dependencies.@happyvertical/smrt-core=workspace:*',
+      'optionalDependencies.sharp=catalog:sharp',
       'peerDependencies.svelte=workspace:^',
+      'devDependencies.vitest=catalog:',
     ],
   );
 });

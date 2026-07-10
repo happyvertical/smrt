@@ -208,11 +208,11 @@ for (const pkg of shardPackages) {
   });
 
   if (result.error) {
-    fail(`Failed to run npm pack for ${pkg.name}: ${result.error.message}`);
+    fail(`Failed to run pnpm pack for ${pkg.name}: ${result.error.message}`);
   }
 
   if (result.status !== 0) {
-    fail(`npm pack failed for ${pkg.name}`);
+    fail(`pnpm pack failed for ${pkg.name}`);
   }
 
   const created = readdirSync(outputDir).filter(
@@ -235,7 +235,18 @@ for (const pkg of shardPackages) {
     },
   );
   if (packedManifestResult.error || packedManifestResult.status !== 0) {
-    fail(`Failed to inspect packed manifest for ${pkg.name}`);
+    const details = [
+      `status=${packedManifestResult.status ?? 'unknown'}`,
+      packedManifestResult.error
+        ? `error=${packedManifestResult.error.message}`
+        : '',
+      packedManifestResult.stderr?.trim()
+        ? `stderr=${packedManifestResult.stderr.trim()}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('; ');
+    fail(`Failed to inspect packed manifest for ${pkg.name}: ${details}`);
   }
 
   const packedManifest = JSON.parse(packedManifestResult.stdout);
