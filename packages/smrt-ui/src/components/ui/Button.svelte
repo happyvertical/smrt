@@ -100,6 +100,7 @@ const linkProps = $derived(() => {
 function handleClick(event: MouseEvent) {
   if (isDisabled) {
     event.preventDefault();
+    event.stopPropagation();
     return;
   }
 

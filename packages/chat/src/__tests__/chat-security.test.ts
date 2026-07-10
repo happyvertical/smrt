@@ -796,6 +796,7 @@ describe('chat security (S5 #1392)', () => {
       '@happyvertical/smrt-chat:ChatThread',
       '@happyvertical/smrt-chat:ChatReaction',
       '@happyvertical/smrt-chat:AgentSession',
+      '@happyvertical/smrt-chat:VoiceGatewayTurn',
       '@happyvertical/smrt-chat:VoiceSession',
     ];
 
@@ -1321,6 +1322,7 @@ describe('chat security (S5 #1392)', () => {
         'ChatThreadCollection',
         'AgentSessionCollection',
         'ChatReactionCollection',
+        'VoiceGatewayTurnCollection',
         'VoiceSessionCollection',
       ]) {
         expect(index[exportName]).toBeUndefined();

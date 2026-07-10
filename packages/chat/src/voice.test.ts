@@ -27,7 +27,10 @@ import {
   createVoiceChatSession,
   createVoiceGatewayTurnHandler,
   handleVoiceGatewayTurn,
+  MAX_VOICE_GATEWAY_TEXT_LENGTH,
   SMRT_CHAT_VOICE_TARGET,
+  VoiceGatewayBadRequestError,
+  VoiceGatewayReplayError,
   type VoiceGatewayTurnPayload,
   VoiceSessionExpiredError,
   VoiceSessionRejectedError,
@@ -304,6 +307,113 @@ describe('voice gateway chat integration', () => {
       limit: 10,
     });
     expect(messages).toHaveLength(0);
+  });
+
+  it('rejects oversized gateway text before creating chat messages', async () => {
+    const voiceSession = await createVoiceChatSession({
+      chatService: chat,
+      db,
+      tenantId,
+      actorProfileId: 'speaker-profile',
+      persona,
+      ttlSeconds: 60,
+    });
+    const { ai } = makeAI(() => textResponse('should not run'));
+
+    await expect(
+      handleVoiceGatewayTurn({
+        chatService: chat,
+        db,
+        ai,
+        payload: payloadFor(voiceSession, {
+          text: 'x'.repeat(MAX_VOICE_GATEWAY_TEXT_LENGTH + 1),
+        }),
+        recall: false,
+      }),
+    ).rejects.toBeInstanceOf(VoiceGatewayBadRequestError);
+
+    const messages = await chat.getRoomMessages({
+      roomId: voiceSession.chatRoomId,
+      actorProfileId: 'speaker-profile',
+      tenantId,
+      limit: 10,
+    });
+    expect(messages).toHaveLength(0);
+  });
+
+  it('rejects an invalid persona snapshot before creating chat messages', async () => {
+    const voiceSession = await createVoiceChatSession({
+      chatService: chat,
+      db,
+      tenantId,
+      actorProfileId: 'speaker-profile',
+      persona,
+      ttlSeconds: 60,
+    });
+    voiceSession.voiceSession.setPersonaSnapshot({
+      ...persona,
+      runAsUserId: '',
+    });
+    await voiceSession.voiceSession.save();
+    const { ai } = makeAI(() => textResponse('should not run'));
+
+    await expect(
+      handleVoiceGatewayTurn({
+        chatService: chat,
+        db,
+        ai,
+        payload: payloadFor(voiceSession),
+        recall: false,
+      }),
+    ).rejects.toBeInstanceOf(VoiceSessionRejectedError);
+
+    const messages = await chat.getRoomMessages({
+      roomId: voiceSession.chatRoomId,
+      actorProfileId: 'speaker-profile',
+      tenantId,
+      limit: 10,
+    });
+    expect(messages).toHaveLength(0);
+  });
+
+  it('rejects duplicate gateway turn ids with one persisted transcript', async () => {
+    const voiceSession = await createVoiceChatSession({
+      chatService: chat,
+      db,
+      tenantId,
+      actorProfileId: 'speaker-profile',
+      persona,
+      ttlSeconds: 60,
+    });
+    const { ai } = makeAI(() => textResponse('I heard you.'));
+    const payload = payloadFor(voiceSession);
+
+    await handleVoiceGatewayTurn({
+      chatService: chat,
+      db,
+      ai,
+      payload,
+      recall: false,
+    });
+
+    await expect(
+      handleVoiceGatewayTurn({
+        chatService: chat,
+        db,
+        ai,
+        payload,
+        recall: false,
+      }),
+    ).rejects.toBeInstanceOf(VoiceGatewayReplayError);
+
+    const messages = await chat.getRoomMessages({
+      roomId: voiceSession.chatRoomId,
+      actorProfileId: 'speaker-profile',
+      tenantId,
+      limit: 10,
+    });
+    expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
+    expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
   });
 
   it('rejects an invalid gateway bearer token through the HTTP handler', async () => {

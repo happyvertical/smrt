@@ -1,8 +1,13 @@
 import type { AIInterface, AIMessage } from '@happyvertical/ai';
 import type { PrincipalAuditSink } from '@happyvertical/smrt-agents';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type SmrtClassOptions,
+  ValidationError,
+} from '@happyvertical/smrt-core';
+import { VoiceGatewayTurnCollection } from './collections/VoiceGatewayTurnCollection.js';
 import { VoiceSessionCollection } from './collections/VoiceSessionCollection.js';
 import type { ChatMessage } from './models/ChatMessage.js';
+import type { VoiceGatewayTurn } from './models/VoiceGatewayTurn.js';
 import type { VoiceSession } from './models/VoiceSession.js';
 import {
   bindPersonaToSession,
@@ -13,6 +18,7 @@ import {
 import type { ChatService } from './services/index.js';
 
 export const SMRT_CHAT_VOICE_TARGET = 'smrt:chat';
+export const MAX_VOICE_GATEWAY_TEXT_LENGTH = 12_000;
 const DEFAULT_VOICE_SESSION_TTL_SECONDS = 10 * 60;
 const DEFAULT_HISTORY_LIMIT = 24;
 
@@ -342,6 +348,7 @@ export async function handleVoiceGatewayTurn(
   }
 
   validateGatewayPayloadAgainstBinding(payload, voiceSession);
+  const persona = requireVoiceSessionPersona(voiceSession);
 
   const agentSession = await options.chatService.getAgentSession({
     agentSessionId: voiceSession.agentSessionId,
@@ -370,90 +377,103 @@ export async function handleVoiceGatewayTurn(
     }
   }
 
-  const history = await loadConversationHistory({
-    chatService: options.chatService,
-    tenantId: voiceSession.tenantId,
-    actorProfileId: voiceSession.actorProfileId,
-    roomId: voiceSession.chatRoomId,
-    threadId: voiceSession.threadId,
-    limit: options.historyLimit ?? DEFAULT_HISTORY_LIMIT,
-  });
-  const correlationId = crypto.randomUUID();
-  const commonMetadata = {
-    source: 'voice-gateway',
-    target: payload.target,
-    voiceSessionId,
-    gatewaySessionId: payload.session_id,
-    gatewayTurnId: payload.turn_id,
-    correlationId,
-  };
+  const gatewayTurn = await reserveVoiceGatewayTurn(
+    options.db,
+    voiceSession,
+    payload,
+  );
 
-  const userMessage = await options.chatService.sendAgentUserMessage({
-    tenantId: voiceSession.tenantId,
-    agentSessionId: voiceSession.agentSessionId,
-    actorProfileId: voiceSession.actorProfileId,
-    content: payload.text,
-  });
-  await mergeAndSaveMetadata(userMessage, {
-    ...commonMetadata,
-    voiceRole: 'transcript',
-  });
-
-  const turn = await runPersonaConversationTurn({
-    ai: options.ai,
-    db: options.db,
-    persona: voiceSession.getPersonaSnapshot(),
-    tenantId: voiceSession.tenantId,
-    userMessage: payload.text,
-    history,
-    chatService: options.chatService,
-    session: agentSession,
-    threadId: voiceSession.threadId,
-    recall: options.recall,
-    model: options.model,
-    temperature: options.temperature,
-    maxTokens: options.maxTokens,
-    maxSteps: options.maxSteps,
-    postgresRls: options.postgresRls,
-    audit: options.audit,
-    onBehalfOfUserId: voiceSession.actorUserId ?? undefined,
-    correlationId,
-  });
-
-  for (const toolMessage of turn.authoredMessages?.toolMessages ?? []) {
-    await mergeAndSaveMetadata(toolMessage, {
-      ...commonMetadata,
-      voiceRole: 'tool',
-    });
-  }
-  const assistantMessage = turn.authoredMessages?.assistantMessage ?? null;
-  if (assistantMessage) {
-    await mergeAndSaveMetadata(assistantMessage, {
-      ...commonMetadata,
-      voiceRole: 'assistant',
-    });
-  }
-
-  voiceSession.recordGatewayTurn(payload.turn_id);
-  await voiceSession.save();
-
-  return {
-    session_id: payload.session_id,
-    turn_id: payload.turn_id,
-    text: turn.result.content,
-    metadata: {
+  try {
+    const history = await loadConversationHistory({
+      chatService: options.chatService,
       tenantId: voiceSession.tenantId,
-      chatRoomId: voiceSession.chatRoomId,
+      actorProfileId: voiceSession.actorProfileId,
+      roomId: voiceSession.chatRoomId,
       threadId: voiceSession.threadId,
-      agentSessionId: voiceSession.agentSessionId,
-      userMessageId: userMessage.id as string,
-      assistantMessageId: (assistantMessage?.id as string | undefined) ?? null,
-      personaId: voiceSession.personaId,
-      correlationId: turn.correlationId,
-      voiceSessionId,
+      limit: options.historyLimit ?? DEFAULT_HISTORY_LIMIT,
+    });
+    const correlationId = crypto.randomUUID();
+    const commonMetadata = {
       source: 'voice-gateway',
-    },
-  };
+      target: payload.target,
+      voiceSessionId,
+      gatewaySessionId: payload.session_id,
+      gatewayTurnId: payload.turn_id,
+      correlationId,
+    };
+
+    const userMessage = await options.chatService.sendAgentUserMessage({
+      tenantId: voiceSession.tenantId,
+      agentSessionId: voiceSession.agentSessionId,
+      actorProfileId: voiceSession.actorProfileId,
+      content: payload.text,
+    });
+    await mergeAndSaveMetadata(userMessage, {
+      ...commonMetadata,
+      voiceRole: 'transcript',
+    });
+
+    const turn = await runPersonaConversationTurn({
+      ai: options.ai,
+      db: options.db,
+      persona,
+      tenantId: voiceSession.tenantId,
+      userMessage: payload.text,
+      history,
+      chatService: options.chatService,
+      session: agentSession,
+      threadId: voiceSession.threadId,
+      recall: options.recall,
+      model: options.model,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      maxSteps: options.maxSteps,
+      postgresRls: options.postgresRls,
+      audit: options.audit,
+      onBehalfOfUserId: voiceSession.actorUserId ?? undefined,
+      correlationId,
+    });
+
+    for (const toolMessage of turn.authoredMessages?.toolMessages ?? []) {
+      await mergeAndSaveMetadata(toolMessage, {
+        ...commonMetadata,
+        voiceRole: 'tool',
+      });
+    }
+    const assistantMessage = turn.authoredMessages?.assistantMessage ?? null;
+    if (assistantMessage) {
+      await mergeAndSaveMetadata(assistantMessage, {
+        ...commonMetadata,
+        voiceRole: 'assistant',
+      });
+    }
+
+    voiceSession.recordGatewayTurn(payload.turn_id);
+    await voiceSession.save();
+    await gatewayTurn.complete();
+
+    return {
+      session_id: payload.session_id,
+      turn_id: payload.turn_id,
+      text: turn.result.content,
+      metadata: {
+        tenantId: voiceSession.tenantId,
+        chatRoomId: voiceSession.chatRoomId,
+        threadId: voiceSession.threadId,
+        agentSessionId: voiceSession.agentSessionId,
+        userMessageId: userMessage.id as string,
+        assistantMessageId:
+          (assistantMessage?.id as string | undefined) ?? null,
+        personaId: voiceSession.personaId,
+        correlationId: turn.correlationId,
+        voiceSessionId,
+        source: 'voice-gateway',
+      },
+    };
+  } catch (error) {
+    await markVoiceGatewayTurnFailed(gatewayTurn);
+    throw error;
+  }
 }
 
 export function createVoiceGatewayTurnHandler(
@@ -530,6 +550,11 @@ function normalizeGatewayPayload(input: unknown): VoiceGatewayTurnPayload {
     input.text,
     'Voice gateway payload text is required',
   );
+  if (text.length > MAX_VOICE_GATEWAY_TEXT_LENGTH) {
+    throw new VoiceGatewayBadRequestError(
+      `Voice gateway payload text must be ${MAX_VOICE_GATEWAY_TEXT_LENGTH} characters or fewer`,
+    );
+  }
   const metadata = input.metadata;
   if (metadata !== undefined && !isRecord(metadata)) {
     throw new VoiceGatewayBadRequestError(
@@ -595,6 +620,77 @@ function validateGatewayPayloadAgainstBinding(
     'personaId',
     voiceSession.personaId,
     'personaId does not match the voice session binding',
+  );
+}
+
+function requireVoiceSessionPersona(
+  voiceSession: VoiceSession,
+): ConversationPersona {
+  const persona = voiceSession.getPersonaSnapshot();
+  if (!hasNonEmptyString(persona.id)) {
+    throw new VoiceSessionRejectedError(
+      'Voice session persona snapshot has no persona id',
+    );
+  }
+  if (persona.id !== voiceSession.personaId) {
+    throw new VoiceSessionRejectedError(
+      'Voice session persona snapshot does not match the voice session persona',
+    );
+  }
+  if (persona.tenantId !== voiceSession.tenantId) {
+    throw new VoiceSessionRejectedError(
+      'Voice session persona snapshot tenant does not match the voice session tenant',
+    );
+  }
+  if (!hasNonEmptyString(persona.runAsUserId)) {
+    throw new VoiceSessionRejectedError(
+      'Voice session persona snapshot has no runnable user',
+    );
+  }
+  if (!Array.isArray(persona.allowedTools)) {
+    throw new VoiceSessionRejectedError(
+      'Voice session persona snapshot has an invalid tool allow-list',
+    );
+  }
+  return persona;
+}
+
+async function reserveVoiceGatewayTurn(
+  db: SmrtClassOptions['db'],
+  voiceSession: VoiceSession,
+  payload: VoiceGatewayTurnPayload,
+): Promise<VoiceGatewayTurn> {
+  const gatewayTurns = await VoiceGatewayTurnCollection.create({ db });
+  try {
+    return await gatewayTurns.reserveTurn({
+      tenantId: voiceSession.tenantId,
+      voiceSessionId: voiceSession.id as string,
+      gatewaySessionId: payload.session_id,
+      gatewayTurnId: payload.turn_id,
+      target: payload.target,
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new VoiceGatewayReplayError();
+    }
+    throw error;
+  }
+}
+
+async function markVoiceGatewayTurnFailed(
+  gatewayTurn: VoiceGatewayTurn,
+): Promise<void> {
+  try {
+    await gatewayTurn.fail();
+  } catch {
+    // Preserve the original turn failure for the gateway response.
+  }
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof ValidationError &&
+    error.code === 'VALIDATION_UNIQUE_CONSTRAINT'
   );
 }
 
@@ -689,6 +785,10 @@ function requireNonEmptyString(value: unknown, message: string): string {
     throw new VoiceGatewayBadRequestError(message);
   }
   return value;
+}
+
+function hasNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

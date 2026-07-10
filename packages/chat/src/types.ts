@@ -17,6 +17,7 @@ export type ChatMessageType =
 export type ChatMessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type AgentSessionStatus = 'active' | 'closed' | 'expired';
 export type VoiceSessionStatus = 'active' | 'expired' | 'revoked';
+export type VoiceGatewayTurnStatus = 'processing' | 'completed' | 'failed';
 
 // ---- Options Interfaces ----
 
@@ -121,6 +122,17 @@ export interface VoiceSessionOptions extends SmrtObjectOptions {
   personaSnapshot?: Record<string, unknown> | string;
   metadata?: Record<string, unknown> | string;
   processedTurnIds?: string[] | string;
+}
+
+export interface VoiceGatewayTurnOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  voiceSessionId?: string;
+  gatewaySessionId?: string;
+  gatewayTurnId?: string;
+  target?: string;
+  status?: VoiceGatewayTurnStatus;
+  completedAt?: Date | null;
+  failedAt?: Date | null;
 }
 
 // ---- Search / Filter types ----

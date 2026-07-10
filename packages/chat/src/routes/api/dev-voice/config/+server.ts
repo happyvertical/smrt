@@ -1,7 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 
 const DEFAULT_SAMPLE_RATE = 16_000;
-const DEFAULT_GATEWAY_HTTP_URL = 'http://voice-gateway.tail8e7e73.ts.net:8080';
+const DEFAULT_GATEWAY_HTTP_URL = 'http://127.0.0.1:8080';
 
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0

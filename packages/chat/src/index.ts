@@ -79,6 +79,7 @@ export {
   ChatReaction,
   ChatRoom,
   ChatThread,
+  VoiceGatewayTurn,
   VoiceSession,
 } from './models/index.js';
 export {
@@ -130,6 +131,8 @@ export type {
   ChatRoomType,
   ChatThreadOptions,
   OnlineStatus,
+  VoiceGatewayTurnOptions,
+  VoiceGatewayTurnStatus,
   VoiceSessionOptions,
   VoiceSessionStatus,
 } from './types.js';
@@ -143,6 +146,7 @@ export {
   createVoiceGatewayTurnHandler,
   type HandleVoiceGatewayTurnOptions,
   handleVoiceGatewayTurn,
+  MAX_VOICE_GATEWAY_TEXT_LENGTH,
   SMRT_CHAT_VOICE_TARGET,
   type VoiceChatSessionCreationResult,
   VoiceGatewayBadRequestError,

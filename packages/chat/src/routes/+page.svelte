@@ -51,6 +51,26 @@ interface VoiceControlFrame {
 
 const currentProfileId = 'profile-dev-user';
 const assistantProfileId = 'agent-dev-assistant';
+const VOICE_CAPTURE_WORKLET_NAME = 'smrt-voice-capture';
+const VOICE_CAPTURE_WORKLET_SOURCE = `
+class SmrtVoiceCaptureProcessor extends AudioWorkletProcessor {
+  process(inputs, outputs) {
+    const output = outputs[0] && outputs[0][0];
+    if (output) output.fill(0);
+
+    const input = inputs[0] && inputs[0][0];
+    if (input) {
+      const copy = new Float32Array(input.length);
+      copy.set(input);
+      this.port.postMessage(copy, [copy.buffer]);
+    }
+
+    return true;
+  }
+}
+
+registerProcessor('${VOICE_CAPTURE_WORKLET_NAME}', SmrtVoiceCaptureProcessor);
+`;
 
 const seedRooms: ChatRoomData[] = [
   {
@@ -160,7 +180,7 @@ let voiceSocket: WebSocket | null = null;
 let voiceStream: MediaStream | null = null;
 let voiceAudioContext: AudioContext | null = null;
 let voiceSource: MediaStreamAudioSourceNode | null = null;
-let voiceProcessor: ScriptProcessorNode | null = null;
+let voiceProcessor: AudioWorkletNode | null = null;
 let activeVoiceAudio: HTMLAudioElement | null = null;
 let activeVoiceAudioUrl: string | null = null;
 
@@ -414,6 +434,50 @@ function downsampleToPcm16(
   return output.buffer;
 }
 
+async function createVoiceCaptureProcessor(
+  audioContext: AudioContext,
+  config: DevVoiceConfig,
+  socket: WebSocket,
+): Promise<AudioWorkletNode> {
+  if (!audioContext.audioWorklet) {
+    throw new Error('This browser does not support AudioWorklet capture.');
+  }
+
+  const workletUrl = URL.createObjectURL(
+    new Blob([VOICE_CAPTURE_WORKLET_SOURCE], { type: 'text/javascript' }),
+  );
+  try {
+    await audioContext.audioWorklet.addModule(workletUrl);
+  } finally {
+    URL.revokeObjectURL(workletUrl);
+  }
+
+  const processor = new AudioWorkletNode(
+    audioContext,
+    VOICE_CAPTURE_WORKLET_NAME,
+    {
+      channelCount: 1,
+      channelCountMode: 'explicit',
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+    },
+  );
+
+  processor.port.onmessage = (event: MessageEvent<Float32Array>) => {
+    if (socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const pcm = downsampleToPcm16(
+      event.data,
+      audioContext.sampleRate,
+      config.sampleRate,
+    );
+    socket.send(pcm);
+  };
+
+  return processor;
+}
+
 function stopActiveVoiceAudio() {
   if (activeVoiceAudio) {
     activeVoiceAudio.pause();
@@ -531,6 +595,7 @@ function handleVoiceSocketMessage(
 }
 
 function cleanupVoiceCapture() {
+  voiceProcessor?.port.close();
   voiceProcessor?.disconnect();
   voiceProcessor = null;
   voiceSource?.disconnect();
@@ -585,28 +650,20 @@ async function startVoiceConversation() {
     const audioContext = new AudioContext();
     await audioContext.resume();
     const source = audioContext.createMediaStreamSource(stream);
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
     const socket = new WebSocket(voiceSocketUrl(config));
 
     voiceStream = stream;
     voiceAudioContext = audioContext;
     voiceSource = source;
-    voiceProcessor = processor;
     voiceSocket = socket;
     socket.binaryType = 'arraybuffer';
 
-    processor.onaudioprocess = (event) => {
-      event.outputBuffer.getChannelData(0).fill(0);
-      if (socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      const pcm = downsampleToPcm16(
-        event.inputBuffer.getChannelData(0),
-        audioContext.sampleRate,
-        config.sampleRate,
-      );
-      socket.send(pcm);
-    };
+    const processor = await createVoiceCaptureProcessor(
+      audioContext,
+      config,
+      socket,
+    );
+    voiceProcessor = processor;
 
     source.connect(processor);
     processor.connect(audioContext.destination);
