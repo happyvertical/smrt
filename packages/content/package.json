@@ -34,6 +34,10 @@
     "./playground": {
       "types": "./dist/playground.d.ts",
       "import": "./dist/playground.js"
+    },
+    "./workbench": {
+      "types": "./dist/workbench.d.ts",
+      "import": "./dist/workbench.js"
     }
   },
   "scripts": {

@@ -18,6 +18,7 @@ import { getAgentSkill, listAgentSkills } from './agent-skills.js';
 import {
   buildArchitectureContext,
   buildKnowledgeIndex,
+  buildPackageSpecialistContext,
   buildReviewContext,
   checkKnowledgeFreshness,
   checkKnowledgeFreshnessFromIndex,
@@ -53,9 +54,15 @@ const LIVE_KNOWLEDGE_CACHE_HINT = {
   ttlMs: 0,
   cacheScope: 'private' as const,
 };
+const WORKBENCH_PROJECT_URI = 'smrt://workbench/project';
+const WORKBENCH_PACKAGE_PREFIX = 'smrt://workbench/package/';
+const WORKBENCH_SPECIALIST_SUFFIX = '/specialist';
 
 type KnowledgeIndexResult = Awaited<ReturnType<typeof buildKnowledgeIndex>>;
 type KnowledgePackageResult = KnowledgeIndexResult['packages'][number];
+type PackageSpecialistResult = Awaited<
+  ReturnType<typeof buildPackageSpecialistContext>
+>;
 type PromptArguments = Record<string, string> | undefined;
 
 export function createServer(): Server {
@@ -263,6 +270,14 @@ export function createServer(): Server {
             'Composed SMRT, downstream domain, and HappyVertical SDK knowledge index.',
           mimeType: 'application/json',
         },
+        {
+          uri: WORKBENCH_PROJECT_URI,
+          name: 'smrt-workbench-project',
+          title: 'SMRT Workbench Project',
+          description:
+            'Workbench-facing package and knowledge resource index for the current project.',
+          mimeType: 'application/json',
+        },
         ...index.packages.map((pkg) => ({
           uri: `${KNOWLEDGE_PACKAGE_PREFIX}${encodeURIComponent(pkg.name)}`,
           name: `smrt-domain-knowledge-${pkg.name}`,
@@ -271,6 +286,26 @@ export function createServer(): Server {
             'Package-scoped SMRT domain knowledge, generated surfaces, and authored context.',
           mimeType: 'application/json',
         })),
+        ...index.packages
+          .filter((pkg) => pkg.kind !== 'sdk')
+          .flatMap((pkg) => [
+            {
+              uri: `${WORKBENCH_PACKAGE_PREFIX}${encodeURIComponent(pkg.name)}`,
+              name: `smrt-workbench-${pkg.name}`,
+              title: `SMRT Workbench Package: ${pkg.name}`,
+              description:
+                'Workbench package resource with docs, manifest, knowledge, scripts, and surface metadata.',
+              mimeType: 'application/json',
+            },
+            {
+              uri: `${WORKBENCH_PACKAGE_PREFIX}${encodeURIComponent(pkg.name)}${WORKBENCH_SPECIALIST_SUFFIX}`,
+              name: `smrt-workbench-specialist-${pkg.name}`,
+              title: `SMRT Package Specialist: ${pkg.name}`,
+              description:
+                'Deterministic package specialist prompt bundle and source list.',
+              mimeType: 'application/json',
+            },
+          ]),
       ],
     };
   });
@@ -297,6 +332,90 @@ export function createServer(): Server {
             uri,
             mimeType: 'application/json',
             text: JSON.stringify(sanitizeKnowledgeIndex(index), null, 2),
+          },
+        ],
+      };
+    }
+
+    if (uri === WORKBENCH_PROJECT_URI) {
+      const index = await buildKnowledgeIndex();
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                project: sanitizeKnowledgeIndex(index),
+                workbenchResources: index.packages
+                  .filter((pkg) => pkg.kind !== 'sdk')
+                  .map((pkg) => ({
+                    packageName: pkg.name,
+                    packageUri: `${WORKBENCH_PACKAGE_PREFIX}${encodeURIComponent(pkg.name)}`,
+                    specialistUri: `${WORKBENCH_PACKAGE_PREFIX}${encodeURIComponent(pkg.name)}${WORKBENCH_SPECIALIST_SUFFIX}`,
+                  })),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    if (
+      uri.startsWith(WORKBENCH_PACKAGE_PREFIX) &&
+      uri.endsWith(WORKBENCH_SPECIALIST_SUFFIX)
+    ) {
+      const packageName = decodeURIComponent(
+        uri.slice(
+          WORKBENCH_PACKAGE_PREFIX.length,
+          -WORKBENCH_SPECIALIST_SUFFIX.length,
+        ),
+      );
+      const specialist = await buildPackageSpecialistContext({
+        package: packageName,
+      });
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              sanitizePackageSpecialist(specialist),
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    if (uri.startsWith(WORKBENCH_PACKAGE_PREFIX)) {
+      const packageName = decodeURIComponent(
+        uri.slice(WORKBENCH_PACKAGE_PREFIX.length),
+      );
+      const index = await buildKnowledgeIndex();
+      const pkg = index.packages.find((item) => item.name === packageName);
+      if (!pkg) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown workbench package: ${packageName}`,
+        );
+      }
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                package: sanitizeKnowledgePackage(pkg),
+                specialistUri: `${WORKBENCH_PACKAGE_PREFIX}${encodeURIComponent(pkg.name)}${WORKBENCH_SPECIALIST_SUFFIX}`,
+              },
+              null,
+              2,
+            ),
           },
         ],
       };
@@ -470,6 +589,20 @@ export function createServer(): Server {
                 args as unknown as Parameters<typeof smrtReview>[0],
               ),
               detailArg(args),
+            ),
+            null,
+            2,
+          );
+          break;
+
+        case 'build-package-specialist-context':
+          result = JSON.stringify(
+            sanitizePackageSpecialist(
+              await buildPackageSpecialistContext(
+                args as unknown as Parameters<
+                  typeof buildPackageSpecialistContext
+                >[0],
+              ),
             ),
             null,
             2,
@@ -776,6 +909,30 @@ function sanitizeKnowledgePackage(pkg: KnowledgePackageResult) {
       filePath: sanitizePath(object.filePath),
     })),
   };
+}
+
+function sanitizePackageSpecialist(specialist: PackageSpecialistResult) {
+  return {
+    selectedPackage: sanitizeKnowledgePackage(specialist.selectedPackage),
+    selectedSdkPackages: specialist.selectedSdkPackages.map((pkg) =>
+      sanitizeKnowledgePackage(pkg),
+    ),
+    promptBundle: {
+      ...specialist.promptBundle,
+      contextMarkdown: specialist.promptBundle.contextMarkdown.replace(
+        /^Baseline root: .+$/m,
+        'Baseline root: .',
+      ),
+      sourceFiles: sanitizePaths(specialist.promptBundle.sourceFiles),
+    },
+    sourceFiles: sanitizePaths(specialist.sourceFiles),
+  };
+}
+
+function sanitizePaths(paths: string[]): string[] {
+  return paths
+    .map(sanitizePath)
+    .filter((path): path is string => typeof path === 'string');
 }
 
 function sanitizePath(path: string | undefined): string | undefined {

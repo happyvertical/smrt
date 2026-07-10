@@ -56,6 +56,7 @@ let _utilityCommands: Record<string, Command> | null = null;
 let _dispatchCommands: Record<string, Command> | null = null;
 let _docsCommands: Record<string, Command> | null = null;
 let _playgroundCommands: Record<string, Command> | null = null;
+let _workbenchCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -119,6 +120,14 @@ async function getPlaygroundCommands(): Promise<Record<string, Command>> {
     _playgroundCommands = playgroundCommands;
   }
   return _playgroundCommands;
+}
+
+async function getWorkbenchCommands(): Promise<Record<string, Command>> {
+  if (!_workbenchCommands) {
+    const { workbenchCommands } = await import('./commands/index.js');
+    _workbenchCommands = workbenchCommands;
+  }
+  return _workbenchCommands;
 }
 
 export interface CLIConfig {
@@ -770,6 +779,7 @@ export class CLIGenerator {
       'docs',
       'git',
       'playground',
+      'workbench',
     ]);
 
     if (knownBuiltInNamespaces.has(firstArg)) {
@@ -1393,6 +1403,7 @@ export class CLIGenerator {
       dispatchCommands,
       docsCommands,
       playgroundCommands,
+      workbenchCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1402,6 +1413,7 @@ export class CLIGenerator {
       getDispatchCommands(),
       getDocsCommands(),
       getPlaygroundCommands(),
+      getWorkbenchCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -1412,6 +1424,7 @@ export class CLIGenerator {
       ...dispatchCommands,
       ...docsCommands,
       ...playgroundCommands,
+      ...workbenchCommands,
     };
 
     const builtInCommand =
@@ -1757,6 +1770,7 @@ export class CLIGenerator {
       dispatchCommands,
       docsCommands,
       playgroundCommands,
+      workbenchCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1766,6 +1780,7 @@ export class CLIGenerator {
       getDispatchCommands(),
       getDocsCommands(),
       getPlaygroundCommands(),
+      getWorkbenchCommands(),
     ]);
 
     console.log('Project Setup:');
@@ -1776,6 +1791,12 @@ export class CLIGenerator {
 
     console.log('Playground:');
     for (const command of Object.values(playgroundCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Workbench:');
+    for (const command of Object.values(workbenchCommands)) {
       this.showCommandHelp(command);
     }
     console.log();

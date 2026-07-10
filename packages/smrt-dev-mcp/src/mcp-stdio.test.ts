@@ -77,6 +77,7 @@ describe('smrt-dev-mcp stdio server', () => {
         'build-domain-review-context',
         'build-architecture-context',
         'build-domain-architecture-context',
+        'build-package-specialist-context',
         'smrt-review',
         'smrt-architecture',
         'review-smrt-project',
@@ -198,6 +199,19 @@ describe('smrt-dev-mcp stdio server', () => {
       ),
     ).toContain('@happyvertical/smrt-profiles');
 
+    const specialistResult = await client.callTool({
+      name: 'build-package-specialist-context',
+      arguments: {
+        rootDir: repoRoot,
+        package: 'content',
+      },
+    });
+    const specialist = JSON.parse(textContent(specialistResult));
+    expect(specialist.promptBundle.contextMarkdown).toContain(
+      'Baseline root: .',
+    );
+    expect(specialist.promptBundle.contextMarkdown).not.toContain(repoRoot);
+
     const skillsResult = await client.callTool({
       name: 'list-agent-skills',
       arguments: {},
@@ -275,6 +289,7 @@ describe('smrt-dev-mcp stdio server', () => {
       expect.arrayContaining([
         'smrt-dev-mcp://agent-skills/smrt-code-review',
         'smrt://knowledge/project',
+        'smrt://workbench/project',
       ]),
     );
     const resourceResult = await client.readResource({
@@ -321,6 +336,28 @@ describe('smrt-dev-mcp stdio server', () => {
         : '{}',
     );
     expect(packageKnowledge).not.toHaveProperty('directory');
+
+    const specialistUri = resourceUris.find(
+      (uri) =>
+        uri.startsWith('smrt://workbench/package/') &&
+        uri.endsWith('/specialist') &&
+        uri.includes(encodeURIComponent('@happyvertical/smrt-content')),
+    );
+    if (!specialistUri) {
+      throw new Error('Expected content specialist resource URI');
+    }
+    const specialistResourceResult = await client.readResource({
+      uri: specialistUri,
+    });
+    const specialistResourceContent = specialistResourceResult.contents[0];
+    const specialistResourceText =
+      specialistResourceContent && 'text' in specialistResourceContent
+        ? specialistResourceContent.text
+        : '';
+    expect(specialistResourceText).not.toContain(repoRoot);
+    expect(
+      JSON.parse(specialistResourceText).promptBundle.contextMarkdown,
+    ).toContain('Baseline root: .');
 
     await expect(
       client.readResource({

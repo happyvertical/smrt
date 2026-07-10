@@ -1,0 +1,21 @@
+{
+  "name": "smrt-workbench-host",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "svelte-kit sync && vite dev",
+    "build": "svelte-kit sync && vite build",
+    "preview": "vite preview",
+    "test:e2e": "pnpm exec playwright test -c playwright.config.ts",
+    "test:e2e:headed": "pnpm exec playwright test -c playwright.config.ts --headed"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-workbench": "workspace:*",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.69.1",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "svelte": "^5.56.4",
+    "vite": "^8.1.3"
+  }
+}

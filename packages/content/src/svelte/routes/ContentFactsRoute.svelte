@@ -12,6 +12,7 @@ import {
 } from './shared.js';
 
 interface ContentFactsRouteProps {
+  client?: ReturnType<typeof createClient>;
   navigation?: ContentRouteNavigationItem[];
   apiBaseUrl?: string;
   createHref?: string | null;
@@ -23,9 +24,10 @@ let {
   apiBaseUrl = '/api/v1',
   createHref = null,
   embedded = false,
+  client = undefined,
 }: ContentFactsRouteProps = $props();
 
-const client = $derived(createClient(apiBaseUrl));
+const apiClient = $derived(client ?? createClient(apiBaseUrl));
 const { t } = useI18n();
 
 let query = $state('');
@@ -61,7 +63,7 @@ async function loadFacts() {
   refreshing = true;
 
   try {
-    const response = await client.contents.browseFacts(query, {
+    const response = await apiClient.contents.browseFacts(query, {
       limit: 100,
       latestOnly,
       includeSuperseded,

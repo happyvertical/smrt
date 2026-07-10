@@ -24,6 +24,7 @@
     "build:clean": "pnpm run clean && pnpm run build",
     "typecheck": "turbo typecheck",
     "dev": "turbo dev --parallel",
+    "workbench": "tsx packages/cli/src/index.ts workbench dev",
     "validate-build": "node scripts/validate-build.js",
     "check:standards": "node scripts/check-standards.mjs && node scripts/check-readmes.mjs",
     "check:readmes": "node scripts/check-readmes.mjs",

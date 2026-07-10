@@ -1,35 +1,3 @@
-import { IMAGES_ROUTE_META } from './routes/shared.js';
-
-const DEFAULT_IMAGES_PLAYGROUND_API_BASE_URL = '/api/v1';
-
-type ImagesPlaygroundGlobal = typeof globalThis & {
-  __SMRT_IMAGES_PLAYGROUND_API_BASE_URL__?: string;
-  location?: {
-    search: string;
-  };
-};
-
-function resolveImagesPlaygroundApiBaseUrl(): string {
-  const configuredViaGlobal = (globalThis as ImagesPlaygroundGlobal)
-    .__SMRT_IMAGES_PLAYGROUND_API_BASE_URL__;
-  if (configuredViaGlobal) {
-    return configuredViaGlobal;
-  }
-
-  const browserLocation = (globalThis as ImagesPlaygroundGlobal).location;
-  if (browserLocation) {
-    const configuredViaQuery = new URLSearchParams(browserLocation.search).get(
-      'smrtImagesApiBaseUrl',
-    );
-
-    if (configuredViaQuery) {
-      return configuredViaQuery;
-    }
-  }
-
-  return DEFAULT_IMAGES_PLAYGROUND_API_BASE_URL;
-}
-
 function createPreviewImageUri(label: string, accent: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
     <defs>
@@ -61,13 +29,13 @@ const sampleImage = {
 };
 
 const loadImageEditor = () => import('./components/ImageEditor.svelte');
-const loadImageStudioRoute = () => import('./routes/ImageStudioRoute.svelte');
 const loadImageUploader = () => import('./components/ImageUploader.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-images',
   displayName: 'Images',
-  description: IMAGES_ROUTE_META.studio.description,
+  description:
+    'Component previews for image acquisition, editing, and package UI states.',
   entries: [
     {
       id: 'image-uploader',
@@ -102,25 +70,6 @@ export default {
       modes: {
         mock: {
           label: 'Mock',
-        },
-      },
-    },
-    {
-      id: 'image-studio-route',
-      title: 'Image Studio Route',
-      description:
-        'Package-owned acquisition and editing flow backed by the generated images API.',
-      loadComponent: loadImageStudioRoute,
-      order: 3,
-      tags: ['route', 'images', 'admin'],
-      modes: {
-        live: {
-          label: 'Live',
-          description:
-            'Requires the images package dev server and generated routes. Override the base URL with ?smrtImagesApiBaseUrl=... or window.__SMRT_IMAGES_PLAYGROUND_API_BASE_URL__ when needed.',
-          props: {
-            apiBaseUrl: resolveImagesPlaygroundApiBaseUrl(),
-          },
         },
       },
     },

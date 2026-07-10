@@ -25,6 +25,7 @@ import {
 } from './shared.js';
 
 interface ContentContributionsRouteProps {
+  client?: ReturnType<typeof createClient>;
   navigation?: ContentRouteNavigationItem[];
   apiBaseUrl?: string;
   embedded?: boolean;
@@ -34,9 +35,10 @@ let {
   navigation = CONTENT_DEFAULT_ROUTE_NAVIGATION,
   apiBaseUrl = '/api/v1',
   embedded = false,
+  client = undefined,
 }: ContentContributionsRouteProps = $props();
 
-const client = $derived(createClient(apiBaseUrl));
+const apiClient = $derived(client ?? createClient(apiBaseUrl));
 const { t } = useI18n();
 
 let contributionTypes = $state<ContentContributionTypeConfigStateData | null>(
@@ -79,12 +81,12 @@ function mapFilesToAttachments(files: File[]) {
 }
 
 async function loadContributionTypes() {
-  const response = await client.contentContributions.getContributionTypes();
+  const response = await apiClient.contentContributions.getContributionTypes();
   contributionTypes = response.data;
 }
 
 async function loadContributors() {
-  const response = await client.contentContributors.list();
+  const response = await apiClient.contentContributors.list();
   contributors = response.data;
 
   if (!portalEmail) {
@@ -93,7 +95,7 @@ async function loadContributors() {
 }
 
 async function loadInbox() {
-  const response = await client.contentContributions.listInbox();
+  const response = await apiClient.contentContributions.listInbox();
   inboxContributions = response.data;
   selectedInboxId = response.data[0]?.id || null;
 }
@@ -105,7 +107,7 @@ async function loadPortal() {
     return;
   }
 
-  const response = await client.contentContributions.listForContributor({
+  const response = await apiClient.contentContributions.listForContributor({
     contributorEmail: portalEmail,
   });
   portalContributions = response.data;
@@ -178,18 +180,19 @@ async function handleSubmitContribution(
   await runContributionAction(
     'Submitting contribution...',
     async () => {
-      const response = await client.contentContributions.submitWebContribution({
-        typeKey: payload.typeKey,
-        contributorEmail: payload.contributorEmail,
-        contributorName: payload.contributorName,
-        title: payload.title || null,
-        description: payload.description || null,
-        body: payload.body || null,
-        attachments: mapFilesToAttachments(payload.files),
-        metadata: {
-          source: 'content-route',
-        },
-      });
+      const response =
+        await apiClient.contentContributions.submitWebContribution({
+          typeKey: payload.typeKey,
+          contributorEmail: payload.contributorEmail,
+          contributorName: payload.contributorName,
+          title: payload.title || null,
+          description: payload.description || null,
+          body: payload.body || null,
+          attachments: mapFilesToAttachments(payload.files),
+          metadata: {
+            source: 'content-route',
+          },
+        });
 
       portalEmail = payload.contributorEmail || portalEmail;
       const contribution =
@@ -205,7 +208,7 @@ async function handleSubmitContribution(
 
 async function handleWithdraw(contribution: ContentContributionData) {
   await runContributionAction('Withdrawing contribution...', async () => {
-    await client.contentContributions.withdraw(contribution.id || '', {
+    await apiClient.contentContributions.withdraw(contribution.id || '', {
       reason: 'Withdrawn from the contribution route.',
     });
     notice = `Withdrew "${contribution.title || contribution.id}".`;
@@ -217,7 +220,7 @@ async function handleApprove(
   options: { targetStatus: 'draft' | 'review'; note: string },
 ) {
   await runContributionAction('Approving contribution...', async () => {
-    await client.contentContributions.approve(contribution.id || '', {
+    await apiClient.contentContributions.approve(contribution.id || '', {
       editorNote: options.note,
       targetStatus: options.targetStatus,
     });
@@ -230,7 +233,7 @@ async function handleRequestChanges(
   options: { note: string },
 ) {
   await runContributionAction('Requesting changes...', async () => {
-    await client.contentContributions.requestChanges(contribution.id || '', {
+    await apiClient.contentContributions.requestChanges(contribution.id || '', {
       editorNote: options.note,
     });
     notice = `Requested changes for "${contribution.title || contribution.id}".`;
@@ -242,7 +245,7 @@ async function handleReject(
   options: { note: string },
 ) {
   await runContributionAction('Rejecting contribution...', async () => {
-    await client.contentContributions.reject(contribution.id || '', {
+    await apiClient.contentContributions.reject(contribution.id || '', {
       editorNote: options.note,
     });
     notice = `Rejected "${contribution.title || contribution.id}".`;
@@ -254,9 +257,9 @@ async function handleSaveType(data: Partial<ContentContributionTypeData>) {
     'Saving contribution type...',
     async () => {
       if (data.id) {
-        await client.contentContributionTypes.update(data.id, data);
+        await apiClient.contentContributionTypes.update(data.id, data);
       } else {
-        await client.contentContributionTypes.create(data);
+        await apiClient.contentContributionTypes.create(data);
       }
       notice = `Saved contribution type "${data.label || data.key}".`;
     },
@@ -268,7 +271,7 @@ async function handleDeleteType(data: Partial<ContentContributionTypeData>) {
   await runContributionAction(
     'Deleting contribution type...',
     async () => {
-      await client.contentContributionTypes.delete(data.id || '');
+      await apiClient.contentContributionTypes.delete(data.id || '');
       notice = `Deleted contribution type "${data.label || data.key}".`;
     },
     { refreshTypes: true },
@@ -280,9 +283,9 @@ async function handleSaveContributor(data: Partial<ContentContributorData>) {
     'Saving contributor...',
     async () => {
       if (data.id) {
-        await client.contentContributors.update(data.id, data);
+        await apiClient.contentContributors.update(data.id, data);
       } else {
-        await client.contentContributors.create(data);
+        await apiClient.contentContributors.create(data);
       }
       portalEmail = data.email || portalEmail;
       notice = `Saved contributor "${data.name || data.email}".`;
@@ -295,7 +298,7 @@ async function handleDeleteContributor(data: Partial<ContentContributorData>) {
   await runContributionAction(
     'Deleting contributor...',
     async () => {
-      await client.contentContributors.delete(data.id || '');
+      await apiClient.contentContributors.delete(data.id || '');
       if (portalEmail === data.email) {
         portalEmail = '';
       }

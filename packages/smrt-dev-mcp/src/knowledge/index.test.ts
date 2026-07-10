@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildArchitectureContext,
   buildKnowledgeIndex,
+  buildPackageSpecialistContext,
   buildReviewContext,
   checkKnowledgeFreshness,
   smrtArchitecture,
@@ -177,6 +178,35 @@ describe('SMRT knowledge index', () => {
       '@happyvertical/smrt-demo',
     ]);
     expect(index.sdkPackages).toHaveLength(0);
+  });
+
+  it('builds deterministic package specialist context', async () => {
+    await writeFile(
+      join(rootDir, 'packages', 'demo', 'README.md'),
+      '# Demo README\n\nDeveloper docs.',
+    );
+    await writeFile(
+      join(rootDir, 'packages', 'demo', 'src', 'workbench.ts'),
+      'export default { packageName: "@happyvertical/smrt-demo" };',
+    );
+
+    const specialist = await buildPackageSpecialistContext({
+      rootDir,
+      package: 'demo',
+    });
+
+    expect(specialist.selectedPackage.name).toBe('@happyvertical/smrt-demo');
+    expect(specialist.promptBundle.title).toBe(
+      'SMRT package specialist: @happyvertical/smrt-demo',
+    );
+    expect(specialist.sourceFiles).toEqual(
+      expect.arrayContaining([
+        'packages/demo/AGENTS.md',
+        'packages/demo/README.md',
+        'packages/demo/src/workbench.ts',
+        'packages/demo/src/manifest/manifest.json',
+      ]),
+    );
   });
 
   it('loads domain knowledge artifacts before raw manifest fallback', async () => {

@@ -18,6 +18,7 @@ describe('smrt-dev-mcp tools', () => {
     expect(names).toContain('build-domain-review-context');
     expect(names).toContain('smrt-review');
     expect(names).toContain('build-architecture-context');
+    expect(names).toContain('build-package-specialist-context');
     expect(names).toContain('build-domain-architecture-context');
     expect(names).toContain('smrt-architecture');
     expect(names).toContain('review-smrt-project');

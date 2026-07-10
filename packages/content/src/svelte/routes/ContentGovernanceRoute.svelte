@@ -1,6 +1,7 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import ContentGovernanceManager from '../components/ContentGovernanceManager.svelte';
+import type { ContentGovernanceManagerClient } from '../governance-manager-client.js';
 import { M } from '../i18n.routes.js';
 import {
   CONTENT_DEFAULT_ROUTE_NAVIGATION,
@@ -10,12 +11,14 @@ import {
 } from './shared.js';
 
 interface ContentGovernanceRouteProps {
+  client?: ContentGovernanceManagerClient;
   navigation?: ContentRouteNavigationItem[];
   apiBaseUrl?: string;
   embedded?: boolean;
 }
 
 let {
+  client = undefined,
   navigation = CONTENT_DEFAULT_ROUTE_NAVIGATION,
   apiBaseUrl = '/api/v1',
   embedded = false,
@@ -66,7 +69,7 @@ const { t } = useI18n();
     </section>
 
     <section class="panel">
-      <ContentGovernanceManager {apiBaseUrl} />
+      <ContentGovernanceManager {apiBaseUrl} {client} />
     </section>
   </main>
 </div>
