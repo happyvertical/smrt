@@ -1,11 +1,19 @@
 import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import AdminShell from '../admin-shell/AdminShell.svelte';
+import adminShellSource from '../admin-shell/AdminShell.svelte?raw';
 import { createShellState } from '../admin-shell/state.svelte.js';
+import type { ShellFocusTool } from '../admin-shell/types.js';
 
 function textSnippet(text: string) {
   return createRawSnippet(() => ({
     render: () => `<span>${text}</span>`,
+  }));
+}
+
+function activeToolSnippet() {
+  return createRawSnippet<[{ tool: ShellFocusTool | null }]>((context) => ({
+    render: () => `<span>${context().tool?.id ?? 'none'} panel</span>`,
   }));
 }
 
@@ -42,6 +50,12 @@ describe('AdminShell', () => {
     }
   });
 
+  it('pins the shell to the viewport so long workspace content scrolls inside main', () => {
+    expect(adminShellSource).toMatch(
+      /\.smrt-admin-shell\s*\{[^}]*\bblock-size:\s*100svh\s*;/,
+    );
+  });
+
   it('toggles a physical-code panel hotkey', async () => {
     const component = mount(AdminShell, {
       target: container,
@@ -59,6 +73,27 @@ describe('AdminShell', () => {
       flushSync();
 
       expect(shell?.getAttribute('data-top-state')).toBe('expanded');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('hides hotkey badges when shell hotkeys are disabled', () => {
+    const state = createShellState({
+      settings: { hotkeysEnabled: false },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      expect(
+        container.querySelector('.smrt-admin-shell__edge-toggle-kbd'),
+      ).toBeNull();
     } finally {
       unmount(component);
     }
@@ -90,6 +125,70 @@ describe('AdminShell', () => {
       expect(right?.getAttribute('data-state')).toBe('expanded');
       expect(rail?.textContent).toContain('focus rail');
       expect(panel?.textContent).toContain('focus panel');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders the active registered focus tool after switching tools', async () => {
+    const state = createShellState({
+      config: { right: { initial: 'expanded' } },
+    });
+    state.registerFocusTool({
+      id: 'usage',
+      label: 'Usage',
+    });
+    state.registerFocusTool({
+      id: 'tasks',
+      label: 'Tasks',
+    });
+
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+        focusPanel: activeToolSnippet(),
+      },
+    });
+
+    try {
+      const panel = container.querySelector('.smrt-admin-shell__panel--right');
+      expect(panel?.textContent).toContain('usage panel');
+
+      state.openFocusTool('tasks');
+      await tick();
+
+      expect(panel?.textContent).toContain('tasks panel');
+      expect(panel?.textContent).not.toContain('usage panel');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('pins a tenant footer below the scrolling tenant panel', () => {
+    const state = createShellState({
+      config: { left: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+        tenantPanel: textSnippet('tenant navigation'),
+        tenantFooter: textSnippet('account menu'),
+      },
+    });
+
+    try {
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-content')
+          ?.textContent,
+      ).toContain('tenant navigation');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-footer')
+          ?.textContent,
+      ).toContain('account menu');
     } finally {
       unmount(component);
     }

@@ -67,6 +67,14 @@ export interface ShellNavItem {
   children?: ShellNavItem[];
 }
 
+/** Tenant option rendered by {@link WorkspaceAccountMenu}. */
+export interface WorkspaceAccountTenant {
+  id: string;
+  label: string;
+  roleLabel?: string;
+  disabled?: boolean;
+}
+
 export interface ShellFocusTool {
   id: string;
   label: string;

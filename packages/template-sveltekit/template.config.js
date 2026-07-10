@@ -4,14 +4,13 @@
  * This file configures the template for use with `smrt gnode create`
  *
  * Version pins are kept in sync with `template/package.json` and the rest of
- * the SMRT monorepo (see packages/smrt-svelte/package.json for the canonical
- * Svelte 5 + Vite 7 baseline). Any changes here MUST be mirrored in
+ * the s-m-r-t monorepo. Any changes here MUST be mirrored in
  * `template/package.json` so generated projects match the tracked template.
  */
 
 export default {
   name: 'sveltekit',
-  description: 'SvelteKit project with SMRT framework integration',
+  description: 'Minimal SvelteKit project with s-m-r-t integration',
   framework: 'sveltekit',
   version: '1.0.0',
 
@@ -20,17 +19,24 @@ export default {
 
   // Dependencies to add to generated project
   dependencies: {
-    '@happyvertical/smrt-core': '^0.38.25',
+    '@happyvertical/smrt-core': '0.38.25',
+    '@happyvertical/smrt-profiles': '0.38.25',
+    '@happyvertical/smrt-svelte': '0.38.25',
+    '@happyvertical/smrt-tenancy': '0.38.25',
+    '@happyvertical/smrt-ui': '0.38.25',
+    '@happyvertical/smrt-users': '0.38.25',
   },
 
   devDependencies: {
+    '@happyvertical/smrt-cli': '0.38.25',
     '@sveltejs/adapter-auto': '^7.0.1',
-    '@sveltejs/kit': '^2.46.0',
-    '@sveltejs/vite-plugin-svelte': '^6.2.4',
-    'svelte': '^5.18.0',
-    'svelte-check': '^4.3.5',
-    'typescript': '^5.9.3',
-    'vite': '^7.3.1',
+    '@sveltejs/kit': '^2.69.2',
+    '@sveltejs/vite-plugin-svelte': '^7.2.0',
+    '@types/node': '^24.13.3',
+    'svelte': '^5.56.4',
+    'svelte-check': '^4.7.2',
+    'typescript': '^6.0.3',
+    'vite': '^8.1.4',
   },
 
   // Optional: customize files
@@ -55,8 +61,9 @@ export default {
       console.log(`\n✅ Created ${ctx.name} successfully!`);
       console.log('\nNext steps:');
       console.log(`  cd ${ctx.name}`);
-      console.log('  npm install');
-      console.log('  npm run dev');
+      console.log('  pnpm install');
+      console.log('  pnpm db:migrate');
+      console.log('  pnpm dev');
       console.log();
     },
   },

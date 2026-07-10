@@ -63,7 +63,7 @@ export interface SvelteKitOptions {
 const BIOME_LINE_WIDTH = 80;
 const STANDARD_API_ACTIONS = ['list', 'get', 'create', 'update', 'delete'];
 
-interface ResolvedApiActionRouteConfig {
+export interface ResolvedApiActionRouteConfig {
   scope: 'item' | 'collection';
   method: ApiHttpMethod;
   pathSegments: string[];
@@ -776,7 +776,7 @@ function extractRoutePathParamNames(pathSegments: string[]): string[] {
     .filter(Boolean);
 }
 
-function resolveApiActionRouteConfig(
+export function resolveApiActionRouteConfig(
   actionName: string,
   actionDef: { isStatic?: boolean },
   apiConfig: unknown,

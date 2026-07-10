@@ -63,20 +63,6 @@ export {
   HUMAN_SIGNAL_TYPES,
 } from './feedback.js';
 export {
-  type PersonaMemoryLike,
-  personaLearningMemory,
-  personaMemoryScope,
-  reinforceFromFeedback,
-} from './persona-memory.js';
-export {
-  applyPersonaInstructions,
-  ensurePersonaInstructionsPrompt,
-  type PersonaLike,
-  personaInstructionsPromptKey,
-  resolvePersonaInstructions,
-  upsertPromptTemplateOverride,
-} from './persona-prompt.js';
-export {
   type AddPersonaInstanceOptions,
   addPersonaInstance,
   agentOptionsForPersona,
@@ -95,6 +81,20 @@ export {
   type UpgradeSingletonResult,
   upgradeSingletonToDefaultPersona,
 } from './persona-instance.js';
+export {
+  type PersonaMemoryLike,
+  personaLearningMemory,
+  personaMemoryScope,
+  reinforceFromFeedback,
+} from './persona-memory.js';
+export {
+  applyPersonaInstructions,
+  ensurePersonaInstructionsPrompt,
+  type PersonaLike,
+  personaInstructionsPromptKey,
+  resolvePersonaInstructions,
+  upsertPromptTemplateOverride,
+} from './persona-prompt.js';
 export {
   availabilityFromResolvedAgent,
   type ManifestPersonaDefaults,

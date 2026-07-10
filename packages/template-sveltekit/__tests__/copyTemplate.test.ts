@@ -67,6 +67,23 @@ describe('copyTemplate', () => {
     }
   });
 
+  it('does not copy internal test fixtures if they appear under the template', () => {
+    const fixturesDir = join(getTemplatePath(), '__tests__');
+    const createdHere = !existsSync(fixturesDir);
+    if (createdHere) {
+      mkdirSync(fixturesDir, { recursive: true });
+      writeFileSync(join(fixturesDir, 'fixture.test.ts'), 'throw new Error()');
+    }
+    try {
+      copyTemplate(tempDir, { name: 'my-app', overwrite: true });
+      expect(existsSync(join(tempDir, '__tests__'))).toBe(false);
+    } finally {
+      if (createdHere) {
+        rmSync(fixturesDir, { recursive: true, force: true });
+      }
+    }
+  });
+
   it('substitutes the project name into package.json', () => {
     copyTemplate(tempDir, { name: 'my-app', overwrite: true });
 
@@ -74,5 +91,7 @@ describe('copyTemplate', () => {
       readFileSync(join(tempDir, 'package.json'), 'utf-8'),
     );
     expect(pkg.name).toBe('my-app');
+    expect(pkg.packageManager).toBe('pnpm@10.34.4');
+    expect(pkg.engines).toEqual({ node: '>=24.18.0', pnpm: '10.34.4' });
   });
 });

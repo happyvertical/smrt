@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 
 function fail(message) {
@@ -59,6 +66,12 @@ const shardIndex = parsePositiveIntegerOption(
   '--shard-index',
   'PUBLISH_PACK_SHARD_INDEX',
   1,
+);
+const outputDir = resolve(
+  repoRoot,
+  readOptionValue('--output-dir') ??
+    process.env.PUBLISH_PACK_OUTPUT_DIR ??
+    '.artifacts/publish-pack',
 );
 
 if (shardIndex > shardCount) {
@@ -179,9 +192,15 @@ if (shardPackages.length === 0) {
   process.exit(0);
 }
 
+mkdirSync(outputDir, { recursive: true });
+const artifacts = [];
+
 for (const pkg of shardPackages) {
-  console.log(`📦 Validating publish dry-run for ${pkg.name}`);
-  const result = spawnSync('npm', ['pack', '--dry-run'], {
+  console.log(`📦 Creating and validating publish artifact for ${pkg.name}`);
+  const before = new Set(
+    readdirSync(outputDir).filter((entry) => entry.endsWith('.tgz')),
+  );
+  const result = spawnSync('npm', ['pack', '--pack-destination', outputDir], {
     cwd: pkg.dir,
     stdio: 'inherit',
     env: process.env,
@@ -192,12 +211,28 @@ for (const pkg of shardPackages) {
   }
 
   if (result.status !== 0) {
-    fail(`npm pack --dry-run failed for ${pkg.name}`);
+    fail(`npm pack failed for ${pkg.name}`);
   }
+
+  const created = readdirSync(outputDir).filter(
+    (entry) => entry.endsWith('.tgz') && !before.has(entry),
+  );
+  if (created.length !== 1) {
+    fail(
+      `Expected exactly one tarball for ${pkg.name}, found ${created.length}`,
+    );
+  }
+  const filename = created[0];
+  const tarballPath = join(outputDir, filename);
 
   const verifyResult = spawnSync(
     process.execPath,
-    [join(repoRoot, 'scripts', 'verify-package-types-exports.js'), pkg.dir],
+    [
+      join(repoRoot, 'scripts', 'verify-package-types-exports.js'),
+      pkg.dir,
+      '--tarball',
+      tarballPath,
+    ],
     {
       cwd: repoRoot,
       stdio: 'inherit',
@@ -214,7 +249,43 @@ for (const pkg of shardPackages) {
   if (verifyResult.status !== 0) {
     fail(`Packed export verification failed for ${pkg.name}`);
   }
+
+  const packageJson = JSON.parse(
+    readFileSync(join(pkg.dir, 'package.json'), 'utf8'),
+  );
+  artifacts.push({
+    name: pkg.name,
+    version: packageJson.version,
+    filename,
+    sha256: createHash('sha256')
+      .update(readFileSync(tarballPath))
+      .digest('hex'),
+  });
 }
+
+const releaseVersions = new Set(artifacts.map((artifact) => artifact.version));
+if (releaseVersions.size !== 1) {
+  fail(
+    `Pack shard contains inconsistent versions: ${[...releaseVersions].join(', ')}`,
+  );
+}
+
+const manifestPath = join(
+  outputDir,
+  `manifest-${shardIndex}-of-${shardCount}.json`,
+);
+writeFileSync(
+  manifestPath,
+  `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      releaseVersion: artifacts[0].version,
+      packages: artifacts,
+    },
+    null,
+    2,
+  )}\n`,
+);
 
 console.log(
   shardCount > 1

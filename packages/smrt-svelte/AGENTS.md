@@ -81,6 +81,7 @@ the top-of-stack, domain-aware pieces:
 | AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
 | Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
 | Module | `ModulePanel` |
+| Settings (`/settings`) | `SettingsCatalog`, `paginateSettingsCatalog` |
 | Workspace (`/workspace`) | `WorkspaceShell`, `NavTree`, `Breadcrumbs`, `ToolsDock`, `RoleShell` |
 
 ### Gap primitives & S10 consolidation (L3 #1422)
@@ -120,6 +121,7 @@ library. Which barrel for what:
 | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-svelte/layout` |
 | Chat message bubble, reaction picker, typing indicator | `@happyvertical/smrt-svelte/chat` |
 | Admin shell, nav tree, breadcrumbs, tools dock | `@happyvertical/smrt-svelte/workspace` |
+| Server-paged settings search, selection, and list/detail layout | `@happyvertical/smrt-svelte/settings` |
 
 The package root re-exports `./ui`, `./forms`, etc., so `from
 '@happyvertical/smrt-svelte'` also works; prefer the specific subpath in domain
@@ -235,6 +237,26 @@ await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has n
 - `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.
 - `@happyvertical/logger` (SDK) is a `dependency` — the console logger used for voice/AI error reporting in the form components. Consume it **only** through `src/internal/logger.ts`, never `createLogger()` at module scope: `createLogger()` reads `HAVE_LOGGER_LEVEL` from `process.env`, so a top-level call throws `ReferenceError: process is not defined` in the browser and kills client-side hydration under `vite dev` (prod builds tree-shake/define it away, so this only bites in dev). The `internal/logger` wrapper constructs the logger lazily and falls back to a bare `ConsoleLogger` when `process.env` is absent, keeping this browser-reachable module (imported by `Provider` + the form primitives) safe.
 - Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`, `@xenova/transformers`) and `chrono-node`.
+
+## Scalable settings catalog (`./settings`)
+
+`SettingsCatalog` is the shared search/browse/select/edit shell for large
+code-first or database-backed settings registries. Its interface accepts a
+server-produced `SettingsCatalogPage`: callers keep transport, authorization,
+and domain-specific editor forms, while the module owns compact result rows,
+GET search, query-preserving selection links, bounded pagination, result counts,
+empty states, and responsive list/detail layout.
+
+`paginateSettingsCatalog()` is the optional server helper for definitions that
+already live in memory (prompt and language registries). It searches before
+paging, clamps pages, caps rendered slices at 100 rows, and selects only one
+detail item. Database-backed callers should query their own page and construct
+the same `SettingsCatalogPage` interface directly rather than loading every row.
+
+The summary-row type and selected-detail type may differ: list pages can remain
+cheap while only the selected definition is fully resolved. This is the
+scalability contract; do not resolve every settings editor before passing data
+to the catalog.
 
 ## AdminShell workspace surface
 

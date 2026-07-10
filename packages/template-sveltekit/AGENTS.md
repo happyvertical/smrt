@@ -1,31 +1,50 @@
 # template-sveltekit
 
-Base SvelteKit project template used by `smrt init`. Scaffolds a full-stack, multi-tenant app with SMRT integration.
+Minimal SvelteKit project template used by `smrt gnode create --template=sveltekit`.
+It is the ground-up alternative to `smrt-saas-starter`.
 
 ## Exports
 
-- `getTemplatePath()` — returns path to template directory
-- `copyTemplate(destination, options)` — copies template files with project name substitution. Skips internal-only directories (e.g. `.svelte-kit/` tsconfig stub).
-- `templateInfo` — metadata (SvelteKit 2.x, Svelte 5, REST API, SMRT CLI, SQLite, multi-tenant)
+- `getTemplatePath()` returns the template directory.
+- `copyTemplate(destination, options)` copies authored files, substitutes the
+  project package name, and skips `.svelte-kit` plus test-fixture directories.
+- `templateInfo` describes the SvelteKit, SQLite, generated-interface, session,
+  tenancy, and permission foundation.
 
-## Template Contents
+## Current generated-project contract
 
-- `template/src/hooks.server.ts` — pre-wires `enableTenancy()`, `createSessionHandler({ enterTenantContext: true })`, and a subdomain → tenantId handle, sequenced in that order
-- `template/src/lib/server/tenancy.ts` — pluggable tenant resolver (`subdomainStrategy`, `pathPrefixStrategy`, `headerStrategy`, `createTenantResolver`)
-- `template/src/lib/server/smrt.ts` — centralized SmrtClassOptions / collection factory; imports the plugin-generated `smrt-register.js` (guarded — the file is gitignored and regenerated on every dev/build run) and seeds `.smrt/manifest.json` so server runtimes get package-qualified registrations + scanned field metadata (without them, writes silently drop domain columns)
-- `template/vite.config.ts` — smrtPlugin() + smrtConsumer(), plus explicit `oxc: { decorator: { legacy: true } }` (Vite 8's oxc transform does not reliably honor `experimentalDecorators` through the SvelteKit tsconfig `extends` chain)
-- `template/src/lib/objects/Item.ts` — example `@smrt()` object
-- `template/src/routes/+page.server.ts` + `+page.svelte` — reference SSR data loading: server load queries collections directly (opt-in read cache via `cache: { ttl }`), declares `depends('smrt:items')`, and a form action + `invalidate('smrt:items')` demonstrates post-mutation refresh
-- `template/src/app.d.ts` — `App.Locals` extends `SessionLocals` from `@happyvertical/smrt-users/sveltekit`
+- Node `>=24.18.0`; pnpm `10.34.4` via `packageManager` and `engines`.
+- Directly used `@happyvertical/smrt-*` packages are pinned to `0.38.25`.
+- `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
+  its binary. `@happyvertical/smrt-web` stays opt-in until a page imports it.
+- `smrtConsumer()` explicitly consumes profiles, tenancy, and users manifests;
+  `smrtPlugin()` scans `src/lib/objects`, generates Vite virtual definitions,
+  SvelteKit routes, runtime registration, and knowledge artifacts.
+- `pnpm db:migrate` builds first to refresh generated artifacts, then runs the
+  current manifest-driven migration command. Do not restore deprecated
+  `smrt db:setup` documentation.
 
-## Test Infrastructure
+## Application patterns
 
-- Tests live in `__tests__/` at the package root — **not** inside `template/` — because `cpSync` would otherwise scaffold them into consumer projects.
-- The template's `template/tsconfig.json` extends `./.svelte-kit/tsconfig.json` (per SvelteKit convention). To let the package run its tests without first running `svelte-kit sync`, a vitest `globalSetup` hook at `__tests__/setup/svelte-kit-stub.ts` writes a minimal stub at test startup and removes it at teardown. The stub directory is gitignored AND `copyTemplate()` filters it out as defense-in-depth.
+- `src/hooks.server.ts` stores a URL-selected tenant candidate separately, then
+  lets `createSessionHandler({ enterTenantContext: true })` establish the only
+  authorized tenant context. Never turn an untrusted header into authority.
+- `src/lib/server/smrt.ts` imports generated local registrations, loads the
+  generated manifest metadata, and uses the public users request-scoped DB API.
+- `Item` is the single example object and demonstrates optional tenant scope,
+  a REST writable allowlist, shared CRUD action metadata, and the explicit
+  collection registration required by generated CLI/MCP runtime commands.
+- Initial data comes from `+page.server.ts`; loads declare
+  `depends('smrt:items')`, mutations call `invalidate('smrt:items')`, and
+  hand-written writes call `assertOperationPermission()` with the session's
+  exact permission snapshot.
+- The root layout uses Provider, the current smrt-ui ThemeProvider, AdminShell,
+  and a small explicit TenantNav. Generated REST routes do not imply page routes.
+- WebMCP and live browser data examples are opt-in per page and must seed live
+  collections from SSR `initialData` to avoid a duplicate first request.
 
-## Key Patterns
+## Tests
 
-- **SSR data loading convention**: reference pages load collection data in `+page.server.ts` (serialized into the HTML, hydrated without a duplicate client fetch). Loads declare `depends('smrt:<collection>')` (REST route segment naming: `/api/items` → `smrt:items`); mutations call `invalidate('smrt:<collection>')` to re-run them.
-- **Pluggable tenant resolver**: `tenancy.ts` exports strategy functions + a `createTenantResolver()` factory. Consumers swap strategies by editing one line.
-- **File copying with placeholder substitution**: project name is replaced in template files during generation.
-- **No template-internal test pollution**: `__tests__/` and the `.svelte-kit/` stub are package-level and excluded from `copyTemplate` output.
+Tests live in package-level `__tests__/`, never under `template/`. Vitest's
+global setup creates a temporary `.svelte-kit/tsconfig.json` stub and removes it
+afterward; `copyTemplate()` filters the directory as defense in depth.

@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Ensures all @happyvertical SDK packages in the pnpm catalog and package.json
+# Ensures all @happyvertical SDK packages in the pnpm catalog and workspace
 # overrides use the same version. Standalone packages (ocr, pdf, spider) are
 # versioned independently and excluded.
 set -euo pipefail
 
 WORKSPACE_FILE="pnpm-workspace.yaml"
-PACKAGE_FILE="package.json"
 STANDALONE_PACKAGES="ocr|pdf|spider"
 
 if [ ! -f "$WORKSPACE_FILE" ]; then
@@ -13,8 +12,18 @@ if [ ! -f "$WORKSPACE_FILE" ]; then
   exit 1
 fi
 
-# Extract SDK catalog versions (exclude standalone packages)
-catalog_versions=$(grep "^  '@happyvertical/" "$WORKSPACE_FILE" \
+extract_section_entries() {
+  local section=$1
+  awk -v header="${section}:" '
+    $0 == header { in_section = 1; next }
+    in_section && /^[^[:space:]#]/ { exit }
+    in_section && /^  '\''@happyvertical\// { print }
+  ' "$WORKSPACE_FILE"
+}
+
+# Extract only the catalog block; pnpm 11 also stores overrides in this file.
+catalog_entries=$(extract_section_entries catalog)
+catalog_versions=$(printf '%s\n' "$catalog_entries" \
   | grep -vE "/(${STANDALONE_PACKAGES})'" \
   | awk -F': ' '{print $2}' || true)
 
@@ -29,7 +38,7 @@ catalog_count=$(echo "$unique_catalog" | wc -l | tr -d ' ')
 if [ "$catalog_count" -ne 1 ]; then
   echo "ERROR: SDK packages in $WORKSPACE_FILE catalog have mismatched versions:"
   echo ""
-  grep "^  '@happyvertical/" "$WORKSPACE_FILE" | grep -vE "/(${STANDALONE_PACKAGES})'"
+  printf '%s\n' "$catalog_entries" | grep -vE "/(${STANDALONE_PACKAGES})'"
   echo ""
   echo "All SDK packages must use the same version. Found:"
   echo "$unique_catalog"
@@ -38,35 +47,32 @@ fi
 
 echo "OK: Catalog SDK packages at ${unique_catalog}"
 
-# Also check pnpm.overrides in package.json if present
-if [ -f "$PACKAGE_FILE" ]; then
-  # Extract only lines that look like override entries: "  "@happyvertical/foo": "^x.y.z"
-  override_versions=$(grep -E '^\s+"@happyvertical/[^"]+": "\^' "$PACKAGE_FILE" \
-    | grep -vE "/(smrt-|ocr|pdf|spider)" \
-    | sed 's/.*": *"\(.*\)".*/\1/' || true)
+# Also check SDK entries in the pnpm 11 workspace overrides block.
+override_entries=$(extract_section_entries overrides \
+  | grep -vE "'@happyvertical/(smrt-|ocr|pdf|spider)" || true)
+override_versions=$(printf '%s\n' "$override_entries" \
+  | awk -F': ' 'NF > 1 {print $2}' || true)
 
-  if [ -n "$override_versions" ]; then
-    unique_overrides=$(echo "$override_versions" | sort -u)
-    override_count=$(echo "$unique_overrides" | wc -l | tr -d ' ')
+if [ -n "$override_versions" ]; then
+  unique_overrides=$(echo "$override_versions" | sort -u)
+  override_count=$(echo "$unique_overrides" | wc -l | tr -d ' ')
 
-    if [ "$override_count" -ne 1 ]; then
-      echo "ERROR: SDK packages in $PACKAGE_FILE overrides have mismatched versions:"
-      echo ""
-      grep -E '^\s+"@happyvertical/[^"]+": "\^' "$PACKAGE_FILE" \
-        | grep -vE "/(smrt-|ocr|pdf|spider)"
-      echo ""
-      echo "Found:"
-      echo "$unique_overrides"
-      exit 1
-    fi
-
-    if [ "$unique_overrides" != "$unique_catalog" ]; then
-      echo "ERROR: Override version ($unique_overrides) does not match catalog version ($unique_catalog)."
-      exit 1
-    fi
-
-    echo "OK: Override SDK packages at ${unique_overrides}"
+  if [ "$override_count" -ne 1 ]; then
+    echo "ERROR: SDK packages in $WORKSPACE_FILE overrides have mismatched versions:"
+    echo ""
+    printf '%s\n' "$override_entries"
+    echo ""
+    echo "Found:"
+    echo "$unique_overrides"
+    exit 1
   fi
+
+  if [ "$unique_overrides" != "$unique_catalog" ]; then
+    echo "ERROR: Override version ($unique_overrides) does not match catalog version ($unique_catalog)."
+    exit 1
+  fi
+
+  echo "OK: Override SDK packages at ${unique_overrides}"
 fi
 
 echo "OK: All SDK versions aligned."

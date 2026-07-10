@@ -21,7 +21,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendChange,
   bumpChangeFeed,
@@ -567,6 +567,37 @@ describe('change feed spine (issue #1758)', () => {
       expect(page.cursor).toBe(1);
       expect(page.resyncRequired).toBe(true);
       expect(page.resyncCursor).toBe(5);
+    });
+  });
+
+  describe('append allocation', () => {
+    it('retries SDK-wrapped Postgres unique violations', async () => {
+      const wrappedUniqueViolation = Object.assign(
+        new Error('Failed to execute raw query'),
+        {
+          code: 'DATABASE_ERROR',
+          context: {
+            originalError:
+              'duplicate key value violates unique constraint "_smrt_changes_pkey", code=23505, detail=Key (seq)=(1) already exists.',
+          },
+        },
+      );
+      const query = vi
+        .fn()
+        .mockRejectedValueOnce(wrappedUniqueViolation)
+        .mockResolvedValueOnce({ rows: [{ seq: 1 }] });
+      const postgresDb = {
+        url: 'postgresql://ci.invalid/smrt',
+        query,
+      } as unknown as DatabaseInterface;
+
+      await expect(
+        appendChange(postgresDb, {
+          table: 'products',
+          rowId: 'product-1',
+        }),
+      ).resolves.toBe(1);
+      expect(query).toHaveBeenCalledTimes(2);
     });
   });
 

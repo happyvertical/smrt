@@ -62,8 +62,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     appPanel?: Snippet;
     tenantRail?: Snippet;
     tenantPanel?: Snippet;
+    tenantFooter?: Snippet;
     focusRail?: Snippet;
-    focusPanel?: Snippet;
+    focusPanel?: Snippet<[{ tool: ShellFocusTool | null }]>;
     systemBar?: Snippet;
     systemPanel?: Snippet;
     topLeftCorner?: Snippet;
@@ -86,6 +87,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     appPanel,
     tenantRail,
     tenantPanel,
+    tenantFooter,
     focusRail,
     focusPanel,
     systemBar,
@@ -112,11 +114,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   setAdminShell(shell);
 
   let shortcutsOpen = $state(false);
-  const activeFocusTool = $derived(
-    shell.focusTools.find((tool) => tool.id === shell.activeFocusToolId) ??
+  function resolveActiveFocusTool(): ShellFocusTool | null {
+    return (
+      shell.focusTools.find((tool) => tool.id === shell.activeFocusToolId) ??
       shell.focusTools[0] ??
-      null,
-  );
+      null
+    );
+  }
   const shortcutEdges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 
   onMount(() => {
@@ -168,6 +172,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   function hotkeyFor(edge: PanelEdge): string {
     return formatHotkeyBinding(
       resolveHotkey(edge, shell.config.panels[edge], shell.settings),
+    );
+  }
+
+  function showsHotkeyFor(edge: PanelEdge): boolean {
+    return (
+      shell.settings.hotkeysEnabled !== false &&
+      resolveHotkey(edge, shell.config.panels[edge], shell.settings) !== null
     );
   }
 
@@ -226,14 +237,16 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     onclick={() => shell.togglePanel(edge)}
   >
     <span>{labelFor(edge)}</span>
-    <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
+    {#if showsHotkeyFor(edge)}
+      <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
+    {/if}
     <ActivityBadge {edge} />
   </Button>
 {/snippet}
 
 {#snippet focusContent(tool: ShellFocusTool | null)}
   {#if focusPanel}
-    {@render focusPanel()}
+    {@render focusPanel({ tool })}
   {:else if tool?.render}
     {@render tool.render({ tool })}
   {:else if tool?.component}
@@ -312,13 +325,22 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     >
       <div class="smrt-admin-shell__rail">
         {#if edgeExpanded('left')}
-          {#if tenantPanel}
-            {@render tenantPanel()}
-          {:else if tenantRail}
-            {@render tenantRail()}
-          {:else}
-            {@render edgeToggle('left')}
-          {/if}
+          <div class="smrt-admin-shell__tenant-stack">
+            <div class="smrt-admin-shell__tenant-content">
+              {#if tenantPanel}
+                {@render tenantPanel()}
+              {:else if tenantRail}
+                {@render tenantRail()}
+              {:else}
+                {@render edgeToggle('left')}
+              {/if}
+            </div>
+            {#if tenantFooter}
+              <div class="smrt-admin-shell__tenant-footer">
+                {@render tenantFooter()}
+              </div>
+            {/if}
+          </div>
         {:else if tenantRail}
           {@render tenantRail()}
         {:else}
@@ -349,7 +371,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       </div>
       {#if edgeExpanded('right')}
         <div class="smrt-admin-shell__panel smrt-admin-shell__panel--right">
-          {@render focusContent(activeFocusTool)}
+          {#key shell.activeFocusToolId}
+            {@render focusContent(resolveActiveFocusTool())}
+          {/key}
         </div>
       {/if}
     </aside>
@@ -457,6 +481,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-top-track) minmax(0, 1fr)
       var(--smrt-admin-shell-bottom-track);
     min-block-size: 100svh;
+    block-size: 100svh;
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     overflow: hidden;
@@ -559,6 +584,32 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     block-size: 100%;
     overflow: auto;
     padding: var(--smrt-spacing-3);
+  }
+
+  .smrt-admin-shell__edge--left[data-state='expanded']
+    .smrt-admin-shell__rail {
+    overflow: hidden;
+  }
+
+  .smrt-admin-shell__tenant-stack {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: var(--smrt-spacing-3);
+    min-width: 0;
+    min-height: 0;
+    block-size: 100%;
+  }
+
+  .smrt-admin-shell__tenant-content {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .smrt-admin-shell__tenant-footer {
+    min-width: 0;
+    padding-block-start: var(--smrt-spacing-3);
+    border-block-start: 1px solid var(--smrt-color-outline-variant);
   }
 
   .smrt-admin-shell__edge--right[data-state='expanded']

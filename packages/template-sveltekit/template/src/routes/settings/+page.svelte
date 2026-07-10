@@ -9,7 +9,7 @@
 </script>
 
 <svelte:head>
-  <title>Settings · SMRT App</title>
+  <title>Settings · s-m-r-t app</title>
 </svelte:head>
 
 <section class="settings">

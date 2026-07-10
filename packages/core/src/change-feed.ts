@@ -281,8 +281,41 @@ function getQueryRows(result: unknown): Record<string, unknown>[] {
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
+  const signals: string[] = [];
+  const pending: unknown[] = [error];
+  const seen = new Set<object>();
+
+  while (pending.length > 0 && seen.size < 5) {
+    const candidate = pending.shift();
+    if (typeof candidate === 'string') {
+      signals.push(candidate);
+      continue;
+    }
+    if (!candidate || typeof candidate !== 'object' || seen.has(candidate)) {
+      continue;
+    }
+    seen.add(candidate);
+
+    const shaped = candidate as {
+      cause?: unknown;
+      code?: unknown;
+      context?: unknown;
+      message?: unknown;
+    };
+    if (typeof shaped.message === 'string') signals.push(shaped.message);
+    if (typeof shaped.code === 'string') signals.push(shaped.code);
+    if (shaped.cause !== undefined) pending.push(shaped.cause);
+
+    if (shaped.context && typeof shaped.context === 'object') {
+      const originalError = (shaped.context as { originalError?: unknown })
+        .originalError;
+      if (originalError !== undefined) pending.push(originalError);
+    }
+  }
+
+  const message = signals.join(', ');
   return (
+    /\b23505\b/.test(message) ||
     /unique constraint/i.test(message) ||
     /duplicate key/i.test(message) ||
     /primary key constraint/i.test(message) ||

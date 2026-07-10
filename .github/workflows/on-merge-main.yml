@@ -30,8 +30,8 @@ jobs:
   # Cancel any in-progress PR validation checks when PR is merged
   cancel-pr-checks:
     name: Cancel PR Validation Checks
-    if: github.event_name == 'push'
-    runs-on: arc-happyvertical
+    if: github.event_name == 'push' && vars.CI_MERGE_QUEUE_ENABLED != 'true'
+    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
 
     steps:
       - name: Checkout repository
@@ -103,7 +103,7 @@ jobs:
   # Run tests
   test:
     name: Test
-    if: always()
+    if: vars.CI_MERGE_QUEUE_ENABLED != 'true'
     uses: ./.github/workflows/test.yml
     permissions:
       contents: read
@@ -113,7 +113,7 @@ jobs:
   build:
     name: Build
     needs: test
-    if: always() && needs.test.result == 'success'
+    if: vars.CI_MERGE_QUEUE_ENABLED != 'true' && needs.test.result == 'success'
     uses: ./.github/workflows/build.yml
     permissions:
       contents: read
@@ -122,10 +122,10 @@ jobs:
   # Publish packages and deploy docs
   publish:
     name: Publish
-    needs: build
+    needs: [test, build]
     if: |
       always() &&
-      needs.build.result == 'success'
+      (vars.CI_MERGE_QUEUE_ENABLED == 'true' || needs.build.result == 'success')
     uses: ./.github/workflows/publish.yml
     secrets: inherit
     permissions:
