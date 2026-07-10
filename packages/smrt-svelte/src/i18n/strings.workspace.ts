@@ -68,6 +68,9 @@ export const M = defineMessages({
   'ui.system_scope_panel.no_running_work': 'No running work',
   'ui.system_status_chips.system_status': 'System status',
   'ui.tenant_nav.tenant_navigation': 'Tenant navigation',
+  'ui.workspace_account_menu.open': 'Open account menu',
+  'ui.workspace_account_menu.current_tenant': '{tenant} — current',
+  'ui.workspace_account_menu.sign_out': 'Sign out',
 
   // web/activity-feed adapter demo (#1779) — playground/admin-shell-activity-feed
   'ui.activity_feed.title': 'Live activity feed',

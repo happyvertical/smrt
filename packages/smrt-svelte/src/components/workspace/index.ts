@@ -72,8 +72,10 @@ export type {
   ShellSystemItem,
   ShellSystemPanel,
   VisiblePanelState,
+  WorkspaceAccountTenant,
 } from './admin-shell/types.js';
 export { EDGE_SCOPES, PANEL_EDGES, SCOPE_EDGES } from './admin-shell/types.js';
+export { default as WorkspaceAccountMenu } from './admin-shell/WorkspaceAccountMenu.svelte';
 
 export {
   type NavSection,
