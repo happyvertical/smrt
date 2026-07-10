@@ -70,6 +70,11 @@ describePostgres('Postgres permission RLS', () => {
   let isolated: IsolatedTestDbResult | undefined;
   let adminDb: DatabaseInterface | undefined;
   let roleName = '';
+  let rowAId = '';
+  let rowBId = '';
+  let tenantAId = '';
+  let tenantBId = '';
+  let tenantCId = '';
 
   beforeEach(async () => {
     isolated = await createIsolatedTestDbFromManifest();
@@ -83,30 +88,44 @@ describePostgres('Postgres permission RLS', () => {
       url: isolated.config.url,
     });
 
-    roleName = `smrt_users_rls_${randomUUID().replaceAll('-', '_')}`;
+    rowAId = randomUUID();
+    rowBId = randomUUID();
+    tenantAId = randomUUID();
+    tenantBId = randomUUID();
+    tenantCId = randomUUID();
 
     await adminDb.query('TRUNCATE TABLE public.permission_rls_records');
     await adminDb.query(
-      [
-        'INSERT INTO public.permission_rls_records',
-        '  (id, slug, context, tenant_id, title)',
-        'VALUES',
-        "  ('row-a', 'row-a', '', 'tenant-a', 'Tenant A'),",
-        "  ('row-b', 'row-b', '', 'tenant-b', 'Tenant B')",
-      ].join('\n'),
+      `INSERT INTO public.permission_rls_records
+        (id, slug, context, tenant_id, title)
+      VALUES
+        ($1, 'row-a', '', $2, 'Tenant A'),
+        ($3, 'row-b', '', $4, 'Tenant B')`,
+      rowAId,
+      tenantAId,
+      rowBId,
+      tenantBId,
     );
 
     await applyPostgresPermissionPolicies({
       db: { type: 'postgres', url: isolated.config.url },
     });
 
-    await adminDb.query(
-      `CREATE ROLE "${roleName}" LOGIN PASSWORD 'postgres' NOSUPERUSER NOBYPASSRLS`,
-    );
-    await adminDb.query(`GRANT USAGE ON SCHEMA public TO "${roleName}"`);
-    await adminDb.query(
-      `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.permission_rls_records TO "${roleName}"`,
-    );
+    const currentRole = rowsOf(
+      await adminDb.query(
+        'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+      ),
+    )[0];
+    if (currentRole?.rolsuper === true || currentRole?.rolbypassrls === true) {
+      roleName = `smrt_users_rls_${randomUUID().replaceAll('-', '_')}`;
+      await adminDb.query(
+        `CREATE ROLE "${roleName}" LOGIN PASSWORD 'postgres' NOSUPERUSER NOBYPASSRLS`,
+      );
+      await adminDb.query(`GRANT USAGE ON SCHEMA public TO "${roleName}"`);
+      await adminDb.query(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.permission_rls_records TO "${roleName}"`,
+      );
+    }
   });
 
   afterEach(async () => {
@@ -156,7 +175,7 @@ describePostgres('Postgres permission RLS', () => {
 
     const tx = await transactionFactory.beginTransaction();
     try {
-      await tx.query(`SET ROLE "${roleName}"`);
+      if (roleName) await tx.query(`SET ROLE "${roleName}"`);
       await setSessionContext(tx, permissions, tenantId, options);
       await fn(tx);
     } finally {
@@ -169,18 +188,18 @@ describePostgres('Postgres permission RLS', () => {
   it('enforces read visibility by tenant and permission', async () => {
     await withRoleTransaction(
       ['permission_rls_records.read'],
-      'tenant-a',
+      tenantAId,
       async (tx) => {
         const result = await tx.query(
-          'SELECT id FROM public.permission_rls_records ORDER BY id',
+          'SELECT id FROM public.permission_rls_records ORDER BY slug',
         );
-        expect(rowsOf(result).map((row) => row.id)).toEqual(['row-a']);
+        expect(rowsOf(result).map((row) => row.id)).toEqual([rowAId]);
       },
     );
 
     await withRoleTransaction(
       ['permission_rls_records.read'],
-      'tenant-c',
+      tenantCId,
       async (tx) => {
         const result = await tx.query(
           'SELECT id FROM public.permission_rls_records ORDER BY id',
@@ -189,7 +208,7 @@ describePostgres('Postgres permission RLS', () => {
       },
     );
 
-    await withRoleTransaction([], 'tenant-a', async (tx) => {
+    await withRoleTransaction([], tenantAId, async (tx) => {
       const result = await tx.query(
         'SELECT id FROM public.permission_rls_records ORDER BY id',
       );
@@ -198,26 +217,28 @@ describePostgres('Postgres permission RLS', () => {
   });
 
   it('enforces insert, update, delete, and bypass semantics', async () => {
+    const rowCId = randomUUID();
+    const rowDId = randomUUID();
     await withRoleTransaction(
       ['permission_rls_records.create'],
-      'tenant-a',
+      tenantAId,
       async (tx) => {
         const inserted = await tx.query(
-          [
-            'INSERT INTO public.permission_rls_records',
-            '  (id, slug, context, tenant_id, title)',
-            "VALUES ('row-c', 'row-c', '', 'tenant-a', 'Tenant C')",
-          ].join('\n'),
+          `INSERT INTO public.permission_rls_records
+            (id, slug, context, tenant_id, title)
+          VALUES ($1, 'row-c', '', $2, 'Tenant C')`,
+          rowCId,
+          tenantAId,
         );
         expect(rowCountOf(inserted)).toBe(1);
 
         await expect(
           tx.query(
-            [
-              'INSERT INTO public.permission_rls_records',
-              '  (id, slug, context, tenant_id, title)',
-              "VALUES ('row-d', 'row-d', '', 'tenant-b', 'Tenant D')",
-            ].join('\n'),
+            `INSERT INTO public.permission_rls_records
+              (id, slug, context, tenant_id, title)
+            VALUES ($1, 'row-d', '', $2, 'Tenant D')`,
+            rowDId,
+            tenantBId,
           ),
         ).rejects.toThrow(/row-level security/i);
       },
@@ -225,23 +246,21 @@ describePostgres('Postgres permission RLS', () => {
 
     await withRoleTransaction(
       ['permission_rls_records.read', 'permission_rls_records.update'],
-      'tenant-a',
+      tenantAId,
       async (tx) => {
         const updated = await tx.query(
-          [
-            'UPDATE public.permission_rls_records',
-            "SET title = 'Tenant A Updated'",
-            "WHERE id = 'row-a'",
-          ].join('\n'),
+          `UPDATE public.permission_rls_records
+          SET title = 'Tenant A Updated'
+          WHERE id = $1`,
+          rowAId,
         );
         expect(rowCountOf(updated)).toBe(1);
 
         const blocked = await tx.query(
-          [
-            'UPDATE public.permission_rls_records',
-            "SET title = 'Tenant B Updated'",
-            "WHERE id = 'row-b'",
-          ].join('\n'),
+          `UPDATE public.permission_rls_records
+          SET title = 'Tenant B Updated'
+          WHERE id = $1`,
+          rowBId,
         );
         expect(rowCountOf(blocked)).toBe(0);
       },
@@ -249,21 +268,17 @@ describePostgres('Postgres permission RLS', () => {
 
     await withRoleTransaction(
       ['permission_rls_records.read', 'permission_rls_records.delete'],
-      'tenant-a',
+      tenantAId,
       async (tx) => {
         const deleted = await tx.query(
-          [
-            'DELETE FROM public.permission_rls_records',
-            "WHERE id = 'row-a'",
-          ].join('\n'),
+          'DELETE FROM public.permission_rls_records WHERE id = $1',
+          rowAId,
         );
         expect(rowCountOf(deleted)).toBe(1);
 
         const blocked = await tx.query(
-          [
-            'DELETE FROM public.permission_rls_records',
-            "WHERE id = 'row-b'",
-          ].join('\n'),
+          'DELETE FROM public.permission_rls_records WHERE id = $1',
+          rowBId,
         );
         expect(rowCountOf(blocked)).toBe(0);
       },
@@ -271,12 +286,12 @@ describePostgres('Postgres permission RLS', () => {
 
     await withRoleTransaction(
       [],
-      'tenant-a',
+      tenantAId,
       async (tx) => {
         const result = await tx.query(
-          'SELECT id FROM public.permission_rls_records ORDER BY id',
+          'SELECT id FROM public.permission_rls_records ORDER BY slug',
         );
-        expect(rowsOf(result).map((row) => row.id)).toEqual(['row-a', 'row-b']);
+        expect(rowsOf(result).map((row) => row.id)).toEqual([rowAId, rowBId]);
       },
       {
         superAdminBypass: true,
@@ -285,17 +300,18 @@ describePostgres('Postgres permission RLS', () => {
 
     await withRoleTransaction(
       [],
-      'tenant-a',
+      tenantAId,
       async (tx) => {
+        const systemRowId = randomUUID();
         const inserted = await tx.query(
-          [
-            'INSERT INTO public.permission_rls_records',
-            '  (id, slug, context, tenant_id, title)',
-            "VALUES ('row-system', 'row-system', '', 'tenant-b', 'System Insert')",
-            'RETURNING id',
-          ].join('\n'),
+          `INSERT INTO public.permission_rls_records
+            (id, slug, context, tenant_id, title)
+          VALUES ($1, 'row-system', '', $2, 'System Insert')
+          RETURNING id`,
+          systemRowId,
+          tenantBId,
         );
-        expect(rowsOf(inserted).map((row) => row.id)).toEqual(['row-system']);
+        expect(rowsOf(inserted).map((row) => row.id)).toEqual([systemRowId]);
       },
       {
         systemContext: true,
@@ -335,28 +351,29 @@ describePostgres('Postgres permission RLS', () => {
       db: { type: 'postgres', url: isolated?.config.url },
     });
 
-    await withRoleTransaction(['audits.inspect'], 'tenant-a', async (tx) => {
+    await withRoleTransaction(['audits.inspect'], tenantAId, async (tx) => {
       const selected = await tx.query(
         'SELECT id FROM public.permission_rls_records ORDER BY id',
       );
-      expect(rowsOf(selected).map((row) => row.id)).toEqual(['row-a']);
+      expect(rowsOf(selected).map((row) => row.id)).toEqual([rowAId]);
 
+      const auditRowId = randomUUID();
       const inserted = await tx.query(
-        [
-          'INSERT INTO public.permission_rls_records',
-          '  (id, slug, context, tenant_id, title)',
-          "VALUES ('row-audit', 'row-audit', '', 'tenant-a', 'Audit Insert')",
-        ].join('\n'),
+        `INSERT INTO public.permission_rls_records
+          (id, slug, context, tenant_id, title)
+        VALUES ($1, 'row-audit', '', $2, 'Audit Insert')`,
+        auditRowId,
+        tenantAId,
       );
       expect(rowCountOf(inserted)).toBe(1);
 
       await expect(
         tx.query(
-          [
-            'INSERT INTO public.permission_rls_records',
-            '  (id, slug, context, tenant_id, title)',
-            "VALUES ('row-audit-blocked', 'row-audit-blocked', '', 'tenant-b', 'Blocked Insert')",
-          ].join('\n'),
+          `INSERT INTO public.permission_rls_records
+            (id, slug, context, tenant_id, title)
+          VALUES ($1, 'row-audit-blocked', '', $2, 'Blocked Insert')`,
+          randomUUID(),
+          tenantBId,
         ),
       ).rejects.toThrow(/row-level security/i);
     });
