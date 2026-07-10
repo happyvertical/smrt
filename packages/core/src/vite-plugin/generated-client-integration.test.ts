@@ -20,7 +20,13 @@
  *   a BARE array for list, and snake_case `created_at` on the wire.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -115,19 +121,71 @@ describe('generated client <-> generated server integration (#1794/#1796/#1797)'
     );
     writeFileSync(
       join(projectRoot, 'src', 'objects.ts'),
-      `import { SmrtObject } from '@happyvertical/smrt-core';
+      `import { SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
 
-@smrt({ api: { public: true } })
+@smrt({
+  api: {
+    public: true,
+    routes: {
+      findFeatured: { method: 'GET' },
+      invalidItemScope: { scope: 'item' },
+    },
+  },
+})
+export class GenClientProductCollection extends SmrtCollection<GenClientProduct> {
+  static readonly _itemClass = GenClientProduct;
+
+  async list(): Promise<GenClientProduct[]> {
+    return super.list();
+  }
+
+  async findFeatured(options: { category?: string } = {}): Promise<GenClientProduct[]> {
+    return this.list({ where: { featured: true, ...options } });
+  }
+
+  async search(filters: { term?: string } = {}): Promise<GenClientProduct[]> {
+    return this.list({ where: filters });
+  }
+
+  async invalidItemScope(): Promise<GenClientProduct[]> {
+    return this.list();
+  }
+}
+
+@smrt({
+  api: {
+    public: true,
+    routes: { invalidCollectionScope: { scope: 'collection' } },
+  },
+})
 export class GenClientProduct extends SmrtObject {
   name: string = '';
   price: number = 0;
+
+  async invalidCollectionScope(): Promise<GenClientProduct> {
+    return this;
+  }
+}
+
+@smrt({
+  api: {
+    public: true,
+    routes: { describe: { path: 'descriptions/[tone]' } },
+  },
+})
+export class ArtCollection extends SmrtObject {
+  async describe(tone: string): Promise<string> {
+    void tone;
+    return 'item model, not SmrtCollection';
+  }
 }
 `,
     );
 
     const plugin: any = smrtPlugin({
-      generateTypes: false,
+      generateTypes: true,
       include: ['src/**/*.ts'],
+      watch: false,
     });
     await plugin.configResolved?.call(plugin, {
       root: projectRoot,
@@ -135,6 +193,11 @@ export class GenClientProduct extends SmrtObject {
       plugins: [],
       build: {},
     } as any);
+    getHook(plugin, 'configureServer').call(plugin, {
+      config: { root: projectRoot },
+      middlewares: { use: vi.fn() },
+    });
+    await getHook(plugin, 'buildStart').call(plugin);
 
     const load = getHook(plugin, 'load').bind(plugin);
     const clientSource = (await load('\0smrt:client')) as string;
@@ -143,6 +206,30 @@ export class GenClientProduct extends SmrtObject {
     // inflection change surfaces as a readable failure rather than an
     // `undefined.list()` TypeError below.
     expect(clientSource).toContain('genclientproducts:');
+    expect(clientSource).toContain('genClientProductCollection:');
+    expect(clientSource.match(/\n {2}genclientproducts:/g)).toHaveLength(1);
+    expect(clientSource).toContain('findFeatured: (options)');
+    expect(clientSource).not.toContain('findFeatured: (id, options)');
+    expect(clientSource).not.toContain('list: (id, options)');
+    expect(clientSource).not.toContain('invalidItemScope: (');
+    expect(clientSource).not.toContain('invalidCollectionScope: (');
+    expect(clientSource).toContain('describe: (id, options)');
+    expect(clientSource).not.toContain('describe: (options)');
+    const declarationSource = readFileSync(
+      join(projectRoot, 'src', 'types', 'virtual-modules.d.ts'),
+      'utf-8',
+    );
+    expect(declarationSource).toContain(
+      'genClientProductCollection: Omit<CrudOperations<GenClientProductData>, "search"> & {',
+    );
+    expect(declarationSource).not.toContain('invalidItemScope(');
+    expect(declarationSource).not.toContain('invalidCollectionScope(');
+    expect(declarationSource).toContain(
+      'findFeatured(options?: Record<string, any>): Promise<any>;',
+    );
+    expect(declarationSource).toContain(
+      'describe(id: string, options: { tone: string }): Promise<any>;',
+    );
 
     // Evaluate the generated ESM the way a bundler would: write it to disk and
     // dynamic-import it. This exercises the ACTUAL emitted source, not a
@@ -212,6 +299,58 @@ export class GenClientProduct extends SmrtObject {
     // A 404 would have surfaced `{ error: "Object type '...' not found" }`,
     // which is NOT an array of products.
     expect(rows.some((r) => r.name === 'Widget')).toBe(true);
+  });
+
+  it('uses collection-scoped URLs and configured verbs for generated collection methods', async () => {
+    const collectionHandler = vi.fn(async (req: Request) => {
+      const url = new URL(req.url);
+      expect(url.pathname).toBe('/api/v1/genclientproducts/findFeatured');
+      expect(url.searchParams.get('category')).toBe('news');
+      expect(req.method).toBe('GET');
+      expect(await req.text()).toBe('');
+      return Response.json({
+        action: 'findFeatured',
+        result: [{ name: 'Featured widget' }],
+      });
+    });
+    stubFetchToServer(collectionHandler);
+
+    const client = createClient('/api/v1');
+    const collectionClient =
+      client.genClientProductCollection as typeof client.genClientProductCollection & {
+        findFeatured(options?: Record<string, unknown>): Promise<unknown>;
+      };
+    const result = await collectionClient.findFeatured({ category: 'news' });
+
+    expect(result).toEqual([{ name: 'Featured widget' }]);
+    expect(collectionHandler).toHaveBeenCalledOnce();
+  });
+
+  it('preserves custom collection search methods instead of masking them with the generic fetcher', async () => {
+    const collectionHandler = vi.fn(async (req: Request) => {
+      expect(new URL(req.url).pathname).toBe(
+        '/api/v1/genclientproducts/search',
+      );
+      expect(req.method).toBe('POST');
+      expect(await req.json()).toEqual({ filters: { term: 'widget' } });
+      return Response.json({
+        action: 'search',
+        result: [{ name: 'Widget' }],
+      });
+    });
+    stubFetchToServer(collectionHandler);
+
+    const client = createClient('/api/v1');
+    const collectionClient =
+      client.genClientProductCollection as typeof client.genClientProductCollection & {
+        search(options?: Record<string, unknown>): Promise<unknown>;
+      };
+    const result = await collectionClient.search({
+      filters: { term: 'widget' },
+    });
+
+    expect(result).toEqual([{ name: 'Widget' }]);
+    expect(collectionHandler).toHaveBeenCalledOnce();
   });
 
   it('#1797: list() returns a BARE array whose items carry snake_case created_at', async () => {
