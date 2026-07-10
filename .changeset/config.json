@@ -47,6 +47,7 @@
       "@happyvertical/smrt-secrets",
       "@happyvertical/smrt-sites",
       "@happyvertical/smrt-subscriptions",
+      "@happyvertical/smrt-support",
       "@happyvertical/smrt-tags",
       "@happyvertical/smrt-tenancy",
       "@happyvertical/smrt-template-site-static-json",
