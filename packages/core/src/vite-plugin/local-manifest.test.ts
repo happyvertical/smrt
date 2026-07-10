@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { smrtPlugin } from './index';
 
 function createExternalSmrtPackage(
@@ -177,30 +177,43 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     expect(knowledge.tags).toEqual(['project-default']);
   });
 
-  it('should write .smrt/manifest.json during buildStart', async () => {
+  it('reuses the initial scan and rescans subsequent watch builds', async () => {
     const plugin = smrtPlugin({
       include: ['src/**/*.ts'],
       generateTypes: false,
     });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    // configResolved must be called first to set projectRoot
-    await (plugin as any).configResolved({
-      root: tmpDir,
-      build: {},
-      plugins: [],
-    });
+    try {
+      // configResolved seeds the manifest used by the first buildStart hook.
+      await (plugin as any).configResolved({
+        root: tmpDir,
+        build: {},
+        plugins: [],
+      });
+      await (plugin as any).buildStart();
 
-    // Remove the manifest written by configResolved
-    const manifestPath = join(tmpDir, '.smrt', 'manifest.json');
-    if (existsSync(manifestPath)) {
-      rmSync(manifestPath);
+      const scanCount = () =>
+        logSpy.mock.calls.filter(([message]) =>
+          String(message).includes('[smrt] OXC scan completed'),
+        ).length;
+      expect(scanCount()).toBe(1);
+
+      // A later buildStart represents a watch rebuild and must rescan changes.
+      createLocalSmrtObject(tmpDir);
+      await (plugin as any).buildStart();
+      expect(scanCount()).toBe(2);
+
+      const manifestPath = join(tmpDir, '.smrt', 'manifest.json');
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      expect(
+        Object.values<any>(manifest.objects).some(
+          (objectDef) => objectDef.className === 'LocalThing',
+        ),
+      ).toBe(true);
+    } finally {
+      logSpy.mockRestore();
     }
-
-    // Now call buildStart
-    await (plugin as any).buildStart();
-
-    // Verify .smrt/manifest.json was written again
-    expect(existsSync(manifestPath)).toBe(true);
   });
 
   it('should still write dist/manifest.json during closeBundle for library builds', async () => {

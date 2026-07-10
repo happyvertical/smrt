@@ -74,6 +74,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TURBO_FORCE: 'true'
 
+      # Seed the cache once before the three core shards start. Each shard
+      # restores the same test manifest instead of scanning core independently.
+      - name: Seed core test manifest
+        run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Preview changeset version bump
         run: |
           echo "🔍 Simulating changeset version bump..."
@@ -317,9 +324,14 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate test manifest and run core tests (shard ${{ matrix.shard }})
+      - name: Restore core test manifest
+        run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run core tests (shard ${{ matrix.shard }})
         working-directory: packages/core
-        run: node scripts/generate-test-manifest.js && pnpm exec vitest run --shard=${{ matrix.shard }}
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
