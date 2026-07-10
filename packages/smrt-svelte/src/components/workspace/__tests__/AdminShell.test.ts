@@ -51,12 +51,9 @@ describe('AdminShell', () => {
   });
 
   it('pins the shell to the viewport so long workspace content scrolls inside main', () => {
-    const shellRule = adminShellSource
-      .match(/\.smrt-admin-shell\s*\{(?<body>[\s\S]*?)\n\s*\}/)
-      ?.groups?.body.split('\n')
-      .map((line) => line.trim());
-
-    expect(shellRule).toContain('block-size: 100svh;');
+    expect(adminShellSource).toMatch(
+      /\.smrt-admin-shell\s*\{[^}]*\bblock-size:\s*100svh\s*;/,
+    );
   });
 
   it('toggles a physical-code panel hotkey', async () => {
