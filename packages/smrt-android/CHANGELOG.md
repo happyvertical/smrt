@@ -1,5 +1,7 @@
 # @happyvertical/smrt-android
 
+## 0.38.26
+
 ## 0.38.25
 
 ## 0.38.24

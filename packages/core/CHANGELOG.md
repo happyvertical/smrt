@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.26
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stabilize generated client collection keys (#1918) (core)
+  - @happyvertical/smrt-config@0.38.26
+  - @happyvertical/smrt-types@0.38.26
+  - @happyvertical/smrt-scanner@0.38.26
+
 ## 0.38.25
 
 ### Patch Changes
