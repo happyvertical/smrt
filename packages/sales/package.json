@@ -1,0 +1,89 @@
+{
+  "name": "@happyvertical/smrt-sales",
+  "version": "0.38.26",
+  "description": "Modular sales for the SMRT framework: CRM (Leads, Opportunities, Pipelines), referral intake with versioned attribution policies, neutral commissions with snapshots and payouts, and reusable Svelte surfaces",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./crm": {
+      "types": "./dist/crm.d.ts",
+      "import": "./dist/crm.js"
+    },
+    "./referrals": {
+      "types": "./dist/referrals.d.ts",
+      "import": "./dist/referrals.js"
+    },
+    "./commissions": {
+      "types": "./dist/commissions.d.ts",
+      "import": "./dist/commissions.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/sql": "catalog:"
+  },
+  "peerDependencies": {
+    "svelte": "^5.56.4"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/package": "^2.5.8",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@types/node": "24.13.2",
+    "svelte": "^5.56.4",
+    "svelte-check": "^4.7.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.3",
+    "vitest": "^4.1.9"
+  },
+  "keywords": [
+    "smrt",
+    "sales",
+    "crm",
+    "referrals",
+    "commissions",
+    "payouts",
+    "multi-tenant"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/sales"
+  }
+}
