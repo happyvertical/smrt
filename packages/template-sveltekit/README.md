@@ -1,113 +1,151 @@
 # @happyvertical/smrt-template-sveltekit
 
-SvelteKit project template with SMRT framework integration. Scaffolds a full-stack app with auto-generated REST API routes, TypeScript, and SQLite.
+The minimal “learn and build from the ground up” SvelteKit template for
+s-m-r-t 0.38.25. The package exports `copyTemplate()`, `getTemplatePath()`, and
+`templateInfo` and is the `sveltekit` template used by `smrt gnode create`.
 
-## What This Template Provides
+## 1. Install and run
 
-- SvelteKit 2.x with Svelte 5 and TypeScript
-- `smrtPlugin()` Vite integration for automatic REST API route generation
-- Example `@smrt()` object (`Item.ts`) with barrel export
-- Reference SSR data loading: `+page.server.ts` server load with the `depends('smrt:<collection>')` / `invalidate('smrt:<collection>')` refresh convention and opt-in collection read caching
-- Server-side SMRT initialization (`src/lib/server/smrt.ts`)
-- `smrt.config.ts` with SQLite database and optional AI provider
-- `.env.example` with starter environment variables
-- **Multi-tenancy pre-wired**: `src/hooks.server.ts` registers the tenancy interceptor, loads sessions via `createSessionHandler({ enterTenantContext: true })`, and resolves the tenant from a leading subdomain (`acme.demo.local` → `tenantId='acme'`). Strategy is swappable in `src/lib/server/tenancy.ts` — see the template's own README for path-prefix / header-based variants.
-
-## Prerequisites
-
-- Node.js 18+
-- pnpm (recommended) or npm
-
-## Usage
-
-### With smrt CLI (recommended)
+Scaffold through the public CLI:
 
 ```bash
-smrt gnode create my-app --template sveltekit
+node --input-type=module -e "import { copyTemplate } from './packages/template-sveltekit/index.js'; copyTemplate('./my-app', { name: 'my-app' })"
 cd my-app
-npm install
-npm run dev
+pnpm install
+cp .env.example .env
+pnpm db:migrate
+pnpm check
+pnpm build
+pnpm dev
 ```
 
-### Programmatic usage
+Run the copy command from the monorepo root. The public 0.38.25 CLI advertises
+`gnode create`, but its command dispatcher currently rejects `gnode`; this
+package's tested `copyTemplate()` export is the working scaffold path.
 
-```javascript
+Generated projects require Node.js 24.18.0 or newer and pnpm 10.34.4. They pin
+all directly used `@happyvertical/smrt-*` packages to 0.38.25.
+
+For programmatic scaffolding:
+
+```js
 import { copyTemplate } from '@happyvertical/smrt-template-sveltekit';
 
-copyTemplate('./my-new-project', {
+copyTemplate('/absolute/path/to/my-app', {
   name: 'my-app',
   overwrite: false,
 });
 ```
 
-## Getting Started (after scaffolding)
+`copyTemplate()` substitutes the package name and excludes package-internal
+`.svelte-kit` and test fixtures.
+
+## 2. Understand the generated files
+
+The checked-in template contains authored objects, hooks, server helpers,
+pages, and configuration. Vite generates `.smrt/manifest.json`,
+`.smrt/smrt-knowledge.json`, `.smrt/register.js`,
+`src/lib/server/smrt-register.ts`, `src/lib/types/smrt-generated/`, and
+`src/routes/api/**/+server.ts`. All are ignored and excluded from scaffold
+fixtures.
+
+`smrtPlugin()` scans the local object directory and generates local routes and
+types. `smrtConsumer()` explicitly consumes the profiles, tenancy, and users
+package manifests. `@happyvertical/smrt-cli` is a direct dev dependency because
+the generated package scripts and README invoke its `smrt` binary.
+
+## 3. Define the first object
+
+The generated `src/lib/objects/Item.ts` is one optional-tenant object with
+title, description, and status fields. Its small explicit `ItemCollection`
+constructor keeps generated CLI/MCP runtime commands constructible. Its
+`@smrt()` configuration exposes CRUD to REST, MCP, WebMCP definitions, and CLI
+while using an API writable allowlist.
+
+Add objects beside Item and export them from `src/lib/objects/index.ts`.
+`vite.config.ts` already scans that directory.
+
+## 4. Initialize or migrate the database
+
+Generated projects use SQLite at `./app.db` by default:
 
 ```bash
-cd my-app
-npm install
-cp .env.example .env    # Edit with your values
-npm run dev             # Start dev server at http://localhost:5173
+pnpm db:migrate
 ```
 
-## Environment Variables
+The script builds first to refresh manifests, registrations, types, and API
+routes, then runs `smrt db:migrate`. The deprecated `smrt db:setup` command is
+not documented or shipped.
 
-Defined in `.env.example`:
+## 5. Understand tenant context
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | Yes | Database path (default: `./data/app.db`) |
-| `DATABASE_TYPE` | Yes | Database engine (default: `sqlite`) |
-| `PUBLIC_SITE_NAME` | No | Display name for the site |
-| `PUBLIC_SITE_URL` | No | Public URL (default: `http://localhost:5173`) |
-| `OPENAI_API_KEY` | No | OpenAI API key for AI features |
-| `ANTHROPIC_API_KEY` | No | Anthropic API key (alternative AI provider) |
+The template resolves a URL tenant candidate into separate
+`selectedTenantId`/`selectedTenantSlug` locals. It does not establish query
+context from that selection. The session hook runs afterward and only its
+membership-authorized tenant enters the s-m-r-t tenancy context.
 
-## Template Structure
+Untrusted tenant headers are ignored. Applications may replace
+`src/lib/server/tenancy.ts` with a path, signed-cookie, or trusted-gateway
+selector, but selection must remain separate from authorization and session
+switches must use `switchSessionTenant()`.
 
+## 6. Understand users, profiles, memberships, roles, and permissions
+
+The generated project consumes the current profiles and users manifests and
+wires `createSessionHandler({ enterTenantContext: true })`. A User is the auth
+identity, Profile is person-facing metadata, Membership joins a User to a
+Tenant and Role, Role maps to Permission records, and Session publishes the
+resolved permission snapshot.
+
+The home-page form action calls `assertOperationPermission()` with that exact
+snapshot. Provider-specific login and provisioning remain app-owned extension
+points.
+
+## 7. Load data into a SvelteKit page
+
+The home page loads Item rows in `+page.server.ts`, returns plain serialized
+data, and declares `depends('smrt:items')`. The Svelte 5 page reads hydrated
+`$props()` data and calls `invalidate('smrt:items')` after a successful form
+mutation. It does not fetch initial data in `onMount` or `$effect`.
+
+## 8. Use generated REST, MCP, WebMCP, and CLI interfaces
+
+REST routes are generated under `src/routes/api`. MCP and WebMCP descriptors
+come from the same action metadata. CLI commands are available through the
+declared dev dependency:
+
+```bash
+pnpm smrt objects
+pnpm smrt schema Item
+pnpm smrt generate-mcp --no-config --no-readme
 ```
-template/
-├── .env.example            # Environment variable defaults
-├── .gitignore
-├── package.json            # Dependencies (smrt-core, SvelteKit)
-├── smrt.config.ts          # SMRT configuration (DB, AI, schema migration)
-├── svelte.config.js        # SvelteKit config (adapter-auto)
-├── tsconfig.json
-├── vite.config.ts          # Vite + smrtPlugin() for API route generation
-└── src/
-    ├── app.d.ts            # SvelteKit type declarations (extends SessionLocals)
-    ├── app.html            # HTML shell
-    ├── hooks.server.ts     # Pre-wired auth + tenancy
-    ├── lib/
-    │   ├── objects/
-    │   │   ├── index.ts    # Barrel export
-    │   │   └── Item.ts     # Example @smrt() object
-    │   └── server/
-    │       ├── smrt.ts     # Server-side SMRT initialization + manifest seeding
-    │       ├── smrt-register.ts # Object registration (generated by smrtPlugin, gitignored)
-    │       └── tenancy.ts  # Pluggable tenant resolver
-    └── routes/
-        ├── +page.server.ts # Home page server load + demo mutation (reference pattern)
-        └── +page.svelte    # Home page
+
+WebMCP registration is documented as an opt-in, per-page integration using
+`collectionDefinitions` from `@happyvertical/smrt-virt-web` and
+`registerWebMcpTools()` from `@happyvertical/smrt-web`. CRUD is wired in
+0.38.25; custom action execution is not yet wired and is documented as such.
+The CLI's manifest-only `objects` and `schema` commands work in this
+source-first template. Local-object CRUD execution through the generic CLI
+additionally requires a compiled JavaScript project entry point.
+
+## 9. Add optional live browser data
+
+`@happyvertical/smrt-web` is intentionally not a base direct dependency. A
+consumer adds it only when a page imports the live collection or WebMCP runtime:
+
+```bash
+pnpm add @happyvertical/smrt-web@0.38.25
 ```
 
-## Exports
+The generated-project README shows the current hydration pattern:
+`createSmrtCollection(getCollectionDefinition('items'), { initialData,
+basePath: '/api' })` followed by `liveCollection()`. The root layout does not
+load the browser engine.
 
-This package exposes three things for programmatic use:
+## 10. Graduate to smrt-saas-starter
 
-- `getTemplatePath()` -- returns the absolute path to the `template/` directory
-- `copyTemplate(destination, options)` -- copies template files with project name substitution in `package.json`
-- `templateInfo` -- metadata object describing the template
-
-## Placeholder Substitution
-
-During `smrt gnode create`, these placeholders are replaced in template files:
-
-| Placeholder | Value |
-|-------------|-------|
-| `{{PROJECT_NAME}}` | Project name from CLI |
-| `{{PACKAGE_NAME}}` | Lowercase, hyphenated package name |
-
-## Related
-
-- [SMRT Framework](https://github.com/happyvertical/smrt)
-- [SvelteKit](https://kit.svelte.dev/)
+Use this template for learning and focused, ground-up applications. Choose
+`smrt-saas-starter` when the baseline should already contain production-shaped
+onboarding, billing/subscriptions, workers, provider configuration, deployment
+infrastructure, and mobile applications. This package intentionally avoids
+becoming a second SaaS starter.

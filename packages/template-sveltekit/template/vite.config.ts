@@ -18,10 +18,24 @@ export default defineConfig({
   },
   plugins: [
     sveltekit(),
+    // Only packages whose object manifests this app consumes belong here.
+    // Keeping the list explicit avoids treating tooling/UI packages as domain
+    // model providers and makes generated runtime registration deterministic.
+    smrtConsumer({
+      packages: [
+        '@happyvertical/smrt-profiles',
+        '@happyvertical/smrt-tenancy',
+        '@happyvertical/smrt-users',
+      ],
+      generateTypes: true,
+      typesDir: 'src/lib/types/smrt-generated',
+      svelteKit: true,
+    }),
     smrtPlugin({
       include: ['src/lib/objects/**/*.ts'],
       exclude: ['**/*.test.ts', '**/*.spec.ts'],
       generateTypes: true,
+      typeDeclarationsPath: 'src/lib/types/smrt-generated',
       svelteKit: {
         enabled: true,
         routesDir: 'src/routes/api',
@@ -30,9 +44,5 @@ export default defineConfig({
         configFileName: 'smrt.ts',
       },
     }),
-    // Required alongside smrtPlugin(): this project depends on external SMRT
-    // packages (@happyvertical/smrt-users, smrt-tenancy, …), and the consumer
-    // plugin emits `.smrt/register.js` so their classes load for CLI/runtime.
-    smrtConsumer(),
   ],
 });

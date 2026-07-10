@@ -14,6 +14,7 @@ import {
   type SmrtObject,
 } from '@happyvertical/smrt-core';
 import { loadManifestFromPathSync } from '@happyvertical/smrt-core/manifest';
+import { getRequestScopedDatabase } from '@happyvertical/smrt-users';
 
 // Import all SMRT objects to register them.
 import '../objects/index.js';
@@ -25,8 +26,17 @@ import '../objects/index.js';
 // fresh checkout that has not run the plugin yet still boots.
 try {
   await import('./smrt-register.js');
-} catch {
-  // Not generated yet — the first `vite dev` / `vite build` will create it.
+} catch (error) {
+  // Not generated yet — the first `vite dev` / `vite build` creates it. Do
+  // not hide a real import/runtime error from an existing generated module.
+  const code = (error as NodeJS.ErrnoException).code;
+  const message = error instanceof Error ? error.message : '';
+  if (
+    code !== 'ERR_MODULE_NOT_FOUND' &&
+    !message.includes('smrt-register.js')
+  ) {
+    throw error;
+  }
 }
 
 // Hydrate field metadata for this app's own objects from the local manifest
@@ -38,13 +48,6 @@ try {
 const localManifestPath = join(process.cwd(), '.smrt', 'manifest.json');
 if (existsSync(localManifestPath)) {
   loadManifestFromPathSync(localManifestPath);
-}
-
-declare global {
-  // eslint-disable-next-line no-var
-  var __smrtGetRequestScopedDatabase:
-    | (() => SmrtClassOptions['db'] | undefined)
-    | undefined;
 }
 
 /**
@@ -64,21 +67,10 @@ const objectOverrides: Record<string, Partial<SmrtClassOptions>> = {
 function getDefaultConfig(): SmrtClassOptions {
   return {
     db: {
-      url: process.env.DATABASE_URL || './data/app.db',
+      url: process.env.DATABASE_URL || './app.db',
       type: (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') || 'sqlite',
     },
-    ai: process.env.OPENAI_API_KEY
-      ? {
-          type: 'openai',
-          apiKey: process.env.OPENAI_API_KEY,
-        }
-      : undefined,
   };
-}
-
-function getRequestScopedDatabase(): SmrtClassOptions['db'] | undefined {
-  const getter = globalThis.__smrtGetRequestScopedDatabase;
-  return typeof getter === 'function' ? getter() : undefined;
 }
 
 /**
@@ -102,7 +94,7 @@ export async function getCollection<T extends SmrtObject>(className: string) {
   const objectOverride = objectOverrides[className];
   const requestScopedDb = objectOverride?.db
     ? undefined
-    : getRequestScopedDatabase();
+    : (getRequestScopedDatabase() as SmrtClassOptions['db'] | undefined);
 
   return await ObjectRegistry.getCollection<T>(className, {
     ...config,
