@@ -95,6 +95,34 @@ describe('AdminShell', () => {
     }
   });
 
+  it('pins a tenant footer below the scrolling tenant panel', () => {
+    const state = createShellState({
+      config: { left: { initial: 'expanded' } },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+        tenantPanel: textSnippet('tenant navigation'),
+        tenantFooter: textSnippet('account menu'),
+      },
+    });
+
+    try {
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-content')
+          ?.textContent,
+      ).toContain('tenant navigation');
+      expect(
+        container.querySelector('.smrt-admin-shell__tenant-footer')
+          ?.textContent,
+      ).toContain('account menu');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('publishes collapsed side sizes for stable top and bottom chrome', () => {
     const state = createShellState({
       config: {
