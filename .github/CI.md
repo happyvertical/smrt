@@ -21,7 +21,8 @@ filesystem so pnpm can hardlink packages. Do not restore the RAM-backed split
 mounts without measuring runner memory and install latency. The shared setup
 action also points `TMPDIR` at the workspace-backed runner temp directory so
 SQLite fixtures and other temporary test files bypass the container overlay
-filesystem.
+filesystem. ARC runners can provide `CI_TEST_TMPDIR` to route those files to a
+bounded, test-only tmpfs; other runners retain the workspace-backed fallback.
 
 ## Pull requests and merge groups
 
