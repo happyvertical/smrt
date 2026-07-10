@@ -10,12 +10,13 @@
  * - a cross-tenant read is denied,
  * - a live role change reflects on the next resolve.
  *
- * RLS only bites for a non-superuser, NOBYPASSRLS role, so — exactly like the
- * existing `permission-postgres-rls.test.ts` — enforcement is exercised under
- * `SET ROLE` inside a transaction. The permission set fed onto that session is
- * the real {@link PermissionResolver} output (the same live cascade
- * `withPrincipalPermissionContext` runs), and a companion test proves the
- * wrapper itself publishes that principal onto a real Postgres session.
+ * RLS only bites for a non-superuser, NOBYPASSRLS role. The dedicated CI role
+ * already has those properties and the policies FORCE RLS for the table owner;
+ * local superuser databases use a temporary `SET ROLE` target instead. The
+ * permission set fed onto that session is the real {@link PermissionResolver}
+ * output (the same live cascade `withPrincipalPermissionContext` runs), and a
+ * companion test proves the wrapper itself publishes that principal onto a
+ * real Postgres session.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -74,6 +75,29 @@ async function closeDatabase(database: unknown): Promise<void> {
   }
 }
 
+async function seedWithSystemContext(
+  db: DatabaseInterface,
+  sql: string,
+  ...values: unknown[]
+): Promise<void> {
+  const factory = db as DatabaseInterface & {
+    beginTransaction?: () => Promise<TransactionHandle>;
+  };
+  if (!factory.beginTransaction) {
+    throw new Error('Postgres test database does not support transactions.');
+  }
+
+  const tx = await factory.beginTransaction();
+  try {
+    await tx.query("SELECT set_config('smrt.system_context', 'true', true)");
+    await tx.query(sql, ...values);
+    await tx.commit();
+  } catch (error) {
+    if (tx.isActive()) await tx.rollback();
+    throw error;
+  }
+}
+
 describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
   let isolated: IsolatedTestDbResult | undefined;
   let adminDb: DatabaseInterface | undefined;
@@ -84,6 +108,8 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
   let tenantBId = '';
   let roleId = '';
   let readPermissionId = '';
+  let rowAId = '';
+  let rowBId = '';
 
   beforeEach(async () => {
     isolated = await createIsolatedTestDbFromManifest();
@@ -137,27 +163,40 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
     roleId = role.id as string;
     readPermissionId = readPermission.id as string;
 
+    rowAId = randomUUID();
+    rowBId = randomUUID();
+
     // One record per tenant; the principal is bound to tenant A only.
-    await adminDb.query(
-      [
-        'INSERT INTO public.principal_rls_records',
-        '  (id, slug, context, tenant_id, title)',
-        'VALUES',
-        `  ('row-a', 'row-a', '', '${tenantAId}', 'Tenant A'),`,
-        `  ('row-b', 'row-b', '', '${tenantBId}', 'Tenant B')`,
-      ].join('\n'),
+    await seedWithSystemContext(
+      adminDb,
+      `INSERT INTO public.principal_rls_records
+        (id, slug, context, tenant_id, title)
+      VALUES
+        ($1, 'row-a', '', $2, 'Tenant A'),
+        ($3, 'row-b', '', $4, 'Tenant B')`,
+      rowAId,
+      tenantAId,
+      rowBId,
+      tenantBId,
     );
 
     await applyPostgresPermissionPolicies(options);
 
-    roleName = `smrt_principal_rls_${randomUUID().replaceAll('-', '_')}`;
-    await adminDb.query(
-      `CREATE ROLE "${roleName}" LOGIN PASSWORD 'postgres' NOSUPERUSER NOBYPASSRLS`,
-    );
-    await adminDb.query(`GRANT USAGE ON SCHEMA public TO "${roleName}"`);
-    await adminDb.query(
-      `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.principal_rls_records TO "${roleName}"`,
-    );
+    const currentRole = rowsOf(
+      await adminDb.query(
+        'SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user',
+      ),
+    )[0];
+    if (currentRole?.rolsuper === true || currentRole?.rolbypassrls === true) {
+      roleName = `smrt_principal_rls_${randomUUID().replaceAll('-', '_')}`;
+      await adminDb.query(
+        `CREATE ROLE "${roleName}" LOGIN PASSWORD 'postgres' NOSUPERUSER NOBYPASSRLS`,
+      );
+      await adminDb.query(`GRANT USAGE ON SCHEMA public TO "${roleName}"`);
+      await adminDb.query(
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.principal_rls_records TO "${roleName}"`,
+      );
+    }
   });
 
   afterEach(async () => {
@@ -210,7 +249,7 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
     }
     const tx = await factory.beginTransaction();
     try {
-      await tx.query(`SET ROLE "${roleName}"`);
+      if (roleName) await tx.query(`SET ROLE "${roleName}"`);
       await tx.query("SELECT set_config('smrt.tenant_id', $1, true)", tenantId);
       await tx.query("SELECT set_config('smrt.user_id', $1, true)", userId);
       await tx.query("SELECT set_config('smrt.session_id', $1, true)", '');
@@ -239,9 +278,9 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
       const result = await tx.query(
         'SELECT id FROM public.principal_rls_records ORDER BY id',
       );
-      // row-a (tenant A) is visible; row-b (tenant B) is filtered — cross-tenant
-      // denied.
-      expect(rowsOf(result).map((row) => row.id)).toEqual(['row-a']);
+      // The tenant A row is visible; the tenant B row is filtered —
+      // cross-tenant denied.
+      expect(rowsOf(result).map((row) => row.id)).toEqual([rowAId]);
     });
   });
 
@@ -251,11 +290,11 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
     await underResolvedPrincipal(tenantAId, async (tx) => {
       await expect(
         tx.query(
-          [
-            'INSERT INTO public.principal_rls_records',
-            '  (id, slug, context, tenant_id, title)',
-            `VALUES ('row-c', 'row-c', '', '${tenantAId}', 'Tenant C')`,
-          ].join('\n'),
+          `INSERT INTO public.principal_rls_records
+            (id, slug, context, tenant_id, title)
+          VALUES ($1, 'row-c', '', $2, 'Tenant C')`,
+          randomUUID(),
+          tenantAId,
         ),
       ).rejects.toThrow(/row-level security/i);
     });
@@ -267,7 +306,7 @@ describePostgres('withPrincipalPermissionContext + Postgres RLS', () => {
       const result = await tx.query(
         'SELECT id FROM public.principal_rls_records ORDER BY id',
       );
-      expect(rowsOf(result).map((row) => row.id)).toEqual(['row-a']);
+      expect(rowsOf(result).map((row) => row.id)).toEqual([rowAId]);
     });
 
     // Revoke the read permission from the role at the data layer.
