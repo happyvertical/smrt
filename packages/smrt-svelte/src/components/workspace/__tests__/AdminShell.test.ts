@@ -64,6 +64,27 @@ describe('AdminShell', () => {
     }
   });
 
+  it('hides hotkey badges when shell hotkeys are disabled', () => {
+    const state = createShellState({
+      settings: { hotkeysEnabled: false },
+    });
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        state,
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      expect(
+        container.querySelector('.smrt-admin-shell__edge-toggle-kbd'),
+      ).toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('keeps the focus rail visible when the right panel is expanded', () => {
     const state = createShellState({
       config: {

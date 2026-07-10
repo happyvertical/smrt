@@ -173,6 +173,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     );
   }
 
+  function showsHotkeyFor(edge: PanelEdge): boolean {
+    return (
+      shell.settings.hotkeysEnabled !== false &&
+      resolveHotkey(edge, shell.config.panels[edge], shell.settings) !== null
+    );
+  }
+
   // Focus containment for the modal shortcuts dialog. Runs on mount of the
   // dialog node and tears down when it unmounts (Escape / close), restoring
   // focus to whatever opened it. Keeps `aria-modal="true"` honest.
@@ -228,7 +235,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     onclick={() => shell.togglePanel(edge)}
   >
     <span>{labelFor(edge)}</span>
-    <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
+    {#if showsHotkeyFor(edge)}
+      <kbd class="smrt-admin-shell__edge-toggle-kbd">{hotkeyFor(edge)}</kbd>
+    {/if}
     <ActivityBadge {edge} />
   </Button>
 {/snippet}
