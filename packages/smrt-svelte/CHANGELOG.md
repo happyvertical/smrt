@@ -1,5 +1,21 @@
 # @happyvertical/smrt-svelte
 
+## 1.0.0
+
+### Minor Changes
+
+- 605bcfe: Add a server-paged settings catalog with search, selection, compact results, and responsive list/detail rendering.
+
+### Patch Changes
+
+- 605bcfe: Constrain `AdminShell` to the viewport so long workspace content scrolls inside the main region without extending the sidebars or pushing shell footers off-screen.
+- 605bcfe: Remount the active AdminShell focus-tool renderer when applications switch tools.
+- 605bcfe: Make `WorkspaceAccountMenu` user-first, with tenant and role shown as secondary context while tenant switching and sign-out remain inside the menu.
+  - @happyvertical/smrt-languages@1.0.0
+  - @happyvertical/smrt-types@1.0.0
+  - @happyvertical/smrt-ui@1.0.0
+  - @happyvertical/smrt-web@1.0.0
+
 ## 0.38.26
 
 ### Patch Changes

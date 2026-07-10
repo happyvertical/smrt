@@ -25,14 +25,14 @@
     "svelte-check": "^4.7.2",
     "typescript": "^6.0.3",
     "vite": "^8.1.4",
-    "@happyvertical/smrt-cli": "0.38.25"
+    "@happyvertical/smrt-cli": "^0.39.0"
   },
   "dependencies": {
-    "@happyvertical/smrt-core": "0.38.25",
-    "@happyvertical/smrt-profiles": "0.38.25",
-    "@happyvertical/smrt-svelte": "0.38.25",
-    "@happyvertical/smrt-tenancy": "0.38.25",
-    "@happyvertical/smrt-ui": "0.38.25",
-    "@happyvertical/smrt-users": "0.38.25"
+    "@happyvertical/smrt-core": "^0.39.0",
+    "@happyvertical/smrt-profiles": "^0.39.0",
+    "@happyvertical/smrt-svelte": "^0.39.0",
+    "@happyvertical/smrt-tenancy": "^0.39.0",
+    "@happyvertical/smrt-ui": "^0.39.0",
+    "@happyvertical/smrt-users": "^0.39.0"
   }
 }
