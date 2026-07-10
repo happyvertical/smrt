@@ -135,7 +135,7 @@ function normalizeRelatedName(related: string): string {
  * carries no type argument of its own; without walking the extends chain it
  * would be mistaken for a model and claim its base model's REST collection.
  */
-function isWebCollectionClass(
+export function isCollectionManifestClass(
   manifest: SmartObjectManifest,
   obj: SmartObjectDefinition,
   seen: Set<string> = new Set(),
@@ -150,7 +150,7 @@ function isWebCollectionClass(
   if (!parentName || seen.has(parentName)) return false;
   seen.add(parentName);
   const parent = findByName(manifest, parentName);
-  return parent ? isWebCollectionClass(manifest, parent, seen) : false;
+  return parent ? isCollectionManifestClass(manifest, parent, seen) : false;
 }
 
 /**
@@ -192,7 +192,7 @@ function selectEntriesQualifiedBy(
   >();
 
   for (const obj of Object.values(manifest.objects)) {
-    if (isWebCollectionClass(manifest, obj)) continue;
+    if (isCollectionManifestClass(manifest, obj)) continue;
 
     const exposedActions = resolveApiActionSet(obj);
     if (!qualifies(exposedActions)) continue;

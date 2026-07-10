@@ -30,6 +30,7 @@ import {
   buildWebCollectionDefinition,
   buildWebToolDescriptors,
   computeWebManifestHash,
+  isCollectionManifestClass,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -1184,39 +1185,65 @@ const GENERATED_CLIENT_BASE_METHODS = new Set([
   'search',
 ]);
 
-function isCollectionManifestEntry(
+function findManifestObjectByName(
+  manifest: SmartObjectManifest,
+  name: string,
+): SmartObjectManifest['objects'][string] | undefined {
+  return Object.entries(manifest.objects).find(
+    ([manifestKey, candidate]) =>
+      manifestKey === name ||
+      candidate.qualifiedName === name ||
+      candidate.className === name,
+  )?.[1];
+}
+
+function resolveCollectionItemObject(
   obj: SmartObjectManifest['objects'][string],
-): boolean {
-  return obj.extends === 'SmrtCollection' || Boolean(obj.extendsTypeArg);
+  manifest: SmartObjectManifest,
+): SmartObjectManifest['objects'][string] | undefined {
+  const seen = new Set<string>();
+  let candidate: SmartObjectManifest['objects'][string] | undefined = obj;
+
+  while (candidate) {
+    if (candidate.extendsTypeArg) {
+      const itemObject = findManifestObjectByName(
+        manifest,
+        candidate.extendsTypeArg,
+      );
+      if (itemObject) return itemObject;
+    }
+
+    if (candidate.className.endsWith('Collection')) {
+      const conventionalItem = findManifestObjectByName(
+        manifest,
+        candidate.className.slice(0, -'Collection'.length),
+      );
+      if (conventionalItem) return conventionalItem;
+    }
+
+    const parentName = candidate.extendsQualified || candidate.extends;
+    if (!parentName || seen.has(parentName)) return undefined;
+    seen.add(parentName);
+    candidate = findManifestObjectByName(manifest, parentName);
+  }
+
+  return undefined;
 }
 
 function resolveApiClientDataInterfaceName(
   obj: SmartObjectManifest['objects'][string],
   manifest: SmartObjectManifest,
 ): string {
-  if (!isCollectionManifestEntry(obj)) {
+  if (!isCollectionManifestClass(manifest, obj)) {
     return `${obj.className}Data`;
   }
 
-  const itemClassName =
-    obj.extendsTypeArg ||
-    (obj.className.endsWith('Collection')
-      ? obj.className.slice(0, -'Collection'.length)
-      : undefined);
-  const itemObject = itemClassName
-    ? Object.entries(manifest.objects).find(
-        ([manifestKey, candidate]) =>
-          manifestKey === itemClassName ||
-          candidate.className === itemClassName,
-      )?.[1]
-    : undefined;
+  const itemObject = resolveCollectionItemObject(obj, manifest);
 
   return `${itemObject?.className || obj.className}Data`;
 }
 
-function uniqueApiClientEntries(
-  objects: Array<[string, SmartObjectManifest['objects'][string]]>,
-): Array<{
+function uniqueApiClientEntries(manifest: SmartObjectManifest): Array<{
   objectName: string;
   obj: SmartObjectManifest['objects'][string];
   clientKey: string;
@@ -1225,28 +1252,38 @@ function uniqueApiClientEntries(
     string,
     SmartObjectManifest['objects'][string]
   >();
+  const objects = Object.entries(manifest.objects);
 
   for (const [, obj] of objects) {
     const current = canonicalCollectionOwners.get(obj.collection);
     if (
       !current ||
-      (isCollectionManifestEntry(current) && !isCollectionManifestEntry(obj))
+      (isCollectionManifestClass(manifest, current) &&
+        !isCollectionManifestClass(manifest, obj))
     ) {
       canonicalCollectionOwners.set(obj.collection, obj);
     }
   }
 
+  // Secondary keys must never claim canonical REST collection keys, even when
+  // a collection class normalizes to the same spelling and is scanned first
+  // (for example Contents + Content -> "contents").
+  const reservedCanonicalKeys = new Set(canonicalCollectionOwners.keys());
   const usedKeys = new Set<string>();
 
   return objects.map(([objectName, obj]) => {
-    let clientKey =
-      canonicalCollectionOwners.get(obj.collection) === obj
-        ? obj.collection
-        : lowerFirst(obj.className);
+    const isCanonicalOwner =
+      canonicalCollectionOwners.get(obj.collection) === obj;
+    let clientKey = isCanonicalOwner
+      ? obj.collection
+      : lowerFirst(obj.className);
 
     const baseClientKey = clientKey;
     let suffix = 2;
-    while (usedKeys.has(clientKey)) {
+    while (
+      usedKeys.has(clientKey) ||
+      (!isCanonicalOwner && reservedCanonicalKeys.has(clientKey))
+    ) {
       clientKey = `${baseClientKey}${suffix}`;
       suffix += 1;
     }
@@ -1260,7 +1297,7 @@ function generateClientModule(
   manifest: SmartObjectManifest,
   options: { kebabRoutes?: boolean } = {},
 ): string {
-  const objects = uniqueApiClientEntries(Object.entries(manifest.objects));
+  const objects = uniqueApiClientEntries(manifest);
 
   const clientMethods = objects
     .map(({ obj, clientKey }) => {
@@ -1290,7 +1327,7 @@ function generateClientModule(
             method,
             apiConfig,
             { kebabRoutes: options.kebabRoutes },
-            isCollectionManifestEntry(obj)
+            isCollectionManifestClass(manifest, obj)
               ? 'collection'
               : method.isStatic
                 ? 'collection'
@@ -1731,9 +1768,7 @@ ${fields}
     // type surface matches what generateClientModule actually emits at
     // runtime — otherwise consumers see methods in autocomplete that are
     // undefined at runtime.
-    const apiClientInterface = uniqueApiClientEntries(
-      Object.entries(manifest.objects),
-    )
+    const apiClientInterface = uniqueApiClientEntries(manifest)
       .map(({ obj, clientKey }) => {
         const { methods = {} } = obj;
         const apiConfig = obj.decoratorConfig?.api;
@@ -1754,7 +1789,7 @@ ${fields}
               method,
               apiConfig,
               {},
-              isCollectionManifestEntry(obj)
+              isCollectionManifestClass(manifest, obj)
                 ? 'collection'
                 : method.isStatic
                   ? 'collection'

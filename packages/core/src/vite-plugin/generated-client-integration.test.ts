@@ -179,6 +179,36 @@ export class ArtCollection extends SmrtObject {
     return 'item model, not SmrtCollection';
   }
 }
+
+@smrt({ api: { public: true } })
+export class Contents extends SmrtCollection<Content> {
+  async featured(): Promise<Content[]> {
+    return this.list();
+  }
+}
+
+@smrt({ api: { public: true } })
+export class Content extends SmrtObject {
+  async summarize(): Promise<string> {
+    return 'summary';
+  }
+}
+
+@smrt({ api: { public: true } })
+export class GenClientMessageCollection extends SmrtCollection<GenClientMessage> {}
+
+@smrt({ api: { public: true } })
+export class GenClientEmailCollection extends GenClientMessageCollection {
+  async findUnread(): Promise<GenClientEmail[]> {
+    return this.list();
+  }
+}
+
+@smrt({ api: { public: true } })
+export class GenClientMessage extends SmrtObject {}
+
+@smrt({ api: { public: true } })
+export class GenClientEmail extends GenClientMessage {}
 `,
     );
 
@@ -208,6 +238,8 @@ export class ArtCollection extends SmrtObject {
     expect(clientSource).toContain('genclientproducts:');
     expect(clientSource).toContain('genClientProductCollection:');
     expect(clientSource.match(/\n {2}genclientproducts:/g)).toHaveLength(1);
+    expect(clientSource.match(/\n {2}contents:/g)).toHaveLength(1);
+    expect(clientSource).toContain('contents2:');
     expect(clientSource).toContain('findFeatured: (options)');
     expect(clientSource).not.toContain('findFeatured: (id, options)');
     expect(clientSource).not.toContain('list: (id, options)');
@@ -215,6 +247,10 @@ export class ArtCollection extends SmrtObject {
     expect(clientSource).not.toContain('invalidCollectionScope: (');
     expect(clientSource).toContain('describe: (id, options)');
     expect(clientSource).not.toContain('describe: (options)');
+    expect(clientSource).toContain('featured: (options)');
+    expect(clientSource).toContain('summarize: (id, options)');
+    expect(clientSource).toContain('findUnread: (options)');
+    expect(clientSource).not.toContain('findUnread: (id, options)');
     const declarationSource = readFileSync(
       join(projectRoot, 'src', 'types', 'virtual-modules.d.ts'),
       'utf-8',
@@ -229,6 +265,15 @@ export class ArtCollection extends SmrtObject {
     );
     expect(declarationSource).toContain(
       'describe(id: string, options: { tone: string }): Promise<any>;',
+    );
+    expect(declarationSource).toContain(
+      'contents: CrudOperations<ContentData> & {\n      summarize(id: string, options?: Record<string, never>): Promise<any>;',
+    );
+    expect(declarationSource).toContain(
+      'contents2: CrudOperations<ContentData> & {\n      featured(options?: Record<string, never>): Promise<any>;',
+    );
+    expect(declarationSource).toContain(
+      'genClientEmailCollection: CrudOperations<GenClientEmailData> & {\n      findUnread(options?: Record<string, never>): Promise<any>;',
     );
 
     // Evaluate the generated ESM the way a bundler would: write it to disk and
