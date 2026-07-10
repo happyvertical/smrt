@@ -20,22 +20,27 @@ const itemSource = readFileSync(
 );
 
 describe('generated project metadata', () => {
-  it('pins every directly used s-m-r-t package to 0.38.25', () => {
+  it('keeps every directly used s-m-r-t package on one release line', () => {
     const smrtDependencies = {
       ...packageJson.dependencies,
       ...packageJson.devDependencies,
     };
-    for (const [name, version] of Object.entries(smrtDependencies)) {
-      if (name.startsWith('@happyvertical/smrt-')) {
-        expect(version, name).toBe('0.38.25');
-      }
+    const smrtVersions = Object.entries(smrtDependencies).filter(([name]) =>
+      name.startsWith('@happyvertical/smrt-'),
+    );
+    const releaseRange = smrtVersions[0]?.[1];
+
+    expect(releaseRange).toMatch(/^\^0\.\d+\.\d+$/);
+    for (const [name, version] of smrtVersions) {
+      expect(version, name).toBe(releaseRange);
     }
   });
 
   it('ships the CLI directly and keeps browser data opt-in', () => {
-    expect(packageJson.devDependencies['@happyvertical/smrt-cli']).toBe(
-      '0.38.25',
+    expect(packageJson.devDependencies).toHaveProperty(
+      '@happyvertical/smrt-cli',
     );
+    expect(packageJson.dependencies['@happyvertical/smrt-cli']).toBeUndefined();
     expect(packageJson.dependencies['@happyvertical/smrt-web']).toBeUndefined();
   });
 
