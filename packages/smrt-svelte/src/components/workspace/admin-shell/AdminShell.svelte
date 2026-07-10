@@ -477,6 +477,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       var(--smrt-admin-shell-top-track) minmax(0, 1fr)
       var(--smrt-admin-shell-bottom-track);
     min-block-size: 100svh;
+    block-size: 100svh;
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     overflow: hidden;

@@ -1,6 +1,7 @@
 import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import AdminShell from '../admin-shell/AdminShell.svelte';
+import adminShellSource from '../admin-shell/AdminShell.svelte?raw';
 import { createShellState } from '../admin-shell/state.svelte.js';
 
 function textSnippet(text: string) {
@@ -40,6 +41,15 @@ describe('AdminShell', () => {
     } finally {
       unmount(component);
     }
+  });
+
+  it('pins the shell to the viewport so long workspace content scrolls inside main', () => {
+    const shellRule = adminShellSource
+      .match(/\.smrt-admin-shell\s*\{(?<body>[\s\S]*?)\n\s*\}/)
+      ?.groups?.body.split('\n')
+      .map((line) => line.trim());
+
+    expect(shellRule).toContain('block-size: 100svh;');
   });
 
   it('toggles a physical-code panel hotkey', async () => {
