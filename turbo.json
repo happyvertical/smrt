@@ -93,7 +93,8 @@
       "dependsOn": [
         "^build",
         "build",
-        "generate:test"
+        "generate:test",
+        "@happyvertical/smrt-core#build"
       ],
       "inputs": [
         "src/**",

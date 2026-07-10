@@ -351,8 +351,11 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build core dependency closure
-        run: pnpm turbo run build --filter='@happyvertical/smrt-core...'
+      # This suite discovers every packages/*/dist/manifest.json and asserts
+      # full-registry scale, so it is the one validation lane that requires all
+      # package manifests rather than only the core dependency closure.
+      - name: Build all package manifests
+        run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
