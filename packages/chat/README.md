@@ -10,6 +10,30 @@ pnpm add @happyvertical/smrt-chat
 
 ## Usage
 
+### Local dev server
+
+Run the chat package workbench directly:
+
+```bash
+pnpm --dir packages/chat dev
+```
+
+The root route opens an interactive chat surface backed by
+`src/routes/api/dev-chat/+server.ts`. If `SMRT_CHAT_DEV_PROVIDER` /
+`SMRT_CHAT_DEV_API_KEY` or standard provider credentials such as
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` are available, the
+assistant turn goes through `@happyvertical/ai`; otherwise it uses a
+deterministic local fallback. Component previews are available at `/previews`.
+
+The workbench also has a local-only voice conversation mode. It reads
+`SMRT_CHAT_DEV_VOICE_GATEWAY_HTTP_URL` and
+`SMRT_CHAT_DEV_VOICE_GATEWAY_WS_URL`, fetches gateway targets from
+`/api/dev-voice/config`, streams browser microphone audio to `WS /ws/voice` as
+PCM16 mono at 16 kHz, appends gateway transcripts/responses to the chat, and
+plays returned TTS audio. If the gateway requires a bearer token, set
+`SMRT_CHAT_DEV_VOICE_GATEWAY_TOKEN`; browser WebSocket testing also requires
+`SMRT_CHAT_DEV_VOICE_GATEWAY_EXPOSE_TOKEN=true`, so use this only for local dev.
+
 ### Rooms and messages
 
 ```typescript
@@ -104,6 +128,93 @@ if (session.isActive()) {
 }
 ```
 
+### Voice gateway turns
+
+`smrt-chat` can expose a gateway-facing turn target for browser voice input.
+The browser receives only a short-lived SMRT voice session binding; the
+gateway-to-SMRT service bearer token stays server-side.
+
+```typescript
+import {
+  createVoiceChatSession,
+  createVoiceGatewayTurnHandler,
+} from '@happyvertical/smrt-chat';
+
+// Authenticated app route: bind the speaking profile to a persona and an
+// existing or newly-created agent session.
+const voice = await createVoiceChatSession({
+  chatService: chat,
+  db,
+  tenantId: locals.tenantId,
+  actorProfileId: locals.profileId,
+  actorUserId: locals.userId,
+  persona: resolvedPersona,
+  agentSessionId: session.id, // omit to create/reuse an agent session
+  ttlSeconds: 600,
+});
+
+// Return voice.gatewaySessionId + voice.metadata to the browser/gateway. Do not
+// return the gateway service token.
+
+// Gateway target route: configure the deployed voice gateway HTTP target to
+// POST here with Authorization: Bearer <SMRT_VOICE_GATEWAY_TOKEN>.
+export const POST = ({ request }) =>
+  createVoiceGatewayTurnHandler({
+    chatService: chat,
+    db,
+    ai,
+    gatewayToken: process.env.SMRT_VOICE_GATEWAY_TOKEN ?? '',
+  })(request);
+```
+
+The gateway sends the transcribed text turn:
+
+```json
+{
+  "session_id": "gateway-or-smrt-stable-session-id",
+  "turn_id": "gateway-generated-turn-id",
+  "target": "smrt:chat",
+  "actor": "optional-display-name",
+  "text": "transcribed user utterance",
+  "metadata": {
+    "tenantId": "tenant uuid",
+    "actorProfileId": "profile id",
+    "chatRoomId": "room id",
+    "threadId": "optional thread id",
+    "agentSessionId": "agent session id",
+    "personaId": "persona id",
+    "voiceSessionId": "SMRT-issued voice session id",
+    "source": "voice-gateway"
+  }
+}
+```
+
+SMRT validates `metadata.voiceSessionId` against its server-side binding, then
+checks any supplied tenant/profile/persona/session/thread ids against that
+binding instead of trusting the gateway metadata. A valid turn is persisted as a
+normal user chat message, routed through `runPersonaConversationTurn()`, and the
+assistant reply is persisted as a normal assistant message. The response is:
+
+```json
+{
+  "session_id": "same session_id",
+  "turn_id": "same turn_id",
+  "text": "assistant response text",
+  "metadata": {
+    "tenantId": "tenant id",
+    "chatRoomId": "room id",
+    "threadId": null,
+    "agentSessionId": "agent session id",
+    "userMessageId": "persisted transcript message id",
+    "assistantMessageId": "persisted assistant message id",
+    "personaId": "persona id",
+    "correlationId": "feedback correlation id",
+    "voiceSessionId": "SMRT-issued voice session id",
+    "source": "voice-gateway"
+  }
+}
+```
+
 ### Direct messages
 
 ```typescript
@@ -129,10 +240,15 @@ const dmRoom = await chat.getOrCreateDM({
 | `ChatThread` | Threaded conversation linked to a root message, with resolve/reopen lifecycle |
 | `ChatReaction` | Emoji reaction on a message |
 | `AgentSession` | AI agent session with `allowedTools` (JSON string array), `sessionContext` for multi-turn memory, `systemPrompt`, and usage limits (`maxTokens`/`maxMessages`/`expiresAt`) |
+| `VoiceSession` | Short-lived voice gateway binding over a tenant, actor profile, persona, and agent session |
 
-### Collections
+### Internal collections
 
-| Export | Description |
+Raw collection classes are not exported from the package index. They are listed
+here as implementation details; application code should use `ChatService` and
+the voice helpers.
+
+| Internal class | Description |
 |--------|------------|
 | `ChatRoomCollection` | Room queries, `findOrCreateDM()` |
 | `ChatMessageCollection` | Message queries and search filters |
@@ -140,16 +256,20 @@ const dmRoom = await chat.getOrCreateDM({
 | `ChatThreadCollection` | Thread queries |
 | `ChatReactionCollection` | Reaction queries |
 | `AgentSessionCollection` | Session queries, `findActiveSession()`, `findOrCreate()` |
+| `VoiceSessionCollection` | Voice session binding queries and stale-expiry helper |
 
 ### Services
 
 | Export | Description |
 |--------|------------|
 | `ChatService` | Facade: `createRoom()`, `sendMessage()`, `startThread()`, `addParticipant()`, `removeParticipant()`, `updateRoom()`, `addReaction()`, `removeReaction()`, `getOrCreateDM()`, `createAgentSession()`, `sendAgentUserMessage()`, `getRoomMessages()`, `getRoomForMember()`, `updateAgentSessionConfig()`. Every write takes a server-supplied `actorProfileId`. The agent-authored reply path (`sendAgentReply`) is intentionally NOT on this facade or the package index — it is an internal function in `services/ChatService.ts` for the trusted in-process agent runtime only (S5 #1392). |
+| `createVoiceChatSession()` | Creates a short-lived voice binding for an authenticated actor and persona, optionally against an existing agent session |
+| `handleVoiceGatewayTurn()` | Lower-level gateway turn adapter for non-Fetch hosts |
+| `createVoiceGatewayTurnHandler()` | Fetch-compatible HTTP handler for the gateway target endpoint |
 
 ### Types
 
-`ChatRoomType`, `ChatRoomStatus`, `ChatRoomOptions`, `ChatMessageType`, `ChatMessageRole`, `ChatMessageOptions`, `ChatMessageSearchFilters`, `ChatParticipantRole`, `ChatParticipantStatus`, `ChatParticipantOptions`, `OnlineStatus`, `ChatThreadOptions`, `ChatReactionOptions`, `AgentSessionStatus`, `AgentSessionOptions`
+`ChatRoomType`, `ChatRoomStatus`, `ChatRoomOptions`, `ChatMessageType`, `ChatMessageRole`, `ChatMessageOptions`, `ChatMessageSearchFilters`, `ChatParticipantRole`, `ChatParticipantStatus`, `ChatParticipantOptions`, `OnlineStatus`, `ChatThreadOptions`, `ChatReactionOptions`, `AgentSessionStatus`, `AgentSessionOptions`, `VoiceSessionStatus`, `VoiceSessionOptions`, `VoiceGatewayTurnPayload`, `VoiceGatewayTurnResponse`
 
 ### Constants
 

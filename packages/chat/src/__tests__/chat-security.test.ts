@@ -796,6 +796,7 @@ describe('chat security (S5 #1392)', () => {
       '@happyvertical/smrt-chat:ChatThread',
       '@happyvertical/smrt-chat:ChatReaction',
       '@happyvertical/smrt-chat:AgentSession',
+      '@happyvertical/smrt-chat:VoiceSession',
     ];
 
     for (const qualifiedName of internals) {
@@ -1296,6 +1297,7 @@ describe('chat security (S5 #1392)', () => {
         'threads',
         'agentSessions',
         'reactions',
+        'voiceSessions',
       ];
       for (const prop of collectionProps) {
         const value = (svc as unknown as Record<string, unknown>)[prop];
@@ -1319,6 +1321,7 @@ describe('chat security (S5 #1392)', () => {
         'ChatThreadCollection',
         'AgentSessionCollection',
         'ChatReactionCollection',
+        'VoiceSessionCollection',
       ]) {
         expect(index[exportName]).toBeUndefined();
       }

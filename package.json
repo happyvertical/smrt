@@ -110,6 +110,7 @@
       "@happyvertical/projects": "^0.78.0",
       "@happyvertical/repos": "^0.78.0",
       "@happyvertical/secrets": "^0.78.0",
+      "@happyvertical/speech": "^0.78.0",
       "@happyvertical/spider": "^1.1.10",
       "@happyvertical/sql": "^0.78.0",
       "@happyvertical/utils": "^0.78.0",

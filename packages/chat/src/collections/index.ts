@@ -4,3 +4,4 @@ export { ChatParticipantCollection } from './ChatParticipantCollection.js';
 export { ChatReactionCollection } from './ChatReactionCollection.js';
 export { ChatRoomCollection } from './ChatRoomCollection.js';
 export { ChatThreadCollection } from './ChatThreadCollection.js';
+export { VoiceSessionCollection } from './VoiceSessionCollection.js';

@@ -353,15 +353,6 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 <style>
   :global(body) {
     margin: 0;
-    font-family:
-      "IBM Plex Sans",
-      "Inter",
-      system-ui,
-      sans-serif;
-    background:
-      radial-gradient(circle at top left, rgba(30, 96, 145, 0.16), transparent 28rem),
-      linear-gradient(180deg, #f4f7fb 0%, #eef2f8 100%);
-    color: #0f1722;
     min-height: 100vh;
   }
 
@@ -369,6 +360,9 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     display: grid;
     grid-template-columns: 20rem minmax(0, 1fr);
     min-height: 100vh;
+    background: var(--smrt-color-background);
+    color: var(--smrt-color-on-background);
+    font-family: var(--smrt-font-family);
   }
 
   .sidebar {
@@ -376,9 +370,9 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     align-content: start;
     gap: 1.25rem;
     padding: 1.5rem;
-    background: rgba(7, 15, 26, 0.92);
-    color: #ecf2ff;
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-right: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface);
     backdrop-filter: blur(18px);
   }
 
@@ -404,7 +398,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     font-size: 0.75rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: #6aa4ff;
+    color: var(--smrt-color-primary);
   }
 
   .sidebar__header p:last-child,
@@ -432,17 +426,22 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 
   .search span {
     font-size: 0.82rem;
-    color: rgba(236, 242, 255, 0.72);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .search input {
     width: 100%;
     box-sizing: border-box;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.9rem;
-    background: rgba(255, 255, 255, 0.08);
-    color: inherit;
+    background: var(--smrt-color-surface-container-lowest);
+    color: var(--smrt-color-on-surface);
     padding: 0.8rem 0.95rem;
+  }
+
+  .search input::placeholder {
+    color: var(--smrt-color-on-surface-variant);
+    opacity: 0.72;
   }
 
   .module-list button,
@@ -466,15 +465,16 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   }
 
   .module-list button {
-    background: rgba(255, 255, 255, 0.06);
-    color: inherit;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
     border: 1px solid transparent;
   }
 
   .module-list button.selected,
   .module-list button:hover {
-    background: rgba(106, 164, 255, 0.14);
-    border-color: rgba(106, 164, 255, 0.34);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .module-list button span,
@@ -494,16 +494,19 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   }
 
   .entry-list button {
-    background: rgba(255, 255, 255, 0.72);
-    border: 1px solid rgba(15, 23, 34, 0.08);
-    box-shadow: 0 18px 45px rgba(15, 23, 34, 0.05);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    box-shadow: 0 18px 45px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
   }
 
   .entry-list button.selected,
   .entry-list button:hover {
     transform: translateY(-1px);
-    border-color: rgba(14, 93, 224, 0.25);
-    box-shadow: 0 18px 45px rgba(14, 93, 224, 0.12);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
+    box-shadow: 0 18px 45px color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
   }
 
   .mode-pills {
@@ -522,17 +525,18 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   }
 
   .mode-pills span {
-    background: rgba(14, 93, 224, 0.08);
-    color: #0e5de0;
+    background: var(--smrt-color-primary-container);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .preview-panel,
   .empty-card {
     padding: 1.1rem;
     border-radius: 1.25rem;
-    background: rgba(255, 255, 255, 0.82);
-    border: 1px solid rgba(15, 23, 34, 0.08);
-    box-shadow: 0 24px 60px rgba(15, 23, 34, 0.08);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    box-shadow: 0 24px 60px color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent);
     backdrop-filter: blur(18px);
   }
 
@@ -549,26 +553,24 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     gap: 0.45rem;
     padding: 0.2rem;
     border-radius: 999px;
-    background: #e6edf9;
+    background: var(--smrt-color-surface-container-high);
   }
 
   .mode-toggle button {
     background: transparent;
-    color: #36527b;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .mode-toggle button.active {
-    background: #0e5de0;
-    color: white;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary);
   }
 
   .preview-stage {
     padding: 1rem;
     border-radius: 1rem;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(245, 248, 252, 0.94)),
-      radial-gradient(circle at top, rgba(106, 164, 255, 0.12), transparent 28rem);
-    border: 1px solid rgba(15, 23, 34, 0.06);
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-lowest);
     overflow: auto;
     min-height: 24rem;
   }

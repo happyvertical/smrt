@@ -65,6 +65,36 @@ const output = new VoiceOutput({
 output.getWordAtTime(0.7); // { word: 'evening', start: 0.6, end: 1.0 }
 ```
 
+### Runtime speech adapters
+
+`@happyvertical/smrt-voice` stores voice domain records. Runtime STT/TTS provider
+calls are owned by `@happyvertical/speech`.
+
+```typescript
+import { getSpeech } from '@happyvertical/speech';
+import { VoiceOutput, VoiceProfile } from '@happyvertical/smrt-voice';
+
+const speech = await getSpeech({
+  synthesizer: {
+    type: 'qwen3-tts',
+    baseUrl: 'http://qwen3-tts.qwen3-tts.svc.cluster.local',
+  },
+});
+
+const profile = await VoiceProfile.find('voice-123');
+const spoken = await speech.synthesize({
+  text: 'Welcome to the evening news.',
+  voice: profile.toSpeechVoice(),
+});
+
+const output = VoiceOutput.fromSynthesizedSpeech({
+  sourceText: 'Welcome to the evening news.',
+  voiceProfileId: profile.id,
+  audioAssetId: 'asset-created-by-your-asset-store',
+  speech: spoken,
+});
+```
+
 ## API
 
 ### Models
@@ -84,6 +114,7 @@ output.getWordAtTime(0.7); // { word: 'evening', start: 0.6, end: 1.0 }
 | `SampleQuality` | Audio quality rating: `low`, `medium`, `high` |
 | `WordTiming` | Per-word timing entry: `{ word, start, end }` (seconds) |
 | `VoiceOutputMetadata` | Audio metadata: sampleRate, format, channels, bitDepth, provider, model |
+| `SpeechVoice`, `SynthesizedSpeech`, `TranscriptResult` | Runtime contracts re-exported from `@happyvertical/speech` |
 | `VoiceProfileOptions` | Profile creation options |
 | `VoiceSampleOptions` | Sample creation options |
 | `VoiceOutputOptions` | Output creation options |
@@ -92,10 +123,12 @@ output.getWordAtTime(0.7); // { word: 'evening', start: 0.6, end: 1.0 }
 
 - `VoiceProfile.isCloned` / `isDesigned` -- which creation mode is active
 - `VoiceProfile.isReady` -- status equals `ready`
+- `VoiceProfile.toSpeechVoice()` -- runtime voice contract for `@happyvertical/speech`
 - `VoiceSample.meetsMinDuration` -- duration >= 3 seconds
 - `VoiceSample.isSuitableForCloning` -- meets min duration AND quality != low
 - `VoiceOutput.wordCount` / `wordsPerSecond` -- computed from sourceText and duration
 - `VoiceOutput.getWordAtTime(seconds)` -- look up word being spoken at a timestamp
+- `VoiceOutput.fromSynthesizedSpeech()` -- normalize speech adapter output metadata/timings
 
 ## Dependencies
 
@@ -104,3 +137,4 @@ output.getWordAtTime(0.7); // { word: 'evening', start: 0.6, end: 1.0 }
 - `@happyvertical/smrt-config` -- configuration loading
 - `@happyvertical/smrt-content` -- content models (VoiceOutput extends Content)
 - `@happyvertical/smrt-tenancy` -- multi-tenant scoping
+- `@happyvertical/speech` -- runtime STT/TTS adapter contracts

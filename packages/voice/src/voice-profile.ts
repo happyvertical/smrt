@@ -9,6 +9,7 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type { SpeechVoice } from '@happyvertical/speech';
 
 /**
  * Voice profile status
@@ -271,4 +272,43 @@ export class VoiceProfile extends SmrtObject {
   get isGlobal(): boolean {
     return this.tenantId === null;
   }
+
+  /**
+   * Convert this persisted profile into the runtime voice shape consumed by
+   * @happyvertical/speech adapters.
+   */
+  toSpeechVoice(): SpeechVoice {
+    const voiceData = isRecord(this.voiceData) ? this.voiceData : {};
+    const prompt =
+      stringValue(voiceData.prompt) ?? stringValue(voiceData.voicePrompt);
+    const speakerId =
+      stringValue(voiceData.speakerId) ??
+      stringValue(voiceData.speaker) ??
+      stringValue(voiceData.providerVoiceId);
+
+    return {
+      id:
+        stringValue(voiceData.id) ??
+        stringValue(voiceData.voiceId) ??
+        stringValue(this.id),
+      name: this.name || undefined,
+      language: this.language || undefined,
+      speakerId,
+      prompt,
+      metadata: {
+        ...voiceData,
+        provider: this.provider,
+        defaultSpeed: this.defaultSpeed,
+        defaultPitch: this.defaultPitch,
+      },
+    };
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }

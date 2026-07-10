@@ -2,11 +2,26 @@
 
 Chat rooms, threads, and agent sessions with app-controlled tool whitelisting.
 
+## Dev Server
+
+`pnpm --dir packages/chat dev` runs a package-local SvelteKit workbench. The root
+route is an interactive chat surface with a dev-only `/api/dev-chat` endpoint:
+it uses `@happyvertical/ai` when local provider credentials are present and
+falls back to a deterministic local assistant otherwise. `/previews` hosts the
+shared component playground entries from `src/svelte/playground.ts`.
+
+The root workbench also has a dev-only voice conversation mode. It reads voice
+gateway connection details through `/api/dev-voice/config`, streams browser mic
+audio to `WS /ws/voice` as PCM16 mono, appends gateway transcripts/responses to
+the chat, and plays returned TTS audio. Exposing
+`SMRT_CHAT_DEV_VOICE_GATEWAY_TOKEN` to the browser requires
+`SMRT_CHAT_DEV_VOICE_GATEWAY_EXPOSE_TOKEN=true`; keep that local-only.
+
 ## Models
 
-Internal models — all mutations go through the membership/owner-checked `ChatService` (S5 #1392). EVERY `@smrt()` model in this package (ChatRoom, ChatMessage, ChatParticipant, ChatThread, ChatReaction, AgentSession) has a READ-ONLY generated REST/MCP surface (`list`/`get` only); `create`/`update`/`delete` are intentionally NOT generated so the raw collection routes cannot skip the service-layer authorization. A structural regression test enumerates the registry to assert no chat model exposes a mutating op.
+Internal models — all mutations go through the membership/owner-checked `ChatService` (S5 #1392) or the voice adapter's binding-checked flow. EVERY `@smrt()` model in this package (ChatRoom, ChatMessage, ChatParticipant, ChatThread, ChatReaction, AgentSession, VoiceSession) has a READ-ONLY generated REST/MCP surface (`list`/`get` only); `create`/`update`/`delete` are intentionally NOT generated so the raw collection routes cannot skip the service-layer authorization. A structural regression test enumerates the registry to assert no chat model exposes a mutating op.
 
-`ChatService` is a CLOSED FACADE (S5 #1392). The raw collections (`rooms`, `messages`, `participants`, `threads`, `agentSessions`, `reactions`) are ES `#private` fields — they are NOT on the public `ChatService` type and the package index does NOT export the collection classes, so a consumer cannot do `chat.messages.create({senderProfileId, role})` / `new ChatParticipantCollection(...)` to mutate around the authorization. The security-sensitive internals (`#writeMessage`, `#emitAgentReply`, `#enrollParticipant`, `#loadActiveSession`, `#requireActiveMembership`, `#requireRoomAdmin`, `#extractToolName`) are ES `#private` too, so they are unreachable at runtime — TypeScript `private` alone is erased and would leave them callable on the prototype. The agent-reply bridge is a `Symbol`-keyed static (not the old enumerable `_runAgentReply`), reachable only by the module-local `sendAgentReply` that holds the non-exported symbol.
+`ChatService` is a CLOSED FACADE (S5 #1392). The raw collections (`rooms`, `messages`, `participants`, `threads`, `agentSessions`, `reactions`, `voiceSessions`) are ES `#private` fields — they are NOT on the public `ChatService` type and the package index does NOT export the collection classes, so a consumer cannot do `chat.messages.create({senderProfileId, role})` / `new ChatParticipantCollection(...)` to mutate around the authorization. The security-sensitive internals (`#writeMessage`, `#emitAgentReply`, `#enrollParticipant`, `#loadActiveSession`, `#requireActiveMembership`, `#requireRoomAdmin`, `#extractToolName`) are ES `#private` too, so they are unreachable at runtime — TypeScript `private` alone is erased and would leave them callable on the prototype. The agent-reply bridge is a `Symbol`-keyed static (not the old enumerable `_runAgentReply`), reachable only by the module-local `sendAgentReply` that holds the non-exported symbol.
 
 - **ChatRoom**: `roomType` (public/private/dm/agent), `status`, `topic`, `maxParticipants`, `lastMessageAt`. Tenant-scoped (required).
 - **ChatMessage**: shared by users + agents. `role` (user/assistant/system/tool), `messageType` (text/system/action/file/tool_call/tool_result), `toolCallData` JSON. Unified model — no separate agent message type. Tenant-scoped (required).
@@ -14,6 +29,7 @@ Internal models — all mutations go through the membership/owner-checked `ChatS
 - **ChatThread**: `rootMessageId`, `isResolved`, `messageCount`. Created via `ChatService.startThread()` (member-checked). Tenant-scoped (required).
 - **ChatReaction**: `messageId`, `profileId`, `emoji`. Added/removed via `ChatService.addReaction()`/`removeReaction()` (member-checked, self-keyed). Tenant-scoped (required).
 - **AgentSession**: `agentId` (string ref, not FK), `allowedTools` (JSON string array), `sessionContext` (JSON), `systemPrompt`, limits (`maxTokens`/`maxMessages`/`expiresAt`). Optional tenancy.
+- **VoiceSession**: short-lived voice-gateway binding over `(tenant, actorProfileId, personaId, room/thread/agentSession)` plus a persona snapshot, gateway `session_id`, expiry, replay tracking, and metadata. Tenant-scoped (required). Generated surface is read-only; creation and turns go through `createVoiceChatSession()` / `handleVoiceGatewayTurn()`.
 
 ## ChatService
 
@@ -33,6 +49,12 @@ The "chat with your learning agent" surface — the real agentic runtime for `Ag
 - **`runPersonaConversationTurn(options)`** (`persona-conversation.ts`) — binds a conversation to an `AgentPersona`/`ResolvedPersona`: runs as its principal (`runAsUserId`), offers only its `allowedTools`, speaks its instructions (`resolvePersonaInstructions`, layering approved learned directives), and injects its **recalled learning memory** (`personaLearningMemory`, isolated per `memoryScope`) into the system prompt. `bindPersonaToSession()` mirrors the persona's `allowedTools`/instructions onto the `AgentSession` so the chat authoring gate agrees with the loop's offer gate. Authors the reply (and each executed tool) via the internal `sendAgentReply` bridge.
 - **Agent orchestration** (L3, #1892) — the loop accepts non-manifest **`extraTools`** (`PrincipalTool[]`, from `@happyvertical/smrt-agents`), gated by the *same* fail-closed allow-list. The standard **`invoke-agent`** tool (`createInvokeAgentTool`, slug `agents.invoke`) lets a conversational agent delegate to a **worker agent under its own principal** — the worker runs via `executeAsPrincipal` as the originating user (never its own authority), the principal is immutable along the chain, and its completion is surfaced back into the conversation. `runPersonaConversationTurn` filters `extraTools` by the persona's `allowedTools` (offer gate); the tool's `execute` re-asserts `assertToolAllowed` (execution gate). See `@happyvertical/smrt-agents` for the delegation envelope + transports.
 - **Chat feedback capture** (`chat-feedback.ts`) — `captureChatFeedback()` + `acceptAppliedChange`/`rejectAppliedChange`/`correctResponse`/`rateResponse`/`thumbsUp`/`thumbsDown` write a `Feedback` row (personas) carrying the conversation's **correlation-id**, and (by default) reinforce the persona's learning memory (`reinforceFromFeedback`). So an in-chat reject decays a strategy below the reuse floor and it stops being recalled; a correction supersedes its stored value.
+
+## Voice Gateway Turns (#1910)
+
+Voice is an input mode for the existing persona chat harness, not a separate chat runtime. `createVoiceChatSession()` creates a short-lived `VoiceSession` for an authenticated actor/profile, binding tenant, persona, agent session, room, and optional thread. `handleVoiceGatewayTurn()` resolves that binding from `metadata.voiceSessionId`, checks the gateway's `session_id` and any supplied tenant/profile/persona/session/thread metadata against the server-side binding, persists the transcript through `ChatService.sendAgentUserMessage()`, runs `runPersonaConversationTurn()`, stamps voice/correlation metadata onto the persisted user/assistant/tool messages, records the gateway `turn_id`, and returns the gateway response contract. The Fetch-compatible `createVoiceGatewayTurnHandler()` adds the coarse gateway bearer-token check.
+
+The gateway bearer token proves only "this request came from the gateway"; it never authorizes the end user. The short-lived `VoiceSession` binding is the user/session proof, and untrusted gateway metadata must be validated against that binding before any chat write or tool loop. Tool execution remains fail-closed through the persona allow-list mirrored onto `AgentSession` by `bindPersonaToSession()`.
 
 ## Gotchas
 

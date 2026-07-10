@@ -146,11 +146,15 @@ function handlePointerUp() {
   }
 
   @media (max-width: 600px) {
+    .chat-layout {
+      flex-direction: column;
+    }
+
     .chat-layout__sidebar {
       width: 100% !important;
-      position: absolute;
-      inset: 0;
-      z-index: 10;
+      max-height: 14rem;
+      border-right: 0;
+      border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     }
 
     .chat-layout__resize-handle {

@@ -8,6 +8,10 @@
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
 import { crossPackageRef, foreignKey, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
+import type {
+  WordTiming as SpeechWordTiming,
+  SynthesizedSpeech,
+} from '@happyvertical/speech';
 import { VoiceProfile } from './voice-profile.js';
 
 /**
@@ -28,6 +32,16 @@ export interface WordTiming {
    * End time in seconds
    */
   end: number;
+
+  /**
+   * Provider confidence score, when available
+   */
+  confidence?: number;
+
+  /**
+   * Speaker identifier, when diarization is available
+   */
+  speakerId?: string;
 }
 
 /**
@@ -43,6 +57,11 @@ export interface VoiceOutputMetadata {
    * Audio format (e.g., 'wav', 'mp3', 'ogg')
    */
   format?: string;
+
+  /**
+   * MIME type returned by the speech provider
+   */
+  contentType?: string;
 
   /**
    * Number of audio channels
@@ -113,6 +132,17 @@ export interface VoiceOutputOptions extends ContentOptions {
    * Audio metadata
    */
   audioMetadata?: VoiceOutputMetadata;
+}
+
+/**
+ * Create a VoiceOutput from a runtime @happyvertical/speech synthesis result.
+ */
+export interface VoiceOutputFromSynthesizedSpeechOptions
+  extends VoiceOutputOptions {
+  /**
+   * Runtime synthesis result from @happyvertical/speech.
+   */
+  speech: SynthesizedSpeech;
 }
 
 /**
@@ -242,4 +272,62 @@ export class VoiceOutput extends Content {
       null
     );
   }
+
+  /**
+   * Build a persisted output model from a provider-neutral speech result.
+   *
+   * The binary audio remains in the caller-owned asset pipeline; this helper
+   * only normalizes metadata and timing fields onto the SMRT model.
+   */
+  static fromSynthesizedSpeech(
+    options: VoiceOutputFromSynthesizedSpeechOptions,
+  ): VoiceOutput {
+    const { speech, audioMetadata, duration, wordTimings, ...rest } = options;
+    return new VoiceOutput({
+      ...rest,
+      duration: duration ?? speech.durationSeconds ?? 0,
+      wordTimings: wordTimings ?? wordTimingsFromSpeech(speech.words),
+      audioMetadata: {
+        ...metadataFromSynthesizedSpeech(speech),
+        ...audioMetadata,
+      },
+    });
+  }
+}
+
+export function wordTimingsFromSpeech(
+  words: readonly SpeechWordTiming[] | null | undefined,
+): WordTiming[] | null {
+  if (!words || words.length === 0) {
+    return null;
+  }
+  return words.map((word) => ({
+    word: word.word,
+    start: word.startSeconds,
+    end: word.endSeconds,
+    confidence: word.confidence,
+    speakerId: word.speakerId,
+  }));
+}
+
+export function metadataFromSynthesizedSpeech(
+  speech: SynthesizedSpeech,
+): VoiceOutputMetadata {
+  return {
+    sampleRate: speech.sampleRate,
+    format: speech.format ?? formatFromContentType(speech.contentType),
+    contentType: speech.contentType,
+    channels: speech.channels,
+    fileSize: speech.audio.byteLength,
+    provider: speech.provider,
+    model: speech.model,
+  };
+}
+
+function formatFromContentType(contentType: string): string | undefined {
+  const normalized = contentType.split(';', 1)[0]?.trim().toLowerCase();
+  if (!normalized?.startsWith('audio/')) {
+    return undefined;
+  }
+  return normalized.slice('audio/'.length);
 }

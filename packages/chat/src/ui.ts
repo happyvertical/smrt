@@ -78,6 +78,7 @@ export const CHAT_MODULE_META: SmrtModuleMeta = {
     'ChatParticipant',
     'ChatReaction',
     'AgentSession',
+    'VoiceSession',
   ],
   collections: [
     'ChatRoomCollection',
@@ -86,5 +87,6 @@ export const CHAT_MODULE_META: SmrtModuleMeta = {
     'ChatParticipantCollection',
     'ChatReactionCollection',
     'AgentSessionCollection',
+    'VoiceSessionCollection',
   ],
 };

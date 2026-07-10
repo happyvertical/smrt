@@ -16,6 +16,7 @@ export type ChatMessageType =
   | 'tool_result';
 export type ChatMessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type AgentSessionStatus = 'active' | 'closed' | 'expired';
+export type VoiceSessionStatus = 'active' | 'expired' | 'revoked';
 
 // ---- Options Interfaces ----
 
@@ -101,6 +102,25 @@ export interface AgentSessionOptions extends SmrtObjectOptions {
   lastMessageAt?: Date | null;
   expiresAt?: Date | null;
   closedAt?: Date | null;
+}
+
+export interface VoiceSessionOptions extends SmrtObjectOptions {
+  tenantId?: string;
+  gatewaySessionId?: string;
+  actorProfileId?: string;
+  actorUserId?: string | null;
+  personaId?: string;
+  agentSessionId?: string;
+  chatRoomId?: string;
+  threadId?: string | null;
+  target?: string;
+  status?: VoiceSessionStatus;
+  expiresAt?: Date;
+  lastTurnAt?: Date | null;
+  lastGatewayTurnId?: string | null;
+  personaSnapshot?: Record<string, unknown> | string;
+  metadata?: Record<string, unknown> | string;
+  processedTurnIds?: string[] | string;
 }
 
 // ---- Search / Filter types ----

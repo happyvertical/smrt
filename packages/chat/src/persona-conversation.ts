@@ -35,6 +35,7 @@ import {
 } from '@happyvertical/smrt-personas';
 import { getDatabase } from '@happyvertical/sql';
 import type { AgentSession } from './models/AgentSession.js';
+import type { ChatMessage } from './models/ChatMessage.js';
 import {
   buildManifestToolCatalog,
   type ManifestTool,
@@ -294,6 +295,14 @@ export interface PersonaConversationTurnResult {
   recalled: LearningMemoryRecord[];
   /** The system prompt assembled for the turn. */
   systemPrompt: string;
+  /** Persisted messages authored by this turn when a chat service was supplied. */
+  authoredMessages?: AuthoredConversationMessages;
+}
+
+/** Persisted assistant/tool messages emitted for a persona turn. */
+export interface AuthoredConversationMessages {
+  toolMessages: ChatMessage[];
+  assistantMessage: ChatMessage | null;
 }
 
 function assembleSystemPrompt(
@@ -388,8 +397,9 @@ export async function runPersonaConversationTurn(
     audit: options.audit,
   });
 
+  let authoredMessages: AuthoredConversationMessages | undefined;
   if (options.chatService && options.session?.id) {
-    await authorConversationReply({
+    authoredMessages = await authorConversationReply({
       chatService: options.chatService,
       session: options.session,
       tenantId,
@@ -398,7 +408,7 @@ export async function runPersonaConversationTurn(
     });
   }
 
-  return { result, correlationId, recalled, systemPrompt };
+  return { result, correlationId, recalled, systemPrompt, authoredMessages };
 }
 
 /**
@@ -466,13 +476,14 @@ async function authorConversationReply(input: {
   tenantId: string;
   threadId: string | null;
   result: ToolLoopResult;
-}): Promise<void> {
+}): Promise<AuthoredConversationMessages> {
   const { sendAgentReply } = await import('./services/ChatService.js');
+  const toolMessages: ChatMessage[] = [];
   for (const invocation of input.result.invocations) {
     if (!invocation.ok) {
       continue;
     }
-    await sendAgentReply(input.chatService, {
+    const message = await sendAgentReply(input.chatService, {
       tenantId: input.tenantId,
       agentSessionId: input.session.id as string,
       threadId: input.threadId,
@@ -481,12 +492,14 @@ async function authorConversationReply(input: {
       messageType: 'tool_result',
       toolCallData: { name: invocation.slug, args: invocation.args },
     });
+    toolMessages.push(message);
   }
-  await sendAgentReply(input.chatService, {
+  const assistantMessage = await sendAgentReply(input.chatService, {
     tenantId: input.tenantId,
     agentSessionId: input.session.id as string,
     threadId: input.threadId,
     content: input.result.content,
     kind: 'assistant',
   });
+  return { toolMessages, assistantMessage };
 }
