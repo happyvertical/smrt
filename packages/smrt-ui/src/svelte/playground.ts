@@ -10,7 +10,7 @@ export default {
   packageName: '@happyvertical/smrt-ui',
   displayName: 'UI Foundation',
   description:
-    'Provider-free controls and data primitives rendered in the active SMRT theme.',
+    'Provider-free controls and data primitives rendered in the active s-m-r-t theme.',
   entries: [
     {
       id: 'base-controls',

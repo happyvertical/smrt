@@ -334,7 +334,7 @@ const smrtEasing: EasingScale = {
  */
 export const smrtTheme: Theme = {
   id: 'smrt',
-  name: 'SMRT',
+  name: 's-m-r-t',
   light: lightColors,
   dark: darkColors,
   typography,

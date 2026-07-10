@@ -22,7 +22,7 @@ export interface Props {
 
 let {
   modules = [],
-  title = 'SMRT Playground',
+  title = 's-m-r-t playground',
   subtitle = 'Shared package previews with app-local overrides',
 }: Props = $props();
 
@@ -777,7 +777,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     color: var(--smrt-color-primary);
     font-size: 0.68rem;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
+    text-transform: none;
   }
 
   .package-landing > header h2 {
@@ -876,7 +876,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     color: var(--smrt-color-primary);
     font-size: 0.68rem;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
+    text-transform: none;
   }
 
   .preview-heading h2 {
