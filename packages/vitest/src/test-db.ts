@@ -42,6 +42,7 @@ import { join } from 'node:path';
 // `createIsolatedTestDbFromManifest({ includeObjects: [...] })` were still
 // misclassified as table-bearing and lost their FK/junction columns.
 import { isSmrtCollectionExtendsName } from '@happyvertical/smrt-core';
+import { getDatabaseFromSqliteSchemaTemplate } from './sqlite-schema-template.js';
 import type {
   DatabaseInterfaceWithTransaction,
   TransactionHandle,
@@ -52,6 +53,12 @@ type VitestDatabaseConnectionOptions = Parameters<
 >[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
 };
+
+function removeSqliteFiles(url: string): void {
+  rmSync(url, { force: true });
+  rmSync(`${url}-wal`, { force: true });
+  rmSync(`${url}-shm`, { force: true });
+}
 
 // ============================================================================
 // Manifest Types (minimal to avoid circular dependency with smrt-core)
@@ -281,10 +288,7 @@ export async function createTestDb(prefix = 'smrt-test'): Promise<{
       // Small delay to allow any pending writes
       await new Promise((resolve) => setTimeout(resolve, 50));
       try {
-        rmSync(config.url, { force: true });
-        // Also remove -wal and -shm files if they exist
-        rmSync(`${config.url}-wal`, { force: true });
-        rmSync(`${config.url}-shm`, { force: true });
+        removeSqliteFiles(config.url);
       } catch {
         // Ignore cleanup errors
       }
@@ -402,6 +406,10 @@ export interface IsolatedTestDbResult {
  * receive their own temp database file (SQLite) or an independent
  * transaction (PostgreSQL).
  *
+ * File-backed SQLite schemas are prepared once per process, snapshotted, and
+ * copied into each later database. The template contains schema only; test
+ * data remains isolated in the per-test transaction and database file.
+ *
  * Requires `@happyvertical/sql` with `beginTransaction()` support
  * (SDK PR #722).  Throws if the adapter does not implement it.
  *
@@ -459,13 +467,27 @@ export async function createIsolatedTestDb(
 
   // Create the base database connection
   // Cast to extended interface that includes beginTransaction (from SDK #722)
-  const baseDb = (await getDatabase({
-    ...config,
-    __smrtSkipVitestSchemaPreparation: true,
-  } as VitestDatabaseConnectionOptions)) as DatabaseInterfaceWithTransaction;
+  const baseDb =
+    schema && config.type === 'sqlite' && config.url !== ':memory:'
+      ? await getDatabaseFromSqliteSchemaTemplate({
+          cacheKey: `isolated-test-db\0${schema}`,
+          databaseOptions: {
+            ...config,
+            __smrtSkipVitestSchemaPreparation: true,
+          },
+          getDatabase: async (databaseOptions) =>
+            (await getDatabase(
+              databaseOptions as VitestDatabaseConnectionOptions,
+            )) as DatabaseInterfaceWithTransaction,
+          prepare: (database) => syncSchema({ db: database, schema }),
+        })
+      : ((await getDatabase({
+          ...config,
+          __smrtSkipVitestSchemaPreparation: true,
+        } as VitestDatabaseConnectionOptions)) as DatabaseInterfaceWithTransaction);
 
   // Sync schema if provided (must be done before transaction for DDL)
-  if (schema) {
+  if (schema && config.type !== 'sqlite') {
     await syncSchema({ db: baseDb, schema });
   }
 
@@ -515,9 +537,7 @@ export async function createIsolatedTestDb(
     ) {
       await new Promise((resolve) => setTimeout(resolve, 50));
       try {
-        rmSync(config.url, { force: true });
-        rmSync(`${config.url}-wal`, { force: true });
-        rmSync(`${config.url}-shm`, { force: true });
+        removeSqliteFiles(config.url);
       } catch {
         // Ignore cleanup errors
       }
