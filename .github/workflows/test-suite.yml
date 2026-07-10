@@ -289,7 +289,10 @@ jobs:
     needs: build
     if: inputs.mode == 'full'
     runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
-    timeout-minutes: 15
+    # A remote-cache outage can add several minutes of cold setup and build
+    # time. Match the package-shard ceiling so cache misses cannot cancel an
+    # otherwise healthy core suite.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       max-parallel: 2
