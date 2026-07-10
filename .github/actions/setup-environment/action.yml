@@ -204,29 +204,6 @@ runs:
         restore-keys: |
           ${{ runner.os }}-pnpm-store-
 
-    # Turbo build/test/typecheck cache shared across CI jobs. turbo.json pins the
-    # cache to .turbo/cache. This RESTORES only — the build job alone saves the
-    # populated cache (a dedicated actions/cache/save step) so that parallel jobs
-    # which don't run a build (e.g. dependency-audit, install-deps:false) can't
-    # claim the immutable per-SHA key with an empty cache. Dependent jobs restore
-    # the build job's cache, so their `pnpm run build` is a turbo cache hit instead
-    # of a cold full rebuild (was ~11 redundant builds per run). Key is per-commit
-    # with progressively looser restore-keys (same manifests, then any) for warm
-    # starts across runs.
-    - name: Ensure Turbo cache directory exists
-      shell: bash
-      run: mkdir -p .turbo/cache
-
-    - name: Restore Turbo cache
-      id: turbo-cache
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-      with:
-        path: .turbo/cache
-        key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-
-          ${{ runner.os }}-turbo-
-
     - name: Cache Playwright browsers
       if: inputs.setup-playwright == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -266,40 +243,38 @@ runs:
       if: inputs.install-deps == 'true'
       shell: bash
       run: |
-        # In CI, add pnpm overrides to package.json for SDK workspace resolution
+        # In CI, add pnpm overrides for SDK workspace resolution. pnpm 11 reads
+        # root overrides from pnpm-workspace.yaml rather than package.json.
         if [ -d sdk/packages ]; then
-          echo "Adding pnpm overrides for SDK workspace packages to package.json"
+          echo "Adding pnpm overrides for SDK workspace packages to pnpm-workspace.yaml"
 
-          # Use node to add overrides to package.json
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-
-            // Add pnpm.overrides section
-            pkg.pnpm = pkg.pnpm || {};
-            pkg.pnpm.overrides = {
-              '@happyvertical/ai': 'workspace:*',
-              '@happyvertical/cache': 'workspace:*',
-              '@happyvertical/config': 'workspace:*',
-              '@happyvertical/documents': 'workspace:*',
-              '@happyvertical/email': 'workspace:*',
-              '@happyvertical/files': 'workspace:*',
-              '@happyvertical/geo': 'workspace:*',
-              '@happyvertical/github-actions': 'workspace:*',
-              '@happyvertical/languages': 'workspace:*',
-              '@happyvertical/logger': 'workspace:*',
-              '@happyvertical/ocr': 'workspace:*',
-              '@happyvertical/pdf': 'workspace:*',
-              '@happyvertical/sdk-mcp': 'workspace:*',
-              '@happyvertical/spider': 'workspace:*',
-              '@happyvertical/sql': 'workspace:*',
-              '@happyvertical/translator': 'workspace:*',
-              '@happyvertical/utils': 'workspace:*'
-            };
-
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-            console.log('✓ Added SDK workspace overrides to package.json');
-          "
+          current_overrides=$(pnpm config get overrides --json)
+          updated_overrides=$(CURRENT_OVERRIDES="$current_overrides" node -e '
+            const overrides = JSON.parse(process.env.CURRENT_OVERRIDES || "{}");
+            const sdkPackages = [
+              "@happyvertical/ai",
+              "@happyvertical/cache",
+              "@happyvertical/config",
+              "@happyvertical/documents",
+              "@happyvertical/email",
+              "@happyvertical/files",
+              "@happyvertical/geo",
+              "@happyvertical/github-actions",
+              "@happyvertical/languages",
+              "@happyvertical/logger",
+              "@happyvertical/ocr",
+              "@happyvertical/pdf",
+              "@happyvertical/sdk-mcp",
+              "@happyvertical/spider",
+              "@happyvertical/sql",
+              "@happyvertical/translator",
+              "@happyvertical/utils",
+            ];
+            for (const packageName of sdkPackages) overrides[packageName] = "workspace:*";
+            process.stdout.write(JSON.stringify(overrides));
+          ')
+          pnpm config set --location=project --json overrides "$updated_overrides"
+          echo "✓ Added SDK workspace overrides to pnpm-workspace.yaml"
 
           echo "Installing with SDK workspace packages (--no-frozen-lockfile)"
           pnpm install --no-frozen-lockfile --loglevel error

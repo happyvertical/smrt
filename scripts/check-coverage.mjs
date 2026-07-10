@@ -240,6 +240,35 @@ function measureCoverage(pkg) {
 }
 
 /**
+ * Materialize only the build outputs needed by the packages whose coverage is
+ * being measured. CI used to run a full monorepo build before this script,
+ * which made a one-package coverage check restore every package's outputs.
+ */
+function buildCoverageClosures(packages) {
+  const filters = packages.map(({ pkg }) => {
+    const manifest = JSON.parse(
+      readFileSync(join(PKGS, pkg, 'package.json'), 'utf8'),
+    );
+    return `--filter=${manifest.name}...`;
+  });
+
+  if (filters.length === 0) return;
+
+  console.log(
+    `\n── building ${filters.length} coverage package dependency closure(s) ──`,
+  );
+  execFileSync(
+    'pnpm',
+    ['exec', 'turbo', 'run', 'build', '--concurrency=2', ...filters],
+    {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: process.env,
+    },
+  );
+}
+
+/**
  * Did the PR touch any source file v8 actually measured in this package?
  *
  * A touched file that doesn't appear in the coverage report (a `.svelte` file
@@ -308,6 +337,8 @@ function main() {
     console.log('✓ coverage-gate: no tiered packages to check.');
     return;
   }
+
+  buildCoverageClosures(checked);
 
   const failures = [];
   const results = [];

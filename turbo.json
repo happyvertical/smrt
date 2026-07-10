@@ -8,6 +8,9 @@
     "vitest.workspace.ts",
     "biome.json"
   ],
+  "globalPassThroughEnv": [
+    "PUBLISH_PACK_OUTPUT_DIR"
+  ],
   "tasks": {
     "generate": {
       "dependsOn": [
@@ -127,6 +130,20 @@
         "**/*.ts",
         "**/*.js",
         "biome.json"
+      ],
+      "cache": false
+    },
+    "test:postgres": {
+      "dependsOn": [
+        "build",
+        "generate:test"
+      ],
+      "env": [
+        "CI_POSTGRES_BASE_URL",
+        "DATABASE_URL",
+        "TEST_DB_URL",
+        "TEST_DB_ADAPTER",
+        "SMRT_TEST_POSTGRES_URL"
       ],
       "cache": false
     },

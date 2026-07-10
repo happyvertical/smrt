@@ -73,8 +73,16 @@ describe('computeTableVersionEtag (#1765 + #1764 salt)', () => {
     // The whole point of the salt: a shape-only redeploy (no table write, so the
     // version is unchanged) must produce a DIFFERENT read ETag so clients refetch
     // instead of being answered 304 with the old shape.
-    const v1 = computeTableVersionEtag(3, '/products?limit=10', 'hashAAAAAAAAAAAA');
-    const v2 = computeTableVersionEtag(3, '/products?limit=10', 'hashBBBBBBBBBBBB');
+    const v1 = computeTableVersionEtag(
+      3,
+      '/products?limit=10',
+      'hashAAAAAAAAAAAA',
+    );
+    const v2 = computeTableVersionEtag(
+      3,
+      '/products?limit=10',
+      'hashBBBBBBBBBBBB',
+    );
     expect(v1).not.toBe(v2);
     // ...and each is distinct from the unsalted validator too.
     const unsalted = computeTableVersionEtag(3, '/products?limit=10');
@@ -83,9 +91,9 @@ describe('computeTableVersionEtag (#1765 + #1764 salt)', () => {
   });
 
   it('a salted ETag is deterministic for the same (version, representation, manifestHash)', () => {
-    expect(
+    expect(computeTableVersionEtag(9, '/x', 'stableHash000000')).toBe(
       computeTableVersionEtag(9, '/x', 'stableHash000000'),
-    ).toBe(computeTableVersionEtag(9, '/x', 'stableHash000000'));
+    );
   });
 });
 
@@ -447,7 +455,9 @@ describe('emitted SvelteKit route helper: ETag v2 structure (#1765)', () => {
     expect(snippet).toContain('MANIFEST_HASH');
     // The representation extra stays `undefined` (non-tenant); the salt is a
     // SEPARATE third argument — it must not be folded into canonicalReadRepresentation.
-    expect(snippet).toContain('canonicalReadRepresentation(request, undefined)');
+    expect(snippet).toContain(
+      'canonicalReadRepresentation(request, undefined)',
+    );
   });
 
   it('omits the MANIFEST_HASH constant and third argument when no hash is threaded (backward-compat)', () => {

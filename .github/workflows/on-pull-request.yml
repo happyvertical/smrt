@@ -3,23 +3,26 @@ name: Pull Request Validation
 on:
   pull_request:
     branches: [main]
+  merge_group:
+    types: [checks_requested]
 
 # Cancel in-progress runs when new commits are pushed
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
-  contents: write  # Needed for auto-generating and committing changesets
-  pull-requests: write
+  contents: read
+  pull-requests: read
   packages: read
 
 jobs:
   validate-commits:
     name: Validate Conventional Commits
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
@@ -66,6 +69,7 @@ jobs:
 
   validate-workflows:
     name: Validate Workflow Files
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -146,6 +150,7 @@ jobs:
 
   secret-scan:
     name: Secret Scan (gitleaks)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 gives us the base branch history needed for merge-base.
@@ -262,40 +267,154 @@ jobs:
 
   dependency-audit:
     name: Dependency Vulnerability Audit
-    runs-on: arc-happyvertical
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
-      # pnpm audit reads the dependency tree from pnpm-lock.yaml — no
-      # node_modules needed, so install-deps is false. Registry auth lets the
-      # @happyvertical/* scoped queries (GitHub Packages) succeed.
-      - name: Setup environment
-        uses: ./.github/actions/setup-environment
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '24.18.0'
-          install-deps: 'false'
-          setup-playwright: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: '11.11.0'
+          run_install: false
 
       # Sweep S8 (#1413): fail the PR on any high/critical advisory. Accepted
-      # advisories are baselined — with justification — in package.json under
-      # pnpm.auditConfig.ignoreGhsas. Moderate/low are reported but non-blocking.
+      # advisories are baselined — with justification — in pnpm-workspace.yaml
+      # under auditConfig.ignoreGhsas. Moderate/low are reported but non-blocking.
       - name: Audit dependencies (fail on high+)
         run: pnpm audit --audit-level=high
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  postgres-scope:
+    name: Detect PostgreSQL Test Scope
+    runs-on: ubuntu-latest
+    outputs:
+      required: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.postgres }}
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Detect PostgreSQL-sensitive changes
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+        with:
+          filters: |
+            postgres:
+              - '.github/actions/**'
+              - '.github/workflows/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'turbo.json'
+              - 'packages/analytics/**'
+              - 'packages/cli/**'
+              - 'packages/core/**'
+              - 'packages/users/**'
+              - 'packages/vitest/**'
+              - 'scripts/run-with-ci-postgres.mjs'
+
+  postgres-tests:
+    name: PostgreSQL Tests
+    needs: postgres-scope
+    if: |
+      needs.postgres-scope.outputs.required == 'true' &&
+      vars.CI_POSTGRES_ENABLED == 'true'
+    uses: ./.github/workflows/postgres-tests.yml
+    permissions:
+      contents: read
+      packages: read
 
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml
+    with:
+      mode: ${{ github.event_name == 'merge_group' && 'full' || (vars.CI_MERGE_QUEUE_ENABLED == 'true' && 'affected' || 'full') }}
     permissions:
       contents: read
       packages: read
 
   publish-dry-run:
     name: Publish Dry Run
+    if: github.event_name == 'merge_group' || vars.CI_MERGE_QUEUE_ENABLED != 'true'
     uses: ./.github/workflows/publish-dry-run.yml
     permissions:
       contents: read
       packages: read
+
+  required-ci:
+    name: Required CI
+    if: always()
+    needs:
+      - validate-commits
+      - validate-workflows
+      - check-sdk-versions
+      - secret-scan
+      - check-standards
+      - dependency-audit
+      - postgres-scope
+      - postgres-tests
+      - test
+      - publish-dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required job set
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGE_QUEUE_ENABLED: ${{ vars.CI_MERGE_QUEUE_ENABLED }}
+          VALIDATE_COMMITS: ${{ needs.validate-commits.result }}
+          VALIDATE_WORKFLOWS: ${{ needs.validate-workflows.result }}
+          CHECK_SDK: ${{ needs.check-sdk-versions.result }}
+          SECRET_SCAN: ${{ needs.secret-scan.result }}
+          CHECK_STANDARDS: ${{ needs.check-standards.result }}
+          DEPENDENCY_AUDIT: ${{ needs.dependency-audit.result }}
+          POSTGRES_SCOPE: ${{ needs.postgres-scope.result }}
+          POSTGRES_ENABLED: ${{ vars.CI_POSTGRES_ENABLED }}
+          POSTGRES_REQUIRED: ${{ needs.postgres-scope.outputs.required }}
+          POSTGRES_TESTS: ${{ needs.postgres-tests.result }}
+          TEST_SUITE: ${{ needs.test.result }}
+          PUBLISH_DRY_RUN: ${{ needs.publish-dry-run.result }}
+        run: |
+          require_success() {
+            name=$1
+            result=$2
+            if [ "$result" != "success" ]; then
+              echo "$name must succeed, got: $result"
+              exit 1
+            fi
+          }
+
+          require_success "Check SDK Version Alignment" "$CHECK_SDK"
+          require_success "Check Monorepo Standards" "$CHECK_STANDARDS"
+          require_success "Dependency Vulnerability Audit" "$DEPENDENCY_AUDIT"
+          require_success "PostgreSQL scope detection" "$POSTGRES_SCOPE"
+          require_success "Validate Changes" "$TEST_SUITE"
+
+          if [ "$POSTGRES_REQUIRED" = "true" ] && [ "$POSTGRES_ENABLED" = "true" ]; then
+            require_success "PostgreSQL Tests" "$POSTGRES_TESTS"
+          elif [ "$POSTGRES_TESTS" != "skipped" ]; then
+            echo "PostgreSQL Tests should be skipped when disabled or out of scope, got: $POSTGRES_TESTS"
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            require_success "Validate Conventional Commits" "$VALIDATE_COMMITS"
+            require_success "Validate Workflow Files" "$VALIDATE_WORKFLOWS"
+            require_success "Secret Scan" "$SECRET_SCAN"
+            if [ "$MERGE_QUEUE_ENABLED" != "true" ]; then
+              require_success "Publish Dry Run" "$PUBLISH_DRY_RUN"
+            elif [ "$PUBLISH_DRY_RUN" != "skipped" ]; then
+              echo "Publish Dry Run should be deferred to merge_group"
+              exit 1
+            fi
+          else
+            require_success "Publish Dry Run" "$PUBLISH_DRY_RUN"
+          fi
+
+          echo "Required CI job set passed for $EVENT_NAME"
