@@ -20,7 +20,7 @@ SvelteKit route APIs; apps pass data, endpoints, and permission-filtered nav in.
 - `AdminShell`
 - `ShellState` / `createShellState`
 - `ShellSettingsPanel`, `HotkeyInput`, `ShortcutsOverlay`
-- `ShellDockTool`, `TenantNav`, `WorkspaceAccountMenu`
+- `ShellCorner`, `ShellDockTool`, `TenantNav`, `WorkspaceAccountMenu`
 - `ActivityBadge`, `ActivityList`, `ActivityItem`, `ActivityToasts`
 - `AppScopePanel`, `SystemStatusChips`, `SystemScopePanel`
 - `tenantNavFromManifest`
@@ -29,6 +29,11 @@ Use `AdminShell`'s `tenantFooter` snippet with `WorkspaceAccountMenu` to keep a
 single-line tenant/account control pinned below scrolling tenant navigation.
 Tenant switching and sign-out stay app-owned callbacks, so the workspace core
 remains independent of SvelteKit and `smrt-users` route conventions.
+
+Keep the `appBar` snippet for content in the center header band. Side-aligned
+identity and action content belongs in `topLeftCorner` / `topRightCorner`,
+wrapped in `ShellCorner side="left"` or `ShellCorner side="right"` so it follows
+the corresponding shell track as that edge expands and collapses.
 
 ## Migration
 
