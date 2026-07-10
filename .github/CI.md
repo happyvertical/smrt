@@ -18,7 +18,10 @@ If the remote cache is unavailable, Turbo performs a cold build.
 
 The pnpm store and runner workspace must remain on the same node-local
 filesystem so pnpm can hardlink packages. Do not restore the RAM-backed split
-mounts without measuring runner memory and install latency.
+mounts without measuring runner memory and install latency. The shared setup
+action also points `TMPDIR` at the workspace-backed runner temp directory so
+SQLite fixtures and other temporary test files bypass the container overlay
+filesystem.
 
 ## Pull requests and merge groups
 

@@ -9,7 +9,8 @@
     "biome.json"
   ],
   "globalPassThroughEnv": [
-    "PUBLISH_PACK_OUTPUT_DIR"
+    "PUBLISH_PACK_OUTPUT_DIR",
+    "TMPDIR"
   ],
   "tasks": {
     "generate": {

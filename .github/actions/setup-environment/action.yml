@@ -49,6 +49,13 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Configure runner temp directory
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP"
+        echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+        echo "Using workspace-backed runner temp directory at $RUNNER_TEMP"
+
     # Check if Node.js is already installed with the required version (custom ARC runner)
     - name: Check Node.js version
       id: node-check
