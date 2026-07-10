@@ -64,7 +64,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     tenantPanel?: Snippet;
     tenantFooter?: Snippet;
     focusRail?: Snippet;
-    focusPanel?: Snippet;
+    focusPanel?: Snippet<[{ tool: ShellFocusTool | null }]>;
     systemBar?: Snippet;
     systemPanel?: Snippet;
     topLeftCorner?: Snippet;
@@ -114,11 +114,13 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   setAdminShell(shell);
 
   let shortcutsOpen = $state(false);
-  const activeFocusTool = $derived(
-    shell.focusTools.find((tool) => tool.id === shell.activeFocusToolId) ??
+  function resolveActiveFocusTool(): ShellFocusTool | null {
+    return (
+      shell.focusTools.find((tool) => tool.id === shell.activeFocusToolId) ??
       shell.focusTools[0] ??
-      null,
-  );
+      null
+    );
+  }
   const shortcutEdges: PanelEdge[] = ['top', 'left', 'bottom', 'right'];
 
   onMount(() => {
@@ -244,7 +246,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
 {#snippet focusContent(tool: ShellFocusTool | null)}
   {#if focusPanel}
-    {@render focusPanel()}
+    {@render focusPanel({ tool })}
   {:else if tool?.render}
     {@render tool.render({ tool })}
   {:else if tool?.component}
@@ -369,7 +371,9 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       </div>
       {#if edgeExpanded('right')}
         <div class="smrt-admin-shell__panel smrt-admin-shell__panel--right">
-          {@render focusContent(activeFocusTool)}
+          {#key shell.activeFocusToolId}
+            {@render focusContent(resolveActiveFocusTool())}
+          {/key}
         </div>
       {/if}
     </aside>
