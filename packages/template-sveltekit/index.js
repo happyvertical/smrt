@@ -22,7 +22,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * vendored `.svelte-kit/tsconfig.json` stub that lets the template's own
  * tests typecheck without first running `svelte-kit sync`).
  */
-const COPY_SKIP = new Set(['.svelte-kit']);
+const COPY_SKIP = new Set(['.svelte-kit', '__tests__', 'test', 'tests']);
 
 /**
  * Get the path to the template directory
@@ -81,14 +81,14 @@ export function copyTemplate(destination, options = {}) {
  */
 export const templateInfo = {
   name: 'sveltekit',
-  description: 'SvelteKit project with SMRT framework integration',
+  description: 'Minimal SvelteKit project with s-m-r-t framework integration',
   features: [
     'SvelteKit 2.x with Svelte 5',
     'Auto-generated REST API routes',
-    'SMRT CLI integration',
+    's-m-r-t CLI integration',
     'TypeScript support',
     'SQLite database (configurable)',
-    'Multi-tenant ready (session + subdomain tenant resolution wired)',
+    'Session-authorized tenancy with separate subdomain selection',
   ],
 };
 

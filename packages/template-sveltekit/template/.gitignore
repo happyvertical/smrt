@@ -21,6 +21,7 @@ dist
 src/routes/api/**/+server.ts
 src/lib/server/smrt-register.ts
 src/lib/types/smrt-generated/
+src/types/smrt-generated/
 
 # Database
 *.db
