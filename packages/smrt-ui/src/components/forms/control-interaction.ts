@@ -227,25 +227,31 @@ function capabilitiesOf(
   registration: ControlRegistration,
 ): ControlCapability[] {
   const declared = registration.metadata.capabilities;
-  if (declared) return [...declared];
-  const capabilities: ControlCapability[] = ['explain'];
-  if (registration.getValue && registration.metadata.readable !== false) {
-    capabilities.push('read');
+  const capabilities: ControlCapability[] = declared ? [...declared] : [];
+  if (!declared) {
+    capabilities.push('explain');
+    if (registration.getValue && registration.metadata.readable !== false) {
+      capabilities.push('read');
+    }
+    if (registration.focus) capabilities.push('focus');
+    if (registration.reveal) capabilities.push('reveal');
+    if (registration.highlight) capabilities.push('highlight');
+    if (registration.validate) capabilities.push('validate');
+    if (registration.setValue && registration.metadata.writable !== false) {
+      capabilities.push('stage', 'apply', 'undo');
+    }
+    if (
+      (registration.clear || registration.setValue) &&
+      registration.metadata.writable !== false
+    ) {
+      capabilities.push('clear');
+    }
   }
-  if (registration.focus) capabilities.push('focus');
-  if (registration.reveal) capabilities.push('reveal');
-  if (registration.highlight) capabilities.push('highlight');
-  if (registration.validate) capabilities.push('validate');
-  if (registration.setValue && registration.metadata.writable !== false) {
-    capabilities.push('stage', 'apply', 'undo');
-  }
-  if (
-    (registration.clear || registration.setValue) &&
-    registration.metadata.writable !== false
-  ) {
-    capabilities.push('clear');
-  }
-  return capabilities;
+  return capabilities.filter((capability) => {
+    if (capability === 'read') return !isSecret(registration);
+    if (isMutation(capability)) return !isSecret(registration);
+    return true;
+  });
 }
 
 function redactsValue(registration: ControlRegistration): boolean {

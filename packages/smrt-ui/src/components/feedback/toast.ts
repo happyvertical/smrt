@@ -55,6 +55,9 @@ export function createToaster(): Toaster {
   function show(input: string | ToastInput): string {
     const normalized = typeof input === 'string' ? { message: input } : input;
     const id = normalized.id ?? `toast-${++nextToastId}`;
+    const existingTimer = timers.get(id);
+    if (existingTimer) clearTimeout(existingTimer);
+    timers.delete(id);
     const toast: Toast = {
       id,
       message: normalized.message,

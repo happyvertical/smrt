@@ -77,6 +77,10 @@ function getRowKey(row: T, index: number): string | number {
   return row[rowKey] as string | number;
 }
 
+function getDisplayRowKey(row: T, index: number): string | number {
+  return getRowKey(row, displayIndexOffset + index);
+}
+
 // Handle sort click
 function handleSort(column: DataTableColumn<T>) {
   if (!sortable || !column.sortable) return;
@@ -119,12 +123,14 @@ function handleRowSelect(key: string | number, event: Event) {
 // Handle select all
 function handleSelectAll() {
   if (allSelected) {
-    const visibleKeys = new Set(displayData.map((row, i) => getRowKey(row, i)));
+    const visibleKeys = new Set(
+      displayData.map((row, i) => getDisplayRowKey(row, i)),
+    );
     selected = new Set([...selected].filter((key) => !visibleKeys.has(key)));
   } else {
     selected = new Set([
       ...selected,
-      ...displayData.map((row, i) => getRowKey(row, i)),
+      ...displayData.map((row, i) => getDisplayRowKey(row, i)),
     ]);
   }
   onSelectionChange?.(selected);
@@ -194,6 +200,7 @@ const displayData = $derived.by(() => {
   const start = (page - 1) * pageSize;
   return sortedData.slice(start, start + pageSize);
 });
+const displayIndexOffset = $derived(pageSize ? (page - 1) * pageSize : 0);
 
 $effect(() => {
   if (page > totalPages) handlePageChange(totalPages);
@@ -202,10 +209,11 @@ $effect(() => {
 // Selection state
 const allSelected = $derived(
   displayData.length > 0 &&
-    displayData.every((row, i) => selected.has(getRowKey(row, i))),
+    displayData.every((row, i) => selected.has(getDisplayRowKey(row, i))),
 );
 const someSelected = $derived(
-  displayData.some((row, i) => selected.has(getRowKey(row, i))) && !allSelected,
+  displayData.some((row, i) => selected.has(getDisplayRowKey(row, i))) &&
+    !allSelected,
 );
 
 const columnCount = $derived(
@@ -325,8 +333,8 @@ const sizeClasses = {
           </td>
         </tr>
       {:else}
-        {#each displayData as row, index (getRowKey(row, index))}
-          {@const key = getRowKey(row, index)}
+        {#each displayData as row, index (getDisplayRowKey(row, index))}
+          {@const key = getDisplayRowKey(row, index)}
           {@const isSelected = selected.has(key)}
           {@const isExpanded = expanded.has(key)}
           {@const rowCanExpand = canExpand?.(row, index) ?? true}

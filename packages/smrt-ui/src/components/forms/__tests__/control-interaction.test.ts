@@ -88,10 +88,14 @@ describe('control interaction registry', () => {
       },
     });
 
-    expect(registry.get(identity)?.state).toMatchObject({
+    const snapshot = registry.get(identity);
+    expect(snapshot?.state).toMatchObject({
       value: undefined,
       valueRedacted: true,
     });
+    expect(snapshot?.metadata.capabilities).not.toEqual(
+      expect.arrayContaining(['read', 'stage', 'apply', 'clear', 'undo']),
+    );
     const result = await registry.execute(
       { action: 'stage', identity, value: 'replacement' },
       { source: 'agent' },

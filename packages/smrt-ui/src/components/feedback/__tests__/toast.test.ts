@@ -30,4 +30,26 @@ describe('toast', () => {
     toaster.error('Failed', { duration: 0 });
     expect(seen).toEqual(expect.arrayContaining(['success', 'error']));
   });
+
+  it('restarts dismissal timing when a toast id is reused', () => {
+    vi.useFakeTimers();
+    try {
+      const toaster = createToaster();
+      let visibleIds: string[] = [];
+      toaster.subscribe((toasts) => {
+        visibleIds = toasts.map((toast) => toast.id);
+      });
+
+      toaster.show({ id: 'saving', message: 'Saving', duration: 1000 });
+      vi.advanceTimersByTime(500);
+      toaster.show({ id: 'saving', message: 'Still saving', duration: 1000 });
+      vi.advanceTimersByTime(500);
+
+      expect(visibleIds).toEqual(['saving']);
+      vi.advanceTimersByTime(500);
+      expect(visibleIds).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

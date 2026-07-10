@@ -1,5 +1,22 @@
 /** DOM adapter helpers shared by addressable control Implementations. */
 
+const focusableControlSelector = [
+  'input:not([type="hidden"]):not(:disabled)',
+  'select:not(:disabled)',
+  'textarea:not(:disabled)',
+  'button:not(:disabled)',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"]):not([type="hidden"])',
+  '[contenteditable="true"]',
+].join(',');
+
+export function focusControl(node: HTMLElement): void {
+  const target = node.matches(focusableControlSelector)
+    ? node
+    : node.querySelector<HTMLElement>(focusableControlSelector);
+  target?.focus();
+}
+
 export function revealControl(node: HTMLElement): void {
   node.scrollIntoView({
     block: 'center',

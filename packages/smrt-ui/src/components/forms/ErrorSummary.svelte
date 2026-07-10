@@ -1,4 +1,5 @@
 <script lang="ts">
+import { focusControl } from './control-dom.js';
 import type { FormError } from './types.js';
 export interface Props {
   errors: FormError[];
@@ -19,7 +20,7 @@ function select(error: FormError) {
     `[data-smrt-control="${CSS.escape(error.controlId)}"]`,
   );
   target?.scrollIntoView({ block: 'center' });
-  target?.focus();
+  if (target) focusControl(target);
   onselect?.(error.controlId);
 }
 </script>

@@ -5,6 +5,7 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import Progress from '../../feedback/Progress.svelte';
 import Spinner from '../../feedback/Spinner.svelte';
 import { createControlInteractionRegistry } from '../control-interaction.js';
+import ErrorSummary from '../ErrorSummary.svelte';
 import Fixture from './core-controls.fixture.svelte';
 
 describe('core controls', () => {
@@ -74,6 +75,35 @@ describe('core controls', () => {
     const registry = createControlInteractionRegistry();
     const { container } = render(Fixture, { props: { registry } });
     await expectNoA11yViolations(container);
+  });
+
+  it('focuses the usable control inside an error-summary target', async () => {
+    const { container } = render(ErrorSummary, {
+      props: {
+        errors: [
+          {
+            controlId: 'profile-photo',
+            label: 'Profile photo',
+            message: 'Choose a file',
+          },
+        ],
+      },
+    });
+    const wrapper = document.createElement('div');
+    wrapper.dataset.smrtControl = 'profile-photo';
+    wrapper.scrollIntoView = () => undefined;
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    const file = document.createElement('input');
+    file.type = 'file';
+    wrapper.append(hidden, file);
+    container.append(wrapper);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Profile photo: Choose a file' }),
+    );
+
+    expect(file).toHaveFocus();
   });
 });
 
