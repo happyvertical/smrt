@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { findUnsupportedDependencyProtocols } from './publish-artifacts-lib.mjs';
 
 function fail(message) {
   console.error(`❌ ${message}`);
@@ -200,18 +201,18 @@ for (const pkg of shardPackages) {
   const before = new Set(
     readdirSync(outputDir).filter((entry) => entry.endsWith('.tgz')),
   );
-  const result = spawnSync('npm', ['pack', '--pack-destination', outputDir], {
+  const result = spawnSync('pnpm', ['pack', '--pack-destination', outputDir], {
     cwd: pkg.dir,
     stdio: 'inherit',
     env: process.env,
   });
 
   if (result.error) {
-    fail(`Failed to run npm pack for ${pkg.name}: ${result.error.message}`);
+    fail(`Failed to run pnpm pack for ${pkg.name}: ${result.error.message}`);
   }
 
   if (result.status !== 0) {
-    fail(`npm pack failed for ${pkg.name}`);
+    fail(`pnpm pack failed for ${pkg.name}`);
   }
 
   const created = readdirSync(outputDir).filter(
@@ -224,6 +225,40 @@ for (const pkg of shardPackages) {
   }
   const filename = created[0];
   const tarballPath = join(outputDir, filename);
+
+  const packedManifestResult = spawnSync(
+    'tar',
+    ['-xOf', tarballPath, 'package/package.json'],
+    {
+      encoding: 'utf8',
+      env: process.env,
+    },
+  );
+  if (packedManifestResult.error || packedManifestResult.status !== 0) {
+    const details = [
+      `status=${packedManifestResult.status ?? 'unknown'}`,
+      packedManifestResult.error
+        ? `error=${packedManifestResult.error.message}`
+        : '',
+      packedManifestResult.stderr?.trim()
+        ? `stderr=${packedManifestResult.stderr.trim()}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('; ');
+    fail(`Failed to inspect packed manifest for ${pkg.name}: ${details}`);
+  }
+
+  const packedManifest = JSON.parse(packedManifestResult.stdout);
+  const unsupportedProtocols =
+    findUnsupportedDependencyProtocols(packedManifest);
+  if (unsupportedProtocols.length > 0) {
+    fail(
+      `Packed manifest for ${pkg.name} contains unresolved dependency protocols:\n${unsupportedProtocols
+        .map((entry) => `- ${entry}`)
+        .join('\n')}`,
+    );
+  }
 
   const verifyResult = spawnSync(
     process.execPath,

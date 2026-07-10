@@ -14,7 +14,7 @@ It is the ground-up alternative to `smrt-saas-starter`.
 ## Current generated-project contract
 
 - Node `>=24.18.0`; pnpm `10.34.4` via `packageManager` and `engines`.
-- Directly used `@happyvertical/smrt-*` packages are pinned to `0.38.25`.
+- Directly used `@happyvertical/smrt-*` packages share one current release range.
 - `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
   its binary. `@happyvertical/smrt-web` stays opt-in until a page imports it.
 - `smrtConsumer()` explicitly consumes profiles, tenancy, and users manifests;

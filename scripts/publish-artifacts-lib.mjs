@@ -2,6 +2,30 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+const DEPENDENCY_SECTIONS = [
+  'dependencies',
+  'optionalDependencies',
+  'peerDependencies',
+  'devDependencies',
+];
+
+export function findUnsupportedDependencyProtocols(packageJson) {
+  const unsupported = [];
+
+  for (const section of DEPENDENCY_SECTIONS) {
+    for (const [name, specifier] of Object.entries(packageJson[section] ?? {})) {
+      if (
+        typeof specifier === 'string' &&
+        (specifier.startsWith('catalog:') || specifier.startsWith('workspace:'))
+      ) {
+        unsupported.push(`${section}.${name}=${specifier}`);
+      }
+    }
+  }
+
+  return unsupported;
+}
+
 function discoverExpectedPackages(repoRoot) {
   const config = JSON.parse(
     readFileSync(join(repoRoot, '.changeset/config.json'), 'utf8'),
