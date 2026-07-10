@@ -79,8 +79,11 @@ export {
   ChatReaction,
   ChatRoom,
   ChatThread,
+  VoiceGatewayTurn,
+  VoiceSession,
 } from './models/index.js';
 export {
+  type AuthoredConversationMessages,
   type BindPersonaToSessionOptions,
   bindPersonaToSession,
   type ConversationPersona,
@@ -111,7 +114,6 @@ export {
   type ToolLoopResult,
   type ToolLoopStopReason,
 } from './tool-loop.js';
-
 // Types
 export type {
   AgentSessionOptions,
@@ -129,7 +131,33 @@ export type {
   ChatRoomType,
   ChatThreadOptions,
   OnlineStatus,
+  VoiceGatewayTurnOptions,
+  VoiceGatewayTurnStatus,
+  VoiceSessionOptions,
+  VoiceSessionStatus,
 } from './types.js';
 
 // UI metadata (no Svelte dependency - import ./svelte for components)
 export { CHAT_MODULE_META, CHAT_UI_SLOTS } from './ui.js';
+export {
+  assertVoiceGatewayBearer,
+  type CreateVoiceChatSessionOptions,
+  createVoiceChatSession,
+  createVoiceGatewayTurnHandler,
+  type HandleVoiceGatewayTurnOptions,
+  handleVoiceGatewayTurn,
+  MAX_VOICE_GATEWAY_TEXT_LENGTH,
+  SMRT_CHAT_VOICE_TARGET,
+  type VoiceChatSessionCreationResult,
+  VoiceGatewayBadRequestError,
+  VoiceGatewayError,
+  VoiceGatewayReplayError,
+  type VoiceGatewayTurnHandlerOptions,
+  type VoiceGatewayTurnMetadata,
+  type VoiceGatewayTurnPayload,
+  type VoiceGatewayTurnResponse,
+  type VoiceGatewayTurnResponseMetadata,
+  VoiceGatewayUnauthorizedError,
+  VoiceSessionExpiredError,
+  VoiceSessionRejectedError,
+} from './voice.js';

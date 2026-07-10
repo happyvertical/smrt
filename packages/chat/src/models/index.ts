@@ -4,3 +4,5 @@ export { ChatParticipant } from './ChatParticipant.js';
 export { ChatReaction } from './ChatReaction.js';
 export { ChatRoom } from './ChatRoom.js';
 export { ChatThread } from './ChatThread.js';
+export { VoiceGatewayTurn } from './VoiceGatewayTurn.js';
+export { VoiceSession } from './VoiceSession.js';

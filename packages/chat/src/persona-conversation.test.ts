@@ -17,7 +17,12 @@ import type {
   ChatOptions,
 } from '@happyvertical/ai';
 import type { PrincipalAuditEntry } from '@happyvertical/smrt-agents';
-import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  ObjectRegistry,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { personaLearningMemory } from '@happyvertical/smrt-personas';
 import {
   MembershipCollection,
@@ -46,6 +51,8 @@ import { toolFunctionName } from './tool-loop.js';
 })
 class ConvNote extends SmrtObject {
   tenantId: string | null = null;
+
+  @field()
   title = '';
 }
 void ConvNote;

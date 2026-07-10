@@ -10,7 +10,7 @@ TTS voice profiles with two creation modes: AI design or audio cloning. Word-lev
 
 ## Gotchas
 
-- **Default provider hardcoded**: 'qwen3-tts' — no provider abstraction layer
+- **Runtime providers live in `@happyvertical/speech`**: this package persists voice profiles, samples, and outputs. Use `VoiceProfile.toSpeechVoice()` and `VoiceOutput.fromSynthesizedSpeech()` at the adapter boundary.
 - **Sample minimum not enforced in constructor**: 3-sec minimum documented but not validated on create
 - **WordTiming from external provider**: framework doesn't generate timings — populated by TTS service
 - **Status transitions not enforced**: can manually set status without triggering generation workflow

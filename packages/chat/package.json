@@ -37,14 +37,14 @@
     "AGENTS.md"
   ],
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
-    "dev": "npm run build:watch",
+    "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
-    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
+    "check": "svelte-kit sync && pnpm exec svelte-check --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "keywords": [
@@ -86,8 +86,10 @@
     }
   },
   "devDependencies": {
+    "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/kit": "^2.69.1",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "24.13.2",

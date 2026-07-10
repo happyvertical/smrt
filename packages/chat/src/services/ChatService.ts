@@ -8,6 +8,7 @@ import { ChatParticipantCollection } from '../collections/ChatParticipantCollect
 import { ChatReactionCollection } from '../collections/ChatReactionCollection.js';
 import { ChatRoomCollection } from '../collections/ChatRoomCollection.js';
 import { ChatThreadCollection } from '../collections/ChatThreadCollection.js';
+import { VoiceSessionCollection } from '../collections/VoiceSessionCollection.js';
 import type { AgentSession } from '../models/AgentSession.js';
 import type { ChatMessage } from '../models/ChatMessage.js';
 import type { ChatThread } from '../models/ChatThread.js';
@@ -97,6 +98,7 @@ export class ChatService {
   readonly #threads: ChatThreadCollection;
   readonly #agentSessions: AgentSessionCollection;
   readonly #reactions: ChatReactionCollection;
+  readonly #voiceSessions: VoiceSessionCollection;
 
   private constructor(
     rooms: ChatRoomCollection,
@@ -105,6 +107,7 @@ export class ChatService {
     threads: ChatThreadCollection,
     agentSessions: AgentSessionCollection,
     reactions: ChatReactionCollection,
+    voiceSessions: VoiceSessionCollection,
   ) {
     this.#rooms = rooms;
     this.#messages = messages;
@@ -112,6 +115,7 @@ export class ChatService {
     this.#threads = threads;
     this.#agentSessions = agentSessions;
     this.#reactions = reactions;
+    this.#voiceSessions = voiceSessions;
   }
 
   static async create(options: SmrtObjectOptions): Promise<ChatService> {
@@ -139,6 +143,10 @@ export class ChatService {
       '@happyvertical/smrt-chat:ChatReaction',
       ChatReactionCollection,
     );
+    ObjectRegistry.registerCollection(
+      '@happyvertical/smrt-chat:VoiceSession',
+      VoiceSessionCollection,
+    );
 
     const rooms = (await ObjectRegistry.getCollection(
       '@happyvertical/smrt-chat:ChatRoom',
@@ -164,6 +172,10 @@ export class ChatService {
       '@happyvertical/smrt-chat:ChatReaction',
       options,
     )) as ChatReactionCollection;
+    const voiceSessions = (await ObjectRegistry.getCollection(
+      '@happyvertical/smrt-chat:VoiceSession',
+      options,
+    )) as VoiceSessionCollection;
 
     return new ChatService(
       rooms,
@@ -172,6 +184,7 @@ export class ChatService {
       threads,
       agentSessions,
       reactions,
+      voiceSessions,
     );
   }
 
@@ -183,6 +196,7 @@ export class ChatService {
     await this.#threads.initialize();
     await this.#agentSessions.initialize();
     await this.#reactions.initialize();
+    await this.#voiceSessions.initialize();
   }
 
   /**

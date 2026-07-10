@@ -38,11 +38,31 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export type {
+  AudioInput,
+  Speech,
+  SpeechAdapterAvailability,
+  SpeechSynthesizer,
+  SpeechSynthesizerType,
+  SpeechVoice,
+  SpeechVoiceInput,
+  SynthesisRequest,
+  SynthesizedSpeech,
+  Transcriber,
+  TranscriberType,
+  TranscriptionRequest,
+  TranscriptResult,
+  TranscriptSegment,
+  WordTiming as SpeechWordTiming,
+} from '@happyvertical/speech';
 export {
+  metadataFromSynthesizedSpeech,
   VoiceOutput,
+  type VoiceOutputFromSynthesizedSpeechOptions,
   type VoiceOutputMetadata,
   type VoiceOutputOptions,
   type WordTiming,
+  wordTimingsFromSpeech,
 } from './voice-output.js';
 // Models
 export {

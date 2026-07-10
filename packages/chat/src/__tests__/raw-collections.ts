@@ -21,6 +21,7 @@ import type { ChatParticipantCollection } from '../collections/ChatParticipantCo
 import type { ChatReactionCollection } from '../collections/ChatReactionCollection.js';
 import type { ChatRoomCollection } from '../collections/ChatRoomCollection.js';
 import type { ChatThreadCollection } from '../collections/ChatThreadCollection.js';
+import type { VoiceSessionCollection } from '../collections/VoiceSessionCollection.js';
 
 export interface RawChatCollections {
   rooms: ChatRoomCollection;
@@ -29,6 +30,7 @@ export interface RawChatCollections {
   threads: ChatThreadCollection;
   agentSessions: AgentSessionCollection;
   reactions: ChatReactionCollection;
+  voiceSessions: VoiceSessionCollection;
 }
 
 /**
@@ -62,5 +64,17 @@ export async function getRawChatCollections(
     '@happyvertical/smrt-chat:ChatReaction',
     options,
   )) as ChatReactionCollection;
-  return { rooms, messages, participants, threads, agentSessions, reactions };
+  const voiceSessions = (await ObjectRegistry.getCollection(
+    '@happyvertical/smrt-chat:VoiceSession',
+    options,
+  )) as VoiceSessionCollection;
+  return {
+    rooms,
+    messages,
+    participants,
+    threads,
+    agentSessions,
+    reactions,
+    voiceSessions,
+  };
 }

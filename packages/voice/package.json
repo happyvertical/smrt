@@ -41,6 +41,7 @@
     "@happyvertical/smrt-content": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/speech": "catalog:",
     "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {

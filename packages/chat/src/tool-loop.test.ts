@@ -21,7 +21,12 @@ import type {
   AIResponse,
   ChatOptions,
 } from '@happyvertical/ai';
-import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  ObjectRegistry,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -51,7 +56,11 @@ import {
 })
 class ToolLoopNote extends SmrtObject {
   tenantId: string | null = null;
+
+  @field()
   title = '';
+
+  @field()
   body = '';
 
   /** A public custom action → a `tool_loop_notes.archive` catalog tool. */

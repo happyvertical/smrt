@@ -96,6 +96,18 @@ const linkProps = $derived(() => {
     ),
   ) as HTMLAnchorAttributes;
 });
+
+function handleClick(event: MouseEvent) {
+  if (isDisabled) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+
+  onclick?.(
+    event as Parameters<NonNullable<HTMLButtonAttributes['onclick']>>[0],
+  );
+}
 </script>
 
 {#if isLink}
@@ -111,7 +123,7 @@ const linkProps = $derived(() => {
     tabindex={isDisabled ? -1 : undefined}
     aria-disabled={isDisabled}
     aria-busy={loading}
-    onclick={onclick as HTMLAnchorAttributes['onclick']}
+    onclick={handleClick as HTMLAnchorAttributes['onclick']}
     {...linkProps()}
   >
     {#if loading}
@@ -129,7 +141,7 @@ const linkProps = $derived(() => {
     class="button {variant} {size} {className}"
     class:full-width={fullWidth}
     class:loading
-    {onclick}
+    onclick={handleClick}
     {...rest}
   >
     {#if loading}

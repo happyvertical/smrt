@@ -5,7 +5,6 @@
  */
 import { Textarea } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../../i18n.messages.js';
 
 const { t } = useI18n();
@@ -69,16 +68,15 @@ function handleInput(event: Event) {
         <span class="message-input__reply-text">{replyTo.content}</span>
       </div>
       {#if oncancelreply}
-        <Button
-          variant="ghost"
-          size="sm"
+        <!-- raw-primitive-allow: compact icon-only composer control; uses the component's local button geometry and avoids wrapper event forwarding in the dev-server browser path -->
+        <button
           class="message-input__reply-close"
           type="button"
           onclick={oncancelreply}
           aria-label={t(M['chat.message_input.cancel_reply'])}
         >
           <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
-        </Button>
+        </button>
       {/if}
     </div>
   {/if}
@@ -94,8 +92,8 @@ function handleInput(event: Event) {
       oninput={handleInput}
       aria-label={t(M['chat.message_input.input_label'])}
     />
-    <Button
-      variant="ghost"
+    <!-- raw-primitive-allow: compact icon-only composer submit control; native button is required so pointer clicks and Enter-submit share the same local handler in package dev servers -->
+    <button
       class="message-input__send"
       type="button"
       onclick={handleSend}
@@ -112,7 +110,7 @@ function handleInput(event: Event) {
           stroke-linejoin="round"
         />
       </svg>
-    </Button>
+    </button>
   </div>
 </div>
 
@@ -162,18 +160,22 @@ function handleInput(event: Event) {
     text-overflow: ellipsis;
   }
 
-  /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .message-input__reply :global(.message-input__reply-close) {
+  .message-input__reply-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 24px;
     height: 24px;
     padding: 0;
+    border: 0;
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
+    cursor: pointer;
     flex-shrink: 0;
   }
 
-  .message-input__reply :global(.message-input__reply-close:hover) {
+  .message-input__reply-close:hover {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
   }
 
@@ -195,24 +197,29 @@ function handleInput(event: Event) {
     overflow-y: auto;
   }
 
-  /* :global() pierces into the Button child's rendered <button> (see #1589). */
-  .message-input__bar :global(.message-input__send) {
+  .message-input__send {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 36px;
     height: 36px;
     padding: 0;
+    border: 0;
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
+    cursor: pointer;
     flex-shrink: 0;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
-  .message-input__bar :global(.message-input__send:hover:not(:disabled)) {
+  .message-input__send:hover:not(:disabled) {
     background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
   }
 
-  .message-input__bar :global(.message-input__send:disabled) {
+  .message-input__send:disabled {
     background: var(--smrt-color-surface-container-high, #e1e3e8);
     color: var(--smrt-color-outline, #74777f);
+    cursor: default;
   }
 </style>
