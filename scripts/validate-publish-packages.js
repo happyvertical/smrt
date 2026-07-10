@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { findUnsupportedDependencyProtocols } from './publish-artifacts-lib.mjs';
 
 function fail(message) {
   console.error(`❌ ${message}`);
@@ -200,7 +201,7 @@ for (const pkg of shardPackages) {
   const before = new Set(
     readdirSync(outputDir).filter((entry) => entry.endsWith('.tgz')),
   );
-  const result = spawnSync('npm', ['pack', '--pack-destination', outputDir], {
+  const result = spawnSync('pnpm', ['pack', '--pack-destination', outputDir], {
     cwd: pkg.dir,
     stdio: 'inherit',
     env: process.env,
@@ -224,6 +225,29 @@ for (const pkg of shardPackages) {
   }
   const filename = created[0];
   const tarballPath = join(outputDir, filename);
+
+  const packedManifestResult = spawnSync(
+    'tar',
+    ['-xOf', tarballPath, 'package/package.json'],
+    {
+      encoding: 'utf8',
+      env: process.env,
+    },
+  );
+  if (packedManifestResult.error || packedManifestResult.status !== 0) {
+    fail(`Failed to inspect packed manifest for ${pkg.name}`);
+  }
+
+  const packedManifest = JSON.parse(packedManifestResult.stdout);
+  const unsupportedProtocols =
+    findUnsupportedDependencyProtocols(packedManifest);
+  if (unsupportedProtocols.length > 0) {
+    fail(
+      `Packed manifest for ${pkg.name} contains unresolved dependency protocols:\n${unsupportedProtocols
+        .map((entry) => `- ${entry}`)
+        .join('\n')}`,
+    );
+  }
 
   const verifyResult = spawnSync(
     process.execPath,
