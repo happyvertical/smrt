@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.38.25
+
+### Patch Changes
+
+- ### Features
+
+  - add voice dev workbench (#1915) (chat)
+  - @happyvertical/smrt-config@0.38.25
+  - @happyvertical/smrt-types@0.38.25
+  - @happyvertical/smrt-scanner@0.38.25
+
 ## 0.38.24
 
 ### Patch Changes
