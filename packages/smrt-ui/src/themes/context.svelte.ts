@@ -34,7 +34,7 @@ export function getThemeContext(): ThemeContext {
 
   if (!context) {
     throw new Error(
-      'Theme context not found. Make sure to wrap your app with <ThemeProvider> from @smrt/svelte/themes',
+      'Theme context not found. Make sure to wrap your app with <ThemeProvider> from @happyvertical/smrt-ui/themes',
     );
   }
 

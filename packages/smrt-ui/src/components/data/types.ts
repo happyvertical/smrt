@@ -73,6 +73,34 @@ export interface DataTableProps<T> {
   sort?: SortState;
   /** Sort change callback */
   onSortChange?: (sort: SortState) => void;
+  /** Parent owns sorting and supplies already-sorted rows. */
+  manualSorting?: boolean;
+  /** Optional client-side row filter. */
+  filterFn?: (row: T, index: number) => boolean;
+  /** Current 1-based page. Pagination is enabled when pageSize is set. */
+  page?: number;
+  /** Rows per page. */
+  pageSize?: number;
+  /** Parent owns pagination and supplies only the current page. */
+  manualPagination?: boolean;
+  /** Total server row count when manualPagination is enabled. */
+  totalRows?: number;
+  /** Page change callback. */
+  onPageChange?: (page: number) => void;
+  /** Controlled set of expanded row keys. */
+  expanded?: Set<string | number>;
+  /** Expansion change callback. */
+  onExpandedChange?: (expanded: Set<string | number>) => void;
+  /** Predicate controlling which rows can expand. */
+  canExpand?: (row: T, index: number) => boolean;
+  /** Expanded row content. */
+  expandedContent?: Snippet<[{ row: T; index: number }]>;
+  /** Optional content above the table. */
+  toolbar?: Snippet;
+  /** Optional full-width table footer content. */
+  footer?: Snippet<[{ rows: T[] }]>;
+  /** Controlled visible column ids. Column.hidden is still respected. */
+  visibleColumnIds?: Set<string>;
   /** Loading state */
   loading?: boolean;
   /** Empty state content */

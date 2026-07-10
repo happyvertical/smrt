@@ -2,6 +2,14 @@
  * SMRT Form context for field registration and coordination
  */
 
+import type {
+  ControlConstraints,
+  ControlInteractionRegistry,
+  ControlKind,
+  ControlOption,
+  ControlRuntimeState,
+  ControlSensitivity,
+} from '@happyvertical/smrt-ui/forms';
 import { getContext, setContext } from 'svelte';
 
 /**
@@ -35,6 +43,21 @@ export interface FieldDefinition {
   setValue: (value: unknown) => void;
   /** Get current field value */
   getValue: () => unknown;
+  /** Optional richer interaction metadata and capabilities. */
+  controlId?: string;
+  interactionKind?: ControlKind;
+  sensitivity?: ControlSensitivity;
+  readable?: boolean;
+  writable?: boolean;
+  constraints?: ControlConstraints;
+  options?: ControlOption[];
+  unit?: string;
+  clear?: () => void;
+  focus?: () => void;
+  reveal?: () => void;
+  highlight?: (durationMs?: number) => void;
+  validate?: () => boolean;
+  getState?: () => ControlRuntimeState;
 }
 
 /**
@@ -55,6 +78,9 @@ export interface SMRTFormContext {
   readonly isExtracting: boolean;
   /** Toggle form-level listening on/off */
   toggleListening: () => void;
+  /** Shared transport-neutral registry used by voice/chat/tutorial adapters. */
+  readonly interactionRegistry: ControlInteractionRegistry;
+  readonly formId: string;
 }
 
 /**

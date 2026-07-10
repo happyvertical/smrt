@@ -3,7 +3,7 @@
  * AgentScheduleForm - Create or edit an agent schedule
  */
 
-import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
+import { Checkbox, Form, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
@@ -250,11 +250,12 @@ function handleCronPreset(preset: string) {
 
       <!-- Enabled -->
       <div class="form-field form-field--checkbox">
-        <label>
-          <!-- raw-primitive-allow: native checkbox; no Provider-free checkbox primitive (Toggle is a switch with different semantics, CheckboxInput requires a Provider) -->
-          <input type="checkbox" bind:checked={enabled} disabled={loading} />
-          {t(M['agents.schedule_form.enable_schedule_immediately'])}
-        </label>
+        <Checkbox
+          name="enabled"
+          label={t(M['agents.schedule_form.enable_schedule_immediately'])}
+          bind:checked={enabled}
+          disabled={loading}
+        />
       </div>
     </div>
 
@@ -297,13 +298,6 @@ function handleCronPreset(preset: string) {
     flex-direction: row;
     align-items: center;
     gap: var(--smrt-spacing-sm, 0.5rem);
-  }
-
-  .form-field--checkbox label {
-    display: flex;
-    align-items: center;
-    gap: var(--smrt-spacing-sm, 0.5rem);
-    cursor: pointer;
   }
 
   .form-field label {

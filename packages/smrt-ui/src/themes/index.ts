@@ -7,7 +7,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { ThemeProvider } from '@smrt/svelte/themes';
+ *   import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
  * </script>
  *
  * <ThemeProvider preset="glass" colorScheme="system">

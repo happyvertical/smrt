@@ -36,13 +36,13 @@ export { default as PermissionCheck } from './components/permissions/PermissionC
 // Role components (domain-agnostic — typed against smrt-types contracts)
 export { default as RoleBadge } from './components/roles/RoleBadge.svelte';
 export { default as RoleSelector } from './components/roles/RoleSelector.svelte';
-// Theme components
-export type { ThemeMode } from './components/theme/index.js';
 // UI components
 export * from './components/ui/index.js';
 // Module UI registry
 export * from './registry/index.js';
 // Theme system
 export * from './theme/index.js';
+// Compatibility name for the canonical theme system's color-scheme type.
+export type { ColorScheme as ThemeMode } from './themes/types.js';
 // Generic Svelte types (migrated from @happyvertical/svelte)
 export type * from './types-generic.js';

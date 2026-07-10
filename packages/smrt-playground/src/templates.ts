@@ -47,7 +47,7 @@ import { playgroundModules } from 'virtual:smrt-playground/modules';
 </script>
 
 <PlaygroundHost
-  title="SMRT Playground"
+  title="s-m-r-t playground"
   subtitle="Package previews and local app overrides"
   modules={playgroundModules}
 />

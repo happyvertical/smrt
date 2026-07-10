@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import type { ControlInteractionOptions } from './control-interaction.js';
 import {
   type FormGroupContextValue,
   nextFieldId,
@@ -12,14 +13,25 @@ export interface Props {
   error?: string;
   hint?: string;
   required?: boolean;
+  /** Agent/tutorial interaction metadata inherited by the wrapped control. */
+  interaction?: ControlInteractionOptions | false;
   children: Snippet;
 }
 
-const { label, id, error, hint, required = false, children }: Props = $props();
+const {
+  label,
+  id,
+  error,
+  hint,
+  required = false,
+  interaction,
+  children,
+}: Props = $props();
 
 // Stable id so the label's `for` and the wrapped input's `id` agree even when
 // the consumer doesn't pass one.
-const fallbackId = nextFieldId();
+const instanceId = $props.id();
+const fallbackId = `smrt-field-${instanceId}`;
 const fieldId = $derived(id ?? fallbackId);
 const hintId = $derived(hint && !error ? `${fieldId}-hint` : undefined);
 const errorId = $derived(error ? `${fieldId}-error` : undefined);
@@ -34,6 +46,11 @@ setFormGroupContext(
     inputId: fieldId,
     describedBy,
     invalid: !!error,
+    label,
+    description: hint,
+    required,
+    error,
+    interaction,
   }),
 );
 </script>

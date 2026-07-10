@@ -1,4 +1,11 @@
 <script lang="ts">
+import {
+  type ControlInteractionEvent,
+  type ControlInteractionRegistry,
+  type ControlKind,
+  createControlInteractionRegistry,
+  setControlInteractionContext,
+} from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { onDestroy } from 'svelte';
@@ -34,6 +41,13 @@ export interface Props {
   method?: 'GET' | 'POST';
   /** Form action URL for native form submission */
   action?: string;
+  /** Stable identity used by control/agent interaction adapters. */
+  formId?: string;
+  interactionRegistry?: ControlInteractionRegistry;
+  oninteraction?: (event: ControlInteractionEvent) => void;
+  id?: string;
+  name?: string;
+  class?: string;
 }
 
 const {
@@ -46,10 +60,38 @@ const {
   onsubmit,
   method,
   action,
+  formId,
+  interactionRegistry,
+  oninteraction,
+  id,
+  name,
+  class: className = '',
 }: Props = $props();
 
 const app = useAppState();
 const stt = useSTT();
+const instanceId = $props.id();
+const generatedFormId = `smrt-form-${instanceId}`;
+const localInteractionRegistry = createControlInteractionRegistry();
+const resolvedFormId = $derived(formId ?? id ?? name ?? generatedFormId);
+const resolvedInteractionRegistry = $derived(
+  interactionRegistry ?? localInteractionRegistry,
+);
+const interactionDisposers = new Map<string, () => void>();
+
+setControlInteractionContext({
+  get formId() {
+    return resolvedFormId;
+  },
+  get registry() {
+    return resolvedInteractionRegistry;
+  },
+});
+
+$effect(() => {
+  if (!oninteraction) return;
+  return resolvedInteractionRegistry.subscribe(oninteraction);
+});
 
 // Internal state
 let fields = $state<Map<string, FieldDefinition>>(new Map());
@@ -66,16 +108,64 @@ let levelMonitorStream: MediaStream | null = null;
 
 const isSmrt = $derived(app.state.mode === 'smrt');
 
+function interactionKind(field: FieldDefinition): ControlKind {
+  if (field.interactionKind) return field.interactionKind;
+  switch (field.type) {
+    case 'text':
+    case 'email':
+    case 'number':
+    case 'checkbox':
+    case 'select':
+    case 'textarea':
+      return field.type;
+    case 'datetime':
+      return 'datetime';
+    default:
+      return 'custom';
+  }
+}
+
 // Create form context
 const formContext: SMRTFormContext = {
   get mode() {
     return app.state.mode === 'smrt' ? 'smrt' : 'default';
   },
   registerField(field: FieldDefinition) {
+    interactionDisposers.get(field.name)?.();
     fields.set(field.name, field);
     fields = new Map(fields); // Trigger reactivity
+    interactionDisposers.set(
+      field.name,
+      resolvedInteractionRegistry.register({
+        identity: {
+          formId: resolvedFormId,
+          controlId: field.controlId ?? field.name,
+        },
+        metadata: {
+          kind: interactionKind(field),
+          label: field.label,
+          description: field.description,
+          sensitivity: field.sensitivity ?? 'public',
+          readable: field.readable,
+          writable: field.writable,
+          constraints: field.constraints,
+          options: field.options,
+          unit: field.unit,
+        },
+        getValue: field.getValue,
+        setValue: field.setValue,
+        clear: field.clear ?? (() => field.setValue('')),
+        focus: field.focus,
+        reveal: field.reveal,
+        highlight: field.highlight,
+        validate: field.validate,
+        getState: field.getState,
+      }),
+    );
   },
   unregisterField(name: string) {
+    interactionDisposers.get(name)?.();
+    interactionDisposers.delete(name);
     fields.delete(name);
     fields = new Map(fields);
   },
@@ -89,6 +179,12 @@ const formContext: SMRTFormContext = {
     return isExtracting;
   },
   toggleListening: () => toggleFormListening(),
+  get interactionRegistry() {
+    return resolvedInteractionRegistry;
+  },
+  get formId() {
+    return resolvedFormId;
+  },
 };
 
 // Provide context to children
@@ -498,6 +594,8 @@ onDestroy(() => {
     clearTimeout(silenceTimer);
   }
   stopAudioLevelMonitoring();
+  for (const dispose of interactionDisposers.values()) dispose();
+  interactionDisposers.clear();
 });
 
 function handleModeToggle() {
@@ -519,16 +617,28 @@ function handleSubmit(e: Event) {
   // Otherwise, let native form submission happen (e.g., for SvelteKit use:enhance)
 }
 
-function getFormData(): Record<string, unknown> {
+export function getFormData(): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   for (const [name, field] of fields) {
     data[name] = field.getValue();
   }
   return data;
 }
+
+export function getInteractionRegistry(): ControlInteractionRegistry {
+  return resolvedInteractionRegistry;
+}
 </script>
 
-<form class="smrt-form" onsubmit={handleSubmit} {method} {action}>
+<form
+  {id}
+  {name}
+  class="smrt-form {className}"
+  data-smrt-form={resolvedFormId}
+  onsubmit={handleSubmit}
+  {method}
+  {action}
+>
   <!--
     Screen-reader status region (L1 #1420): announces async STT / field-
     extraction state politely, since the visible cues live on a button whose

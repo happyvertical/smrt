@@ -40,6 +40,7 @@ test('shared host renders content reference previews and governance modes', asyn
   await expect(page.getByTestId('playground-selected-module')).toHaveText(
     'Content',
   );
+  await expect(page.getByTestId('playground-package-landing')).toBeVisible();
 
   await expect(
     page.locator(
@@ -54,7 +55,7 @@ test('shared host renders content reference previews and governance modes', asyn
 
   await page
     .locator(
-      '[data-playground-entry="@happyvertical/smrt-content:content-editor"]',
+      '[data-playground-landing-entry="@happyvertical/smrt-content:content-editor"]',
     )
     .click();
 
@@ -62,8 +63,8 @@ test('shared host renders content reference previews and governance modes', asyn
     page.getByTestId('playground-preview-title'),
   ).toHaveText('Content Editor');
   await expect(
-    page.getByTestId('playground-preview-stage').getByRole('heading', {
-      name: 'Edit Content',
+    page.getByTestId('playground-preview-stage').getByRole('button', {
+      name: 'Update Content',
     }),
   ).toBeVisible();
 
@@ -87,7 +88,7 @@ test('shared host renders content reference previews and governance modes', asyn
   expect(errors).toEqual([]);
 });
 
-test('shared host stays interactive while switching packages with modal previews', async ({
+test('shared host stays interactive while switching package previews', async ({
   page,
 }) => {
   const errors = trackPlaygroundErrors(page);
@@ -103,13 +104,13 @@ test('shared host stays interactive while switching packages with modal previews
   );
   await page
     .locator(
-      '[data-playground-entry="@happyvertical/smrt-assets:create-asset-modal"]',
+      '[data-playground-landing-entry="@happyvertical/smrt-assets:asset-grid"]',
     )
     .click();
 
   await expect(
     page.getByTestId('playground-preview-title'),
-  ).toHaveText('Create Asset Modal');
+  ).toHaveText('Asset Grid');
 
   await page
     .locator('[data-playground-module="@happyvertical/smrt-content"]')

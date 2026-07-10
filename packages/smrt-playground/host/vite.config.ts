@@ -108,5 +108,8 @@ export default defineConfig({
   plugins: [smrtPlaygroundVitePlugin({ mode: 'workspace' }), sveltekit()],
   server: {
     port: 5560,
+    fs: {
+      allow: [resolve(__dirname, '../../..')],
+    },
   },
 });

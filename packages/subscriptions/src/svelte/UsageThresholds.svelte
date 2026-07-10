@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Progress } from '@happyvertical/smrt-ui/feedback';
 import type { ThresholdEvaluation } from '../types.js';
 
 let {
@@ -19,13 +20,13 @@ let {
         <strong>{evaluation.threshold.label ?? evaluation.threshold.metricKey}</strong>
         <span>{evaluation.usage.quantity} / {evaluation.threshold.limit}</span>
       </div>
-      <progress
-        aria-label={`${evaluation.threshold.label ?? evaluation.threshold.metricKey} usage`}
-        max="1"
+      <Progress
+        label={`${evaluation.threshold.label ?? evaluation.threshold.metricKey} usage`}
+        max={1}
         value={Number.isFinite(evaluation.ratio)
           ? Math.min(1, evaluation.ratio)
           : 1}
-      ></progress>
+      />
       <p>{evaluation.state}</p>
     </article>
   {/each}
@@ -65,7 +66,4 @@ let {
     margin: 0;
   }
 
-  .smrt-usage-thresholds progress {
-    inline-size: 100%;
-  }
 </style>

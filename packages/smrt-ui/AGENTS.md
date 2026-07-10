@@ -14,9 +14,11 @@ SMRT has one shared set of UI primitives, split across two packages by concern:
 
 - **`smrt-ui` (here) owns the domain-agnostic VISUAL primitives** — `Button`,
   `Card`, `Modal`/`ConfirmDialog`, `Badge`, `Avatar`, `Chip`, `Dropdown`,
-  `Tooltip`, `Skeleton`, `Tree`, `Pagination`, `DataTable`, … — **plus the
+  `Tooltip`, `Skeleton`, `Tree`, `Pagination`, `DataTable`, `ContentList`, … — **plus the
   Provider-free base FORM primitives** under `./forms` (`Form`, `Input`,
-  `Select`, `Textarea`, `Toggle`, `FormGroup`), relocated here in #1589's
+  `Select`, `Textarea`, `Checkbox`, `Switch`, `RadioGroup`, `Slider`,
+  `RangeSlider`, `Combobox`, `MultiSelect`, `TagsInput`, `FilePicker`,
+  `FormGroup`), relocated here in #1589's
   deferred-forms phase so domain packages can adopt them without pulling in the
   smrt-svelte Provider or closing a build-graph cycle. These are dependency-free:
   no Provider, no i18n, no spoken-input logic.
@@ -42,22 +44,32 @@ components are exempt — they *are* the primitives.
 | Subpath | Contents |
 |---------|----------|
 | `.` | barrel re-exporting the primitives, registry, and theme system |
-| `./ui` | `Button`, `Card`, `Badge`, `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`, `Tree`, `Pagination`, … |
-| `./feedback` | `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` |
+| `./playground` | shared-host previews for the complete foundation catalog; rendered inside the active preset and color scheme |
+| `./ui` | `Button`, `Card`, `Badge`, `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`/`Menu`, `Popover`, `Disclosure`, `Accordion`, `Tree`, `Pagination`, … |
+| `./feedback` | `Alert`, `ToastViewport`, `Modal`, `Drawer`/`Sheet`, `ConfirmDialog`, `LoadingOverlay`, `Progress`, `Meter`, `Spinner` |
+| `./data` | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable` and their types |
 | `./layout` | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, … |
 | `./calendar` | `Calendar`, `DayView` |
 | `./chat` | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
-| `./forms` | Provider-free base form primitives: `Form`, `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` (+ the FormGroup a11y context helpers) |
+| `./forms` | Provider-free fields, choice controls, sliders/ranges, combobox/listbox/multiselect/tags, date/time/file controls, plus the transport-neutral control interaction registry |
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
-| `./theme` | simple `ThemeProvider` + context (`useTheme` consumes this from `smrt-svelte`) |
-| `./themes` | canonical preset token system (material/glass/studio/smrt), CSS generation |
+| `./theme` | deprecated compatibility path forwarding to the canonical theme system |
+| `./themes` | canonical `ThemeProvider`, context, preset token system (material/glass/studio/smrt), and CSS generation |
 | `./themes/styles/smrt.css` | static SMRT theme CSS (dark-first amber instrument-panel look) + signature `.smrt-*` flourish utilities |
 | `./themes/styles/fonts.css` | optional self-hosted `@font-face` for the SMRT type stack (Space Grotesk / Inter / JetBrains Mono) |
 | `./styles/tokens.css` | base token stylesheet |
 
 Also internal: `actions/` (`ripple`, `permission`), `display/`, `data/`,
 `nav/`, `permissions/`, `utils/`, `test-support/`.
+
+## Playground
+
+The package publishes `./playground` and keeps its workspace source at
+`src/svelte/playground.ts`. Previews inherit the shared host's active
+Material/Glass/Studio/SMRT preset and light/dark color scheme; preview
+components must consume `--smrt-*` tokens rather than installing their own
+theme provider or static preset stylesheet.
 
 ## Rules
 
@@ -73,6 +85,10 @@ Also internal: `actions/` (`ripple`, `permission`), `display/`, `data/`,
   hooks / browser-ai — live in `@happyvertical/smrt-svelte`, which depends on
   this package.
 - Built with `svelte-package`; consumed via the `svelte` export condition.
+- Form controls expose stable `formId` + `controlId` identity through the
+  interaction registry. Keep chat/voice transports outside this package;
+  mutations must retain sensitivity checks and the stage → confirmed apply
+  policy.
 
 ## Gotchas
 

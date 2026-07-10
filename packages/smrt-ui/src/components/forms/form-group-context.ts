@@ -13,6 +13,7 @@
  * reactive state (id is stable; describedBy/invalid change as hint/error do).
  */
 import { getContext, setContext } from 'svelte';
+import type { ControlInteractionOptions } from './control-interaction.js';
 
 export interface FormGroupContextValue {
   /** Stable id for the field control; matches the FormGroup label's `for`. */
@@ -21,6 +22,12 @@ export interface FormGroupContextValue {
   describedBy: string | undefined;
   /** Whether the field is currently showing an error. */
   invalid: boolean;
+  /** Human-readable label and description for interaction adapters. */
+  label: string;
+  description?: string;
+  required: boolean;
+  error?: string;
+  interaction?: ControlInteractionOptions | false;
 }
 
 const FORM_GROUP_KEY = Symbol('smrt-form-group');

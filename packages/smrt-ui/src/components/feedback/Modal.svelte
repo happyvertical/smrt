@@ -28,8 +28,8 @@ export interface Props {
   title?: string;
   /** Modal size variant */
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
-  /** Placement: center (default) or end for a right-anchored full-height drawer */
-  placement?: 'center' | 'end';
+  /** Placement: center (default), start, or end for full-height drawers */
+  placement?: 'center' | 'start' | 'end';
   /** Whether clicking backdrop closes modal */
   closeOnBackdrop?: boolean;
   /** Whether pressing Escape closes modal */
@@ -114,9 +114,7 @@ const sizeClasses = {
   full: 'modal--full',
 };
 
-const placementClass = $derived(
-  placement === 'end' ? 'modal--end' : 'modal--center',
-);
+const placementClass = $derived(`modal--${placement}`);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -269,11 +267,17 @@ const placementClass = $derived(
 
   /* Placement: end = right-anchored, full-height drawer (e.g. detail panels).
      The size variant still sets the panel width. */
+  .modal--start,
   .modal--end {
     justify-content: flex-end;
     align-items: stretch;
   }
 
+  .modal--start {
+    justify-content: flex-start;
+  }
+
+  .modal--start .modal__container,
   .modal--end .modal__container {
     height: 100%;
     max-height: 100%;
