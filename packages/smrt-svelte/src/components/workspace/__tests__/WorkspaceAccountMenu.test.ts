@@ -29,7 +29,7 @@ describe('WorkspaceAccountMenu', () => {
     });
 
     const trigger = screen.getByRole('button', {
-      name: /Open account menu Acme · ada@example.com/,
+      name: /Open account menu ada@example.com Acme · Owner/,
     });
     await user.click(trigger);
 
@@ -42,6 +42,31 @@ describe('WorkspaceAccountMenu', () => {
     await user.click(trigger);
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     expect(onSignOut).toHaveBeenCalledOnce();
+  });
+
+  it('keeps tenant switching out of the menu when only one tenant is available', async () => {
+    const user = userEvent.setup();
+
+    render(WorkspaceAccountMenu, {
+      props: {
+        userName: 'Ada Lovelace',
+        userLabel: 'ada@example.com',
+        tenantLabel: 'Acme',
+        roleLabel: 'Owner',
+        currentTenantId: 'tenant-a',
+        tenants: tenants.slice(0, 1),
+        onTenantSelect: vi.fn(),
+        onSignOut: vi.fn(),
+      },
+    });
+
+    const trigger = screen.getByRole('button', {
+      name: /Open account menu ada@example.com Acme · Owner/,
+    });
+    await user.click(trigger);
+
+    expect(screen.queryByRole('menuitem', { name: /Acme/ })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
   });
 
   it('is axe-clean', async () => {

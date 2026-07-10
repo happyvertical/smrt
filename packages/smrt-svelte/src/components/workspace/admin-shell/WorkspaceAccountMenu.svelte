@@ -43,11 +43,11 @@ const activeTenantLabel = $derived(
     tenants.find((tenant) => tenant.id === currentTenantId)?.label ||
     '',
 );
-const summary = $derived(
-  activeTenantLabel ? `${activeTenantLabel} · ${identityLabel}` : identityLabel,
+const accountContext = $derived(
+  [activeTenantLabel, roleLabel].filter(Boolean).join(' · '),
 );
 const summaryTitle = $derived(
-  [activeTenantLabel, roleLabel, identityLabel].filter(Boolean).join(' · '),
+  [identityLabel, activeTenantLabel, roleLabel].filter(Boolean).join(' · '),
 );
 const items = $derived.by(() => {
   const menuItems: MenuItem[] = [];
@@ -101,7 +101,12 @@ function handleSelect(id: string): void {
         {t(M['ui.workspace_account_menu.open'])}
       </span>
       <Avatar src={avatarUrl} name={userName} size="sm" aria-hidden="true" />
-      <span class="smrt-workspace-account-menu__summary">{summary}</span>
+      <span class="smrt-workspace-account-menu__identity">
+        <span class="smrt-workspace-account-menu__summary">{identityLabel}</span>
+        {#if accountContext}
+          <span class="smrt-workspace-account-menu__context">{accountContext}</span>
+        {/if}
+      </span>
       <span class="smrt-workspace-account-menu__indicator" aria-hidden="true">•••</span>
     {/snippet}
   </Dropdown>
@@ -139,14 +144,28 @@ function handleSelect(id: string): void {
     overflow-y: auto;
   }
 
-  .smrt-workspace-account-menu__summary {
+  .smrt-workspace-account-menu__identity {
+    display: grid;
+    gap: var(--smrt-spacing-1);
     min-width: 0;
+  }
+
+  .smrt-workspace-account-menu__summary,
+  .smrt-workspace-account-menu__context {
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .smrt-workspace-account-menu__summary {
     color: var(--smrt-color-on-surface);
     font-size: var(--smrt-typography-body-small-size);
     font-weight: var(--smrt-typography-weight-medium);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .smrt-workspace-account-menu__context {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-label-small-size);
   }
 
   .smrt-workspace-account-menu__indicator {
