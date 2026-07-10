@@ -2,7 +2,11 @@
  * Generic component types migrated from @happyvertical/svelte
  */
 import type { Snippet } from 'svelte';
-import type { HTMLAttributes, HTMLButtonAttributes } from 'svelte/elements';
+import type {
+  HTMLAnchorAttributes,
+  HTMLAttributes,
+  HTMLButtonAttributes,
+} from 'svelte/elements';
 
 // Badge types
 export type BadgeVariant =
@@ -29,6 +33,12 @@ export interface ButtonProps extends Omit<HTMLButtonAttributes, 'class'> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   href?: string;
+  class?: string;
+  fullWidth?: boolean;
+  loading?: boolean;
+  target?: HTMLAnchorAttributes['target'];
+  rel?: HTMLAnchorAttributes['rel'];
+  download?: HTMLAnchorAttributes['download'];
   children?: Snippet;
 }
 

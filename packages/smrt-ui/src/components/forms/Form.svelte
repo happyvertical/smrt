@@ -19,20 +19,67 @@
  */
 import type { Snippet } from 'svelte';
 import type { HTMLFormAttributes } from 'svelte/elements';
+import {
+  type ControlInteractionEvent,
+  type ControlInteractionRegistry,
+  createControlInteractionRegistry,
+} from './control-interaction.js';
+import { setControlInteractionContext } from './control-interaction-context.js';
 
 export interface Props extends Omit<HTMLFormAttributes, 'class'> {
   class?: string;
   preventDefault?: boolean;
+  /** Stable form scope used by voice/chat/tutorial adapters. */
+  formId?: string;
+  /** Supply a registry to coordinate multiple forms or inspect commands. */
+  interactionRegistry?: ControlInteractionRegistry;
+  /** Receives registry lifecycle and command events. */
+  oninteraction?: (event: ControlInteractionEvent) => void;
   children: Snippet;
 }
 
 let {
   class: className = '',
   preventDefault = true,
+  formId,
+  interactionRegistry,
+  oninteraction,
+  id,
+  name,
   onsubmit,
   children,
   ...rest
 }: Props = $props();
+
+const instanceId = $props.id();
+const generatedFormId = `smrt-form-${instanceId}`;
+const localInteractionRegistry = createControlInteractionRegistry();
+const resolvedFormId = $derived(formId ?? id ?? name ?? generatedFormId);
+const resolvedInteractionRegistry = $derived(
+  interactionRegistry ?? localInteractionRegistry,
+);
+
+setControlInteractionContext({
+  get formId() {
+    return resolvedFormId;
+  },
+  get registry() {
+    return resolvedInteractionRegistry;
+  },
+});
+
+$effect(() => {
+  if (!oninteraction) return;
+  return resolvedInteractionRegistry.subscribe(oninteraction);
+});
+
+export function getInteractionRegistry(): ControlInteractionRegistry {
+  return resolvedInteractionRegistry;
+}
+
+export function getFormId(): string {
+  return resolvedFormId;
+}
 
 function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   if (preventDefault) event.preventDefault();
@@ -40,7 +87,14 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
 }
 </script>
 
-<form class="form {className}" onsubmit={handleSubmit} {...rest}>
+<form
+  id={id}
+  name={name}
+  class="form {className}"
+  data-smrt-form={resolvedFormId}
+  onsubmit={handleSubmit}
+  {...rest}
+>
 	{@render children()}
 </form>
 
@@ -50,4 +104,3 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   with a consumer's single-class layout override (e.g. `:global(.x){display:flex}`)
   and can win by stylesheet order. The `form` class stays as a stable hook.
 -->
-

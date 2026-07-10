@@ -1,11 +1,19 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import type { HTMLSelectAttributes } from 'svelte/elements';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
+import type { ControlInteractionOptions } from './control-interaction.js';
+import { tryGetControlInteractionContext } from './control-interaction-context.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 
 export interface Props extends Omit<HTMLSelectAttributes, 'class' | 'value'> {
   value?: string;
   class?: string;
+  interaction?: ControlInteractionOptions | false;
   children: Snippet;
 }
 
@@ -16,7 +24,9 @@ let {
   required = false,
   name,
   class: className = '',
+  interaction,
   children,
+  'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedby,
   'aria-invalid': ariaInvalid,
   ...rest
@@ -24,6 +34,8 @@ let {
 
 // Inherit id / hint+error association / error state from a wrapping FormGroup.
 const formGroup = tryGetFormGroupContext();
+const controlInteraction = tryGetControlInteractionContext();
+let selectEl = $state<HTMLSelectElement | null>(null);
 const resolvedId = $derived(id ?? formGroup?.().inputId);
 const resolvedDescribedBy = $derived(
   ariaDescribedby ?? formGroup?.().describedBy,
@@ -31,17 +43,81 @@ const resolvedDescribedBy = $derived(
 const resolvedInvalid = $derived(
   ariaInvalid ?? (formGroup?.().invalid ? 'true' : undefined),
 );
+const resolvedInteraction = $derived.by(() => {
+  const inherited = formGroup?.().interaction;
+  if (interaction === false || inherited === false) return false;
+  return { ...(inherited ?? {}), ...(interaction ?? {}) };
+});
+const resolvedControlId = $derived(
+  resolvedInteraction === false
+    ? undefined
+    : (resolvedInteraction.id ?? name ?? resolvedId),
+);
+
+function setControlValue(next: unknown) {
+  value = String(next ?? '');
+  if (selectEl) emitControlChange(selectEl);
+}
+
+$effect(() => {
+  const context = controlInteraction;
+  const element = selectEl;
+  const controlId = resolvedControlId;
+  const options = resolvedInteraction;
+  if (!context || !element || !controlId || options === false) return;
+  return context.registry.register({
+    identity: { formId: context.formId, controlId, subject: options.subject },
+    metadata: {
+      kind: 'select',
+      label: formGroup?.().label ?? ariaLabel ?? undefined,
+      description: options.description ?? formGroup?.().description,
+      sensitivity: options.sensitivity ?? 'public',
+      readable: options.readable,
+      writable: options.writable,
+      constraints: { required: required === true },
+      options: Array.from(element.options).map((option) => ({
+        value: option.value,
+        label: option.label,
+        disabled: option.disabled,
+      })),
+    },
+    getValue: () => value,
+    setValue: setControlValue,
+    clear: () => setControlValue(''),
+    focus: () => element.focus(),
+    reveal: () => revealControl(element),
+    highlight: (durationMs) => highlightControl(element, durationMs),
+    validate: () => element.reportValidity(),
+    getState: () => ({
+      disabled: element.disabled,
+      valid: element.validity.valid,
+      validationMessage: element.validationMessage || undefined,
+    }),
+  });
+});
+
+export function focus(): void {
+  selectEl?.focus();
+}
+
+export function getElement(): HTMLSelectElement | null {
+  return selectEl;
+}
 </script>
 
-<select
+	<select
+		bind:this={selectEl}
 	id={resolvedId}
 	bind:value
 	{disabled}
 	{required}
-	{name}
+		{name}
+		aria-label={ariaLabel}
 	aria-describedby={resolvedDescribedBy}
 	aria-invalid={resolvedInvalid}
-	class="select {className}"
+		class="select {className}"
+		data-smrt-control={resolvedControlId}
+		data-smrt-form={controlInteraction?.formId}
 	{...rest}
 >
 	{@render children()}
@@ -73,6 +149,11 @@ const resolvedInvalid = $derived(
 		outline: none;
 		border-color: var(--smrt-color-primary, #005ac1);
 		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
+	}
+
+	.select[data-smrt-highlighted='true'] {
+		outline: 3px solid var(--smrt-color-tertiary, #7d5260);
+		outline-offset: 3px;
 	}
 
 	.select:disabled {

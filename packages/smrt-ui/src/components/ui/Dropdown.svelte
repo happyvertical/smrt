@@ -1,7 +1,3 @@
-<script module lang="ts">
-let menuIdCounter = 0;
-</script>
-
 <script lang="ts">
 /**
  * Dropdown / Menu — a trigger button and a positioned menu list.
@@ -12,8 +8,9 @@ let menuIdCounter = 0;
  * Space to activate, Escape to close + refocus the trigger, and click-outside to
  * dismiss. CSS-anchored via `placement` — no JS positioning dependency.
  */
-import { tick } from 'svelte';
+
 import type { Snippet } from 'svelte';
+import { tick } from 'svelte';
 import type { DropdownPlacement, MenuItem } from '../../types-generic';
 
 export interface Props {
@@ -40,7 +37,8 @@ const {
   disabled = false,
 }: Props = $props();
 
-const menuId = `smrt-menu-${(menuIdCounter += 1)}`;
+const instanceId = $props.id();
+const menuId = `smrt-menu-${instanceId}`;
 let open = $state(false);
 let wrapEl = $state<HTMLElement | null>(null);
 let triggerEl = $state<HTMLButtonElement | null>(null);
@@ -84,7 +82,7 @@ function onTriggerKeydown(event: KeyboardEvent) {
 function focusByOffset(offset: number) {
   const order = enabledIndexes;
   if (order.length === 0) return;
-  const current = itemEls.findIndex((el) => el === document.activeElement);
+  const current = itemEls.indexOf(document.activeElement as HTMLButtonElement);
   const pos = order.indexOf(current);
   const next = order[(pos + offset + order.length) % order.length];
   itemEls[next]?.focus();

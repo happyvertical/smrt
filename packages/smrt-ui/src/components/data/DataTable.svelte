@@ -15,6 +15,7 @@ import type { Snippet } from 'svelte';
 import { M } from '../../i18n/strings.js';
 import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
+import Pagination from '../ui/Pagination.svelte';
 import type {
   DataTableColumn,
   DataTableProps,
@@ -43,6 +44,20 @@ let {
   sortable = false,
   sort = $bindable({ columnId: null, direction: null }),
   onSortChange,
+  manualSorting = false,
+  filterFn,
+  page = $bindable(1),
+  pageSize,
+  manualPagination = false,
+  totalRows,
+  onPageChange,
+  expanded = $bindable(new Set<string | number>()),
+  onExpandedChange,
+  canExpand,
+  expandedContent,
+  toolbar,
+  footer,
+  visibleColumnIds,
   loading = false,
   empty,
   rowClass,
@@ -104,11 +119,28 @@ function handleRowSelect(key: string | number, event: Event) {
 // Handle select all
 function handleSelectAll() {
   if (allSelected) {
-    selected = new Set();
+    const visibleKeys = new Set(displayData.map((row, i) => getRowKey(row, i)));
+    selected = new Set([...selected].filter((key) => !visibleKeys.has(key)));
   } else {
-    selected = new Set(sortedData.map((row, i) => getRowKey(row, i)));
+    selected = new Set([
+      ...selected,
+      ...displayData.map((row, i) => getRowKey(row, i)),
+    ]);
   }
   onSelectionChange?.(selected);
+}
+
+function handleExpanded(key: string | number, event: Event) {
+  event.stopPropagation();
+  const next = new Set(expanded);
+  next.has(key) ? next.delete(key) : next.add(key);
+  expanded = next;
+  onExpandedChange?.(next);
+}
+
+function handlePageChange(next: number) {
+  page = Math.min(Math.max(1, next), totalPages);
+  onPageChange?.(page);
 }
 
 // Handle row click
@@ -127,19 +159,25 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 }
 
 // Get visible columns
-const visibleColumns = $derived(columns.filter((col) => !col.hidden));
+const visibleColumns = $derived(
+  columns.filter(
+    (col) => !col.hidden && (!visibleColumnIds || visibleColumnIds.has(col.id)),
+  ),
+);
+
+const filteredData = $derived(filterFn ? data.filter(filterFn) : data);
 
 // Sort data
 const sortedData = $derived.by(() => {
-  if (!sort.columnId || !sort.direction) return data;
+  if (manualSorting || !sort.columnId || !sort.direction) return filteredData;
 
   const column = columns.find((c) => c.id === sort.columnId);
-  if (!column) return data;
+  if (!column) return filteredData;
 
   const accessor = column.accessor ?? column.id;
   const direction = sort.direction;
 
-  return [...data].sort((a, b) => {
+  return [...filteredData].sort((a, b) => {
     if (column.sortFn) {
       return column.sortFn(a, b, direction);
     }
@@ -147,12 +185,31 @@ const sortedData = $derived.by(() => {
   });
 });
 
+const totalRowCount = $derived(totalRows ?? sortedData.length);
+const totalPages = $derived(
+  pageSize ? Math.max(1, Math.ceil(totalRowCount / pageSize)) : 1,
+);
+const displayData = $derived.by(() => {
+  if (!pageSize || manualPagination) return sortedData;
+  const start = (page - 1) * pageSize;
+  return sortedData.slice(start, start + pageSize);
+});
+
+$effect(() => {
+  if (page > totalPages) handlePageChange(totalPages);
+});
+
 // Selection state
 const allSelected = $derived(
-  data.length > 0 && data.every((row, i) => selected.has(getRowKey(row, i))),
+  displayData.length > 0 &&
+    displayData.every((row, i) => selected.has(getRowKey(row, i))),
 );
 const someSelected = $derived(
-  data.some((row, i) => selected.has(getRowKey(row, i))) && !allSelected,
+  displayData.some((row, i) => selected.has(getRowKey(row, i))) && !allSelected,
+);
+
+const columnCount = $derived(
+  visibleColumns.length + (selectable ? 1 : 0) + (expandedContent ? 1 : 0),
 );
 
 // Get cell value
@@ -169,10 +226,8 @@ const sizeClasses = {
 };
 </script>
 
-<div
-  class="data-table-container"
-  class:data-table-container--sticky={stickyHeader}
->
+{#if toolbar}<div class="data-table-toolbar">{@render toolbar()}</div>{/if}
+<div class="data-table-container" class:data-table-container--sticky={stickyHeader}>
   <table
     class="data-table {sizeClasses[size]}"
     class:data-table--striped={striped}
@@ -186,6 +241,7 @@ const sizeClasses = {
 
     <thead class="data-table__head">
       <tr class="data-table__row data-table__row--header">
+        {#if expandedContent}<th class="data-table__cell data-table__cell--expand" scope="col"><span class="sr-only">Expand</span></th>{/if}
         {#if selectable}
           <th class="data-table__cell data-table__cell--checkbox" scope="col">
             <input
@@ -245,7 +301,7 @@ const sizeClasses = {
         <tr class="data-table__row data-table__row--loading">
           <td
             class="data-table__cell data-table__cell--loading"
-            colspan={visibleColumns.length + (selectable ? 1 : 0)}
+            colspan={columnCount}
           >
             <div class="data-table__loading-indicator">
               <span class="data-table__spinner"></span>
@@ -253,11 +309,11 @@ const sizeClasses = {
             </div>
           </td>
         </tr>
-      {:else if sortedData.length === 0}
+      {:else if displayData.length === 0}
         <tr class="data-table__row data-table__row--empty">
           <td
             class="data-table__cell data-table__cell--empty"
-            colspan={visibleColumns.length + (selectable ? 1 : 0)}
+            colspan={columnCount}
           >
             {#if empty}
               {@render empty()}
@@ -269,9 +325,11 @@ const sizeClasses = {
           </td>
         </tr>
       {:else}
-        {#each sortedData as row, index (getRowKey(row, index))}
+        {#each displayData as row, index (getRowKey(row, index))}
           {@const key = getRowKey(row, index)}
           {@const isSelected = selected.has(key)}
+          {@const isExpanded = expanded.has(key)}
+          {@const rowCanExpand = canExpand?.(row, index) ?? true}
           <tr
             class="data-table__row {rowClass?.(row, index) ?? ''}"
             class:data-table__row--selected={isSelected}
@@ -285,6 +343,11 @@ const sizeClasses = {
               }
             }}
           >
+            {#if expandedContent}
+              <td class="data-table__cell data-table__cell--expand">
+                {#if rowCanExpand}<button type="button" class="data-table__expand-button" aria-label={isExpanded ? 'Collapse row' : 'Expand row'} aria-expanded={isExpanded} onclick={(event) => handleExpanded(key, event)}>{isExpanded ? '−' : '+'}</button>{/if}
+              </td>
+            {/if}
             {#if selectable}
               <td class="data-table__cell data-table__cell--checkbox">
                 <input
@@ -313,17 +376,30 @@ const sizeClasses = {
               </td>
             {/each}
           </tr>
+          {#if expandedContent && isExpanded}
+            <tr class="data-table__row data-table__row--expanded">
+              <td class="data-table__cell data-table__cell--expanded" colspan={columnCount}>{@render expandedContent({ row, index })}</td>
+            </tr>
+          {/if}
         {/each}
       {/if}
     </tbody>
+    {#if footer}
+      <tfoot><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayData })}</td></tr></tfoot>
+    {/if}
   </table>
 </div>
+{#if pageSize && totalPages > 1}<Pagination currentPage={page} {totalPages} onPageChange={handlePageChange} aria-label="Table pages" />{/if}
 
 <style>
   .data-table-container {
     width: 100%;
     overflow-x: auto;
   }
+
+  .data-table-toolbar { margin-bottom: var(--smrt-spacing-2); }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
   .data-table-container--sticky {
     max-height: 100%;
@@ -443,6 +519,12 @@ const sizeClasses = {
     width: 48px;
     text-align: center;
   }
+
+  .data-table__cell--expand { width: 2.75rem; text-align: center; }
+  .data-table__expand-button { width: 1.75rem; height: 1.75rem; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-full); background: transparent; color: var(--smrt-color-on-surface); cursor: pointer; }
+  .data-table__expand-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
+  .data-table__cell--expanded { padding: var(--smrt-spacing-4); background: var(--smrt-color-surface-container-low); }
+  .data-table__footer { border-top: 2px solid var(--smrt-color-outline-variant); font-weight: var(--smrt-typography-weight-medium); }
 
   .data-table__checkbox {
     width: 18px;

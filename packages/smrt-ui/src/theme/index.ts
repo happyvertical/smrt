@@ -1,32 +1,8 @@
 /**
- * Theme system exports
+ * @deprecated Import from `@happyvertical/smrt-ui/themes`.
+ *
+ * This compatibility path now forwards to the canonical preset-aware theme
+ * system so `/theme`, `/themes`, and root imports share one context and one
+ * ThemeProvider implementation.
  */
-
-// Context
-export {
-  getThemeContext,
-  setThemeContext,
-  THEME_KEY,
-  type ThemeContext,
-  type ThemeState,
-  tryGetThemeContext,
-} from './context.js';
-// Components
-export { default as ThemeProvider } from './ThemeProvider.svelte';
-
-// Tokens
-export {
-  borderRadius,
-  type ColorScheme,
-  darkColors,
-  defaultThemeConfig,
-  duration,
-  easing,
-  elevation,
-  generateColorVariables,
-  generateThemeVariables,
-  lightColors,
-  spacing,
-  type ThemeConfig,
-  typography,
-} from './tokens.js';
+export * from '../themes/index.js';

@@ -7,6 +7,7 @@
  */
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { createRawSnippet } from 'svelte';
 import { describe, expect, it } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import DataTable from '../DataTable.svelte';
@@ -49,6 +50,39 @@ describe('DataTable', () => {
     expect(nameHeader).not.toHaveAttribute('aria-sort');
     await userEvent.click(screen.getByRole('button', { name: 'Name' }));
     expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+  });
+
+  it('filters and paginates client-side rows', async () => {
+    render(DataTable, {
+      props: {
+        data: [...data, { name: 'Grace', age: 85 }],
+        columns,
+        filterFn: (person: Person) => person.age > 40,
+        pageSize: 1,
+      },
+    });
+    expect(screen.getByRole('cell', { name: 'Linus' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('cell', { name: 'Grace' }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(screen.getByRole('cell', { name: 'Grace' })).toBeInTheDocument();
+  });
+
+  it('reveals expandable row content', async () => {
+    render(DataTable, {
+      props: {
+        data,
+        columns,
+        expandedContent: createRawSnippet(() => ({
+          render: () => '<p>Row detail</p>',
+        })),
+      },
+    });
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'Expand row' })[0],
+    );
+    expect(screen.getByText('Row detail')).toBeInTheDocument();
   });
 
   it('is axe-clean', async () => {

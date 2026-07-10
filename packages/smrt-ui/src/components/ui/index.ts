@@ -2,14 +2,18 @@
  * UI components - Buttons, cards, badges, and other UI elements
  */
 
+export { default as Accordion } from './Accordion.svelte';
+export { default as AccordionItem } from './AccordionItem.svelte';
 // Export components
 export { default as Avatar } from './Avatar.svelte';
 export { default as Badge } from './Badge.svelte';
 export { default as Button } from './Button.svelte';
 export { default as Card } from './Card.svelte';
 export { default as Chip } from './Chip.svelte';
-export { default as Dropdown } from './Dropdown.svelte';
+export { default as Disclosure } from './Disclosure.svelte';
+export { default as Dropdown, default as Menu } from './Dropdown.svelte';
 export { default as Pagination } from './Pagination.svelte';
+export { default as Popover } from './Popover.svelte';
 export { default as Skeleton } from './Skeleton.svelte';
 export { default as Tooltip } from './Tooltip.svelte';
 export { default as Tree } from './Tree.svelte';

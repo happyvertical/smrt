@@ -17,7 +17,7 @@ const sampleRooms = [
       roomId: 'room-editorial',
       senderProfileId: 'profile-taylor',
       senderName: 'Taylor Rowan',
-      content: 'Content QA is clear for tonight’s rollout.',
+      content: 'Content QA is clear for tonight’s publication window.',
       messageType: 'text',
       role: 'user',
       isEdited: false,
@@ -56,8 +56,7 @@ const sampleMessages = [
     roomId: 'room-editorial',
     senderProfileId: 'profile-taylor',
     senderName: 'Taylor Rowan',
-    content:
-      'The root playground is showing the content previews correctly now.',
+    content: 'The editorial checklist is ready for review.',
     messageType: 'text',
     role: 'user',
     isEdited: false,
@@ -80,7 +79,7 @@ const sampleMessages = [
     senderProfileId: 'profile-jordan',
     senderName: 'Jordan Lee',
     content:
-      'Next up is broadening the package rollout from the content reference implementation.',
+      'I’ll verify the governance states and flag anything that needs attention.',
     messageType: 'text',
     role: 'user',
     isEdited: false,
@@ -88,8 +87,7 @@ const sampleMessages = [
     replyTo: {
       id: 'chat-message-1',
       senderName: 'Taylor Rowan',
-      content:
-        'The root playground is showing the content previews correctly now.',
+      content: 'The editorial checklist is ready for review.',
     },
     reactions: [],
     attachments: [],
@@ -156,12 +154,11 @@ export default {
       order: 3,
       props: {
         onsend: noop,
-        placeholder: 'Reply to the rollout thread…',
+        placeholder: 'Reply to Editorial Ops…',
         replyTo: {
           id: 'chat-message-1',
           senderName: 'Taylor Rowan',
-          content:
-            'The root playground is showing the content previews correctly now.',
+          content: 'The editorial checklist is ready for review.',
         },
         oncancelreply: noop,
       },

@@ -359,7 +359,7 @@ This preview module lives in \`src/svelte/playground.ts\`.
 
 - Package-owned previews stay close to the real components
 - The shared host simply discovers and renders them
-- Live entries can still point at the package's generated API routes`;
+- Live entries can point at the package's generated API routes`;
 
 // Keep the published playground module importable from Node so `smrt
 // playground list` can inspect entry metadata without needing a Svelte loader.

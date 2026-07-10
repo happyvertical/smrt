@@ -37,17 +37,17 @@ pnpm add @happyvertical/smrt-svelte
 <Toggle label="Active" bind:checked={active} />
 ```
 
-### UI Components
+### UI Foundation
 
 ```svelte
 <script>
-  import { Button, Card, Badge, Pagination } from '@happyvertical/smrt-svelte/ui';
-  import { DataTable } from '@happyvertical/smrt-svelte';
+  import { Button, Card, Badge, Pagination } from '@happyvertical/smrt-ui/ui';
+  import { DataTable } from '@happyvertical/smrt-ui/data';
 </script>
 
 <Card>
-  <DataTable columns={cols} rows={data} />
-  <Pagination total={100} page={1} perPage={20} />
+  <DataTable columns={cols} data={rows} pageSize={20} />
+  <Pagination currentPage={1} totalPages={5} />
 </Card>
 ```
 
@@ -72,7 +72,7 @@ pnpm add @happyvertical/smrt-svelte
 
 ```svelte
 <script>
-  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
 </script>
 
 <ThemeProvider preset="glass" colorScheme="system">
@@ -151,7 +151,9 @@ scaffold adopts AdminShell as its default chrome exactly this way; copy its
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, etc.) |
 | `@happyvertical/smrt-svelte/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
 | `@happyvertical/smrt-svelte/ui` | UI primitives (Button, Card, Badge, Pagination) |
-| `@happyvertical/smrt-svelte/themes` | ThemeProvider, presets (material/glass/studio), CSS generation |
+| `@happyvertical/smrt-ui/themes` | Canonical ThemeProvider, Material/Glass/Studio/SMRT presets, CSS generation |
+| `@happyvertical/smrt-ui/forms` | Provider-free foundational form controls and the agent interaction registry |
+| `@happyvertical/smrt-ui/data` | DataTable, CollectionList/ContentList, CollectionToolbar |
 | `@happyvertical/smrt-svelte/registry` | ModuleUIRegistry for agent admin panels |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
 | `@happyvertical/smrt-svelte/browser-ai` | Browser AI client (STT/TTS/LLM adapters, capability detection) |

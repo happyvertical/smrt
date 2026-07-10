@@ -13,6 +13,10 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./playground": {
+      "types": "./dist/playground.d.ts",
+      "import": "./dist/playground.js"
+    },
     "./ui": {
       "types": "./dist/components/ui/index.d.ts",
       "svelte": "./dist/components/ui/index.js",
@@ -24,6 +28,12 @@
       "svelte": "./dist/components/feedback/index.js",
       "import": "./dist/components/feedback/index.js",
       "default": "./dist/components/feedback/index.js"
+    },
+    "./data": {
+      "types": "./dist/components/data/index.d.ts",
+      "svelte": "./dist/components/data/index.js",
+      "import": "./dist/components/data/index.js",
+      "default": "./dist/components/data/index.js"
     },
     "./layout": {
       "types": "./dist/components/layout/index.d.ts",
