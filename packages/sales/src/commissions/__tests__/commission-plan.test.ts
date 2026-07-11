@@ -260,4 +260,22 @@ describe('CommissionPlan', () => {
     );
     expect(after?.version).toBe(2);
   });
+
+  it('tenants do not collide on the same plan key/version (codex P1)', async () => {
+    const a = await createDraft({
+      planKey: 'default',
+      version: 1,
+      tenantId: 'tenant-a',
+      name: 'Tenant A terms',
+    });
+    const b = await createDraft({
+      planKey: 'default',
+      version: 1,
+      tenantId: 'tenant-b',
+      name: 'Tenant B terms',
+    });
+    expect(a.id).not.toBe(b.id);
+    expect((await plans.get({ id: a.id }))?.name).toBe('Tenant A terms');
+    expect((await plans.get({ id: b.id }))?.name).toBe('Tenant B terms');
+  });
 });

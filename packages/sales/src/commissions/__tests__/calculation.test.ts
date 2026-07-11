@@ -473,4 +473,64 @@ describe('CommissionCalculationService', () => {
     expect(zero.created).toHaveLength(1);
     expect(zero.created[0]?.amountCents).toBe(0);
   });
+
+  it('earning events are immutable evidence (codex P2)', async () => {
+    const event = await createEvent({
+      grossAmountCents: 10000,
+      dedupeKey: 'immutable-evt-1',
+    });
+
+    // Hydrated edit → rejected.
+    const hydrated = await events.get({ id: event.id });
+    if (!hydrated) throw new Error('missing event');
+    hydrated.grossAmountCents = 99999;
+    await expect(hydrated.save()).rejects.toThrow(/immutable\s+evidence/);
+
+    // Same dedupeKey with DIFFERENT values → rejected (would upsert over
+    // the evidence row via the natural key).
+    await expect(
+      events.create({
+        eventKind: 'invoice_payment',
+        occurredAt: new Date('2026-03-15T12:00:00Z'),
+        sourceKind: 'agreement',
+        sourceId: 'agr-1',
+        grossAmountCents: 55555,
+        currency: 'USD',
+        dedupeKey: 'immutable-evt-1',
+      }),
+    ).rejects.toThrow(/immutable evidence/);
+
+    // Even an IDENTICAL raw retried create is refused: the natural-key
+    // upsert would rotate the row's id and orphan commissions referencing
+    // it. Idempotent ingestion goes through getOrCreateByDedupeKey.
+    await expect(
+      events.create({
+        eventKind: 'invoice_payment',
+        occurredAt: new Date('2026-03-15T12:00:00Z'),
+        sourceKind: 'agreement',
+        sourceId: 'agr-1',
+        grossAmountCents: 10000,
+        currency: 'USD',
+        dedupeKey: 'immutable-evt-1',
+      }),
+    ).rejects.toThrow(/immutable evidence/);
+
+    const replay = await events.getOrCreateByDedupeKey({
+      eventKind: 'invoice_payment',
+      occurredAt: new Date('2026-03-15T12:00:00Z'),
+      sourceKind: 'agreement',
+      sourceId: 'agr-1',
+      grossAmountCents: 10000,
+      currency: 'USD',
+      dedupeKey: 'immutable-evt-1',
+    });
+    expect(replay.created).toBe(false);
+    expect(replay.event.id).toBe(event.id);
+    const rows = await events.list({
+      where: { dedupeKey: 'immutable-evt-1' },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe(event.id);
+    expect(rows[0]?.grossAmountCents).toBe(10000);
+  });
 });

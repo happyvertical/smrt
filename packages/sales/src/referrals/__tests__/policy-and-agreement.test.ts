@@ -120,6 +120,24 @@ describe('AttributionPolicy versioning', () => {
     expect(after?.version).toBe(2);
   });
 
+  it('tenants do not collide on the same policy key/version (codex P1)', async () => {
+    const a = await policies.create({
+      policyKey: 'default',
+      version: 1,
+      tenantId: 'tenant-a',
+      windowDays: 30,
+    });
+    const b = await policies.create({
+      policyKey: 'default',
+      version: 1,
+      tenantId: 'tenant-b',
+      windowDays: 60,
+    });
+    expect(a.id).not.toBe(b.id);
+    expect((await policies.get({ id: a.id }))?.windowDays).toBe(30);
+    expect((await policies.get({ id: b.id }))?.windowDays).toBe(60);
+  });
+
   it('freezes policy-defining fields once active (status transitions stay allowed)', async () => {
     await policies.create({
       policyKey: 'frozen',

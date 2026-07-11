@@ -23,7 +23,7 @@ describe('Referrals schema and generation surfaces', () => {
       ).toEqual(['tenant_id', 'key']);
       expect(
         ObjectRegistry.getConfig('AttributionPolicy').conflictColumns,
-      ).toEqual(['policy_key', 'version']);
+      ).toEqual(['tenant_id', 'policy_key', 'version']);
       expect(ObjectRegistry.getConfig('ReferralLink').conflictColumns).toEqual([
         'code',
       ]);

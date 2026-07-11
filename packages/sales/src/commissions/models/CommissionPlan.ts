@@ -157,9 +157,12 @@ export function validateCommissionPlanComponents(
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  // (planKey, version) is the natural key — a retried create of the same
-  // version upserts instead of duplicating.
-  conflictColumns: ['plan_key', 'version'],
+  // (tenantId, planKey, version) is the natural key — a retried create of
+  // the same version upserts instead of duplicating, and two tenants can
+  // both own a plan key like 'default' without colliding. NULL-tenant
+  // (global) rows opt out of upsert dedup on adapters where NULLs compare
+  // distinct — the PaymentIntent natural-key convention.
+  conflictColumns: ['tenant_id', 'plan_key', 'version'],
   // NO generated update route: amendments are new rows
   // (CommissionPlanCollection.createAmendment) and status transitions go
   // through the guarded methods. The save-time guards below still protect

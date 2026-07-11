@@ -110,9 +110,12 @@ export function validateAttributionPolicyTerms(
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  // (policyKey, version) is the natural key — a retried create of the same
-  // version upserts instead of duplicating.
-  conflictColumns: ['policy_key', 'version'],
+  // (tenantId, policyKey, version) is the natural key — a retried create
+  // of the same version upserts instead of duplicating, and two tenants
+  // can both own a policy key like 'default' without colliding.
+  // NULL-tenant (global) rows opt out of upsert dedup on adapters where
+  // NULLs compare distinct — the PaymentIntent natural-key convention.
+  conflictColumns: ['tenant_id', 'policy_key', 'version'],
   // NO generated update route: amendments are new rows and status moves go
   // through the guarded transition methods.
   api: { include: ['list', 'get', 'create'] },

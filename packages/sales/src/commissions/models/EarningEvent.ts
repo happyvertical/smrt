@@ -30,6 +30,13 @@ import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EarningEventOptions } from '../types.js';
 
+/**
+ * Serialized state of each persisted instance, for the save-time
+ * immutability guard (WeakMap keeps it out of the schema and GCs with the
+ * instance — the ReferralTermSnapshot pattern).
+ */
+const persistedEventState = new WeakMap<EarningEvent, string>();
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   // Natural key for idempotent ingestion — a retried create with the same
@@ -130,12 +137,100 @@ export class EarningEvent extends SmrtObject {
 
   /**
    * Re-coerce {@link occurredAt} after the framework reapplies raw option /
-   * hydrated row values (SQLite hands back ISO strings).
+   * hydrated row values (SQLite hands back ISO strings), and capture the
+   * persisted state for the immutability guard when this instance hydrated
+   * an existing row.
    */
   override async initialize(): Promise<this> {
     await super.initialize();
     this.occurredAt = EarningEvent.coerceDate(this.occurredAt) ?? new Date();
+    if (await this.isSaved()) {
+      persistedEventState.set(this, this.serializeState());
+    }
     return this;
+  }
+
+  /**
+   * Save with the evidence-immutability guard. EarningEvents are immutable
+   * commercial evidence; three write vectors are closed:
+   *
+   * - a HYDRATED persisted row must serialize identically to its captured
+   *   state (no-op re-saves pass, any change throws);
+   * - an instance carrying an existing id WITHOUT having hydrated it
+   *   (`create({ id, _skipLoad: true })`) is rejected outright;
+   * - a NEW instance whose `dedupeKey` already belongs to another row is
+   *   refused outright: the natural-key upsert would not only rewrite the
+   *   evidence values but ROTATE the row's id (orphaning any Commission
+   *   whose `earningEventId` points at it). Idempotent ingestion goes
+   *   through `EarningEventCollection.getOrCreateByDedupeKey()`, which
+   *   finds first and never upserts.
+   */
+  override async save(): Promise<this> {
+    const captured = persistedEventState.get(this);
+    if (captured !== undefined) {
+      if (captured !== this.serializeState()) {
+        throw new Error(
+          `EarningEvent ${this.id ?? '<new>'}: earning events are immutable ` +
+            'evidence — record a correcting event (or a CommissionAdjustment ' +
+            'downstream) instead of editing this row.',
+        );
+      }
+    } else if (this.id && (await this.isSaved())) {
+      throw new Error(
+        `EarningEvent ${this.id}: refusing to overwrite an existing event ` +
+          'row from a non-hydrated instance — earning events are immutable ' +
+          'evidence.',
+      );
+    } else if (this.dedupeKey) {
+      // Fresh instance (create() pre-assigns an id, so key off "no captured
+      // state and not a persisted id" rather than a missing id): its
+      // natural key may collide with existing evidence via the upsert.
+      try {
+        const row = await this.db.get(this.tableName, {
+          dedupe_key: this.dedupeKey,
+        });
+        if (row && row.id !== this.id) {
+          throw new Error(
+            `EarningEvent (dedupeKey '${this.dedupeKey}'): an event with ` +
+              'this dedupe key already exists — earning events are ' +
+              'immutable evidence, and the natural-key upsert would rotate ' +
+              "the existing row's id (orphaning commissions that reference " +
+              'it). Use EarningEventCollection.getOrCreateByDedupeKey() ' +
+              'for idempotent ingestion, or record a new event under its ' +
+              'own dedupe key.',
+          );
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('immutable evidence')
+        ) {
+          throw error;
+        }
+        // DB not ready / table absent — nothing persisted to protect yet.
+      }
+    }
+    const result = (await super.save()) as this;
+    persistedEventState.set(this, this.serializeState());
+    return result;
+  }
+
+  private serializeState(): string {
+    // Stable key ordering so a no-op re-serialization matches.
+    return JSON.stringify({
+      tenantId: this.tenantId,
+      eventKind: this.eventKind,
+      occurredAt: this.occurredAt.toISOString(),
+      sourceKind: this.sourceKind,
+      sourceId: this.sourceId,
+      grossAmountCents: this.grossAmountCents,
+      netAmountCents: this.netAmountCents,
+      marginCents: this.marginCents,
+      currency: this.currency,
+      customBases: this.customBases,
+      dedupeKey: this.dedupeKey,
+      metadata: this.metadata,
+    });
   }
 
   /**
