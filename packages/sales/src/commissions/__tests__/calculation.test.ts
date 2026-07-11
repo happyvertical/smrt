@@ -556,4 +556,56 @@ describe('CommissionCalculationService', () => {
       ),
     ).rejects.toThrow(/fixedAmountCents/);
   });
+
+  it('commission audit rows refuse dedupe-key overwrites (codex P1)', async () => {
+    const event = await createEvent({ grossAmountCents: 10000 });
+    const components: CommissionPlanComponent[] = [
+      { key: 'c1', trigger: '*', basis: 'gross', rate: 0.1 },
+    ];
+    const first = await service.calculateForEvent(baseInput(event, components));
+    const won = first.created[0];
+
+    // A raw create carrying the winner's dedupe key is refused…
+    await expect(
+      commissions.create({
+        earnerId: earner.id as string,
+        amountCents: 99999,
+        currency: 'USD',
+        dedupeKey: won.dedupeKey,
+      }),
+    ).rejects.toThrow(/immutable audit rows/);
+    // …and the persisted amount is untouched.
+    expect((await commissions.get({ id: won.id }))?.amountCents).toBe(
+      won.amountCents,
+    );
+
+    // The calc service itself turns the refusal into idempotency (replay
+    // path already covered; this asserts the row count stays 1).
+    expect(await commissions.findByEvent(event.id as string)).toHaveLength(1);
+  });
+
+  it('refuses an earner from a different tenant lane than the event (codex P1)', async () => {
+    const foreignEarner = await earners.create({
+      profileId: 'profile-foreign',
+      displayName: 'Other Tenant Earner',
+      status: 'active',
+      tenantId: 'tenant-other',
+    });
+    const event = await createEvent({
+      grossAmountCents: 10000,
+      tenantId: 'tenant-mine',
+    });
+    const guarded = new CommissionCalculationService(commissions, earners);
+    await expect(
+      guarded.calculateForEvent(
+        baseInput(
+          event,
+          [{ key: 'c1', trigger: '*', basis: 'gross', rate: 0.1 }],
+          {
+            earnerId: foreignEarner.id as string,
+          },
+        ),
+      ),
+    ).rejects.toThrow(/cross-tenant commissions are refused/);
+  });
 });

@@ -98,6 +98,47 @@ export class OpportunityConversion extends SmrtObject {
   setMetadata(metadata: Record<string, unknown>): void {
     this.metadata = JSON.stringify(metadata);
   }
+
+  /**
+   * Save with the append-only guard: a fresh instance whose
+   * `(opportunityId, targetKind, targetId)` natural key already belongs to
+   * a DIFFERENT row is refused — the conflict-column upsert would replace
+   * the existing conversion link (note and id) without the won-opportunity
+   * validation. Idempotent linking goes through
+   * `OpportunityConversionCollection.recordConversion()`, which finds
+   * first and reports `{ created: false }`.
+   */
+  override async save(): Promise<this> {
+    if (this.opportunityId && this.targetKind && this.targetId) {
+      try {
+        const res = await this.db.query(
+          `SELECT id FROM ${this.tableName} WHERE opportunity_id = $1 AND target_kind = $2 AND target_id = $3`,
+          this.opportunityId,
+          this.targetKind,
+          this.targetId,
+        );
+        const rows = Array.isArray(res)
+          ? (res as Record<string, unknown>[])
+          : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);
+        const taken = rows.find((row) => row.id !== this.id);
+        if (taken) {
+          throw new Error(
+            `OpportunityConversion ${this.opportunityId}/${this.targetKind}/${this.targetId}: ` +
+              'this conversion link already exists — conversion links are ' +
+              'append-only. Use ' +
+              'OpportunityConversionCollection.recordConversion() for ' +
+              'idempotent linking.',
+          );
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('append-only')) {
+          throw error;
+        }
+        // DB not ready / table absent — nothing persisted to collide with.
+      }
+    }
+    return (await super.save()) as this;
+  }
 }
 
 export default OpportunityConversion;

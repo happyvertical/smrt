@@ -90,6 +90,30 @@ describe('OpportunityConversionCollection.recordConversion()', () => {
     ).toHaveLength(1);
   });
 
+  it('refuses a raw create onto an existing conversion link (codex P2)', async () => {
+    const opportunity = await wonOpportunity('Guarded');
+    const first = await conversions.recordConversion({
+      opportunityId: opportunity.id ?? '',
+      targetKind: 'client',
+      targetId: 'client-77',
+      note: 'original link',
+    });
+
+    // A generated-surface create carrying the same natural key would
+    // upsert over the append-only link — refused.
+    await expect(
+      conversions.create({
+        opportunityId: opportunity.id ?? '',
+        targetKind: 'client',
+        targetId: 'client-77',
+        note: 'rewritten note',
+      }),
+    ).rejects.toThrow(/append-only/);
+    expect((await conversions.get({ id: first.conversion.id }))?.note).toBe(
+      'original link',
+    );
+  });
+
   it('allows several links per opportunity with distinct targets', async () => {
     const opportunity = await wonOpportunity('Multi target');
 

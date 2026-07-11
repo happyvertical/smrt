@@ -472,4 +472,45 @@ describe('ReferralCommissionService (referrals → commissions bridge)', () => {
     });
     expect(ok.results).toHaveLength(1);
   });
+
+  it('anchors recurrence windows at qualification (codex P1)', async () => {
+    const referrer = await makeReferrerWithEarner('profile-window');
+    const { referral } = await makeQualifiedReferral({
+      referrer,
+      components: [
+        {
+          key: 'rev-share',
+          trigger: 'invoice_payment',
+          basis: 'gross',
+          rate: 0.1,
+          recurrence: { kind: 'recurring', windowMonths: 1 },
+        },
+      ],
+    });
+
+    // Inside the window (qualified 2026-06-15, windowMonths 1): pays.
+    const inWindow = await makeEvent({
+      occurredAt: new Date('2026-07-01T00:00:00Z'),
+      grossAmountCents: 10_000,
+    });
+    const ok = await bridge.processEarningEvent({
+      event: inWindow,
+      referralIds: [referral.id as string],
+    });
+    expect(ok.results[0]?.created).toHaveLength(1);
+
+    // Months past qualification: the frozen window has closed.
+    const late = await makeEvent({
+      occurredAt: new Date('2026-10-01T00:00:00Z'),
+      grossAmountCents: 10_000,
+    });
+    const skipped = await bridge.processEarningEvent({
+      event: late,
+      referralIds: [referral.id as string],
+    });
+    expect(skipped.results[0]?.created).toHaveLength(0);
+    expect(skipped.results[0]?.skipped).toEqual([
+      { componentKey: 'rev-share', reason: 'outside_recurrence_window' },
+    ]);
+  });
 });

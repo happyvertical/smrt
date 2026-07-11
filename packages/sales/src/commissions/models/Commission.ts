@@ -386,9 +386,44 @@ export class Commission extends SmrtObject {
   override async save(): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
+    await this.assertDedupeKeyNotTaken();
     const result = (await super.save()) as this;
     loadedCommissionStatus.set(this, this.status);
     return result;
+  }
+
+  /**
+   * Refuse a save whose `dedupeKey` already belongs to a DIFFERENT row —
+   * commissions are audit rows, and the natural-key upsert would let a
+   * fresh instance (generated `create`, or the loser of a calculation
+   * race) overwrite the persisted amount/status and rotate the row id.
+   * `CommissionCalculationService` treats this refusal as "someone else
+   * already earned it" and returns the existing row.
+   */
+  private async assertDedupeKeyNotTaken(): Promise<void> {
+    if (!this.dedupeKey) return;
+    try {
+      const res = await this.db.query(
+        `SELECT id FROM ${this.tableName} WHERE dedupe_key = $1`,
+        this.dedupeKey,
+      );
+      const rows = Array.isArray(res)
+        ? (res as Record<string, unknown>[])
+        : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);
+      const taken = rows.find((row) => row.id !== this.id);
+      if (taken) {
+        throw new Error(
+          `Commission (dedupeKey '${this.dedupeKey}'): a commission with ` +
+            'this dedupe key already exists — commissions are immutable ' +
+            'audit rows; corrections append CommissionAdjustments.',
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('immutable')) {
+        throw error;
+      }
+      // DB not ready / table absent — nothing persisted to collide with.
+    }
   }
 
   private async resolvePriorStatus(): Promise<CommissionStatus | undefined> {

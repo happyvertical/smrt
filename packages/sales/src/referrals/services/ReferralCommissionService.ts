@@ -228,6 +228,11 @@ export class ReferralCommissionService {
         termsSnapshotId: snapshotId,
         currency: snapshot.currency,
         clearingDays: snapshot.clearingDays,
+        // Recurrence windows (`windowMonths`) anchor at QUALIFICATION —
+        // the moment the terms bound. Without an anchor the calc service
+        // deliberately skips the window check, which would pay
+        // time-limited recurring components forever.
+        anchorAt: referral.qualifiedAt ?? undefined,
         // Occurrences consumed under THESE terms from PRIOR events — the
         // current event must not count against recurrence limits (its own
         // replay is handled by the calc service's idempotency).

@@ -13,6 +13,7 @@
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { CommissionCollection } from '../collections/CommissionCollection.js';
+import { EarnerCollection } from '../collections/EarnerCollection.js';
 import type { Commission } from '../models/Commission.js';
 import { validateCommissionPlanComponents } from '../models/CommissionPlan.js';
 import type { EarningEvent } from '../models/EarningEvent.js';
@@ -103,13 +104,24 @@ export interface CommissionCalculationResult {
 }
 
 export class CommissionCalculationService {
-  constructor(private readonly commissions: CommissionCollection) {}
+  constructor(
+    private readonly commissions: CommissionCollection,
+    /**
+     * Optional earner lookup for the tenant-lane guard. When provided,
+     * `calculateForEvent` refuses an earner from a different tenant lane
+     * than the event (a cross-tenant `earnerId` would create a commission
+     * payable to another tenant's account). `static create()` always wires
+     * it; direct constructors may omit it for narrow test fixtures.
+     */
+    private readonly earners?: EarnerCollection,
+  ) {}
 
   static async create(
     classOptions: SmrtClassOptions = {},
   ): Promise<CommissionCalculationService> {
     return new CommissionCalculationService(
       await CommissionCollection.create(classOptions),
+      await EarnerCollection.create(classOptions),
     );
   }
 
@@ -176,6 +188,25 @@ export class CommissionCalculationService {
     // (snapshots and plans validate on write, but nothing forces callers
     // through them) — malformed rates/amounts must never reach the math.
     validateCommissionPlanComponents(input.components);
+
+    // Tenant-lane guard: an earner from a different lane than the event
+    // would receive a commission payable to another tenant's account
+    // (reachable via any surface that lets an earnerId be assigned).
+    if (this.earners) {
+      const earner = await this.earners.get({ id: input.earnerId });
+      if (
+        earner &&
+        earner.tenantId !== null &&
+        (event.tenantId ?? null) !== null &&
+        earner.tenantId !== event.tenantId
+      ) {
+        throw new Error(
+          `CommissionCalculationService.calculateForEvent: earner '${input.earnerId}' ` +
+            `belongs to tenant '${earner.tenantId}' but the event belongs to ` +
+            `tenant '${event.tenantId}' — cross-tenant commissions are refused.`,
+        );
+      }
+    }
     const termsRef =
       input.termsSnapshotId || `${input.planKey}@${input.planVersion}`;
 
@@ -361,36 +392,58 @@ export class CommissionCalculationService {
         roundingMode: 'half_away_from_zero',
       };
 
-      const commission = await this.commissions.create({
-        // Commissions inherit the event's tenancy so background calculation
-        // (no active tenant context) still lands rows in the right tenant.
-        tenantId: event.tenantId,
-        earnerId: input.earnerId,
-        earningEventId: event.id,
-        planKey: input.planKey,
-        planVersion: input.planVersion,
-        componentKey: component.key,
-        termsSnapshotKind: input.termsSnapshotKind ?? '',
-        termsSnapshotId: input.termsSnapshotId ?? '',
-        basis: component.basis,
-        baseAmountCents,
-        rate,
-        shareFraction,
-        splitGroupId: input.splitGroupId ?? '',
-        amountCents,
-        currency: event.currency,
-        status: 'pending',
-        clearingEndsAt:
-          input.clearingDays !== undefined
-            ? new Date(
-                event.occurredAt.getTime() + input.clearingDays * MS_PER_DAY,
-              )
-            : null,
-        sourceKind: event.sourceKind,
-        sourceId: event.sourceId,
-        calculationTrace: JSON.stringify(trace),
-        dedupeKey,
-      });
+      let commission: Commission;
+      try {
+        commission = await this.commissions.create({
+          // Commissions inherit the event's tenancy so background
+          // calculation (no active tenant context) still lands rows in the
+          // right tenant.
+          tenantId: event.tenantId,
+          earnerId: input.earnerId,
+          earningEventId: event.id,
+          planKey: input.planKey,
+          planVersion: input.planVersion,
+          componentKey: component.key,
+          termsSnapshotKind: input.termsSnapshotKind ?? '',
+          termsSnapshotId: input.termsSnapshotId ?? '',
+          basis: component.basis,
+          baseAmountCents,
+          rate,
+          shareFraction,
+          splitGroupId: input.splitGroupId ?? '',
+          amountCents,
+          currency: event.currency,
+          status: 'pending',
+          clearingEndsAt:
+            input.clearingDays !== undefined
+              ? new Date(
+                  event.occurredAt.getTime() + input.clearingDays * MS_PER_DAY,
+                )
+              : null,
+          sourceKind: event.sourceKind,
+          sourceId: event.sourceId,
+          calculationTrace: JSON.stringify(trace),
+          dedupeKey,
+        });
+      } catch (error) {
+        // The Commission dedupe-key guard refuses to overwrite an existing
+        // row — under a calculation race the loser lands here. That IS the
+        // idempotent outcome: hand back the row that won.
+        if (
+          error instanceof Error &&
+          error.message.includes('immutable audit rows')
+        ) {
+          const winner = await this.commissions.list({
+            where: { dedupeKey },
+            limit: 1,
+          });
+          if (winner[0]) {
+            existing.push(winner[0]);
+            continue;
+          }
+        }
+        throw error;
+      }
       created.push(commission);
     }
 
