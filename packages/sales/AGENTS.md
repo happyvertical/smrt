@@ -52,7 +52,7 @@ Referrers and Sales Representatives are **distinct roles** and stay that way. Bo
 
 ### svelte
 
-Props-driven presentational components (no data fetching, smrt-ui primitives, tokens only): CRM dashboard/list/board/detail surfaces, Referrer portal views (status, earnings explanation, payout history), and operator views (attribution conflicts, approvals, payout batches, commission-expense summary kept separate from client invoices). View-model prop types are exported interfaces (never inline intersected generics in `$props()`).
+Props-driven presentational components (no data fetching, no model-class imports, Provider-free smrt-ui primitives, `--smrt-*` tokens only): CRM — `SalesDashboard`, `LeadList`, `OpportunityBoard`, `OpportunityDetail`; referrer portal — `ReferralLinkManager`, `ReferralStatusList`, `ReferrerEarningsSummary`, `CommissionBreakdown` (trace-explained amounts), `PayoutHistoryList`, `ExecutedAgreementsList`; operator — `AttributionConflictQueue` (award editor + required resolution reason), `PayoutBatchReview`, `CommissionExpenseSummary` (explicitly distinct from client invoices). Monetary props stay integer cents; `format.ts` converts at render. View-model prop types are exported interfaces (never inline intersected generics in `$props()`); pure helpers (dashboard math, award validation mirroring the service, payout action gating) are unit-tested while components are svelte-check-gated.
 
 ## Currency
 
