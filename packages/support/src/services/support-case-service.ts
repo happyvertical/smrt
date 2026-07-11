@@ -146,6 +146,22 @@ export class SupportCaseService {
    * and writes the `created` audit event.
    */
   async openCase(input: OpenCaseInput): Promise<SupportCase> {
+    // Resolve and validate the plan BEFORE the insert — a dangling id or a
+    // foreign tenant's plan must never persist onto a case, even partially.
+    let plan: SupportPlan | null = null;
+    if (input.planId) {
+      plan = await this.plans.get({ id: input.planId });
+      if (!plan) {
+        throw new Error(`SupportPlan not found: ${input.planId}`);
+      }
+      if (plan.tenantId && plan.tenantId !== (input.tenantId ?? null)) {
+        throw new Error(
+          `SupportPlan '${plan.planKey || plan.id}' belongs to tenant '${plan.tenantId}' ` +
+            `and cannot govern a case in tenant '${input.tenantId ?? null}'.`,
+        );
+      }
+    }
+
     const supportCase = await this.cases.create({
       tenantId: input.tenantId ?? null,
       caseNumber: generateCaseNumber(),
@@ -160,18 +176,13 @@ export class SupportCaseService {
       projectId: input.projectId ?? null,
       bindingId: input.bindingId ?? null,
       threadKey: input.threadKey ?? '',
-      planId: input.planId ?? null,
+      planId: null,
       preferredSpecialistId: input.preferredSpecialistId ?? null,
       metadata: JSON.stringify(input.metadata ?? {}),
     });
 
-    if (input.planId) {
-      const plan = await this.plans.get({ id: input.planId });
-      if (plan) {
-        // applyPlan validates the tenant boundary; a foreign plan aborts the
-        // open so no case persists with another tenant's terms.
-        await this.applyPlan(supportCase, plan);
-      }
+    if (plan) {
+      await this.applyPlan(supportCase, plan);
     }
 
     await this.recordEvent(supportCase, 'created', {

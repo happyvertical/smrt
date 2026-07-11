@@ -705,6 +705,17 @@ export class ServiceTargetEngine {
       action: 'notify',
     };
 
+    // Escalation is idempotent per (target, level): at-least-once job
+    // delivery (or a concurrent duplicate claim) must not stack duplicate
+    // escalation records, notifications, or reassignments.
+    const already = await this.escalations.list({
+      where: { targetId: target.id, level },
+      limit: 1,
+    });
+    if (already.length > 0) {
+      return;
+    }
+
     const escalation = await this.escalations.create({
       tenantId: supportCase.tenantId,
       caseId: this.requireId(supportCase, 'SupportCase'),

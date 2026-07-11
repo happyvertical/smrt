@@ -64,6 +64,18 @@ describe('SupportCaseService', () => {
         planId: foreignPlan.id,
       }),
     ).rejects.toThrow(/cannot govern a case in tenant/);
+    // The rejected open never persisted a partial case.
+    expect(await service.cases.findQueue({})).toHaveLength(0);
+
+    // A dangling plan id is refused up front too — no case row with an
+    // unresolvable plan reference.
+    await expect(
+      service.openCase({
+        subject: 'dangling plan',
+        planId: 'no-such-plan',
+      }),
+    ).rejects.toThrow(/SupportPlan not found/);
+    expect(await service.cases.findQueue({})).toHaveLength(0);
 
     const supportCase = await service.openCase({
       subject: 'no plan yet',

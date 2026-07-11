@@ -259,3 +259,12 @@ pnpm --filter @happyvertical/smrt-support build
   intact.
 - **Plan edits never rewrite history** — cases keep `planSnapshot`, charges
   and compensation keep `rateSnapshot`.
+- **Create-or-join and included-time consumption serialize in-process** —
+  `SupportIntakeService` (per conversation key) and
+  `TimeEntryApprovalService` (per case) use a `KeyedMutex`, which covers the
+  single-app-process deployment these paths run in. Multi-replica
+  deployments must serialize at the app layer (route a conversation's
+  intake / a case's approvals through one worker, or add an app-level
+  claim) — the framework exposes no cross-adapter transaction primitive at
+  this seam. Escalation is additionally idempotent per `(target, level)`,
+  so at-least-once job redelivery never stacks duplicate escalations.

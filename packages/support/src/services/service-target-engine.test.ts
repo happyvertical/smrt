@@ -516,6 +516,22 @@ describe('ServiceTargetEngine', () => {
       return { supportCase, ack: byType(created, 'acknowledgement') };
     }
 
+    it('escalates once per (target, level) under duplicate redelivery', async () => {
+      const { supportCase, ack } = await breachedSetup();
+
+      // At-least-once jobs redeliver: a stale instance that still believes
+      // the clock is pending, plus a straight re-run, must not stack
+      // duplicate level-1 escalations (codex review round 3, PR #1943).
+      const stale = await reloadTarget(ack.id ?? '');
+      await ack.checkAndEscalate({ at: at('11:00:00') });
+      await stale.checkAndEscalate({ at: at('11:00:00') });
+      await ack.checkAndEscalate({ at: at('11:00:05') });
+
+      const rows = await escalations.forCase(supportCase.id ?? '');
+      const levelOnes = rows.filter((row) => row.level === 1);
+      expect(levelOnes).toHaveLength(1);
+    });
+
     it('marks an overdue pending clock breached, escalates level 1, and schedules the delayed level-2 step', async () => {
       const { supportCase, ack } = await breachedSetup();
 
