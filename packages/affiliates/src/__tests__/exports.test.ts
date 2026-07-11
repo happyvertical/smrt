@@ -1,10 +1,10 @@
 import {
-  Commission as SalesCommission,
-  CommissionCollection as SalesCommissionCollection,
   CommissionPayout,
   CommissionPayoutCollection,
   Earner,
   EarnerCollection,
+  Commission as SalesCommission,
+  CommissionCollection as SalesCommissionCollection,
 } from '@happyvertical/smrt-sales';
 import { describe, expect, it } from 'vitest';
 import {
