@@ -212,7 +212,9 @@ export class ServiceTargetEngine {
    * defaults (24×7 calendar, default target minutes, pause on
    * `waiting_on_client`, empty escalation policy).
    */
-  async resolvePlanTerms(supportCase: SupportCase): Promise<ResolvedTargetPlanTerms> {
+  async resolvePlanTerms(
+    supportCase: SupportCase,
+  ): Promise<ResolvedTargetPlanTerms> {
     const snapshot = supportCase.getPlanSnapshot();
     if (Object.keys(snapshot).length > 0) {
       const coverage = Array.isArray(snapshot.coverage)

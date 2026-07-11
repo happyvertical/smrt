@@ -137,6 +137,44 @@ generated CRUD.
   observer keyed on the `ChatMessage`/`Email` class names that never throws
   into the source package's save path. Join semantics: open case → join;
   resolved → reopen; closed → new case.
+- **SupportAiWorkflow** — the Automated Support Response (FR-28a):
+  `processIntake`/`processCase` run acknowledge → classify → answer →
+  resolve under the resolved `SupportPolicy` (conservative defaults), each
+  phase writing a `SupportAiRun` + `ai_run` case event. AI calls go through
+  the injected `SupportAiBoundary` (default uses `supportCase.do()` with
+  defensive JSON parsing that fails toward the human); knowledge comes from
+  the pluggable `SupportKnowledgeProvider` (default no-op). Classification
+  never overwrites human triage; email answers are drafted
+  (`metadata.draft`) unless the policy allows sending. Handoff triggers —
+  `client_request`, `low_confidence`, `high_severity`, `sensitive`,
+  `failed_resolution`, `policy` (attempt budget) — are always active.
+- **HumanHandoffService** — the lossless Human Handoff (FR-28b):
+  `handoff` assembles the full context package (case state + compact
+  timeline + AI runs) into the `handoff` event, stamps
+  `metadata.activeHandoff` for the no-repeat guarantee (repeat triggers are
+  deduped events), routes through the injected `assignSpecialist` seam
+  (#1929's routing service plugs in; default queues `new` cases to
+  `triaged`), and `releaseHandoff` clears the flag.
+- **ServiceTargetEngine** — Service Target clocks (FR-30/31):
+  `startTargetsForCase` derives per-severity clocks from the case's
+  `planSnapshot` (live plan fallback) with due times computed in covered
+  time (`coverage-calendar.ts`: timezone-aware weekly windows + holidays;
+  empty coverage = 24×7) and schedules one-shot `_smrt_jobs` escalation jobs
+  at `dueAt`; `onInteractionRecorded` satisfies acknowledgement/response and
+  recurs `update` cycles; `onCaseTransition` pauses/resumes clocks only when
+  the plan's `pauseStatuses` say so (recomputing remaining covered minutes)
+  and settles targets on resolve. Breach → `SupportServiceTarget.
+  checkAndEscalate` (background-eligible, at-least-once-safe) marks the
+  breach and escalates through the plan's policy steps (notify/reassign,
+  delayed follow-up levels), transitioning the case to `escalated`.
+- **SupportRoutingService** — explainable ranked routing (FR-30):
+  `rankSpecialists` hard-filters on active status, effective Project
+  Support Qualification, workload cap, and availability windows (specialist
+  timezone), then scores preferred-specialist, qualification level, on-call,
+  workload headroom, and language (weights in `ROUTING_WEIGHTS`; every
+  factor recorded so ineligible specialists show why); `autoAssign` writes
+  the assignment with its rationale; `reassign` is gated by
+  `support.reassign-case` and refuses cross-tenant principals.
 - **ServiceTimeEntryService** — the ONE recording contract for all four
   entry sources (FR-40): `record` validates duration (explicit or derived
   from the period; `timer` needs both bounds), participant coherence
@@ -166,11 +204,14 @@ or a `PermissionResolver`.
 
 `@happyvertical/smrt-support/svelte` ships presentational Svelte 5 surfaces:
 `CaseQueue` (priority/status/assignment/channel at a glance, `onselect`),
-`CaseDetail` (header, meta, linked work, merged timeline), and
-`TimeEntryApprovalQueue` (date/hours/description/worker/status/amount with
+`CaseDetail` (header, meta, linked work, merged timeline), `TargetList`
+(Service Target clocks with due/paused/satisfied/breached badges),
+`RoutingRationale` (ranked specialists with eligibility + factor chips and
+an optional reassign action), and `TimeEntryApprovalQueue`
+(date/hours/description/worker/status/amount with
 approve/reject-with-reason actions on submitted rows). Hosts adapt models
-with `toSupportCaseView` / `toCaseTimelineItemView` /
-`toSupportTimeEntryView` — the time-entry view's first eight fields
+with `toSupportCaseView` / `toCaseTimelineItemView` / `toServiceTargetView`
+/ `toSupportTimeEntryView` — the time-entry view's first eight fields
 deliberately match `smrt-projects`' presentation `TimeEntry` contract.
 Components use `smrt-ui` primitives (`smrtRawPrimitives: "strict"`).
 
