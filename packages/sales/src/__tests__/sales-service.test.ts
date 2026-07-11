@@ -115,6 +115,14 @@ describe('SalesService', () => {
     });
     stage.id = 'stage-qualified';
 
+    const pipeline = new PipelineDefinition({
+      tenantId: 'tenant-1',
+      key: 'default',
+      name: 'Default Pipeline',
+      isDefault: true,
+    });
+    pipeline.id = 'pipeline-1';
+
     const getByLeadId = vi
       .fn()
       .mockResolvedValueOnce(null)
@@ -132,7 +140,9 @@ describe('SalesService', () => {
           };
         }),
       },
-      pipelines: {},
+      pipelines: {
+        get: vi.fn(async () => pipeline),
+      },
       stages: {
         findByKey: vi.fn(async () => stage),
         get: vi.fn(async () => stage),
@@ -156,6 +166,138 @@ describe('SalesService', () => {
     expect(getByLeadId).toHaveBeenCalledTimes(2);
     expect(lead.save).not.toHaveBeenCalled();
     expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it('rejects caller-supplied pipeline ids from a different tenant during conversion', async () => {
+    const lead = new Lead({
+      tenantId: 'tenant-1',
+      name: 'Ada',
+      status: 'qualified',
+    });
+    lead.id = 'lead-1';
+
+    const foreignPipeline = new PipelineDefinition({
+      tenantId: 'tenant-2',
+      key: 'default',
+      name: 'Foreign Pipeline',
+      isDefault: true,
+    });
+    foreignPipeline.id = 'pipeline-foreign';
+
+    const stores = {
+      leads: { get: vi.fn(async () => lead) },
+      opportunities: {
+        getByLeadId: vi.fn(async () => null),
+        create: vi.fn(),
+      },
+      pipelines: {
+        get: vi.fn(async () => foreignPipeline),
+      },
+      stages: {
+        findByKey: vi.fn(),
+      },
+      activities: { create: vi.fn() },
+      leadMerges: {},
+    } as unknown as SalesServiceOptions;
+
+    await expect(
+      new SalesService(stores).convertLeadToOpportunity({
+        leadId: lead.id,
+        pipelineId: foreignPipeline.id,
+        stageKey: 'qualified',
+      }),
+    ).rejects.toThrow(
+      "Pipeline 'pipeline-foreign' does not belong to tenant 'tenant-1'",
+    );
+
+    expect(stores.stages.findByKey).not.toHaveBeenCalled();
+    expect(stores.opportunities.create).not.toHaveBeenCalled();
+  });
+
+  it('reloads the winning default pipeline and stage after duplicate-key bootstrap races', async () => {
+    const winnerPipeline = new PipelineDefinition({
+      tenantId: 'tenant-1',
+      key: 'default',
+      name: 'Default Sales Pipeline',
+      isDefault: true,
+    });
+    winnerPipeline.id = 'pipeline-1';
+    winnerPipeline.save = vi.fn(async () => undefined);
+
+    const seededStages = new Map<string, PipelineStage>();
+    const duplicateStageKeys = new Set(['new']);
+    let getDefaultCalls = 0;
+
+    const stores = {
+      leads: {},
+      opportunities: {},
+      pipelines: {
+        getDefault: vi.fn(async () => {
+          getDefaultCalls += 1;
+          return getDefaultCalls === 1 ? null : winnerPipeline;
+        }),
+        get: vi.fn(async ({ id }: { id: string }) =>
+          id === winnerPipeline.id ? winnerPipeline : null,
+        ),
+        list: vi.fn(async () => [winnerPipeline]),
+        create: vi.fn(async (data) => {
+          const pipeline = new PipelineDefinition(data);
+          pipeline.id = 'pipeline-racing';
+          pipeline.save = vi.fn(async () => {
+            throw {
+              code: '23505',
+              message:
+                'duplicate key value violates unique constraint "sales_pipelines_tenant_id_key_idx"',
+            };
+          });
+          return pipeline;
+        }),
+      },
+      stages: {
+        findByKey: vi.fn(async (pipelineId: string, key: string) => {
+          const stage = seededStages.get(`${pipelineId}:${key}`) ?? null;
+          return stage;
+        }),
+        create: vi.fn(async (data) => {
+          const stage = new PipelineStage(data);
+          stage.id = `stage-${data.key}`;
+          stage.save = vi.fn(async () => {
+            if (duplicateStageKeys.delete(data.key)) {
+              const winner = new PipelineStage(data);
+              winner.id = `winner-${data.key}`;
+              winner.save = vi.fn(async () => undefined);
+              seededStages.set(`${data.pipelineId}:${data.key}`, winner);
+              throw {
+                code: 'VALIDATION_UNIQUE_CONSTRAINT',
+                message:
+                  'duplicate key value violates unique constraint "sales_pipeline_stages_tenant_id_pipeline_id_key_idx"',
+              };
+            }
+            seededStages.set(`${data.pipelineId}:${data.key}`, stage);
+          });
+          return stage;
+        }),
+      },
+      activities: {},
+      leadMerges: {},
+    } as unknown as SalesServiceOptions;
+
+    const result = await new SalesService(stores).ensureDefaultPipeline(
+      'tenant-1',
+    );
+
+    expect(result.pipeline).toEqual({
+      id: 'pipeline-1',
+      key: 'default',
+      name: 'Default Sales Pipeline',
+    });
+    expect(result.stageIdsByKey.new).toBe('winner-new');
+    expect(result.stageIdsByKey.qualified).toBe('stage-qualified');
+    expect(Object.keys(result.stageIdsByKey)).toHaveLength(
+      DEFAULT_PIPELINE_STAGE_DEFINITIONS.length,
+    );
+    expect(stores.pipelines.getDefault).toHaveBeenCalledTimes(2);
+    expect(stores.stages.findByKey).toHaveBeenCalledWith('pipeline-1', 'new');
   });
 
   it('preserves the full source opportunity snapshot and opportunity-only activities when merging leads', async () => {

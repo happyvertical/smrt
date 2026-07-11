@@ -107,16 +107,7 @@ export class SalesService {
   ): Promise<EnsureDefaultPipelineResult> {
     let pipeline = await this.pipelines.getDefault(tenantId);
     if (!pipeline) {
-      pipeline = await this.pipelines.create({
-        tenantId,
-        key: 'default',
-        name: 'Default Sales Pipeline',
-        description:
-          'Default lead qualification and opportunity progression pipeline',
-        active: true,
-        isDefault: true,
-      });
-      await pipeline.save();
+      pipeline = await this.createDefaultPipelineWithRaceHandling(tenantId);
     }
 
     await this.normalizeDefaultFlags(tenantId, pipeline);
@@ -160,17 +151,25 @@ export class SalesService {
       };
     }
 
-    const pipeline =
+    const pipelineId =
       args.pipelineId?.trim() ||
       (await this.ensureDefaultPipeline(lead.tenantId)).pipeline.id;
+    const pipeline = await this.requirePipelineForTenant(
+      pipelineId,
+      lead.tenantId,
+    );
     const stageKey = args.stageKey ?? 'qualified';
-    const stage = await this.resolveStage(pipeline, stageKey);
+    const stage = await this.resolveStageForTenant(
+      pipeline.id ?? '',
+      stageKey,
+      lead.tenantId,
+    );
 
     const { opportunity, created } =
       await this.createOpportunityWithRaceHandling({
         tenantId: lead.tenantId,
         leadId: lead.id ?? '',
-        pipelineId: pipeline,
+        pipelineId: pipeline.id ?? '',
         stageId: stage.id ?? '',
         ownerId: args.ownerId ?? lead.ownerId,
         name: args.name ?? this.defaultOpportunityName(lead),
@@ -225,10 +224,11 @@ export class SalesService {
     const opportunity = await this.requireOpportunity(args.opportunityId);
     const previousStageId = opportunity.stageId;
     const stage = args.stageId?.trim()
-      ? await this.requireStage(args.stageId)
-      : await this.resolveStage(
+      ? await this.requireStageForOpportunity(args.stageId, opportunity)
+      : await this.resolveStageForTenant(
           opportunity.pipelineId,
           args.stageKey ?? 'qualified',
+          opportunity.tenantId,
         );
 
     opportunity.moveTo(stage);
@@ -413,20 +413,72 @@ export class SalesService {
         definition.key,
       );
       if (!stage) {
-        stage = await this.stages.create({
-          tenantId: pipeline.tenantId,
-          pipelineId: pipeline.id ?? '',
-          key: definition.key,
-          name: definition.name,
-          sortOrder: definition.sortOrder,
-          terminal: definition.terminal,
-          outcome: definition.outcome,
-        });
-        await stage.save();
+        stage = await this.createPipelineStageWithRaceHandling(
+          pipeline,
+          definition,
+        );
       }
       stages.push(stage);
     }
     return stages.sort((left, right) => left.sortOrder - right.sortOrder);
+  }
+
+  private async createDefaultPipelineWithRaceHandling(
+    tenantId: string,
+  ): Promise<PipelineDefinition> {
+    try {
+      const pipeline = await this.pipelines.create({
+        tenantId,
+        key: 'default',
+        name: 'Default Sales Pipeline',
+        description:
+          'Default lead qualification and opportunity progression pipeline',
+        active: true,
+        isDefault: true,
+      });
+      await pipeline.save();
+      return pipeline;
+    } catch (error) {
+      if (!this.isDuplicateKeyError(error)) {
+        throw error;
+      }
+      const winner = await this.pipelines.getDefault(tenantId);
+      if (!winner) {
+        throw error;
+      }
+      return winner;
+    }
+  }
+
+  private async createPipelineStageWithRaceHandling(
+    pipeline: PipelineDefinition,
+    definition: DefaultPipelineStageDefinition,
+  ): Promise<PipelineStage> {
+    try {
+      const stage = await this.stages.create({
+        tenantId: pipeline.tenantId,
+        pipelineId: pipeline.id ?? '',
+        key: definition.key,
+        name: definition.name,
+        sortOrder: definition.sortOrder,
+        terminal: definition.terminal,
+        outcome: definition.outcome,
+      });
+      await stage.save();
+      return stage;
+    } catch (error) {
+      if (!this.isDuplicateKeyError(error)) {
+        throw error;
+      }
+      const winner = await this.stages.findByKey(
+        pipeline.id ?? '',
+        definition.key,
+      );
+      if (!winner) {
+        throw error;
+      }
+      return winner;
+    }
   }
 
   private defaultOpportunityName(lead: Lead): string {
@@ -528,14 +580,20 @@ export class SalesService {
     }
   }
 
-  private async resolveStage(
+  private async resolveStageForTenant(
     pipelineId: string,
     stageKey: PipelineStageKey,
+    tenantId: string,
   ): Promise<PipelineStage> {
     const stage = await this.stages.findByKey(pipelineId, stageKey);
     if (!stage) {
       throw new Error(
         `Pipeline stage '${stageKey}' was not found for pipeline '${pipelineId}'`,
+      );
+    }
+    if (stage.tenantId !== tenantId) {
+      throw new Error(
+        `Pipeline stage '${stage.id}' does not belong to tenant '${tenantId}'`,
       );
     }
     return stage;
@@ -557,6 +615,40 @@ export class SalesService {
       throw new Error(`Opportunity '${opportunityId}' not found`);
     }
     return opportunity;
+  }
+
+  private async requirePipelineForTenant(
+    pipelineId: string,
+    tenantId: string,
+  ): Promise<PipelineDefinition> {
+    const pipeline = await this.pipelines.get({ id: pipelineId });
+    if (!pipeline) {
+      throw new Error(`Pipeline '${pipelineId}' not found`);
+    }
+    if (pipeline.tenantId !== tenantId) {
+      throw new Error(
+        `Pipeline '${pipelineId}' does not belong to tenant '${tenantId}'`,
+      );
+    }
+    return pipeline;
+  }
+
+  private async requireStageForOpportunity(
+    stageId: string,
+    opportunity: Opportunity,
+  ): Promise<PipelineStage> {
+    const stage = await this.requireStage(stageId);
+    if (stage.tenantId !== opportunity.tenantId) {
+      throw new Error(
+        `Pipeline stage '${stageId}' does not belong to tenant '${opportunity.tenantId}'`,
+      );
+    }
+    if (stage.pipelineId !== opportunity.pipelineId) {
+      throw new Error(
+        `Pipeline stage '${stageId}' belongs to a different pipeline`,
+      );
+    }
+    return stage;
   }
 
   private async requireStage(stageId: string): Promise<PipelineStage> {
