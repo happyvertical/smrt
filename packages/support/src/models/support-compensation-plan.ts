@@ -81,21 +81,42 @@ export class SupportCompensationPlanCollection extends SmrtCollection<SupportCom
   /**
    * Resolve the plan compensating a specialist at a work instant:
    * specialist-specific first, then the tenant default. Ties (overlapping
-   * effective ranges) prefer the latest `effectiveFrom`.
+   * effective ranges) prefer an exact tenant match over a global
+   * (NULL-tenant) plan, then the latest `effectiveFrom`.
+   *
+   * Pass `options.tenantId` (the work's tenant) whenever resolution may run
+   * without an ambient tenant context (system/job paths list across
+   * tenants): candidates are then limited to that tenant's plans plus
+   * global NULL-tenant plans, so another tenant's default can never price
+   * this tenant's work.
    */
   async resolveForSpecialist(
     specialistId: string,
     at: Date = new Date(),
+    options: { tenantId?: string | null } = {},
   ): Promise<SupportCompensationPlan | null> {
     const candidates = await this.list({
       where: { status: 'active' },
     });
-    const effective = candidates.filter((plan) => plan.isEffectiveAt(at));
+    const tenantId = options.tenantId;
+    const effective = candidates.filter(
+      (plan) =>
+        plan.isEffectiveAt(at) &&
+        (tenantId === undefined ||
+          plan.tenantId === null ||
+          plan.tenantId === tenantId),
+    );
     const pick = (plans: SupportCompensationPlan[]) =>
-      plans.sort(
-        (a, b) =>
-          (b.effectiveFrom?.getTime() ?? 0) - (a.effectiveFrom?.getTime() ?? 0),
-      )[0] ?? null;
+      plans.sort((a, b) => {
+        if (tenantId !== undefined) {
+          const aExact = a.tenantId === tenantId ? 1 : 0;
+          const bExact = b.tenantId === tenantId ? 1 : 0;
+          if (aExact !== bExact) return bExact - aExact;
+        }
+        return (
+          (b.effectiveFrom?.getTime() ?? 0) - (a.effectiveFrom?.getTime() ?? 0)
+        );
+      })[0] ?? null;
     const specific = pick(
       effective.filter((plan) => plan.specialistId === specialistId),
     );

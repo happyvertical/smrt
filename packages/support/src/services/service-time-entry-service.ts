@@ -173,6 +173,12 @@ export class ServiceTimeEntryService {
       supportCase = await this.caseService.getCase(input.caseId);
       if (input.tenantId === undefined) {
         tenantId = supportCase.tenantId;
+      } else if ((input.tenantId ?? null) !== supportCase.tenantId) {
+        // An explicit tenant must agree with the case — otherwise the entry
+        // would be a cross-tenant reference onto another tenant's case.
+        throw new Error(
+          `ServiceTimeEntry: tenantId '${input.tenantId}' does not match the case's tenant '${supportCase.tenantId}'.`,
+        );
       }
     }
 

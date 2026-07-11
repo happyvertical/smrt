@@ -302,19 +302,21 @@ export interface TimeEntryEvidence {
 
 /**
  * Parse a JSON value stored as text, returning the fallback on malformed
- * input (never throws — stored JSON may predate schema changes).
+ * input (never throws — stored JSON may predate schema changes). Accepts an
+ * already-parsed value (e.g. a `type: 'json'` column that hydrated as an
+ * object) and hands it back unchanged.
  */
-export function parseJsonField<T>(
-  raw: string | null | undefined,
-  fallback: T,
-): T {
+export function parseJsonField<T>(raw: unknown, fallback: T): T {
   if (!raw) {
     return fallback;
   }
+  // Text columns hydrate as strings; a non-string here means the caller
+  // already holds a parsed value — hand it back rather than throwing.
+  if (typeof raw !== 'string') {
+    return raw as T;
+  }
   try {
     const parsed = JSON.parse(raw);
-    // Hydrated `type: 'json'`-less text columns always come back as strings,
-    // but be tolerant of a caller passing an already-parsed object through.
     return (parsed ?? fallback) as T;
   } catch {
     return fallback;

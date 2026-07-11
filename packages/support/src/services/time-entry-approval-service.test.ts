@@ -335,6 +335,42 @@ describe('TimeEntryApprovalService', () => {
       expect(compensation.getRateSnapshot()).not.toHaveProperty('margin');
     });
 
+    it("never prices work with another tenant's default plan", async () => {
+      // A foreign tenant's default plan exists and is newer/richer.
+      await approvalService.compensationPlans.create({
+        tenantId: 'tenant-other',
+        specialistId: null,
+        name: 'Foreign default',
+        hourlyRate: 500.0,
+        effectiveFrom: new Date('2026-01-02T00:00:00.000Z'),
+      });
+      await approvalService.compensationPlans.create({
+        tenantId: 'tenant-1',
+        specialistId: null,
+        name: 'Own default',
+        hourlyRate: 30.0,
+        effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+      });
+
+      const plan = await planWith(
+        { mode: 'automatic' },
+        { overageHourlyRate: 120.0 },
+      );
+      const supportCase = await caseUnder(plan, { tenantId: 'tenant-1' });
+      const entry = await submittedEntry(supportCase.id ?? '', {
+        specialistId: 'spec-1',
+        durationSeconds: 3600,
+      });
+
+      const { compensation } = await approvalService.approve(entry.id ?? '', {
+        at: APPROVE_AT,
+      });
+      // Resolution is scoped to the entry's tenant (codex review, PR
+      // #1943): the foreign default never applies.
+      expect(compensation.amount).toBeCloseTo(30.0, 2);
+      expect(compensation.getRateSnapshot()).toMatchObject({ hourlyRate: 30 });
+    });
+
     it('falls back to the tenant default when the specific plan has expired', async () => {
       await approvalService.compensationPlans.create({
         specialistId: 'spec-1',

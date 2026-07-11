@@ -596,6 +596,10 @@ export class TimeEntryApprovalService {
       ? await this.compensationPlans.resolveForSpecialist(
           entry.specialistId,
           entry.endedAt ?? at,
+          // Scope defaults to the entry's tenant — approval may run without
+          // an ambient tenant context, and another tenant's default plan
+          // must never price this tenant's work.
+          { tenantId: entry.tenantId ?? null },
         )
       : null;
     const payableSeconds = entry.durationSeconds;

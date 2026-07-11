@@ -238,13 +238,26 @@ describe('ServiceTimeEntryService', () => {
 
     const explicit = await service.record({
       caseId: supportCase.id,
-      tenantId: 'tenant-override',
+      tenantId: 'tenant-1',
       participantKind: 'human',
       participantProfileId: 'profile-1',
       source: 'manual',
       durationSeconds: 600,
     });
-    expect(explicit.tenantId).toBe('tenant-override');
+    expect(explicit.tenantId).toBe('tenant-1');
+
+    // A disagreeing explicit tenant would be a cross-tenant reference onto
+    // another tenant's case — refused (copilot review, PR #1943).
+    await expect(
+      service.record({
+        caseId: supportCase.id,
+        tenantId: 'tenant-other',
+        participantKind: 'human',
+        participantProfileId: 'profile-1',
+        source: 'manual',
+        durationSeconds: 600,
+      }),
+    ).rejects.toThrow(/does not match the case's tenant/);
   });
 
   it('round-trips work evidence', async () => {

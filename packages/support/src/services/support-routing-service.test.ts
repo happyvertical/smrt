@@ -114,6 +114,23 @@ describe('SupportRoutingService', () => {
   }
 
   describe('rankSpecialists', () => {
+    it('hard-filters specialists from another tenant with the factor visible', async () => {
+      const foreign = await makeSpecialist({ tenantId: 'tenant-x' });
+      const local = await makeSpecialist({ tenantId: 'tenant-b' });
+      await allDayWeekly(foreign);
+      await allDayWeekly(local);
+      const supportCase = await openCase({ tenantId: 'tenant-b' });
+
+      const ranked = await routing.rankSpecialists(supportCase, { at: AT });
+      const foreignRank = ranked.find(
+        (item) => item.specialistId === foreign.id,
+      );
+      const localRank = ranked.find((item) => item.specialistId === local.id);
+      expect(foreignRank?.eligible).toBe(false);
+      expect(foreignRank?.factors.tenantMismatch).toBe(true);
+      expect(localRank?.eligible).toBe(true);
+    });
+
     it('hard-filters on an effective project qualification, keeping the failing factor visible', async () => {
       const qualified = await makeSpecialist();
       const unqualified = await makeSpecialist();
@@ -385,6 +402,31 @@ describe('SupportRoutingService', () => {
           ),
         }),
       ).rejects.toThrow(/tenant/);
+    });
+
+    it('refuses a specialist from another tenant and unknown specialist ids', async () => {
+      const foreign = await makeSpecialist({ tenantId: 'tenant-x' });
+      const supportCase = await openCase({ tenantId: 'tenant-b' });
+      const principal = supportPrincipalFromPermissions(
+        [REASSIGN_CASE_PERMISSION],
+        { id: 'profile-lead', tenantId: 'tenant-b' },
+      );
+
+      // An authorized in-tenant caller must not be able to assign (and
+      // audit) a foreign tenant's specialist (codex review, PR #1943).
+      await expect(
+        routing.reassign(supportCase, {
+          specialistId: foreign.id ?? '',
+          principal,
+        }),
+      ).rejects.toThrow(/specialist tenant does not match/);
+
+      await expect(
+        routing.reassign(supportCase, {
+          specialistId: 'no-such-specialist',
+          principal,
+        }),
+      ).rejects.toThrow(/unknown specialist/);
     });
 
     it('reassigns with a manual rationale when authorized', async () => {

@@ -232,6 +232,18 @@ export class SupportRoutingService {
       eligible = false;
     }
 
+    // Tenant boundary (hard filter): a case never routes to another
+    // tenant's specialist, even when ranking runs without an ambient
+    // tenant context (system/job paths list across tenants).
+    if (
+      specialist.tenantId &&
+      supportCase.tenantId &&
+      specialist.tenantId !== supportCase.tenantId
+    ) {
+      factors.tenantMismatch = true;
+      eligible = false;
+    }
+
     if (excluded.has(specialistId)) {
       factors.excluded = true;
       eligible = false;
@@ -410,6 +422,24 @@ export class SupportRoutingService {
     ) {
       throw new ReassignDeniedError(
         'Reassignment denied: principal tenant does not match the case tenant.',
+      );
+    }
+    // The target must be a real specialist in the case's tenant — an
+    // authorized caller must not be able to assign (and audit) a foreign
+    // tenant's specialist onto this case.
+    const specialist = await this.specialists.get({ id: input.specialistId });
+    if (!specialist) {
+      throw new ReassignDeniedError(
+        `Reassignment denied: unknown specialist '${input.specialistId}'.`,
+      );
+    }
+    if (
+      specialist.tenantId &&
+      supportCase.tenantId &&
+      specialist.tenantId !== supportCase.tenantId
+    ) {
+      throw new ReassignDeniedError(
+        'Reassignment denied: specialist tenant does not match the case tenant.',
       );
     }
     return this.caseService.assign(supportCase, {
