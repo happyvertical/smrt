@@ -163,6 +163,40 @@ describe('ReferralLink codes', () => {
     expect(await touches.findBySubject('lead', 'lead-123')).toHaveLength(1);
   });
 
+  it('rejects taking over an existing code on any write path (codex P1)', async () => {
+    const victim = await links.createWithUniqueCode({
+      referrerId,
+      programId,
+      targetUrl: 'https://example.test/victim',
+    });
+    const other = await links.createWithUniqueCode({ referrerId, programId });
+
+    // A generated-surface create carrying the victim's code would upsert
+    // over the victim row (hijacking its destination) — refused.
+    await expect(
+      links.create({
+        referrerId,
+        programId,
+        code: victim.code,
+        targetUrl: 'https://attacker.example/landing',
+      }),
+    ).rejects.toThrow(/cannot be taken over/);
+    expect((await links.get({ id: victim.id }))?.targetUrl).toBe(
+      'https://example.test/victim',
+    );
+
+    // Re-pointing an existing link's code at another link's code — refused.
+    other.code = victim.code;
+    await expect(other.save()).rejects.toThrow(/cannot be taken over/);
+
+    // Legitimate edits to the link's own row still save.
+    const mine = await links.get({ id: victim.id });
+    if (!mine) throw new Error('missing link');
+    mine.label = 'renamed';
+    await mine.save();
+    expect((await links.get({ id: victim.id }))?.label).toBe('renamed');
+  });
+
   it('resolves codes case-insensitively (codes mint lowercase)', async () => {
     const link = await links.createWithUniqueCode({ referrerId, programId });
     const clicked = await links.recordClick({

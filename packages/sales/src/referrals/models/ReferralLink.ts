@@ -127,12 +127,41 @@ export class ReferralLink extends SmrtObject {
   }
 
   /**
-   * Save with the target-URL guard: a non-empty {@link targetUrl} must be an
-   * absolute http/https URL regardless of which write path set it.
+   * Save with two guards:
+   *
+   * - a non-empty {@link targetUrl} must be an absolute http/https URL
+   *   regardless of which write path set it;
+   * - the {@link code} must not belong to a DIFFERENT persisted link. Codes
+   *   are the upsert natural key and they are public — without this check a
+   *   generated-surface `create` carrying an existing code would silently
+   *   UPSERT over that link (rewriting its referrer/program/target: a
+   *   referral-code hijack). Mint codes through
+   *   `ReferralLinkCollection.createWithUniqueCode()`.
    */
   override async save(): Promise<this> {
     if (this.targetUrl) {
       assertHttpTargetUrl(this.targetUrl);
+    }
+    if (this.code) {
+      try {
+        const row = await this.db.get(this.tableName, { code: this.code });
+        if (row && row.id !== this.id) {
+          throw new Error(
+            `ReferralLink (code '${this.code}'): this code already belongs ` +
+              'to another link — referral codes are unique and cannot be ' +
+              'taken over. Mint links through ' +
+              'ReferralLinkCollection.createWithUniqueCode().',
+          );
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('cannot be taken over')
+        ) {
+          throw error;
+        }
+        // DB not ready / table absent — nothing persisted to protect yet.
+      }
     }
     return (await super.save()) as this;
   }
