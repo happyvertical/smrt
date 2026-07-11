@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createDatabaseName,
+  databaseEnvironment,
   databaseUrl,
 } from './run-with-ci-postgres.mjs';
 
@@ -30,4 +31,24 @@ test('replaces only the database path in a PostgreSQL URL', () => {
     ),
     'postgresql://ci_runner:secret@ci-postgres-rw.ci-services:5432/smrt_ci_1_2_3_core_4?sslmode=require',
   );
+});
+
+test('exports the isolated URL for SMRT and libpq clients', () => {
+  const url =
+    'postgresql://ci_runner:secret%20value@ci-postgres-rw:5433/smrt_ci_1';
+  const environment = databaseEnvironment(url, {
+    KEEP_ME: 'yes',
+    PGDATABASE: 'old-database',
+  });
+
+  assert.equal(environment.KEEP_ME, 'yes');
+  assert.equal(environment.DATABASE_URL, url);
+  assert.equal(environment.TEST_DB_URL, url);
+  assert.equal(environment.TEST_DB_ADAPTER, 'postgres');
+  assert.equal(environment.SMRT_TEST_POSTGRES_URL, url);
+  assert.equal(environment.PGHOST, 'ci-postgres-rw');
+  assert.equal(environment.PGPORT, '5433');
+  assert.equal(environment.PGUSER, 'ci_runner');
+  assert.equal(environment.PGPASSWORD, 'secret value');
+  assert.equal(environment.PGDATABASE, 'smrt_ci_1');
 });

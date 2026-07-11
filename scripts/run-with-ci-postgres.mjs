@@ -26,6 +26,22 @@ export function databaseUrl(baseUrl, databaseName) {
   return url.toString();
 }
 
+export function databaseEnvironment(testUrl, environment = process.env) {
+  const url = new URL(testUrl);
+  return {
+    ...environment,
+    DATABASE_URL: testUrl,
+    TEST_DB_URL: testUrl,
+    TEST_DB_ADAPTER: 'postgres',
+    SMRT_TEST_POSTGRES_URL: testUrl,
+    PGHOST: url.hostname,
+    PGPORT: url.port || '5432',
+    PGUSER: decodeURIComponent(url.username),
+    PGPASSWORD: decodeURIComponent(url.password),
+    PGDATABASE: decodeURIComponent(url.pathname.replace(/^\//, '')),
+  };
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     stdio: 'inherit',
@@ -91,13 +107,7 @@ export async function main(argv = process.argv.slice(2)) {
     }
 
     const status = run(command, args, {
-      env: {
-        ...process.env,
-        DATABASE_URL: testUrl,
-        TEST_DB_URL: testUrl,
-        TEST_DB_ADAPTER: 'postgres',
-        SMRT_TEST_POSTGRES_URL: testUrl,
-      },
+      env: databaseEnvironment(testUrl),
     });
     return status;
   } finally {
