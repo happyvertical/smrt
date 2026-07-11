@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.39.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve workspace protocols before publishing (#1940) (release)
+  - @happyvertical/smrt-config@0.39.1
+  - @happyvertical/smrt-types@0.39.1
+  - @happyvertical/smrt-scanner@0.39.1
+
+## 1.0.0
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.38.26
 
 ### Patch Changes

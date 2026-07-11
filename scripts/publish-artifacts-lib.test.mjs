@@ -9,7 +9,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { verifyPublishArtifacts } from './publish-artifacts-lib.mjs';
+import {
+  findUnsupportedDependencyProtocols,
+  verifyPublishArtifacts,
+} from './publish-artifacts-lib.mjs';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'smrt-publish-artifacts-'));
@@ -69,4 +72,44 @@ test('rejects a tarball changed after validation', () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('finds unresolved workspace and catalog dependency protocols', () => {
+  assert.deepEqual(
+    findUnsupportedDependencyProtocols({
+      dependencies: {
+        '@happyvertical/jobs': 'catalog:',
+        '@happyvertical/smrt-core': 'workspace:*',
+        zod: '^4.0.0',
+      },
+      optionalDependencies: {
+        sharp: 'catalog:sharp',
+      },
+      peerDependencies: {
+        svelte: 'workspace:^',
+      },
+      devDependencies: {
+        vitest: 'catalog:',
+      },
+    }),
+    [
+      'dependencies.@happyvertical/jobs=catalog:',
+      'dependencies.@happyvertical/smrt-core=workspace:*',
+      'optionalDependencies.sharp=catalog:sharp',
+      'peerDependencies.svelte=workspace:^',
+      'devDependencies.vitest=catalog:',
+    ],
+  );
+});
+
+test('accepts registry-compatible dependency ranges', () => {
+  assert.deepEqual(
+    findUnsupportedDependencyProtocols({
+      dependencies: {
+        '@happyvertical/jobs': '^0.78.0',
+        '@happyvertical/smrt-core': '0.39.1',
+      },
+    }),
+    [],
+  );
 });
