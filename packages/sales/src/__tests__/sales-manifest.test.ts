@@ -31,9 +31,12 @@ function objectByName(manifest: SalesManifest, name: string): ManifestObject {
 }
 
 describe('generated sales manifest mutation policy', () => {
-  it('keeps SalesActivity MCP operations append-only', async () => {
-    const activity = objectByName(await salesManifest(), 'SalesActivity');
-    expect(activity.decoratorConfig?.mcp).toEqual({
+  it.each([
+    'SalesActivity',
+    'LeadMerge',
+  ])('keeps %s MCP operations append-only', async (objectName) => {
+    const object = objectByName(await salesManifest(), objectName);
+    expect(object.decoratorConfig?.mcp).toEqual({
       include: ['list', 'get', 'create'],
     });
   });

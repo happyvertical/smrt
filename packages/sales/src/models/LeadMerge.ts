@@ -12,7 +12,7 @@ import type { LeadMergeOptions, LeadMergeSnapshot } from '../types.js';
   tableName: 'sales_lead_merges',
   api: { include: ['list', 'get', 'create'] },
   cli: true,
-  mcp: true,
+  mcp: { include: ['list', 'get', 'create'] },
   conflictColumns: ['tenant_id', 'source_lead_id'],
 })
 export class LeadMerge extends SmrtObject {

@@ -155,6 +155,7 @@ describe('SalesService', () => {
       leadId: lead.id,
       pipelineId: 'pipeline-1',
       stageKey: 'qualified',
+      ownerId: 'rep-new',
     });
 
     expect(result).toEqual({
@@ -168,7 +169,10 @@ describe('SalesService', () => {
       expect.objectContaining({ _insertOnly: true }),
     );
     expect(lead.status).toBe('converted');
+    expect(lead.ownerId).toBe('rep-new');
     expect(lead.save).toHaveBeenCalledOnce();
+    expect(winner.ownerId).toBe('rep-new');
+    expect(winner.save).toHaveBeenCalledOnce();
     expect(createActivity).not.toHaveBeenCalled();
   });
 
@@ -188,6 +192,7 @@ describe('SalesService', () => {
       stageId: 'stage-qualified',
     });
     opportunity.id = 'opportunity-1';
+    opportunity.save = vi.fn(async () => opportunity);
     const stage = new PipelineStage({
       tenantId: 'tenant-1',
       pipelineId: 'pipeline-1',
@@ -214,6 +219,8 @@ describe('SalesService', () => {
     expect(lead.status).toBe('converted');
     expect(lead.ownerId).toBe('rep-new');
     expect(lead.save).toHaveBeenCalledOnce();
+    expect(opportunity.ownerId).toBe('rep-new');
+    expect(opportunity.save).toHaveBeenCalledOnce();
     expect(createActivity).not.toHaveBeenCalled();
   });
 
