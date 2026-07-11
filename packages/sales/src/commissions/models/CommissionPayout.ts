@@ -238,6 +238,15 @@ export class CommissionPayout extends SmrtObject {
         `CommissionPayout ${this.id ?? '<new>'}: cannot approve from status '${this.status}'`,
       );
     }
+    // A batch whose reconciled membership nets to nothing (or a clawback
+    // surplus) must never move toward remittance — such payouts exist only
+    // as audit artifacts of a raced/interrupted claim pass.
+    if (this.totalAmountCents <= 0) {
+      throw new Error(
+        `CommissionPayout ${this.id ?? '<new>'}: cannot approve a batch with ` +
+          `non-positive total (${this.totalAmountCents} cents)`,
+      );
+    }
     this.status = 'approved';
   }
 

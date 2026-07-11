@@ -62,15 +62,26 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
   async latestActiveByKey(
     planKey: string,
     at: Date = new Date(),
+    tenantId?: string | null,
   ): Promise<CommissionPlan | null> {
     const results = await this.list({
       where: { planKey, status: 'active' },
       orderBy: 'version DESC',
     });
+    const inEffect = results.filter(
+      (plan) => plan.effectiveFrom === null || plan.effectiveFrom <= at,
+    );
+    if (tenantId === undefined) {
+      // No explicit scope: ambient tenant scoping (when present) applies.
+      return inEffect[0] ?? null;
+    }
+    // Explicit scope (system/background paths run without ambient tenant
+    // context): the tenant's own versions form their own key-space; global
+    // (NULL-tenant) versions are the fallback. Never another tenant's.
     return (
-      results.find(
-        (plan) => plan.effectiveFrom === null || plan.effectiveFrom <= at,
-      ) ?? null
+      inEffect.find((plan) => plan.tenantId === tenantId) ??
+      inEffect.find((plan) => plan.tenantId === null) ??
+      null
     );
   }
 

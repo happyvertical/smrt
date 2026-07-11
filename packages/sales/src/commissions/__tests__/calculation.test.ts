@@ -533,4 +533,27 @@ describe('CommissionCalculationService', () => {
     expect(rows[0]?.id).toBe(event.id);
     expect(rows[0]?.grossAmountCents).toBe(10000);
   });
+
+  it('rejects malformed components before any money math (codex P2)', async () => {
+    const event = await createEvent();
+    await expect(
+      service.calculateForEvent(
+        baseInput(event, [
+          { key: 'bad-rate', trigger: '*', basis: 'gross', rate: 2 },
+        ]),
+      ),
+    ).rejects.toThrow(/rate/);
+    await expect(
+      service.calculateForEvent(
+        baseInput(event, [
+          {
+            key: 'bad-fixed',
+            trigger: '*',
+            basis: 'fixed',
+            fixedAmountCents: 12.5,
+          },
+        ]),
+      ),
+    ).rejects.toThrow(/fixedAmountCents/);
+  });
 });

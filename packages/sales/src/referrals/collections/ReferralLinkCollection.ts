@@ -201,10 +201,15 @@ export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
       }),
     });
 
-    link.clickCount += 1;
-    await link.save();
+    // Atomic in-database increment — edge clicks arrive concurrently, and a
+    // load-increment-save would lose all but one of a burst's counts. The
+    // touch rows remain the authoritative evidence; clickCount is the fast
+    // counter derived from them.
+    await this.db
+      .execute`UPDATE referral_links SET click_count = click_count + 1 WHERE id = ${link.id ?? ''}`;
+    const fresh = (await this.get({ id: link.id })) ?? link;
 
-    return { link, touch };
+    return { link: fresh, touch };
   }
 }
 

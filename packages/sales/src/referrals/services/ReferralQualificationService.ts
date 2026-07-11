@@ -336,22 +336,30 @@ export class ReferralQualificationService {
   ): Promise<CommissionPlan | null> {
     if (!agreement.commissionPlanKey) return null;
     if (agreement.commissionPlanVersion > 0) {
+      // Pinned lookup, scoped to the AGREEMENT's tenant with global
+      // fallback — system/background qualification runs without ambient
+      // tenant context, and another tenant's same-named plan must never be
+      // frozen into this tenant's snapshot.
       const results = await this.deps.plans.list({
         where: {
           planKey: agreement.commissionPlanKey,
           version: agreement.commissionPlanVersion,
+          status: 'active',
         },
-        limit: 1,
       });
-      const plan = results[0];
-      return plan && plan.status === 'active' ? plan : null;
+      return (
+        results.find((plan) => plan.tenantId === agreement.tenantId) ??
+        results.find((plan) => plan.tenantId === null) ??
+        null
+      );
     }
     // Unpinned agreements resolve the version in effect at the
-    // qualification clock — a future-dated active amendment must not
-    // govern earlier qualifications.
+    // qualification clock, in the agreement's tenant lane — a future-dated
+    // active amendment must not govern earlier qualifications.
     return await this.deps.plans.latestActiveByKey(
       agreement.commissionPlanKey,
       at,
+      agreement.tenantId,
     );
   }
 

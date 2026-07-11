@@ -14,6 +14,7 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { CommissionCollection } from '../collections/CommissionCollection.js';
 import type { Commission } from '../models/Commission.js';
+import { validateCommissionPlanComponents } from '../models/CommissionPlan.js';
 import type { EarningEvent } from '../models/EarningEvent.js';
 import { calculateCommissionAmountCents, roundCents } from '../money.js';
 import type {
@@ -171,6 +172,10 @@ export class CommissionCalculationService {
         `CommissionCalculationService.calculateForEvent: shareFraction must be a finite number in [0, 1], got ${String(shareFraction)}`,
       );
     }
+    // Money guard: direct callers can hand in arbitrary component arrays
+    // (snapshots and plans validate on write, but nothing forces callers
+    // through them) — malformed rates/amounts must never reach the math.
+    validateCommissionPlanComponents(input.components);
     const termsRef =
       input.termsSnapshotId || `${input.planKey}@${input.planVersion}`;
 

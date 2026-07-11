@@ -68,15 +68,26 @@ export class AttributionPolicyCollection extends SmrtCollection<AttributionPolic
   async latestActiveByKey(
     policyKey: string,
     at: Date = new Date(),
+    tenantId?: string | null,
   ): Promise<AttributionPolicy | null> {
     const results = await this.list({
       where: { policyKey, status: 'active' },
       orderBy: 'version DESC',
     });
+    const inEffect = results.filter(
+      (policy) => policy.effectiveFrom === null || policy.effectiveFrom <= at,
+    );
+    if (tenantId === undefined) {
+      // No explicit scope: ambient tenant scoping (when present) applies.
+      return inEffect[0] ?? null;
+    }
+    // Explicit scope (system/background paths run without ambient tenant
+    // context): the tenant's own versions form their own key-space; global
+    // (NULL-tenant) versions are the fallback. Never another tenant's.
     return (
-      results.find(
-        (policy) => policy.effectiveFrom === null || policy.effectiveFrom <= at,
-      ) ?? null
+      inEffect.find((policy) => policy.tenantId === tenantId) ??
+      inEffect.find((policy) => policy.tenantId === null) ??
+      null
     );
   }
 

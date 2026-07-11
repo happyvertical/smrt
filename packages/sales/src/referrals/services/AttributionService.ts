@@ -643,9 +643,15 @@ export class AttributionService {
   ): Promise<AttributionPolicy | null> {
     const policyKey = policyKeyOverride ?? program.defaultAttributionPolicyKey;
     if (!policyKey) return null;
-    // Resolve the version in effect at the resolution clock — a
-    // future-dated active amendment must not govern earlier attributions.
-    return await this.deps.policies.latestActiveByKey(policyKey, at);
+    // Resolve the version in effect at the resolution clock, scoped to the
+    // PROGRAM's tenant (with global fallback) — system/background paths run
+    // without ambient tenant context, and another tenant's same-named
+    // policy must never govern this program's attributions.
+    return await this.deps.policies.latestActiveByKey(
+      policyKey,
+      at,
+      program.tenantId,
+    );
   }
 
   /**

@@ -278,4 +278,42 @@ describe('CommissionPlan', () => {
     expect((await plans.get({ id: a.id }))?.name).toBe('Tenant A terms');
     expect((await plans.get({ id: b.id }))?.name).toBe('Tenant B terms');
   });
+
+  it('scopes latestActiveByKey to a tenant lane with global fallback (codex P1)', async () => {
+    const now = new Date('2026-07-01T00:00:00Z');
+    const aPlan = await createDraft({
+      planKey: 'lane-plan',
+      version: 1,
+      tenantId: 'tenant-a',
+    });
+    aPlan.activate();
+    await aPlan.save();
+    const bPlan = await createDraft({
+      planKey: 'lane-plan',
+      version: 2,
+      tenantId: 'tenant-b',
+    });
+    bPlan.activate();
+    await bPlan.save();
+
+    // Tenant A never resolves tenant B's higher version.
+    const forA = await plans.latestActiveByKey('lane-plan', now, 'tenant-a');
+    expect(forA?.version).toBe(1);
+    expect(forA?.tenantId).toBe('tenant-a');
+
+    // A tenant with no versions of its own falls back to a GLOBAL row only.
+    expect(
+      await plans.latestActiveByKey('lane-plan', now, 'tenant-c'),
+    ).toBeNull();
+    const globalPlan = await createDraft({
+      planKey: 'lane-plan',
+      version: 3,
+      tenantId: null,
+    });
+    globalPlan.activate();
+    await globalPlan.save();
+    const forC = await plans.latestActiveByKey('lane-plan', now, 'tenant-c');
+    expect(forC?.version).toBe(3);
+    expect(forC?.tenantId).toBeNull();
+  });
 });

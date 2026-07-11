@@ -571,5 +571,16 @@ describe('Balances and payout batches', () => {
       ).rejects.toThrow(/cannot complete from status 'pending'/);
       expect((await commissions.get({ id: c1.id }))?.status).toBe('payable');
     });
+
+    it('never approves a batch with a non-positive total (codex P2)', async () => {
+      const hollow = await payouts.create({
+        earnerId: earner.id as string,
+        idempotencyKey: 'hollow-1',
+        commissionTotalCents: 0,
+        adjustmentTotalCents: 0,
+        totalAmountCents: 0,
+      });
+      expect(() => hollow.approve()).toThrow(/non-positive total/);
+    });
   });
 });
