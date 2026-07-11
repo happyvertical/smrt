@@ -8,4 +8,5 @@ export {
   discoverManifests,
   loadManifest,
   loadManifestFile,
+  resolveManifestEntryPackageName,
 } from './manifest-discovery.js';

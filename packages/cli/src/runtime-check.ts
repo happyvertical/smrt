@@ -17,6 +17,7 @@ import {
   type DiscoveredManifest,
   discoverManifests,
   loadManifestFile,
+  resolveManifestEntryPackageName,
 } from './discovery/index.js';
 
 type RuntimeCheckSeverity = 'error' | 'warning' | 'pass';
@@ -165,11 +166,34 @@ function flattenManifestEntries(
   );
 
   return Object.entries(manifest.objects || {}).map(([key, objectDef]) => ({
-    manifestPackageName,
+    manifestPackageName: resolveManifestEntryPackageName(
+      key,
+      objectDef as SmartObjectDefinition,
+      manifestPackageName,
+    ),
     manifestSource: source,
     key,
     definition: objectDef as SmartObjectDefinition,
   }));
+}
+
+function getOwnedProjectManifest(
+  manifest: SmartObjectManifest,
+): SmartObjectManifest {
+  const packageName = manifest.packageName;
+  if (!packageName) {
+    return manifest;
+  }
+
+  const objects = Object.fromEntries(
+    Object.entries(manifest.objects || {}).filter(
+      ([key, definition]) =>
+        resolveManifestEntryPackageName(key, definition, packageName) ===
+        packageName,
+    ),
+  );
+
+  return { ...manifest, objects };
 }
 
 function findProjectManifest(
@@ -379,7 +403,7 @@ function registerDependencyManifests(
       ObjectRegistry.registerFromManifest(
         name,
         objectDef,
-        manifest.packageName,
+        resolveManifestEntryPackageName(name, objectDef, manifest.packageName),
       );
     }
   }
@@ -868,6 +892,7 @@ export async function runRuntimeCheck(
   const projectManifest = (await loadManifestFile(
     projectManifestInfo.path,
   )) as unknown as SmartObjectManifest;
+  const ownedProjectManifest = getOwnedProjectManifest(projectManifest);
   const dependencyManifests = await loadDependencyManifests(
     projectManifest,
     projectRoot,
@@ -915,8 +940,12 @@ export async function runRuntimeCheck(
     };
   }
   registerDependencyManifests(dependencyManifests);
-  await checkRuntimeHydration(projectManifest, dependencyManifests, findings);
-  checkShadowing(projectManifest, dependencyManifests, findings);
+  await checkRuntimeHydration(
+    ownedProjectManifest,
+    dependencyManifests,
+    findings,
+  );
+  checkShadowing(ownedProjectManifest, dependencyManifests, findings);
 
   if (!findings.some((finding) => finding.severity === 'error')) {
     addFinding(

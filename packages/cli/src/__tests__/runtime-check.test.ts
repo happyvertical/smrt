@@ -214,6 +214,72 @@ describe('runRuntimeCheck', () => {
     ).toBe(false);
   });
 
+  it('accepts aggregated consumer manifests without treating dependency entries as local', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    const externalDefinition = {
+      className: 'FixtureProfile',
+      qualifiedName: '@fixture/profiles:FixtureProfile',
+      packageName: '@fixture/profiles',
+      collection: 'profiles',
+      fields: {
+        displayName: { type: 'text', required: false },
+        isActive: { type: 'boolean', required: false },
+      },
+    } as const;
+
+    await createExternalPackage(projectRoot, '@fixture/profiles', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/profiles',
+      objects: {
+        '@fixture/profiles:FixtureProfile': externalDefinition,
+      },
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/profiles'],
+      objects: {
+        '@test/app:FixtureStaffProfile': {
+          className: 'FixtureStaffProfile',
+          qualifiedName: '@test/app:FixtureStaffProfile',
+          packageName: '@test/app',
+          collection: 'profiles',
+          extends: 'FixtureProfile',
+          fields: {
+            role: { type: 'text', required: false },
+          },
+        },
+        '@fixture/profiles:FixtureProfile': externalDefinition,
+      },
+    });
+    await createRegisterFile(projectRoot);
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+    const errors = result.findings.filter(
+      (finding) => finding.severity === 'error',
+    );
+
+    expect(errors, errors.map((finding) => finding.message).join('\n')).toEqual(
+      [],
+    );
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'pass',
+          code: 'runtime-check-passed',
+        }),
+      ]),
+    );
+  });
+
   it('does not require generated registrations for empty dependency manifests', async () => {
     const projectRoot = await mkdtemp(
       resolve(process.cwd(), '.tmp-runtime-check-'),
