@@ -48,6 +48,13 @@ same `retry` policy inline in their own `vitest.config.ts`.
 
 **DB adapter auto-detection**: `DATABASE_URL` set → PostgreSQL; otherwise → SQLite temp files.
 
+For local file-backed SQLite, identical schemas are prepared once per Vitest
+process and cloned from an immutable schema-only template for later databases.
+The cache key is the full generated DDL, concurrent first callers share one
+build, and every test still receives its own database file and transaction.
+Existing non-empty database files are never replaced. PostgreSQL, DuckDB, JSON,
+remote libSQL, and in-memory SQLite retain their normal preparation paths.
+
 ```typescript
 let db, cleanup;
 beforeEach(async () => {
@@ -103,6 +110,7 @@ Pattern: render → assert role/name/state → drive with user-event → prove a
 
 - `src/index.ts` — Vite plugin, manifest generation, workspace aliases, all exports
 - `src/setup.ts` — globalThis isolation setup file
+- `src/sqlite-schema-template.ts` — process-local immutable SQLite schema templates
 - `src/svelte-setup.ts` — Svelte component-test setup (jest-dom, cleanup, dialog polyfill)
 - `src/svelte.ts` — component-test surface (Testing Library + a11y, one import)
 - `src/a11y.ts` — `expectNoA11yViolations` (axe-core)

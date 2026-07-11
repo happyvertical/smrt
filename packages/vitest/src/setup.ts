@@ -23,6 +23,10 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
+import {
+  getDatabaseFromSqliteSchemaTemplate,
+  getLocalSqliteFilePath,
+} from './sqlite-schema-template.js';
 
 // Type alias for any to avoid conflicts with smrt-core's globalThis declarations
 type CacheState = unknown;
@@ -236,27 +240,45 @@ vi.mock('@happyvertical/sql', async () => {
         return actual.getDatabase(options);
       }
 
-      const db = await actual.getDatabase(options);
+      const canUseSqliteSchemaTemplate = Boolean(
+        options &&
+          typeof options === 'object' &&
+          !('query' in options) &&
+          getLocalSqliteFilePath(options as { type?: string; url?: string }),
+      );
+      let db: Awaited<ReturnType<typeof actual.getDatabase>> | undefined =
+        canUseSqliteSchemaTemplate
+          ? undefined
+          : await actual.getDatabase(options);
       let schemaSqlBatches: string[] = [];
 
       try {
         const smrtCore = await loadSmrtCoreModule();
-        schemaSqlBatches = buildSchemaSqlBatches(
-          smrtCore,
-          db as { url?: string; exportTable?: unknown },
-          options,
-        );
+        if (canUseSqliteSchemaTemplate) {
+          const dbConfig = options as { url?: string };
+          schemaSqlBatches = buildSchemaSqlBatches(
+            smrtCore,
+            { url: dbConfig.url },
+            options,
+          );
+        } else {
+          db ??= await actual.getDatabase(options);
+          schemaSqlBatches = buildSchemaSqlBatches(
+            smrtCore,
+            db as { url?: string; exportTable?: unknown },
+            options,
+          );
+        }
       } catch {
-        return db;
+        return db ?? actual.getDatabase(options);
       }
 
       const schemaSql = schemaSqlBatches.filter(Boolean).join('\n-- smrt --\n');
       if (!schemaSql) {
-        return db;
+        return db ?? actual.getDatabase(options);
       }
 
-      const dbObject = db as object;
-      if (preparedSchemasByDb.get(dbObject) === schemaSql) {
+      if (db && preparedSchemasByDb.get(db as object) === schemaSql) {
         return db;
       }
 
@@ -265,17 +287,38 @@ vi.mock('@happyvertical/sql', async () => {
         preparationKey &&
         preparedSchemasByConfig.get(preparationKey) === schemaSql
       ) {
-        preparedSchemasByDb.set(dbObject, schemaSql);
+        db ??= await actual.getDatabase(options);
+        preparedSchemasByDb.set(db as object, schemaSql);
         return db;
       }
 
-      for (const schemaBatch of schemaSqlBatches) {
-        if (!schemaBatch) {
-          continue;
+      const prepareSchema = async (
+        database: Awaited<ReturnType<typeof actual.getDatabase>>,
+      ): Promise<void> => {
+        for (const schemaBatch of schemaSqlBatches) {
+          if (!schemaBatch) {
+            continue;
+          }
+          await actual.syncSchema({ db: database, schema: schemaBatch });
         }
-        await actual.syncSchema({ db, schema: schemaBatch });
+      };
+
+      if (canUseSqliteSchemaTemplate) {
+        db = await getDatabaseFromSqliteSchemaTemplate({
+          cacheKey: `automatic-schema\0${schemaSql}`,
+          databaseOptions: options as Record<string, unknown> & {
+            url?: string;
+          },
+          getDatabase: (databaseOptions) =>
+            actual.getDatabase(databaseOptions as VitestDatabaseOptions),
+          prepare: prepareSchema,
+        });
+      } else {
+        db ??= await actual.getDatabase(options);
+        await prepareSchema(db);
       }
-      preparedSchemasByDb.set(dbObject, schemaSql);
+
+      preparedSchemasByDb.set(db as object, schemaSql);
       if (preparationKey) {
         preparedSchemasByConfig.set(preparationKey, schemaSql);
       }
