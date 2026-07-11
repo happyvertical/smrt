@@ -87,3 +87,81 @@ export interface SyncStatus {
   syncError?: string;
   syncedFields: string[];
 }
+
+/**
+ * Managed application capability keys for project integrations.
+ */
+export type ProjectIntegrationCapability =
+  | 'requests:create'
+  | 'requests:read-own'
+  | (string & {});
+
+/**
+ * Provisioned managed-application integration lifecycle.
+ */
+export type ProjectIntegrationStatus = 'active' | 'revoked';
+
+/**
+ * Audit events emitted for managed-application integrations.
+ */
+export type ProjectIntegrationAuditAction = 'created' | 'rotated' | 'revoked';
+
+/**
+ * Supported development request categories. Open string union so apps can add
+ * narrower taxonomy without waiting for a package release.
+ */
+export type DevelopmentRequestType = 'bug' | 'feature' | 'task' | (string & {});
+
+/**
+ * Request visibility as shown back to the managed application's user.
+ */
+export type DevelopmentRequestVisibility = 'requester' | 'workspace' | 'public';
+
+/**
+ * Request origin marker.
+ */
+export type DevelopmentRequestOrigin = 'managed-app' | (string & {});
+
+/**
+ * Request lifecycle status.
+ */
+export type DevelopmentRequestStatus =
+  | 'submitted'
+  | 'triaged'
+  | 'planned'
+  | 'in_progress'
+  | 'completed'
+  | 'declined';
+
+/**
+ * One evidence attachment linked from a request.
+ */
+export interface DevelopmentRequestEvidence {
+  url: string;
+  label?: string;
+}
+
+/**
+ * Input accepted by the managed integration server client when creating a
+ * request on behalf of an app-scoped requester.
+ */
+export interface ManagedDevelopmentRequestCreateInput {
+  requesterId: string;
+  participantId?: string;
+  type: DevelopmentRequestType;
+  description: string;
+  evidence?: DevelopmentRequestEvidence[];
+  visibility?: DevelopmentRequestVisibility;
+  origin?: DevelopmentRequestOrigin;
+  discussion?: string;
+}
+
+/**
+ * Actor metadata captured for a request lifecycle transition.
+ */
+export interface DevelopmentRequestTransitionInput {
+  status: DevelopmentRequestStatus;
+  actorType: 'integration' | 'participant' | 'system';
+  actorId?: string;
+  note?: string;
+}

@@ -1,6 +1,16 @@
 import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
+  'projects.development_request.type': 'Request type',
+  'projects.development_request.feature': 'Feature',
+  'projects.development_request.bug': 'Bug',
+  'projects.development_request.support': 'Support',
+  'projects.development_request.description': 'Description',
+  'projects.development_request.evidence_url': 'Evidence URL',
+  'projects.development_request.discussion': 'Discussion',
+  'projects.development_request.submit': 'Submit request',
+  'projects.development_request.empty': 'No development requests',
+  'projects.development_request.list_aria': 'Development requests',
   'projects.approval_actions.approved_message': 'This entry has been approved',
   'projects.approval_actions.rejected_message': 'This entry was rejected',
   'projects.bulk_actions.approve_all': 'Approve All',

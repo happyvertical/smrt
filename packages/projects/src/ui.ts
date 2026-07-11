@@ -11,13 +11,31 @@ import type { ModuleUISlot, SmrtModuleMeta } from '@happyvertical/smrt-types';
  * Projects module UI slots
  */
 export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
+  'development-request-form': {
+    id: 'development-request-form',
+    label: 'Development Request Form',
+    description: 'Reusable managed-application request submission form',
+    icon: 'send',
+    category: 'form',
+    order: 1,
+    propsInterface: 'DevelopmentRequestFormProps',
+  },
+  'development-request-list': {
+    id: 'development-request-list',
+    label: 'Development Request List',
+    description: 'Requester-facing list of managed development requests',
+    icon: 'list',
+    category: 'list',
+    order: 2,
+    propsInterface: 'DevelopmentRequestListProps',
+  },
   'time-entry-card': {
     id: 'time-entry-card',
     label: 'Time Entry Card',
     description: 'Card component for displaying time entries',
     icon: 'clock',
     category: 'display',
-    order: 1,
+    order: 3,
     propsInterface: 'TimeEntryCardProps',
   },
   'time-entry-list': {
@@ -26,7 +44,7 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     description: 'List of time entries with optional selection',
     icon: 'list',
     category: 'list',
-    order: 2,
+    order: 4,
     propsInterface: 'TimeEntryListProps',
   },
   'time-summary': {
@@ -35,7 +53,7 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     description: 'Summary statistics for time entries',
     icon: 'chart',
     category: 'display',
-    order: 3,
+    order: 5,
     propsInterface: 'TimeSummaryProps',
   },
   'duration-display': {
@@ -44,7 +62,7 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     description: 'Formats hours for display in decimal or HH:MM format',
     icon: 'timer',
     category: 'display',
-    order: 4,
+    order: 6,
     propsInterface: 'DurationDisplayProps',
   },
   'approval-actions': {
@@ -53,7 +71,7 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     description: 'Status-based action buttons for approval workflow',
     icon: 'check',
     category: 'action',
-    order: 5,
+    order: 7,
     propsInterface: 'ApprovalActionsProps',
   },
   'bulk-actions': {
@@ -62,7 +80,7 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     description: 'Action bar for bulk operations on selected items',
     icon: 'select-all',
     category: 'action',
-    order: 6,
+    order: 8,
     propsInterface: 'BulkActionsProps',
   },
   'reject-dialog': {
@@ -71,7 +89,7 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     description: 'Modal dialog for rejecting with a reason',
     icon: 'x-circle',
     category: 'form',
-    order: 7,
+    order: 9,
     propsInterface: 'RejectDialogProps',
   },
 };
@@ -82,9 +100,21 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
 export const PROJECTS_MODULE_META: SmrtModuleMeta = {
   name: '@happyvertical/smrt-projects',
   displayName: 'Projects',
-  description: 'Provider-agnostic project management with time tracking',
+  description:
+    'Provider-agnostic project management with managed-app request intake and time tracking',
   uiSlots: PROJECTS_UI_SLOTS,
-  models: ['Repository', 'Issue', 'PullRequest', 'Project', 'Comment', 'Label'],
+  models: [
+    'Repository',
+    'Issue',
+    'PullRequest',
+    'Project',
+    'Comment',
+    'Label',
+    'ProjectIntegration',
+    'ProjectIntegrationAudit',
+    'DevelopmentRequest',
+    'DevelopmentRequestHistory',
+  ],
   collections: [
     'RepositoryCollection',
     'IssueCollection',
@@ -92,5 +122,9 @@ export const PROJECTS_MODULE_META: SmrtModuleMeta = {
     'ProjectCollection',
     'CommentCollection',
     'LabelCollection',
+    'ProjectIntegrationCollection',
+    'ProjectIntegrationAuditCollection',
+    'DevelopmentRequestCollection',
+    'DevelopmentRequestHistoryCollection',
   ],
 };
