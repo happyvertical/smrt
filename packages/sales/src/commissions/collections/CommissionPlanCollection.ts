@@ -52,17 +52,26 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
   }
 
   /**
-   * The highest ACTIVE version of a plan, or `null` when no version is
-   * active. This is what calculation callers resolve terms from when no
-   * frozen snapshot pins a specific version.
+   * The highest ACTIVE version of a plan already IN EFFECT at `at`, or
+   * `null` when none is. This is what calculation callers resolve terms
+   * from when no frozen snapshot pins a specific version. A future-dated
+   * amendment can be activated ahead of its effective date without
+   * governing earlier qualifications (`effectiveFrom: null` = effective
+   * immediately).
    */
-  async latestActiveByKey(planKey: string): Promise<CommissionPlan | null> {
+  async latestActiveByKey(
+    planKey: string,
+    at: Date = new Date(),
+  ): Promise<CommissionPlan | null> {
     const results = await this.list({
       where: { planKey, status: 'active' },
       orderBy: 'version DESC',
-      limit: 1,
     });
-    return results[0] ?? null;
+    return (
+      results.find(
+        (plan) => plan.effectiveFrom === null || plan.effectiveFrom <= at,
+      ) ?? null
+    );
   }
 
   /**

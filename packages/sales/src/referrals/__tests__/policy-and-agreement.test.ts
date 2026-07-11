@@ -87,6 +87,39 @@ describe('AttributionPolicy versioning', () => {
     expect(await policies.latestActiveByKey('unknown')).toBeNull();
   });
 
+  it('latestActiveByKey ignores active policy versions not yet in effect (codex P2)', async () => {
+    const v1 = await policies.create({
+      policyKey: 'effective-policy',
+      version: 1,
+      status: 'active',
+      windowDays: 30,
+      effectiveFrom: null,
+    });
+    expect(v1.version).toBe(1);
+
+    // A future-dated amendment activated ahead of its effective date.
+    const v2 = await policies.createAmendment('effective-policy', {
+      windowDays: 90,
+      effectiveFrom: new Date('2026-09-01T00:00:00Z'),
+    });
+    v2.activate();
+    await v2.save();
+
+    // Before the effective date the in-force version still governs…
+    const before = await policies.latestActiveByKey(
+      'effective-policy',
+      new Date('2026-08-15T00:00:00Z'),
+    );
+    expect(before?.version).toBe(1);
+    expect(before?.windowDays).toBe(30);
+    // …and from the effective date on, the amendment takes over.
+    const after = await policies.latestActiveByKey(
+      'effective-policy',
+      new Date('2026-09-01T00:00:00Z'),
+    );
+    expect(after?.version).toBe(2);
+  });
+
   it('freezes policy-defining fields once active (status transitions stay allowed)', async () => {
     await policies.create({
       policyKey: 'frozen',

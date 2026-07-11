@@ -58,19 +58,26 @@ export class AttributionPolicyCollection extends SmrtCollection<AttributionPolic
   }
 
   /**
-   * The highest ACTIVE version of a policy, or `null` when no version is
-   * active. This is what `AttributionService.resolve()` loads when the
-   * caller doesn't pin a version.
+   * The highest ACTIVE version of a policy already IN EFFECT at `at`, or
+   * `null` when none is. This is what `AttributionService.resolve()` loads
+   * when the caller doesn't pin a version. A future-dated amendment can be
+   * activated ahead of its effective date without governing attributions
+   * resolved before it takes effect (`effectiveFrom: null` = effective
+   * immediately).
    */
   async latestActiveByKey(
     policyKey: string,
+    at: Date = new Date(),
   ): Promise<AttributionPolicy | null> {
     const results = await this.list({
       where: { policyKey, status: 'active' },
       orderBy: 'version DESC',
-      limit: 1,
     });
-    return results[0] ?? null;
+    return (
+      results.find(
+        (policy) => policy.effectiveFrom === null || policy.effectiveFrom <= at,
+      ) ?? null
+    );
   }
 
   /**

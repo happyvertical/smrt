@@ -438,4 +438,138 @@ describe('Balances and payout batches', () => {
       ).rejects.toThrow(/totals invariant/);
     });
   });
+
+  describe('settlement atomicity (codex P1 hardening)', () => {
+    it('repairs an interrupted claim pass on a same-key replay', async () => {
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 4000,
+      });
+      const c2 = await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+      });
+      const first = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'repair-1',
+      });
+      const payoutId = first.payout?.id as string;
+      expect(first.settledCommissionIds).toHaveLength(2);
+
+      // Manufacture the interrupted state codex flagged: the payout exists
+      // with full totals but one member row never got stamped.
+      const interrupted = await commissions.get({ id: c2.id });
+      if (!interrupted) throw new Error('missing row');
+      interrupted.payoutId = '';
+      await interrupted.save();
+      expect(
+        (await commissions.findByPayout(payoutId)).map((c) => c.id),
+      ).toEqual([c1.id]);
+
+      // Same-key replay detects the totals/membership mismatch and repairs.
+      const replay = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'repair-1',
+      });
+      expect(replay.created).toBe(false);
+      expect(replay.payout?.id).toBe(payoutId);
+      expect(new Set(replay.settledCommissionIds)).toEqual(
+        new Set([c1.id, c2.id]),
+      );
+      expect((await commissions.get({ id: c2.id }))?.payoutId).toBe(payoutId);
+      // Totals are reproducible from the (repaired) membership again.
+      expect(replay.payout?.commissionTotalCents).toBe(7000);
+      expect(replay.payout?.totalAmountCents).toBe(7000);
+    });
+
+    it('never re-claims a row owned by a different payout', async () => {
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 6000,
+      });
+      // Simulate another batch owning the row.
+      const owned = await commissions.get({ id: c1.id });
+      if (!owned) throw new Error('missing row');
+      owned.payoutId = 'some-other-payout';
+      await owned.save();
+
+      const claimed = await commissions.claimForPayout(
+        [c1.id as string],
+        'my-payout',
+      );
+      expect(claimed).toEqual([]);
+      expect((await commissions.get({ id: c1.id }))?.payoutId).toBe(
+        'some-other-payout',
+      );
+    });
+
+    it('claimForPayout skips rows that are no longer payable', async () => {
+      const c1 = await createCommission({
+        status: 'earned',
+        amountCents: 2500,
+      });
+      const claimed = await commissions.claimForPayout(
+        [c1.id as string],
+        'my-payout',
+      );
+      expect(claimed).toEqual([]);
+      expect((await commissions.get({ id: c1.id }))?.payoutId).toBeFalsy();
+    });
+
+    it('completePayout flips members before finalizing so a retry can finish the batch', async () => {
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 4000,
+      });
+      const c2 = await createCommission({
+        status: 'payable',
+        amountCents: 2000,
+      });
+      const batch = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'complete-order-1',
+      });
+      const payout = batch.payout;
+      if (!payout) throw new Error('expected payout');
+      payout.approve();
+      await payout.save();
+      payout.markProcessing();
+      await payout.save();
+
+      // Manufacture the mid-completion crash state: one member already paid
+      // while the payout is still processing.
+      const paidEarly = await commissions.get({ id: c1.id });
+      if (!paidEarly) throw new Error('missing row');
+      paidEarly.markPaid(new Date('2026-07-01T00:00:00Z'));
+      await paidEarly.save();
+
+      // The retry completes the remaining member and only then finalizes.
+      const completed = await payoutService.completePayout(
+        payout.id as string,
+        'wire-retry-1',
+      );
+      expect(completed.status).toBe('completed');
+      expect((await commissions.get({ id: c1.id }))?.status).toBe('paid');
+      expect((await commissions.get({ id: c2.id }))?.status).toBe('paid');
+    });
+
+    it('completePayout refuses non-processing payouts without touching members', async () => {
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 9000,
+      });
+      const batch = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'complete-guard-1',
+      });
+      await expect(
+        payoutService.completePayout(batch.payout?.id as string, 'wire-x'),
+      ).rejects.toThrow(/cannot complete from status 'pending'/);
+      expect((await commissions.get({ id: c1.id }))?.status).toBe('payable');
+    });
+  });
 });

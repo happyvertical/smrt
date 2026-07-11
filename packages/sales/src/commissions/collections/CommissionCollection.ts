@@ -80,6 +80,44 @@ export class CommissionCollection extends SmrtCollection<Commission> {
       orderBy: 'created_at ASC',
     });
   }
+
+  /**
+   * Conditionally claim rows for a payout batch: each row is re-loaded
+   * fresh and stamped with `payoutId` only when it is still payable and
+   * unclaimed (or already claimed by THIS payout — the idempotent-retry /
+   * repair case). Rows claimed by a DIFFERENT payout are skipped, and every
+   * claim is verified by a post-save re-read so a lost race never counts
+   * toward the caller's totals.
+   *
+   * This is the single place claim semantics live. It narrows the
+   * concurrent-batch window to the re-read granularity; true compare-and-set
+   * needs DB transactions the collection layer doesn't expose (settlement
+   * runs are expected to be single-writer per earner — see
+   * `CommissionPayoutService`).
+   *
+   * Returns the claimed rows (freshly loaded, `payoutId` verified).
+   */
+  async claimForPayout(
+    commissionIds: string[],
+    payoutId: string,
+  ): Promise<Commission[]> {
+    const claimed: Commission[] = [];
+    for (const id of commissionIds) {
+      const row = await this.get({ id });
+      if (!row) continue;
+      if (row.payoutId && row.payoutId !== payoutId) continue; // other batch
+      if (!row.payoutId) {
+        if (!row.isPayable()) continue; // no longer eligible
+        row.payoutId = payoutId;
+        await row.save();
+      }
+      const verified = await this.get({ id });
+      if (verified && verified.payoutId === payoutId) {
+        claimed.push(verified);
+      }
+    }
+    return claimed;
+  }
 }
 
 export default CommissionCollection;

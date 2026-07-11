@@ -443,4 +443,34 @@ describe('ReferralQualificationService', () => {
     reloaded.components = JSON.stringify([]);
     await expect(reloaded.save()).rejects.toThrow(/immutable once created/);
   });
+
+  it('unpinned resolution ignores a future-dated active amendment (codex P2)', async () => {
+    await makeActivePlan(); // v1, effective immediately
+    const v2 = await plans.createAmendment('referral-standard', {
+      components: [
+        {
+          key: 'rev-share',
+          trigger: 'invoice_payment',
+          basis: 'gross',
+          rate: 0.5,
+        },
+      ],
+      effectiveFrom: new Date('2099-01-01T00:00:00Z'),
+    });
+    v2.activate();
+    await v2.save();
+
+    await makeActiveAgreement(); // unpinned (commissionPlanVersion: 0)
+    const referral = await makeAttributedReferral();
+    const { qualified, snapshot } = await service.qualify({
+      referralId: referral.id ?? '',
+      now: NOW,
+    });
+
+    // The snapshot pins the version IN EFFECT at the qualification clock —
+    // the future-dated v2 does not govern early.
+    expect(qualified).toBe(true);
+    expect(snapshot?.planVersion).toBe(1);
+    expect(snapshot?.getComponents()[0].rate).not.toBe(0.5);
+  });
 });

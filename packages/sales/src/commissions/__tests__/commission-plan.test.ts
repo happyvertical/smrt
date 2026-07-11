@@ -233,4 +233,31 @@ describe('CommissionPlan', () => {
     await v1Again.save();
     expect(await plans.latestActiveByKey('latest-plan')).toBeNull();
   });
+
+  it('latestActiveByKey ignores active versions not yet in effect (codex P2)', async () => {
+    const now = new Date('2026-07-01T00:00:00Z');
+    const v1 = await createDraft({
+      planKey: 'effective-plan',
+      effectiveFrom: null,
+    });
+    v1.activate();
+    await v1.save();
+
+    // A future-dated amendment activated ahead of its effective date.
+    const v2 = await plans.createAmendment('effective-plan', {
+      effectiveFrom: new Date('2026-08-01T00:00:00Z'),
+    });
+    v2.activate();
+    await v2.save();
+
+    // Before the effective date the in-force version still governs…
+    const before = await plans.latestActiveByKey('effective-plan', now);
+    expect(before?.version).toBe(1);
+    // …and from the effective date on, the amendment takes over.
+    const after = await plans.latestActiveByKey(
+      'effective-plan',
+      new Date('2026-08-01T00:00:00Z'),
+    );
+    expect(after?.version).toBe(2);
+  });
 });

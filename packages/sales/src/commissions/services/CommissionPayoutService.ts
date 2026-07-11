@@ -86,19 +86,33 @@ export class CommissionPayoutService {
    * Create a settlement batch for one earner in one currency.
    *
    * Flow:
-   * 1. **Idempotency** — an existing payout with the (defaulted) key is
-   *    returned as `{ payout, created: false }` WITHOUT re-gathering or
-   *    re-stamping anything (`settled*Ids` come back empty on a replay).
+   * 1. **Idempotency + repair** — an existing payout with the (defaulted)
+   *    key is returned as `{ payout, created: false }`. A clean replay
+   *    touches nothing (new payable work is never swept into an existing
+   *    batch). A PENDING payout whose stored totals disagree with the rows
+   *    stamped with its id — the signature of an interrupted claim pass —
+   *    is repaired: the claim pass re-runs and the totals are reconciled
+   *    from the verified membership. Past `pending` the batch is frozen.
    * 2. **Gather** — payable unsettled commissions for the earner/currency,
    *    plus unsettled adjustments whose parent commission is
    *    earned/approved/payable/paid (same eligibility as the balance
    *    service, so the batch settles exactly what the balance reports).
    * 3. **Refuse** — `netTotal <= 0` → `'nothing_payable'`;
    *    `netTotal < threshold` (earner default, overridable) →
-   *    `'below_threshold'`. Nothing is stamped on refusal.
-   * 4. **Mint + stamp** — create the `pending` payout carrying the totals
-   *    (`commissionTotalCents` / `adjustmentTotalCents` /
-   *    `totalAmountCents`) and stamp `payoutId` on the EXACT gathered rows.
+   *    `'below_threshold'`. Nothing is minted or stamped on refusal.
+   * 4. **Mint, claim, reconcile** — create the `pending` payout, then
+   *    CLAIM the gathered rows through the collections' conditional
+   *    `claimForPayout` (rows grabbed by another batch in the interim are
+   *    skipped, never double-claimed), and finally store totals computed
+   *    from the rows that were VERIFIABLY claimed — the payout's totals
+   *    are always reproducible from its member rows.
+   *
+   * Concurrency: claims are conditional with post-save verification, which
+   * narrows but does not eliminate races between batches with different
+   * keys (the collection layer exposes no cross-row transaction — the same
+   * stance as commerce/ledgers compensation). Settlement runs are expected
+   * to be single-writer per earner; totals are correct-by-construction from
+   * claimed rows either way.
    */
   async createPayoutBatch(
     input: CreatePayoutBatchInput,
@@ -119,10 +133,23 @@ export class CommissionPayoutService {
         input.periodEnd ?? now,
       );
 
-    // Idempotent replay: same key → same payout, nothing re-stamped.
+    // Idempotent replay: same key → same payout. A CLEAN replay (stored
+    // totals match the stamped membership) returns without touching rows —
+    // new payable work is never swept into an existing batch. A pending
+    // payout whose stored totals DISAGREE with its membership is the
+    // signature of an interrupted claim pass: repair it (re-claim +
+    // reconcile totals) instead of returning totals its rows can't
+    // reproduce. Anything past pending is frozen.
     const existingPayout =
       await this.deps.payouts.findByIdempotencyKey(idempotencyKey);
     if (existingPayout) {
+      if (
+        existingPayout.isPending() &&
+        !(await this.membershipConsistent(existingPayout))
+      ) {
+        const repaired = await this.claimAndReconcile(existingPayout, input);
+        return { ...repaired, created: false };
+      }
       return {
         payout: existingPayout,
         created: false,
@@ -189,34 +216,140 @@ export class CommissionPayoutService {
       idempotencyKey,
     });
 
-    // Stamp the EXACT gathered rows — the payout settles these and only
-    // these, so its totals stay reproducible from its member rows.
-    const settledCommissionIds: string[] = [];
-    for (const commission of commissions) {
-      commission.payoutId = payout.id ?? '';
-      await commission.save();
-      if (commission.id) settledCommissionIds.push(commission.id);
-    }
-    const settledAdjustmentIds: string[] = [];
-    for (const adjustment of eligibleAdjustments) {
-      adjustment.payoutId = payout.id ?? '';
-      await adjustment.save();
-      if (adjustment.id) settledAdjustmentIds.push(adjustment.id);
+    // Claim the gathered rows conditionally and reconcile the stored
+    // totals from what was VERIFIABLY claimed — a row grabbed by another
+    // batch between gather and claim is skipped, never double-claimed, and
+    // never counted.
+    const result = await this.claimAndReconcile(payout, input);
+    return { ...result, created: true };
+  }
+
+  /**
+   * Whether a payout's stored totals are reproducible from the rows
+   * actually stamped with its id — the invariant an interrupted claim pass
+   * breaks. Clean replays short-circuit on this; repair runs only when it
+   * fails.
+   */
+  private async membershipConsistent(
+    payout: CommissionPayout,
+  ): Promise<boolean> {
+    const payoutId = payout.id ?? '';
+    const members = await this.deps.commissions.findByPayout(payoutId);
+    const memberAdjustments =
+      await this.deps.adjustments.findByPayout(payoutId);
+    const commissionTotalCents = members.reduce(
+      (sum, c) => sum + c.amountCents,
+      0,
+    );
+    const adjustmentTotalCents = memberAdjustments.reduce(
+      (sum, a) => sum + a.amountCents,
+      0,
+    );
+    return (
+      payout.commissionTotalCents === commissionTotalCents &&
+      payout.adjustmentTotalCents === adjustmentTotalCents &&
+      payout.totalAmountCents === commissionTotalCents + adjustmentTotalCents
+    );
+  }
+
+  /**
+   * Claim pass + totals reconciliation for a PENDING payout.
+   *
+   * The claim set is the union of rows already stamped with this payout
+   * (an interrupted earlier pass) and the currently gathered eligible
+   * rows. Claims go through the collections' conditional `claimForPayout`
+   * (rows owned by another batch are skipped); totals are then recomputed
+   * from the claimed rows and saved when they drift from what the payout
+   * carries. In the pathological all-rows-raced-away case the payout keeps
+   * zero totals and a note — auditable, never double-paid.
+   */
+  private async claimAndReconcile(
+    payout: CommissionPayout,
+    input: CreatePayoutBatchInput,
+  ): Promise<Omit<CreatePayoutBatchResult, 'created'>> {
+    const payoutId = payout.id ?? '';
+
+    const previouslyClaimed =
+      await this.deps.commissions.findByPayout(payoutId);
+    const gathered = await this.deps.commissions.findPayableUnsettled(
+      input.earnerId,
+      input.currency,
+    );
+    const commissionIds = [
+      ...new Set(
+        [...previouslyClaimed, ...gathered]
+          .map((c) => c.id)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const claimedCommissions = await this.deps.commissions.claimForPayout(
+      commissionIds,
+      payoutId,
+    );
+
+    const previouslyClaimedAdjustments =
+      await this.deps.adjustments.findByPayout(payoutId);
+    const gatheredAdjustments = await this.findEligibleUnsettledAdjustments(
+      input.earnerId,
+      input.currency,
+    );
+    const adjustmentIds = [
+      ...new Set(
+        [...previouslyClaimedAdjustments, ...gatheredAdjustments]
+          .map((a) => a.id)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const claimedAdjustments = await this.deps.adjustments.claimForPayout(
+      adjustmentIds,
+      payoutId,
+    );
+
+    const commissionTotalCents = claimedCommissions.reduce(
+      (sum, c) => sum + c.amountCents,
+      0,
+    );
+    const adjustmentTotalCents = claimedAdjustments.reduce(
+      (sum, a) => sum + a.amountCents,
+      0,
+    );
+    const totalAmountCents = commissionTotalCents + adjustmentTotalCents;
+
+    if (
+      payout.commissionTotalCents !== commissionTotalCents ||
+      payout.adjustmentTotalCents !== adjustmentTotalCents ||
+      payout.totalAmountCents !== totalAmountCents
+    ) {
+      payout.commissionTotalCents = commissionTotalCents;
+      payout.adjustmentTotalCents = adjustmentTotalCents;
+      payout.totalAmountCents = totalAmountCents;
+      if (claimedCommissions.length === 0 && claimedAdjustments.length === 0) {
+        payout.notes =
+          'no rows claimed (raced by a concurrent batch); nothing will be paid';
+      }
+      await payout.save();
     }
 
     return {
       payout,
-      created: true,
-      settledCommissionIds,
-      settledAdjustmentIds,
+      settledCommissionIds: claimedCommissions
+        .map((c) => c.id)
+        .filter((id): id is string => !!id),
+      settledAdjustmentIds: claimedAdjustments
+        .map((a) => a.id)
+        .filter((id): id is string => !!id),
     };
   }
 
   /**
-   * Complete a payout: `payout.complete(paymentReference)` (requires status
-   * `processing`), then flip the batch's settled commissions
-   * `payable → paid`. Adjustments carry no status — stamping `payoutId` at
-   * batch time already settled them.
+   * Complete a payout: flip the batch's settled commissions
+   * `payable → paid` FIRST, then `payout.complete(paymentReference)`
+   * (requires status `processing`). Ordering matters for recoverability —
+   * if a member save fails mid-loop the payout is still `processing`, so a
+   * retry finishes the remaining members (already-paid ones are skipped)
+   * and then finalizes; the terminal transition never strands `payable`
+   * members behind a `completed` payout. Adjustments carry no status —
+   * stamping `payoutId` at batch time already settled them.
    */
   async completePayout(
     payoutId: string,
@@ -224,8 +357,16 @@ export class CommissionPayoutService {
     now: Date = new Date(),
   ): Promise<CommissionPayout> {
     const payout = await this.requirePayout(payoutId);
-    payout.complete(paymentReference, now);
-    await payout.save();
+    if (!payout.isProcessing()) {
+      throw new Error(
+        `CommissionPayout ${payout.id ?? '<new>'}: cannot complete from status '${payout.status}'`,
+      );
+    }
+    if (!paymentReference) {
+      throw new Error(
+        `CommissionPayout ${payout.id ?? '<new>'}: complete() requires a paymentReference`,
+      );
+    }
 
     const members = await this.deps.commissions.findByPayout(payoutId);
     for (const commission of members) {
@@ -234,6 +375,9 @@ export class CommissionPayoutService {
         await commission.save();
       }
     }
+
+    payout.complete(paymentReference, now);
+    await payout.save();
     return payout;
   }
 

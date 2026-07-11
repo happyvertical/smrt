@@ -59,6 +59,34 @@ export class CommissionAdjustmentCollection extends SmrtCollection<CommissionAdj
       orderBy: 'created_at ASC',
     });
   }
+
+  /**
+   * Conditionally claim adjustment rows for a payout batch — the
+   * adjustment twin of `CommissionCollection.claimForPayout`. Rows already
+   * claimed by a DIFFERENT payout are skipped; rows already claimed by THIS
+   * payout pass through (idempotent retry / repair); every claim is
+   * verified by a post-save re-read. Returns the claimed rows.
+   */
+  async claimForPayout(
+    adjustmentIds: string[],
+    payoutId: string,
+  ): Promise<CommissionAdjustment[]> {
+    const claimed: CommissionAdjustment[] = [];
+    for (const id of adjustmentIds) {
+      const row = await this.get({ id });
+      if (!row) continue;
+      if (row.payoutId && row.payoutId !== payoutId) continue; // other batch
+      if (!row.payoutId) {
+        row.payoutId = payoutId;
+        await row.save();
+      }
+      const verified = await this.get({ id });
+      if (verified && verified.payoutId === payoutId) {
+        claimed.push(verified);
+      }
+    }
+    return claimed;
+  }
 }
 
 export default CommissionAdjustmentCollection;

@@ -159,6 +159,18 @@ export class CommissionCalculationService {
     }
 
     const shareFraction = input.shareFraction ?? 1;
+    // Money guard: an out-of-range or non-finite fraction would persist
+    // overpayment, negative, or NaN commissions — reject before any
+    // component calculates.
+    if (
+      !Number.isFinite(shareFraction) ||
+      shareFraction < 0 ||
+      shareFraction > 1
+    ) {
+      throw new Error(
+        `CommissionCalculationService.calculateForEvent: shareFraction must be a finite number in [0, 1], got ${String(shareFraction)}`,
+      );
+    }
     const termsRef =
       input.termsSnapshotId || `${input.planKey}@${input.planVersion}`;
 

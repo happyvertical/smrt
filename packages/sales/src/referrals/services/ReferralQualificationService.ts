@@ -204,7 +204,7 @@ export class ReferralQualificationService {
       };
     }
 
-    const plan = await this.resolvePlan(agreement);
+    const plan = await this.resolvePlan(agreement, now);
     if (!plan) {
       return {
         qualified: false,
@@ -268,7 +268,7 @@ export class ReferralQualificationService {
         reason: 'no_active_agreement',
       };
     }
-    const plan = await this.resolvePlan(agreement);
+    const plan = await this.resolvePlan(agreement, now);
     if (!plan) {
       return {
         requalified: false,
@@ -332,6 +332,7 @@ export class ReferralQualificationService {
    */
   private async resolvePlan(
     agreement: ReferralAgreement,
+    at: Date = new Date(),
   ): Promise<CommissionPlan | null> {
     if (!agreement.commissionPlanKey) return null;
     if (agreement.commissionPlanVersion > 0) {
@@ -345,7 +346,13 @@ export class ReferralQualificationService {
       const plan = results[0];
       return plan && plan.status === 'active' ? plan : null;
     }
-    return await this.deps.plans.latestActiveByKey(agreement.commissionPlanKey);
+    // Unpinned agreements resolve the version in effect at the
+    // qualification clock — a future-dated active amendment must not
+    // govern earlier qualifications.
+    return await this.deps.plans.latestActiveByKey(
+      agreement.commissionPlanKey,
+      at,
+    );
   }
 
   /**

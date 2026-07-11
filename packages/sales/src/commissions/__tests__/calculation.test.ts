@@ -453,4 +453,24 @@ describe('CommissionCalculationService', () => {
     );
     expect(commission.tenantId).toBe('tenant-x');
   });
+
+  it('rejects a shareFraction outside [0, 1] or non-finite (codex P2)', async () => {
+    const event = await createEvent({ grossAmountCents: 10000 });
+    const components: CommissionPlanComponent[] = [
+      { key: 'guard', trigger: '*', basis: 'gross', rate: 0.1 },
+    ];
+    for (const bad of [-0.1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(
+        service.calculateForEvent(
+          baseInput(event, components, { shareFraction: bad }),
+        ),
+      ).rejects.toThrow(/shareFraction must be a finite number in \[0, 1\]/);
+    }
+    // Boundary values are legal: 0 produces a zero-amount commission.
+    const zero = await service.calculateForEvent(
+      baseInput(event, components, { shareFraction: 0 }),
+    );
+    expect(zero.created).toHaveLength(1);
+    expect(zero.created[0]?.amountCents).toBe(0);
+  });
 });
