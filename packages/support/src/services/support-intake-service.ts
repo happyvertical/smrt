@@ -29,6 +29,7 @@ import {
   SupportChannelBindingCollection,
 } from '../models/support-channel-binding.js';
 import type { SupportInteraction } from '../models/support-interaction.js';
+import { KeyedMutex } from './keyed-mutex.js';
 import { SupportCaseService } from './support-case-service.js';
 
 /** Qualified source types intake understands. */
@@ -95,6 +96,7 @@ export class SupportIntakeService {
   readonly caseService: SupportCaseService;
   readonly bindings: SupportChannelBindingCollection;
   private readonly options: SupportIntakeOptions;
+  private readonly conversationMutex = new KeyedMutex();
 
   protected constructor(
     caseService: SupportCaseService,
@@ -253,6 +255,33 @@ export class SupportIntakeService {
 
   /** The shared create-or-join core (deterministic per conversation key). */
   private async createOrJoin(input: {
+    binding: SupportChannelBinding;
+    threadKey: string;
+    sourceKey: string;
+    tenantId: string | null;
+    subject: string;
+    body: string;
+    clientProfileId: string | null;
+    openedByProfileId: string | null;
+    authorProfileId: string | null;
+    occurredAt?: Date;
+    sourceType: string;
+    sourceId: string;
+    rfcMessageId?: string | null;
+    caseMetadata?: Record<string, unknown>;
+    interactionMetadata?: Record<string, unknown>;
+  }): Promise<IntakeResult> {
+    // Serialize per conversation: two concurrent first messages for the same
+    // room/thread must not both observe "no open case" and split one
+    // conversation across duplicate canonical cases (their source keys
+    // differ, so row uniqueness alone cannot catch this).
+    const conversationKey = `${input.binding.id ?? ''}:${input.threadKey}`;
+    return this.conversationMutex.run(conversationKey, () =>
+      this.createOrJoinExclusive(input),
+    );
+  }
+
+  private async createOrJoinExclusive(input: {
     binding: SupportChannelBinding;
     threadKey: string;
     sourceKey: string;

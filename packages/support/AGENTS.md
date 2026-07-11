@@ -19,8 +19,11 @@ driving its execution; the delivery side reports status echoes back.
 
 Case-side models are **internal**: generated API/CLI/MCP surfaces are
 read-only (`list`/`get`) and every write goes through the service facades
-(the `smrt-chat` `ChatService` idiom). Configuration models expose full
-generated CRUD.
+(the `smrt-chat` `ChatService` idiom). Operational configuration models
+(bindings, policies, specialists, qualifications, availability) expose full
+generated CRUD; **commercial terms** (`SupportPlan`,
+`SupportCompensationPlan`) are read-only too — their writes flow through the
+`support.manage-plans`-gated `SupportPlanAdminService`.
 
 ### Case core (#1926)
 
@@ -167,6 +170,10 @@ generated CRUD.
   checkAndEscalate` (background-eligible, at-least-once-safe) marks the
   breach and escalates through the plan's policy steps (notify/reassign,
   delayed follow-up levels), transitioning the case to `escalated`.
+- **SupportPlanAdminService** — the permission-gated write surface for
+  commercial terms: create/update/archive for Managed Support Plans and
+  Support Compensation Plans, every act behind `support.manage-plans` with
+  cross-tenant writes refused (generated CRUD on both models is read-only).
 - **SupportRoutingService** — explainable ranked routing (FR-30):
   `rankSpecialists` hard-filters on active status, effective Project
   Support Qualification, workload cap, and availability windows (specialist

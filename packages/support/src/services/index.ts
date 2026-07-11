@@ -20,6 +20,7 @@ export {
   type HumanHandoffServiceOptions,
   type SpecialistRouter,
 } from './human-handoff-service.js';
+export { KeyedMutex } from './keyed-mutex.js';
 export {
   DEFAULT_SEVERITY_KEY,
   ESCALATION_JOB_PRIORITY,
@@ -67,6 +68,11 @@ export {
   type SupportIntakeOptions,
   SupportIntakeService,
 } from './support-intake-service.js';
+export {
+  type PlanAdminActor,
+  PlanAdminDeniedError,
+  SupportPlanAdminService,
+} from './support-plan-admin-service.js';
 export {
   type AutoAssignResult,
   type RankedSpecialist,

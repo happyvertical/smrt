@@ -44,6 +44,10 @@ const READ_ONLY_MODELS = [
   'ServiceTimeEntry',
   'SupportCharge',
   'SupportCompensation',
+  // Commercial terms write only through the `support.manage-plans`-gated
+  // SupportPlanAdminService — never via generated CRUD.
+  'SupportPlan',
+  'SupportCompensationPlan',
 ];
 
 const FULL_CRUD_MODELS = [
@@ -52,8 +56,6 @@ const FULL_CRUD_MODELS = [
   'SupportSpecialist',
   'SupportQualification',
   'SupportAvailability',
-  'SupportPlan',
-  'SupportCompensationPlan',
 ];
 
 describe('generated surfaces', () => {

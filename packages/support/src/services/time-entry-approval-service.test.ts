@@ -447,6 +447,38 @@ describe('TimeEntryApprovalService', () => {
     });
   });
 
+  describe('concurrent approvals', () => {
+    it('never over-consumes included time when two approvals race on one case', async () => {
+      const plan = await planWith(
+        { mode: 'automatic' },
+        { includedMinutes: 60, overageHourlyRate: 120.0 },
+      );
+      const supportCase = await caseUnder(plan);
+      const first = await submittedEntry(supportCase.id ?? '', {
+        durationSeconds: 3600,
+      });
+      const second = await submittedEntry(supportCase.id ?? '', {
+        durationSeconds: 3600,
+      });
+
+      // Both 60-minute entries race a 60-minute allowance: exactly one may
+      // consume it; the other bills the full hour (codex review round 2,
+      // PR #1943 — approvals serialize per case).
+      const [a, b] = await Promise.all([
+        approvalService.approve(first.id ?? '', { at: APPROVE_AT }),
+        approvalService.approve(second.id ?? '', { at: APPROVE_AT }),
+      ]);
+
+      const amounts = [a.charge.amount, b.charge.amount].sort((x, y) => x - y);
+      expect(amounts[0]).toBeCloseTo(0, 2);
+      expect(amounts[1]).toBeCloseTo(120.0, 2);
+      const consumed =
+        (a.charge.includedSecondsApplied ?? 0) +
+        (b.charge.includedSecondsApplied ?? 0);
+      expect(consumed).toBe(3600);
+    });
+  });
+
   describe('approval retryability (partial-failure recovery)', () => {
     it('re-approving after a partial settlement write refreshes the same rows without double-counting', async () => {
       const plan = await planWith(

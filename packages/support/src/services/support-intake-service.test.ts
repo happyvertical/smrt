@@ -107,6 +107,36 @@ describe('SupportIntakeService', () => {
       expect(interactions).toHaveLength(1);
     });
 
+    it('keeps one canonical case under concurrent first messages', async () => {
+      await bindRoom();
+      // Two DIFFERENT messages race intake for a brand-new conversation —
+      // without per-conversation serialization both would observe "no open
+      // case" and split the conversation (codex review round 2, PR #1943).
+      const [a, b] = await Promise.all([
+        intake.ingestChatMessage({
+          messageId: 'race-1',
+          roomId: 'room-1',
+          senderProfileId: 'person-1',
+          content: 'first racer',
+        }),
+        intake.ingestChatMessage({
+          messageId: 'race-2',
+          roomId: 'room-1',
+          senderProfileId: 'person-1',
+          content: 'second racer',
+        }),
+      ]);
+
+      expect(a.supportCase?.id).toBe(b.supportCase?.id);
+      expect([a.outcome, b.outcome].sort()).toEqual(['created', 'joined']);
+      const cases = await intake.caseService.cases.findQueue({});
+      expect(cases).toHaveLength(1);
+      const interactions = await intake.caseService.interactions.forCase(
+        cases[0]?.id ?? '',
+      );
+      expect(interactions).toHaveLength(2);
+    });
+
     it('opens distinct cases per thread within one room', async () => {
       await bindRoom();
       const main = await intake.ingestChatMessage({

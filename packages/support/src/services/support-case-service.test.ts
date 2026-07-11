@@ -49,6 +49,55 @@ describe('SupportCaseService', () => {
     expect(events[0]?.eventType).toBe('created');
   });
 
+  it("refuses another tenant's plan on open and on apply", async () => {
+    const foreignPlan = await service.plans.create({
+      tenantId: 'tenant-b',
+      planKey: 'foreign',
+      name: 'Foreign',
+      overageHourlyRate: 500.0,
+    });
+
+    await expect(
+      service.openCase({
+        subject: 'wrong plan',
+        tenantId: 'tenant-a',
+        planId: foreignPlan.id,
+      }),
+    ).rejects.toThrow(/cannot govern a case in tenant/);
+
+    const supportCase = await service.openCase({
+      subject: 'no plan yet',
+      tenantId: 'tenant-a',
+    });
+    await expect(service.applyPlan(supportCase, foreignPlan)).rejects.toThrow(
+      /cannot govern a case in tenant/,
+    );
+
+    // Global NULL-tenant template plans apply anywhere.
+    const globalPlan = await service.plans.create({
+      planKey: 'global',
+      name: 'Global',
+    });
+    await service.applyPlan(supportCase, globalPlan);
+    expect(supportCase.planId).toBe(globalPlan.id);
+  });
+
+  it('refuses to reopen a case that is not terminal', async () => {
+    const supportCase = await service.openCase({ subject: 'still open' });
+    await expect(
+      service.reopen(supportCase, { actorKind: 'client' }),
+    ).rejects.toThrow(/only resolved or closed cases can be reopened/);
+    expect(supportCase.reopenCount).toBe(0);
+
+    await service.resolve(supportCase, {
+      actorKind: 'specialist',
+      summary: 'done',
+    });
+    await expect(
+      service.reopen(supportCase, { actorKind: 'client', to: 'closed' }),
+    ).rejects.toThrow(/must land in an active status/);
+  });
+
   it('captures the plan snapshot when opening under a plan', async () => {
     const plan = await service.plans.create({
       planKey: 'gold',

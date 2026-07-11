@@ -52,6 +52,7 @@ import type {
   TimeEntryApprovalPath,
   TimeEntryEvidence,
 } from '../types.js';
+import { KeyedMutex } from './keyed-mutex.js';
 import { SupportCaseService } from './support-case-service.js';
 
 /** Thrown when an approval-path or tenant gate refuses the acting principal. */
@@ -151,6 +152,7 @@ export class TimeEntryApprovalService {
   readonly compensations: SupportCompensationCollection;
   readonly compensationPlans: SupportCompensationPlanCollection;
   readonly caseService: SupportCaseService;
+  private readonly approvalMutex = new KeyedMutex();
 
   protected constructor(collections: {
     entries: ServiceTimeEntryCollection;
@@ -275,6 +277,19 @@ export class TimeEntryApprovalService {
     input: ApproveTimeEntryInput = {},
   ): Promise<ApproveTimeEntryResult> {
     const entry = await this.getEntry(entryRef);
+    // Serialize per work context: concurrent approvals against the same case
+    // must not each read the same remaining included allowance and both
+    // consume it (over-granting included time / under-billing overage).
+    const lockKey = entry.caseId ?? `entry:${entry.id ?? ''}`;
+    return this.approvalMutex.run(lockKey, () =>
+      this.approveExclusive(entry, input),
+    );
+  }
+
+  private async approveExclusive(
+    entry: ServiceTimeEntry,
+    input: ApproveTimeEntryInput,
+  ): Promise<ApproveTimeEntryResult> {
     if (entry.status !== 'submitted') {
       throw new Error(
         `ServiceTimeEntry ${entry.id}: only 'submitted' entries can be approved (status is '${entry.status}').`,

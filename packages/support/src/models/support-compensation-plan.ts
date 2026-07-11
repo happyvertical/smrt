@@ -20,10 +20,13 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { parseJsonField } from '../types.js';
 
+// Provider earning terms are written only through the
+// `support.manage-plans`-gated `SupportPlanAdminService`; the generated
+// surface stays read-only (see SupportPlan for the rationale).
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'support_compensation_plans',
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
   conflictColumns: ['tenant_id', 'specialist_id', 'effective_from'],

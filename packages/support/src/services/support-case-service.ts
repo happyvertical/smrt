@@ -168,6 +168,8 @@ export class SupportCaseService {
     if (input.planId) {
       const plan = await this.plans.get({ id: input.planId });
       if (plan) {
+        // applyPlan validates the tenant boundary; a foreign plan aborts the
+        // open so no case persists with another tenant's terms.
         await this.applyPlan(supportCase, plan);
       }
     }
@@ -187,9 +189,18 @@ export class SupportCaseService {
 
   /**
    * Capture the plan terms onto the case (`planSnapshot`) so later plan edits
-   * never rewrite what this case was handled under.
+   * never rewrite what this case was handled under. A tenant-owned plan only
+   * applies to that tenant's cases (global NULL-tenant template plans apply
+   * anywhere) — a foreign plan would snapshot another tenant's pricing,
+   * approval, and escalation terms.
    */
   async applyPlan(supportCase: SupportCase, plan: SupportPlan): Promise<void> {
+    if (plan.tenantId && plan.tenantId !== supportCase.tenantId) {
+      throw new Error(
+        `SupportPlan '${plan.planKey || plan.id}' belongs to tenant '${plan.tenantId}' ` +
+          `and cannot govern a case in tenant '${supportCase.tenantId}'.`,
+      );
+    }
     supportCase.planId = plan.id ?? null;
     supportCase.setPlanSnapshot(plan.snapshotTerms());
     await supportCase.save();
@@ -382,6 +393,20 @@ export class SupportCaseService {
   ): Promise<SupportCase> {
     const supportCase =
       typeof caseRef === 'string' ? await this.getCase(caseRef) : caseRef;
+    // Only terminal cases reopen, and only into an active state — anything
+    // else would corrupt the reopen history for a case that never closed.
+    if (supportCase.status !== 'resolved' && supportCase.status !== 'closed') {
+      throw new Error(
+        `SupportCase ${supportCase.caseNumber || supportCase.id}: only ` +
+          `resolved or closed cases can be reopened (status is '${supportCase.status}').`,
+      );
+    }
+    const to = actor.to ?? 'triaged';
+    if (to === 'resolved' || to === 'closed') {
+      throw new Error(
+        `SupportCase: a reopen must land in an active status (got '${to}').`,
+      );
+    }
     const priorResolution = {
       resolvedAt: supportCase.resolvedAt?.toISOString() ?? null,
       resolvedByProfileId: supportCase.resolvedByProfileId,
@@ -391,7 +416,7 @@ export class SupportCaseService {
       reopenIndex: supportCase.reopenCount + 1,
     };
     const from = supportCase.status;
-    supportCase.status = actor.to ?? 'triaged';
+    supportCase.status = to;
     supportCase.reopenCount += 1;
     supportCase.lastReopenedAt = new Date();
     supportCase.resolvedAt = null;

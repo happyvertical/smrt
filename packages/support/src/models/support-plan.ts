@@ -43,10 +43,14 @@ export const DEFAULT_TARGET_MINUTES: ServiceTargetMinutes = {
   resolutionMinutes: null,
 };
 
+// Commercial terms are written only through the `support.manage-plans`-gated
+// `SupportPlanAdminService` — the generated surface stays read-only so an
+// authenticated caller cannot rewrite pricing/service terms via CRUD routes
+// (`create` would even upsert over `conflictColumns`).
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'support_plans',
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
   conflictColumns: ['tenant_id', 'plan_key'],
