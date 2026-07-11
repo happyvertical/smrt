@@ -1,6 +1,7 @@
 <script lang="ts">
 import type {
   DevelopmentRequestEvidence,
+  DevelopmentRequestOrigin,
   DevelopmentRequestStatus,
   DevelopmentRequestType,
   DevelopmentRequestVisibility,
@@ -8,12 +9,12 @@ import type {
 
 export interface DevelopmentRequestListItem {
   id: string;
-  requesterId?: string;
+  requesterId: string;
   type: DevelopmentRequestType;
   description: string;
   status: DevelopmentRequestStatus;
   visibility?: DevelopmentRequestVisibility;
-  origin?: string;
+  origin?: DevelopmentRequestOrigin;
   discussion?: string;
   evidence?: DevelopmentRequestEvidence[];
   createdAt?: Date | string;

@@ -1,9 +1,236 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379252178,
+  "timestamp": 1783796136706,
   "packageName": "@happyvertical/smrt-projects",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.39.1",
   "objects": {
+    "@happyvertical/smrt-projects:DevelopmentRequestHistoryCollection": {
+      "name": "developmentrequesthistorycollection",
+      "className": "DevelopmentRequestHistoryCollection",
+      "qualifiedName": "@happyvertical/smrt-projects:DevelopmentRequestHistoryCollection",
+      "collection": "developmentrequesthistories",
+      "filePath": "packages/projects/src/collections/DevelopmentRequestHistories.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {},
+      "methods": {
+        "listForRequest": {
+          "name": "listForRequest",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "requestId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<DevelopmentRequestHistory[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "development_request_histories"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "DevelopmentRequestHistory",
+      "exportName": "DevelopmentRequestHistoryCollection",
+      "collectionExportName": "DevelopmentRequestHistoryCollectionCollection",
+      "schema": {
+        "tableName": "development_request_histories",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"development_request_histories\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "development_request_histories_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "development_request_histories_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "97a2530c"
+      }
+    },
+    "@happyvertical/smrt-projects:DevelopmentRequestCollection": {
+      "name": "developmentrequestcollection",
+      "className": "DevelopmentRequestCollection",
+      "qualifiedName": "@happyvertical/smrt-projects:DevelopmentRequestCollection",
+      "collection": "developmentrequests",
+      "filePath": "packages/projects/src/collections/DevelopmentRequests.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {},
+      "methods": {
+        "createManaged": {
+          "name": "createManaged",
+          "async": true,
+          "parameters": [
+            {
+              "name": "input",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<DevelopmentRequest>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listByIntegrationRequester": {
+          "name": "listByIntegrationRequester",
+          "async": true,
+          "parameters": [
+            {
+              "name": "input",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<DevelopmentRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "transitionStatus": {
+          "name": "transitionStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "requestId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "transition",
+              "type": "DevelopmentRequestTransitionInput",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<DevelopmentRequest>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listForProject": {
+          "name": "listForProject",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "projectId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "status",
+              "type": "DevelopmentRequestStatus",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<DevelopmentRequest[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "development_requests"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "DevelopmentRequest",
+      "exportName": "DevelopmentRequestCollection",
+      "collectionExportName": "DevelopmentRequestCollectionCollection",
+      "schema": {
+        "tableName": "development_requests",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"development_requests\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "development_requests_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "development_requests_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "9d07b06c"
+      }
+    },
     "@happyvertical/smrt-projects:IssueCollection": {
       "name": "issuecollection",
       "className": "IssueCollection",
@@ -208,8 +435,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -247,7 +474,243 @@
             "unique": true
           }
         ],
-        "version": "6878d960"
+        "version": "93b3c6f0"
+      }
+    },
+    "@happyvertical/smrt-projects:ProjectIntegrationAuditCollection": {
+      "name": "projectintegrationauditcollection",
+      "className": "ProjectIntegrationAuditCollection",
+      "qualifiedName": "@happyvertical/smrt-projects:ProjectIntegrationAuditCollection",
+      "collection": "projectintegrationaudits",
+      "filePath": "packages/projects/src/collections/ProjectIntegrationAudits.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {},
+      "methods": {
+        "listForIntegration": {
+          "name": "listForIntegration",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "integrationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProjectIntegrationAudit[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "project_integration_audits"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProjectIntegrationAudit",
+      "exportName": "ProjectIntegrationAuditCollection",
+      "collectionExportName": "ProjectIntegrationAuditCollectionCollection",
+      "schema": {
+        "tableName": "project_integration_audits",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"project_integration_audits\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "project_integration_audits_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "project_integration_audits_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "3066e366"
+      }
+    },
+    "@happyvertical/smrt-projects:ProjectIntegrationCollection": {
+      "name": "projectintegrationcollection",
+      "className": "ProjectIntegrationCollection",
+      "qualifiedName": "@happyvertical/smrt-projects:ProjectIntegrationCollection",
+      "collection": "projectintegrations",
+      "filePath": "packages/projects/src/collections/ProjectIntegrations.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {},
+      "methods": {
+        "provision": {
+          "name": "provision",
+          "async": true,
+          "parameters": [
+            {
+              "name": "input",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<object>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "rotate": {
+          "name": "rotate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "integrationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<object>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "revoke": {
+          "name": "revoke",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "integrationId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProjectIntegration>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "authenticate": {
+          "name": "authenticate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "credential",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProjectIntegration | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listForProject": {
+          "name": "listForProject",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "projectId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProjectIntegration[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "project_integrations"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ProjectIntegration",
+      "exportName": "ProjectIntegrationCollection",
+      "collectionExportName": "ProjectIntegrationCollectionCollection",
+      "schema": {
+        "tableName": "project_integrations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"project_integrations\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "project_integrations_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "project_integrations_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "61d58a70"
       }
     },
     "@happyvertical/smrt-projects:ProjectCollection": {
@@ -411,8 +874,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -450,7 +913,7 @@
             "unique": true
           }
         ],
-        "version": "e20f67a7"
+        "version": "f713c200"
       }
     },
     "@happyvertical/smrt-projects:PullRequestCollection": {
@@ -673,8 +1136,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -712,7 +1175,7 @@
             "unique": true
           }
         ],
-        "version": "6b253fe9"
+        "version": "798511d0"
       }
     },
     "@happyvertical/smrt-projects:RepositoryCollection": {
@@ -866,8 +1329,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -905,7 +1368,7 @@
             "unique": true
           }
         ],
-        "version": "8a21736d"
+        "version": "a9b3565e"
       }
     },
     "@happyvertical/smrt-projects:Comment": {
@@ -918,7 +1381,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "issueId": {
           "type": "foreignKey",
@@ -1022,6 +1499,9 @@
             "list",
             "get"
           ]
+        },
+        "tenantScoped": {
+          "mode": "optional"
         }
       },
       "extends": "SmrtObject",
@@ -1034,8 +1514,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1058,15 +1538,15 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "issue_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "comment_id": {
             "type": "TEXT",
@@ -1109,7 +1589,441 @@
             "unique": true
           }
         ],
-        "version": "846958c1"
+        "version": "ed899e3f"
+      }
+    },
+    "@happyvertical/smrt-projects:DevelopmentRequest": {
+      "name": "developmentrequest",
+      "className": "DevelopmentRequest",
+      "qualifiedName": "@happyvertical/smrt-projects:DevelopmentRequest",
+      "collection": "developmentrequests",
+      "filePath": "packages/projects/src/models/DevelopmentRequest.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "projectId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "integrationId": {
+          "type": "foreignKey",
+          "required": true,
+          "related": "ProjectIntegration",
+          "_meta": {
+            "required": true
+          }
+        },
+        "requesterId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "participantId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "type": {
+          "type": "text",
+          "required": false,
+          "default": "feature"
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "evidence": {
+          "type": "text",
+          "required": false,
+          "default": "[]"
+        },
+        "visibility": {
+          "type": "text",
+          "required": false,
+          "default": "requester"
+        },
+        "origin": {
+          "type": "text",
+          "required": false,
+          "default": "managed-app"
+        },
+        "discussion": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "submitted"
+        }
+      },
+      "methods": {
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEvidence": {
+          "name": "getEvidence",
+          "async": false,
+          "parameters": [],
+          "returnType": "DevelopmentRequestEvidence[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setEvidence": {
+          "name": "setEvidence",
+          "async": false,
+          "parameters": [
+            {
+              "name": "value",
+              "type": "DevelopmentRequestEvidence[] | string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "development_requests",
+        "api": false,
+        "mcp": false,
+        "cli": false,
+        "tenantScoped": {
+          "mode": "required"
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "DevelopmentRequest",
+      "collectionExportName": "DevelopmentRequestCollection",
+      "validationRules": [
+        {
+          "field": "tenantId",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "integrationId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
+      "schema": {
+        "tableName": "development_requests",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"development_requests\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"project_id\" TEXT DEFAULT '',\n  \"integration_id\" UUID NOT NULL,\n  \"requester_id\" TEXT DEFAULT '',\n  \"participant_id\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'feature',\n  \"description\" TEXT DEFAULT '',\n  \"evidence\" TEXT DEFAULT '[]',\n  \"visibility\" TEXT DEFAULT 'requester',\n  \"origin\" TEXT DEFAULT 'managed-app',\n  \"discussion\" TEXT DEFAULT '',\n  \"status\" TEXT DEFAULT 'submitted'\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "project_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "integration_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false
+          },
+          "requester_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "participant_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "type": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "feature"
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "evidence": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "[]"
+          },
+          "visibility": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "requester"
+          },
+          "origin": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "managed-app"
+          },
+          "discussion": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "submitted"
+          }
+        },
+        "indexes": [
+          {
+            "name": "development_requests_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "development_requests_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "0f9594f9"
+      }
+    },
+    "@happyvertical/smrt-projects:DevelopmentRequestHistory": {
+      "name": "developmentrequesthistory",
+      "className": "DevelopmentRequestHistory",
+      "qualifiedName": "@happyvertical/smrt-projects:DevelopmentRequestHistory",
+      "collection": "developmentrequesthistories",
+      "filePath": "packages/projects/src/models/DevelopmentRequestHistory.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "requestId": {
+          "type": "foreignKey",
+          "required": true,
+          "related": "DevelopmentRequest",
+          "_meta": {
+            "required": true
+          }
+        },
+        "fromStatus": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "toStatus": {
+          "type": "text",
+          "required": false,
+          "default": "submitted"
+        },
+        "actorType": {
+          "type": "text",
+          "required": false,
+          "default": "system"
+        },
+        "actorId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "note": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "development_request_histories",
+        "api": false,
+        "mcp": false,
+        "cli": false,
+        "tenantScoped": {
+          "mode": "required"
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "DevelopmentRequestHistory",
+      "collectionExportName": "DevelopmentRequestHistoryCollection",
+      "validationRules": [
+        {
+          "field": "tenantId",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "requestId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
+      "schema": {
+        "tableName": "development_request_histories",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"development_request_histories\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"request_id\" UUID NOT NULL,\n  \"from_status\" TEXT DEFAULT '',\n  \"to_status\" TEXT DEFAULT 'submitted',\n  \"actor_type\" TEXT DEFAULT 'system',\n  \"actor_id\" TEXT DEFAULT '',\n  \"note\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "request_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false
+          },
+          "from_status": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "to_status": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "submitted"
+          },
+          "actor_type": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "system"
+          },
+          "actor_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "note": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "development_request_histories_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "development_request_histories_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "483a3831"
       }
     },
     "@happyvertical/smrt-projects:Issue": {
@@ -1130,7 +2044,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "repositoryId": {
           "type": "foreignKey",
@@ -1253,6 +2181,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -1267,7 +2211,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -1279,7 +2223,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1295,6 +2239,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -1339,6 +2297,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -1366,7 +2338,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -1385,7 +2357,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -1399,7 +2371,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -1429,6 +2401,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -1437,6 +2428,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -1451,6 +2447,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -1465,6 +2466,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -1517,7 +2523,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -1531,7 +2537,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1810,7 +2816,11 @@
             "sync",
             "incorporateFeedback",
             "rollback"
-          ]
+          ],
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
         }
       },
       "extends": "SmrtObject",
@@ -1830,8 +2840,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1862,13 +2872,13 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "repository_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "number": {
             "type": "INTEGER",
@@ -1997,7 +3007,7 @@
             ]
           }
         ],
-        "version": "6be412cc"
+        "version": "e187bb4a"
       }
     },
     "@happyvertical/smrt-projects:Label": {
@@ -2132,8 +3142,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2156,9 +3166,9 @@
           },
           "repository_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "name": {
             "type": "TEXT",
@@ -2195,7 +3205,7 @@
             "unique": true
           }
         ],
-        "version": "e872a7c3"
+        "version": "698e39f8"
       }
     },
     "@happyvertical/smrt-projects:Project": {
@@ -2208,7 +3218,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "projectId": {
           "type": "text",
@@ -2508,7 +3532,11 @@
             "addItem",
             "updateItemStatus",
             "listItems"
-          ]
+          ],
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
         }
       },
       "extends": "SmrtObject",
@@ -2521,8 +3549,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2545,9 +3573,9 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "project_id": {
             "type": "TEXT",
@@ -2643,7 +3671,354 @@
             "unique": true
           }
         ],
-        "version": "6c5ebaa2"
+        "version": "2e8c344a"
+      }
+    },
+    "@happyvertical/smrt-projects:ProjectIntegration": {
+      "name": "projectintegration",
+      "className": "ProjectIntegration",
+      "qualifiedName": "@happyvertical/smrt-projects:ProjectIntegration",
+      "collection": "projectintegrations",
+      "filePath": "packages/projects/src/models/ProjectIntegration.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "projectId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "credentialHash": {
+          "type": "text",
+          "required": false,
+          "default": "",
+          "_meta": {
+            "sensitive": true
+          },
+          "sensitive": true
+        },
+        "capabilities": {
+          "type": "json",
+          "required": false,
+          "default": []
+        },
+        "status": {
+          "type": "text",
+          "required": false,
+          "default": "active"
+        },
+        "revokedAt": {
+          "type": "datetime",
+          "required": false
+        }
+      },
+      "methods": {
+        "hasCapability": {
+          "name": "hasCapability",
+          "async": false,
+          "parameters": [
+            {
+              "name": "capability",
+              "type": "ProjectIntegrationCapability",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isActive": {
+          "name": "isActive",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "project_integrations",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "tenantScoped": {
+          "mode": "required"
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProjectIntegration",
+      "collectionExportName": "ProjectIntegrationCollection",
+      "validationRules": [
+        {
+          "field": "tenantId",
+          "rule": "required",
+          "fieldType": "text"
+        }
+      ],
+      "schema": {
+        "tableName": "project_integrations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"project_integrations\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"project_id\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"credential_hash\" TEXT DEFAULT '',\n  \"capabilities\" JSON DEFAULT '[]',\n  \"status\" TEXT DEFAULT 'active',\n  \"revoked_at\" TIMESTAMP\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "project_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "credential_hash": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": ""
+          },
+          "capabilities": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false,
+            "default": []
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "active"
+          },
+          "revoked_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "project_integrations_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "project_integrations_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "bfbaa783"
+      }
+    },
+    "@happyvertical/smrt-projects:ProjectIntegrationAudit": {
+      "name": "projectintegrationaudit",
+      "className": "ProjectIntegrationAudit",
+      "qualifiedName": "@happyvertical/smrt-projects:ProjectIntegrationAudit",
+      "collection": "projectintegrationaudits",
+      "filePath": "packages/projects/src/models/ProjectIntegrationAudit.ts",
+      "packageName": "@happyvertical/smrt-projects",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "integrationId": {
+          "type": "foreignKey",
+          "required": true,
+          "related": "ProjectIntegration",
+          "_meta": {
+            "required": true
+          }
+        },
+        "action": {
+          "type": "text",
+          "required": false,
+          "default": "created"
+        },
+        "note": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "project_integration_audits",
+        "api": false,
+        "mcp": false,
+        "cli": false,
+        "tenantScoped": {
+          "mode": "required"
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "ProjectIntegrationAudit",
+      "collectionExportName": "ProjectIntegrationAuditCollection",
+      "validationRules": [
+        {
+          "field": "tenantId",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "integrationId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
+      "schema": {
+        "tableName": "project_integration_audits",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"project_integration_audits\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"integration_id\" UUID NOT NULL,\n  \"action\" TEXT DEFAULT 'created',\n  \"note\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "integration_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false
+          },
+          "action": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false,
+            "default": "created"
+          },
+          "note": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "project_integration_audits_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "project_integration_audits_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "acf40ff8"
       }
     },
     "@happyvertical/smrt-projects:PullRequest": {
@@ -2664,7 +4039,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "repositoryId": {
           "type": "foreignKey",
@@ -2831,6 +4220,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -2845,7 +4250,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -2857,7 +4262,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -2873,6 +4278,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -2917,6 +4336,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -2944,7 +4377,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -2963,7 +4396,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -2977,7 +4410,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -3007,6 +4440,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -3015,6 +4467,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -3029,6 +4486,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -3043,6 +4505,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -3095,7 +4562,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -3109,7 +4576,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3474,7 +4941,11 @@
             "summarize",
             "merge",
             "markReady"
-          ]
+          ],
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
         },
         "tableName": "issues",
         "tableStrategy": "sti"
@@ -3496,8 +4967,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3528,13 +4999,13 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "repository_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "number": {
             "type": "INTEGER",
@@ -3663,7 +5134,7 @@
             ]
           }
         ],
-        "version": "7f869200"
+        "version": "f42d9cf0"
       }
     },
     "@happyvertical/smrt-projects:Repository": {
@@ -3676,7 +5147,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "owner": {
           "type": "text",
@@ -3884,7 +5369,11 @@
             "get",
             "sync",
             "create"
-          ]
+          ],
+          "skipApiCheck": true
+        },
+        "tenantScoped": {
+          "mode": "optional"
         }
       },
       "extends": "SmrtObject",
@@ -3897,8 +5386,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3921,9 +5410,9 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "owner": {
             "type": "TEXT",
@@ -4001,7 +5490,7 @@
             "unique": true
           }
         ],
-        "version": "0b8823bb"
+        "version": "c302a5e5"
       }
     }
   },
