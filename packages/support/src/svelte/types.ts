@@ -7,9 +7,11 @@
  * intersections) keep Svelte 5 prop type evaluation cheap.
  */
 
+import type { ServiceTimeEntry } from '../models/service-time-entry.js';
 import type { SupportCase } from '../models/support-case.js';
 import type { SupportCaseEvent } from '../models/support-case-event.js';
 import type { SupportInteraction } from '../models/support-interaction.js';
+import type { SupportCharge } from '../models/support-settlement.js';
 import type { CaseTimelineItem } from '../services/support-case-service.js';
 
 export interface SupportCaseView {
@@ -47,6 +49,31 @@ export interface SupportWorkLinkView {
   targetLabel: string;
   externalUrl: string;
   status: string;
+}
+
+/**
+ * View shape for a Service Time Entry in approval/review surfaces. The first
+ * eight fields deliberately match `smrt-projects`' presentation `TimeEntry`
+ * contract (`packages/projects/src/svelte/utils.ts`) — smrt-support promotes
+ * that presentation-only shape into persisted models, so hosts can reuse
+ * either package's time surfaces over the same view rows.
+ */
+export interface SupportTimeEntryView {
+  id: string;
+  /** ISO date part (`YYYY-MM-DD`) of the work period start. */
+  date: string;
+  /** Worked duration in decimal hours, rounded to 2 decimals. */
+  hours: number;
+  description: string;
+  status: string;
+  /** Client charge amount, when a derived {@link SupportCharge} is supplied. */
+  amount?: number;
+  workerName?: string;
+  /** Hourly rate from the charge's frozen `rateSnapshot`, when supplied. */
+  hourlyRate?: number;
+  source: string;
+  participantKind: string;
+  caseId: string | null;
 }
 
 function toIso(value: Date | string | null | undefined): string | null {
@@ -152,4 +179,53 @@ export function priorityBadgeKey(priority: string): string {
 /** Human-readable label for a snake_case status value. */
 export function humanizeStatus(value: string): string {
   return (value ?? '').replace(/_/g, ' ');
+}
+
+/** Adapt a ServiceTimeEntry model (plus its optional charge) to the view. */
+export function toSupportTimeEntryView(
+  entry: ServiceTimeEntry,
+  opts: { charge?: SupportCharge | null; workerName?: string | null } = {},
+): SupportTimeEntryView {
+  const startIso = toIso(
+    entry.startedAt ?? (entry.created_at as Date | string | undefined) ?? null,
+  );
+  const view: SupportTimeEntryView = {
+    id: entry.id ?? '',
+    date: startIso ? startIso.slice(0, 10) : '',
+    hours: Math.round((entry.durationSeconds / 3600) * 100) / 100,
+    description: entry.description,
+    status: entry.status,
+    source: entry.source,
+    participantKind: entry.participantKind,
+    caseId: entry.caseId,
+  };
+  if (opts.charge) {
+    view.amount = opts.charge.amount;
+    const hourlyRate = opts.charge.getRateSnapshot().hourlyRate;
+    if (typeof hourlyRate === 'number') {
+      view.hourlyRate = hourlyRate;
+    }
+  }
+  if (opts.workerName) {
+    view.workerName = opts.workerName;
+  }
+  return view;
+}
+
+/** Map a time-entry status onto `StatusBadge` default color-scheme keys. */
+export function timeEntryStatusBadgeKey(status: string): string {
+  switch (status) {
+    case 'draft':
+      return 'inactive';
+    case 'submitted':
+      return 'pending';
+    case 'approved':
+      return 'success';
+    case 'rejected':
+      return 'error';
+    case 'corrected':
+      return 'warning';
+    default:
+      return 'pending';
+  }
 }

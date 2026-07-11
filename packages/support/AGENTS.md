@@ -137,6 +137,22 @@ generated CRUD.
   observer keyed on the `ChatMessage`/`Email` class names that never throws
   into the source package's save path. Join semantics: open case → join;
   resolved → reopen; closed → new case.
+- **ServiceTimeEntryService** — the ONE recording contract for all four
+  entry sources (FR-40): `record` validates duration (explicit or derived
+  from the period; `timer` needs both bounds), participant coherence
+  (`human` → `participantProfileId`, `agent` → `agentRef`), and the work
+  context (case and/or work ref; case entries copy the tenant and append a
+  `time_recorded` event); `submit` stamps the submitter.
+- **TimeEntryApprovalService** — the approval gate and only writer of the
+  commercial snapshots (FR-36): `approve` resolves the governing terms (case
+  `planSnapshot` first, live plan fallback, zero-rate default), gates by
+  policy path (`automatic`/`threshold`/`operator`/`client`; operator paths
+  behind `support.approve-time-entry`; cross-tenant principals refused), then
+  derives the `SupportCharge` (included time first, then overage/on-call) and
+  `SupportCompensation` (effective-dated plan) rows; `reject` and `correct`
+  (supersede + linked fresh draft via `correctionOfId`) round out the
+  lifecycle. Case events carry the charge amount only — compensation never
+  leaks case-side.
 
 ## Permissions
 
@@ -149,10 +165,14 @@ or a `PermissionResolver`.
 ## Svelte UI
 
 `@happyvertical/smrt-support/svelte` ships presentational Svelte 5 surfaces:
-`CaseQueue` (priority/status/assignment/channel at a glance, `onselect`) and
-`CaseDetail` (header, meta, linked work, merged timeline). Hosts adapt models
-with `toSupportCaseView` / `toCaseTimelineItemView`. Components use
-`smrt-ui` primitives (`smrtRawPrimitives: "strict"`).
+`CaseQueue` (priority/status/assignment/channel at a glance, `onselect`),
+`CaseDetail` (header, meta, linked work, merged timeline), and
+`TimeEntryApprovalQueue` (date/hours/description/worker/status/amount with
+approve/reject-with-reason actions on submitted rows). Hosts adapt models
+with `toSupportCaseView` / `toCaseTimelineItemView` /
+`toSupportTimeEntryView` — the time-entry view's first eight fields
+deliberately match `smrt-projects`' presentation `TimeEntry` contract.
+Components use `smrt-ui` primitives (`smrtRawPrimitives: "strict"`).
 
 ## Dependencies
 

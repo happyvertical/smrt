@@ -13,6 +13,12 @@ export {
   type SpecialistRouter,
 } from './human-handoff-service.js';
 export {
+  type RecordServiceTimeEntryInput,
+  ServiceTimeEntryService,
+  type ServiceTimeEntryServiceOptions,
+  type SubmitServiceTimeEntryInput,
+} from './service-time-entry-service.js';
+export {
   createDefaultAiBoundary,
   createNoopKnowledgeProvider,
   type KnowledgeSnippet,
@@ -45,3 +51,14 @@ export {
   type SupportIntakeOptions,
   SupportIntakeService,
 } from './support-intake-service.js';
+export {
+  type ApproveTimeEntryInput,
+  type ApproveTimeEntryResult,
+  type CorrectTimeEntryInput,
+  type CorrectTimeEntryResult,
+  type RejectTimeEntryInput,
+  type ResolvedPlanTerms,
+  TimeEntryApprovalDeniedError,
+  TimeEntryApprovalService,
+  type TimeEntryApprovalServiceOptions,
+} from './time-entry-approval-service.js';
