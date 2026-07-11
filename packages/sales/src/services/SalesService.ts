@@ -142,6 +142,7 @@ export class SalesService {
 
     const existing = await this.opportunities.getByLeadId(lead.id ?? '');
     if (existing?.id) {
+      await this.reconcileConvertedLead(lead, args.ownerId);
       const currentStage = await this.requireStage(existing.stageId);
       return {
         opportunityId: existing.id,
@@ -180,6 +181,7 @@ export class SalesService {
         lastStageChangeAt: new Date(),
       });
     if (!created) {
+      await this.reconcileConvertedLead(lead, args.ownerId);
       const currentStage = await this.requireStage(opportunity.stageId);
       return {
         opportunityId: opportunity.id ?? '',
@@ -495,6 +497,26 @@ export class SalesService {
       return `${lead.name.trim()} opportunity`;
     }
     return 'New opportunity';
+  }
+
+  private async reconcileConvertedLead(
+    lead: Lead,
+    ownerId?: string | null,
+  ): Promise<void> {
+    const normalizedOwnerId = ownerId?.trim() || null;
+    const needsConversion = lead.status !== 'converted';
+    const needsOwnerUpdate =
+      normalizedOwnerId !== null && lead.ownerId !== normalizedOwnerId;
+    if (!needsConversion && !needsOwnerUpdate) {
+      return;
+    }
+    if (needsConversion) {
+      lead.markConverted();
+    }
+    if (needsOwnerUpdate && normalizedOwnerId) {
+      lead.assign(normalizedOwnerId);
+    }
+    await lead.save();
   }
 
   private mergeTaggedAcquisition(

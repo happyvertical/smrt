@@ -16,7 +16,24 @@ function normalizeAcquisitionHistory(raw: string | null | undefined): string {
 }
 
 @TenantScoped({ mode: 'required' })
-@smrt({ tableName: 'sales_leads', api: true, cli: true, mcp: true })
+@smrt({
+  tableName: 'sales_leads',
+  api: {
+    writable: [
+      'name',
+      'email',
+      'organization',
+      'ownerId',
+      'status',
+      'qualificationSummary',
+      'qualifiedAt',
+      'qualifiedById',
+      'mergedIntoLeadId',
+    ],
+  },
+  cli: true,
+  mcp: true,
+})
 export class Lead extends SmrtObject {
   @tenantId()
   tenantId: string = '';

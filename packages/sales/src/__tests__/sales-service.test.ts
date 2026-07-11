@@ -167,7 +167,53 @@ describe('SalesService', () => {
     expect(stores.opportunities.create).toHaveBeenCalledWith(
       expect.objectContaining({ _insertOnly: true }),
     );
-    expect(lead.save).not.toHaveBeenCalled();
+    expect(lead.status).toBe('converted');
+    expect(lead.save).toHaveBeenCalledOnce();
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it('reconciles lead conversion state when retrying an existing opportunity', async () => {
+    const lead = new Lead({
+      tenantId: 'tenant-1',
+      name: 'Ada',
+      ownerId: 'rep-old',
+      status: 'qualified',
+    });
+    lead.id = 'lead-1';
+    lead.save = vi.fn(async () => undefined);
+    const opportunity = new Opportunity({
+      tenantId: 'tenant-1',
+      leadId: lead.id,
+      pipelineId: 'pipeline-1',
+      stageId: 'stage-qualified',
+    });
+    opportunity.id = 'opportunity-1';
+    const stage = new PipelineStage({
+      tenantId: 'tenant-1',
+      pipelineId: 'pipeline-1',
+      key: 'qualified',
+      name: 'Qualified',
+    });
+    stage.id = 'stage-qualified';
+    const createActivity = vi.fn();
+    const stores = {
+      leads: { get: vi.fn(async () => lead) },
+      opportunities: { getByLeadId: vi.fn(async () => opportunity) },
+      pipelines: {},
+      stages: { get: vi.fn(async () => stage) },
+      activities: { create: createActivity },
+      leadMerges: {},
+    } as unknown as SalesServiceOptions;
+
+    const result = await new SalesService(stores).convertLeadToOpportunity({
+      leadId: lead.id,
+      ownerId: 'rep-new',
+    });
+
+    expect(result.created).toBe(false);
+    expect(lead.status).toBe('converted');
+    expect(lead.ownerId).toBe('rep-new');
+    expect(lead.save).toHaveBeenCalledOnce();
     expect(createActivity).not.toHaveBeenCalled();
   });
 

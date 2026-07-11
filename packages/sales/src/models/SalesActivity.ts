@@ -16,7 +16,7 @@ import type {
   tableName: 'sales_activities',
   api: { include: ['list', 'get', 'create'] },
   cli: true,
-  mcp: true,
+  mcp: { include: ['list', 'get', 'create'] },
 })
 export class SalesActivity extends SmrtObject {
   @tenantId()
