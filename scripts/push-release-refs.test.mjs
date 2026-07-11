@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { pushReleaseRefs } from './push-release-refs.mjs';
 
-test('supplies GitHub authentication directly to both release pushes', () => {
+test('supplies GitHub authentication directly to the atomic release push', () => {
   const calls = [];
   const spawn = (command, args, options) => {
     calls.push({ command, args, options });
@@ -57,6 +57,18 @@ test('fails before pushing when the GitHub App token is missing', () => {
         spawn: () => assert.fail('git must not run without authentication'),
       }),
     /RELEASE_GITHUB_TOKEN is required/,
+  );
+});
+
+test('fails before pushing when the release version is missing', () => {
+  assert.throws(
+    () =>
+      pushReleaseRefs({
+        githubToken: 'installation-token',
+        releaseVersion: '',
+        spawn: () => assert.fail('git must not run without a release version'),
+      }),
+    /RELEASE_VERSION is required/,
   );
 });
 

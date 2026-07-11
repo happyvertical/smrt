@@ -35,6 +35,10 @@ export function pushReleaseRefs({
   releaseVersion = process.env.RELEASE_VERSION,
   spawn = spawnSync,
 } = {}) {
+  if (!releaseVersion) {
+    fail('RELEASE_VERSION is required to push release refs');
+  }
+
   requireCleanRefPart(baseBranch, 'Release base branch');
   requireCleanRefPart(releaseVersion, 'Release version');
 
