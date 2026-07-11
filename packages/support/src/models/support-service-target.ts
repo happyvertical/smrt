@@ -20,6 +20,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { backgroundEligible } from '@happyvertical/smrt-jobs';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   parseJsonField,
@@ -28,6 +29,11 @@ import {
   type ServiceTargetType,
   type SupportEscalationReason,
 } from '../types.js';
+
+/** Outcome of one {@link SupportServiceTarget.checkAndEscalate} delivery. */
+export interface CheckAndEscalateResult {
+  outcome: 'breached' | 'escalated' | 'rescheduled' | 'noop' | 'missing';
+}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -98,6 +104,77 @@ export class SupportServiceTarget extends SmrtObject {
 
   isRunning(): boolean {
     return this.status === 'pending';
+  }
+
+  /**
+   * One-shot escalation job entry point, delivered at-least-once by the
+   * jobs runner at `dueAt` (and again for delayed policy steps). Reloads its
+   * own persisted state first, so stale deliveries are harmless:
+   *
+   * - not `pending` and no due pending-escalation marker → no-op (already
+   *   satisfied/cancelled/paused, or an already-breached clock without a due
+   *   follow-up step);
+   * - `pending` with `dueAt` in the future → no-op (the clock was
+   *   rescheduled after this job was enqueued);
+   * - `pending` and overdue → mark breached and escalate through the plan's
+   *   escalation policy;
+   * - `breached` with a due pending-escalation marker → continue with the
+   *   next policy step.
+   *
+   * The engine is imported dynamically to avoid a static model → service
+   * cycle. `args.at` (ISO string or `Date`) pins "now" for deterministic
+   * tests; the runner passes no args, so production uses wall-clock time.
+   */
+  @backgroundEligible()
+  async checkAndEscalate(
+    args?: Record<string, unknown>,
+    _context?: unknown,
+  ): Promise<CheckAndEscalateResult> {
+    const rawAt = args?.at;
+    const at =
+      rawAt instanceof Date
+        ? rawAt
+        : typeof rawAt === 'string' && !Number.isNaN(new Date(rawAt).getTime())
+          ? new Date(rawAt)
+          : new Date();
+
+    if (!this.id) {
+      return { outcome: 'missing' };
+    }
+    // Load fresh, authoritative state — the enqueued row may be stale.
+    const targets = await SupportServiceTargetCollection.create({
+      db: this.db,
+    });
+    const fresh = await targets.get({ id: this.id });
+    if (!fresh) {
+      return { outcome: 'missing' };
+    }
+
+    if (fresh.status === 'pending') {
+      if (fresh.dueAt.getTime() > at.getTime()) {
+        return { outcome: 'rescheduled' };
+      }
+      fresh.breachedAt = at;
+      fresh.status = 'breached';
+      await fresh.save();
+      const { ServiceTargetEngine } = await import(
+        '../services/service-target-engine.js'
+      );
+      const engine = await ServiceTargetEngine.create({ db: this.db });
+      await engine.escalateForBreach(fresh, { at });
+      return { outcome: 'breached' };
+    }
+
+    if (fresh.status === 'breached') {
+      const { ServiceTargetEngine } = await import(
+        '../services/service-target-engine.js'
+      );
+      const engine = await ServiceTargetEngine.create({ db: this.db });
+      const continued = await engine.continueEscalation(fresh, at);
+      return { outcome: continued ? 'escalated' : 'noop' };
+    }
+
+    return { outcome: 'noop' };
   }
 }
 

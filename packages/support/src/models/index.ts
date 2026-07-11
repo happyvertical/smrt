@@ -42,6 +42,7 @@ export {
   SupportPolicyCollection,
 } from './support-policy.js';
 export {
+  type CheckAndEscalateResult,
   SupportEscalation,
   SupportEscalationCollection,
   SupportServiceTarget,

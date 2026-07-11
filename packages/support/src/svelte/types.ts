@@ -11,6 +11,7 @@ import type { ServiceTimeEntry } from '../models/service-time-entry.js';
 import type { SupportCase } from '../models/support-case.js';
 import type { SupportCaseEvent } from '../models/support-case-event.js';
 import type { SupportInteraction } from '../models/support-interaction.js';
+import type { SupportServiceTarget } from '../models/support-service-target.js';
 import type { SupportCharge } from '../models/support-settlement.js';
 import type { CaseTimelineItem } from '../services/support-case-service.js';
 
@@ -228,4 +229,73 @@ export function timeEntryStatusBadgeKey(status: string): string {
     default:
       return 'pending';
   }
+}
+
+/** Serializable Service Target clock view for `TargetList` (#1929). */
+export interface ServiceTargetView {
+  id: string;
+  targetType: string;
+  cycle: number;
+  status: string;
+  severity: string;
+  baseMinutes: number;
+  startedAt: string | null;
+  dueAt: string | null;
+  satisfiedAt: string | null;
+  breachedAt: string | null;
+  /** Whether the clock is currently frozen by the plan's pause rules. */
+  paused: boolean;
+}
+
+/** Adapt a SupportServiceTarget model to the `TargetList` view shape. */
+export function toServiceTargetView(
+  target: SupportServiceTarget,
+): ServiceTargetView {
+  return {
+    id: target.id ?? '',
+    targetType: target.targetType,
+    cycle: target.cycle,
+    status: target.status,
+    severity: target.severity,
+    baseMinutes: target.baseMinutes,
+    startedAt: toIso(target.startedAt),
+    dueAt: toIso(target.dueAt),
+    satisfiedAt: toIso(target.satisfiedAt),
+    breachedAt: toIso(target.breachedAt),
+    paused: target.status === 'paused',
+  };
+}
+
+/**
+ * Map a Service Target status onto smrt-ui `StatusBadge` default
+ * color-scheme keys: running/paused clocks read as attention-colored,
+ * satisfied as success, breached as error.
+ */
+export function targetStatusBadgeKey(status: string): string {
+  switch (status) {
+    case 'pending':
+      return 'pending';
+    case 'paused':
+      return 'warning';
+    case 'satisfied':
+      return 'success';
+    case 'breached':
+      return 'error';
+    case 'cancelled':
+      return 'inactive';
+    default:
+      return 'pending';
+  }
+}
+
+/**
+ * Serializable ranked-specialist view for `RoutingRationale` (#1929) —
+ * mirrors the routing service's `RankedSpecialist` result shape.
+ */
+export interface RankedSpecialistView {
+  specialistId: string;
+  displayName: string;
+  score: number;
+  eligible: boolean;
+  factors: Record<string, number | string | boolean>;
 }

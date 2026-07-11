@@ -3,6 +3,14 @@
  */
 
 export {
+  addCoveredMinutes,
+  type CoverageCalendar,
+  coveredMinutesBetween,
+  MAX_COVERAGE_SCAN_DAYS,
+  type ZonedParts,
+  zonedParts,
+} from './coverage-calendar.js';
+export {
   type HandoffAiRunSummary,
   type HandoffContextPackage,
   type HandoffTimelineItem,
@@ -12,6 +20,14 @@ export {
   type HumanHandoffServiceOptions,
   type SpecialistRouter,
 } from './human-handoff-service.js';
+export {
+  DEFAULT_SEVERITY_KEY,
+  ESCALATION_JOB_PRIORITY,
+  type ResolvedTargetPlanTerms,
+  ServiceTargetEngine,
+  type ServiceTargetEngineOptions,
+  SUPPORT_JOB_QUEUE,
+} from './service-target-engine.js';
 export {
   type RecordServiceTimeEntryInput,
   ServiceTimeEntryService,
@@ -51,6 +67,14 @@ export {
   type SupportIntakeOptions,
   SupportIntakeService,
 } from './support-intake-service.js';
+export {
+  type AutoAssignResult,
+  type RankedSpecialist,
+  ReassignDeniedError,
+  ROUTING_WEIGHTS,
+  SupportRoutingService,
+  type SupportRoutingServiceOptions,
+} from './support-routing-service.js';
 export {
   type ApproveTimeEntryInput,
   type ApproveTimeEntryResult,
