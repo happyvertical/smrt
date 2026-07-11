@@ -14,14 +14,35 @@ export {
   TenantSubscriptionCollection,
   TenantUsageMetricCollection,
 } from './collections/index.js';
+export type {
+  PricingStrategy,
+  SpendingPeriod,
+  SpendingPolicyBehavior,
+} from './models/index.js';
 export {
+  BillingAdjustment,
+  BillingAdjustmentCollection,
+  ClientCharge,
+  ClientChargeCollection,
+  PricingRule,
+  PricingRuleCollection,
+  SpendingPolicy,
+  SpendingPolicyCollection,
   SubscriptionPlan,
   TenantSubscription,
   TenantUsageMetric,
 } from './models/index.js';
+export type {
+  CustomPricingContext,
+  CustomPricingStrategy,
+  PriceUsageOptions,
+  SpendingDecision,
+} from './services/index.js';
 export {
+  CommercialUsageService,
   evaluateThreshold,
   evaluateThresholds,
+  SpendingPolicyEvaluator,
   type SubscriptionPlanReader,
   SubscriptionResolver,
   type SubscriptionResolverReaders,

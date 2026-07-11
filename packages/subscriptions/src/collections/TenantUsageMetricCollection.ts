@@ -18,6 +18,17 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
   static readonly _itemClass = TenantUsageMetric;
 
   async recordUsage(options: RecordUsageOptions): Promise<TenantUsageMetric> {
+    if (options.source && options.sourceId) {
+      const existing = await this.list({
+        where: {
+          tenantId: options.tenantId,
+          source: options.source,
+          sourceId: options.sourceId,
+        },
+        limit: 1,
+      });
+      if (existing[0]) return existing[0];
+    }
     const subscriber = normalizeSubscriber({
       tenantId: options.tenantId,
       subscriberKind: options.subscriberKind,
@@ -34,6 +45,10 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
       windowEnd: options.windowEnd,
       source: options.source ?? '',
       sourceId: options.sourceId ?? '',
+      projectId: options.projectId ?? '',
+      workRefType: options.workRefType ?? '',
+      workRefId: options.workRefId ?? '',
+      provider: options.provider ?? '',
       dimensions: stringifyJson(options.dimensions ?? {}),
     });
     return metric;
