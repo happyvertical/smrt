@@ -1,5 +1,12 @@
 # @happyvertical/smrt-playground
 
+## 0.39.2
+
+### Patch Changes
+
+- c80ac05: Allow consumers to use SMRT Playground with stable Vite 7 or Vite 8 releases.
+  - @happyvertical/smrt-ui@0.39.2
+
 ## 0.39.1
 
 ### Patch Changes
