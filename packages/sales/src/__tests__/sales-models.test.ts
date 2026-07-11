@@ -61,4 +61,16 @@ describe('sales models', () => {
     activity.setDetails({ from: 'new', to: 'qualified' });
     expect(activity.getDetails()).toEqual({ from: 'new', to: 'qualified' });
   });
+
+  it('rejects qualification after conversion or merge and normalizes merge ids', () => {
+    const converted = new Lead({ tenantId: 'tenant-1', status: 'converted' });
+    expect(() => converted.qualify()).toThrow(
+      'A converted lead cannot be qualified',
+    );
+
+    const merged = new Lead({ tenantId: 'tenant-1' });
+    merged.markMerged('  target-lead  ');
+    expect(merged.mergedIntoLeadId).toBe('target-lead');
+    expect(() => merged.qualify()).toThrow('A merged lead cannot be qualified');
+  });
 });

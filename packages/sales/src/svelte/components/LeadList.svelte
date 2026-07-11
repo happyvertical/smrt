@@ -60,7 +60,7 @@ function cardClass(status: string): string {
             type="button"
             class="action-button action-primary"
             onclick={() => onqualify?.(lead)}
-            disabled={lead.status === 'qualified' || lead.status === 'converted'}
+            disabled={lead.status !== 'new'}
           >
             Qualify
           </Button>

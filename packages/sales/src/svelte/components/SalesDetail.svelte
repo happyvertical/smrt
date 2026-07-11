@@ -62,7 +62,7 @@ function formatTime(item: SalesActivityView | { occurredAt: string }): string {
         type="button"
         class="primary"
         onclick={() => onqualify?.(record.lead.id)}
-        disabled={record.lead.status === 'qualified' || record.lead.status === 'converted'}
+        disabled={record.lead.status !== 'new'}
       >
         Qualify
       </Button>
@@ -70,6 +70,7 @@ function formatTime(item: SalesActivityView | { occurredAt: string }): string {
   </header>
 
   {#if record.opportunity}
+    {@const opportunityId = record.opportunity.id}
     <section class="card">
       <div class="card-head">
         <div>
@@ -84,7 +85,7 @@ function formatTime(item: SalesActivityView | { occurredAt: string }): string {
           <Button
             type="button"
             class={stage.id === record.opportunity.stageId ? 'active' : ''}
-            onclick={() => onmoveStage?.(record.opportunity?.id ?? '', stage.id)}
+            onclick={() => onmoveStage?.(opportunityId, stage.id)}
           >
             {stage.name}
           </Button>
@@ -199,7 +200,7 @@ function formatTime(item: SalesActivityView | { occurredAt: string }): string {
     flex-wrap: wrap;
   }
 
-  :global(button) {
+  .detail :global(button) {
     padding: 0.6rem 0.85rem;
     border-radius: 999px;
     border: 1px solid rgba(29, 53, 87, 0.16);
@@ -207,7 +208,7 @@ function formatTime(item: SalesActivityView | { occurredAt: string }): string {
     color: #1d3557;
   }
 
-  :global(button.primary),
+  .detail :global(button.primary),
   .stage-row :global(button.active) {
     background: #1d3557;
     color: white;

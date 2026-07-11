@@ -164,8 +164,38 @@ describe('SalesService', () => {
       stageKey: 'qualified',
     });
     expect(getByLeadId).toHaveBeenCalledTimes(2);
+    expect(stores.opportunities.create).toHaveBeenCalledWith(
+      expect.objectContaining({ _insertOnly: true }),
+    );
     expect(lead.save).not.toHaveBeenCalled();
     expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit stage when moving an opportunity', async () => {
+    const opportunity = new Opportunity({
+      tenantId: 'tenant-1',
+      pipelineId: 'pipeline-1',
+      stageId: 'stage-new',
+    });
+    opportunity.id = 'opportunity-1';
+    const stores = {
+      leads: {},
+      opportunities: { get: vi.fn(async () => opportunity) },
+      pipelines: {},
+      stages: { get: vi.fn(), findByKey: vi.fn() },
+      activities: { create: vi.fn() },
+      leadMerges: {},
+    } as unknown as SalesServiceOptions;
+
+    await expect(
+      new SalesService(stores).moveOpportunity({
+        opportunityId: opportunity.id,
+      }),
+    ).rejects.toThrow(
+      'A stage id or stage key is required to move an opportunity',
+    );
+    expect(stores.stages.get).not.toHaveBeenCalled();
+    expect(stores.stages.findByKey).not.toHaveBeenCalled();
   });
 
   it('rejects caller-supplied pipeline ids from a different tenant during conversion', async () => {

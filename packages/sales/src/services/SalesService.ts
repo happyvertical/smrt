@@ -223,11 +223,17 @@ export class SalesService {
   async moveOpportunity(args: MoveOpportunityArgs): Promise<Opportunity> {
     const opportunity = await this.requireOpportunity(args.opportunityId);
     const previousStageId = opportunity.stageId;
+    const stageKey = args.stageKey?.trim();
+    if (!args.stageId?.trim() && !stageKey) {
+      throw new Error(
+        'A stage id or stage key is required to move an opportunity',
+      );
+    }
     const stage = args.stageId?.trim()
       ? await this.requireStageForOpportunity(args.stageId, opportunity)
       : await this.resolveStageForTenant(
           opportunity.pipelineId,
-          args.stageKey ?? 'qualified',
+          stageKey as PipelineStageKey,
           opportunity.tenantId,
         );
 
@@ -566,7 +572,10 @@ export class SalesService {
     lastStageChangeAt: Date;
   }): Promise<{ opportunity: Opportunity; created: boolean }> {
     try {
-      const opportunity = await this.opportunities.create(args);
+      const opportunity = await this.opportunities.create({
+        ...args,
+        _insertOnly: true,
+      });
       return { opportunity, created: true };
     } catch (error) {
       if (!this.isDuplicateKeyError(error)) {

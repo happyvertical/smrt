@@ -163,7 +163,7 @@ function formatCurrency(value: number, currency = 'USD'): string {
     gap: 0.45rem;
   }
 
-  :global(.move) {
+  .board :global(.move) {
     flex: 1 1 auto;
     padding: 0.55rem 0.7rem;
     border-radius: 999px;
@@ -171,7 +171,7 @@ function formatCurrency(value: number, currency = 'USD'): string {
     background: rgba(255, 255, 255, 0.8);
   }
 
-  :global(.move-primary) {
+  .board :global(.move-primary) {
     background: #2a9d8f;
     border-color: #2a9d8f;
     color: white;

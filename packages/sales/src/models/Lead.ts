@@ -78,6 +78,9 @@ export class Lead extends SmrtObject {
   }
 
   qualify(actorId?: string | null, summary?: string): void {
+    if (this.status === 'converted' || this.status === 'merged') {
+      throw new Error(`A ${this.status} lead cannot be qualified`);
+    }
     this.status = 'qualified';
     this.qualifiedAt = new Date();
     this.qualifiedById = actorId?.trim() || null;
@@ -91,10 +94,11 @@ export class Lead extends SmrtObject {
   }
 
   markMerged(targetLeadId: string): void {
-    if (!targetLeadId.trim()) {
+    const normalized = targetLeadId.trim();
+    if (!normalized) {
       throw new Error('A merge target lead id is required');
     }
     this.status = 'merged';
-    this.mergedIntoLeadId = targetLeadId;
+    this.mergedIntoLeadId = normalized;
   }
 }
