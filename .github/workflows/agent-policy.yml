@@ -2,7 +2,7 @@ name: Agent Policy
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -26,11 +26,14 @@ jobs:
             ghcr.io/*@sha256:*) ;;
             *) echo 'AGENT_POLICY_ARTIFACT must be an immutable GHCR digest' >&2; exit 1 ;;
           esac
-          mkdir -p .hv-policy
-          oras pull "$POLICY_ARTIFACT" -o .hv-policy
-          tar -xzf .hv-policy/agent-policy.tar.gz -C .hv-policy
+          policy_dir="$RUNNER_TEMP/hv-policy"
+          rm -rf "$policy_dir"
+          mkdir -p "$policy_dir"
+          oras pull "$POLICY_ARTIFACT" -o "$policy_dir"
+          tar -xzf "$policy_dir/agent-policy.tar.gz" -C "$policy_dir"
+          echo "HV_POLICY_DIR=$policy_dir" >> "$GITHUB_ENV"
       - name: Validate lifecycle
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 .hv-policy/scripts/hv-agent check-pr "$PR_NUMBER"
+        run: python3 "$HV_POLICY_DIR/scripts/hv-agent" check-pr "$PR_NUMBER"

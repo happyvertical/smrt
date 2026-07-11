@@ -42,7 +42,7 @@ pnpm test
 pnpm typecheck
 pnpm lint
 pnpm format
-pnpm dev:knowledge-check
+pnpm smrt dev:knowledge-check
 ```
 
 Use the narrowest package command first, then the relevant root checks. The
