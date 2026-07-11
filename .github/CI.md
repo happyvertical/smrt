@@ -73,7 +73,8 @@ Packages opt in with a `test:postgres` script. The wrapper obtains the
 disposable URL from `CI_POSTGRES_BASE_URL` or the read-only file named by
 `CI_POSTGRES_BASE_URL_FILE`, creates a uniquely named database, exports all
 supported PostgreSQL test URL variables plus libpq's `PG*` connection
-variables, and drops the database afterward. IAC
+variables, including supported URI query parameters, and drops the database
+afterward. IAC
 stores the same credential in SOPS-encrypted Secrets in the database and runner
 namespaces; the node runner mounts only the URL copy. It has no production
 database secret access.

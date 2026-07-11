@@ -6,6 +6,43 @@ import { pathToFileURL } from 'node:url';
 
 const DEFAULT_URL_FILE = '/var/run/ci-services/postgres/url';
 
+const LIBPQ_PARAMETER_ENV = {
+  application_name: 'PGAPPNAME',
+  channel_binding: 'PGCHANNELBINDING',
+  client_encoding: 'PGCLIENTENCODING',
+  connect_timeout: 'PGCONNECT_TIMEOUT',
+  dbname: 'PGDATABASE',
+  gssencmode: 'PGGSSENCMODE',
+  gsslib: 'PGGSSLIB',
+  host: 'PGHOST',
+  hostaddr: 'PGHOSTADDR',
+  keepalives: 'PGKEEPALIVES',
+  keepalives_count: 'PGKEEPALIVESCOUNT',
+  keepalives_idle: 'PGKEEPALIVESIDLE',
+  keepalives_interval: 'PGKEEPALIVESINTERVAL',
+  krbsrvname: 'PGKRBSRVNAME',
+  load_balance_hosts: 'PGLOADBALANCEHOSTS',
+  options: 'PGOPTIONS',
+  passfile: 'PGPASSFILE',
+  password: 'PGPASSWORD',
+  port: 'PGPORT',
+  requirepeer: 'PGREQUIREPEER',
+  service: 'PGSERVICE',
+  servicefile: 'PGSERVICEFILE',
+  sslcert: 'PGSSLCERT',
+  sslcrl: 'PGSSLCRL',
+  sslcrldir: 'PGSSLCRLDIR',
+  sslkey: 'PGSSLKEY',
+  ssl_max_protocol_version: 'PGSSLMAXPROTOCOLVERSION',
+  ssl_min_protocol_version: 'PGSSLMINPROTOCOLVERSION',
+  sslmode: 'PGSSLMODE',
+  sslrootcert: 'PGSSLROOTCERT',
+  sslsni: 'PGSSLSNI',
+  target_session_attrs: 'PGTARGETSESSIONATTRS',
+  tcp_user_timeout: 'PGTCPUSER_TIMEOUT',
+  user: 'PGUSER',
+};
+
 export function createDatabaseName({
   epoch = Math.floor(Date.now() / 1000),
   runId = process.env.GITHUB_RUN_ID || 'local',
@@ -28,17 +65,26 @@ export function databaseUrl(baseUrl, databaseName) {
 
 export function databaseEnvironment(testUrl, environment = process.env) {
   const url = new URL(testUrl);
+  const libpqEnvironment = {
+    PGHOST: url.hostname,
+    PGPORT: url.port || '5432',
+    PGUSER: decodeURIComponent(url.username),
+    PGPASSWORD: decodeURIComponent(url.password),
+    PGDATABASE: decodeURIComponent(url.pathname.replace(/^\//, '')),
+  };
+
+  for (const [parameter, value] of url.searchParams) {
+    const environmentName = LIBPQ_PARAMETER_ENV[parameter];
+    if (environmentName) libpqEnvironment[environmentName] = value;
+  }
+
   return {
     ...environment,
     DATABASE_URL: testUrl,
     TEST_DB_URL: testUrl,
     TEST_DB_ADAPTER: 'postgres',
     SMRT_TEST_POSTGRES_URL: testUrl,
-    PGHOST: url.hostname,
-    PGPORT: url.port || '5432',
-    PGUSER: decodeURIComponent(url.username),
-    PGPASSWORD: decodeURIComponent(url.password),
-    PGDATABASE: decodeURIComponent(url.pathname.replace(/^\//, '')),
+    ...libpqEnvironment,
   };
 }
 

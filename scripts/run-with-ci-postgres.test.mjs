@@ -35,7 +35,8 @@ test('replaces only the database path in a PostgreSQL URL', () => {
 
 test('exports the isolated URL for SMRT and libpq clients', () => {
   const url =
-    'postgresql://ci_runner:secret%20value@ci-postgres-rw:5433/smrt_ci_1';
+    'postgresql://ci_runner:secret%20value@authority-host:5433/smrt_ci_1' +
+    '?host=query-host&port=6543&sslmode=verify-full&application_name=smrt%20ci';
   const environment = databaseEnvironment(url, {
     KEEP_ME: 'yes',
     PGDATABASE: 'old-database',
@@ -46,9 +47,11 @@ test('exports the isolated URL for SMRT and libpq clients', () => {
   assert.equal(environment.TEST_DB_URL, url);
   assert.equal(environment.TEST_DB_ADAPTER, 'postgres');
   assert.equal(environment.SMRT_TEST_POSTGRES_URL, url);
-  assert.equal(environment.PGHOST, 'ci-postgres-rw');
-  assert.equal(environment.PGPORT, '5433');
+  assert.equal(environment.PGHOST, 'query-host');
+  assert.equal(environment.PGPORT, '6543');
   assert.equal(environment.PGUSER, 'ci_runner');
   assert.equal(environment.PGPASSWORD, 'secret value');
   assert.equal(environment.PGDATABASE, 'smrt_ci_1');
+  assert.equal(environment.PGSSLMODE, 'verify-full');
+  assert.equal(environment.PGAPPNAME, 'smrt ci');
 });
