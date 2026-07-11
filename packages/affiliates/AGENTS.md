@@ -1,62 +1,51 @@
 # @happyvertical/smrt-affiliates
 
-Partner revenue sharing with multi-type partners, multi-tier commissions, and payout processing.
+**DEPRECATED compatibility shim** over the `@happyvertical/smrt-sales`
+commissions core. This package declares **no models and owns no persistence**
+— every export is a re-export (or a legacy-shaped alias) of the sales
+package's neutral commissions module, kept so existing imports compile while
+consumers migrate. It will be removed in a future major release.
 
-## Models
+- Migration path (tables, columns, statuses, SQL sketches): `MIGRATION.md`
+  in this package.
+- The real API: `packages/sales/AGENTS.md` (`commissions` module).
 
-- **Partner**: `partnerTypes` JSON array (publisher/salesperson/referrer — multi-role). `parentPartnerId` for site-attached salespeople. `referredById` for referral attribution. `commissionRate`, `parentCommissionShare`.
-- **Commission**: 4 types per ad event — Display (publisher), Referral (referrer), Sales (salesperson), Parent (parent publisher's share). **Immutable** — no update/delete API.
-- **Payout**: batch aggregation. Status: `PENDING → APPROVED → PROCESSING → COMPLETED` (or FAILED).
+## What the shim exports
 
-## Currency
+| Shim export | Actual thing |
+|---|---|
+| `Partner` / `PartnerCollection` | `Earner` / `EarnerCollection` from `@happyvertical/smrt-sales` (same class references) |
+| `Commission` / `CommissionCollection` | `Commission` / `CommissionCollection` from `@happyvertical/smrt-sales` (new shape) |
+| `Payout` / `PayoutCollection` | `CommissionPayout` / `CommissionPayoutCollection` from `@happyvertical/smrt-sales` |
+| `PartnerOptions` / `CommissionOptions` / `PayoutOptions` | `EarnerOptions` / `CommissionOptions` / `CommissionPayoutOptions` type aliases |
+| `PartnerStatus`, `PartnerType`, `CommissionType`, `CommissionStatus`, `PayoutStatus`, `PayoutMethod` | frozen `as const` objects preserving the exact legacy enum members/values, each with a matching derived type |
 
-**All monetary fields are integer cents.** Helpers: `getTotalInDollars()`, `getAmountInDollars()`. `Commission.calculateAmount(grossRevenue, rate)` uses `Math.round()`.
+The shim deliberately does **not** re-export the rest of the new surface
+(no `Earner`-named exports, no plans/events/adjustments/services) — new code
+imports `@happyvertical/smrt-sales` directly.
 
-## Parent Commission Share
+## Name/value mapping notes
 
-```
-Salesperson.parentCommissionShare = 0.20 (20% to parent publisher)
-Effective sales rate = salesRate × (1 - parentCommissionShare)
-```
-
-## Cross-Package References (plain strings)
-
-`profileId` → smrt-profiles, `propertyId` → smrt-properties, `eventId` → smrt-ads, `invoiceId` → smrt-commerce
-
-## Tenancy
-
-Per `docs/content/standards.md §7`, tenant-aware models normally apply
-`@TenantScoped({ mode: 'optional' })` from `@happyvertical/smrt-tenancy`. The
-three models in this package deviate intentionally; each `@smrt(...)` block
-carries an inline comment pointing back to this section.
-
-`Partner`, `Commission`, and `Payout` are deliberately **NOT** tenant-scoped.
-The affiliate network is a cross-tenant graph by design:
-
-- A single `Partner` (e.g. a publisher operating multiple sites across
-  different tenants) needs a stable identity for revenue aggregation,
-  payout thresholds, and tax reporting. Slicing partner identity per
-  tenant would either duplicate the row or hide payouts owed across
-  tenants.
-- `Commission` rows attribute revenue to a partner across whichever tenant
-  generated the ad event; the cross-tenant attribution is the point of the
-  network.
-- `Payout` aggregates commissions for a partner regardless of which tenant
-  the underlying revenue came from. A tenant-scoped query would produce
-  systematically incorrect totals.
-
-This is the same reasoning that keeps `TenantKey` in `packages/secrets`
-out of the tenancy interceptor: rows that must be queried across tenants
-to fulfil their purpose should not be silently filtered.
-
-Operators that need tenant-attributed reporting should aggregate by
-joining `Commission` rows back to `eventId` (smrt-ads) and the originating
-ad's tenant — not by adding `@TenantScoped` here.
+- `PartnerStatus` values align exactly with the `EarnerStatus` union.
+- `PayoutStatus` values align exactly with the `CommissionPayoutStatus`
+  union; `PayoutMethod` values align with the new `PayoutMethod` union
+  (which adds `'other'`).
+- `CommissionStatus.INCLUDED` (`'included'`) has **no direct equivalent**;
+  the nearest new state is `'payable'` with `payoutId` set. `PENDING`/`PAID`
+  align.
+- `PartnerType` has no equivalent — roles are first-class models now:
+  `Referrer` (`@happyvertical/smrt-sales/referrals`) and
+  `SalesRepresentative` (`@happyvertical/smrt-sales/crm`), each holding an
+  `earnerId`.
+- `CommissionType` is superseded by `CommissionPlan` component keys.
 
 ## Gotchas
 
-- **No tenancy** (intentional): cross-tenant network visibility for affiliate tracking — see Tenancy section above for rationale
-- **partnerTypes is JSON string**: must parse with `getPartnerTypes()` helper
-- **Commission rate copied at event time**: immutable record, not a live reference to Partner.commissionRate
-- **Payout amounts in cents**: divide by 100 for display
-- **No ledger integration**: Payout → Invoice mapping is external
+- **No manifest, no tables**: the package emits no SMRT objects; there is no
+  `./manifest` export anymore. Data lives in the sales tables (`earners`,
+  `commissions`, `commission_payouts`).
+- **Tenancy stance changed**: the legacy models were intentionally NOT
+  tenant-scoped; the sales models are `@TenantScoped({ mode: 'optional' })`.
+  Legacy rows migrate with `tenant_id = NULL` (global) — see `MIGRATION.md`.
+- **Do not add models here**: new commission features belong in
+  `packages/sales/src/commissions/`.
