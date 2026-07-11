@@ -293,6 +293,48 @@ describe('ServiceTargetEngine', () => {
       expect(nextJob?.runAt.toISOString()).toBe(at('11:40:00').toISOString());
     });
 
+    it('a templated acknowledgement satisfies only the acknowledgement clock', async () => {
+      const plan = await makePlan();
+      const supportCase = await openPlannedCase(plan);
+      const created = await engine.startTargetsForCase(supportCase, { at: T0 });
+      const updateZero = byType(created, 'update');
+
+      // The AI workflow marks its instant receipt with
+      // `metadata.acknowledgement` — it must not satisfy response/update
+      // clocks (that would neuter response Service Targets on AI cases).
+      const ackInteraction = await service.recordInteraction(supportCase, {
+        direction: 'outbound',
+        channelKind: 'chat',
+        actorKind: 'agent',
+        body: 'Thanks — case opened, on it.',
+        occurredAt: at('10:01:00'),
+        metadata: { acknowledgement: true },
+      });
+      await engine.onInteractionRecorded(supportCase, ackInteraction);
+
+      expect(
+        (await reloadTarget(byType(created, 'acknowledgement').id ?? ''))
+          .status,
+      ).toBe('satisfied');
+      expect(
+        (await reloadTarget(byType(created, 'response').id ?? '')).status,
+      ).toBe('pending');
+      expect((await reloadTarget(updateZero.id ?? '')).status).toBe('pending');
+
+      // The substantive answer then satisfies the response clock.
+      const answer = await service.recordInteraction(supportCase, {
+        direction: 'outbound',
+        channelKind: 'chat',
+        actorKind: 'agent',
+        body: 'Here is the fix: …',
+        occurredAt: at('10:15:00'),
+      });
+      await engine.onInteractionRecorded(supportCase, answer);
+      expect(
+        (await reloadTarget(byType(created, 'response').id ?? '')).status,
+      ).toBe('satisfied');
+    });
+
     it('never satisfies clocks from inbound client interactions', async () => {
       const plan = await makePlan();
       const supportCase = await openPlannedCase(plan);

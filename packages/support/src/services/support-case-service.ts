@@ -66,6 +66,8 @@ export interface RecordInteractionInput {
   sourceId?: string | null;
   /** Idempotency key; generated (`manual:<uuid>`) when omitted. */
   sourceKey?: string;
+  /** RFC 822 Message-ID for email interactions (keyed reply threading). */
+  rfcMessageId?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -228,18 +230,24 @@ export class SupportCaseService {
       sourceType: input.sourceType ?? null,
       sourceId: input.sourceId ?? null,
       sourceKey,
+      rfcMessageId: input.rfcMessageId ?? '',
       metadata: JSON.stringify(input.metadata ?? {}),
     });
 
     let caseDirty = false;
-    if (input.direction === 'outbound') {
+    // Drafts (metadata.draft) were never delivered to the client — they
+    // stamp nothing.
+    if (input.direction === 'outbound' && input.metadata?.draft !== true) {
       if (!supportCase.acknowledgedAt) {
         supportCase.acknowledgedAt = interaction.occurredAt;
         caseDirty = true;
       }
+      // Templated receipts (metadata.acknowledgement) acknowledge but are
+      // not the substantive first response.
       if (
         !supportCase.firstRespondedAt &&
-        (input.actorKind === 'specialist' || input.actorKind === 'agent')
+        (input.actorKind === 'specialist' || input.actorKind === 'agent') &&
+        input.metadata?.acknowledgement !== true
       ) {
         supportCase.firstRespondedAt = interaction.occurredAt;
         caseDirty = true;

@@ -81,6 +81,14 @@ export class SupportInteraction extends SmrtObject {
   @field({ type: 'text' })
   sourceKey: string = '';
 
+  /**
+   * RFC 822 Message-ID for email interactions — a first-class column so
+   * reply threading (`In-Reply-To` joins) is a keyed lookup instead of a
+   * bounded metadata scan. Empty for non-email interactions.
+   */
+  @field({ type: 'text' })
+  rfcMessageId: string = '';
+
   @field({ type: 'text' })
   metadata: string = '{}';
 
@@ -107,6 +115,17 @@ export class SupportInteractionCollection extends SmrtCollection<SupportInteract
   /** Look up an interaction by its idempotency key. */
   async bySourceKey(sourceKey: string): Promise<SupportInteraction | null> {
     const matches = await this.list({ where: { sourceKey }, limit: 1 });
+    return matches[0] ?? null;
+  }
+
+  /** Keyed lookup of an email interaction by its RFC 822 Message-ID. */
+  async byRfcMessageId(
+    rfcMessageId: string,
+  ): Promise<SupportInteraction | null> {
+    if (!rfcMessageId) {
+      return null;
+    }
+    const matches = await this.list({ where: { rfcMessageId }, limit: 1 });
     return matches[0] ?? null;
   }
 }

@@ -457,7 +457,20 @@ export class ServiceTargetEngine {
     const at = interaction.occurredAt ?? new Date();
     const satisfied: SupportServiceTarget[] = [];
 
-    for (const targetType of ['acknowledgement', 'response'] as const) {
+    // Drafts (`metadata.draft`) were never delivered — they satisfy nothing.
+    const interactionMeta = interaction.getMetadata();
+    if (interactionMeta.draft === true) {
+      return [];
+    }
+    // A templated receipt (`metadata.acknowledgement`) satisfies only the
+    // acknowledgement clock; response/update clocks wait for a substantive
+    // reply — otherwise the instant AI ack would neuter response targets.
+    const ackOnly = interactionMeta.acknowledgement === true;
+    const satisfiableTypes = ackOnly
+      ? (['acknowledgement'] as const)
+      : (['acknowledgement', 'response'] as const);
+
+    for (const targetType of satisfiableTypes) {
       const target = await this.targets.activeTarget(caseId, targetType);
       if (target) {
         await this.satisfyTarget(supportCase, target, at);
@@ -465,7 +478,9 @@ export class ServiceTargetEngine {
       }
     }
 
-    const update = await this.targets.activeTarget(caseId, 'update');
+    const update = ackOnly
+      ? null
+      : await this.targets.activeTarget(caseId, 'update');
     if (update) {
       await this.satisfyTarget(supportCase, update, at);
       satisfied.push(update);

@@ -108,6 +108,28 @@ describe('SupportCaseService', () => {
       expect(supportCase.firstRespondedAt).toBeInstanceOf(Date);
     });
 
+    it('an acknowledgement-marked receipt stamps acknowledgedAt but not firstRespondedAt', async () => {
+      const supportCase = await service.openCase({ subject: 'ack only' });
+
+      await service.recordInteraction(supportCase, {
+        direction: 'outbound',
+        channelKind: 'chat',
+        actorKind: 'agent',
+        body: 'Thanks — case opened.',
+        metadata: { acknowledgement: true },
+      });
+      expect(supportCase.acknowledgedAt).toBeInstanceOf(Date);
+      expect(supportCase.firstRespondedAt).toBeNull();
+
+      await service.recordInteraction(supportCase, {
+        direction: 'outbound',
+        channelKind: 'chat',
+        actorKind: 'agent',
+        body: 'Here is the actual answer.',
+      });
+      expect(supportCase.firstRespondedAt).toBeInstanceOf(Date);
+    });
+
     it('moves a waiting_on_client case back to in_progress on inbound', async () => {
       const supportCase = await service.openCase({ subject: 'unpark' });
       await service.transition(supportCase, 'in_progress', {

@@ -217,6 +217,16 @@ describe('SupportIntakeService', () => {
       });
       expect(reply.outcome).toBe('joined');
       expect(reply.supportCase?.id).toBe(first.supportCase?.id);
+
+      // Threading rides a first-class keyed column, not a bounded metadata
+      // scan (codex P2, PR #1943) — the Message-ID is persisted and
+      // queryable directly.
+      expect(first.interaction?.rfcMessageId).toBe('<m1@client.test>');
+      const parent =
+        await intake.caseService.interactions.byRfcMessageId(
+          '<m1@client.test>',
+        );
+      expect(parent?.id).toBe(first.interaction?.id);
     });
 
     it('skips mail sent from the binding self addresses', async () => {

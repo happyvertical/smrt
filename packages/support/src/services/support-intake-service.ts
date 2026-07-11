@@ -238,6 +238,7 @@ export class SupportIntakeService {
       occurredAt: input.occurredAt,
       sourceType: EMAIL_SOURCE_TYPE,
       sourceId: input.emailId,
+      rfcMessageId: input.rfcMessageId ?? null,
       caseMetadata: unresolvedClient
         ? { unresolvedClient: true, fromAddress: input.fromAddress }
         : undefined,
@@ -264,6 +265,7 @@ export class SupportIntakeService {
     occurredAt?: Date;
     sourceType: string;
     sourceId: string;
+    rfcMessageId?: string | null;
     caseMetadata?: Record<string, unknown>;
     interactionMetadata?: Record<string, unknown>;
   }): Promise<IntakeResult> {
@@ -334,6 +336,7 @@ export class SupportIntakeService {
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       sourceKey: input.sourceKey,
+      rfcMessageId: input.rfcMessageId ?? '',
       metadata: input.interactionMetadata,
     });
 
@@ -368,19 +371,9 @@ export class SupportIntakeService {
   private async findInteractionByRfcMessageId(
     rfcMessageId: string,
   ): Promise<SupportInteraction | null> {
-    // rfcMessageId lives in interaction metadata; scan recent email
-    // interactions (metadata is a JSON text column, so filter in memory).
-    const candidates = await this.caseService.interactions.list({
-      where: { sourceType: EMAIL_SOURCE_TYPE },
-      orderBy: 'occurred_at DESC',
-      limit: 500,
-    });
-    return (
-      candidates.find(
-        (interaction) =>
-          (interaction.getMetadata().rfcMessageId ?? null) === rfcMessageId,
-      ) ?? null
-    );
+    // Keyed lookup on the first-class column — reply threading must not
+    // depend on how much traffic arrived since the parent message.
+    return this.caseService.interactions.byRfcMessageId(rfcMessageId);
   }
 }
 

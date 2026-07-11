@@ -484,6 +484,14 @@ describe('SupportAiWorkflow', () => {
     );
     expect(draftAnswer?.getMetadata().draft).toBe(true);
 
+    // Undelivered drafts stamp nothing — the client never saw them (codex
+    // P1, PR #1943).
+    const draftedReloaded = await workflow.caseService.getCase(
+      drafted.id ?? '',
+    );
+    expect(draftedReloaded.acknowledgedAt).toBeNull();
+    expect(draftedReloaded.firstRespondedAt).toBeNull();
+
     await workflow.policies.create({
       name: 'send-email-replies',
       autoSendEmailReplies: true,
@@ -497,6 +505,59 @@ describe('SupportAiWorkflow', () => {
       (item) => item.sourceKey.startsWith('ai:answer:'),
     );
     expect(sentAnswer?.getMetadata().draft).toBe(false);
+  });
+
+  it('never auto-resolves from an unsent email draft', async () => {
+    const { workflow } = await createWorkflow({
+      classify: { severity: 'sev4', confidence: 0.95 },
+      answer: { confidence: 0.95, proposedResolution: true },
+    });
+    await workflow.policies.create({
+      name: 'resolve-but-draft',
+      autoResolve: true,
+      autoResolveMaxSeverity: 'sev3',
+      // autoSendEmailReplies stays false — the answer is only a draft.
+    });
+    const supportCase = await openCase(workflow, { channelKind: 'email' });
+    const runs = await workflow.processCase(supportCase.id ?? '');
+
+    const resolveRun = runs.find((run) => run.phase === 'resolve');
+    expect(resolveRun?.outcome).toBe('skipped');
+    const reloaded = await workflow.caseService.getCase(supportCase.id ?? '');
+    expect(reloaded.status).not.toBe('resolved');
+
+    // The same policy over a chat case resolves autonomously — the gate is
+    // specifically the undelivered draft.
+    const chatCase = await openCase(workflow, {
+      subject: 'chat twin',
+      channelKind: 'chat',
+    });
+    await workflow.processCase(chatCase.id ?? '');
+    const chatReloaded = await workflow.caseService.getCase(chatCase.id ?? '');
+    expect(chatReloaded.status).toBe('resolved');
+  });
+
+  it('counts low-confidence answers toward maxAutoAttempts', async () => {
+    const { workflow, answerCalls } = await createWorkflow({
+      answer: { confidence: 0.1 },
+    });
+    await workflow.policies.create({
+      name: 'one-shot-low',
+      maxAutoAttempts: 1,
+    });
+    const supportCase = await openCase(workflow);
+
+    const first = await workflow.processCase(supportCase.id ?? '');
+    expect(first.find((run) => run.phase === 'answer')?.outcome).toBe(
+      'handed_off',
+    );
+
+    // The boundary was consumed by the low-confidence attempt — a second
+    // pass must not spin another answer (codex P2, PR #1943).
+    const second = await workflow.processCase(supportCase.id ?? '');
+    const secondAnswer = second.find((run) => run.phase === 'answer');
+    expect(secondAnswer?.outcome).toBe('skipped');
+    expect(answerCalls).toHaveLength(1);
   });
 
   it('never overwrites human triage during classification', async () => {

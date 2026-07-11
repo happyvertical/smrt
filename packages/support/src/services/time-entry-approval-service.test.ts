@@ -411,7 +411,97 @@ describe('TimeEntryApprovalService', () => {
     });
   });
 
+  describe('approval retryability (partial-failure recovery)', () => {
+    it('re-approving after a partial settlement write refreshes the same rows without double-counting', async () => {
+      const plan = await planWith(
+        { mode: 'automatic' },
+        { includedMinutes: 60, overageHourlyRate: 120.0 },
+      );
+      const supportCase = await caseUnder(plan);
+      const entry = await submittedEntry(supportCase.id ?? '', {
+        durationSeconds: 5400, // 60 included + 30 metered
+      });
+
+      // Simulate the failure mode codex flagged (P1, PR #1943): a prior
+      // approval attempt wrote the settlement rows but died before the
+      // entry flipped to 'approved' — the entry is still 'submitted' with a
+      // stale charge row present.
+      await approvalService.charges.create({
+        tenantId: entry.tenantId,
+        timeEntryId: entry.id ?? '',
+        caseId: entry.caseId,
+        planId: plan.id,
+        amount: 999,
+        currency: 'USD',
+        billableSeconds: 5400,
+        includedSecondsApplied: 3600,
+        rateSnapshot: JSON.stringify({ stale: true }),
+        status: 'final',
+        finalizedAt: APPROVE_AT,
+      });
+
+      const result = await approvalService.approve(entry.id ?? '', {
+        at: APPROVE_AT,
+      });
+      expect(result.entry.status).toBe('approved');
+      // The retry refreshed the SAME row: correct amount, no self
+      // double-count of the included allowance, and still exactly one
+      // charge + one compensation for the entry.
+      expect(result.charge.amount).toBeCloseTo(60.0, 2);
+      expect(result.charge.includedSecondsApplied).toBe(3600);
+      expect(result.charge.getRateSnapshot()).toMatchObject({
+        includedSecondsBefore: 3600,
+      });
+      const charges = await approvalService.charges.forCase(
+        supportCase.id ?? '',
+      );
+      expect(charges).toHaveLength(1);
+      const compensation = await approvalService.compensations.forTimeEntry(
+        entry.id ?? '',
+      );
+      expect(compensation).not.toBeNull();
+    });
+  });
+
   describe('corrections', () => {
+    it('releases the corrected charge’s included time back to the case', async () => {
+      const plan = await planWith(
+        { mode: 'automatic' },
+        { includedMinutes: 60, overageHourlyRate: 120.0 },
+      );
+      const supportCase = await caseUnder(plan);
+
+      // A 60-minute entry consumes the whole included allowance.
+      const entry = await submittedEntry(supportCase.id ?? '', {
+        durationSeconds: 3600,
+      });
+      const approved = await approvalService.approve(entry.id ?? '', {
+        at: APPROVE_AT,
+      });
+      expect(approved.charge.amount).toBeCloseTo(0, 2);
+      expect(approved.charge.includedSecondsApplied).toBe(3600);
+
+      // Correcting it down to 30 minutes releases the allowance — the
+      // replacement must consume included time again, not bill overage
+      // (codex P1, PR #1943).
+      const { correction } = await approvalService.correct(entry.id ?? '', {
+        principal: operator(),
+        patch: { durationSeconds: 1800 },
+        note: 'over-recorded',
+      });
+      await entryService.submit(correction, {
+        byProfileId: 'profile-worker-1',
+      });
+      const reApproved = await approvalService.approve(correction.id ?? '', {
+        at: APPROVE_AT,
+      });
+      expect(reApproved.charge.includedSecondsApplied).toBe(1800);
+      expect(reApproved.charge.amount).toBeCloseTo(0, 2);
+      expect(reApproved.charge.getRateSnapshot()).toMatchObject({
+        includedSecondsBefore: 3600,
+      });
+    });
+
     it('supersedes the original and re-derives fresh snapshots from the patch', async () => {
       const plan = await planWith(
         { mode: 'automatic' },

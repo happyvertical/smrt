@@ -297,15 +297,12 @@ export class TimeEntryApprovalService {
       supportCase,
     );
 
-    // Set every approval field BEFORE the save — the model's freeze engages
-    // the moment the row persists as 'approved'.
-    entry.approvedAt = at;
-    entry.approvedByProfileId = principal?.id ?? null;
-    entry.approvalPath = path;
-    entry.status = 'approved';
-    await entry.save();
-
-    const charge = await this.charges.create({
+    // Settlement rows are written BEFORE the entry flips to 'approved' so a
+    // transient failure leaves the entry 'submitted' and the whole approval
+    // retryable (codex P1, PR #1943): both writes are upserts keyed on the
+    // entry (one charge/compensation per entry), the consumption query above
+    // excludes the entry's own row, and the status flip lands last.
+    const charge = await this.upsertChargeRow(entry, {
       tenantId: entry.tenantId,
       timeEntryId: entry.id ?? '',
       caseId: entry.caseId,
@@ -330,6 +327,14 @@ export class TimeEntryApprovalService {
     });
 
     const compensation = await this.deriveCompensation(entry, at);
+
+    // Set every approval field BEFORE the save — the model's freeze engages
+    // the moment the row persists as 'approved'.
+    entry.approvedAt = at;
+    entry.approvedByProfileId = principal?.id ?? null;
+    entry.approvalPath = path;
+    entry.status = 'approved';
+    await entry.save();
 
     if (supportCase) {
       // Case-visible audit carries the client-side amount ONLY — provider
@@ -541,8 +546,16 @@ export class TimeEntryApprovalService {
     let includedSecondsBefore = 0;
     if (entry.caseId && terms.includedMinutes > 0) {
       const existing = await this.charges.forCase(entry.caseId);
+      // Only live charges consume included time: `corrected`/`voided` rows
+      // release their allowance back to the case (codex P1, PR #1943), and
+      // the entry's own row is excluded so an approval retry after a partial
+      // failure never double-counts itself.
       const consumed = existing
-        .filter((charge) => charge.status !== 'voided')
+        .filter(
+          (charge) =>
+            (charge.status === 'final' || charge.status === 'pending') &&
+            charge.timeEntryId !== entry.id,
+        )
         .reduce((sum, charge) => sum + (charge.includedSecondsApplied ?? 0), 0);
       includedSecondsBefore = Math.max(
         0,
@@ -588,7 +601,7 @@ export class TimeEntryApprovalService {
     const payableSeconds = entry.durationSeconds;
 
     if (!plan) {
-      return this.compensations.create({
+      return this.upsertCompensationRow(entry, {
         tenantId: entry.tenantId,
         timeEntryId: entry.id ?? '',
         specialistId: entry.specialistId,
@@ -606,7 +619,7 @@ export class TimeEntryApprovalService {
     }
 
     const amount = roundMoney((payableSeconds / 3600) * plan.hourlyRate);
-    return this.compensations.create({
+    return this.upsertCompensationRow(entry, {
       tenantId: entry.tenantId,
       timeEntryId: entry.id ?? '',
       specialistId: entry.specialistId,
@@ -625,6 +638,42 @@ export class TimeEntryApprovalService {
       status: 'final',
       finalizedAt: at,
     });
+  }
+
+  /**
+   * Idempotent write of the entry's single charge row: an approval retry
+   * after a partial failure refreshes the existing row instead of colliding
+   * on the `time_entry_id` unique key.
+   */
+  protected async upsertChargeRow(
+    entry: ServiceTimeEntry,
+    fields: Record<string, unknown>,
+  ): Promise<SupportCharge> {
+    const existing = entry.id
+      ? await this.charges.forTimeEntry(entry.id)
+      : null;
+    if (!existing) {
+      return this.charges.create(fields);
+    }
+    Object.assign(existing, fields);
+    await existing.save();
+    return existing;
+  }
+
+  /** Idempotent write of the entry's single compensation row (see above). */
+  protected async upsertCompensationRow(
+    entry: ServiceTimeEntry,
+    fields: Record<string, unknown>,
+  ): Promise<SupportCompensation> {
+    const existing = entry.id
+      ? await this.compensations.forTimeEntry(entry.id)
+      : null;
+    if (!existing) {
+      return this.compensations.create(fields);
+    }
+    Object.assign(existing, fields);
+    await existing.save();
+    return existing;
   }
 
   /** Cross-tenant acts are refused when both sides carry a tenant. */

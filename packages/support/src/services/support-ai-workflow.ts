@@ -470,7 +470,10 @@ export class SupportAiWorkflow {
               metadata: { attempt: attemptNumber, draft },
             }),
           );
-          answerPosted = true;
+          // A drafted email was never delivered to the client — it must not
+          // count as a posted answer, so autonomous resolution stays gated
+          // until the reply actually goes out (codex P1, PR #1943).
+          answerPosted = !draft;
         } else {
           runs.push(
             await this.writeRun(supportCase, {
@@ -568,12 +571,21 @@ export class SupportAiWorkflow {
       });
     }
     const caseId = this.caseIdOf(supportCase);
+    // Email receipts are drafts unless the policy sends automated mail — an
+    // undelivered receipt must not stamp `acknowledgedAt` or satisfy the
+    // acknowledgement Service Target.
+    const draft =
+      supportCase.channelKind === 'email' && !policy.autoSendEmailReplies;
     const interaction = await this.caseService.recordInteraction(supportCase, {
       direction: 'outbound',
       channelKind: (supportCase.channelKind || 'chat') as SupportChannelKind,
       actorKind: 'agent',
       body: `Thanks for reaching out — we've opened case ${supportCase.caseNumber} and are looking into it now.`,
       sourceKey: `ai:ack:${caseId}`,
+      // A templated receipt is an acknowledgement only — it must not satisfy
+      // response Service Targets or stamp `firstRespondedAt` (the substantive
+      // answer does that).
+      metadata: { acknowledgement: true, draft },
     });
     return this.writeRun(supportCase, {
       phase: 'acknowledge',
@@ -655,13 +667,15 @@ export class SupportAiWorkflow {
     };
   }
 
-  /** Prior boundary-consuming answer attempts (completed or failed). */
+  /**
+   * Prior boundary-consuming answer attempts. Low-confidence answers consume
+   * the boundary too (`handed_off`), so they count toward the attempt budget
+   * — only `skipped` runs (which never called the boundary) are free.
+   */
   private async countAnswerAttempts(caseId: string): Promise<number> {
     const runs = await this.aiRuns.forCase(caseId);
     return runs.filter(
-      (run) =>
-        run.phase === 'answer' &&
-        (run.outcome === 'completed' || run.outcome === 'failed'),
+      (run) => run.phase === 'answer' && run.outcome !== 'skipped',
     ).length;
   }
 
