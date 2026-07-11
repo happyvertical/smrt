@@ -48,6 +48,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | analytics | GA4/Plausible: properties, data streams, server-side events, AI-powered reports |
 | reports | Materialized aggregate read models: report decorators, portable aggregate specs, rebuild refresh |
 | subscriptions | Tenant subscription plans, feature grants, usage thresholds, and entitlement resolution |
+| support | AI-first Support Cases: chat/email intake to canonical cases (create-or-join dedup), guarded lifecycle + reopen history, Automated Support Response with lossless Human Handoff, Project-qualified routing, Service Target clocks with timed escalation, generic ServiceTimeEntry with separated SupportCharge/SupportCompensation snapshots |
 
 ### Domain
 | Package | Purpose |
