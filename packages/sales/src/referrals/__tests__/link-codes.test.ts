@@ -148,6 +148,19 @@ describe('ReferralLink codes', () => {
     const persisted = await links.get({ id: link.id });
     expect(persisted?.clickCount).toBe(2);
     expect(await touches.findByReferrer(referrerId)).toHaveLength(2);
+
+    // An edge that already knows the prospect can identify the touch at
+    // click time — resolve() gathers by subject pair, so this makes the
+    // click attributable without a second identified touch.
+    const identified = await links.recordClick({
+      code: link.code,
+      occurredAt,
+      subjectKind: 'lead',
+      subjectId: 'lead-123',
+    });
+    expect(identified.touch?.subjectKind).toBe('lead');
+    expect(identified.touch?.subjectId).toBe('lead-123');
+    expect(await touches.findBySubject('lead', 'lead-123')).toHaveLength(1);
   });
 
   it('resolves codes case-insensitively (codes mint lowercase)', async () => {

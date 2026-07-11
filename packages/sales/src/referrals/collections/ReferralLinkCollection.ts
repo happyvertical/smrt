@@ -81,6 +81,15 @@ export interface RecordClickInput {
   evidence?: Record<string, unknown>;
   /** When the click occurred; defaults to now. */
   occurredAt?: Date;
+  /**
+   * Prospect identity when the edge already knows it (e.g. a logged-in
+   * visitor or a pre-created lead). Without a subject pair the touch is
+   * anonymous and `AttributionService.resolve` cannot gather it by subject —
+   * the intake handler must then append a second, identified touch once the
+   * prospect materializes (same `occurredAt` preserves credit ordering).
+   */
+  subjectKind?: string;
+  subjectId?: string;
 }
 
 export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
@@ -181,6 +190,8 @@ export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
       referrerId: link.referrerId,
       programId: link.programId,
       kind: 'click',
+      subjectKind: input.subjectKind ?? '',
+      subjectId: input.subjectId ?? '',
       occurredAt,
       evidence: JSON.stringify({
         ...(input.evidence ?? {}),

@@ -163,7 +163,7 @@ export class LeadCollection extends SmrtCollection<Lead> {
     if (lead.status !== 'qualified') {
       lead.status = 'qualified'; // save-guard rejects illegal transitions
       if (!lead.qualifiedAt) {
-        lead.qualifiedAt = new Date();
+        lead.qualifiedAt = params.now ?? new Date();
       }
       await lead.save();
     }

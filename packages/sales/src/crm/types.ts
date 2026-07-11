@@ -253,6 +253,8 @@ export interface QualifyLeadParams {
   /** ISO 4217 currency code; defaults to `'USD'`. */
   currency?: string;
   expectedCloseAt?: Date | null;
+  /** Clock for the `qualifiedAt` stamp; defaults to now. */
+  now?: Date;
 }
 
 /** Params for `LeadCollection.mergeLeads()`. */
@@ -287,6 +289,8 @@ export interface MoveToStageParams {
   outcomeReason?: string;
   /** Override the stage's default probability for this opportunity. */
   probabilityOverride?: number;
+  /** Clock for the `wonAt`/`lostAt` stamps; defaults to now. */
+  now?: Date;
 }
 
 /** Params for `OpportunityConversionCollection.recordConversion()`. */

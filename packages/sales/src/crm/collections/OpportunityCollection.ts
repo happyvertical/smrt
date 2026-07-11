@@ -120,10 +120,10 @@ export class OpportunityCollection extends SmrtCollection<Opportunity> {
     }
     if (stage.isWon) {
       opportunity.status = 'won';
-      opportunity.wonAt = new Date();
+      opportunity.wonAt = params.now ?? new Date();
     } else if (stage.isLost) {
       opportunity.status = 'lost';
-      opportunity.lostAt = new Date();
+      opportunity.lostAt = params.now ?? new Date();
     }
     await opportunity.save();
 
