@@ -60,7 +60,8 @@ export type ReferralProcessingSkipReason =
   | 'referral_not_found'
   | 'not_qualified'
   | 'missing_snapshot'
-  | 'referrer_missing_earner';
+  | 'referrer_missing_earner'
+  | 'tenant_mismatch';
 
 /** One referral the bridge skipped, and why. */
 export interface ReferralProcessingSkip {
@@ -180,9 +181,32 @@ export class ReferralCommissionService {
         continue;
       }
 
+      // Tenant-lane check: without ambient tenant context, explicit
+      // referral ids (or target pairs reused across tenants) could pull a
+      // qualified referral from ANOTHER tenant and pay its earner from
+      // this event. The event, referral, and snapshot must share one lane
+      // (a NULL-tenant event may feed tenant referrals — operator-level
+      // ingestion — but a tenant event never crosses into another tenant).
+      const lane = referral.tenantId ?? null;
+      if (
+        (event.tenantId !== null && event.tenantId !== lane) ||
+        (snapshot.tenantId ?? null) !== lane
+      ) {
+        skippedReferrals.push({ referralId, reason: 'tenant_mismatch' });
+        continue;
+      }
+
       const referrer = await this.deps.referrers.get({
         id: referral.referrerId,
       });
+      if (
+        referrer &&
+        referrer.tenantId !== null &&
+        referrer.tenantId !== lane
+      ) {
+        skippedReferrals.push({ referralId, reason: 'tenant_mismatch' });
+        continue;
+      }
       if (!referrer?.earnerId) {
         skippedReferrals.push({
           referralId,

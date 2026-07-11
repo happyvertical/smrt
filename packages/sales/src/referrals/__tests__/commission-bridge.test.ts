@@ -447,4 +447,29 @@ describe('ReferralCommissionService (referrals → commissions bridge)', () => {
       bridge.processEarningEvent({ event: await makeEvent() }),
     ).rejects.toThrow(/requires referralIds or a \(targetKind, targetId\)/);
   });
+
+  it('skips referrals in a different tenant lane than the event (codex P1)', async () => {
+    const referrer = await makeReferrerWithEarner('profile-lane');
+    const { referral } = await makeQualifiedReferral({ referrer });
+
+    // A tenant-owned event must never pay a referral in another lane
+    // (this referral fixture lives in the NULL/global lane).
+    const foreignEvent = await makeEvent({ tenantId: 'tenant-z' });
+    const result = await bridge.processEarningEvent({
+      event: foreignEvent,
+      referralIds: [referral.id as string],
+    });
+    expect(result.results).toHaveLength(0);
+    expect(result.skippedReferrals).toEqual([
+      { referralId: referral.id, reason: 'tenant_mismatch' },
+    ]);
+
+    // A NULL-tenant (operator-level) event still feeds the global lane.
+    const globalEvent = await makeEvent();
+    const ok = await bridge.processEarningEvent({
+      event: globalEvent,
+      referralIds: [referral.id as string],
+    });
+    expect(ok.results).toHaveLength(1);
+  });
 });

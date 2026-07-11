@@ -344,6 +344,7 @@ export class AttributionPolicy extends SmrtObject {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertFrozenIdentityUnchanged();
+    await this.assertNaturalKeyNotTaken();
     if (this.status === 'active') {
       validateAttributionPolicyTerms(this);
     }
@@ -353,6 +354,47 @@ export class AttributionPolicy extends SmrtObject {
       frozenPolicySnapshot.set(this, this.serializeFrozenSnapshot());
     }
     return result;
+  }
+
+  /**
+   * Refuse a save whose `(tenantId, policyKey, version)` natural key
+   * already belongs to a DIFFERENT row — the frozen-identity guard is
+   * instance-local, so a fresh instance would otherwise upsert over the
+   * persisted policy (rewriting attribution rules and rotating the row
+   * id). Edit drafts by hydrating them; change terms with
+   * `AttributionPolicyCollection.createAmendment()`.
+   */
+  private async assertNaturalKeyNotTaken(): Promise<void> {
+    if (!this.policyKey) return;
+    try {
+      const res = await this.db.query(
+        `SELECT id, tenant_id FROM ${this.tableName} WHERE policy_key = $1 AND version = $2`,
+        this.policyKey,
+        this.version,
+      );
+      const rows = Array.isArray(res)
+        ? (res as Record<string, unknown>[])
+        : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);
+      const taken = rows.find(
+        (row) =>
+          (row.tenant_id ?? null) === (this.tenantId ?? null) &&
+          row.id !== this.id,
+      );
+      if (taken) {
+        throw new Error(
+          `AttributionPolicy ${this.policyKey}@${this.version}: this ` +
+            'version already exists for the tenant — policy versions are ' +
+            'immutable records. Hydrate the existing row to edit a draft, ' +
+            'or create new terms with ' +
+            'AttributionPolicyCollection.createAmendment().',
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('immutable')) {
+        throw error;
+      }
+      // DB not ready / table absent — nothing persisted to collide with.
+    }
   }
 
   /**

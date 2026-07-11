@@ -162,6 +162,7 @@ export class ReferralQualificationService {
     const policy = await this.findPolicyVersion(
       referral.policyKey,
       referral.policyVersion,
+      referral.tenantId,
     );
     if (policy) {
       if (input.isExistingClient && !policy.allowExistingClients) {
@@ -313,14 +314,26 @@ export class ReferralQualificationService {
     return referral;
   }
 
-  /** The exact policy version pinned on the referral, when it exists. */
-  private async findPolicyVersion(policyKey: string, version: number) {
+  /**
+   * The exact policy version pinned on the referral, when it exists —
+   * resolved in the REFERRAL's tenant lane (global fallback): background
+   * qualification runs without ambient tenant context, and another
+   * tenant's same-keyed policy must never supply the eligibility flags.
+   */
+  private async findPolicyVersion(
+    policyKey: string,
+    version: number,
+    tenantId: string | null = null,
+  ) {
     if (!policyKey || version <= 0) return null;
     const results = await this.deps.policies.list({
       where: { policyKey, version },
-      limit: 1,
     });
-    return results[0] ?? null;
+    return (
+      results.find((policy) => policy.tenantId === tenantId) ??
+      results.find((policy) => policy.tenantId === null) ??
+      null
+    );
   }
 
   /**

@@ -138,6 +138,23 @@ describe('AttributionPolicy versioning', () => {
     expect((await policies.get({ id: b.id }))?.windowDays).toBe(60);
   });
 
+  it('refuses a fresh create onto an existing policy version (codex P1)', async () => {
+    const original = await policies.create({
+      policyKey: 'upsert-guard',
+      version: 1,
+      status: 'active',
+      windowDays: 30,
+    });
+    await expect(
+      policies.create({
+        policyKey: 'upsert-guard',
+        version: 1,
+        windowDays: 5,
+      }),
+    ).rejects.toThrow(/immutable records/);
+    expect((await policies.get({ id: original.id }))?.windowDays).toBe(30);
+  });
+
   it('freezes policy-defining fields once active (status transitions stay allowed)', async () => {
     await policies.create({
       policyKey: 'frozen',
@@ -242,6 +259,29 @@ describe('ReferralAgreement versioning', () => {
     draft.commissionPlanKey = 'referral-standard';
     draft.activate();
     await expect(draft.save()).resolves.toBeDefined();
+  });
+
+  it('refuses a fresh create onto an existing agreement version (codex P1)', async () => {
+    const original = await agreements.create({
+      referrerId,
+      programId,
+      version: 1,
+      status: 'active',
+      commissionPlanKey: 'referral-standard',
+      clearingDays: 30,
+    });
+    await expect(
+      agreements.create({
+        referrerId,
+        programId,
+        version: 1,
+        commissionPlanKey: 'evil-plan',
+        clearingDays: 0,
+      }),
+    ).rejects.toThrow(/immutable records/);
+    const persisted = await agreements.get({ id: original.id });
+    expect(persisted?.commissionPlanKey).toBe('referral-standard');
+    expect(persisted?.clearingDays).toBe(30);
   });
 
   it('activeFor returns the active version whose effective window contains the instant', async () => {

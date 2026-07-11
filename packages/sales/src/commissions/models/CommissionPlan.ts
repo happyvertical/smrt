@@ -354,6 +354,7 @@ export class CommissionPlan extends SmrtObject {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertFrozenIdentityUnchanged();
+    await this.assertNaturalKeyNotTaken();
     if (this.status === 'active') {
       validateCommissionPlanComponents(this.getComponents());
     }
@@ -363,6 +364,47 @@ export class CommissionPlan extends SmrtObject {
       frozenPlanSnapshot.set(this, this.serializeFrozenSnapshot());
     }
     return result;
+  }
+
+  /**
+   * Refuse a save whose `(tenantId, planKey, version)` natural key already
+   * belongs to a DIFFERENT row. The frozen-identity guard above is
+   * instance-local (WeakMap), so a FRESH instance carrying an existing
+   * natural key would otherwise sail through and the conflict-column
+   * upsert would rewrite the persisted terms (and rotate the row id).
+   * Edit drafts by hydrating them; change terms with
+   * `CommissionPlanCollection.createAmendment()`.
+   */
+  private async assertNaturalKeyNotTaken(): Promise<void> {
+    if (!this.planKey) return;
+    try {
+      const res = await this.db.query(
+        `SELECT id, tenant_id FROM ${this.tableName} WHERE plan_key = $1 AND version = $2`,
+        this.planKey,
+        this.version,
+      );
+      const rows = Array.isArray(res)
+        ? (res as Record<string, unknown>[])
+        : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);
+      const taken = rows.find(
+        (row) =>
+          (row.tenant_id ?? null) === (this.tenantId ?? null) &&
+          row.id !== this.id,
+      );
+      if (taken) {
+        throw new Error(
+          `CommissionPlan ${this.planKey}@${this.version}: this version ` +
+            'already exists for the tenant — plan versions are immutable ' +
+            'records. Hydrate the existing row to edit a draft, or create ' +
+            'new terms with CommissionPlanCollection.createAmendment().',
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('immutable')) {
+        throw error;
+      }
+      // DB not ready / table absent — nothing persisted to collide with.
+    }
   }
 
   /**

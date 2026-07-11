@@ -607,4 +607,25 @@ describe('AttributionService', () => {
       'attributed',
     );
   });
+
+  it('requires a non-blank actor for exception resolution and overrides (codex P2)', async () => {
+    await expect(
+      service.resolveException({
+        exceptionId: 'whatever',
+        awards: [{ referrerId: 'r1', creditFraction: 1 }],
+        resolutionReason: 'valid reason',
+        actorProfileId: '   ',
+      }),
+    ).rejects.toThrow(/actorProfileId/);
+    await expect(
+      service.override({
+        targetKind: 'lead',
+        targetId: 'lead-x',
+        programId: 'prog-x',
+        awards: [{ referrerId: 'r1', creditFraction: 1 }],
+        resolutionReason: 'valid reason',
+        actorProfileId: '',
+      }),
+    ).rejects.toThrow(/actorProfileId/);
+  });
 });

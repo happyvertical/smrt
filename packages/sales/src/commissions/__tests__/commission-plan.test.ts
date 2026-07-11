@@ -316,4 +316,28 @@ describe('CommissionPlan', () => {
     expect(forC?.version).toBe(3);
     expect(forC?.tenantId).toBeNull();
   });
+
+  it('refuses a fresh create onto an existing plan version (codex P1)', async () => {
+    const original = await createDraft({
+      planKey: 'upsert-guard',
+      version: 1,
+      components: JSON.stringify(baseComponents),
+    });
+    original.activate();
+    await original.save();
+
+    // A fresh instance carrying the same (tenant, key, version) would
+    // upsert changed terms over the active row — refused.
+    await expect(
+      createDraft({
+        planKey: 'upsert-guard',
+        version: 1,
+        components: JSON.stringify([
+          { key: 'evil', trigger: '*', basis: 'gross', rate: 0.99 },
+        ]),
+      }),
+    ).rejects.toThrow(/immutable records/);
+    const persisted = await plans.get({ id: original.id });
+    expect(persisted?.getComponents()).toEqual(baseComponents);
+  });
 });

@@ -442,6 +442,7 @@ export class AttributionService {
       input.resolutionReason,
       'resolveException',
     );
+    AttributionService.assertActor(input.actorProfileId, 'resolveException');
     AttributionService.assertAwards(input.awards);
     const now = input.now ?? new Date();
 
@@ -518,6 +519,7 @@ export class AttributionService {
       input.resolutionReason,
       'override',
     );
+    AttributionService.assertActor(input.actorProfileId, 'override');
     AttributionService.assertAwards(input.awards);
     const now = input.now ?? new Date();
 
@@ -801,14 +803,20 @@ export class AttributionService {
   }> {
     const pinned = displaced.find((referral) => referral.policyKey);
     if (pinned) {
+      // Program-tenant lane with global fallback — an override running
+      // without ambient tenant context must not adopt another tenant's
+      // same-keyed policy version for the expiry window.
       const versions = await this.deps.policies.list({
         where: { policyKey: pinned.policyKey, version: pinned.policyVersion },
-        limit: 1,
       });
+      const laneVersion =
+        versions.find((policy) => policy.tenantId === program.tenantId) ??
+        versions.find((policy) => policy.tenantId === null) ??
+        null;
       return {
         policyKey: pinned.policyKey,
         policyVersion: pinned.policyVersion,
-        windowDays: versions[0]?.windowDays ?? null,
+        windowDays: laneVersion?.windowDays ?? null,
       };
     }
     const policy = await this.resolvePolicy(program, undefined);
@@ -894,6 +902,19 @@ export class AttributionService {
     if (!reason?.trim()) {
       throw new Error(
         `AttributionService.${method} requires a non-empty resolutionReason`,
+      );
+    }
+  }
+
+  /**
+   * Attribution decisions are audited — a blank actor would permanently
+   * resolve/override credit with an empty `resolvedByProfileId`, defeating
+   * the audit trail.
+   */
+  private static assertActor(actorProfileId: string, method: string): void {
+    if (!actorProfileId?.trim()) {
+      throw new Error(
+        `AttributionService.${method} requires a non-empty actorProfileId`,
       );
     }
   }

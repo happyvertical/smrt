@@ -323,6 +323,7 @@ export class ReferralAgreement extends SmrtObject {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertFrozenTermsUnchanged();
+    await this.assertNaturalKeyNotTaken();
     if (this.status === 'active' && !this.commissionPlanKey) {
       throw new Error(
         `ReferralAgreement ${this.referrerId}/${this.programId}@${this.version}: commissionPlanKey is required while active`,
@@ -334,6 +335,45 @@ export class ReferralAgreement extends SmrtObject {
       frozenAgreementSnapshot.set(this, this.serializeFrozenTerms());
     }
     return result;
+  }
+
+  /**
+   * Refuse a save whose `(referrerId, programId, version)` natural key
+   * already belongs to a DIFFERENT row — the frozen-terms guard is
+   * instance-local, so a fresh instance would otherwise upsert over the
+   * persisted agreement (replacing legally frozen referral terms without
+   * an amendment, and rotating the row id). Edit drafts by hydrating
+   * them; change terms with
+   * `ReferralAgreementCollection.createAmendment()`.
+   */
+  private async assertNaturalKeyNotTaken(): Promise<void> {
+    if (!this.referrerId || !this.programId) return;
+    try {
+      const res = await this.db.query(
+        `SELECT id FROM ${this.tableName} WHERE referrer_id = $1 AND program_id = $2 AND version = $3`,
+        this.referrerId,
+        this.programId,
+        this.version,
+      );
+      const rows = Array.isArray(res)
+        ? (res as Record<string, unknown>[])
+        : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);
+      const taken = rows.find((row) => row.id !== this.id);
+      if (taken) {
+        throw new Error(
+          `ReferralAgreement ${this.referrerId}/${this.programId}@${this.version}: ` +
+            'this version already exists — agreement versions are ' +
+            'immutable records. Hydrate the existing row to edit a draft, ' +
+            'or create new terms with ' +
+            'ReferralAgreementCollection.createAmendment().',
+        );
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('immutable')) {
+        throw error;
+      }
+      // DB not ready / table absent — nothing persisted to collide with.
+    }
   }
 
   private async resolvePriorStatus(): Promise<
