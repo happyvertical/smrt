@@ -1,4 +1,7 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { M } from './i18n.js';
+
 export interface CommercialMetricView {
   metricKey: string;
   usage: number;
@@ -15,9 +18,10 @@ export interface CommercialMetricView {
 }
 
 let { metrics = [] }: { metrics?: CommercialMetricView[] } = $props();
+const { t } = useI18n();
 </script>
 
-<section class="commercial-overview" aria-label="Commercial usage overview">
+<section class="commercial-overview" aria-label={t(M['subscriptions.commercial.overview_label'])}>
   {#each metrics as metric (metric.metricKey)}
     <article>
       <header><strong>{metric.metricKey}</strong><span class:blocked={metric.thresholdState === 'blocked'}>{metric.thresholdState ?? 'ok'}</span></header>
