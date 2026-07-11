@@ -97,7 +97,11 @@ Each package is packed once. Pack shards verify that exact tarball and emit a
 schema-versioned manifest containing package name, version, filename, and
 SHA-256. The summary verifies complete package membership and uniform versions.
 The release job publishes those tarballs sequentially and safely skips versions
-already present on npm during a retry.
+already present on npm during a retry. After publication, it supplies the
+release App credential directly to Git instead of relying on checkout's
+path-conditional credential include (ARC workspaces may resolve through a
+symlink). The release commit and tag are pushed atomically, so GitHub cannot
+record only one of the two refs.
 
 The manual `publish-mode=changesets` option is an emergency fallback for the
 first two successful artifact-based releases. Remove the option after both
