@@ -412,10 +412,18 @@ jobs:
       # round-robins by name), keeping per-runner load low so transient
       # resource-pressure timing flakes stay rare.
       - name: Run package tests (shard ${{ matrix.shard }}, excluding core)
-        run: node scripts/test-packages-shard.mjs '${{ matrix.shard }}' | xargs -r pnpm turbo run test --concurrency=2
+        # SQLite-heavy suites can emit tens of thousands of successful log
+        # lines. Buffer only failed task output so ARC runners retain a healthy
+        # log stream while otherwise-green tests keep running.
+        run: >-
+          node scripts/test-packages-shard.mjs '${{ matrix.shard }}'
+          | xargs -r pnpm turbo run test --concurrency=2 --output-logs=errors-only
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
+          # The node runner exposes all 32 host CPUs. Cap each of the two
+          # concurrent Turbo tasks so Vitest cannot fan out to dozens of workers.
+          VITEST_MAX_WORKERS: '2'
 
       - name: Upload test results
         if: always()
