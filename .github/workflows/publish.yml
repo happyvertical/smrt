@@ -368,9 +368,11 @@ jobs:
         env:
           CI: true
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+          RELEASE_BASE_BRANCH: main
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
           PUBLISH_MODE: ${{ inputs.publish-mode || 'artifacts' }}
         run: |
@@ -405,8 +407,11 @@ jobs:
           # Skip developer hooks in CI. Release builds can generate source
           # artifacts, and those hooks should not block the automation push
           # after the equivalent safety checks have already run above.
-          git push --no-verify -f origin "v$RELEASE_VERSION"
-          git push --no-verify origin main
+          # Supply auth directly to Git for these writes. On ARC runners the
+          # workspace can resolve through a symlink into the pnpm store, so the
+          # path-conditional credentials installed by actions/checkout do not
+          # match the repository's real gitdir even though public fetches work.
+          node scripts/push-release-refs.mjs
 
           RELEASE_NOTES="## Published Packages"$'\n\n'
           RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
