@@ -43,7 +43,8 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | commerce | Customer/Vendor, Contract (5 STI types), Invoice with ledger integration, Fulfillment |
 | products | Product catalog — reference template for triple-consumption (npm/federation/standalone) with owned asset joins via `product_assets` |
 | ads | Ad delivery: priority waterfall, weighted A/B variations, immutable event tracking |
-| affiliates | Revenue sharing: multi-type partners, multi-tier commissions, payout processing |
+| sales | Modular sales: CRM (Lead/Opportunity/Pipeline), referrals with versioned attribution policies + immutable term snapshots, neutral commissions core (Earner, CommissionPlan, Commission, CommissionPayout — integer cents), reusable Svelte surfaces; subpaths `/crm`, `/referrals`, `/commissions`, `/svelte` |
+| affiliates | DEPRECATED compatibility shim over `smrt-sales` — re-exports legacy Partner/Commission/Payout names with no persistence of its own; see `packages/affiliates/MIGRATION.md` |
 | ledgers | Double-entry accounting, balance enforcement (EPSILON=0.01), journal lifecycle |
 | analytics | GA4/Plausible: properties, data streams, server-side events, AI-powered reports |
 | reports | Materialized aggregate read models: report decorators, portable aggregate specs, rebuild refresh |
