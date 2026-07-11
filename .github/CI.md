@@ -5,6 +5,20 @@ builds and tests. The internal Turborepo server is the build-output cache;
 GitHub Actions cache archives are deliberately not used for `.turbo/cache`.
 If the remote cache is unavailable, Turbo performs a cold build.
 
+## Manifest generation
+
+SMRT package builds scan each source tree once. The Vite plugin creates the
+initial manifest during `configResolved`, reuses it for the first `buildStart`,
+and rescans only on later watch rebuilds. Do not restore an unconditional first
+`buildStart` scan; it doubles manifest work for every non-watch library build.
+
+Vitest still generates one test manifest per package process so test-local
+`@smrt()` classes remain discoverable. Core's exhaustive suite is different:
+the build job seeds the cacheable `@happyvertical/smrt-core#generate:test`
+task, and all three core shards restore that exact output before invoking
+Vitest. A Turbo cache outage may make a shard regenerate the manifest, but must
+never prevent the tests from running.
+
 ## Runner selection
 
 - `arc-happyvertical-node` is the normal Node.js runner. It has exact Node and

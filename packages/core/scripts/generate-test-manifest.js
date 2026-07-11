@@ -41,7 +41,12 @@ async function generateTestManifest() {
         // Scan all source files including test files for test manifest
         // Test classes defined inline need to be in the manifest for proper field detection
         include: ['src/**/*.ts'],
-        exclude: ['src/**/*.d.ts', 'node_modules/**'],
+        exclude: [
+          'src/**/*.d.ts',
+          'src/manifest/static-manifest.ts',
+          'src/manifest/test-manifest-stub.ts',
+          'node_modules/**',
+        ],
 
         // === SCANNER CONFIGURATION ===
         baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],

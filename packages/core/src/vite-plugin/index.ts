@@ -246,6 +246,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let projectRoot: string = process.cwd();
   let config: ResolvedConfig | null = null; // Store resolved config for closeBundle hook
   let resolvedPluginNames: string[] = [];
+  let hasFreshConfigResolvedManifest = false;
 
   /**
    * Write manifest to .smrt/manifest.json for CLI discovery.
@@ -501,6 +502,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     },
 
     async configResolved(resolvedConfig) {
+      hasFreshConfigResolvedManifest = false;
       // Store config for closeBundle hook
       config = resolvedConfig;
       resolvedPluginNames = (resolvedConfig.plugins || []).map(
@@ -557,9 +559,30 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           ),
         });
       }
+
+      // Vite calls buildStart immediately after configResolved for the initial
+      // build. The manifest already reflects the same source tree, so let that
+      // first hook reuse it. Later buildStart calls are watch rebuilds and must
+      // rescan changed classes.
+      hasFreshConfigResolvedManifest = true;
     },
 
     async buildStart() {
+      if (hasFreshConfigResolvedManifest) {
+        hasFreshConfigResolvedManifest = false;
+        // configureServer may be attached between configResolved and
+        // buildStart. Emit declarations from the reused manifest even though
+        // the scanner itself does not need to run again.
+        if (generateTypes && server && manifest) {
+          await generateTypeDeclarationFile(
+            manifest,
+            projectRoot,
+            typeDeclarationsPath,
+          );
+        }
+        return;
+      }
+
       // Rescan files on build start in all modes
       manifest = await scanAndGenerateManifest(projectRoot);
 
