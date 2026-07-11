@@ -123,8 +123,13 @@ export class Referral extends SmrtObject {
    * The ReferralTermSnapshot frozen at qualification ('' until qualified).
    * Requalification repoints this at a NEW snapshot; old snapshots remain
    * as history.
+   *
+   * Deliberately a PLAIN string reference (not `@foreignKey`): the
+   * snapshot's own `referralId` FK carries the relationship, and declaring
+   * both directions would put a cycle in the model graph (breaking the
+   * registry's topological initialization order). Services fetch the
+   * snapshot by id explicitly.
    */
-  @foreignKey('ReferralTermSnapshot')
   snapshotId: string = '';
 
   /**
