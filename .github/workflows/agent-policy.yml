@@ -1,0 +1,36 @@
+name: Agent Policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  packages: read
+
+jobs:
+  lifecycle:
+    name: lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+      - name: Load pinned policy runtime
+        env:
+          POLICY_ARTIFACT: ${{ vars.AGENT_POLICY_ARTIFACT }}
+        run: |
+          case "$POLICY_ARTIFACT" in
+            ghcr.io/*@sha256:*) ;;
+            *) echo 'AGENT_POLICY_ARTIFACT must be an immutable GHCR digest' >&2; exit 1 ;;
+          esac
+          mkdir -p .hv-policy
+          oras pull "$POLICY_ARTIFACT" -o .hv-policy
+          tar -xzf .hv-policy/agent-policy.tar.gz -C .hv-policy
+      - name: Validate lifecycle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 .hv-policy/scripts/hv-agent check-pr "$PR_NUMBER"
