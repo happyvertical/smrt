@@ -1,5 +1,14 @@
 # @happyvertical/smrt-subscriptions
 
+## 0.39.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.39.1
+  - @happyvertical/smrt-tenancy@0.39.1
+  - @happyvertical/smrt-ui@0.39.1
+
 ## 1.0.0
 
 ### Patch Changes
