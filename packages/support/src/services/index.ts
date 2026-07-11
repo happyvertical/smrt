@@ -3,6 +3,29 @@
  */
 
 export {
+  type HandoffAiRunSummary,
+  type HandoffContextPackage,
+  type HandoffTimelineItem,
+  type HumanHandoffInput,
+  type HumanHandoffResult,
+  HumanHandoffService,
+  type HumanHandoffServiceOptions,
+  type SpecialistRouter,
+} from './human-handoff-service.js';
+export {
+  createDefaultAiBoundary,
+  createNoopKnowledgeProvider,
+  type KnowledgeSnippet,
+  type SupportAiAnswerResult,
+  type SupportAiBoundary,
+  type SupportAiClassifyResult,
+  SupportAiWorkflow,
+  type SupportAiWorkflowOptions,
+  type SupportHandoffNotice,
+  type SupportKnowledgeProvider,
+  severityRank,
+} from './support-ai-workflow.js';
+export {
   type CaseActor,
   type CaseTimelineItem,
   type OpenCaseInput,
