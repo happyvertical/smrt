@@ -1,7 +1,12 @@
+import type { EmailClient, GetEmailClientOptions } from '@happyvertical/email';
 import type { Account } from './models/Account.js';
 import { TelegramSender } from './senders/TelegramSender.js';
 import { ZulipSender } from './senders/ZulipSender.js';
-import type { MessageSenderInterface, MessagingChannel } from './types.js';
+import type {
+  MessageClientFactory,
+  MessageSenderInterface,
+  MessagingChannel,
+} from './types.js';
 
 export type MessagingProviderFieldType =
   | 'string'
@@ -32,7 +37,30 @@ export interface MessagingProviderDefinition {
   credentialFields: MessagingProviderField[];
   endpointFields: MessagingProviderField[];
   createSender?: (account: Account) => Promise<MessageSenderInterface>;
+  /**
+   * Creates the SDK email client for this provider. Absent on the builtin
+   * metadata-only definitions — registered by the explicit
+   * `@happyvertical/smrt-messages/providers/email` entry point so the
+   * @happyvertical/email SDK (googleapis/nodemailer) never enters
+   * provider-neutral consumer bundles (#1979).
+   */
+  createEmailClient?: (options: GetEmailClientOptions) => Promise<EmailClient>;
+  /**
+   * Creates the SDK message client (Slack, Twitter, …) for this provider.
+   * Registered by the matching `@happyvertical/smrt-messages/providers/*`
+   * entry point; absent until that entry is imported.
+   */
+  createMessageClient?: MessageClientFactory;
 }
+
+/**
+ * Function-valued definition keys. Stripped by MessagingSettingsService before
+ * definitions are serialized to setup UIs.
+ */
+export type MessagingProviderFunctionKey =
+  | 'createSender'
+  | 'createEmailClient'
+  | 'createMessageClient';
 
 const REGISTRY_KEY = Symbol.for('smrt.messaging.providers');
 
