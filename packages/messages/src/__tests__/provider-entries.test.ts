@@ -121,6 +121,29 @@ describe('importing providers/email enables the email client boundary', () => {
     ).toBeTypeOf('function');
   });
 
+  it('Attachment.readContent() honors a files module registered via the core optional-dependency registry', async () => {
+    const { registerOptionalDependency } = await import(
+      '@happyvertical/smrt-core'
+    );
+    const read = vi.fn(async () => Buffer.from('attachment-bytes'));
+    registerOptionalDependency('@happyvertical/files', {
+      getFilesystem: async () => ({ read }),
+    });
+    try {
+      const { Attachment } = await import('../models/Attachment');
+      const attachment = new Attachment({});
+      attachment.filePath = '/stored/file.bin';
+
+      const content = await attachment.readContent();
+
+      expect(content?.toString()).toBe('attachment-bytes');
+      expect(read).toHaveBeenCalledWith('/stored/file.bin');
+    } finally {
+      // Restore runtime resolution for any later test in this worker.
+      registerOptionalDependency('@happyvertical/files', undefined);
+    }
+  });
+
   it('keeps provider definitions serializable for setup UIs (functions stripped)', async () => {
     await import('../providers/email');
     const serialized = listMessagingProviders({ includeUnavailable: true }).map(

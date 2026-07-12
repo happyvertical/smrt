@@ -18,6 +18,37 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('importOptionalDependency registration (bundled-runtime opt-in)', () => {
+  it('serves a module registered on the global registry without runtime resolution', async () => {
+    vi.resetModules();
+    const lazy = await import('./lazy-external.js');
+    const fake = { marker: 'registered-module' };
+    lazy.registerOptionalDependency('@happyvertical/fake-optional', fake);
+
+    // Module-fresh import instance must still see the registration —
+    // the registry lives on globalThis, so ANY package's entry point
+    // satisfies EVERY package's lazy import of the same specifier.
+    vi.resetModules();
+    const secondInstance = await import('./lazy-external.js');
+    const resolved = await secondInstance.importOptionalDependency(
+      '@happyvertical/fake-optional',
+      'unused hint',
+    );
+    expect(resolved).toBe(fake);
+  });
+
+  it('throws the enablement hint when unregistered and unresolvable', async () => {
+    vi.resetModules();
+    const lazy = await import('./lazy-external.js');
+    await expect(
+      lazy.importOptionalDependency(
+        '@happyvertical/does-not-exist-anywhere',
+        "Import 'some/entry' to enable it.",
+      ),
+    ).rejects.toThrow(/Import 'some\/entry' to enable it\./);
+  });
+});
+
 describe('createFilesystemAdapter', () => {
   it('uses a registered factory without touching the files SDK', async () => {
     const loader = await loadFresh();

@@ -133,7 +133,7 @@ export class Attachment extends SmrtObject {
     try {
       const { getFilesystem } = (await importOptionalDependency(
         '@happyvertical/files',
-        "Import '@happyvertical/smrt-assets/filesystem' or resolve @happyvertical/files at runtime to read externally-stored attachments.",
+        "Import '@happyvertical/smrt-core/filesystem' (or '@happyvertical/smrt-assets/filesystem') during server startup to read externally-stored attachments in bundled builds.",
       )) as typeof import('@happyvertical/files');
       const files = await getFilesystem({ type: 'local' });
       const data = await files.read(this.filePath);

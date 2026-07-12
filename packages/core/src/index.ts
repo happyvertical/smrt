@@ -151,7 +151,10 @@ export {
   resolveLazyConfig,
   unregisterConfigResolver,
 } from './lazy-config';
-export { importOptionalDependency } from './lazy-external';
+export {
+  importOptionalDependency,
+  registerOptionalDependency,
+} from './lazy-external';
 // Learning memory — confidence-scored, self-correcting recall/capture (#1886)
 export {
   DEFAULT_LEARNING_CONFIG,
