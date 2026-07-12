@@ -23,6 +23,7 @@ concurrency:
     }}-${{
       github.event_name == 'pull_request' &&
       !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) &&
+      !(github.event.action == 'edited' && github.event.changes.base != null) &&
       'lifecycle' ||
       'validation'
     }}
@@ -98,7 +99,10 @@ jobs:
 
   validate-commits:
     name: Validate Conventional Commits
-    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'pull_request' &&
+      (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event.action == 'edited' && github.event.changes.base != null))
     runs-on: ubuntu-latest
 
     steps:
@@ -145,7 +149,10 @@ jobs:
 
   validate-workflows:
     name: Validate Workflow Files
-    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'pull_request' &&
+      (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event.action == 'edited' && github.event.changes.base != null))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -216,7 +223,10 @@ jobs:
 
   check-sdk-versions:
     name: Check SDK Version Alignment
-    if: github.event_name == 'merge_group' || contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'merge_group' ||
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -227,7 +237,10 @@ jobs:
 
   secret-scan:
     name: Secret Scan (gitleaks)
-    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'pull_request' &&
+      (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event.action == 'edited' && github.event.changes.base != null))
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 gives us the base branch history needed for merge-base.
@@ -261,7 +274,10 @@ jobs:
 
   check-standards:
     name: Check Monorepo Standards
-    if: github.event_name == 'merge_group' || contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'merge_group' ||
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -345,7 +361,10 @@ jobs:
 
   dependency-audit:
     name: Dependency Vulnerability Audit
-    if: github.event_name == 'merge_group' || contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'merge_group' ||
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -373,7 +392,10 @@ jobs:
 
   postgres-scope:
     name: Detect PostgreSQL Test Scope
-    if: github.event_name == 'merge_group' || contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'merge_group' ||
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
     runs-on: ubuntu-latest
     outputs:
       required: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.postgres }}
@@ -413,7 +435,10 @@ jobs:
 
   test:
     name: Validate Changes
-    if: github.event_name == 'merge_group' || contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)
+    if: >-
+      github.event_name == 'merge_group' ||
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
     uses: ./.github/workflows/test-suite.yml
     with:
       mode: ${{ github.event_name == 'merge_group' && 'full' || (vars.CI_MERGE_QUEUE_ENABLED == 'true' && 'affected' || 'full') }}
@@ -423,7 +448,11 @@ jobs:
 
   publish-dry-run:
     name: Publish Dry Run
-    if: (github.event_name == 'merge_group' || contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)) && (github.event_name == 'merge_group' || vars.CI_MERGE_QUEUE_ENABLED != 'true')
+    if: >-
+      (github.event_name == 'merge_group' ||
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)) &&
+      (github.event_name == 'merge_group' || vars.CI_MERGE_QUEUE_ENABLED != 'true')
     uses: ./.github/workflows/publish-dry-run.yml
     permissions:
       contents: read
@@ -434,7 +463,8 @@ jobs:
       ${{
         (github.event_name == 'workflow_dispatch' ||
         (github.event_name == 'pull_request' &&
-        !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))) &&
+        !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) &&
+        !(github.event.action == 'edited' && github.event.changes.base != null))) &&
         'Lifecycle Event' ||
         'Required CI'
       }}
@@ -457,7 +487,8 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'pull_request' &&
-          !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+          !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) &&
+          !(github.event.action == 'edited' && github.event.changes.base != null))
         env:
           LIFECYCLE: ${{ needs.lifecycle.result }}
         run: |
@@ -471,7 +502,8 @@ jobs:
         if: >-
           github.event_name == 'merge_group' ||
           (github.event_name == 'pull_request' &&
-          contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+          (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
+          (github.event.action == 'edited' && github.event.changes.base != null)))
         env:
           EVENT_NAME: ${{ github.event_name }}
           LIFECYCLE: ${{ needs.lifecycle.result }}
