@@ -300,6 +300,36 @@ describe('managed application delivery control plane (#1949)', () => {
       ([call]) => call.idempotencyKey,
     );
     expect(new Set(idempotencyKeys).size).toBe(1);
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: String(developmentRequest.id),
+      idempotencyKey: 'terminal-completed',
+      sequence: 5,
+      type: 'completed',
+      payload: {},
+    });
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: String(developmentRequest.id),
+      idempotencyKey: 'terminal-rejected',
+      sequence: 6,
+      type: 'rejected',
+      payload: { reason: 'Newer rejection' },
+    });
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: String(developmentRequest.id),
+      idempotencyKey: 'terminal-completed',
+      sequence: 5,
+      type: 'completed',
+      payload: {},
+    });
+    const requests = await DevelopmentRequestCollection.create({ db });
+    expect(
+      await withTenant({ tenantId: projectIntegration.tenantId }, () =>
+        requests.get({ id: String(developmentRequest.id) }),
+      ),
+    ).toMatchObject({ status: 'declined' });
     const integrations = await ProjectIntegrationCollection.create({ db });
     await integrations.revoke(
       projectIntegration.tenantId,
@@ -321,6 +351,9 @@ describe('managed application delivery control plane (#1949)', () => {
         payload: {},
       }),
     ).rejects.toThrow(/revoked/i);
+    const send = vi.fn(async () => undefined);
+    await delivery.deliverPending({ send }, projectIntegration.tenantId);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('retries failed delivery, replays in order, and rejects stale previews', async () => {

@@ -126,6 +126,13 @@ export class ProjectDeliveryService {
     );
     if (event.type === 'preview') await this.upsertPreview(request, payload);
     if (
+      (event.type === 'completed' ||
+        event.type === 'deployment' ||
+        event.type === 'rejected') &&
+      !(await this.isLatestTerminalEvent(event))
+    )
+      return;
+    if (
       (event.type === 'completed' || event.type === 'deployment') &&
       request.status !== 'completed'
     )
@@ -176,6 +183,11 @@ export class ProjectDeliveryService {
       }),
     );
     for (const event of pending) {
+      const active = await this.integrations.findActive(
+        tenantId,
+        event.integrationId,
+      );
+      if (!active) continue;
       event.deliveryAttempts += 1;
       try {
         await sender.send(event);
@@ -277,6 +289,25 @@ export class ProjectDeliveryService {
         'Development Request is outside this Project Integration.',
       );
     return request;
+  }
+
+  private async isLatestTerminalEvent(
+    event: ProjectDeliveryEvent,
+  ): Promise<boolean> {
+    const latest = (
+      await withTenant({ tenantId: event.tenantId }, () =>
+        this.events.list({
+          where: {
+            integrationId: event.integrationId,
+            requestId: event.requestId,
+            type: ['completed', 'deployment', 'rejected'],
+          },
+          orderBy: 'sequence DESC',
+          limit: 1,
+        }),
+      )
+    )[0];
+    return !latest || latest.sequence <= event.sequence;
   }
 
   private async upsertPreview(
