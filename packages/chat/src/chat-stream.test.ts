@@ -12,6 +12,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AIInterface, AIMessage, ChatOptions } from '@happyvertical/ai';
+import type { PrincipalTool } from '@happyvertical/smrt-agents';
 import {
   MembershipCollection,
   RoleCollection,
@@ -50,6 +51,62 @@ function makeStreamAI(chunks: string[]): AIInterface {
     async chat(_messages: AIMessage[], options?: ChatOptions) {
       for (const chunk of chunks) options?.onProgress?.(chunk);
       return { content: chunks.join(''), finishReason: 'stop' };
+    },
+  } as unknown as AIInterface;
+}
+
+/**
+ * A mock AI that calls one tool on its first *tools-offered* round, then streams
+ * `finalChunks` as the assistant reply. Persona-path token deltas arrive through
+ * `chat({ stream: true, onProgress })`, so the text round forwards each chunk to
+ * `onProgress` exactly like {@link makeStreamAI}. It records the tool function
+ * names offered on each round into `offeredEachRound`, so a test can assert the
+ * offer gate directly at the wire (was the custom tool ever handed to the model).
+ * Crucially it only calls the tool WHEN OFFERED — so the same mock executes the
+ * tool with an allow-listing persona and stays silent with one that omits it,
+ * isolating the offer gate.
+ */
+function makeToolThenTextAI(config: {
+  toolFunctionName: string;
+  toolArgs: Record<string, unknown>;
+  finalChunks: string[];
+  /** Populated with the tool function names offered on each `chat` round. */
+  offeredEachRound?: string[][];
+}): AIInterface {
+  const { toolFunctionName, toolArgs, finalChunks, offeredEachRound } = config;
+  let call = 0;
+  return {
+    async *stream() {
+      for (const chunk of finalChunks) yield chunk;
+    },
+    async chat(_messages: AIMessage[], options?: ChatOptions) {
+      const offered = Array.isArray(options?.tools)
+        ? options.tools.map(
+            (t) => (t as { function: { name: string } }).function.name,
+          )
+        : [];
+      offeredEachRound?.push(offered);
+      const toolsOffered = offered.length > 0 && options?.toolChoice !== 'none';
+      if (toolsOffered && call === 0) {
+        call += 1;
+        return {
+          content: '',
+          finishReason: 'tool_calls',
+          toolCalls: [
+            {
+              id: 'tc_1',
+              type: 'function',
+              function: {
+                name: toolFunctionName,
+                arguments: JSON.stringify(toolArgs),
+              },
+            },
+          ],
+        };
+      }
+      call += 1;
+      for (const chunk of finalChunks) options?.onProgress?.(chunk);
+      return { content: finalChunks.join(''), finishReason: 'stop' };
     },
   } as unknown as AIInterface;
 }
@@ -335,6 +392,48 @@ describe('createChatStreamHandler', () => {
 // Persona-bound path (real harness, mock AI)
 // ---------------------------------------------------------------------------
 
+/** A lead/ticket the custom tool "filed" — the observable side effect. */
+interface FiledLead {
+  note: string;
+}
+
+/**
+ * A custom {@link PrincipalTool} standing in for the avatar-starter's
+ * assistance-request / lead-ticket tool (a `@smrt({ api:false, mcp:false })`
+ * service write that can only reach the loop as `extraTools`). Its `execute`
+ * re-asserts its own fail-closed gate, then records the filed lead so a test can
+ * observe whether it actually ran.
+ */
+function makeAssistanceRequestTool(filed: FiledLead[]): PrincipalTool {
+  return {
+    slug: 'assistance.request',
+    aiTool: {
+      type: 'function',
+      function: {
+        name: 'assistance-request',
+        description: 'File an assistance request / lead ticket for the user.',
+        parameters: {
+          type: 'object',
+          required: ['note'],
+          properties: {
+            note: {
+              type: 'string',
+              description: 'What the user needs help with.',
+            },
+          },
+        },
+      },
+    },
+    async execute({ run, args }) {
+      // Execution gate (defense-in-depth behind the offer gate).
+      run.assertToolAllowed('assistance.request');
+      const note = typeof args.note === 'string' ? args.note : '';
+      filed.push({ note });
+      return { filed: true, note };
+    },
+  };
+}
+
 describe('runChatConversationStream — persona-bound path', () => {
   let dbPath: string;
   // A file-backed sqlite CONFIG object (not an instance), so the principal
@@ -460,5 +559,169 @@ describe('runChatConversationStream — persona-bound path', () => {
         (m) => m.role === 'assistant' && m.content === 'Sure, done.',
       ),
     ).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Custom tools threaded through the stream via binding.extraTools.
+  //
+  // The streamed persona path previously offered ONLY manifest CRUD tools (those
+  // named by allowedTools); a custom PrincipalTool — the persona messaging tool
+  // or an assistance-request/lead-ticket tool backed by a `@smrt({ api:false,
+  // mcp:false })` service — could not reach the loop, so a streamed persona chat
+  // could talk but not act. `binding.extraTools` closes that gap, gated by the
+  // persona's allowedTools exactly like the non-streaming path.
+  // -------------------------------------------------------------------------
+
+  it('offers a custom PrincipalTool through the streaming loop and executes it when the persona allow-lists it', async () => {
+    const filed: FiledLead[] = [];
+    const offeredEachRound: string[][] = [];
+    const allowedPersona: ConversationPersona = {
+      ...persona,
+      allowedTools: ['assistance.request'],
+    };
+
+    const chatService = await ChatService.create({ tenantId, db });
+    await chatService.initialize();
+    const { session } = await chatService.createAgentSession({
+      tenantId,
+      agentId: 'stream-agent',
+      actorProfileId: 'human-profile',
+    });
+    // Binding mirrors the persona allow-list onto the session, so the authored
+    // tool_result passes the chat layer's own fail-closed authoring gate too.
+    const bound = await bindPersonaToSession({
+      chatService,
+      session,
+      actorProfileId: 'human-profile',
+      tenantId,
+      persona: allowedPersona,
+    });
+
+    const context: ChatStreamContext = {
+      ai: makeToolThenTextAI({
+        toolFunctionName: 'assistance-request',
+        toolArgs: { note: 'reset my password' },
+        finalChunks: ['Filed', ' it.'],
+        offeredEachRound,
+      }),
+      binding: {
+        chatService,
+        db,
+        persona: allowedPersona,
+        session: bound,
+        tenantId,
+        recall: false,
+        extraTools: [makeAssistanceRequestTool(filed)],
+      },
+    };
+
+    const events = await collect(
+      runChatConversationStream({
+        context,
+        messages: [{ role: 'user', content: 'help me sign in' }],
+      }),
+    );
+
+    // (a) The custom tool was OFFERED to the model at the wire, and EXECUTED
+    // through the streamed loop (the model called it → its side effect ran).
+    expect(offeredEachRound[0]).toContain('assistance-request');
+    expect(filed).toEqual([{ note: 'reset my password' }]);
+
+    // (c) token/done framing is unaffected: deltas stream live, no error frame,
+    // then the persisted assistant message as the authoritative `done`.
+    expect(
+      events
+        .filter((e) => e.type === 'token')
+        .map((e) => (e as { text: string }).text)
+        .join(''),
+    ).toBe('Filed it.');
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    const done = events.at(-1) as {
+      type: 'done';
+      message: { id?: string; content: string };
+    };
+    expect(done.type).toBe('done');
+    expect(done.message.content).toBe('Filed it.');
+    expect(done.message.id).toBeTruthy();
+
+    // The tool observation was authored into the bound room as a tool message.
+    const roomMessages = await chatService.getRoomMessages({
+      roomId: bound.chatRoomId as string,
+      actorProfileId: 'human-profile',
+      tenantId,
+      limit: 50,
+    });
+    expect(
+      roomMessages.some(
+        (m) => m.role === 'tool' && m.content.includes('"filed":true'),
+      ),
+    ).toBe(true);
+  });
+
+  it('does NOT offer or execute the custom tool when the persona omits it from allowedTools (fail-closed)', async () => {
+    const filed: FiledLead[] = [];
+    const offeredEachRound: string[][] = [];
+    // `persona` (from beforeEach) has an empty allow-list. The tool is handed to
+    // the binding, but a tool being OFFERED to the binding is not the same as
+    // AUTHORIZED: the offer gate must drop it before the model ever sees it.
+
+    const chatService = await ChatService.create({ tenantId, db });
+    await chatService.initialize();
+    const { session } = await chatService.createAgentSession({
+      tenantId,
+      agentId: 'stream-agent',
+      actorProfileId: 'human-profile',
+    });
+    const bound = await bindPersonaToSession({
+      chatService,
+      session,
+      actorProfileId: 'human-profile',
+      tenantId,
+      persona,
+    });
+
+    const context: ChatStreamContext = {
+      ai: makeToolThenTextAI({
+        toolFunctionName: 'assistance-request',
+        toolArgs: { note: 'reset my password' },
+        finalChunks: ['I can', ' only talk.'],
+        offeredEachRound,
+      }),
+      binding: {
+        chatService,
+        db,
+        persona,
+        session: bound,
+        tenantId,
+        recall: false,
+        extraTools: [makeAssistanceRequestTool(filed)],
+      },
+    };
+
+    const events = await collect(
+      runChatConversationStream({
+        context,
+        messages: [{ role: 'user', content: 'file a lead for me' }],
+      }),
+    );
+
+    // (b) Fail-closed: the tool was never offered to the model, so it never
+    // executed — the same tool + same mock AI that fired it under an allow-listing
+    // persona stays inert here. The only difference is the persona's allowedTools.
+    expect(
+      offeredEachRound.every((round) => !round.includes('assistance-request')),
+    ).toBe(true);
+    expect(filed).toEqual([]);
+
+    // (c) The stream is otherwise unaffected: deltas still flow to a `done`, no
+    // error frame.
+    expect(
+      events
+        .filter((e) => e.type === 'token')
+        .map((e) => (e as { text: string }).text)
+        .join(''),
+    ).toBe('I can only talk.');
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.at(-1)?.type).toBe('done');
   });
 });
