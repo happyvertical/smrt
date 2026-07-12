@@ -101,6 +101,26 @@ describe('importing providers/email enables the email client boundary', () => {
     });
   });
 
+  it('survives a second module instance re-running builtin registration (HMR/dual-identity)', async () => {
+    await import('../providers/email');
+    expect(getMessagingProvider('smtp')?.createEmailClient).toBeTypeOf(
+      'function',
+    );
+
+    // The registry lives on globalThis while the builtin flag is
+    // module-scoped: a fresh module instance (HMR reload, src/dist dual
+    // identity) re-runs ensureBuiltin... against the shared registry. Builtins
+    // must gap-fill, never clobber the entry-registered client hooks.
+    vi.resetModules();
+    const secondInstance = await import('../providers');
+    secondInstance.ensureBuiltinMessagingProvidersRegistered();
+
+    expect(
+      secondInstance.getMessagingProvider('smtp')?.createEmailClient,
+      'entry-registered hook survived the second builtin registration',
+    ).toBeTypeOf('function');
+  });
+
   it('keeps provider definitions serializable for setup UIs (functions stripped)', async () => {
     await import('../providers/email');
     const serialized = listMessagingProviders({ includeUnavailable: true }).map(

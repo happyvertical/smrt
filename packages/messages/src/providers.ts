@@ -97,6 +97,23 @@ export function listMessagingProviders(
 
 let builtinsRegistered = false;
 
+/**
+ * Registers a builtin definition only when its id is still absent.
+ *
+ * The registry lives on globalThis (survives HMR and duplicate module
+ * instances) while the `builtinsRegistered` flag is module-scoped, so a
+ * second module instance re-runs this function against a registry that may
+ * already hold upgraded definitions — e.g. the functional client hooks
+ * registered by the explicit `providers/*` entry points (#1979). Builtins
+ * therefore only fill gaps; they never overwrite an existing definition.
+ */
+function registerBuiltinMessagingProvider(
+  provider: MessagingProviderDefinition,
+): void {
+  if (registry().has(provider.id)) return;
+  registerMessagingProvider(provider);
+}
+
 export function ensureBuiltinMessagingProvidersRegistered(): void {
   if (builtinsRegistered) return;
   builtinsRegistered = true;
@@ -124,7 +141,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
   ];
 
   for (const id of ['smtp', 'imap', 'pop3'] as const) {
-    registerMessagingProvider({
+    registerBuiltinMessagingProvider({
       id,
       label: id.toUpperCase(),
       channel: 'email',
@@ -137,7 +154,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     });
   }
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'gmail',
     label: 'Gmail',
     channel: 'email',
@@ -169,7 +186,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     endpointFields: emailEndpoint,
   });
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'zulip',
     label: 'Zulip',
     channel: 'zulip',
@@ -203,7 +220,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     createSender: async (account) => new ZulipSender(account),
   });
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'telegram',
     label: 'Telegram',
     channel: 'telegram',
@@ -219,7 +236,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     createSender: async (account) => new TelegramSender(account),
   });
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'sms',
     label: 'SMS (provider required)',
     channel: 'sms',
