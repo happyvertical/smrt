@@ -108,6 +108,13 @@ relying on checkout's path-conditional credential include (ARC workspaces may
 resolve through a symlink). The release commit and tag are pushed atomically, so
 GitHub cannot record only one of the two refs.
 
+If an interrupted run publishes only part of a lockstep version, a later main
+commit must not fill in the remaining packages under that same version: the
+artifacts would come from different source trees. Keep the npm collision guard,
+apply the interrupted run's exact generated version patch to reserve that
+version in Git, and let the next merge publish the complete package set at a new
+version.
+
 Documentation installs as an isolated workspace under `docs/`. Its pnpm build
 policy explicitly allows the `core-js` and `sharp` install scripts required by
 the locked Docusaurus dependency graph; CI must not bypass or interactively
