@@ -107,6 +107,7 @@ export class ClientCharge extends SmrtObject {
       );
     }
     const persisted = [
+      row.tenant_id,
       row.usage_event_id,
       row.subscriber_kind,
       row.subscriber_external_id,
@@ -124,6 +125,7 @@ export class ClientCharge extends SmrtObject {
       row.approved_at,
     ];
     const current = [
+      this.tenantId,
       this.usageEventId,
       this.subscriberKind,
       this.subscriberExternalId,
