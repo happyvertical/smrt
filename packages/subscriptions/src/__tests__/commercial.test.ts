@@ -124,6 +124,45 @@ describe('commercial usage tracer', () => {
     await expect(charge.save()).rejects.toThrow('Operation failed: save');
   });
 
+  it('enforces sourced usage idempotency across concurrent writers', async () => {
+    const input = {
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      metricKey: 'ai.tokens',
+      quantity: 100,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'ai-run',
+      sourceId: 'concurrent-run',
+    };
+    const [first, second] = await Promise.all([
+      service.record(input),
+      service.record({ ...input, quantity: 999 }),
+    ]);
+
+    expect(second.id).toBe(first.id);
+    expect(second.quantity).toBe(first.quantity);
+    expect(first.id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    );
+    expect(await usage.get(String(first.id))).toMatchObject({ id: first.id });
+  });
+
+  it('keeps unsourced usage evidence distinct', async () => {
+    const input = {
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      metricKey: 'ai.tokens',
+      quantity: 100,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+    };
+    const [first, second] = await Promise.all([
+      service.record(input),
+      service.record(input),
+    ]);
+
+    expect(first.id).not.toBe(second.id);
+  });
+
   it('rejects adjustments until a charge is approved', async () => {
     const charge = await charges.create({
       tenantId: '11111111-1111-4111-8111-111111111111',
