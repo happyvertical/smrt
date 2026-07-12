@@ -229,6 +229,7 @@ export class ProjectDeliveryService {
     await this.workAdapter.requestApproval({
       request,
       previewId: preview.previewId,
+      idempotencyKey: `preview-approval:${requiredId(preview.id, 'Preview Approval')}`,
       approved: input.approved,
       reason: input.reason,
     });

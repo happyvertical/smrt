@@ -25,6 +25,8 @@ export interface DevelopmentWorkAdapter {
   requestApproval?(input: {
     request: DevelopmentRequest;
     previewId: string;
+    /** Stable across retries; adapters must deduplicate this operation. */
+    idempotencyKey: string;
     approved: boolean;
     reason: string;
   }): Promise<void>;

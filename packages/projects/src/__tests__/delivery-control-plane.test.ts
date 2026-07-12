@@ -230,7 +230,9 @@ describe('managed application delivery control plane (#1949)', () => {
   });
 
   it('deduplicates delivery events and sends preview decisions through the adapter', async () => {
-    const requestApproval = vi.fn(async () => undefined);
+    const requestApproval = vi.fn(
+      async (_input: { idempotencyKey: string }) => undefined,
+    );
     const work = {
       createWorkItem: vi.fn(),
       getWorkItem: vi.fn(),
@@ -271,12 +273,29 @@ describe('managed application delivery control plane (#1949)', () => {
         (await PreviewApprovalCollection.create({ db })).list(),
       )
     )[0];
-    await delivery.decidePreview(projectIntegration, preview, {
+    const decision = {
       approved: true,
       actorRef: 'requester:user-1',
       reason: 'Verified',
-    });
-    expect(requestApproval).toHaveBeenCalledOnce();
+    };
+    vi.spyOn(preview, 'save').mockRejectedValueOnce(
+      new Error('simulated preview persistence failure'),
+    );
+    await expect(
+      delivery.decidePreview(projectIntegration, preview, decision),
+    ).rejects.toThrow('simulated preview persistence failure');
+    const approvals = await PreviewApprovalCollection.create({ db });
+    const reloaded = await withTenant({ tenantId: 'tenant-1' }, () =>
+      approvals.get(String(preview.id)),
+    );
+    expect(reloaded?.status).toBe('pending');
+    if (!reloaded) throw new Error('Preview Approval was not persisted.');
+    await delivery.decidePreview(projectIntegration, reloaded, decision);
+    expect(requestApproval).toHaveBeenCalledTimes(2);
+    const idempotencyKeys = requestApproval.mock.calls.map(
+      ([call]) => call.idempotencyKey,
+    );
+    expect(new Set(idempotencyKeys).size).toBe(1);
   });
 
   it('retries failed delivery, replays in order, and rejects stale previews', async () => {
@@ -488,6 +507,38 @@ describe('managed application delivery control plane (#1949)', () => {
     await expect(compensation[0].save()).rejects.toThrow(/immutable/i);
     entry.durationSeconds = 1;
     await expect(entry.save()).rejects.toThrow(/immutable/i);
+  });
+
+  it('does not price the client when provider compensation fails after approval', async () => {
+    const priceClient = vi.fn(async () => ({
+      amount: 150,
+      version: 'pricing-v2',
+      terms: { hourlyRate: 150 },
+    }));
+    const service = await ServiceEvidenceService.create(
+      { db },
+      {
+        priceClient,
+        compensateProvider: async () => {
+          throw new Error('provider compensation unavailable');
+        },
+      },
+    );
+    const entry = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-unapproved',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Approval must remain atomic with pricing',
+      durationSeconds: 60,
+    });
+    await service.submit(entry);
+    await expect(
+      service.approve(entry, { approvalPath: 'automatic' }),
+    ).rejects.toThrow('provider compensation unavailable');
+    expect(entry.status).toBe('approved');
+    expect(priceClient).not.toHaveBeenCalled();
   });
 
   it('prices approved service evidence through #1925 Client Charges', async () => {

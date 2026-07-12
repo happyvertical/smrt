@@ -138,10 +138,9 @@ export class ServiceEvidenceService {
     if (entry.status === 'approved' && existingCharge && existingCompensation)
       return entry;
 
-    const [client, provider] = await Promise.all([
-      existingCharge ? null : this.commercial.priceClient(entry),
-      existingCompensation ? null : this.commercial.compensateProvider(entry),
-    ]);
+    // Commit approval before either commercial resolver runs. The subscription
+    // resolver creates an approved ClientCharge as part of priceClient(), so a
+    // failed approval must never leave billable spend behind.
     if (entry.status === 'submitted') {
       entry.status = 'approved';
       entry.approvedAt = new Date();
@@ -149,6 +148,23 @@ export class ServiceEvidenceService {
       entry.approvalPath = options.approvalPath;
       await entry.save();
     }
+    const provider = existingCompensation
+      ? null
+      : await this.commercial.compensateProvider(entry);
+    if (provider)
+      await (
+        await this.compensation.create({
+          tenantId: entry.tenantId,
+          timeEntryId,
+          amount: provider.amount,
+          currency: provider.currency ?? 'USD',
+          termsVersion: provider.version,
+          rateSnapshot: JSON.stringify(provider.terms),
+        })
+      ).save();
+    const client = existingCharge
+      ? null
+      : await this.commercial.priceClient(entry);
     if (client)
       await (
         await this.charges.create({
@@ -160,17 +176,6 @@ export class ServiceEvidenceService {
           strategy: client.strategy ?? '',
           rateSnapshot: JSON.stringify(client.terms),
           sourceChargeRef: client.sourceRef ?? '',
-        })
-      ).save();
-    if (provider)
-      await (
-        await this.compensation.create({
-          tenantId: entry.tenantId,
-          timeEntryId,
-          amount: provider.amount,
-          currency: provider.currency ?? 'USD',
-          termsVersion: provider.version,
-          rateSnapshot: JSON.stringify(provider.terms),
         })
       ).save();
     return entry;
