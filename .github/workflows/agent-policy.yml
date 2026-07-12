@@ -1,0 +1,58 @@
+name: Agent Policy
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to recheck after a claim-only transition
+        required: true
+        type: number
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  packages: read
+
+jobs:
+  lifecycle:
+    name: lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+      - name: Load pinned policy runtime
+        env:
+          POLICY_ARTIFACT: ${{ vars.AGENT_POLICY_ARTIFACT }}
+        run: |
+          case "$POLICY_ARTIFACT" in
+            ghcr.io/*@sha256:*) ;;
+            *) echo 'AGENT_POLICY_ARTIFACT must be an immutable GHCR digest' >&2; exit 1 ;;
+          esac
+          policy_dir="$RUNNER_TEMP/hv-policy"
+          rm -rf "$policy_dir"
+          mkdir -p "$policy_dir"
+          oras pull "$POLICY_ARTIFACT" -o "$policy_dir"
+          archive="$policy_dir/agent-policy.tar.gz"
+          test -f "$archive" || { echo 'policy artifact is missing agent-policy.tar.gz' >&2; exit 1; }
+          python3 - "$archive" <<'PY'
+          import pathlib
+          import sys
+          import tarfile
+
+          with tarfile.open(sys.argv[1], "r:gz") as archive:
+              for member in archive.getmembers():
+                  path = pathlib.PurePosixPath(member.name)
+                  if path.is_absolute() or ".." in path.parts or member.issym() or member.islnk():
+                      raise SystemExit(f"unsafe policy archive member: {member.name}")
+          PY
+          tar -xzf "$archive" -C "$policy_dir"
+          echo "HV_POLICY_DIR=$policy_dir" >> "$GITHUB_ENV"
+      - name: Validate lifecycle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+        run: python3 "$HV_POLICY_DIR/scripts/hv-agent" check-pr "$PR_NUMBER"

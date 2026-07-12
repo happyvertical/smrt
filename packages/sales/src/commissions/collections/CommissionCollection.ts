@@ -52,15 +52,28 @@ export class CommissionCollection extends SmrtCollection<Commission> {
    * Payable commissions for an earner+currency that no payout batch has
    * settled yet — the rows `CommissionPayoutService.createPayoutBatch`
    * gathers.
+   *
+   * Pass `scope` to narrow the gather to one earning source (e.g. a single
+   * ad network): only commissions whose `(sourceKind, sourceId)` match are
+   * returned. This lets a caller cut a payout batch that claims *only* its
+   * network's commissions, so concurrent per-network batches settle
+   * disjoint sets instead of one sweeping the other's rows.
    */
   async findPayableUnsettled(
     earnerId: string,
     currency: string,
+    scope?: { sourceKind: string; sourceId: string },
   ): Promise<Commission[]> {
-    const payable = await this.list({
-      where: { earnerId, currency, status: 'payable' },
-      orderBy: 'created_at ASC',
-    });
+    const where: Record<string, unknown> = {
+      earnerId,
+      currency,
+      status: 'payable',
+    };
+    if (scope) {
+      where.sourceKind = scope.sourceKind;
+      where.sourceId = scope.sourceId;
+    }
+    const payable = await this.list({ where, orderBy: 'created_at ASC' });
     return payable.filter((c) => !c.payoutId);
   }
 
@@ -89,11 +102,17 @@ export class CommissionCollection extends SmrtCollection<Commission> {
    * claim is verified by a post-save re-read so a lost race never counts
    * toward the caller's totals.
    *
+   * Reads and writes go through the model layer (`get` / `save`), so this
+   * respects the tenancy interceptor (a cross-tenant id resolves to `null`
+   * and is skipped, never mutated) and the DB dialect (an empty FK is `''`
+   * on SQLite / `NULL` on the native-`uuid` Postgres/DuckDB columns — the
+   * model normalizes both).
+   *
    * This is the single place claim semantics live. It narrows the
-   * concurrent-batch window to the re-read granularity; true compare-and-set
-   * needs DB transactions the collection layer doesn't expose (settlement
-   * runs are expected to be single-writer per earner — see
-   * `CommissionPayoutService`).
+   * concurrent-batch window to the re-read granularity but is NOT a
+   * cross-row transaction — safe concurrent settlement relies on batches
+   * using DISJOINT scopes (see `CommissionPayoutService.createPayoutBatch`);
+   * overlapping concurrent scopes must be serialized by the caller.
    *
    * Returns the claimed rows (freshly loaded, `payoutId` verified).
    */
