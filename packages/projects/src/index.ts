@@ -48,17 +48,37 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export { DevelopmentRequestHistoryCollection } from './collections/DevelopmentRequestHistories';
+export { DevelopmentRequestCollection } from './collections/DevelopmentRequests';
 // Export collections
 export { IssueCollection } from './collections/Issues';
+export { ProjectIntegrationAuditCollection } from './collections/ProjectIntegrationAudits';
+export { ProjectIntegrationCollection } from './collections/ProjectIntegrations';
 export { ProjectCollection } from './collections/Projects';
 export { PullRequestCollection } from './collections/PullRequests';
 export { RepositoryCollection } from './collections/Repositories';
-
+export { ManagedProjectClient } from './managed-client';
 // Export models
 export { Comment, type CommentOptions } from './models/Comment';
+export {
+  DevelopmentRequest,
+  type DevelopmentRequestOptions,
+} from './models/DevelopmentRequest';
+export {
+  DevelopmentRequestHistory,
+  type DevelopmentRequestHistoryOptions,
+} from './models/DevelopmentRequestHistory';
 export { Issue, type IssueOptions } from './models/Issue';
 export { Label, type LabelOptions } from './models/Label';
 export { Project, type ProjectOptions } from './models/Project';
+export {
+  ProjectIntegration,
+  type ProjectIntegrationOptions,
+} from './models/ProjectIntegration';
+export {
+  ProjectIntegrationAudit,
+  type ProjectIntegrationAuditOptions,
+} from './models/ProjectIntegrationAudit';
 export { PullRequest, type PullRequestOptions } from './models/PullRequest';
 export { Repository, type RepositoryOptions } from './models/Repository';
 export { issueIncorporateFeedbackPrompt } from './prompts';
@@ -69,6 +89,12 @@ export type {
   Branch,
   CreateIssueInput,
   CreatePRInput,
+  DevelopmentRequestEvidence,
+  DevelopmentRequestOrigin,
+  DevelopmentRequestStatus,
+  DevelopmentRequestTransitionInput,
+  DevelopmentRequestType,
+  DevelopmentRequestVisibility,
   // SMRT-specific
   IncorporateFeedbackOptions,
   IncorporateFeedbackResult,
@@ -76,10 +102,14 @@ export type {
   IProject,
   IRepository,
   ItemFilters,
+  ManagedDevelopmentRequestCreateInput,
   MergeMethod,
   ProjectConfig,
   ProjectField,
   ProjectFieldOption,
+  ProjectIntegrationAuditAction,
+  ProjectIntegrationCapability,
+  ProjectIntegrationStatus,
   ProjectItem,
   ProjectProviderType,
   ProjectStatus,

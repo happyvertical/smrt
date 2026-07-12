@@ -14,6 +14,8 @@ import { PROJECTS_MODULE_META } from '../ui.js';
 // Import components
 import ApprovalActions from './components/ApprovalActions.svelte';
 import BulkActions from './components/BulkActions.svelte';
+import DevelopmentRequestForm from './components/DevelopmentRequestForm.svelte';
+import DevelopmentRequestList from './components/DevelopmentRequestList.svelte';
 import DurationDisplay from './components/DurationDisplay.svelte';
 import RejectDialog from './components/RejectDialog.svelte';
 import TimeEntryCard from './components/TimeEntryCard.svelte';
@@ -24,6 +26,8 @@ import TimeSummary from './components/TimeSummary.svelte';
 export {
   ApprovalActions,
   BulkActions,
+  DevelopmentRequestForm,
+  DevelopmentRequestList,
   DurationDisplay,
   RejectDialog,
   TimeEntryCard,
@@ -34,6 +38,12 @@ export {
 // Export component prop types
 export type ApprovalActionsProps = ComponentProps<typeof ApprovalActions>;
 export type BulkActionsProps = ComponentProps<typeof BulkActions>;
+export type DevelopmentRequestFormProps = ComponentProps<
+  typeof DevelopmentRequestForm
+>;
+export type DevelopmentRequestListProps = ComponentProps<
+  typeof DevelopmentRequestList
+>;
 export type DurationDisplayProps = ComponentProps<typeof DurationDisplay>;
 export type RejectDialogProps = ComponentProps<typeof RejectDialog>;
 export type TimeEntryCardProps = ComponentProps<typeof TimeEntryCard>;
@@ -55,6 +65,16 @@ export {
 
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(PROJECTS_MODULE_META);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-projects',
+  'development-request-form',
+  DevelopmentRequestForm,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-projects',
+  'development-request-list',
+  DevelopmentRequestList,
+);
 ModuleUIRegistry.register(
   '@happyvertical/smrt-projects',
   'time-entry-card',
