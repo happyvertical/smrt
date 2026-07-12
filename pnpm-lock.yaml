@@ -1676,6 +1676,9 @@ importers:
       '@happyvertical/smrt-prompts':
         specifier: workspace:*
         version: link:../prompts
+      '@happyvertical/smrt-subscriptions':
+        specifier: workspace:*
+        version: link:../subscriptions
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -2367,6 +2370,9 @@ importers:
       '@happyvertical/smrt-messages':
         specifier: workspace:*
         version: link:../messages
+      '@happyvertical/smrt-projects':
+        specifier: workspace:*
+        version: link:../projects
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy

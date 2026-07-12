@@ -48,27 +48,59 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export { DevelopmentRequestHistoryCollection } from './collections/DevelopmentRequestHistories';
+export { DevelopmentRequestCollection } from './collections/DevelopmentRequests';
 // Export collections
 export { IssueCollection } from './collections/Issues';
+export { ProjectIntegrationAuditCollection } from './collections/ProjectIntegrationAudits';
+export { ProjectIntegrationCollection } from './collections/ProjectIntegrations';
 export { ProjectCollection } from './collections/Projects';
 export { PullRequestCollection } from './collections/PullRequests';
 export { RepositoryCollection } from './collections/Repositories';
-
+export { ManagedProjectClient } from './managed-client';
 // Export models
 export { Comment, type CommentOptions } from './models/Comment';
+export {
+  DevelopmentRequest,
+  type DevelopmentRequestOptions,
+} from './models/DevelopmentRequest';
+export {
+  DevelopmentRequestHistory,
+  type DevelopmentRequestHistoryOptions,
+} from './models/DevelopmentRequestHistory';
+export * from './models/delivery-control-plane.js';
 export { Issue, type IssueOptions } from './models/Issue';
 export { Label, type LabelOptions } from './models/Label';
 export { Project, type ProjectOptions } from './models/Project';
+export {
+  ProjectIntegration,
+  type ProjectIntegrationOptions,
+} from './models/ProjectIntegration';
+export {
+  ProjectIntegrationAudit,
+  type ProjectIntegrationAuditOptions,
+} from './models/ProjectIntegrationAudit';
 export { PullRequest, type PullRequestOptions } from './models/PullRequest';
 export { Repository, type RepositoryOptions } from './models/Repository';
+export * from './models/service-evidence.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
+export * from './services/index.js';
 
 // Export types
 export type {
+  AssistanceClassification,
   // From SDK repos
   Branch,
   CreateIssueInput,
   CreatePRInput,
+  DeliveryEventType,
+  DevelopmentRequestEvidence,
+  DevelopmentRequestOrigin,
+  DevelopmentRequestStatus,
+  DevelopmentRequestTransitionInput,
+  DevelopmentRequestType,
+  DevelopmentRequestVisibility,
+  DevelopmentTriageDecision,
   // SMRT-specific
   IncorporateFeedbackOptions,
   IncorporateFeedbackResult,
@@ -76,10 +108,15 @@ export type {
   IProject,
   IRepository,
   ItemFilters,
+  ManagedAssistanceRequestInput,
+  ManagedDevelopmentRequestCreateInput,
   MergeMethod,
   ProjectConfig,
   ProjectField,
   ProjectFieldOption,
+  ProjectIntegrationAuditAction,
+  ProjectIntegrationCapability,
+  ProjectIntegrationStatus,
   ProjectItem,
   ProjectProviderType,
   ProjectStatus,
@@ -92,6 +129,10 @@ export type {
   SDKPullRequest,
   SDKRepository,
   SearchFilters,
+  ServiceEvidence,
+  ServiceParticipantKind,
+  ServiceTimeEntrySource,
+  ServiceTimeEntryStatus,
   SyncOptions,
   SyncStatus,
   UpdateIssueInput,

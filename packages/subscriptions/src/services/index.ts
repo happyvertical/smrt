@@ -1,4 +1,14 @@
 export type { EntitlementResolutionContext } from '../types.js';
+export type {
+  CustomPricingContext,
+  CustomPricingStrategy,
+  PriceUsageOptions,
+  SpendingDecision,
+} from './commercial.js';
+export {
+  CommercialUsageService,
+  SpendingPolicyEvaluator,
+} from './commercial.js';
 export {
   type SubscriptionPlanReader,
   SubscriptionResolver,

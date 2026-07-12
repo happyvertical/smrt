@@ -22,6 +22,24 @@ const THRESHOLD_ENFORCEMENTS: ThresholdEnforcement[] = [
   'block',
 ];
 
+export async function deterministicUuid(parts: string[]): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(parts));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const uuid = digest.slice(0, 16);
+  uuid[6] = (uuid[6] & 0x0f) | 0x50;
+  uuid[8] = (uuid[8] & 0x3f) | 0x80;
+  const hex = Array.from(uuid, (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
+}
+
 export function parseJsonArray<T>(value: string, fallback: T[] = []): T[] {
   if (!value) {
     return fallback;

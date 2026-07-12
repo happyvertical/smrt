@@ -1,0 +1,891 @@
+import { getTestDatabase } from '@happyvertical/smrt-core';
+import { PricingRuleCollection } from '@happyvertical/smrt-subscriptions';
+import { withTenant } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DevelopmentRequestHistoryCollection } from '../collections/DevelopmentRequestHistories.js';
+import { DevelopmentRequestCollection } from '../collections/DevelopmentRequests.js';
+import { ProjectIntegrationCollection } from '../collections/ProjectIntegrations.js';
+import {
+  AssistanceRequestCollection,
+  PreviewApprovalCollection,
+  ProjectDeliveryEventCollection,
+  ServiceChargeSnapshotCollection,
+  ServiceCompensationSnapshotCollection,
+  ServiceTimeEntryCollection,
+} from '../models/index.js';
+import { AssistanceRequestService } from '../services/assistance-request-service.js';
+import { ProjectDeliveryService } from '../services/delivery-service.js';
+import {
+  DevelopmentRequestService,
+  type DevelopmentWorkAdapter,
+} from '../services/development-request-service.js';
+import {
+  type RecordServiceTimeInput,
+  ServiceEvidenceService,
+} from '../services/service-evidence-service.js';
+import { SubscriptionServiceCommercialResolver } from '../services/subscription-commercial-resolver.js';
+
+describe('managed application delivery control plane (#1949)', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+  });
+
+  afterEach(async () => {
+    await db.close?.();
+  });
+
+  async function integration(capabilities: string[]) {
+    const integrations = await ProjectIntegrationCollection.create({ db });
+    return (
+      await integrations.provision({
+        tenantId: 'tenant-1',
+        projectId: 'project-1',
+        name: 'Managed application',
+        capabilities,
+      })
+    ).integration;
+  }
+
+  async function request(
+    projectIntegrationId: string,
+    input: {
+      requesterId?: string;
+      visibility?: 'requester' | 'workspace';
+    } = {},
+  ) {
+    const requests = await DevelopmentRequestCollection.create({ db });
+    return requests.createManaged({
+      tenantId: 'tenant-1',
+      projectId: 'project-1',
+      integrationId: projectIntegrationId,
+      requesterId: input.requesterId ?? 'user-1',
+      type: 'feature',
+      description: 'Add a CSV export.',
+      visibility: input.visibility ?? 'requester',
+    });
+  }
+
+  it('triages idempotently into canonical work and filters board visibility', async () => {
+    const work: DevelopmentWorkAdapter = {
+      createWorkItem: vi.fn(async () => ({
+        type: 'Issue',
+        id: 'issue-42',
+        canonicalStatus: 'Backlog',
+        providerRef: 'provider-private',
+      })),
+      getWorkItem: vi.fn(async () => ({
+        type: 'Issue',
+        id: 'issue-42',
+        canonicalStatus: 'Completed',
+      })),
+    };
+    const projectIntegration = await integration(['delivery:read']);
+    const developmentRequest = await request(projectIntegration.id as string, {
+      requesterId: 'user-7',
+      visibility: 'workspace',
+    });
+    const service = await DevelopmentRequestService.create({ db }, work);
+    const accepted = await service.triage(developmentRequest, {
+      decision: 'accept',
+      reason: 'Fits roadmap',
+      actorRef: 'operator',
+    });
+    const retried = await service.triage(developmentRequest, {
+      decision: 'accept',
+      reason: 'Retry',
+      actorRef: 'operator',
+    });
+    expect(work.createWorkItem).toHaveBeenCalledTimes(1);
+    expect(retried.links[0].id).toBe(accepted.links[0].id);
+    expect(await service.syncWorkStatus(accepted.links[0])).toMatchObject({
+      status: 'completed',
+    });
+    expect(
+      await service.visibleFor({
+        tenantId: 'tenant-1',
+        projectId: 'project-1',
+        roles: ['workspace'],
+      }),
+    ).toHaveLength(1);
+    expect(
+      await service.visibleFor({
+        tenantId: 'tenant-1',
+        projectId: 'project-1',
+        requesterId: 'someone-else',
+      }),
+    ).toHaveLength(0);
+  });
+
+  it('audits decline, merge, and lossless split decisions', async () => {
+    const projectIntegration = await integration(['delivery:read']);
+    const service = await DevelopmentRequestService.create({ db });
+    const declined = await request(projectIntegration.id as string);
+    await service.triage(declined, {
+      decision: 'decline',
+      reason: 'Outside the product scope',
+      actorRef: 'operator:1',
+    });
+    expect(declined.status).toBe('declined');
+
+    const target = await request(projectIntegration.id as string);
+    const merged = await request(projectIntegration.id as string);
+    await expect(
+      service.triage(merged, {
+        decision: 'merge',
+        mergeIntoRequestId: 'missing-request',
+        reason: 'Duplicate request',
+        actorRef: 'operator:1',
+      }),
+    ).rejects.toThrow(/same project and tenant/i);
+    expect(await service.linksFor(merged)).toHaveLength(0);
+    expect(merged.status).toBe('submitted');
+    const mergeResult = await service.triage(merged, {
+      decision: 'merge',
+      mergeIntoRequestId: target.id as string,
+      reason: 'Same desired outcome',
+      actorRef: 'operator:1',
+    });
+    expect(mergeResult.links[0]).toMatchObject({
+      workItemType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workItemId: target.id,
+      canonicalStatus: 'merged',
+    });
+
+    const source = await request(projectIntegration.id as string);
+    source.setEvidence([{ url: 'https://evidence.invalid/original' }]);
+    await source.save();
+    const splitResult = await service.triage(source, {
+      decision: 'split',
+      reason: 'Separate client and data exports',
+      actorRef: 'operator:1',
+      split: [
+        { type: 'feature', description: 'Export client records' },
+        { type: 'task', description: 'Export data records' },
+      ],
+    });
+    expect(splitResult.splitRequests).toHaveLength(2);
+    expect(splitResult.splitRequests[0]).toMatchObject({
+      requesterId: source.requesterId,
+      origin: `split:${source.id}`,
+      discussion: 'Separate client and data exports',
+    });
+    expect(splitResult.splitRequests[0].getEvidence()).toEqual(
+      source.getEvidence(),
+    );
+    const splitRetry = await service.triage(source, {
+      decision: 'split',
+      reason: 'Retry after response timeout',
+      actorRef: 'operator:1',
+      split: [
+        { type: 'feature', description: 'Export client records' },
+        { type: 'task', description: 'Export data records' },
+      ],
+    });
+    expect(splitRetry.splitRequests.map((item) => item.id)).toEqual(
+      splitResult.splitRequests.map((item) => item.id),
+    );
+    const splitRequestCollection = await DevelopmentRequestCollection.create({
+      db,
+    });
+    expect(
+      await withTenant({ tenantId: source.tenantId }, () =>
+        splitRequestCollection.list({
+          where: { origin: `split:${source.id}` },
+        }),
+      ),
+    ).toHaveLength(2);
+
+    const invalidSource = await request(projectIntegration.id as string);
+    await expect(
+      service.triage(invalidSource, {
+        decision: 'split',
+        reason: 'Invalid split payload',
+        actorRef: 'operator:1',
+        split: [
+          { type: 'feature', description: 'Valid first part' },
+          { type: 'task', description: '   ' },
+        ],
+      }),
+    ).rejects.toThrow('Split request description is required');
+    expect(invalidSource.status).toBe('submitted');
+    expect(
+      await withTenant({ tenantId: invalidSource.tenantId }, () =>
+        splitRequestCollection.list({
+          where: { origin: `split:${invalidSource.id}` },
+        }),
+      ),
+    ).toHaveLength(0);
+
+    const histories = await DevelopmentRequestHistoryCollection.create({ db });
+    const audited = await withTenant({ tenantId: 'tenant-1' }, () =>
+      histories.list({
+        where: { requestId: declined.id },
+        orderBy: 'createdAt ASC',
+      }),
+    );
+    expect(audited.at(-1)).toMatchObject({
+      toStatus: 'declined',
+      actorId: 'operator:1',
+      note: 'Outside the product scope',
+    });
+  });
+
+  it('deduplicates delivery events and sends preview decisions through the adapter', async () => {
+    const requestApproval = vi.fn(
+      async (_input: { idempotencyKey: string }) => undefined,
+    );
+    const work = {
+      createWorkItem: vi.fn(),
+      getWorkItem: vi.fn(),
+      requestApproval,
+    } as unknown as DevelopmentWorkAdapter;
+    const projectIntegration = await integration([
+      'delivery:write',
+      'delivery:read',
+      'previews:approve',
+    ]);
+    const developmentRequest = await request(projectIntegration.id as string);
+    const delivery = await ProjectDeliveryService.create(
+      { db },
+      { workAdapter: work, approvalPolicy: { canApprove: async () => true } },
+    );
+    const first = await delivery.record({
+      integration: projectIntegration,
+      requestId: developmentRequest.id as string,
+      idempotencyKey: 'preview-1',
+      sequence: 4,
+      type: 'preview',
+      payload: { previewId: 'pv-1', previewUrl: 'https://preview.invalid' },
+    });
+    expect(
+      (
+        await delivery.record({
+          integration: projectIntegration,
+          requestId: developmentRequest.id as string,
+          idempotencyKey: 'preview-1',
+          sequence: 4,
+          type: 'preview',
+          payload: {},
+        })
+      ).id,
+    ).toBe(first.id);
+    const preview = (
+      await withTenant({ tenantId: 'tenant-1' }, async () =>
+        (await PreviewApprovalCollection.create({ db })).list(),
+      )
+    )[0];
+    const decision = {
+      approved: true,
+      actorRef: 'requester:user-1',
+      reason: 'Verified',
+    };
+    vi.spyOn(preview, 'save').mockRejectedValueOnce(
+      new Error('simulated preview persistence failure'),
+    );
+    await expect(
+      delivery.decidePreview(projectIntegration, preview, decision),
+    ).rejects.toThrow('simulated preview persistence failure');
+    const approvals = await PreviewApprovalCollection.create({ db });
+    const reloaded = await withTenant({ tenantId: 'tenant-1' }, () =>
+      approvals.get(String(preview.id)),
+    );
+    expect(reloaded?.status).toBe('pending');
+    if (!reloaded) throw new Error('Preview Approval was not persisted.');
+    await delivery.decidePreview(projectIntegration, reloaded, decision);
+    expect(requestApproval).toHaveBeenCalledTimes(2);
+    const idempotencyKeys = requestApproval.mock.calls.map(
+      ([call]) => call.idempotencyKey,
+    );
+    expect(new Set(idempotencyKeys).size).toBe(1);
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: String(developmentRequest.id),
+      idempotencyKey: 'terminal-completed',
+      sequence: 5,
+      type: 'completed',
+      payload: {},
+    });
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: String(developmentRequest.id),
+      idempotencyKey: 'terminal-rejected',
+      sequence: 6,
+      type: 'rejected',
+      payload: { reason: 'Newer rejection' },
+    });
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: String(developmentRequest.id),
+      idempotencyKey: 'terminal-completed',
+      sequence: 5,
+      type: 'completed',
+      payload: {},
+    });
+    const requests = await DevelopmentRequestCollection.create({ db });
+    expect(
+      await withTenant({ tenantId: projectIntegration.tenantId }, () =>
+        requests.get({ id: String(developmentRequest.id) }),
+      ),
+    ).toMatchObject({ status: 'declined' });
+    const integrations = await ProjectIntegrationCollection.create({ db });
+    await integrations.revoke(
+      projectIntegration.tenantId,
+      String(projectIntegration.id),
+    );
+    await expect(
+      delivery.listForIntegration(
+        projectIntegration,
+        String(developmentRequest.id),
+      ),
+    ).rejects.toThrow(/revoked/i);
+    await expect(
+      delivery.record({
+        integration: projectIntegration,
+        requestId: String(developmentRequest.id),
+        idempotencyKey: 'after-revocation',
+        sequence: 5,
+        type: 'completed',
+        payload: {},
+      }),
+    ).rejects.toThrow(/revoked/i);
+    const send = vi.fn(async () => undefined);
+    await delivery.deliverPending({ send }, projectIntegration.tenantId);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('retries failed delivery, replays in order, and rejects stale previews', async () => {
+    const projectIntegration = await integration([
+      'delivery:write',
+      'delivery:read',
+      'previews:approve',
+    ]);
+    const developmentRequest = await request(projectIntegration.id as string);
+    const delivery = await ProjectDeliveryService.create(
+      { db },
+      {
+        workAdapter: {
+          createWorkItem: vi.fn(),
+          getWorkItem: vi.fn(),
+          requestApproval: vi.fn(),
+        } as unknown as DevelopmentWorkAdapter,
+      },
+    );
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: developmentRequest.id as string,
+      idempotencyKey: 'branch-1',
+      sequence: 2,
+      type: 'branch',
+      payload: { name: 'codex/export' },
+    });
+    await delivery.record({
+      integration: projectIntegration,
+      requestId: developmentRequest.id as string,
+      idempotencyKey: 'preview-2',
+      sequence: 3,
+      type: 'preview',
+      payload: { previewId: 'pv-stale' },
+    });
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary outage'))
+      .mockResolvedValue(undefined);
+    await delivery.deliverPending({ send }, 'tenant-1');
+    await delivery.deliverPending({ send }, 'tenant-1');
+    const events = await delivery.listForIntegration(
+      projectIntegration,
+      developmentRequest.id as string,
+    );
+    expect(events.map((event) => event.sequence)).toEqual([2, 3]);
+    expect(events[0]).toMatchObject({
+      deliveryAttempts: 2,
+      lastDeliveryError: '',
+    });
+    const replayed: number[] = [];
+    await delivery.replay(
+      { send: async (event) => void replayed.push(event.sequence) },
+      projectIntegration,
+      1,
+    );
+    expect(replayed).toEqual([2, 3]);
+
+    const preview = (
+      await withTenant({ tenantId: 'tenant-1' }, async () =>
+        (await PreviewApprovalCollection.create({ db })).list(),
+      )
+    )[0];
+    await delivery.markPreviewStale(preview);
+    await expect(
+      delivery.decidePreview(projectIntegration, preview, {
+        approved: true,
+        actorRef: 'requester:user-1',
+        reason: 'Too late',
+      }),
+    ).rejects.toThrow(/stale/i);
+  });
+
+  it('reapplies missing side effects when an idempotent delivery event is retried', async () => {
+    const projectIntegration = await integration(['delivery:write']);
+    const developmentRequest = await request(projectIntegration.id as string);
+    const events = await ProjectDeliveryEventCollection.create({ db });
+    const stranded = await withTenant({ tenantId: 'tenant-1' }, () =>
+      events.create({
+        tenantId: 'tenant-1',
+        integrationId: projectIntegration.id as string,
+        requestId: developmentRequest.id as string,
+        idempotencyKey: 'stranded-preview',
+        sequence: 9,
+        type: 'preview',
+        payload: JSON.stringify({
+          previewId: 'pv-recovered',
+          previewUrl: 'https://preview.invalid/recovered',
+        }),
+      }),
+    );
+    await withTenant({ tenantId: 'tenant-1' }, () => stranded.save());
+
+    const delivery = await ProjectDeliveryService.create({ db });
+    const retried = await delivery.record({
+      integration: projectIntegration,
+      requestId: developmentRequest.id as string,
+      idempotencyKey: 'stranded-preview',
+      sequence: 9,
+      type: 'preview',
+      payload: {},
+    });
+
+    expect(retried.id).toBe(stranded.id);
+    const previews = await withTenant({ tenantId: 'tenant-1' }, async () =>
+      (await PreviewApprovalCollection.create({ db })).list(),
+    );
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toMatchObject({
+      previewId: 'pv-recovered',
+      previewUrl: 'https://preview.invalid/recovered',
+    });
+  });
+
+  it('shares immutable service evidence with separate commercial snapshots', async () => {
+    const service = await ServiceEvidenceService.create(
+      { db },
+      {
+        priceClient: async () => ({
+          amount: 150,
+          version: 'pricing-v2',
+          strategy: 'fixed_unit',
+          terms: { hourlyRate: 150 },
+        }),
+        compensateProvider: async () => ({
+          amount: 90,
+          version: 'terms-v4',
+          terms: { hourlyRate: 90 },
+        }),
+      },
+    );
+    const forged = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-forged-status',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Must begin as draft',
+      durationSeconds: 60,
+      status: 'approved',
+      approvedAt: new Date('2026-07-01T00:00:00Z'),
+      approvalPath: 'forged',
+    } as RecordServiceTimeInput & {
+      status: 'approved';
+      approvedAt: Date;
+      approvalPath: string;
+    });
+    expect(forged).toMatchObject({
+      status: 'draft',
+      approvedAt: null,
+      approvalPath: '',
+    });
+    await expect(
+      service.record({
+        workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+        workRefId: 'request-reversed',
+        participantKind: 'agent',
+        agentRef: 'agent:builder',
+        source: 'manual',
+        description: 'Reversed period',
+        startedAt: new Date('2026-07-01T11:00:00Z'),
+        endedAt: new Date('2026-07-01T10:00:00Z'),
+        durationSeconds: 60,
+      }),
+    ).rejects.toThrow(/startedAt must be before endedAt/i);
+    const entry = await service.record({
+      tenantId: 'tenant-1',
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-1',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Implemented request',
+      durationSeconds: 3600,
+      evidence: [{ kind: 'pull_request', ref: 'pr:42' }],
+    });
+    const rejected = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-rejected',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Evidence awaiting correction',
+      durationSeconds: 60,
+    });
+    await service.submit(rejected);
+    rejected.status = 'rejected';
+    await rejected.save();
+    await service.submit(rejected, 'profile:reviewer');
+    expect(rejected).toMatchObject({
+      status: 'submitted',
+      submittedByProfileId: 'profile:reviewer',
+    });
+    await service.submit(entry);
+    await service.approve(entry, { approvalPath: 'automatic' });
+    const charges = await (
+      await ServiceChargeSnapshotCollection.create({ db })
+    ).list();
+    const compensation = await (
+      await ServiceCompensationSnapshotCollection.create({ db })
+    ).list();
+    expect(charges[0].amount - compensation[0].amount).toBe(60);
+    await service.approve(entry, { approvalPath: 'retry' });
+    expect(
+      await (await ServiceChargeSnapshotCollection.create({ db })).list(),
+    ).toHaveLength(1);
+    await expect(
+      service.correct(entry, {
+        participantKind: 'agent',
+        agentRef: 'agent:builder',
+        source: 'agent',
+        description: 'Invalid correction',
+        durationSeconds: 60,
+      }),
+    ).rejects.toThrow(/case or work reference/i);
+    expect(entry.status).toBe('approved');
+    await expect(
+      service.correct(entry, {
+        tenantId: 'tenant-2',
+        workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+        workRefId: 'request-1',
+        participantKind: 'agent',
+        agentRef: 'agent:builder',
+        source: 'agent',
+        description: 'Cross-tenant correction',
+        durationSeconds: 60,
+      }),
+    ).rejects.toThrow(/original tenant/i);
+    expect(entry.status).toBe('approved');
+    const correction = await service.correct(entry, {
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-1',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Corrected implementation evidence',
+      durationSeconds: 3540,
+    });
+    expect(entry.status).toBe('corrected');
+    expect(correction.correctionOfId).toBe(entry.id);
+    expect(correction.tenantId).toBe(entry.tenantId);
+    await service.submit(correction);
+    await service.approve(correction, { approvalPath: 'automatic' });
+    correction.correctionOfId = null;
+    await expect(correction.save()).rejects.toThrow(/immutable/i);
+    charges[0].amount = 1;
+    await expect(charges[0].save()).rejects.toThrow(/immutable/i);
+    compensation[0].amount = 1;
+    await expect(compensation[0].save()).rejects.toThrow(/immutable/i);
+    entry.durationSeconds = 1;
+    await expect(entry.save()).rejects.toThrow(/immutable/i);
+  });
+
+  it('deduplicates immutable snapshots across concurrent approvals', async () => {
+    let compensationCalls = 0;
+    let clientCalls = 0;
+    let releaseResolvers!: () => void;
+    const bothResolversReady = new Promise<void>((resolve) => {
+      releaseResolvers = resolve;
+    });
+    const service = await ServiceEvidenceService.create(
+      { db },
+      {
+        compensateProvider: async () => {
+          const call = ++compensationCalls;
+          if (compensationCalls === 2) releaseResolvers();
+          await bothResolversReady;
+          return {
+            amount: call * 10,
+            version: `terms-v${call}`,
+            terms: { call },
+          };
+        },
+        priceClient: async () => {
+          const call = ++clientCalls;
+          return {
+            amount: call * 20,
+            version: `pricing-v${call}`,
+            terms: { call },
+          };
+        },
+      },
+    );
+    const entry = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-concurrent-approval',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Concurrent approval',
+      durationSeconds: 60,
+    });
+    await service.submit(entry);
+    const entries = await ServiceTimeEntryCollection.create({ db });
+    const [first, second] = await Promise.all([
+      entries.get(String(entry.id)),
+      entries.get(String(entry.id)),
+    ]);
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+
+    await Promise.all([
+      service.approve(first as NonNullable<typeof first>, {
+        approvalPath: 'automatic',
+      }),
+      service.approve(second as NonNullable<typeof second>, {
+        approvalPath: 'automatic',
+      }),
+    ]);
+
+    const chargeRows = await (
+      await ServiceChargeSnapshotCollection.create({ db })
+    ).list();
+    const compensationRows = await (
+      await ServiceCompensationSnapshotCollection.create({ db })
+    ).list();
+    expect(chargeRows).toHaveLength(1);
+    expect(compensationRows).toHaveLength(1);
+    expect(chargeRows[0].id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    );
+    expect(compensationRows[0].id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    );
+    expect(compensationCalls).toBe(2);
+    expect(clientCalls).toBe(2);
+  });
+
+  it('does not price the client when provider compensation fails after approval', async () => {
+    const priceClient = vi.fn(async () => ({
+      amount: 150,
+      version: 'pricing-v2',
+      terms: { hourlyRate: 150 },
+    }));
+    const service = await ServiceEvidenceService.create(
+      { db },
+      {
+        priceClient,
+        compensateProvider: async () => {
+          throw new Error('provider compensation unavailable');
+        },
+      },
+    );
+    const entry = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-unapproved',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Approval must remain atomic with pricing',
+      durationSeconds: 60,
+    });
+    await service.submit(entry);
+    await expect(
+      service.approve(entry, { approvalPath: 'automatic' }),
+    ).rejects.toThrow('provider compensation unavailable');
+    expect(entry.status).toBe('approved');
+    expect(priceClient).not.toHaveBeenCalled();
+  });
+
+  it('prices approved service evidence through #1925 Client Charges', async () => {
+    const rules = await PricingRuleCollection.create({ db });
+    const rule = await withTenant({ tenantId: 'tenant-1' }, () =>
+      rules.create({
+        tenantId: 'tenant-1',
+        ruleKey: 'services-v1',
+        serviceKey: 'professional-services',
+        metricKey: 'duration.seconds',
+        strategy: 'fixed_unit',
+        currency: 'USD',
+        effectiveFrom: new Date('2026-01-01'),
+      }),
+    );
+    rule.setTerms({ unitPrice: 0.02 });
+    await withTenant({ tenantId: 'tenant-1' }, () => rule.save());
+    const commercial = await SubscriptionServiceCommercialResolver.create(
+      { db },
+      {
+        compensate: async () => ({
+          amount: 25,
+          version: 'provider-v1',
+          terms: { fixed: true },
+        }),
+      },
+    );
+    const service = await ServiceEvidenceService.create({ db }, commercial);
+    const entry = await service.record({
+      tenantId: 'tenant-1',
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-2',
+      participantKind: 'human',
+      participantProfileId: 'profile-1',
+      source: 'manual',
+      description: 'Planning',
+      durationSeconds: 1800,
+      metadata: { projectId: 'project-1' },
+    });
+    await service.submit(entry);
+    await service.approve(entry, { approvalPath: 'operator' });
+    const charge = (
+      await (await ServiceChargeSnapshotCollection.create({ db })).list()
+    )[0];
+    expect(charge).toMatchObject({ amount: 36, pricingVersion: 'services-v1' });
+    expect(charge.sourceChargeRef).toContain(
+      '@happyvertical/smrt-subscriptions:ClientCharge:',
+    );
+  });
+
+  it('routes Assistance Requests to support, development, or both idempotently', async () => {
+    const projectIntegration = await integration(['assistance:create']);
+    const openOrJoin = vi.fn(
+      async ({ assistanceRequestId }: { assistanceRequestId: string }) => ({
+        caseId: `case:${assistanceRequestId}`,
+      }),
+    );
+    const linkDelivery = vi.fn(async () => undefined);
+    const assistance = await AssistanceRequestService.create(
+      { db },
+      { support: { openOrJoin, linkDelivery } },
+    );
+    const supportOnly = await assistance.createRequest(projectIntegration, {
+      requesterId: 'user-1',
+      subject: 'How do I export?',
+      conversation: [{ body: 'Where is export?' }],
+    });
+    await assistance.classify(projectIntegration, supportOnly, {
+      classification: 'support',
+      actorRef: 'agent:triage',
+      reason: 'Answerable question',
+    });
+    expect(supportOnly.supportCaseId).toContain('case:');
+    const developmentOnly = await assistance.createRequest(projectIntegration, {
+      requesterId: 'user-1',
+      subject: 'Add PDF export',
+      conversation: [{ body: 'Please add PDF.' }],
+    });
+    await assistance.classify(projectIntegration, developmentOnly, {
+      classification: 'development',
+      developmentType: 'feature',
+      actorRef: 'agent:triage',
+      reason: 'Desired change',
+    });
+    expect(developmentOnly.developmentRequestId).toBeTruthy();
+    await assistance.classify(projectIntegration, developmentOnly, {
+      classification: 'support',
+      actorRef: 'agent:triage',
+      reason: 'Reclassified as support only',
+    });
+    expect(developmentOnly.supportCaseId).toBeTruthy();
+    expect(developmentOnly.deliveryHandoffLinkedAt).toBeNull();
+    expect(linkDelivery).not.toHaveBeenCalled();
+    const both = await assistance.createRequest(projectIntegration, {
+      requesterId: 'user-1',
+      subject: 'CSV export crashes',
+      conversation: [{ body: 'I get a 500.' }],
+    });
+    await assistance.classify(projectIntegration, both, {
+      classification: 'both',
+      developmentType: 'bug',
+      actorRef: 'agent:triage',
+      reason: 'Support communication plus delivery',
+    });
+    expect(both).toMatchObject({ classification: 'both' });
+    expect(linkDelivery).toHaveBeenCalledOnce();
+    await assistance.classify(projectIntegration, both, {
+      classification: 'both',
+      developmentType: 'bug',
+      actorRef: 'operator',
+      reason: 'Idempotent confirmation',
+    });
+    expect(openOrJoin).toHaveBeenCalledTimes(3);
+    expect(linkDelivery).toHaveBeenCalledOnce();
+
+    const retryAfterFailedSave = await assistance.createRequest(
+      projectIntegration,
+      {
+        requesterId: 'user-2',
+        subject: 'Add spreadsheet export',
+        conversation: [{ body: 'Please add XLSX.' }],
+      },
+    );
+    vi.spyOn(retryAfterFailedSave, 'save').mockRejectedValueOnce(
+      new Error('simulated persistence failure'),
+    );
+    await expect(
+      assistance.classify(projectIntegration, retryAfterFailedSave, {
+        classification: 'development',
+        developmentType: 'feature',
+        actorRef: 'agent:triage',
+        reason: 'Desired change',
+      }),
+    ).rejects.toThrow('simulated persistence failure');
+    const assistanceRequests = await AssistanceRequestCollection.create({ db });
+    const reloaded = await withTenant(
+      { tenantId: projectIntegration.tenantId },
+      () => assistanceRequests.get(String(retryAfterFailedSave.id)),
+    );
+    expect(reloaded?.developmentRequestId).toBe('');
+    if (!reloaded) throw new Error('Assistance Request was not persisted.');
+    await assistance.classify(projectIntegration, reloaded, {
+      classification: 'development',
+      developmentType: 'feature',
+      actorRef: 'agent:triage',
+      reason: 'Retry after response failure',
+    });
+    const developmentRequests = await DevelopmentRequestCollection.create({
+      db,
+    });
+    expect(
+      await withTenant({ tenantId: projectIntegration.tenantId }, () =>
+        developmentRequests.list({
+          where: { origin: `assistance:${retryAfterFailedSave.id}` },
+        }),
+      ),
+    ).toHaveLength(1);
+    const integrations = await ProjectIntegrationCollection.create({ db });
+    await integrations.revoke(
+      projectIntegration.tenantId,
+      String(projectIntegration.id),
+    );
+    await expect(
+      assistance.createRequest(projectIntegration, {
+        requesterId: 'user-after-revocation',
+        subject: 'Blocked request',
+      }),
+    ).rejects.toThrow(/revoked/i);
+    await expect(
+      assistance.classify(projectIntegration, both, {
+        classification: 'support',
+        actorRef: 'agent:triage',
+        reason: 'Blocked classification',
+      }),
+    ).rejects.toThrow(/revoked/i);
+  });
+});
