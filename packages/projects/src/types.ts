@@ -94,6 +94,10 @@ export interface SyncStatus {
 export type ProjectIntegrationCapability =
   | 'requests:create'
   | 'requests:read-own'
+  | 'delivery:write'
+  | 'delivery:read'
+  | 'previews:approve'
+  | 'assistance:create'
   | (string & {});
 
 /**
@@ -115,7 +119,12 @@ export type DevelopmentRequestType = 'bug' | 'feature' | 'task' | (string & {});
 /**
  * Request visibility as shown back to the managed application's user.
  */
-export type DevelopmentRequestVisibility = 'requester' | 'workspace' | 'public';
+export type DevelopmentRequestVisibility =
+  | 'requester'
+  | 'workspace'
+  | 'public'
+  | 'project_team'
+  | 'internal';
 
 /**
  * Request origin marker.
@@ -164,4 +173,52 @@ export interface DevelopmentRequestTransitionInput {
   actorType: 'integration' | 'participant' | 'system';
   actorId?: string;
   note?: string;
+}
+
+export type DevelopmentTriageDecision =
+  | 'accept'
+  | 'decline'
+  | 'merge'
+  | 'split';
+
+export type DeliveryEventType =
+  | 'work_linked'
+  | 'branch'
+  | 'pull_request'
+  | 'ci'
+  | 'preview'
+  | 'approval'
+  | 'deployment'
+  | 'completed'
+  | 'rejected';
+
+export type AssistanceClassification =
+  | 'unclassified'
+  | 'support'
+  | 'development'
+  | 'both';
+
+export type ServiceTimeEntrySource = 'timer' | 'manual' | 'import' | 'agent';
+export type ServiceTimeEntryStatus =
+  | 'draft'
+  | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'corrected';
+export type ServiceParticipantKind = 'human' | 'agent';
+
+export interface ServiceEvidence {
+  kind: string;
+  ref?: string;
+  summary?: string;
+  capturedAt?: string;
+  [key: string]: unknown;
+}
+
+export interface ManagedAssistanceRequestInput {
+  requesterId: string;
+  subject: string;
+  conversation: Record<string, unknown>[];
+  applicationContext?: Record<string, unknown>;
+  evidence?: DevelopmentRequestEvidence[];
 }

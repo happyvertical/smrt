@@ -68,6 +68,7 @@ export {
   DevelopmentRequestHistory,
   type DevelopmentRequestHistoryOptions,
 } from './models/DevelopmentRequestHistory';
+export * from './models/delivery-control-plane.js';
 export { Issue, type IssueOptions } from './models/Issue';
 export { Label, type LabelOptions } from './models/Label';
 export { Project, type ProjectOptions } from './models/Project';
@@ -81,20 +82,25 @@ export {
 } from './models/ProjectIntegrationAudit';
 export { PullRequest, type PullRequestOptions } from './models/PullRequest';
 export { Repository, type RepositoryOptions } from './models/Repository';
+export * from './models/service-evidence.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
+export * from './services/index.js';
 
 // Export types
 export type {
+  AssistanceClassification,
   // From SDK repos
   Branch,
   CreateIssueInput,
   CreatePRInput,
+  DeliveryEventType,
   DevelopmentRequestEvidence,
   DevelopmentRequestOrigin,
   DevelopmentRequestStatus,
   DevelopmentRequestTransitionInput,
   DevelopmentRequestType,
   DevelopmentRequestVisibility,
+  DevelopmentTriageDecision,
   // SMRT-specific
   IncorporateFeedbackOptions,
   IncorporateFeedbackResult,
@@ -102,6 +108,7 @@ export type {
   IProject,
   IRepository,
   ItemFilters,
+  ManagedAssistanceRequestInput,
   ManagedDevelopmentRequestCreateInput,
   MergeMethod,
   ProjectConfig,
@@ -122,6 +129,10 @@ export type {
   SDKPullRequest,
   SDKRepository,
   SearchFilters,
+  ServiceEvidence,
+  ServiceParticipantKind,
+  ServiceTimeEntrySource,
+  ServiceTimeEntryStatus,
   SyncOptions,
   SyncStatus,
   UpdateIssueInput,

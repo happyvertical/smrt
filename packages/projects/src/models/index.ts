@@ -11,6 +11,7 @@ export {
   DevelopmentRequestHistory,
   type DevelopmentRequestHistoryOptions,
 } from './DevelopmentRequestHistory';
+export * from './delivery-control-plane.js';
 export { Issue, type IssueOptions } from './Issue';
 export { Label, type LabelOptions } from './Label';
 export { Project, type ProjectOptions } from './Project';
@@ -24,3 +25,4 @@ export {
 } from './ProjectIntegrationAudit';
 export { PullRequest, type PullRequestOptions } from './PullRequest';
 export { Repository, type RepositoryOptions } from './Repository';
+export * from './service-evidence.js';
