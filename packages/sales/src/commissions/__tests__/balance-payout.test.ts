@@ -789,12 +789,31 @@ describe('Balances and payout batches', () => {
 
     it('rejects malformed or conflicting scope', async () => {
       const base = { earnerId: earner.id as string, currency: 'USD' };
+      // Half-set source.
       await expect(
         payoutService.createPayoutBatch({ ...base, sourceKind: 'ad_network' }),
-      ).rejects.toThrow(/must be set together/);
+      ).rejects.toThrow(/must both be set and non-empty/);
       await expect(
         payoutService.createPayoutBatch({ ...base, sourceId: 'net-a' }),
-      ).rejects.toThrow(/must be set together/);
+      ).rejects.toThrow(/must both be set and non-empty/);
+      // Present-but-empty source must NOT fail open into an earner-wide
+      // settlement (codex P1) — even with payable rows present.
+      await createCommission({ status: 'payable', amountCents: 9000 });
+      await expect(
+        payoutService.createPayoutBatch({
+          ...base,
+          sourceKind: '',
+          sourceId: '',
+        }),
+      ).rejects.toThrow(/must both be set and non-empty/);
+      await expect(
+        payoutService.createPayoutBatch({
+          ...base,
+          sourceKind: 'ad_network',
+          sourceId: '',
+        }),
+      ).rejects.toThrow(/must both be set and non-empty/);
+      // Source ⊕ ids.
       await expect(
         payoutService.createPayoutBatch({
           ...base,

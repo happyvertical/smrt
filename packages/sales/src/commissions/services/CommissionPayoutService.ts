@@ -552,14 +552,18 @@ export class CommissionPayoutService {
     // dynamically-computed `[]` fail closed instead of settling the whole
     // earner.
     const hasIds = input.commissionIds !== undefined;
-    const hasSourceKind = !!input.sourceKind;
-    const hasSourceId = !!input.sourceId;
-    if (hasSourceKind !== hasSourceId) {
+    // A source scope is INTENDED when either property is present. Detecting
+    // presence (not truthiness) is what stops `{ sourceKind: '', sourceId:
+    // '' }` from failing open into an earner-wide settlement — a
+    // present-but-empty (or half-set) source is malformed, not "unscoped".
+    const hasSource =
+      input.sourceKind !== undefined || input.sourceId !== undefined;
+    if (hasSource && (!input.sourceKind || !input.sourceId)) {
       throw new Error(
-        'CommissionPayoutService.createPayoutBatch: sourceKind and sourceId must be set together to scope by source',
+        'CommissionPayoutService.createPayoutBatch: sourceKind and sourceId must both be set and non-empty to scope by source',
       );
     }
-    if (hasIds && (hasSourceKind || hasSourceId)) {
+    if (hasIds && hasSource) {
       throw new Error(
         'CommissionPayoutService.createPayoutBatch: commissionIds and sourceKind/sourceId are mutually exclusive',
       );
