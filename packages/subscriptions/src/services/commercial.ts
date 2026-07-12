@@ -11,6 +11,7 @@ import {
   SpendingPolicyCollection,
 } from '../models/commercial.js';
 import type { RecordUsageOptions } from '../types.js';
+import { deterministicUuid } from '../utils.js';
 
 export interface PriceUsageOptions {
   usageEventId: string;
@@ -132,15 +133,37 @@ export class CommercialUsageService {
         `Client charge ${chargeId} must be approved before it can be adjusted.`,
       );
     }
-    const adjustment = await this.adjustments.create({
-      tenantId: charge.tenantId,
-      clientChargeId: chargeId,
-      amount,
-      currency: charge.currency,
-      reason,
-      source,
-      sourceId,
-    });
+    const sourcedId =
+      source && sourceId
+        ? await deterministicUuid([
+            'billing-adjustment',
+            String(charge.tenantId),
+            chargeId,
+            source,
+            sourceId,
+          ])
+        : null;
+    let adjustment = sourcedId
+      ? await this.adjustments.get(sourcedId)
+      : undefined;
+    if (!adjustment) {
+      try {
+        adjustment = await this.adjustments.create({
+          ...(sourcedId ? { id: sourcedId } : {}),
+          tenantId: charge.tenantId,
+          clientChargeId: chargeId,
+          amount,
+          currency: charge.currency,
+          reason,
+          source,
+          sourceId,
+          _insertOnly: Boolean(sourcedId),
+        });
+      } catch (error) {
+        if (sourcedId) adjustment = await this.adjustments.get(sourcedId);
+        if (!adjustment) throw error;
+      }
+    }
     if (charge.status === 'approved') {
       charge.status = 'adjusted';
       await charge.save();
