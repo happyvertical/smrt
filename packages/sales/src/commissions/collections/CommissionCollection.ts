@@ -52,15 +52,28 @@ export class CommissionCollection extends SmrtCollection<Commission> {
    * Payable commissions for an earner+currency that no payout batch has
    * settled yet — the rows `CommissionPayoutService.createPayoutBatch`
    * gathers.
+   *
+   * Pass `scope` to narrow the gather to one earning source (e.g. a single
+   * ad network): only commissions whose `(sourceKind, sourceId)` match are
+   * returned. This lets a caller cut a payout batch that claims *only* its
+   * network's commissions, so concurrent per-network batches settle
+   * disjoint sets instead of one sweeping the other's rows.
    */
   async findPayableUnsettled(
     earnerId: string,
     currency: string,
+    scope?: { sourceKind: string; sourceId: string },
   ): Promise<Commission[]> {
-    const payable = await this.list({
-      where: { earnerId, currency, status: 'payable' },
-      orderBy: 'created_at ASC',
-    });
+    const where: Record<string, unknown> = {
+      earnerId,
+      currency,
+      status: 'payable',
+    };
+    if (scope) {
+      where.sourceKind = scope.sourceKind;
+      where.sourceId = scope.sourceId;
+    }
+    const payable = await this.list({ where, orderBy: 'created_at ASC' });
     return payable.filter((c) => !c.payoutId);
   }
 

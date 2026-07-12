@@ -17,6 +17,7 @@ import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustm
 import { CommissionCollection } from '../collections/CommissionCollection.js';
 import { CommissionPayoutCollection } from '../collections/CommissionPayoutCollection.js';
 import { EarnerCollection } from '../collections/EarnerCollection.js';
+import type { Commission } from '../models/Commission.js';
 import type { CommissionPayout } from '../models/CommissionPayout.js';
 import {
   ADJUSTMENT_SETTLEABLE_COMMISSION_STATUSES,
@@ -41,11 +42,34 @@ export interface CreatePayoutBatchInput {
   periodEnd?: Date;
   /**
    * Idempotency natural key. Defaults to
-   * `` `${earnerId}:${currency}:${periodEnd ISO date}` `` where the date is
-   * the `YYYY-MM-DD` of `periodEnd` (falling back to `now`). Callers running
-   * more than one batch per earner/currency/day must supply their own key.
+   * `` `${earnerId}:${currency}:${periodEnd ISO date}` ``, or
+   * `` `${earnerId}:${currency}:${sourceKind}:${sourceId}:${periodEnd ISO date}` ``
+   * when scoped by source (so a per-network batch and the earner-wide batch
+   * on the same day don't collide). REQUIRED when {@link commissionIds} is
+   * given — an explicit set has no natural default key. Callers running more
+   * than one batch per key/day must supply their own key.
    */
   idempotencyKey?: string;
+  /**
+   * Restrict the batch to commissions from ONE earning source (e.g. a
+   * single ad network). Both `sourceKind` and `sourceId` must be set
+   * together. Only payable, unsettled commissions matching this source are
+   * gathered, and eligible adjustments are narrowed to those whose parent
+   * commission shares the source. Mutually exclusive with
+   * {@link commissionIds}. Omit both to settle the whole earner+currency
+   * (the original behavior).
+   */
+  sourceKind?: string;
+  sourceId?: string;
+  /**
+   * Restrict the batch to EXACTLY these commissions. Each id is included
+   * only when it is payable, unsettled, and belongs to this earner+currency
+   * — ineligible ids are ignored (inspect `settledCommissionIds` for what
+   * was actually claimed). Adjustments whose parent commission is in this
+   * set come along. Mutually exclusive with {@link sourceKind}/
+   * {@link sourceId}; requires an explicit {@link idempotencyKey}.
+   */
+  commissionIds?: string[];
   /** Overrides the earner's `payoutThresholdCents`. */
   minimumThresholdCents?: number;
   /** Overrides the earner's `payoutMethod`. */
@@ -96,7 +120,10 @@ export class CommissionPayoutService {
    * 2. **Gather** — payable unsettled commissions for the earner/currency,
    *    plus unsettled adjustments whose parent commission is
    *    earned/approved/payable/paid (same eligibility as the balance
-   *    service, so the batch settles exactly what the balance reports).
+   *    service, so the batch settles exactly what the balance reports). Pass
+   *    `sourceKind`/`sourceId` to gather only ONE source's commissions, or
+   *    `commissionIds` to gather an explicit set; in both scoped modes the
+   *    eligible adjustments are narrowed to the same scope.
    * 3. **Refuse** — `netTotal <= 0` → `'nothing_payable'`;
    *    `netTotal < threshold` (earner default, overridable) →
    *    `'below_threshold'`. Nothing is minted or stamped on refusal.
@@ -110,14 +137,18 @@ export class CommissionPayoutService {
    * Concurrency: claims are conditional with post-save verification, which
    * narrows but does not eliminate races between batches with different
    * keys (the collection layer exposes no cross-row transaction — the same
-   * stance as commerce/ledgers compensation). Settlement runs are expected
-   * to be single-writer per earner; totals are correct-by-construction from
-   * claimed rows either way.
+   * stance as commerce/ledgers compensation). The single-writer-per-earner
+   * expectation is relaxed by SCOPING: two batches scoped to different
+   * sources (or disjoint `commissionIds`) gather disjoint row sets, so they
+   * settle concurrently without contending, and `claimForPayout` skips any
+   * row a different batch already owns even when scopes overlap. Totals are
+   * correct-by-construction from claimed rows either way.
    */
   async createPayoutBatch(
     input: CreatePayoutBatchInput,
   ): Promise<CreatePayoutBatchResult> {
     const now = input.now ?? new Date();
+    CommissionPayoutService.assertScope(input);
     const earner = await this.deps.earners.get({ id: input.earnerId });
     if (!earner) {
       throw new Error(
@@ -131,6 +162,9 @@ export class CommissionPayoutService {
         input.earnerId,
         input.currency,
         input.periodEnd ?? now,
+        input.sourceKind && input.sourceId
+          ? { sourceKind: input.sourceKind, sourceId: input.sourceId }
+          : undefined,
       );
 
     // Idempotent replay: same key → same payout. A CLEAN replay (stored
@@ -158,14 +192,13 @@ export class CommissionPayoutService {
       };
     }
 
-    // Gather the exact rows this batch would settle.
-    const commissions = await this.deps.commissions.findPayableUnsettled(
-      input.earnerId,
-      input.currency,
-    );
+    // Gather the exact rows this batch would settle (honoring any source /
+    // explicit-id scope).
+    const commissions = await this.gatherBatchCommissions(input);
     const eligibleAdjustments = await this.findEligibleUnsettledAdjustments(
       input.earnerId,
       input.currency,
+      CommissionPayoutService.adjustmentParentPredicate(input),
     );
 
     const commissionTotalCents = commissions.reduce(
@@ -280,10 +313,9 @@ export class CommissionPayoutService {
 
     const previouslyClaimed =
       await this.deps.commissions.findByPayout(payoutId);
-    const gathered = await this.deps.commissions.findPayableUnsettled(
-      input.earnerId,
-      input.currency,
-    );
+    // Re-gather with the SAME scope as the initial pass so a repair never
+    // pulls out-of-scope rows into a scoped batch.
+    const gathered = await this.gatherBatchCommissions(input);
     const commissionIds = [
       ...new Set(
         [...previouslyClaimed, ...gathered]
@@ -301,6 +333,7 @@ export class CommissionPayoutService {
     const gatheredAdjustments = await this.findEligibleUnsettledAdjustments(
       input.earnerId,
       input.currency,
+      CommissionPayoutService.adjustmentParentPredicate(input),
     );
     const adjustmentIds = [
       ...new Set(
@@ -410,10 +443,15 @@ export class CommissionPayoutService {
    * Unsettled adjustments for the earner/currency whose parent commission
    * is earned/approved/payable/paid — the same eligibility rule the balance
    * service applies, so batches settle exactly what balances report.
+   *
+   * When `parentPredicate` is given (a scoped batch), an adjustment is also
+   * kept only when its parent commission satisfies the predicate — so a
+   * source-scoped or explicit-id batch settles only its own adjustments.
    */
   private async findEligibleUnsettledAdjustments(
     earnerId: string,
     currency: string,
+    parentPredicate?: (parent: Commission) => boolean,
   ) {
     const unsettled = await this.deps.adjustments.findUnsettledByEarner(
       earnerId,
@@ -425,19 +463,97 @@ export class CommissionPayoutService {
       ...new Set(unsettled.map((a) => a.commissionId).filter(Boolean)),
     ];
     const parents = await this.deps.commissions.listByIds(parentIds);
-    const parentStatusById = new Map<string, CommissionStatus>();
+    const parentById = new Map<string, Commission>();
     for (const parent of parents) {
-      if (parent.id) parentStatusById.set(parent.id, parent.status);
+      if (parent.id) parentById.set(parent.id, parent);
     }
+    const settleable =
+      ADJUSTMENT_SETTLEABLE_COMMISSION_STATUSES as readonly CommissionStatus[];
     return unsettled.filter((adjustment) => {
-      const parentStatus = parentStatusById.get(adjustment.commissionId);
-      return (
-        parentStatus !== undefined &&
-        (
-          ADJUSTMENT_SETTLEABLE_COMMISSION_STATUSES as readonly CommissionStatus[]
-        ).includes(parentStatus)
-      );
+      const parent = parentById.get(adjustment.commissionId);
+      if (parent === undefined) return false;
+      if (!settleable.includes(parent.status)) return false;
+      if (parentPredicate && !parentPredicate(parent)) return false;
+      return true;
     });
+  }
+
+  /**
+   * The payable, unsettled commissions this batch would settle, honoring
+   * the input scope: an explicit `commissionIds` set (each validated
+   * payable + unsettled + belonging to this earner/currency), a single
+   * `(sourceKind, sourceId)`, or — unscoped — the whole earner/currency.
+   */
+  private async gatherBatchCommissions(
+    input: CreatePayoutBatchInput,
+  ): Promise<Commission[]> {
+    if (input.commissionIds && input.commissionIds.length > 0) {
+      const rows = await this.deps.commissions.listByIds(input.commissionIds);
+      return rows.filter(
+        (c) =>
+          c.earnerId === input.earnerId &&
+          c.currency === input.currency &&
+          c.status === 'payable' &&
+          !c.payoutId,
+      );
+    }
+    const scope =
+      input.sourceKind && input.sourceId
+        ? { sourceKind: input.sourceKind, sourceId: input.sourceId }
+        : undefined;
+    return await this.deps.commissions.findPayableUnsettled(
+      input.earnerId,
+      input.currency,
+      scope,
+    );
+  }
+
+  /**
+   * Parent-commission predicate that narrows eligible adjustments to the
+   * batch scope: explicit-id batches keep adjustments whose parent is in
+   * the requested id set (even a now-paid parent — a clawback is still
+   * owed); source-scoped batches keep adjustments whose parent shares the
+   * source; unscoped batches keep all (predicate `undefined`).
+   */
+  private static adjustmentParentPredicate(
+    input: CreatePayoutBatchInput,
+  ): ((parent: Commission) => boolean) | undefined {
+    if (input.commissionIds && input.commissionIds.length > 0) {
+      const ids = new Set(input.commissionIds);
+      return (parent) => !!parent.id && ids.has(parent.id);
+    }
+    if (input.sourceKind && input.sourceId) {
+      const { sourceKind, sourceId } = input;
+      return (parent) =>
+        parent.sourceKind === sourceKind && parent.sourceId === sourceId;
+    }
+    return undefined;
+  }
+
+  /**
+   * Validate the batch scope: `sourceKind`/`sourceId` are all-or-nothing
+   * and mutually exclusive with `commissionIds`; an explicit `commissionIds`
+   * batch requires its own `idempotencyKey` (no natural default exists).
+   */
+  private static assertScope(input: CreatePayoutBatchInput): void {
+    const hasIds = !!(input.commissionIds && input.commissionIds.length > 0);
+    const hasSourceKind = !!input.sourceKind;
+    const hasSourceId = !!input.sourceId;
+    if (hasSourceKind !== hasSourceId) {
+      throw new Error(
+        'CommissionPayoutService.createPayoutBatch: sourceKind and sourceId must be set together to scope by source',
+      );
+    }
+    if (hasIds && (hasSourceKind || hasSourceId)) {
+      throw new Error(
+        'CommissionPayoutService.createPayoutBatch: commissionIds and sourceKind/sourceId are mutually exclusive',
+      );
+    }
+    if (hasIds && !input.idempotencyKey) {
+      throw new Error(
+        'CommissionPayoutService.createPayoutBatch: an explicit commissionIds batch requires an idempotencyKey',
+      );
+    }
   }
 
   private async requirePayout(payoutId: string): Promise<CommissionPayout> {
@@ -450,13 +566,23 @@ export class CommissionPayoutService {
     return payout;
   }
 
-  /** `${earnerId}:${currency}:${YYYY-MM-DD of periodEnd}` — see the input doc. */
+  /**
+   * `${earnerId}:${currency}:${YYYY-MM-DD}` — or, when scoped by source,
+   * `${earnerId}:${currency}:${sourceKind}:${sourceId}:${YYYY-MM-DD}` so a
+   * per-network batch and the earner-wide batch on the same day get distinct
+   * keys. See the input doc.
+   */
   private static defaultIdempotencyKey(
     earnerId: string,
     currency: string,
     periodEnd: Date,
+    scope?: { sourceKind: string; sourceId: string },
   ): string {
-    return `${earnerId}:${currency}:${periodEnd.toISOString().slice(0, 10)}`;
+    const date = periodEnd.toISOString().slice(0, 10);
+    if (scope) {
+      return `${earnerId}:${currency}:${scope.sourceKind}:${scope.sourceId}:${date}`;
+    }
+    return `${earnerId}:${currency}:${date}`;
   }
 }
 
