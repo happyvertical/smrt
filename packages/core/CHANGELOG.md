@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.39.8
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: fold lifecycle into PR validation (#1976) (agent-policy)
+  - @happyvertical/smrt-config@0.39.8
+  - @happyvertical/smrt-types@0.39.8
+  - @happyvertical/smrt-scanner@0.39.8
+
 ## 0.39.7
 
 ### Patch Changes
