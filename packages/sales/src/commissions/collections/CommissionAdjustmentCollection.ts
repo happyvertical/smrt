@@ -61,11 +61,14 @@ export class CommissionAdjustmentCollection extends SmrtCollection<CommissionAdj
   }
 
   /**
-   * Conditionally claim adjustment rows for a payout batch — the
-   * adjustment twin of `CommissionCollection.claimForPayout`. Rows already
-   * claimed by a DIFFERENT payout are skipped; rows already claimed by THIS
-   * payout pass through (idempotent retry / repair); every claim is
-   * verified by a post-save re-read. Returns the claimed rows.
+   * Conditionally claim adjustment rows for a payout batch — the adjustment
+   * twin of `CommissionCollection.claimForPayout`. Rows already claimed by a
+   * DIFFERENT payout are skipped; rows already claimed by THIS payout pass
+   * through (idempotent retry / repair); every claim is verified by a
+   * post-save re-read. Reads/writes go through the model layer, so this
+   * respects the tenancy interceptor and the dialect's empty-FK encoding.
+   * Not a cross-row transaction — safe concurrency relies on disjoint batch
+   * scopes (see `CommissionPayoutService`). Returns the claimed rows.
    */
   async claimForPayout(
     adjustmentIds: string[],
