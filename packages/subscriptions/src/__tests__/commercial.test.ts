@@ -107,6 +107,10 @@ describe('commercial usage tracer', () => {
       ruleKey: 'tokens-v1',
       strategy: 'included_overage',
     });
+    const originalTenantId = charge.tenantId;
+    charge.tenantId = '22222222-2222-4222-8222-222222222222';
+    await expect(charge.save()).rejects.toThrow('Operation failed: save');
+    charge.tenantId = originalTenantId;
     charge.amount = 99;
     await expect(charge.save()).rejects.toThrow('Operation failed: save');
     const correction = await service.adjust(
