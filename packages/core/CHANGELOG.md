@@ -1,5 +1,42 @@
 # @happyvertical/smrt-core
 
+## 0.39.6
+
+### Patch Changes
+
+- ### Features
+
+  - token-streaming chat SSE endpoint (#1936) + credentialed CORS for \_events (#1861) (#1971)
+  - add persona-routed outbound messaging (#1968) (messages)
+  - add managed delivery control plane (#1962) (projects)
+  - add commercial usage pricing and spending policies (#1956) (subscriptions)
+  - scope commission payout batches by source or explicit ids (#1964) (sales)
+  - add smrt-sales — modular CRM, referrals, commissions, Svelte (#1945) (sales)
+  - smrt-support — AI-first Support Cases, routing, targets, and service time (epic #1934) (#1943) (support)
+
+  ### Bug Fixes
+
+  - recover partial publish and preserve recovery window (#1972) (release)
+  - recover v0.39.4 and harden verification (#1967) (release)
+  - reconcile v0.39.3 and authenticate ref push (#1959) (release)
+  - expose isolated database to libpq clients (#1946) (ci)
+  - support Vite 7 consumers (#1942) (playground)
+
+  ### Other Changes
+
+  - chore: align lifecycle policy workflow (#1970)
+  - chore: reconcile v0.39.2 repository state (#1947) (release)
+  - chore: add Vite peer release note (#1944) (playground)
+  - perf: reuse generated manifests (#1939) (ci)
+  - perf: reuse SQLite schema templates (#1937) (vitest)
+
+  ### Merged Changes
+
+  - Adopt the shared agent development policy
+  - @happyvertical/smrt-config@0.39.6
+  - @happyvertical/smrt-types@0.39.6
+  - @happyvertical/smrt-scanner@0.39.6
+
 ## 0.39.5
 
 ### Patch Changes
