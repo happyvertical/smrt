@@ -283,6 +283,13 @@ export interface PersonaConversationTurnOptions {
   postgresRls?: boolean;
   /** Correlation id for the turn (feedback ties back to it). Auto-generated when omitted. */
   correlationId?: string;
+  /**
+   * Token sink for live streaming (#1936). Forwarded to {@link runToolLoop}: the
+   * model's text deltas stream here as they arrive. Best-effort (see
+   * `ToolLoopOptions.onToken`); the authored assistant message remains the
+   * authoritative final content.
+   */
+  onToken?: (chunk: string) => void;
 }
 
 /** The outcome of a persona-bound conversation turn. */
@@ -395,6 +402,7 @@ export async function runPersonaConversationTurn(
     agentClass: persona.agentClass,
     postgresRls: options.postgresRls,
     audit: options.audit,
+    onToken: options.onToken,
   });
 
   let authoredMessages: AuthoredConversationMessages | undefined;

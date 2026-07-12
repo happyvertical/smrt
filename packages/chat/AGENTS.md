@@ -7,8 +7,11 @@ Chat rooms, threads, and agent sessions with app-controlled tool whitelisting.
 `pnpm --dir packages/chat dev` runs a package-local SvelteKit workbench. The root
 route is an interactive chat surface with a dev-only `/api/dev-chat` endpoint:
 it uses `@happyvertical/ai` when local provider credentials are present and
-falls back to a deterministic local assistant otherwise. `/previews` hosts the
-shared component playground entries from `src/svelte/playground.ts`.
+falls back to a deterministic local assistant otherwise. `/api/dev-chat-stream`
+is its SSE companion (#1936) — the same provider/local-fallback resolution wired
+through `createChatStreamHandler` in plain mode, so an embedded `SmrtChatBackend`
+client can exercise token streaming locally. `/previews` hosts the shared
+component playground entries from `src/svelte/playground.ts`.
 
 The root workbench also has a dev-only voice conversation mode. It reads voice
 gateway connection details through `/api/dev-voice/config`, streams browser mic
@@ -55,6 +58,14 @@ The "chat with your learning agent" surface — the real agentic runtime for `Ag
 Voice is an input mode for the existing persona chat harness, not a separate chat runtime. `createVoiceChatSession()` creates a short-lived `VoiceSession` for an authenticated actor/profile, binding tenant, persona, agent session, room, and optional thread. `handleVoiceGatewayTurn()` resolves that binding from `metadata.voiceSessionId`, checks the gateway's `session_id` and any supplied tenant/profile/persona/session/thread metadata against the server-side binding, persists the transcript through `ChatService.sendAgentUserMessage()`, runs `runPersonaConversationTurn()`, stamps voice/correlation metadata onto the persisted user/assistant/tool messages, records the gateway `turn_id`, and returns the gateway response contract. The Fetch-compatible `createVoiceGatewayTurnHandler()` adds the coarse gateway bearer-token check.
 
 The gateway bearer token proves only "this request came from the gateway"; it never authorizes the end user. The short-lived `VoiceSession` binding is the user/session proof, and untrusted gateway metadata must be validated against that binding before any chat write or tool loop. Tool execution remains fail-closed through the persona allow-list mirrored onto `AgentSession` by `bindPersonaToSession()`.
+
+## Token Streaming (SSE, #1936)
+
+`chat-stream.ts` is the SSE seam for embeddable conversational UIs (first consumer: the Happy chat widget, `animation#5`): a client POSTs the conversation so far and receives a `text/event-stream` of `data: <json>` frames — `token` deltas as the model generates, then a final `done` frame with the message. The wire `ChatStreamEvent` union also declares `emotion` and `control` (#1921 host-page control commands) lanes for forward compatibility; the v1 engine emits `token`/`done`/`error`.
+
+- **`runChatConversationStream({ context, messages })`** — the transport-agnostic engine (an `AsyncGenerator<ChatStreamEvent>`). Dispatches on `context.binding`: **persona-bound** runs the full `runPersonaConversationTurn` with a token sink wired through the tool loop (`onToken` → `ai.chat({ stream: true, onProgress })`), then persists via `ChatService` and emits the persisted message as `done`; **plain/unbound** streams `ai.stream()` directly and emits a synthesized (unpersisted) `done`. Streamed tokens are a live PREVIEW (a tool-call round may narrate before acting); the `done` message is authoritative. Failures surface as an in-band `error` event, never a throw (the 200 has already committed once streaming starts).
+- **`createChatStreamHandler({ authorize, allowedOrigins?, allowCredentials? })`** — a Fetch-compatible handler returning `text/event-stream` (mirrors `createVoiceGatewayTurnHandler`). `authorize(request, body)` is the SOLE trust boundary and works exactly like the voice gateway: this module NEVER authorizes from the request's `session` metadata — the app validates the caller (bearer session id / cookie / same-origin) and the claimed ids against the authenticated principal, and returns an already-authorized `ChatStreamContext`. Generation caps (`model`/`maxTokens`/`maxSteps`) live on the context (server-resolved), never on the request. Cross-origin embedding uses the same fail-closed CORS posture as core `_events` (#1861): the `Origin` is echoed only when allow-listed (never `*`), credentials only when opted in.
+- **Persona path reuses the harness's own gates unchanged** — persona principal, fail-closed `allowedTools` offer+execution gates, tenant binding. `onToken` is best-effort telemetry threaded through `runToolLoop`; it never changes what the loop persists or authorizes.
 
 ## Gotchas
 

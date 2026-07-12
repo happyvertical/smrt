@@ -55,6 +55,18 @@ export interface APIConfig {
    * `Origin` is echoed only when it appears here.
    */
   allowedOrigins?: string[];
+  /**
+   * Opt into credentialed CORS (#1861). When true, CORS responses to an
+   * allow-listed origin also carry `Access-Control-Allow-Credentials: true`, so
+   * a cross-origin browser client may send cookies (the only auth an
+   * `EventSource` can carry — it cannot set an `Authorization` header). Requires
+   * `enableCors` + a non-empty `allowedOrigins`: credentials are NEVER paired
+   * with a wildcard origin, and the origin is still echoed only when it is
+   * explicitly allow-listed. Fail-closed default (`false`): same-origin only,
+   * even when CORS is otherwise enabled, so a plain `enableCors` never silently
+   * starts flowing cookies cross-origin.
+   */
+  allowCredentials?: boolean;
   customRoutes?: Record<string, (req: Request) => Promise<Response>>;
   authMiddleware?: (
     objectName: string,
@@ -404,17 +416,21 @@ export class APIGenerator {
 
     // Live change-signal SSE route (#1763): auth-guarded, tenant-scoped
     // Server-Sent-Events stream of coarse signals (no row payloads). Logic
-    // lives in ./events-route.ts. Deliberately NOT wrapped in addCorsHeaders —
-    // this slice is same-origin only (EventSource cannot set request headers
-    // and credentialed cross-origin SSE needs Allow-Credentials the CORS
-    // helper does not emit); cross-origin SSE is a follow-up.
+    // lives in ./events-route.ts. Wrapped in addCorsHeaders so a cross-origin
+    // credentialed EventSource can subscribe when `allowCredentials` + an
+    // allow-listed origin are configured (#1861); with the fail-closed default
+    // (`allowCredentials: false`) this stays same-origin only, exactly as
+    // before. The stream body passes through untouched — addCorsHeaders only
+    // re-wraps headers. Fail-closed auth is unchanged: the CORS layer never
+    // authorizes; it only lets an already-authorized cookie reach the guard.
     if (url.pathname === `${this.config.basePath}/_events`) {
-      return handleEventsRoute(req, {
+      const response = await handleEventsRoute(req, {
         authMiddleware: this.config.authMiddleware,
         db: this.resolveContextDb(),
         manifestHash: this.resolveManifestHash(),
         maxSubscribers: this.config.eventsRoute?.maxSubscribers,
       });
+      return this.addCorsHeaders(response, req);
     }
 
     // Handle object routes
@@ -1370,18 +1386,36 @@ export class APIGenerator {
   }
 
   /**
+   * Whether to emit `Access-Control-Allow-Credentials: true` (#1861). Only when
+   * explicitly opted in AND an origin actually resolved — credentials are never
+   * paired with a wildcard/absent origin (`resolveAllowedOrigin` already never
+   * returns `*`).
+   */
+  private shouldAllowCredentials(): boolean {
+    return this.config.allowCredentials === true;
+  }
+
+  /**
    * Create CORS preflight response
    */
   private createCorsResponse(req: Request): Response {
     const headers: Record<string, string> = {
       'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      // `Last-Event-ID` is allow-listed for the `_events` SSE route (#1861): a
+      // fetch-based cross-origin SSE client that resumes from a cursor sends it
+      // as a request header, which is not CORS-safelisted and would otherwise
+      // fail preflight. Harmless on the other routes, which ignore it.
+      'Access-Control-Allow-Headers':
+        'Content-Type,Authorization,Last-Event-ID',
       'Access-Control-Max-Age': '86400',
     };
     const origin = this.resolveAllowedOrigin(req);
     if (origin) {
       headers['Access-Control-Allow-Origin'] = origin;
       headers.Vary = 'Origin';
+      if (this.shouldAllowCredentials()) {
+        headers['Access-Control-Allow-Credentials'] = 'true';
+      }
     }
     return new Response(null, { status: 200, headers });
   }
@@ -1400,7 +1434,18 @@ export class APIGenerator {
       'Access-Control-Allow-Methods',
       'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     );
-    headers.set('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    // `Last-Event-ID` so a fetch-based cross-origin SSE client can resume the
+    // `_events` stream from a cursor (#1861); see createCorsResponse.
+    headers.set(
+      'Access-Control-Allow-Headers',
+      'Content-Type,Authorization,Last-Event-ID',
+    );
+    // Credentialed CORS (#1861): only when opted in, and only alongside a
+    // concrete echoed origin (never `*`) so cookies can flow to an allow-listed
+    // cross-origin client (e.g. a credentialed EventSource on `_events`).
+    if (this.shouldAllowCredentials()) {
+      headers.set('Access-Control-Allow-Credentials', 'true');
+    }
 
     return new Response(response.body, {
       status: response.status,

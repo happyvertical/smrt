@@ -265,6 +265,77 @@ describe('generateEventsRoute (#1763)', () => {
     expect(writtenRouteContent()).toContain("getCollection('Bird')");
   });
 
+  describe('cross-origin CORS emission (#1861)', () => {
+    const docManifest = () =>
+      buildManifest({
+        Doc: {
+          className: 'Doc',
+          collection: 'docs',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: true },
+        },
+      });
+
+    it('emits no CORS surface by default (same-origin only)', () => {
+      generateEventsRoute(projectRoot, docManifest(), baseOptions);
+      const content = writtenRouteContent();
+      expect(content).not.toContain('Access-Control-Allow-Origin');
+      expect(content).not.toContain('CORS_ALLOWED_ORIGINS');
+      expect(content).not.toContain('export const OPTIONS');
+      // The default output still carries the same-origin note.
+      expect(content).toContain('Same-origin only unless an origin allowlist');
+    });
+
+    it('emits an origin-allowlist gate + credentialed preflight when configured', () => {
+      generateEventsRoute(projectRoot, docManifest(), {
+        ...baseOptions,
+        eventsRoute: {
+          allowedOrigins: ['https://widget.example', 'https://app.example'],
+          allowCredentials: true,
+        },
+      });
+      const content = writtenRouteContent();
+      // Allowlist baked in as a Set; Origin echoed only when a member (never `*`).
+      expect(content).toContain(
+        'const CORS_ALLOWED_ORIGINS = new Set(["https://widget.example","https://app.example"])',
+      );
+      expect(content).not.toContain("'Access-Control-Allow-Origin': '*'");
+      expect(content).toContain("'Access-Control-Allow-Origin': origin");
+      expect(content).toContain(
+        "headers['Access-Control-Allow-Credentials'] = 'true'",
+      );
+      // The SSE response and the capacity 503 both carry the CORS headers.
+      expect(content).toContain('...eventsCorsHeaders(request),');
+      expect(content).toContain(
+        'applyEventsCors(eventStreamCapacityExceededResponse(), request)',
+      );
+      // A credentialed preflight is answered for allow-listed origins only.
+      expect(content).toContain('export const OPTIONS: RequestHandler');
+    });
+
+    it('omits the credentials header when allowCredentials is not opted in', () => {
+      generateEventsRoute(projectRoot, docManifest(), {
+        ...baseOptions,
+        eventsRoute: { allowedOrigins: ['https://widget.example'] },
+      });
+      const content = writtenRouteContent();
+      expect(content).toContain('const CORS_ALLOWED_ORIGINS = new Set(');
+      expect(content).toContain("'Access-Control-Allow-Origin': origin");
+      expect(content).not.toContain('Access-Control-Allow-Credentials');
+    });
+
+    it('treats a whitespace-only / empty allowlist as unconfigured (fail-closed)', () => {
+      generateEventsRoute(projectRoot, docManifest(), {
+        ...baseOptions,
+        eventsRoute: { allowedOrigins: ['   ', ''], allowCredentials: true },
+      });
+      const content = writtenRouteContent();
+      expect(content).not.toContain('CORS_ALLOWED_ORIGINS');
+      expect(content).not.toContain('export const OPTIONS');
+    });
+  });
+
   it('skips generation when disabled or when there is nothing to anchor on', () => {
     const manifest = buildManifest({
       Doc: {

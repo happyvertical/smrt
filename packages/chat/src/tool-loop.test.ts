@@ -262,6 +262,57 @@ describe('runToolLoop', () => {
     expect(result.steps).toBe(0);
   });
 
+  it('streams the model text deltas to onToken (#1936)', async () => {
+    // The AI boundary streams via onProgress when the round runs with
+    // stream:true. Assert the loop passes both through and forwards the deltas.
+    const seenStream: Array<boolean | undefined> = [];
+    const ai = {
+      async chat(_messages: AIMessage[], options?: ChatOptions) {
+        seenStream.push(options?.stream);
+        for (const delta of ['Hel', 'lo ', 'there']) {
+          options?.onProgress?.(delta);
+        }
+        return textResponse('Hello there');
+      },
+    } as unknown as AIInterface;
+
+    const tokens: string[] = [];
+    const result = await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      audit: () => {},
+      onToken: (chunk) => tokens.push(chunk),
+    });
+
+    expect(seenStream).toContain(true);
+    expect(tokens.join('')).toBe('Hello there');
+    expect(result.content).toBe('Hello there');
+  });
+
+  it('does not request streaming when no onToken sink is given', async () => {
+    const seenStream: Array<boolean | undefined> = [];
+    const ai = {
+      async chat(_messages: AIMessage[], options?: ChatOptions) {
+        seenStream.push(options?.stream);
+        return textResponse('quiet');
+      },
+    } as unknown as AIInterface;
+
+    await runToolLoop({
+      ai,
+      db,
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: tools(['tool_loop_notes.read']),
+      principal: { runAsUserId: userId, tenantId, allowedTools: NOTE_TOOLS },
+      audit: () => {},
+    });
+
+    expect(seenStream.every((v) => v === undefined)).toBe(true);
+  });
+
   it('reports no_tools when the persona has an empty allow-list', async () => {
     const ai = makeAI(() => textResponse('cannot act'));
     const result = await runToolLoop({

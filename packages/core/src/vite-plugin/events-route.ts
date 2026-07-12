@@ -66,6 +66,8 @@ export function generateEventsRoute(
     manifestHasTenantScopedObject(manifest),
     webManifestHash,
     options.eventsRoute?.maxSubscribers,
+    normalizeAllowedOrigins(options.eventsRoute?.allowedOrigins),
+    options.eventsRoute?.allowCredentials === true,
   );
 
   if (!existsSync(routeDir)) {
@@ -77,11 +79,108 @@ export function generateEventsRoute(
   return true;
 }
 
+/**
+ * Trim, de-duplicate, and drop empty entries from a configured origin
+ * allowlist. An `undefined`/empty result means "same-origin only" — the
+ * generated route emits no CORS surface at all (fail-closed default, #1861).
+ */
+function normalizeAllowedOrigins(
+  origins: string[] | undefined,
+): string[] | undefined {
+  if (!Array.isArray(origins)) return undefined;
+  const cleaned = [
+    ...new Set(
+      origins
+        .filter((o): o is string => typeof o === 'string')
+        .map((o) => o.trim())
+        .filter((o) => o.length > 0),
+    ),
+  ];
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+/**
+ * Build the CORS fragments injected into the generated `_events` route (#1861)
+ * when an origin allowlist is configured. Mirrors the runtime REST generator's
+ * posture: the request `Origin` is echoed only when it is on the allowlist
+ * (never `*`), `Vary: Origin` is always set on a matched response, and
+ * `Access-Control-Allow-Credentials: true` is added only when credentials are
+ * opted in — so cookies flow to an allow-listed cross-origin `EventSource`
+ * while an unmatched origin gets no CORS surface (fail-closed).
+ */
+function buildEventsCorsBlock(
+  allowedOrigins: string[],
+  allowCredentials: boolean,
+): {
+  helpers: string;
+  streamHeadersSpread: string;
+  capacityReturn: string;
+  optionsHandler: string;
+} {
+  const originsLiteral = JSON.stringify(allowedOrigins);
+  const credentialsLine = allowCredentials
+    ? "\n  headers['Access-Control-Allow-Credentials'] = 'true';"
+    : '';
+  const helpers = `
+// Credentialed cross-origin CORS (#1861). Opt-in via
+// \`sveltekit.eventsRoute.allowedOrigins\` (+ \`allowCredentials\`); an unmatched or
+// absent Origin gets no CORS surface, so this route stays same-origin only by
+// default. The Origin is echoed only when allow-listed (never \`*\`), which is
+// what makes credentialed CORS safe. CORS never authorizes — the fail-closed
+// \`requireRouteAuth\` guard below is unchanged; CORS only lets an allow-listed
+// browser's cookies reach it.
+const CORS_ALLOWED_ORIGINS = new Set(${originsLiteral});
+
+function eventsCorsHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get('origin');
+  if (!origin || !CORS_ALLOWED_ORIGINS.has(origin)) return {};
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Origin': origin,
+    Vary: 'Origin',
+  };${credentialsLine}
+  return headers;
+}
+
+function applyEventsCors(response: Response, request: Request): Response {
+  for (const [key, value] of Object.entries(eventsCorsHeaders(request))) {
+    response.headers.set(key, value);
+  }
+  return response;
+}
+`;
+  const streamHeadersSpread = '...eventsCorsHeaders(request),\n        ';
+  const capacityReturn =
+    '    return applyEventsCors(eventStreamCapacityExceededResponse(), request);';
+  const optionsHandler = `
+// Preflight for a credentialed cross-origin subscription. \`EventSource\` GETs
+// are "simple" requests (no preflight), but a fetch-based SSE client may
+// preflight — answer it for allow-listed origins only.
+export const OPTIONS: RequestHandler = async ({ request }) => {
+  const headers = eventsCorsHeaders(request);
+  if (!('Access-Control-Allow-Origin' in headers)) {
+    return new Response(null, { status: 403 });
+  }
+  return new Response(null, {
+    status: 204,
+    headers: {
+      ...headers,
+      'Access-Control-Allow-Methods': 'GET,OPTIONS',
+      'Access-Control-Allow-Headers': 'Authorization,Last-Event-ID,Content-Type',
+      'Access-Control-Max-Age': '86400',
+    },
+  });
+};
+`;
+  return { helpers, streamHeadersSpread, capacityReturn, optionsHandler };
+}
+
 function generateEventsRouteTemplate(
   anchorClassName: string,
   tenantScoped: boolean,
   manifestHash: string | undefined,
-  maxSubscribers?: number,
+  maxSubscribers: number | undefined,
+  allowedOrigins: string[] | undefined,
+  allowCredentials: boolean,
 ): string {
   const configuredMaxSubscribers =
     maxSubscribers !== undefined &&
@@ -95,6 +194,18 @@ function generateEventsRouteTemplate(
       : `, ${JSON.stringify(configuredMaxSubscribers)}`;
   const manifestHashLiteral =
     manifestHash === undefined ? 'undefined' : JSON.stringify(manifestHash);
+  // CORS is emitted only when an explicit allowlist is configured (#1861).
+  // Without one the generated route carries no CORS surface — same-origin only,
+  // byte-for-byte the pre-#1861 output.
+  const corsEnabled = allowedOrigins !== undefined;
+  const corsBlock = corsEnabled
+    ? buildEventsCorsBlock(allowedOrigins, allowCredentials)
+    : {
+        helpers: '',
+        streamHeadersSpread: '',
+        capacityReturn: '    return eventStreamCapacityExceededResponse();',
+        optionsHandler: '',
+      };
   const tenantHelper = tenantScoped
     ? `
 import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
@@ -122,7 +233,7 @@ function establishTenantContext(locals: unknown): void {
 // rowId, tenantId} (NEVER a row payload — authorization stays on the read path)
 // and carries a seq cursor in the SSE id: field. A reconnecting EventSource
 // resends Last-Event-ID; the route replays missed changes from it, then streams
-// live. Same-origin only for this slice (no CORS).
+// live. Same-origin only unless an origin allowlist is configured (#1861).
 
 import { error } from '@sveltejs/kit';
 import {
@@ -135,7 +246,7 @@ import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
 const MANIFEST_HASH = ${manifestHashLiteral};
-
+${corsBlock.helpers}
 // Fail-closed authorization (#1540): the signal stream spans every table, so
 // it is never public — an authenticated principal on \`locals\` is required.
 function hasAuthenticatedPrincipal(locals: unknown): boolean {
@@ -188,7 +299,7 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
   const collection = await getCollection('${anchorClassName}');
   const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(collection.db${maxSubscribersArg});
   if (!releaseSubscriberSlot) {
-    return eventStreamCapacityExceededResponse();
+${corsBlock.capacityReturn}
   }
   return new Response(
     buildChangeEventStream(collection.db, {
@@ -200,7 +311,7 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
     {
       status: 200,
       headers: {
-        'Content-Type': 'text/event-stream',
+        ${corsBlock.streamHeadersSpread}'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
@@ -208,5 +319,5 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
     },
   );
 };
-`;
+${corsBlock.optionsHandler}`;
 }

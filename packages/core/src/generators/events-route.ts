@@ -24,10 +24,16 @@
  *   happens from a different async context (the writer's afterSave, possibly
  *   another request or replica) with no tenant ALS active, so the filter must
  *   be the value resolved at subscribe time, not re-resolved per signal.
- * - **Same-origin only** for this slice: `rest.ts` does NOT wrap `_events` in
- *   CORS headers. `EventSource` cannot set request headers and credentialed
- *   cross-origin SSE needs `Access-Control-Allow-Credentials` the CORS helper
- *   does not emit; cross-origin SSE is a deliberate follow-up.
+ * - **Cross-origin is opt-in** (#1861): `rest.ts` now wraps `_events` in its
+ *   CORS layer. With the fail-closed default it stays same-origin only, but
+ *   when the generator is configured with `enableCors`, an `allowedOrigins`
+ *   allowlist, and `allowCredentials: true`, an allow-listed cross-origin
+ *   browser client can subscribe with a credentialed `EventSource`
+ *   (`withCredentials: true`) — the response echoes the specific origin (never
+ *   `*`) plus `Access-Control-Allow-Credentials: true`, so its cookies reach
+ *   the same fail-closed auth guard. The CORS layer only lets the cookie
+ *   through; it never authorizes — the auth middleware + captured tenant scope
+ *   are unchanged, so the read posture holds identically across origins.
  */
 
 import { createLogger } from '@happyvertical/logger';
