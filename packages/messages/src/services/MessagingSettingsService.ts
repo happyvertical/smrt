@@ -314,11 +314,34 @@ export class MessagingSettingsService {
     }
     for (const field of fields) {
       const value = values[field.id];
-      if (
-        field.required &&
-        (value === undefined || value === null || value === '')
-      ) {
+      const missing = value === undefined || value === '';
+      if (field.required && (missing || value === null)) {
         throw new Error(`${field.label} is required in ${kind}.`);
+      }
+      if (missing) continue;
+
+      if (
+        field.type === 'number' &&
+        (typeof value !== 'number' || !Number.isFinite(value))
+      ) {
+        throw new Error(`${field.label} must be a finite number in ${kind}.`);
+      }
+      if (field.type === 'boolean' && typeof value !== 'boolean') {
+        throw new Error(`${field.label} must be a boolean in ${kind}.`);
+      }
+      if (
+        field.type !== 'number' &&
+        field.type !== 'boolean' &&
+        typeof value !== 'string'
+      ) {
+        throw new Error(`${field.label} must be a string in ${kind}.`);
+      }
+      if (
+        field.type === 'select' &&
+        field.options?.length &&
+        !field.options.some((option) => option.value === value)
+      ) {
+        throw new Error(`${field.label} has an invalid option in ${kind}.`);
       }
     }
   }

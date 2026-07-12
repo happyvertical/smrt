@@ -66,7 +66,11 @@ export class MessagingEndpoint extends SmrtObject {
   getMaskedAddress(): string {
     const address = this.getAddress();
     const visible =
-      address.email ?? address.chatId ?? address.stream ?? address.phoneNumber;
+      address.email ??
+      address.chatId ??
+      address.to ??
+      address.stream ??
+      address.phoneNumber;
     if (typeof visible !== 'string' && typeof visible !== 'number')
       return '••••';
     const value = String(visible);

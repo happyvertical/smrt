@@ -73,4 +73,14 @@ describe('createPersonaMessagingTool', () => {
       }),
     ).rejects.toThrow("Missing required permission 'messages.send'");
   });
+
+  it('fails fast when the default service has no database connection', async () => {
+    const tool = createPersonaMessagingTool({ personaId: 'persona-1' });
+
+    await expect(
+      tool.execute({ run: run(), args: { body: 'Hello' } }),
+    ).rejects.toThrow(
+      'A database connection is required to send persona messages.',
+    );
+  });
 });

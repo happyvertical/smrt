@@ -68,6 +68,15 @@ describe('messaging provider contract', () => {
       unregister();
     }
   });
+
+  it('masks the provider-defined Zulip destination', () => {
+    const endpoint = new MessagingEndpoint({
+      channel: 'zulip',
+      address: JSON.stringify({ type: 'stream', to: 'engineering' }),
+    });
+
+    expect(endpoint.getMaskedAddress()).toBe('••••ring');
+  });
 });
 
 describe('PersonaMessagingService', () => {
@@ -238,5 +247,73 @@ describe('PersonaMessagingService', () => {
       });
       expect(settings.endpoints[0]).not.toHaveProperty('address');
     });
+  });
+
+  it('rejects invalid provider field types before persistence', async () => {
+    const unregister = registerMessagingProvider({
+      id: 'typed-test',
+      label: 'Typed test provider',
+      channel: 'sms',
+      available: true,
+      configurationFields: [],
+      credentialFields: [],
+      endpointFields: [
+        {
+          id: 'count',
+          label: 'Count',
+          type: 'number',
+          required: true,
+        },
+        {
+          id: 'enabled',
+          label: 'Enabled',
+          type: 'boolean',
+          required: true,
+        },
+        {
+          id: 'mode',
+          label: 'Mode',
+          type: 'select',
+          required: true,
+          options: [{ value: 'direct', label: 'Direct' }],
+        },
+      ],
+    });
+    const tenantId = crypto.randomUUID();
+    const settings = new MessagingSettingsService({
+      db,
+      tenantId,
+      principal: messagingPrincipalFromPermissions(
+        [MANAGE_MESSAGE_ROUTES_PERMISSION],
+        { tenantId },
+      ),
+      resolvePersonaTenantId: async () => tenantId,
+    });
+
+    try {
+      await expect(
+        settings.saveEndpoint({
+          label: 'Bad number',
+          providerId: 'typed-test',
+          address: { count: Number.NaN, enabled: true, mode: 'direct' },
+        }),
+      ).rejects.toThrow('Count must be a finite number in endpoint');
+      await expect(
+        settings.saveEndpoint({
+          label: 'Bad boolean',
+          providerId: 'typed-test',
+          address: { count: 1, enabled: 'true', mode: 'direct' },
+        }),
+      ).rejects.toThrow('Enabled must be a boolean in endpoint');
+      await expect(
+        settings.saveEndpoint({
+          label: 'Bad option',
+          providerId: 'typed-test',
+          address: { count: 1, enabled: true, mode: 'broadcast' },
+        }),
+      ).rejects.toThrow('Mode has an invalid option in endpoint');
+    } finally {
+      unregister();
+    }
   });
 });

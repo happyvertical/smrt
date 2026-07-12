@@ -111,6 +111,11 @@ export function createPersonaMessagingTool(
         tenantId,
         permissions: run.permissions,
       };
+      if (!options.createService && !serviceOptions.db) {
+        throw new Error(
+          'A database connection is required to send persona messages.',
+        );
+      }
       const service = options.createService
         ? options.createService(serviceOptions)
         : new PersonaMessagingService({
