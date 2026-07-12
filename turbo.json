@@ -100,6 +100,10 @@
         "generate:test",
         "@happyvertical/smrt-core#build"
       ],
+      "env": [
+        "NODE_ENV",
+        "VITEST_MAX_WORKERS"
+      ],
       "inputs": [
         "src/**",
         "test/**",
