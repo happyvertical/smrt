@@ -257,6 +257,15 @@ export class MessagingSettingsService {
       if (!endpoint || endpoint.tenantId !== this.options.tenantId) {
         throw new Error('Messaging endpoint was not found in this tenant.');
       }
+      const accountProvider = getMessagingProvider(account.providerType);
+      if (
+        !accountProvider?.available ||
+        accountProvider.channel !== account.channelType
+      ) {
+        throw new Error(
+          'Messaging account provider is not available for outbound delivery.',
+        );
+      }
       if (account.channelType !== endpoint.channel) {
         throw new Error(
           'Messaging account and endpoint channels do not match.',

@@ -3,10 +3,7 @@ import { Form, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import type { PersonaMessageRoute } from '../../models/PersonaMessageRoute.js';
-import type {
-  MessagingProviderDefinition,
-  MessagingProviderField,
-} from '../../providers.js';
+import type { MessagingProviderDefinition } from '../../providers.js';
 import type {
   MessagingAccountInput,
   MessagingAccountView,
@@ -15,6 +12,7 @@ import type {
   PersonaMessageRouteInput,
 } from '../../services/MessagingSettingsService.js';
 import { M } from '../i18n.messages.js';
+import { coerceMessagingProviderValues } from '../messaging-settings.js';
 
 const { t } = useI18n();
 
@@ -95,20 +93,6 @@ function selectEndpointProvider(event: Event) {
   endpointAddress = {};
 }
 
-function typedValues(
-  values: Record<string, string>,
-  fields: MessagingProviderField[],
-): Record<string, unknown> {
-  return Object.fromEntries(
-    fields
-      .filter((field) => values[field.id] !== '')
-      .map((field) => [
-        field.id,
-        field.type === 'number' ? Number(values[field.id]) : values[field.id],
-      ]),
-  );
-}
-
 function reset() {
   openForm = null;
   error = '';
@@ -175,7 +159,7 @@ async function saveAccount() {
   saving = true;
   error = '';
   try {
-    const credentials = typedValues(
+    const credentials = coerceMessagingProviderValues(
       accountCredentials,
       activeAccountProvider.credentialFields,
     );
@@ -183,7 +167,7 @@ async function saveAccount() {
       id: accountId,
       name: accountName,
       providerId: activeAccountProvider.id,
-      configuration: typedValues(
+      configuration: coerceMessagingProviderValues(
         accountConfiguration,
         activeAccountProvider.configurationFields,
       ),
@@ -209,7 +193,7 @@ async function saveEndpoint() {
       label: endpointLabel,
       providerId: activeEndpointProvider.id,
       profileId: endpointProfileId,
-      address: typedValues(
+      address: coerceMessagingProviderValues(
         endpointAddress,
         activeEndpointProvider.endpointFields,
       ),

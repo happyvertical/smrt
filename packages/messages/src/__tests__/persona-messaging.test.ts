@@ -3,6 +3,7 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageCollection } from '../collections/MessageCollection.js';
+import { EmailAccount } from '../models/EmailAccount.js';
 import { MessagingEndpoint } from '../models/MessagingEndpoint.js';
 import { PersonaMessageRoute } from '../models/PersonaMessageRoute.js';
 import { TelegramAccount } from '../models/TelegramAccount.js';
@@ -315,5 +316,51 @@ describe('PersonaMessagingService', () => {
     } finally {
       unregister();
     }
+  });
+
+  it('rejects receive-only accounts when saving an outbound route', async () => {
+    const tenantId = crypto.randomUUID();
+    const personaId = crypto.randomUUID();
+
+    await withTenant({ tenantId }, async () => {
+      const account = new EmailAccount({
+        db,
+        tenantId,
+        name: 'Inbound mailbox',
+        providerType: 'imap',
+      });
+      await account.initialize();
+      await account.save();
+      const endpoint = new MessagingEndpoint({
+        db,
+        tenantId,
+        label: 'Owner',
+        channel: 'email',
+        address: JSON.stringify({ email: 'owner@example.com' }),
+      });
+      await endpoint.initialize();
+      await endpoint.save();
+      if (!account.id || !endpoint.id) throw new Error('Test setup failed');
+
+      const settings = new MessagingSettingsService({
+        db,
+        tenantId,
+        principal: messagingPrincipalFromPermissions(
+          [MANAGE_MESSAGE_ROUTES_PERMISSION],
+          { tenantId },
+        ),
+        resolvePersonaTenantId: async () => tenantId,
+      });
+
+      await expect(
+        settings.saveRoute({
+          personaId,
+          accountId: account.id,
+          endpointId: endpoint.id,
+        }),
+      ).rejects.toThrow(
+        'Messaging account provider is not available for outbound delivery.',
+      );
+    });
   });
 });
