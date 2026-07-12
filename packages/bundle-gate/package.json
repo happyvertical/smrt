@@ -4,7 +4,14 @@
   "description": "Consumer bundle reachability and size regression gate for SMRT packages",
   "type": "module",
   "private": true,
+  "author": "HappyVertical",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/bundle-gate"
+  },
   "files": [
+    "dist",
     "CLAUDE.md",
     "AGENTS.md"
   ],

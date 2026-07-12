@@ -81,14 +81,14 @@ export {
   type ProviderOptions,
   type StoreOptions,
 } from './asset-store';
+export { AssetType } from './asset-type';
+export { AssetTypeCollection } from './asset-types';
+export { AssetCollection } from './assets';
 export {
   getFilesystemLazy,
   isFileNotFoundError,
   registerFilesModule,
 } from './files-runtime';
-export { AssetType } from './asset-type';
-export { AssetTypeCollection } from './asset-types';
-export { AssetCollection } from './assets';
 export { Folder } from './folder';
 export { FolderCollection } from './folders';
 export {

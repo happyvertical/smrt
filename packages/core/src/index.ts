@@ -123,7 +123,6 @@ export {
   type FilesystemAdapterFactory,
   registerFilesystemAdapterFactory,
 } from './filesystem-loader';
-export { importOptionalDependency } from './lazy-external';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
@@ -152,6 +151,7 @@ export {
   resolveLazyConfig,
   unregisterConfigResolver,
 } from './lazy-config';
+export { importOptionalDependency } from './lazy-external';
 // Learning memory — confidence-scored, self-correcting recall/capture (#1886)
 export {
   DEFAULT_LEARNING_CONFIG,
