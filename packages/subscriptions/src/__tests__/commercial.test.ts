@@ -306,6 +306,19 @@ describe('commercial usage tracer', () => {
     });
   });
 
+  it('rejects subscriber-specific policies without a subscriber kind', async () => {
+    await expect(
+      policies.create({
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        name: 'Invalid subscriber scope',
+        subscriberExternalId: 'user:1',
+        metricKey: 'ai.tokens',
+        limitAmount: 5,
+        behavior: 'block',
+      }),
+    ).rejects.toThrow('Operation failed: save');
+  });
+
   it('aggregates all metrics for a wildcard spending policy', async () => {
     const tenantId = '11111111-1111-4111-8111-111111111111';
     await policies.create({
@@ -345,6 +358,50 @@ describe('commercial usage tracer', () => {
       allowed: false,
       state: 'blocked',
       projectedAmount: 11,
+    });
+  });
+
+  it('only counts charges in the spending policy currency', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'USD project cap',
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 10,
+      currency: 'USD',
+      behavior: 'block',
+    });
+    for (const [currency, amount] of [
+      ['USD', 4],
+      ['EUR', 100],
+    ] as const) {
+      await charges.create({
+        tenantId,
+        usageEventId: `usage-${currency.toLowerCase()}`,
+        projectId: 'project-1',
+        metricKey: 'ai.tokens',
+        amount,
+        currency,
+        status: 'approved',
+        approvedAt: new Date('2026-07-02T00:00:00Z'),
+      });
+    }
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+    ).evaluate({
+      tenantId,
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      estimatedAmount: 2,
+      at: new Date('2026-07-10T00:00:00Z'),
+    });
+    expect(decision).toMatchObject({
+      allowed: true,
+      state: 'ok',
+      projectedAmount: 6,
     });
   });
 

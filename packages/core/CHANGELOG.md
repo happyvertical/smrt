@@ -1,5 +1,34 @@
 # @happyvertical/smrt-core
 
+## 0.39.4
+
+### Patch Changes
+
+- ### Features
+
+  - add smrt-sales — modular CRM, referrals, commissions, Svelte (#1945) (sales)
+  - smrt-support — AI-first Support Cases, routing, targets, and service time (epic #1934) (#1943) (support)
+
+  ### Bug Fixes
+
+  - reconcile v0.39.3 and authenticate ref push (#1959) (release)
+  - expose isolated database to libpq clients (#1946) (ci)
+  - support Vite 7 consumers (#1942) (playground)
+
+  ### Other Changes
+
+  - chore: reconcile v0.39.2 repository state (#1947) (release)
+  - chore: add Vite peer release note (#1944) (playground)
+  - perf: reuse generated manifests (#1939) (ci)
+  - perf: reuse SQLite schema templates (#1937) (vitest)
+
+  ### Merged Changes
+
+  - Adopt the shared agent development policy
+  - @happyvertical/smrt-config@0.39.4
+  - @happyvertical/smrt-types@0.39.4
+  - @happyvertical/smrt-scanner@0.39.4
+
 ## 0.39.3
 
 ### Patch Changes

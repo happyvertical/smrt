@@ -246,6 +246,7 @@ export function npmVersionExists({
       spec,
       'version',
       '--registry=https://registry.npmjs.org',
+      '--prefer-online',
       '--json',
     ],
     { cwd: repoRoot, encoding: 'utf8', stdio: 'pipe' },

@@ -54,6 +54,8 @@ test('skips existing versions, publishes the missing tarball, and verifies all',
 });
 
 test('fails when registry verification still reports a package missing', () => {
+  const waits = [];
+
   assert.throws(
     () =>
       publishRelease(
@@ -70,8 +72,74 @@ test('fails when registry verification still reports a package missing', () => {
         {
           runNpm: (args) => (args[0] === 'publish' ? '' : null),
           log: () => {},
+          initialVerificationDelayMs: 1,
+          maxVerificationDelayMs: 1,
+          verificationAttempts: 3,
+          wait: (delayMs) => waits.push(delayMs),
         },
       ),
     /Registry verification failed/,
+  );
+  assert.deepEqual(waits, [1, 1]);
+});
+
+test('retries delayed registry visibility before failing the release', () => {
+  let viewCount = 0;
+  const waits = [];
+
+  publishRelease(
+    {
+      releaseVersion: '0.40.0',
+      packages: [
+        {
+          name: '@happyvertical/smrt-a',
+          version: '0.40.0',
+          path: '/artifacts/a.tgz',
+        },
+      ],
+    },
+    {
+      initialVerificationDelayMs: 10,
+      log: () => {},
+      runNpm: (args) => {
+        if (args[0] === 'publish') return '';
+        viewCount += 1;
+        return viewCount >= 4 ? '0.40.0' : null;
+      },
+      verificationAttempts: 3,
+      wait: (delayMs) => waits.push(delayMs),
+    },
+  );
+
+  assert.deepEqual(waits, [10, 20]);
+  assert.equal(viewCount, 4);
+});
+
+test('forces registry views to revalidate cached package metadata', () => {
+  const viewCalls = [];
+
+  publishRelease(
+    {
+      releaseVersion: '0.40.0',
+      packages: [
+        {
+          name: '@happyvertical/smrt-a',
+          version: '0.40.0',
+          path: '/artifacts/a.tgz',
+        },
+      ],
+    },
+    {
+      log: () => {},
+      runNpm: (args) => {
+        if (args[0] === 'view') viewCalls.push(args);
+        return '0.40.0';
+      },
+    },
+  );
+
+  assert.ok(
+    viewCalls.every((args) => args.includes('--prefer-online')),
+    'npm view calls must bypass stale negative cache entries',
   );
 });

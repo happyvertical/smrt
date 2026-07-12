@@ -458,7 +458,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install docs dependencies
-        run: pnpm --dir docs install --frozen-lockfile --ignore-workspace
+        run: pnpm --dir docs install --frozen-lockfile
 
       - name: Build documentation site
         run: pnpm --dir docs build

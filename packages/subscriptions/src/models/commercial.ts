@@ -207,6 +207,15 @@ export class SpendingPolicy extends SmrtObject {
   behavior: SpendingPolicyBehavior = 'observe';
   priority: number = 0;
   active: boolean = true;
+
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    if (this.subscriberExternalId && !this.subscriberKind) {
+      throw new Error(
+        'Spending policies with subscriberExternalId require subscriberKind.',
+      );
+    }
+  }
 }
 
 export class PricingRuleCollection extends SmrtCollection<PricingRule> {

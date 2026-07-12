@@ -583,4 +583,396 @@ describe('Balances and payout batches', () => {
       expect(() => hollow.approve()).toThrow(/non-positive total/);
     });
   });
+  describe('CommissionPayoutService.createPayoutBatch — scoped batches (Anytown integration)', () => {
+    // These tests exercise SCOPE, not the threshold gate — drop the earner's
+    // default 5000 threshold so batch amounts don't have to clear it.
+    beforeEach(async () => {
+      earner.payoutThresholdCents = 0;
+      await earner.save();
+    });
+
+    it('scopes a batch to one source: claims only that network, leaves others', async () => {
+      const a1 = await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      const a2 = await createCommission({
+        status: 'payable',
+        amountCents: 2000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      const b1 = await createCommission({
+        status: 'payable',
+        amountCents: 9000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-b',
+      });
+
+      const batchA = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      expect(batchA.created).toBe(true);
+      expect(new Set(batchA.settledCommissionIds)).toEqual(
+        new Set([a1.id, a2.id]),
+      );
+      expect(batchA.payout?.commissionTotalCents).toBe(5000);
+      // net-b is untouched and still claimable.
+      expect((await commissions.get({ id: b1.id }))?.payoutId).toBeFalsy();
+    });
+
+    it('runs two per-source batches concurrently over disjoint rows', async () => {
+      const a1 = await createCommission({
+        status: 'payable',
+        amountCents: 4000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      const b1 = await createCommission({
+        status: 'payable',
+        amountCents: 6000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-b',
+      });
+
+      const [batchA, batchB] = await Promise.all([
+        payoutService.createPayoutBatch({
+          earnerId: earner.id as string,
+          currency: 'USD',
+          sourceKind: 'ad_network',
+          sourceId: 'net-a',
+        }),
+        payoutService.createPayoutBatch({
+          earnerId: earner.id as string,
+          currency: 'USD',
+          sourceKind: 'ad_network',
+          sourceId: 'net-b',
+        }),
+      ]);
+
+      expect(batchA.settledCommissionIds).toEqual([a1.id]);
+      expect(batchB.settledCommissionIds).toEqual([b1.id]);
+      expect(batchA.payout?.id).not.toBe(batchB.payout?.id);
+      // Distinct default idempotency keys (source folded in) → distinct payouts.
+      expect((await commissions.get({ id: a1.id }))?.payoutId).toBe(
+        batchA.payout?.id,
+      );
+      expect((await commissions.get({ id: b1.id }))?.payoutId).toBe(
+        batchB.payout?.id,
+      );
+    });
+
+    it('settles an explicit set of commission ids and ignores ineligible ones', async () => {
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 2500,
+      });
+      const c2 = await createCommission({
+        status: 'payable',
+        amountCents: 1500,
+      });
+      const notPayable = await createCommission({
+        status: 'earned',
+        amountCents: 9999,
+      });
+      const otherCurrency = await createCommission({
+        status: 'payable',
+        amountCents: 8888,
+        currency: 'EUR',
+      });
+      const alsoPayable = await createCommission({
+        status: 'payable',
+        amountCents: 7000,
+      });
+
+      const batch = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'explicit-set-1',
+        commissionIds: [
+          c1.id as string,
+          c2.id as string,
+          notPayable.id as string,
+          otherCurrency.id as string,
+        ],
+      });
+      // Only the two eligible USD-payable ids are claimed.
+      expect(new Set(batch.settledCommissionIds)).toEqual(
+        new Set([c1.id, c2.id]),
+      );
+      expect(batch.payout?.commissionTotalCents).toBe(4000);
+      // Ineligible ids and the unlisted payable row are untouched.
+      expect(
+        (await commissions.get({ id: notPayable.id }))?.payoutId,
+      ).toBeFalsy();
+      expect(
+        (await commissions.get({ id: otherCurrency.id }))?.payoutId,
+      ).toBeFalsy();
+      expect(
+        (await commissions.get({ id: alsoPayable.id }))?.payoutId,
+      ).toBeFalsy();
+    });
+
+    it('narrows adjustments to the batch source', async () => {
+      const a = await createCommission({
+        status: 'payable',
+        amountCents: 5000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      const b = await createCommission({
+        status: 'payable',
+        amountCents: 5000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-b',
+      });
+      // A clawback on each network's commission.
+      const adjA = await createAdjustment(a, -1000, {
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      await createAdjustment(b, -2000, {
+        sourceKind: 'ad_network',
+        sourceId: 'net-b',
+      });
+
+      const batchA = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      // net-a's commission (5000) minus net-a's adjustment (1000) = 4000; net-b's
+      // adjustment does not touch this batch.
+      expect(batchA.settledAdjustmentIds).toEqual([adjA.id]);
+      expect(batchA.payout?.commissionTotalCents).toBe(5000);
+      expect(batchA.payout?.adjustmentTotalCents).toBe(-1000);
+      expect(batchA.payout?.totalAmountCents).toBe(4000);
+    });
+
+    it('a source batch and the earner-wide batch on the same day do not collide', async () => {
+      await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      await createCommission({ status: 'payable', amountCents: 4000 });
+
+      const now = new Date('2026-08-01T00:00:00Z');
+      const scoped = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+        now,
+      });
+      const wide = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        now,
+      });
+      // Different default idempotency keys → both mint, no collision.
+      expect(scoped.created).toBe(true);
+      expect(wide.created).toBe(true);
+      expect(scoped.payout?.id).not.toBe(wide.payout?.id);
+      // The wide batch swept the remaining (unclaimed) row only — the scoped
+      // batch's row was already owned.
+      expect(scoped.payout?.commissionTotalCents).toBe(3000);
+      expect(wide.payout?.commissionTotalCents).toBe(4000);
+    });
+
+    it('rejects malformed or conflicting scope', async () => {
+      const base = { earnerId: earner.id as string, currency: 'USD' };
+      // Half-set source.
+      await expect(
+        payoutService.createPayoutBatch({ ...base, sourceKind: 'ad_network' }),
+      ).rejects.toThrow(/must both be set and non-empty/);
+      await expect(
+        payoutService.createPayoutBatch({ ...base, sourceId: 'net-a' }),
+      ).rejects.toThrow(/must both be set and non-empty/);
+      // Present-but-empty source must NOT fail open into an earner-wide
+      // settlement (codex P1) — even with payable rows present.
+      await createCommission({ status: 'payable', amountCents: 9000 });
+      await expect(
+        payoutService.createPayoutBatch({
+          ...base,
+          sourceKind: '',
+          sourceId: '',
+        }),
+      ).rejects.toThrow(/must both be set and non-empty/);
+      await expect(
+        payoutService.createPayoutBatch({
+          ...base,
+          sourceKind: 'ad_network',
+          sourceId: '',
+        }),
+      ).rejects.toThrow(/must both be set and non-empty/);
+      // Source ⊕ ids.
+      await expect(
+        payoutService.createPayoutBatch({
+          ...base,
+          sourceKind: 'ad_network',
+          sourceId: 'net-a',
+          idempotencyKey: 'x',
+          commissionIds: ['c1'],
+        }),
+      ).rejects.toThrow(/mutually exclusive/);
+      await expect(
+        payoutService.createPayoutBatch({ ...base, commissionIds: ['c1'] }),
+      ).rejects.toThrow(/requires an idempotencyKey/);
+    });
+
+    it('a present empty commissionIds settles nothing (never fails open) — codex P1', async () => {
+      // Payable rows exist for the earner...
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+      });
+      const c2 = await createCommission({
+        status: 'payable',
+        amountCents: 4000,
+      });
+
+      // ...but a dynamically-computed empty explicit set must claim NONE of
+      // them, not fall through to an earner-wide sweep.
+      const batch = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'empty-set-1',
+        commissionIds: [],
+      });
+      expect(batch.created).toBe(false);
+      expect(batch.reason).toBe('nothing_payable');
+      expect(batch.settledCommissionIds).toEqual([]);
+      expect((await commissions.get({ id: c1.id }))?.payoutId).toBeFalsy();
+      expect((await commissions.get({ id: c2.id }))?.payoutId).toBeFalsy();
+    });
+
+    it('a present empty commissionIds still requires an idempotencyKey', async () => {
+      await expect(
+        payoutService.createPayoutBatch({
+          earnerId: earner.id as string,
+          currency: 'USD',
+          commissionIds: [],
+        }),
+      ).rejects.toThrow(/requires an idempotencyKey/);
+    });
+
+    it('length-prefixed source keys do not collide for ambiguous strings — codex P2', async () => {
+      // net-a source ('a:b','c') and ('a','b:c') would collide under naive
+      // `${sourceKind}:${sourceId}` concatenation; each must mint its own.
+      const x = await createCommission({
+        status: 'payable',
+        amountCents: 1000,
+        sourceKind: 'a:b',
+        sourceId: 'c',
+      });
+      const y = await createCommission({
+        status: 'payable',
+        amountCents: 2000,
+        sourceKind: 'a',
+        sourceId: 'b:c',
+      });
+      const now = new Date('2026-09-01T00:00:00Z');
+      const first = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'a:b',
+        sourceId: 'c',
+        now,
+      });
+      const second = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'a',
+        sourceId: 'b:c',
+        now,
+      });
+      // Distinct keys → two distinct payouts, each settling its own row.
+      expect(first.created).toBe(true);
+      expect(second.created).toBe(true);
+      expect(first.payout?.id).not.toBe(second.payout?.id);
+      expect(first.settledCommissionIds).toEqual([x.id]);
+      expect(second.settledCommissionIds).toEqual([y.id]);
+    });
+
+    it('ignores malformed ids in an explicit set instead of aborting the batch — codex P2', async () => {
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+      });
+      const c2 = await createCommission({
+        status: 'payable',
+        amountCents: 2000,
+      });
+      const batch = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'malformed-id-batch',
+        // A blank and a non-UUID id would abort listByIds on native-uuid
+        // Postgres/DuckDB — they must be dropped as ineligible, not fatal.
+        commissionIds: [c1.id as string, '', 'not-a-uuid', c2.id as string],
+      });
+      expect(new Set(batch.settledCommissionIds)).toEqual(
+        new Set([c1.id, c2.id]),
+      );
+      expect(batch.payout?.commissionTotalCents).toBe(5000);
+    });
+
+    it('repairs an interrupted scoped batch without pulling out-of-scope rows', async () => {
+      const a1 = await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      const a2 = await createCommission({
+        status: 'payable',
+        amountCents: 2000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+      await createCommission({
+        status: 'payable',
+        amountCents: 9000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-b',
+      });
+
+      const first = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+        idempotencyKey: 'scoped-repair-1',
+      });
+      const payoutId = first.payout?.id as string;
+
+      // Simulate an interrupted claim: unstamp one member so totals disagree.
+      const interrupted = await commissions.get({ id: a2.id });
+      if (!interrupted) throw new Error('missing row');
+      interrupted.payoutId = '';
+      await interrupted.save();
+
+      const replay = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+        idempotencyKey: 'scoped-repair-1',
+      });
+      expect(replay.created).toBe(false);
+      // Repair re-claims a1+a2 (net-a) — never the net-b row.
+      expect(new Set(replay.settledCommissionIds)).toEqual(
+        new Set([a1.id, a2.id]),
+      );
+      expect(replay.payout?.commissionTotalCents).toBe(5000);
+    });
+  });
 });
