@@ -47,10 +47,10 @@ export class ManagedProjectClient {
       db: this.#db,
     });
     return requests.createManaged({
+      ...input,
       tenantId: this.#integration.tenantId,
       projectId: this.#integration.projectId,
       integrationId: this.#integration.id as string,
-      ...input,
       requesterId: this.#requesterId,
     });
   }

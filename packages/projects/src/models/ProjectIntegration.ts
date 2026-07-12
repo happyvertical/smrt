@@ -23,6 +23,7 @@ export interface ProjectIntegrationOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'project_integrations',
+  conflictColumns: ['tenant_id', 'project_id', 'name'],
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },

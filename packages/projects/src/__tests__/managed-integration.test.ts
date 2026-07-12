@@ -122,6 +122,14 @@ describe('managed project integrations', () => {
       origin: 'managed-app',
       discussion: 'Requested from settings',
     });
+    const forgedScope = await client.createRequest({
+      type: 'bug',
+      description: 'Attempt to override authenticated scope',
+      tenantId: 'tenant-forged',
+      projectId: 'project-forged',
+      integrationId: second.integration.id,
+      requesterId: 'requester-forged',
+    } as unknown as Parameters<typeof client.createRequest>[0]);
 
     expect(created).toMatchObject({
       tenantId: 'tenant-a',
@@ -131,8 +139,15 @@ describe('managed project integrations', () => {
       participantId: 'participant-optional',
       status: 'submitted',
     });
+    expect(forgedScope).toMatchObject({
+      tenantId: 'tenant-a',
+      projectId: 'project-a',
+      integrationId: first.integration.id,
+      requesterId: 'user-123',
+    });
     expect((await client.listRequests()).map((item) => item.id)).toEqual([
       created.id,
+      forgedScope.id,
     ]);
 
     const differentRequester = await ManagedProjectClient.authenticate(
@@ -241,6 +256,45 @@ describe('managed project integrations', () => {
     ]);
   });
 
+  it('scopes integration name conflicts by tenant and project', async () => {
+    const integrations = await ProjectIntegrationCollection.create({ db });
+    const first = await integrations.provision({
+      tenantId: 'tenant-a',
+      projectId: 'project-a',
+      name: 'Managed application',
+      capabilities: ['requests:create'],
+    });
+    const otherTenant = await integrations.provision({
+      tenantId: 'tenant-b',
+      projectId: 'project-a',
+      name: 'Managed application',
+      capabilities: ['requests:read-own'],
+    });
+    const otherProject = await integrations.provision({
+      tenantId: 'tenant-a',
+      projectId: 'project-b',
+      name: 'Managed application',
+      capabilities: ['delivery:read'],
+    });
+
+    expect(
+      new Set([
+        first.integration.id,
+        otherTenant.integration.id,
+        otherProject.integration.id,
+      ]).size,
+    ).toBe(3);
+    await expect(
+      integrations.authenticate(first.credential),
+    ).resolves.toMatchObject({ id: first.integration.id });
+    await expect(
+      integrations.authenticate(otherTenant.credential),
+    ).resolves.toMatchObject({ id: otherTenant.integration.id });
+    await expect(
+      integrations.authenticate(otherProject.credential),
+    ).resolves.toMatchObject({ id: otherProject.integration.id });
+  });
+
   it('keeps generated metadata available while closing sensitive request surfaces', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const objects: Record<string, any> = manifest.objects;
@@ -248,6 +302,7 @@ describe('managed project integrations', () => {
       objects['@happyvertical/smrt-projects:ProjectIntegration']
         ?.decoratorConfig,
     ).toMatchObject({
+      conflictColumns: ['tenant_id', 'project_id', 'name'],
       api: { include: ['list', 'get'] },
       mcp: { include: ['list', 'get'] },
       cli: { include: ['list', 'get'] },
