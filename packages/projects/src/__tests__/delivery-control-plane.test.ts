@@ -764,6 +764,14 @@ describe('managed application delivery control plane (#1949)', () => {
       reason: 'Desired change',
     });
     expect(developmentOnly.developmentRequestId).toBeTruthy();
+    await assistance.classify(projectIntegration, developmentOnly, {
+      classification: 'support',
+      actorRef: 'agent:triage',
+      reason: 'Reclassified as support only',
+    });
+    expect(developmentOnly.supportCaseId).toBeTruthy();
+    expect(developmentOnly.deliveryHandoffLinkedAt).toBeNull();
+    expect(linkDelivery).not.toHaveBeenCalled();
     const both = await assistance.createRequest(projectIntegration, {
       requesterId: 'user-1',
       subject: 'CSV export crashes',
@@ -783,7 +791,7 @@ describe('managed application delivery control plane (#1949)', () => {
       actorRef: 'operator',
       reason: 'Idempotent confirmation',
     });
-    expect(openOrJoin).toHaveBeenCalledTimes(2);
+    expect(openOrJoin).toHaveBeenCalledTimes(3);
     expect(linkDelivery).toHaveBeenCalledOnce();
 
     const retryAfterFailedSave = await assistance.createRequest(

@@ -178,6 +178,7 @@ export class AssistanceRequestService {
     }
 
     if (
+      input.classification === 'both' &&
       request.supportCaseId &&
       request.developmentRequestId &&
       !request.deliveryHandoffLinkedAt &&
