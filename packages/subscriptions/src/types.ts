@@ -82,6 +82,10 @@ export interface UsageMetricRecord {
   windowEnd: Date;
   source?: string;
   sourceId?: string;
+  projectId?: string;
+  workRefType?: string;
+  workRefId?: string;
+  provider?: string;
   dimensions?: Record<string, unknown>;
 }
 
@@ -260,6 +264,10 @@ export interface TenantUsageMetricOptions extends SmrtObjectOptions {
   windowEnd?: Date;
   source?: string;
   sourceId?: string;
+  projectId?: string;
+  workRefType?: string;
+  workRefId?: string;
+  provider?: string;
   dimensions?: string;
 }
 
