@@ -215,6 +215,14 @@ export class SpendingPolicy extends SmrtObject {
         'Spending policies with subscriberExternalId require subscriberKind.',
       );
     }
+    if (
+      this.period === 'rolling' &&
+      (!Number.isFinite(this.rollingSeconds) || this.rollingSeconds <= 0)
+    ) {
+      throw new Error(
+        'Rolling spending policies require rollingSeconds greater than zero.',
+      );
+    }
   }
 }
 
