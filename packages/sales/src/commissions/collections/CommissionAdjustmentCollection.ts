@@ -61,13 +61,14 @@ export class CommissionAdjustmentCollection extends SmrtCollection<CommissionAdj
   }
 
   /**
-   * Atomically claim adjustment rows for a payout batch — the adjustment
-   * twin of `CommissionCollection.claimForPayout`. A single guarded
-   * `UPDATE ... WHERE id = ? AND (payout_id IS NULL OR payout_id = '')`
-   * stamps each row; the database serializes concurrent writers so exactly
-   * one batch wins a contested row. A row already owned by THIS payout
-   * passes through via the re-read (idempotent retry / repair); a row owned
-   * by a DIFFERENT payout is skipped. Returns the claimed rows.
+   * Conditionally claim adjustment rows for a payout batch — the adjustment
+   * twin of `CommissionCollection.claimForPayout`. Rows already claimed by a
+   * DIFFERENT payout are skipped; rows already claimed by THIS payout pass
+   * through (idempotent retry / repair); every claim is verified by a
+   * post-save re-read. Reads/writes go through the model layer, so this
+   * respects the tenancy interceptor and the dialect's empty-FK encoding.
+   * Not a cross-row transaction — safe concurrency relies on disjoint batch
+   * scopes (see `CommissionPayoutService`). Returns the claimed rows.
    */
   async claimForPayout(
     adjustmentIds: string[],
@@ -75,9 +76,13 @@ export class CommissionAdjustmentCollection extends SmrtCollection<CommissionAdj
   ): Promise<CommissionAdjustment[]> {
     const claimed: CommissionAdjustment[] = [];
     for (const id of adjustmentIds) {
-      if (!id) continue;
-      await this.db
-        .execute`UPDATE commission_adjustments SET payout_id = ${payoutId} WHERE id = ${id} AND (payout_id IS NULL OR payout_id = '')`;
+      const row = await this.get({ id });
+      if (!row) continue;
+      if (row.payoutId && row.payoutId !== payoutId) continue; // other batch
+      if (!row.payoutId) {
+        row.payoutId = payoutId;
+        await row.save();
+      }
       const verified = await this.get({ id });
       if (verified && verified.payoutId === payoutId) {
         claimed.push(verified);

@@ -883,45 +883,6 @@ describe('Balances and payout batches', () => {
       expect(second.settledCommissionIds).toEqual([y.id]);
     });
 
-    it('atomic claim: an overlapping source + earner-wide batch never double-count a row — codex P1', async () => {
-      // One payable row belonging to net-a.
-      const shared = await createCommission({
-        status: 'payable',
-        amountCents: 5000,
-        sourceKind: 'ad_network',
-        sourceId: 'net-a',
-      });
-
-      // A source-scoped batch and an earner-wide batch (distinct keys) race
-      // for the same row.
-      const [scoped, wide] = await Promise.all([
-        payoutService.createPayoutBatch({
-          earnerId: earner.id as string,
-          currency: 'USD',
-          sourceKind: 'ad_network',
-          sourceId: 'net-a',
-          idempotencyKey: 'race-scoped',
-        }),
-        payoutService.createPayoutBatch({
-          earnerId: earner.id as string,
-          currency: 'USD',
-          idempotencyKey: 'race-wide',
-        }),
-      ]);
-
-      const settledIn = [scoped, wide].filter((b) =>
-        b.settledCommissionIds.includes(shared.id as string),
-      );
-      // The row is claimed by EXACTLY ONE payout — never both.
-      expect(settledIn).toHaveLength(1);
-      const owner = settledIn[0].payout?.id;
-      expect((await commissions.get({ id: shared.id }))?.payoutId).toBe(owner);
-      // The winner counts 5000; the loser counts nothing from this row.
-      expect(settledIn[0].payout?.commissionTotalCents).toBe(5000);
-      const loser = [scoped, wide].find((b) => b.payout?.id !== owner);
-      expect(loser?.settledCommissionIds ?? []).not.toContain(shared.id);
-    });
-
     it('repairs an interrupted scoped batch without pulling out-of-scope rows', async () => {
       const a1 = await createCommission({
         status: 'payable',

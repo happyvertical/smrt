@@ -134,16 +134,19 @@ export class CommissionPayoutService {
    *    from the rows that were VERIFIABLY claimed — the payout's totals
    *    are always reproducible from its member rows.
    *
-   * Concurrency: each row is claimed by an ATOMIC guarded UPDATE (row-level
-   * compare-and-set — see `CommissionCollection.claimForPayout`), so a
-   * commission can never be counted into two payouts even when batches run
-   * concurrently with overlapping scopes: the loser's UPDATE matches zero
-   * rows and its re-read excludes the row. Scoping different sources (or
-   * disjoint `commissionIds`) additionally makes batches gather disjoint
-   * sets so they don't contend at all. Totals are correct-by-construction
-   * from the rows each batch verifiably owns. (A batch still isn't wrapped
-   * in one DB transaction — an interrupted claim pass is healed by the
-   * repair-on-replay above, not by rollback.)
+   * Concurrency: claims are conditional with post-save verification, which
+   * narrows but does not eliminate races, and a batch is NOT wrapped in one
+   * DB transaction (the collection layer exposes none). Safe concurrent
+   * settlement therefore relies on SCOPING to DISJOINT sets: two batches
+   * scoped to different sources (or non-overlapping `commissionIds`) gather
+   * disjoint rows and never contend — this is the intended multi-source
+   * (e.g. per-ad-network) settlement pattern. Running OVERLAPPING scopes
+   * concurrently (a source batch and the earner-wide batch, or intersecting
+   * id sets) is the caller's responsibility to serialize: `claimForPayout`
+   * still won't double-own a single row, but a shared commission and its
+   * negative adjustment could split across the two batches, so neither
+   * payout's net would be authoritative. An interrupted claim pass within a
+   * single scope is healed by the repair-on-replay above.
    */
   async createPayoutBatch(
     input: CreatePayoutBatchInput,
