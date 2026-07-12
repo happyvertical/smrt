@@ -442,6 +442,18 @@ describe('commercial usage tracer', () => {
     });
   });
 
+  it('rejects malformed subscriber scope during spending evaluation', async () => {
+    await expect(
+      new SpendingPolicyEvaluator(policies, charges, adjustments).evaluate({
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        subscriberExternalId: 'user:1',
+        metricKey: 'ai.tokens',
+        estimatedAmount: 1,
+        currency: 'USD',
+      }),
+    ).rejects.toThrow(/subscriberKind/i);
+  });
+
   it('rejects subscriber-specific policies without a subscriber kind', async () => {
     await expect(
       policies.create({
@@ -510,6 +522,54 @@ describe('commercial usage tracer', () => {
       allowed: false,
       state: 'blocked',
       projectedAmount: 11,
+    });
+  });
+
+  it('enforces every matching spending policy period', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'Daily cap',
+      metricKey: 'ai.tokens',
+      period: 'day',
+      limitAmount: 100,
+      behavior: 'block',
+    });
+    const monthly = await policies.create({
+      tenantId,
+      name: 'Monthly cap',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 5,
+      behavior: 'block',
+    });
+    await charges.create({
+      tenantId,
+      usageEventId: 'usage-earlier-this-month',
+      metricKey: 'ai.tokens',
+      amount: 4,
+      currency: 'USD',
+      status: 'approved',
+      approvedAt: new Date('2026-07-02T00:00:00Z'),
+    });
+
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+      adjustments,
+    ).evaluate({
+      tenantId,
+      metricKey: 'ai.tokens',
+      estimatedAmount: 2,
+      currency: 'USD',
+      at: new Date('2026-07-10T00:00:00Z'),
+    });
+
+    expect(decision).toMatchObject({
+      allowed: false,
+      state: 'blocked',
+      projectedAmount: 6,
+      matchedPolicyId: monthly.id,
     });
   });
 

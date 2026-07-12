@@ -10,8 +10,12 @@ import {
   type SpendingPolicy,
   SpendingPolicyCollection,
 } from '../models/commercial.js';
-import type { RecordUsageOptions } from '../types.js';
-import { deterministicUuid } from '../utils.js';
+import type { RecordUsageOptions, SubscriberKind } from '../types.js';
+import {
+  deterministicUuid,
+  normalizeSubscriber,
+  subscriberToColumns,
+} from '../utils.js';
 
 export interface PriceUsageOptions {
   usageEventId: string;
@@ -255,6 +259,18 @@ export interface SpendingDecision {
   matchedPolicyId: string | null;
 }
 
+interface SpendingEvaluationInput {
+  tenantId: string;
+  subscriberKind?: SubscriberKind;
+  subscriberExternalId?: string;
+  projectId?: string;
+  serviceKey?: string;
+  metricKey: string;
+  estimatedAmount: number;
+  currency: string;
+  at?: Date;
+}
+
 export class SpendingPolicyEvaluator {
   constructor(
     private readonly policies: SpendingPolicyCollection,
@@ -271,18 +287,18 @@ export class SpendingPolicyEvaluator {
     );
   }
 
-  async evaluate(input: {
-    tenantId: string;
-    subscriberKind?: string;
-    subscriberExternalId?: string;
-    projectId?: string;
-    serviceKey?: string;
-    metricKey: string;
-    estimatedAmount: number;
-    currency: string;
-    at?: Date;
-  }): Promise<SpendingDecision> {
+  async evaluate(input: SpendingEvaluationInput): Promise<SpendingDecision> {
     const at = input.at ?? new Date();
+    const normalizedInput = {
+      ...input,
+      ...subscriberToColumns(
+        normalizeSubscriber({
+          tenantId: input.tenantId,
+          subscriberKind: input.subscriberKind,
+          subscriberExternalId: input.subscriberExternalId,
+        }),
+      ),
+    };
     const candidates = await this.policies.list({
       where: {
         tenantId: input.tenantId,
@@ -290,8 +306,8 @@ export class SpendingPolicyEvaluator {
         active: true,
       },
     });
-    const policy = selectPolicy(candidates, input);
-    if (!policy)
+    const matchingPolicies = selectPolicies(candidates, normalizedInput);
+    if (matchingPolicies.length === 0)
       return {
         allowed: true,
         approvalRequired: false,
@@ -299,6 +315,23 @@ export class SpendingPolicyEvaluator {
         projectedAmount: input.estimatedAmount,
         matchedPolicyId: null,
       };
+    const decisions = await Promise.all(
+      matchingPolicies.map((policy) =>
+        this.evaluatePolicy(policy, normalizedInput, at),
+      ),
+    );
+    return decisions.reduce((mostRestrictive, decision) =>
+      decisionRank(decision) > decisionRank(mostRestrictive)
+        ? decision
+        : mostRestrictive,
+    );
+  }
+
+  private async evaluatePolicy(
+    policy: SpendingPolicy,
+    input: SpendingEvaluationInput,
+    at: Date,
+  ): Promise<SpendingDecision> {
     const [start, end] = policyWindow(policy, at);
     const chargeWhere: Record<string, unknown> = {
       tenantId: input.tenantId,
@@ -409,10 +442,10 @@ function priceTiers(quantity: number, tiers: unknown[]): number {
   }
   return amount;
 }
-function selectPolicy(
+function selectPolicies(
   policies: SpendingPolicy[],
   input: Record<string, unknown>,
-): SpendingPolicy | undefined {
+): SpendingPolicy[] {
   return policies
     .filter(
       (p) =>
@@ -426,9 +459,17 @@ function selectPolicy(
             (!p.subscriberExternalId ||
               p.subscriberExternalId === input.subscriberExternalId))),
     )
-    .sort(
-      (a, b) => scopeScore(b) - scopeScore(a) || b.priority - a.priority,
-    )[0];
+    .sort((a, b) => scopeScore(b) - scopeScore(a) || b.priority - a.priority);
+}
+
+function decisionRank(decision: SpendingDecision): number {
+  return {
+    ok: 0,
+    observed: 1,
+    warned: 2,
+    approval_required: 3,
+    blocked: 4,
+  }[decision.state];
 }
 function scopeScore(p: SpendingPolicy): number {
   return (
