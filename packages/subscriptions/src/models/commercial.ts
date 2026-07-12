@@ -1,4 +1,9 @@
-import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 export type PricingStrategy =
@@ -58,6 +63,7 @@ export class PricingRule extends SmrtObject {
 })
 export class ClientCharge extends SmrtObject {
   @tenantId() tenantId?: string;
+  @foreignKey('TenantUsageMetric')
   usageEventId: string = '';
   subscriberKind: string = 'tenant';
   subscriberExternalId: string = '';
@@ -70,6 +76,7 @@ export class ClientCharge extends SmrtObject {
   quantity: number = 0.0;
   amount: number = 0.0;
   currency: string = 'USD';
+  @foreignKey('PricingRule')
   pricingRuleId: string = '';
   pricingSnapshot: string = '{}';
   status: 'draft' | 'approved' | 'adjusted' = 'draft';
@@ -155,6 +162,7 @@ export class ClientCharge extends SmrtObject {
 })
 export class BillingAdjustment extends SmrtObject {
   @tenantId() tenantId?: string;
+  @foreignKey('ClientCharge')
   clientChargeId: string = '';
   amount: number = 0.0;
   currency: string = 'USD';
