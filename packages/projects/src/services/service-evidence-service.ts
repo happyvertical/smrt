@@ -180,11 +180,11 @@ export class ServiceEvidenceService {
   ): Promise<ServiceTimeEntry> {
     if (entry.status !== 'approved')
       throw new Error('Only approved service time may be corrected.');
-    entry.status = 'corrected';
-    await entry.save();
     const correction = await this.record(input);
     correction.correctionOfId = entry.id ?? null;
     await correction.save();
+    entry.status = 'corrected';
+    await entry.save();
     return correction;
   }
 }

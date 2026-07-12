@@ -335,6 +335,27 @@ describe('managed application delivery control plane (#1949)', () => {
     expect(
       await (await ServiceChargeSnapshotCollection.create({ db })).list(),
     ).toHaveLength(1);
+    await expect(
+      service.correct(entry, {
+        participantKind: 'agent',
+        agentRef: 'agent:builder',
+        source: 'agent',
+        description: 'Invalid correction',
+        durationSeconds: 60,
+      }),
+    ).rejects.toThrow(/case or work reference/i);
+    expect(entry.status).toBe('approved');
+    const correction = await service.correct(entry, {
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-1',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Corrected implementation evidence',
+      durationSeconds: 3540,
+    });
+    expect(entry.status).toBe('corrected');
+    expect(correction.correctionOfId).toBe(entry.id);
     charges[0].amount = 1;
     await expect(charges[0].save()).rejects.toThrow(/immutable/i);
     compensation[0].amount = 1;
@@ -446,5 +467,6 @@ describe('managed application delivery control plane (#1949)', () => {
       reason: 'Idempotent confirmation',
     });
     expect(openOrJoin).toHaveBeenCalledTimes(2);
+    expect(linkDelivery).toHaveBeenCalledOnce();
   });
 });

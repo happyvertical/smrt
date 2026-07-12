@@ -25,6 +25,7 @@ export interface AssistanceSupportPort {
     evidence: DevelopmentRequestEvidence[];
     applicationContext: Record<string, unknown>;
   }): Promise<{ caseId: string }>;
+  /** Implementations must treat this handoff as idempotent. */
   linkDelivery?(input: {
     tenantId: string;
     caseId: string;
@@ -147,13 +148,16 @@ export class AssistanceRequestService {
     if (
       request.supportCaseId &&
       request.developmentRequestId &&
+      !request.deliveryHandoffLinkedAt &&
       this.support?.linkDelivery
-    )
+    ) {
       await this.support.linkDelivery({
         tenantId: request.tenantId,
         caseId: request.supportCaseId,
         developmentRequestId: request.developmentRequestId,
       });
+      request.deliveryHandoffLinkedAt = new Date();
+    }
 
     request.classification = input.classification;
     await withTenant({ tenantId: request.tenantId }, () => request.save());

@@ -53,5 +53,28 @@ describe('ProjectAssistanceSupportAdapter', () => {
     expect(
       await service.interactions.forCase(secondTenant.caseId),
     ).toHaveLength(1);
+
+    const handoff = {
+      tenantId: 'tenant-a',
+      caseId: first.caseId,
+      developmentRequestId: 'development-1',
+    };
+    await adapter.linkDelivery(handoff);
+    await adapter.linkDelivery(handoff);
+    expect(
+      await service.workLinks.list({
+        where: {
+          tenantId: 'tenant-a',
+          caseId: first.caseId,
+          targetType: '@happyvertical/smrt-projects:DevelopmentRequest',
+          targetId: 'development-1',
+        },
+      }),
+    ).toHaveLength(1);
+    expect(
+      (await service.events.forCase(first.caseId)).filter(
+        (event) => event.eventType === 'work_linked',
+      ),
+    ).toHaveLength(1);
   });
 });

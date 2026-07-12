@@ -102,6 +102,7 @@ export class AssistanceRequest extends SmrtObject {
     'unclassified';
   @field({ type: 'text' }) supportCaseId: string = '';
   @field({ type: 'text' }) developmentRequestId: string = '';
+  deliveryHandoffLinkedAt: Date | null = null;
   createdAt: Date = new Date();
 }
 

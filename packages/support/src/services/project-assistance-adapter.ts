@@ -68,15 +68,27 @@ export class ProjectAssistanceSupportAdapter implements AssistanceSupportPort {
   async linkDelivery(
     input: Parameters<NonNullable<AssistanceSupportPort['linkDelivery']>>[0],
   ): Promise<void> {
-    await withTenant({ tenantId: input.tenantId }, () =>
-      this.cases.linkWork(input.caseId, {
+    await withTenant({ tenantId: input.tenantId }, async () => {
+      const existing = (
+        await this.cases.workLinks.list({
+          where: {
+            tenantId: input.tenantId,
+            caseId: input.caseId,
+            targetType: '@happyvertical/smrt-projects:DevelopmentRequest',
+            targetId: input.developmentRequestId,
+          },
+          limit: 1,
+        })
+      )[0];
+      if (existing) return;
+      await this.cases.linkWork(input.caseId, {
         actorKind: 'system',
         linkKind: 'development_work_item',
         targetType: '@happyvertical/smrt-projects:DevelopmentRequest',
         targetId: input.developmentRequestId,
         targetLabel: `Development Request ${input.developmentRequestId}`,
         metadata: { source: 'assistance_request' },
-      }),
-    );
+      });
+    });
   }
 }

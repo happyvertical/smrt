@@ -35,10 +35,10 @@ const STATUS_TRANSITIONS: Record<
   ServiceTimeEntryStatus,
   ServiceTimeEntryStatus[]
 > = {
-  draft: ['submitted'],
-  submitted: ['approved', 'rejected'],
+  draft: ['submitted', 'rejected'],
+  submitted: ['approved', 'rejected', 'draft'],
   approved: ['corrected'],
-  rejected: [],
+  rejected: ['draft', 'submitted'],
   corrected: [],
 };
 
