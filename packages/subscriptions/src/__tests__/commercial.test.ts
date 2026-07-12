@@ -175,6 +175,38 @@ describe('commercial usage tracer', () => {
     ).rejects.toThrow('must be approved');
   });
 
+  it('deduplicates concurrent sourced billing adjustments', async () => {
+    const charge = await charges.create({
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      usageEventId: 'usage-adjustment-retry',
+      amount: 10,
+      status: 'approved',
+      approvedAt: new Date('2026-07-01T00:00:00Z'),
+    });
+    const [first, second] = await Promise.all([
+      service.adjust(
+        String(charge.id),
+        -1,
+        'provider credit',
+        'provider-credit',
+        'credit-1',
+      ),
+      service.adjust(
+        String(charge.id),
+        -1,
+        'provider credit',
+        'provider-credit',
+        'credit-1',
+      ),
+    ]);
+
+    expect(second.id).toBe(first.id);
+    expect(
+      await adjustments.list({ where: { clientChargeId: charge.id } }),
+    ).toHaveLength(1);
+    expect((await charges.get(String(charge.id)))?.status).toBe('adjusted');
+  });
+
   it.each([
     ['fixed_unit', { unitPrice: 2 }, {}, 10, 20],
     [
