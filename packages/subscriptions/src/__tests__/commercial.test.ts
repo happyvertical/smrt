@@ -306,6 +306,19 @@ describe('commercial usage tracer', () => {
     });
   });
 
+  it('rejects subscriber-specific policies without a subscriber kind', async () => {
+    await expect(
+      policies.create({
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        name: 'Invalid subscriber scope',
+        subscriberExternalId: 'user:1',
+        metricKey: 'ai.tokens',
+        limitAmount: 5,
+        behavior: 'block',
+      }),
+    ).rejects.toThrow('Operation failed: save');
+  });
+
   it('aggregates all metrics for a wildcard spending policy', async () => {
     const tenantId = '11111111-1111-4111-8111-111111111111';
     await policies.create({

@@ -252,27 +252,42 @@ export class SpendingPolicyEvaluator {
     const chargeWhere: Record<string, unknown> = {
       tenantId: input.tenantId,
       currency: policy.currency,
+      status: ['approved', 'adjusted'],
       'approvedAt >=': start.toISOString(),
       'approvedAt <': end.toISOString(),
     };
     if (policy.metricKey) chargeWhere.metricKey = policy.metricKey;
+    if (policy.projectId) chargeWhere.projectId = policy.projectId;
+    if (policy.serviceKey) chargeWhere.serviceKey = policy.serviceKey;
+    if (policy.subscriberKind)
+      chargeWhere.subscriberKind = policy.subscriberKind;
+    if (policy.subscriberExternalId)
+      chargeWhere.subscriberExternalId = policy.subscriberExternalId;
     const rows = await this.charges.list({ where: chargeWhere });
     const scopedCharges = rows.filter(
       (charge) =>
         (charge.status === 'approved' || charge.status === 'adjusted') &&
         matchesChargeScope(policy, charge),
     );
-    const chargeIds = new Set(scopedCharges.map((charge) => charge.id));
-    const adjustmentRows = this.adjustments
-      ? await this.adjustments.list({
-          where: { tenantId: input.tenantId, currency: policy.currency },
-        })
-      : [];
+    const chargeIds = scopedCharges
+      .map((charge) => charge.id)
+      .filter((id): id is string => Boolean(id));
+    const chargeIdSet = new Set(chargeIds);
+    const adjustmentRows =
+      this.adjustments && chargeIds.length > 0
+        ? await this.adjustments.list({
+            where: {
+              tenantId: input.tenantId,
+              currency: policy.currency,
+              clientChargeId: chargeIds,
+            },
+          })
+        : [];
     const spent = scopedCharges.reduce((sum, charge) => sum + charge.amount, 0);
     const correctedSpent =
       spent +
       adjustmentRows
-        .filter((adjustment) => chargeIds.has(adjustment.clientChargeId))
+        .filter((adjustment) => chargeIdSet.has(adjustment.clientChargeId))
         .reduce((sum, adjustment) => sum + adjustment.amount, 0);
     const projectedAmount = correctedSpent + input.estimatedAmount;
     const exceeded = projectedAmount > policy.limitAmount;
@@ -350,6 +365,7 @@ function selectPolicy(
   return policies
     .filter(
       (p) =>
+        hasValidSubscriberScope(p) &&
         (!p.metricKey || p.metricKey === input.metricKey) &&
         (!p.projectId || p.projectId === input.projectId) &&
         (!p.serviceKey || p.serviceKey === input.serviceKey) &&
@@ -373,6 +389,7 @@ function scopeScore(p: SpendingPolicy): number {
 }
 function matchesChargeScope(p: SpendingPolicy, c: ClientCharge): boolean {
   return (
+    hasValidSubscriberScope(p) &&
     (!p.projectId || p.projectId === c.projectId) &&
     (!p.serviceKey || p.serviceKey === c.serviceKey) &&
     (!p.metricKey || p.metricKey === c.metricKey) &&
@@ -381,6 +398,9 @@ function matchesChargeScope(p: SpendingPolicy, c: ClientCharge): boolean {
         (!p.subscriberExternalId ||
           p.subscriberExternalId === c.subscriberExternalId)))
   );
+}
+function hasValidSubscriberScope(p: SpendingPolicy): boolean {
+  return !p.subscriberExternalId || Boolean(p.subscriberKind);
 }
 function policyWindow(policy: SpendingPolicy, at: Date): [Date, Date] {
   const end = new Date(at);
