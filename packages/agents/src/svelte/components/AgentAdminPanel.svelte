@@ -63,7 +63,7 @@ async function handleSave(newConfig: unknown) {
 		config={(config ?? {}) as Record<string, unknown>}
 		schema={slot.settingsSchema}
 		onSave={handleSave}
-		{readonly}
+		readonly={readonly || !onSave}
 	/>
 {:else}
 	<div class="no-panel">
