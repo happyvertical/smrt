@@ -46,9 +46,13 @@ async run() { for (const { type, data } of await this.interesting()) { ... } }
 ## Configuration
 
 - **File-based**: `getModuleConfig('agent-name', defaults)` from `smrt.config.ts`
-- **DB-persisted**: `saveSlotConfig(slotId, data)` for UI overrides
+- **DB-persisted**: `saveSlotConfig(slotId, data)` for UI overrides. Persona-backed
+  agents use `AgentOptions.personaId` as the durable config owner; legacy agents
+  use the saved Agent row id.
 - **Merged**: `getMergedConfig('slotId')` — DB overrides file config
-- **UI slots**: `static uiSlots` declares admin panels (id, label, icon, order)
+- **UI slots**: `static uiSlots` declares admin panels (id, label, icon, order,
+  `scope`, optional versioned `settingsSchema`). Without a registered custom
+  component, `AgentSettingsForm` renders that schema.
 
 ## TenantAgent — Multi-Tenant Bindings
 
@@ -120,7 +124,11 @@ class InvoiceAgent extends Agent {
 
 The framework provides only the per-instance **identity**; a package scopes its own dispatch/interests to the instance's config by overriding the seams.
 
-- **`AgentOptions.instanceKey`** — the durable per-instance key (typically the persona id). Honored **only** when `multiInstance` is true, so passing it to a non-opted agent is a no-op.
+- **`AgentOptions.personaId`** — durable persona/settings identity, including
+  the default persona. Independent from execution instance identity.
+- **`AgentOptions.instanceKey`** — the durable execution-instance key (typically
+  the persona id, but null for the default persona). Honored **only** when
+  `multiInstance` is true, so passing it to a non-opted agent is a no-op.
 - **`getInstanceKey()`** → the key, or `null` for a singleton (opt-in off, or no key).
 - **`getDispatchSubscriber()`** → `` `${agentType}#${key}` `` for a multi-instance agent, the bare `agentType` for a singleton. Used everywhere the agent subscribes/seeds/processes, so each instance has its own subscription rows and pending-dispatch queue — two instances never compete for or double-process each other's dispatches. Composed by the exported `instanceScopedSubscriber(agentType, key)`.
 - **`learningScope()`** — suffixed with `#<key>` for a multi-instance agent, so instances learn independently (singleton scope unchanged).

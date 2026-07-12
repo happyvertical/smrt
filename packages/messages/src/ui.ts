@@ -80,6 +80,15 @@ export const MESSAGES_UI_SLOTS: Record<string, ModuleUISlot> = {
     order: 8,
     propsInterface: 'ReplyFormProps',
   },
+  'messaging-settings': {
+    id: 'messaging-settings',
+    label: 'Messaging Settings',
+    description: 'Schema-driven accounts, destinations, and persona routes',
+    icon: 'settings',
+    category: 'action',
+    order: 9,
+    propsInterface: 'MessagingSettingsPanelProps',
+  },
 };
 
 export const MESSAGES_MODULE_META: SmrtModuleMeta = {
@@ -97,6 +106,10 @@ export const MESSAGES_MODULE_META: SmrtModuleMeta = {
     'EmailAccount',
     'SlackAccount',
     'TwitterAccount',
+    'TelegramAccount',
+    'ZulipAccount',
+    'MessagingEndpoint',
+    'PersonaMessageRoute',
     'Attachment',
   ],
   collections: [
@@ -105,5 +118,7 @@ export const MESSAGES_MODULE_META: SmrtModuleMeta = {
     'AccountCollection',
     'EmailAccountCollection',
     'AttachmentCollection',
+    'MessagingEndpointCollection',
+    'PersonaMessageRouteCollection',
   ],
 };

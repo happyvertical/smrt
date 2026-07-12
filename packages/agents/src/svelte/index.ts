@@ -21,6 +21,7 @@ import AgentDashboard from './components/AgentDashboard.svelte';
 import AgentRunHistory from './components/AgentRunHistory.svelte';
 import AgentScheduleForm from './components/AgentScheduleForm.svelte';
 import AgentScheduleList from './components/AgentScheduleList.svelte';
+import AgentSettingsForm from './components/AgentSettingsForm.svelte';
 import AgentSettingsShell from './components/AgentSettingsShell.svelte';
 import ScheduleStatusBadge from './components/ScheduleStatusBadge.svelte';
 
@@ -32,6 +33,7 @@ export {
   AgentRunHistory,
   AgentScheduleForm,
   AgentScheduleList,
+  AgentSettingsForm,
   AgentSettingsShell,
   ScheduleStatusBadge,
 };
@@ -44,6 +46,7 @@ export type AgentRunHistoryProps = ComponentProps<typeof AgentRunHistory>;
 export type AgentScheduleFormProps = ComponentProps<typeof AgentScheduleForm>;
 export type AgentScheduleListProps = ComponentProps<typeof AgentScheduleList>;
 export type AgentSettingsShellProps = ComponentProps<typeof AgentSettingsShell>;
+export type AgentSettingsFormProps = ComponentProps<typeof AgentSettingsForm>;
 export type ScheduleStatusBadgeProps = ComponentProps<
   typeof ScheduleStatusBadge
 >;
@@ -54,6 +57,10 @@ export type ScheduleStatusBadgeProps = ComponentProps<
 // `@happyvertical/smrt-agents/svelte/admin`.
 export type {
   AdminPanelBaseProps,
+  AgentSettingField,
+  AgentSettingFieldType,
+  AgentSettingOption,
+  AgentSettingsSchema,
   AgentUIComponentRegistry,
   AgentUISlot,
   AgentUISlots,

@@ -29,6 +29,7 @@ import MessageList from './components/MessageList.svelte';
 import MessageStatusIndicator from './components/MessageStatusIndicator.svelte';
 import MessageToolbar from './components/MessageToolbar.svelte';
 import MessageTypeBadge from './components/MessageTypeBadge.svelte';
+import MessagingSettingsPanel from './components/MessagingSettingsPanel.svelte';
 import RecipientInput from './components/RecipientInput.svelte';
 import ReplyForm from './components/ReplyForm.svelte';
 import SendStatusBadge from './components/SendStatusBadge.svelte';
@@ -53,6 +54,7 @@ export {
   MessageStatusIndicator,
   MessageToolbar,
   MessageTypeBadge,
+  MessagingSettingsPanel,
   RecipientInput,
   ReplyForm,
   SendStatusBadge,
@@ -81,6 +83,9 @@ export type MessageStatusIndicatorProps = ComponentProps<
 >;
 export type MessageToolbarProps = ComponentProps<typeof MessageToolbar>;
 export type MessageTypeBadgeProps = ComponentProps<typeof MessageTypeBadge>;
+export type MessagingSettingsPanelProps = ComponentProps<
+  typeof MessagingSettingsPanel
+>;
 export type RecipientInputProps = ComponentProps<typeof RecipientInput>;
 export type ReplyFormProps = ComponentProps<typeof ReplyForm>;
 export type SendStatusBadgeProps = ComponentProps<typeof SendStatusBadge>;
@@ -146,4 +151,9 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-messages',
   'reply-form',
   ReplyForm,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-messages',
+  'messaging-settings',
+  MessagingSettingsPanel,
 );

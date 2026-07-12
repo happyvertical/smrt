@@ -138,15 +138,17 @@ per-package opt-in via `static multiInstance`, singleton by default):
 - **Identity** — `personaInstanceKey(persona)` returns the persona id, or `null`
   for the `default` persona (`DEFAULT_PERSONA_NAME`). A `null` key reuses the
   **singleton** runtime identity (class-keyed dispatch subscriber + un-suffixed
-  memory scope). `agentOptionsForPersona(persona)` projects `{ instanceKey,
-  tenantId }` to spread into the agent constructor.
+  memory scope). `agentOptionsForPersona(persona)` always projects
+  `{ personaId, instanceKey, tenantId }`: `personaId` owns durable settings;
+  `instanceKey` owns execution partitioning.
 - **Scheduling** — `schedulePersonaInstance(schedules, persona, { cron, … })`
   creates an `AgentSchedule` for the instance. The instance key rides in
   `agentConfig` (which the scheduler spreads into the agent constructor →
-  `AgentOptions.instanceKey`); `agentId` is left **null** on purpose, because the
+  `AgentOptions.personaId` / `instanceKey`); `agentId` is left **null** on purpose, because the
   scheduler copies `agentId`→`SmrtJob.objectId` and the `TaskRunner`
   `loadFromId()`s it against the agent's STI table — a persona id is not a row
-  there. The default persona carries no key → runs the singleton.
+  there. The default persona carries its `personaId` but no instance key → runs
+  the singleton while retaining persona-owned settings.
 - **Admin** — `buildPersonaInstanceAdmin(personas, { tenantId, agentClass,
   manifest })` renders the class's `uiSlots`/`adminRoutes` **once per instance**
   (with the per-instance dispatch subscriber); `addPersonaInstance()` /
@@ -164,6 +166,7 @@ Leaf package (acyclic by construction — nothing depends back on it):
 - Runtime: `@happyvertical/smrt-core`, `@happyvertical/smrt-tenancy`,
   `@happyvertical/smrt-agents` (the `TenantAgent` type it bridges, plus the
   `AgentSchedule`/multi-instance surface `persona-instance.ts` builds on),
+  `@happyvertical/smrt-messages` (the persona-fixed outbound messaging tool),
   `@happyvertical/smrt-prompts` (persona instructions via `PromptOverride` +
   `resolvePrompt`), `@happyvertical/smrt-users` (the permission catalog slug +
   `PermissionResolver` principal), and `@happyvertical/sql` (`DatabaseInterface`
@@ -187,6 +190,11 @@ Leaf package (acyclic by construction — nothing depends back on it):
   principal simply lacks `personas.activate-directive`, so it can only propose;
   everything privileged in `DirectiveApprovalService` calls `assertCanActivate`
   first. Instruction rewrites are gated; confidence-only reinforcement is not.
+- **Persona messaging is fixed by trusted wiring** —
+  `createPersonaMessagingTool({ personaId })` exposes `messages.send` without
+  accepting persona, account, endpoint, or credential ids from tool arguments.
+  It requires both the persona tool allow-list and the live principal's
+  `messages.send` permission.
 - **Persona instructions live in the override layer, not the base prompt** — the
   per-persona prompt key registers a neutral empty template, so re-registration
   stays idempotent as instructions change; the tenant-scoped override carries the

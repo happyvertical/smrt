@@ -266,6 +266,25 @@ export interface AgentUISlotManifest {
   description?: string;
   icon?: string;
   order?: number;
+  disabled?: boolean;
+  /** Durable owner for settings written through this slot. */
+  scope?: 'agent' | 'persona';
+  /** Optional fallback form contract for host applications. */
+  settingsSchema?: {
+    version: number;
+    fields: Array<{
+      id: string;
+      label: string;
+      type: 'string' | 'number' | 'boolean' | 'select' | 'textarea' | 'json';
+      description?: string;
+      required?: boolean;
+      default?: unknown;
+      placeholder?: string;
+      options?: Array<{ value: string; label: string }>;
+      min?: number;
+      max?: number;
+    }>;
+  };
 }
 
 /**

@@ -209,6 +209,27 @@ describe('Message.send orchestration', () => {
     expect(msg.sendError).toContain('No account associated');
   });
 
+  it('persists sender initialization failures instead of leaving a pending message', async () => {
+    const account = new Account({
+      name: 'Unsupported',
+      providerType: 'mystery',
+      db,
+    });
+    await account.initialize();
+    await account.save();
+    if (!account.id) throw new Error('Test setup failed');
+
+    const msg = new Message({ accountId: account.id, body: 'hello', db });
+    await msg.initialize();
+    await msg.save();
+
+    const result = await msg.send();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not implemented');
+    expect(msg.sendStatus).toBe('failed');
+    expect(msg.sendError).toContain('not implemented');
+  });
+
   it('marks status sent on a successful provider send', async () => {
     const account = new SlackAccount({
       name: 'WS',

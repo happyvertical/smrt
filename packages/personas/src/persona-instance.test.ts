@@ -67,6 +67,7 @@ describe('persona-as-instance (#1890)', () => {
       expect(isDefaultPersona(persona)).toBe(true);
       expect(personaInstanceKey(persona)).toBeNull();
       expect(agentOptionsForPersona(persona)).toEqual({
+        personaId: persona.id,
         instanceKey: null,
         tenantId: 'tenant-a',
       });
@@ -148,6 +149,7 @@ describe('persona-as-instance (#1890)', () => {
       // loadFromId-ing the persona id against the agents STI table; the identity
       // reaches AgentOptions.instanceKey via agentConfig.
       expect(schedule.agentId).toBeNull();
+      expect(schedule.agentConfig.personaId).toBe(persona.id);
       expect(schedule.agentConfig.instanceKey).toBe(persona.id);
       expect(schedule.agentType).toBe(PRAECO);
       expect(schedule.tenantId).toBe('tenant-a');
@@ -167,6 +169,7 @@ describe('persona-as-instance (#1890)', () => {
         cron: '*/5 * * * *',
       });
       expect(schedule.agentId).toBeNull();
+      expect(schedule.agentConfig.personaId).toBe(persona.id);
       expect(schedule.agentConfig.instanceKey).toBeUndefined();
       expect(schedule.agentType).toBe(PRAECO);
     });
@@ -185,6 +188,7 @@ describe('persona-as-instance (#1890)', () => {
         agentConfig: { region: 'eu' },
       });
       expect(schedule.agentConfig.region).toBe('eu');
+      expect(schedule.agentConfig.personaId).toBe(persona.id);
       expect(schedule.agentConfig.instanceKey).toBe(persona.id);
     });
 
