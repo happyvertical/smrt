@@ -130,18 +130,37 @@ export class AssistanceRequestService {
         input.classification === 'both') &&
       !request.developmentRequestId
     ) {
-      const developmentRequest = await this.development.createManaged({
-        tenantId: integration.tenantId,
-        projectId: integration.projectId,
-        integrationId: requiredId(integration.id, 'Project Integration'),
-        requesterId: request.requesterId,
-        type: input.developmentType ?? 'task',
-        description: conversationText(request.conversation) || request.subject,
-        evidence: parseEvidence(request.evidence),
-        origin: `assistance:${request.id}`,
-        discussion: input.reason,
-        visibility: 'requester',
-      });
+      const integrationId = requiredId(integration.id, 'Project Integration');
+      const origin = `assistance:${requiredId(request.id, 'Assistance Request')}`;
+      const existing = (
+        await withTenant({ tenantId: integration.tenantId }, () =>
+          this.development.list({
+            where: {
+              tenantId: integration.tenantId,
+              projectId: integration.projectId,
+              integrationId,
+              origin,
+            },
+            orderBy: 'createdAt ASC',
+            limit: 1,
+          }),
+        )
+      )[0];
+      const developmentRequest =
+        existing ??
+        (await this.development.createManaged({
+          tenantId: integration.tenantId,
+          projectId: integration.projectId,
+          integrationId,
+          requesterId: request.requesterId,
+          type: input.developmentType ?? 'task',
+          description:
+            conversationText(request.conversation) || request.subject,
+          evidence: parseEvidence(request.evidence),
+          origin,
+          discussion: input.reason,
+          visibility: 'requester',
+        }));
       request.developmentRequestId = developmentRequest.id ?? '';
     }
 

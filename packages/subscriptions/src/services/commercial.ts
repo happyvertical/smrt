@@ -251,8 +251,8 @@ export class SpendingPolicyEvaluator {
     const [start, end] = policyWindow(policy, at);
     const chargeWhere: Record<string, unknown> = {
       tenantId: input.tenantId,
-      'createdAt >=': start.toISOString(),
-      'createdAt <': end.toISOString(),
+      'approvedAt >=': start.toISOString(),
+      'approvedAt <': end.toISOString(),
     };
     if (policy.metricKey) chargeWhere.metricKey = policy.metricKey;
     const rows = await this.charges.list({ where: chargeWhere });

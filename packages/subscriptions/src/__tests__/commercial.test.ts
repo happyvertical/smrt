@@ -306,4 +306,42 @@ describe('commercial usage tracer', () => {
       projectedAmount: 11,
     });
   });
+
+  it('counts approved charges in the policy period when approval occurred', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'July approval cap',
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 10,
+      behavior: 'block',
+    });
+    await charges.create({
+      tenantId,
+      usageEventId: 'usage-approved-in-july',
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      amount: 9,
+      status: 'approved',
+      createdAt: new Date('2026-06-30T23:59:00Z'),
+      approvedAt: new Date('2026-07-02T00:00:00Z'),
+    });
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+    ).evaluate({
+      tenantId,
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      estimatedAmount: 2,
+      at: new Date('2026-07-10T00:00:00Z'),
+    });
+    expect(decision).toMatchObject({
+      allowed: false,
+      state: 'blocked',
+      projectedAmount: 11,
+    });
+  });
 });

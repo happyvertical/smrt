@@ -158,24 +158,52 @@ export class DevelopmentRequestService {
     if (input.decision === 'split') {
       if (!input.split?.length)
         throw new Error('At least one split request is required.');
-      for (const part of input.split) {
-        if (!part.description.trim())
-          throw new Error('Split request description is required.');
-        splitRequests.push(
-          await this.requests.createManaged({
-            tenantId: request.tenantId,
-            projectId: request.projectId,
-            integrationId: request.integrationId,
-            requesterId: request.requesterId,
-            participantId: request.participantId || undefined,
-            type: part.type ?? request.type,
-            description: part.description,
-            evidence: request.getEvidence(),
-            visibility: request.visibility,
-            origin: `split:${request.id}`,
-            discussion: input.reason,
+      const origin = `split:${request.id}`;
+      const unmatchedExisting = await withTenant(
+        { tenantId: request.tenantId },
+        () =>
+          this.requests.list({
+            where: {
+              tenantId: request.tenantId,
+              projectId: request.projectId,
+              integrationId: request.integrationId,
+              origin,
+            },
+            orderBy: 'createdAt ASC',
           }),
+      );
+      for (const part of input.split) {
+        const description = part.description.trim();
+        if (!description)
+          throw new Error('Split request description is required.');
+        const type = part.type ?? request.type;
+        const existingIndex = unmatchedExisting.findIndex(
+          (candidate) =>
+            candidate.description.trim() === description &&
+            candidate.type === type &&
+            candidate.requesterId === request.requesterId &&
+            candidate.participantId === request.participantId &&
+            candidate.visibility === request.visibility,
         );
+        if (existingIndex >= 0) {
+          splitRequests.push(unmatchedExisting.splice(existingIndex, 1)[0]);
+        } else {
+          splitRequests.push(
+            await this.requests.createManaged({
+              tenantId: request.tenantId,
+              projectId: request.projectId,
+              integrationId: request.integrationId,
+              requesterId: request.requesterId,
+              participantId: request.participantId || undefined,
+              type,
+              description,
+              evidence: request.getEvidence(),
+              visibility: request.visibility,
+              origin,
+              discussion: input.reason,
+            }),
+          );
+        }
       }
       if (request.status !== 'triaged')
         await this.transition(request, 'triaged', input.actorRef, input.reason);

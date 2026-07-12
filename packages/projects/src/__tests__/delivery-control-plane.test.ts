@@ -7,6 +7,7 @@ import { DevelopmentRequestHistoryCollection } from '../collections/DevelopmentR
 import { DevelopmentRequestCollection } from '../collections/DevelopmentRequests.js';
 import { ProjectIntegrationCollection } from '../collections/ProjectIntegrations.js';
 import {
+  AssistanceRequestCollection,
   PreviewApprovalCollection,
   ProjectDeliveryEventCollection,
   ServiceChargeSnapshotCollection,
@@ -170,6 +171,28 @@ describe('managed application delivery control plane (#1949)', () => {
     expect(splitResult.splitRequests[0].getEvidence()).toEqual(
       source.getEvidence(),
     );
+    const splitRetry = await service.triage(source, {
+      decision: 'split',
+      reason: 'Retry after response timeout',
+      actorRef: 'operator:1',
+      split: [
+        { type: 'feature', description: 'Export client records' },
+        { type: 'task', description: 'Export data records' },
+      ],
+    });
+    expect(splitRetry.splitRequests.map((item) => item.id)).toEqual(
+      splitResult.splitRequests.map((item) => item.id),
+    );
+    const splitRequestCollection = await DevelopmentRequestCollection.create({
+      db,
+    });
+    expect(
+      await withTenant({ tenantId: source.tenantId }, () =>
+        splitRequestCollection.list({
+          where: { origin: `split:${source.id}` },
+        }),
+      ),
+    ).toHaveLength(2);
 
     const histories = await DevelopmentRequestHistoryCollection.create({ db });
     const audited = await withTenant({ tenantId: 'tenant-1' }, () =>
@@ -550,5 +573,48 @@ describe('managed application delivery control plane (#1949)', () => {
     });
     expect(openOrJoin).toHaveBeenCalledTimes(2);
     expect(linkDelivery).toHaveBeenCalledOnce();
+
+    const retryAfterFailedSave = await assistance.createRequest(
+      projectIntegration,
+      {
+        requesterId: 'user-2',
+        subject: 'Add spreadsheet export',
+        conversation: [{ body: 'Please add XLSX.' }],
+      },
+    );
+    vi.spyOn(retryAfterFailedSave, 'save').mockRejectedValueOnce(
+      new Error('simulated persistence failure'),
+    );
+    await expect(
+      assistance.classify(projectIntegration, retryAfterFailedSave, {
+        classification: 'development',
+        developmentType: 'feature',
+        actorRef: 'agent:triage',
+        reason: 'Desired change',
+      }),
+    ).rejects.toThrow('simulated persistence failure');
+    const assistanceRequests = await AssistanceRequestCollection.create({ db });
+    const reloaded = await withTenant(
+      { tenantId: projectIntegration.tenantId },
+      () => assistanceRequests.get(String(retryAfterFailedSave.id)),
+    );
+    expect(reloaded?.developmentRequestId).toBe('');
+    if (!reloaded) throw new Error('Assistance Request was not persisted.');
+    await assistance.classify(projectIntegration, reloaded, {
+      classification: 'development',
+      developmentType: 'feature',
+      actorRef: 'agent:triage',
+      reason: 'Retry after response failure',
+    });
+    const developmentRequests = await DevelopmentRequestCollection.create({
+      db,
+    });
+    expect(
+      await withTenant({ tenantId: projectIntegration.tenantId }, () =>
+        developmentRequests.list({
+          where: { origin: `assistance:${retryAfterFailedSave.id}` },
+        }),
+      ),
+    ).toHaveLength(1);
   });
 });
