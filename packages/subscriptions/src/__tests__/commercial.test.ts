@@ -147,6 +147,37 @@ describe('commercial usage tracer', () => {
     expect(await usage.get(String(first.id))).toMatchObject({ id: first.id });
   });
 
+  it('does not let concurrent charge pricing revert an approval', async () => {
+    const event = await service.record({
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      metricKey: 'ai.tokens',
+      quantity: 10,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'ai-run',
+      sourceId: 'concurrent-price',
+    });
+    await rules.create({
+      tenantId: event.tenantId,
+      ruleKey: 'tokens-concurrent',
+      metricKey: 'ai.tokens',
+      strategy: 'fixed_unit',
+      effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+      terms: JSON.stringify({ unitPrice: 0.1 }),
+    });
+
+    const [approved, draftAttempt] = await Promise.all([
+      service.price({ usageEventId: String(event.id), approved: true }),
+      service.price({ usageEventId: String(event.id) }),
+    ]);
+
+    expect(draftAttempt.id).toBe(approved.id);
+    expect((await charges.get(String(approved.id)))?.status).toBe('approved');
+    expect(
+      await charges.list({ where: { usageEventId: String(event.id) } }),
+    ).toHaveLength(1);
+  });
+
   it('keeps unsourced usage evidence distinct', async () => {
     const input = {
       tenantId: '11111111-1111-4111-8111-111111111111',
@@ -384,6 +415,20 @@ describe('commercial usage tracer', () => {
         name: 'Invalid subscriber scope',
         subscriberExternalId: 'user:1',
         metricKey: 'ai.tokens',
+        limitAmount: 5,
+        behavior: 'block',
+      }),
+    ).rejects.toThrow('Operation failed: save');
+  });
+
+  it('rejects rolling policies without a positive window', async () => {
+    await expect(
+      policies.create({
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        name: 'Invalid rolling cap',
+        metricKey: 'ai.tokens',
+        period: 'rolling',
+        rollingSeconds: 0,
         limitAmount: 5,
         behavior: 'block',
       }),

@@ -61,13 +61,7 @@ export class CommercialUsageService {
       limit: 1,
     });
     if (existing[0]) {
-      const charge = existing[0];
-      if (options.approved && charge.status === 'draft') {
-        charge.status = 'approved';
-        charge.approvedAt = new Date();
-        await charge.save();
-      }
-      return charge;
+      return this.approveCharge(existing[0], options.approved);
     }
     const usage = await this.usage.get(options.usageEventId);
     if (!usage)
@@ -93,30 +87,55 @@ export class CommercialUsageService {
     if (!rule.id)
       throw new Error(`Pricing rule '${rule.ruleKey}' has no persisted id.`);
     const amount = await this.calculateAmount(rule, usage.quantity, dimensions);
-    return this.charges.create({
-      tenantId: usage.tenantId,
-      usageEventId: String(usage.id),
-      subscriberKind: usage.subscriberKind,
-      subscriberExternalId: usage.subscriberExternalId,
-      projectId: usage.projectId,
-      workRefType: usage.workRefType,
-      workRefId: usage.workRefId,
-      provider: usage.provider,
-      serviceKey: String(dimensions.serviceKey ?? ''),
-      metricKey: usage.metricKey,
-      quantity: usage.quantity,
-      amount,
-      currency: rule.currency,
-      pricingRuleId: String(rule.id),
-      pricingSnapshot: JSON.stringify({
-        ruleKey: rule.ruleKey,
-        strategy: rule.strategy,
-        terms: rule.getTerms(),
-        effectiveFrom: rule.effectiveFrom,
-      }),
-      status: options.approved ? 'approved' : 'draft',
-      approvedAt: options.approved ? new Date() : null,
-    });
+    const chargeId = await deterministicUuid([
+      'client-charge',
+      String(usage.tenantId),
+      String(usage.id),
+    ]);
+    try {
+      return await this.charges.create({
+        id: chargeId,
+        tenantId: usage.tenantId,
+        usageEventId: String(usage.id),
+        subscriberKind: usage.subscriberKind,
+        subscriberExternalId: usage.subscriberExternalId,
+        projectId: usage.projectId,
+        workRefType: usage.workRefType,
+        workRefId: usage.workRefId,
+        provider: usage.provider,
+        serviceKey: String(dimensions.serviceKey ?? ''),
+        metricKey: usage.metricKey,
+        quantity: usage.quantity,
+        amount,
+        currency: rule.currency,
+        pricingRuleId: String(rule.id),
+        pricingSnapshot: JSON.stringify({
+          ruleKey: rule.ruleKey,
+          strategy: rule.strategy,
+          terms: rule.getTerms(),
+          effectiveFrom: rule.effectiveFrom,
+        }),
+        status: options.approved ? 'approved' : 'draft',
+        approvedAt: options.approved ? new Date() : null,
+        _insertOnly: true,
+      });
+    } catch (error) {
+      const concurrent = await this.charges.get(chargeId);
+      if (!concurrent) throw error;
+      return this.approveCharge(concurrent, options.approved);
+    }
+  }
+
+  private async approveCharge(
+    charge: ClientCharge,
+    approved = false,
+  ): Promise<ClientCharge> {
+    if (approved && charge.status === 'draft') {
+      charge.status = 'approved';
+      charge.approvedAt = new Date();
+      await charge.save();
+    }
+    return charge;
   }
 
   async adjust(
