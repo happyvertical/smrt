@@ -44,6 +44,15 @@ import type { VoiceGatewayTurnMetadata } from './voice.js';
 export const MAX_CHAT_STREAM_MESSAGES = 50;
 /** Max characters per message (matches the voice gateway text cap). */
 export const MAX_CHAT_STREAM_CONTENT_LENGTH = 12_000;
+/**
+ * Default SSE keep-alive interval (ms). A persona turn can go quiet for tens of
+ * seconds during a silent tool-calling round (an LLM round-trip + an in-process
+ * tool op emit no tokens), and idle intermediaries (nginx / ALB / Cloudflare —
+ * the expected home for an embedded widget backend) drop a connection with no
+ * traffic. A periodic SSE comment line keeps it warm, mirroring the core
+ * `_events` route's `DEFAULT_EVENTS_HEARTBEAT_MS`.
+ */
+export const DEFAULT_CHAT_STREAM_HEARTBEAT_MS = 15_000;
 
 /** Roles carried on the wire (a subset of the internal `ChatMessageRole`). */
 export type ChatStreamRole = 'user' | 'assistant' | 'system';
@@ -351,6 +360,11 @@ export interface ChatStreamHandlerOptions {
   allowedOrigins?: string[];
   /** Emit `Access-Control-Allow-Credentials: true` for an allow-listed origin. */
   allowCredentials?: boolean;
+  /**
+   * SSE keep-alive interval (ms). Defaults to
+   * {@link DEFAULT_CHAT_STREAM_HEARTBEAT_MS}. `0` disables the heartbeat.
+   */
+  heartbeatMs?: number;
 }
 
 /**
@@ -431,7 +445,7 @@ export function createChatStreamHandler(
       : [];
     const events = runChatConversationStream({ context, messages });
 
-    return new Response(sseBody(events), {
+    return new Response(sseBody(events, options.heartbeatMs), {
       status: 200,
       headers: {
         ...cors(request),
@@ -451,25 +465,59 @@ export function encodeChatStreamEvent(event: ChatStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
+/** SSE comment line — a keep-alive `EventSource` ignores natively. */
+const HEARTBEAT_FRAME = encoder.encode(': heartbeat\n\n');
+
 /**
  * Adapt the event generator into a backpressure-aware `ReadableStream`. `pull`
- * advances one event at a time; `cancel` (client disconnect) returns the
- * generator so its `finally` runs (the persona turn is still awaited to
- * completion inside it).
+ * advances one event at a time (so browser-facing delivery stays backpressured);
+ * a `start()` heartbeat interval enqueues an SSE comment while `events.next()`
+ * is pending, so a quiet tool-calling round doesn't let an idle intermediary
+ * drop the connection mid-turn. `cancel` (client disconnect) clears the
+ * heartbeat and returns the generator so its `finally` runs (the persona turn is
+ * still awaited to completion inside it).
  */
 function sseBody(
   events: AsyncGenerator<ChatStreamEvent>,
+  heartbeatMs = DEFAULT_CHAT_STREAM_HEARTBEAT_MS,
 ): ReadableStream<Uint8Array> {
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let closed = false;
+  const stopHeartbeat = () => {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+  };
   return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (!Number.isFinite(heartbeatMs) || heartbeatMs <= 0) return;
+      heartbeat = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(HEARTBEAT_FRAME);
+        } catch {
+          // Controller already closed — stop pinging a dead stream.
+          closed = true;
+          stopHeartbeat();
+        }
+      }, heartbeatMs);
+      // Don't keep the event loop alive solely for heartbeats.
+      (heartbeat as { unref?: () => void }).unref?.();
+    },
     async pull(controller) {
       try {
         const { value, done } = await events.next();
         if (done) {
+          closed = true;
+          stopHeartbeat();
           controller.close();
           return;
         }
         controller.enqueue(encoder.encode(encodeChatStreamEvent(value)));
       } catch (error) {
+        closed = true;
+        stopHeartbeat();
         controller.enqueue(
           encoder.encode(
             encodeChatStreamEvent({
@@ -482,6 +530,8 @@ function sseBody(
       }
     },
     async cancel() {
+      closed = true;
+      stopHeartbeat();
       await events.return?.(undefined);
     },
   });

@@ -85,6 +85,7 @@ export {
   type ChatStreamSession,
   ChatStreamUnauthorizedError,
   createChatStreamHandler,
+  DEFAULT_CHAT_STREAM_HEARTBEAT_MS,
   encodeChatStreamEvent,
   MAX_CHAT_STREAM_CONTENT_LENGTH,
   MAX_CHAT_STREAM_MESSAGES,

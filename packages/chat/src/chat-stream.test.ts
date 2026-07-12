@@ -203,6 +203,44 @@ describe('createChatStreamHandler', () => {
     );
   });
 
+  it('emits SSE keep-alive heartbeats while a turn is quiet', async () => {
+    // Gate the AI stream so the turn goes quiet after the first token; the
+    // heartbeat must keep bytes flowing so an idle proxy can't drop the stream.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ai = {
+      async *stream() {
+        yield 'a';
+        await gate;
+        yield 'b';
+      },
+    } as unknown as AIInterface;
+    const handler = createChatStreamHandler({
+      authorize: () => ({ ai }),
+      heartbeatMs: 10,
+    });
+    const res = await handler(
+      new Request('http://local/api/chat/stream', {
+        method: 'POST',
+        body: JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }),
+      }),
+    );
+    const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline && !text.includes(': heartbeat')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) text += decoder.decode(value);
+    }
+    expect(text).toContain(': heartbeat');
+    release();
+    await reader.cancel();
+  });
+
   it('returns 405 for a non-POST method', async () => {
     const handler = createChatStreamHandler({ authorize: okAuthorize });
     const res = await handler(
