@@ -902,6 +902,29 @@ describe('Balances and payout batches', () => {
       expect(second.settledCommissionIds).toEqual([y.id]);
     });
 
+    it('ignores malformed ids in an explicit set instead of aborting the batch — codex P2', async () => {
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+      });
+      const c2 = await createCommission({
+        status: 'payable',
+        amountCents: 2000,
+      });
+      const batch = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'malformed-id-batch',
+        // A blank and a non-UUID id would abort listByIds on native-uuid
+        // Postgres/DuckDB — they must be dropped as ineligible, not fatal.
+        commissionIds: [c1.id as string, '', 'not-a-uuid', c2.id as string],
+      });
+      expect(new Set(batch.settledCommissionIds)).toEqual(
+        new Set([c1.id, c2.id]),
+      );
+      expect(batch.payout?.commissionTotalCents).toBe(5000);
+    });
+
     it('repairs an interrupted scoped batch without pulling out-of-scope rows', async () => {
       const a1 = await createCommission({
         status: 'payable',

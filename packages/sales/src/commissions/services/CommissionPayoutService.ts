@@ -93,6 +93,14 @@ export interface CreatePayoutBatchResult {
 }
 
 export class CommissionPayoutService {
+  /**
+   * Canonical UUID shape. Explicit `commissionIds` are filtered against this
+   * before hitting the native-`uuid` `id` column so a malformed external id
+   * can't abort the batch on Postgres/DuckDB.
+   */
+  private static readonly UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   constructor(private readonly deps: CommissionPayoutServiceDeps) {}
 
   static async create(
@@ -495,8 +503,17 @@ export class CommissionPayoutService {
     // list settles nothing, it must never fall through to the earner-wide
     // gather.
     if (input.commissionIds !== undefined) {
-      if (input.commissionIds.length === 0) return [];
-      const rows = await this.deps.commissions.listByIds(input.commissionIds);
+      // Drop empty / non-UUID ids before querying: `id` is a native `uuid`
+      // column on Postgres/DuckDB, so a malformed value would abort the
+      // whole `listByIds` query there (SQLite silently misses it). Every
+      // real smrt id is a UUID, so a non-UUID id can't match a commission
+      // anyway — filtering it here is exactly the documented "ineligible
+      // ids are ignored" behavior, and stops one bad id failing the batch.
+      const validIds = input.commissionIds.filter((id) =>
+        CommissionPayoutService.UUID_RE.test(id),
+      );
+      if (validIds.length === 0) return [];
+      const rows = await this.deps.commissions.listByIds(validIds);
       return rows.filter(
         (c) =>
           c.earnerId === input.earnerId &&
