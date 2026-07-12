@@ -50,7 +50,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          fetch-depth: 0  # Needed for changeset version preview
+          # Changesets needs complete commit/tag history, but not historical
+          # file contents. Avoid transferring every old blob on ARC runners.
+          fetch-depth: 0
+          filter: blob:none
 
       - name: Setup environment
         uses: ./.github/actions/setup-environment
