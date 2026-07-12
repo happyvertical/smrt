@@ -81,6 +81,11 @@ export {
   type ProviderOptions,
   type StoreOptions,
 } from './asset-store';
+export {
+  getFilesystemLazy,
+  isFileNotFoundError,
+  registerFilesModule,
+} from './files-runtime';
 export { AssetType } from './asset-type';
 export { AssetTypeCollection } from './asset-types';
 export { AssetCollection } from './assets';

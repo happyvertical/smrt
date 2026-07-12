@@ -7,14 +7,15 @@
  * Supports provider-agnostic storage (local, S3, etc.) via @happyvertical/files.
  */
 
-import {
-  FileNotFoundError,
-  type FilesystemInterface,
-  type GetFilesystemOptions,
-  getFilesystem,
+import type {
+  FilesystemInterface,
+  GetFilesystemOptions,
 } from '@happyvertical/files';
 import type { Asset } from './asset';
 import type { AssetCollection } from './assets';
+// The files SDK is loaded through the lazy boundary in files-runtime.ts so it
+// never enters provider-neutral consumer bundles (#1977/#1979).
+import { getFilesystemLazy, isFileNotFoundError } from './files-runtime.js';
 
 /**
  * MIME type to file extension mapping
@@ -200,7 +201,7 @@ export class AssetStore {
    * Must be called before any file operations.
    */
   async initialize(): Promise<this> {
-    this.fs = await getFilesystem(this.fsOptions);
+    this.fs = await getFilesystemLazy(this.fsOptions);
     this.fsCache.set(this.providerCacheKey(this.fsOptions), this.fs);
     return this;
   }
@@ -226,7 +227,7 @@ export class AssetStore {
     const cached = this.fsCache.get(key);
     if (cached) return cached;
 
-    const filesystem = await getFilesystem(providerOptions);
+    const filesystem = await getFilesystemLazy(providerOptions);
     this.fsCache.set(key, filesystem);
     return filesystem;
   }
@@ -527,7 +528,7 @@ export class AssetStore {
       try {
         await target.filesystem.delete(target.path);
       } catch (err) {
-        if (!(err instanceof FileNotFoundError)) {
+        if (!isFileNotFoundError(err)) {
           throw err;
         }
         // File may not exist on disk — still delete the record
