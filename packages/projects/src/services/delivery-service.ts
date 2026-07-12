@@ -1,6 +1,7 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { DevelopmentRequestCollection } from '../collections/DevelopmentRequests.js';
+import { ProjectIntegrationCollection } from '../collections/ProjectIntegrations.js';
 import type { DevelopmentRequest } from '../models/DevelopmentRequest.js';
 import {
   type PreviewApproval,
@@ -27,6 +28,7 @@ export interface ApprovalPolicy {
 
 export class ProjectDeliveryService {
   constructor(
+    private readonly integrations: ProjectIntegrationCollection,
     private readonly requests: DevelopmentRequestCollection,
     private readonly events: ProjectDeliveryEventCollection,
     private readonly approvals: PreviewApprovalCollection,
@@ -41,12 +43,15 @@ export class ProjectDeliveryService {
       approvalPolicy?: ApprovalPolicy;
     } = {},
   ): Promise<ProjectDeliveryService> {
+    const integrations = await ProjectIntegrationCollection.create(options);
+    const sharedOptions = { ...options, db: integrations.db };
     const [requests, events, approvals] = await Promise.all([
-      DevelopmentRequestCollection.create(options),
-      ProjectDeliveryEventCollection.create(options),
-      PreviewApprovalCollection.create(options),
+      DevelopmentRequestCollection.create(sharedOptions),
+      ProjectDeliveryEventCollection.create(sharedOptions),
+      PreviewApprovalCollection.create(sharedOptions),
     ]);
     return new ProjectDeliveryService(
+      integrations,
       requests,
       events,
       approvals,
@@ -64,14 +69,18 @@ export class ProjectDeliveryService {
     payload: Record<string, unknown>;
     occurredAt?: Date;
   }): Promise<ProjectDeliveryEvent> {
-    requireIntegrationCapability(input.integration, 'delivery:write');
+    const integration = await requireActiveIntegrationCapability(
+      this.integrations,
+      input.integration,
+      'delivery:write',
+    );
     if (!input.idempotencyKey.trim())
       throw new Error('Delivery event idempotencyKey is required.');
     const existing = (
-      await withTenant({ tenantId: input.integration.tenantId }, () =>
+      await withTenant({ tenantId: integration.tenantId }, () =>
         this.events.list({
           where: {
-            integrationId: input.integration.id,
+            integrationId: integration.id,
             idempotencyKey: input.idempotencyKey,
           },
           limit: 1,
@@ -79,34 +88,27 @@ export class ProjectDeliveryService {
       )
     )[0];
     if (existing) {
-      await this.applySideEffects(input.integration, existing);
+      await this.applySideEffects(integration, existing);
       return existing;
     }
     const request = await this.requestForIntegration(
-      input.integration,
+      integration,
       input.requestId,
     );
-    const event = await withTenant(
-      { tenantId: input.integration.tenantId },
-      () =>
-        this.events.create({
-          tenantId: input.integration.tenantId,
-          integrationId: requiredId(
-            input.integration.id,
-            'Project Integration',
-          ),
-          requestId: input.requestId,
-          idempotencyKey: input.idempotencyKey,
-          sequence: input.sequence,
-          type: input.type,
-          payload: JSON.stringify(input.payload),
-          occurredAt: input.occurredAt ?? new Date(),
-        }),
+    const event = await withTenant({ tenantId: integration.tenantId }, () =>
+      this.events.create({
+        tenantId: integration.tenantId,
+        integrationId: requiredId(integration.id, 'Project Integration'),
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        sequence: input.sequence,
+        type: input.type,
+        payload: JSON.stringify(input.payload),
+        occurredAt: input.occurredAt ?? new Date(),
+      }),
     );
-    await withTenant({ tenantId: input.integration.tenantId }, () =>
-      event.save(),
-    );
-    await this.applySideEffects(input.integration, event, request);
+    await withTenant({ tenantId: integration.tenantId }, () => event.save());
+    await this.applySideEffects(integration, event, request);
     return event;
   }
 
@@ -146,11 +148,15 @@ export class ProjectDeliveryService {
     integration: ProjectIntegration,
     requestId: string,
   ): Promise<ProjectDeliveryEvent[]> {
-    requireIntegrationCapability(integration, 'delivery:read');
-    await this.requestForIntegration(integration, requestId);
-    return withTenant({ tenantId: integration.tenantId }, () =>
+    const active = await requireActiveIntegrationCapability(
+      this.integrations,
+      integration,
+      'delivery:read',
+    );
+    await this.requestForIntegration(active, requestId);
+    return withTenant({ tenantId: active.tenantId }, () =>
       this.events.list({
-        where: { integrationId: integration.id, requestId },
+        where: { integrationId: active.id, requestId },
         orderBy: 'sequence ASC',
       }),
     );
@@ -188,11 +194,15 @@ export class ProjectDeliveryService {
     integration: ProjectIntegration,
     afterSequence = -1,
   ): Promise<void> {
-    requireIntegrationCapability(integration, 'delivery:read');
+    const active = await requireActiveIntegrationCapability(
+      this.integrations,
+      integration,
+      'delivery:read',
+    );
     const events = (
-      await withTenant({ tenantId: integration.tenantId }, () =>
+      await withTenant({ tenantId: active.tenantId }, () =>
         this.events.list({
-          where: { integrationId: integration.id },
+          where: { integrationId: active.id },
           orderBy: 'sequence ASC',
         }),
       )
@@ -205,20 +215,21 @@ export class ProjectDeliveryService {
     preview: PreviewApproval,
     input: { approved: boolean; actorRef: string; reason: string },
   ): Promise<PreviewApproval> {
-    requireIntegrationCapability(integration, 'previews:approve');
-    if (preview.tenantId !== integration.tenantId)
+    const active = await requireActiveIntegrationCapability(
+      this.integrations,
+      integration,
+      'previews:approve',
+    );
+    if (preview.tenantId !== active.tenantId)
       throw new Error('Preview is outside this Project Integration tenant.');
     if (preview.status === 'stale')
       throw new Error('Stale previews cannot be approved.');
     if (preview.status !== 'pending') return preview;
-    const request = await this.requestForIntegration(
-      integration,
-      preview.requestId,
-    );
+    const request = await this.requestForIntegration(active, preview.requestId);
     if (
       this.approvalPolicy &&
       !(await this.approvalPolicy.canApprove({
-        integration,
+        integration: active,
         requestId: preview.requestId,
         previewId: preview.previewId,
       }))
@@ -237,7 +248,7 @@ export class ProjectDeliveryService {
     preview.decidedByRef = input.actorRef;
     preview.reason = input.reason;
     preview.decidedAt = new Date();
-    await withTenant({ tenantId: integration.tenantId }, () => preview.save());
+    await withTenant({ tenantId: active.tenantId }, () => preview.save());
     return preview;
   }
 
@@ -305,6 +316,21 @@ export function requireIntegrationCapability(
     throw new Error('Project Integration is revoked.');
   if (!integration.hasCapability(capability))
     throw new Error(`Project Integration lacks capability '${capability}'.`);
+}
+
+export async function requireActiveIntegrationCapability(
+  integrations: ProjectIntegrationCollection,
+  integration: ProjectIntegration,
+  capability: string,
+): Promise<ProjectIntegration> {
+  const integrationId = requiredId(integration.id, 'Project Integration');
+  const active = await integrations.findActive(
+    integration.tenantId,
+    integrationId,
+  );
+  if (!active) throw new Error('Project Integration is revoked.');
+  requireIntegrationCapability(active, capability);
+  return active;
 }
 
 function requiredId(value: string | null | undefined, label: string): string {

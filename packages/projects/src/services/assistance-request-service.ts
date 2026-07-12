@@ -1,6 +1,7 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import { DevelopmentRequestCollection } from '../collections/DevelopmentRequests.js';
+import { ProjectIntegrationCollection } from '../collections/ProjectIntegrations.js';
 import {
   type AssistanceRequest,
   AssistanceRequestCollection,
@@ -12,7 +13,7 @@ import type {
   DevelopmentRequestEvidence,
   ManagedAssistanceRequestInput,
 } from '../types.js';
-import { requireIntegrationCapability } from './delivery-service.js';
+import { requireActiveIntegrationCapability } from './delivery-service.js';
 
 export interface AssistanceSupportPort {
   openOrJoin(input: {
@@ -35,6 +36,7 @@ export interface AssistanceSupportPort {
 
 export class AssistanceRequestService {
   constructor(
+    private readonly integrations: ProjectIntegrationCollection,
     private readonly development: DevelopmentRequestCollection,
     private readonly requests: AssistanceRequestCollection,
     private readonly events: AssistanceRequestEventCollection,
@@ -45,12 +47,15 @@ export class AssistanceRequestService {
     options: SmrtClassOptions = {},
     dependencies: { support?: AssistanceSupportPort } = {},
   ): Promise<AssistanceRequestService> {
+    const integrations = await ProjectIntegrationCollection.create(options);
+    const sharedOptions = { ...options, db: integrations.db };
     const [development, requests, events] = await Promise.all([
-      DevelopmentRequestCollection.create(options),
-      AssistanceRequestCollection.create(options),
-      AssistanceRequestEventCollection.create(options),
+      DevelopmentRequestCollection.create(sharedOptions),
+      AssistanceRequestCollection.create(sharedOptions),
+      AssistanceRequestEventCollection.create(sharedOptions),
     ]);
     return new AssistanceRequestService(
+      integrations,
       development,
       requests,
       events,
@@ -62,15 +67,19 @@ export class AssistanceRequestService {
     integration: ProjectIntegration,
     input: ManagedAssistanceRequestInput,
   ): Promise<AssistanceRequest> {
-    requireIntegrationCapability(integration, 'assistance:create');
+    const active = await requireActiveIntegrationCapability(
+      this.integrations,
+      integration,
+      'assistance:create',
+    );
     if (!input.requesterId.trim())
       throw new Error('Assistance Request requires a stable requesterId.');
     if (!input.subject.trim())
       throw new Error('Assistance Request subject is required.');
-    const request = await withTenant({ tenantId: integration.tenantId }, () =>
+    const request = await withTenant({ tenantId: active.tenantId }, () =>
       this.requests.create({
-        tenantId: integration.tenantId,
-        integrationId: requiredId(integration.id, 'Project Integration'),
+        tenantId: active.tenantId,
+        integrationId: requiredId(active.id, 'Project Integration'),
         requesterId: input.requesterId,
         subject: input.subject.trim(),
         applicationContext: JSON.stringify(input.applicationContext ?? {}),
@@ -80,7 +89,7 @@ export class AssistanceRequestService {
         createdAt: new Date(),
       }),
     );
-    await withTenant({ tenantId: integration.tenantId }, () => request.save());
+    await withTenant({ tenantId: active.tenantId }, () => request.save());
     return request;
   }
 
@@ -94,10 +103,14 @@ export class AssistanceRequestService {
       developmentType?: string;
     },
   ): Promise<AssistanceRequest> {
-    requireIntegrationCapability(integration, 'assistance:create');
+    const active = await requireActiveIntegrationCapability(
+      this.integrations,
+      integration,
+      'assistance:create',
+    );
     if (
-      request.integrationId !== integration.id ||
-      request.tenantId !== integration.tenantId
+      request.integrationId !== active.id ||
+      request.tenantId !== active.tenantId
     )
       throw new Error(
         'Assistance Request is outside this Project Integration.',
@@ -115,7 +128,7 @@ export class AssistanceRequestService {
       const result = await this.support.openOrJoin({
         assistanceRequestId: requiredId(request.id, 'Assistance Request'),
         tenantId: request.tenantId,
-        projectId: integration.projectId,
+        projectId: active.projectId,
         requesterId: request.requesterId,
         subject: request.subject,
         conversation: parseArray(request.conversation),
@@ -130,14 +143,14 @@ export class AssistanceRequestService {
         input.classification === 'both') &&
       !request.developmentRequestId
     ) {
-      const integrationId = requiredId(integration.id, 'Project Integration');
+      const integrationId = requiredId(active.id, 'Project Integration');
       const origin = `assistance:${requiredId(request.id, 'Assistance Request')}`;
       const existing = (
-        await withTenant({ tenantId: integration.tenantId }, () =>
+        await withTenant({ tenantId: active.tenantId }, () =>
           this.development.list({
             where: {
-              tenantId: integration.tenantId,
-              projectId: integration.projectId,
+              tenantId: active.tenantId,
+              projectId: active.projectId,
               integrationId,
               origin,
             },
@@ -149,8 +162,8 @@ export class AssistanceRequestService {
       const developmentRequest =
         existing ??
         (await this.development.createManaged({
-          tenantId: integration.tenantId,
-          projectId: integration.projectId,
+          tenantId: active.tenantId,
+          projectId: active.projectId,
           integrationId,
           requesterId: request.requesterId,
           type: input.developmentType ?? 'task',

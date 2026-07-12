@@ -300,6 +300,27 @@ describe('managed application delivery control plane (#1949)', () => {
       ([call]) => call.idempotencyKey,
     );
     expect(new Set(idempotencyKeys).size).toBe(1);
+    const integrations = await ProjectIntegrationCollection.create({ db });
+    await integrations.revoke(
+      projectIntegration.tenantId,
+      String(projectIntegration.id),
+    );
+    await expect(
+      delivery.listForIntegration(
+        projectIntegration,
+        String(developmentRequest.id),
+      ),
+    ).rejects.toThrow(/revoked/i);
+    await expect(
+      delivery.record({
+        integration: projectIntegration,
+        requestId: String(developmentRequest.id),
+        idempotencyKey: 'after-revocation',
+        sequence: 5,
+        type: 'completed',
+        payload: {},
+      }),
+    ).rejects.toThrow(/revoked/i);
   });
 
   it('retries failed delivery, replays in order, and rejects stale previews', async () => {
@@ -807,5 +828,23 @@ describe('managed application delivery control plane (#1949)', () => {
         }),
       ),
     ).toHaveLength(1);
+    const integrations = await ProjectIntegrationCollection.create({ db });
+    await integrations.revoke(
+      projectIntegration.tenantId,
+      String(projectIntegration.id),
+    );
+    await expect(
+      assistance.createRequest(projectIntegration, {
+        requesterId: 'user-after-revocation',
+        subject: 'Blocked request',
+      }),
+    ).rejects.toThrow(/revoked/i);
+    await expect(
+      assistance.classify(projectIntegration, both, {
+        classification: 'support',
+        actorRef: 'agent:triage',
+        reason: 'Blocked classification',
+      }),
+    ).rejects.toThrow(/revoked/i);
   });
 });
