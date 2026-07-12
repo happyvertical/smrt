@@ -38,7 +38,7 @@ export class ManagedProjectClient {
   async createRequest(
     input: Omit<ManagedDevelopmentRequestCreateInput, 'requesterId'>,
   ) {
-    this.#requireCapability('requests:create');
+    const integration = await this.#requireCapability('requests:create');
     if (!input.description.trim()) {
       throw new Error('Managed request creation requires a description');
     }
@@ -48,30 +48,43 @@ export class ManagedProjectClient {
     });
     return requests.createManaged({
       ...input,
-      tenantId: this.#integration.tenantId,
-      projectId: this.#integration.projectId,
-      integrationId: this.#integration.id as string,
+      tenantId: integration.tenantId,
+      projectId: integration.projectId,
+      integrationId: integration.id as string,
       requesterId: this.#requesterId,
     });
   }
 
   async listRequests() {
-    this.#requireCapability('requests:read-own');
+    const integration = await this.#requireCapability('requests:read-own');
     const requests = await DevelopmentRequestCollection.create({
       db: this.#db,
     });
     return requests.listByIntegrationRequester({
-      tenantId: this.#integration.tenantId,
-      integrationId: this.#integration.id as string,
+      tenantId: integration.tenantId,
+      integrationId: integration.id as string,
       requesterId: this.#requesterId,
     });
   }
 
-  #requireCapability(capability: string): void {
-    if (!this.#integration.hasCapability(capability)) {
+  async #requireCapability(capability: string): Promise<ProjectIntegration> {
+    const tenantId = this.#integration.tenantId;
+    const integrationId = this.#integration.id;
+    if (!tenantId || !integrationId) {
+      throw new Error('Invalid or revoked project integration credential');
+    }
+    const integrations = await ProjectIntegrationCollection.create({
+      db: this.#db,
+    });
+    const integration = await integrations.findActive(tenantId, integrationId);
+    if (!integration) {
+      throw new Error('Invalid or revoked project integration credential');
+    }
+    if (!integration.hasCapability(capability)) {
       throw new Error(
         `Managed project integration lacks required capability '${capability}'`,
       );
     }
+    return integration;
   }
 }

@@ -207,6 +207,34 @@ describe('managed project integrations', () => {
     expect(JSON.stringify(client)).not.toContain('credentialHash');
   });
 
+  it('rechecks revocation before each cached managed-client call', async () => {
+    const integrations = await ProjectIntegrationCollection.create({ db });
+    const provisioned = await integrations.provision({
+      tenantId: 'tenant-a',
+      projectId: 'project-a',
+      name: 'Cached client',
+      capabilities: ['requests:create', 'requests:read-own'],
+    });
+    const client = await ManagedProjectClient.authenticate(
+      provisioned.credential,
+      { db, requesterId: 'u1' },
+    );
+    await client.createRequest({
+      type: 'feature',
+      description: 'Created before revocation',
+    });
+
+    await integrations.revoke('tenant-a', provisioned.integration.id as string);
+
+    await expect(client.listRequests()).rejects.toThrow(/revoked/i);
+    await expect(
+      client.createRequest({
+        type: 'bug',
+        description: 'Blocked after revocation',
+      }),
+    ).rejects.toThrow(/revoked/i);
+  });
+
   it('keeps integrations and requests tenant-scoped under active tenancy', async () => {
     enableTenancy();
     const integrations = await ProjectIntegrationCollection.create({ db });

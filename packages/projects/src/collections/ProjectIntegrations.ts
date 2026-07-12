@@ -85,6 +85,16 @@ export class ProjectIntegrationCollection extends SmrtCollection<ProjectIntegrat
     );
   }
 
+  async findActive(
+    tenantId: string,
+    integrationId: string,
+  ): Promise<ProjectIntegration | null> {
+    const integration = await withTenant({ tenantId }, () =>
+      this.findOne({ where: { id: integrationId, tenantId } }),
+    );
+    return integration?.isActive() ? integration : null;
+  }
+
   private async requireExisting(
     tenantId: string,
     integrationId: string,
