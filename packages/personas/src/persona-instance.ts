@@ -91,6 +91,8 @@ export function isDefaultPersona(persona: Pick<AgentPersona, 'name'>): boolean {
  * caller) — spread into `new AgentClass({ ...agentOptionsForPersona(p), db })`.
  */
 export interface PersonaAgentOptions {
+  /** Persona row that owns settings and audit identity (always present). */
+  personaId: string;
   /** Per-instance key — `null` for the default (singleton) persona. */
   instanceKey: string | null;
   /** The tenant the persona belongs to. */
@@ -104,7 +106,13 @@ export interface PersonaAgentOptions {
 export function agentOptionsForPersona(
   persona: AgentPersona,
 ): PersonaAgentOptions {
+  if (!persona.id) {
+    throw new Error(
+      'agentOptionsForPersona: persona must be saved before it can run',
+    );
+  }
   return {
+    personaId: persona.id,
     instanceKey: personaInstanceKey(persona),
     tenantId: persona.tenantId,
   };
@@ -157,6 +165,7 @@ export async function schedulePersonaInstance(
   const instanceKey = personaInstanceKey(persona);
   const agentConfig: Record<string, unknown> = {
     ...(options.agentConfig ?? {}),
+    personaId: persona.id,
   };
   if (instanceKey) {
     agentConfig.instanceKey = instanceKey;

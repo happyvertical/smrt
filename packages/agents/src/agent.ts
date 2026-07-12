@@ -87,6 +87,15 @@ export interface AgentOptions
    * `@happyvertical/smrt-personas` (a persona is a durable instance).
    */
   instanceKey?: string | null;
+
+  /**
+   * Durable persona row that owns this agent's editable settings.
+   *
+   * This is deliberately independent from `instanceKey`: the reserved default
+   * persona keeps the singleton runtime identity (`instanceKey: null`) but must
+   * still load and save its own persona-scoped settings.
+   */
+  personaId?: string | null;
 }
 
 /**
@@ -452,6 +461,30 @@ export abstract class Agent extends SmrtObject {
   }
 
   /**
+   * Durable owner id used for database-backed slot configuration.
+   *
+   * Persona-backed agents use the persona row id, including the default
+   * persona whose runtime instance key remains null. Legacy/singleton agents
+   * continue to use their persisted Agent STI row id.
+   */
+  getConfigOwnerId(slotId?: string): string | null {
+    const personaId = (this.options as AgentOptions).personaId;
+    const scope = slotId ? this.getUISlots()[slotId]?.scope : undefined;
+    if (scope === 'persona') {
+      return typeof personaId === 'string' && personaId.length > 0
+        ? personaId
+        : null;
+    }
+    if (scope === 'agent') {
+      return this.id ?? null;
+    }
+    if (typeof personaId === 'string' && personaId.length > 0) {
+      return personaId;
+    }
+    return this.id ?? null;
+  }
+
+  /**
    * Canonical dispatch subscriber identity for this agent.
    *
    * A singleton (no instance key) is the bare agent type — **unchanged** from the
@@ -535,10 +568,30 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   async loadConfigs(): Promise<Map<string, Record<string, unknown>>> {
-    if (!this.id) {
-      throw new Error('Agent must be saved before loading configs');
+    const ownerIds = Array.from(
+      new Set(
+        [
+          this.getConfigOwnerId(),
+          this.id ?? null,
+          (this.options as AgentOptions).personaId ?? null,
+        ].filter((id): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    );
+    if (ownerIds.length === 0) {
+      throw new Error(
+        'Agent must have a personaId or be saved before loading configs',
+      );
     }
-    return AgentConfig.forAgent(this.id, this.options);
+    const byOwner = await AgentConfig.forAgents(ownerIds, this.options);
+    const result = new Map<string, Record<string, unknown>>();
+    for (const [ownerId, configs] of byOwner) {
+      for (const [slotId, config] of configs) {
+        if (this.getConfigOwnerId(slotId) === ownerId) {
+          result.set(slotId, config);
+        }
+      }
+    }
+    return result;
   }
 
   /**
@@ -562,12 +615,15 @@ export abstract class Agent extends SmrtObject {
     slotId: string,
     data: Record<string, unknown>,
   ): Promise<void> {
-    if (!this.id) {
-      throw new Error('Agent must be saved before saving slot config');
+    const ownerId = this.getConfigOwnerId(slotId);
+    if (!ownerId) {
+      throw new Error(
+        'Agent must have a personaId or be saved before saving slot config',
+      );
     }
     await AgentConfig.saveSlot(
       {
-        agentId: this.id,
+        agentId: ownerId,
         agentClass: this.getAgentTypeName(),
         slotId,
         configData: data,
@@ -600,12 +656,13 @@ export abstract class Agent extends SmrtObject {
         | Record<string, unknown>
         | undefined) ?? {};
 
-    if (!this.id) {
+    const ownerId = this.getConfigOwnerId(slotId);
+    if (!ownerId) {
       return fileConfig;
     }
 
     // Get db-persisted config
-    const dbConfig = await AgentConfig.forSlot(this.id, slotId, this.options);
+    const dbConfig = await AgentConfig.forSlot(ownerId, slotId, this.options);
 
     // Merge: db overrides file
     return { ...fileConfig, ...(dbConfig ?? {}) };

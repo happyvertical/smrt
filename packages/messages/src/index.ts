@@ -11,6 +11,9 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+import { ensureMessagingPermissionsRegistered } from './permissions.js';
+import { ensureBuiltinMessagingProvidersRegistered } from './providers.js';
+
 // ─────────────────────────────────────────────────────────────────────────
 // Base classes (new)
 // ─────────────────────────────────────────────────────────────────────────
@@ -19,10 +22,14 @@ export { AccountCollection } from './collections/AccountCollection';
 export { AttachmentCollection } from './collections/AttachmentCollection';
 // Base collections
 export { MessageCollection } from './collections/MessageCollection';
+export { MessagingEndpointCollection } from './collections/MessagingEndpointCollection.js';
+export { PersonaMessageRouteCollection } from './collections/PersonaMessageRouteCollection.js';
 export { Account } from './models/Account';
 export { Attachment } from './models/Attachment';
 // Base models
 export { Message } from './models/Message';
+export { MessagingEndpoint } from './models/MessagingEndpoint.js';
+export { PersonaMessageRoute } from './models/PersonaMessageRoute.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Email (backward-compatible)
@@ -55,17 +62,52 @@ export { Whitelist } from './models/Whitelist';
 // Account types
 export { SlackAccount } from './models/SlackAccount';
 export { SlackMessage } from './models/SlackMessage';
+export { TelegramAccount } from './models/TelegramAccount.js';
 // Message types
 export { Tweet } from './models/Tweet';
 export { TwitterAccount } from './models/TwitterAccount';
+export { ZulipAccount } from './models/ZulipAccount.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Senders
 // ─────────────────────────────────────────────────────────────────────────
 
+export {
+  assertMessagingPermission,
+  ensureMessagingPermissionsRegistered,
+  MANAGE_MESSAGE_CREDENTIALS_PERMISSION,
+  MANAGE_MESSAGE_ROUTES_PERMISSION,
+  MESSAGING_PERMISSION_DEFINITIONS,
+  type MessagingPrincipal,
+  messagingPrincipalFromPermissions,
+  SEND_MESSAGES_PERMISSION,
+} from './permissions.js';
+export {
+  ensureBuiltinMessagingProvidersRegistered,
+  getMessagingProvider,
+  listMessagingProviders,
+  type MessagingProviderDefinition,
+  type MessagingProviderField,
+  type MessagingProviderFieldType,
+  registerMessagingProvider,
+} from './providers.js';
 export { EmailSender } from './senders/EmailSender';
 export { SlackSender } from './senders/SlackSender';
+export { TelegramSender } from './senders/TelegramSender.js';
 export { TweetSender } from './senders/TweetSender';
+export { ZulipSender } from './senders/ZulipSender.js';
+export {
+  type MessagingAccountInput,
+  type MessagingAccountView,
+  type MessagingEndpointInput,
+  type MessagingEndpointView,
+  MessagingSettingsService,
+  type PersonaMessageRouteInput,
+} from './services/MessagingSettingsService.js';
+export {
+  type PersonaMessageSendResult,
+  PersonaMessagingService,
+} from './services/PersonaMessagingService.js';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Types
@@ -84,6 +126,7 @@ export type {
   EmailFolderSearchFilters,
   EmailOptions,
   EmailSearchFilters,
+  KnownMessagingChannel,
   // Base options
   MessageOptions,
   // Search filters
@@ -93,9 +136,13 @@ export type {
   MessageSendResult,
   // Discriminator types
   MessageType,
+  MessagingChannel,
+  MessagingEndpointOptions,
+  PersonaMessageRouteOptions,
   ProviderType,
   SendEmailOptions,
   SendMessageOptions,
+  SendPersonaMessageOptions,
   SendSlackOptions,
   SendStatus,
   SendTweetOptions,
@@ -109,3 +156,6 @@ export type {
   TweetOptions,
   TwitterAccountOptions,
 } from './types';
+
+ensureBuiltinMessagingProvidersRegistered();
+ensureMessagingPermissionsRegistered();

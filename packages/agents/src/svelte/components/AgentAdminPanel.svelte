@@ -6,6 +6,7 @@ import type {
   AgentUISlot,
 } from '../../ui.js';
 import { M } from '../i18n.js';
+import AgentSettingsForm from './AgentSettingsForm.svelte';
 
 const { t } = useI18n();
 
@@ -53,9 +54,16 @@ async function handleSave(newConfig: unknown) {
 	<Component
 		{config}
 		onSave={handleSave}
-		{readonly}
+		readonly={readonly || !onSave}
 		{fileConfig}
 		{dbConfig}
+	/>
+{:else if slot.settingsSchema}
+	<AgentSettingsForm
+		config={(config ?? {}) as Record<string, unknown>}
+		schema={slot.settingsSchema}
+		onSave={handleSave}
+		{readonly}
 	/>
 {:else}
 	<div class="no-panel">

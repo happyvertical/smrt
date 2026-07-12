@@ -1,6 +1,8 @@
 # @happyvertical/smrt-messages
 
-Unified multi-channel messaging with STI-based channel hierarchies for the SMRT framework. Supports email, Slack, and Twitter as message subtypes, with per-channel sender implementations and encrypted credential storage.
+Unified multi-channel messaging with persona routes, encrypted credentials, and
+provider adapters. Outbound delivery supports email, Zulip, and Telegram; SMS is
+a reserved channel ready for a provider adapter.
 
 ## Installation
 
@@ -84,6 +86,56 @@ Each channel has a dedicated sender implementing `MessageSenderInterface`.
 | `EmailSender` | Send emails via `@happyvertical/email` client |
 | `SlackSender` | Send Slack messages via API |
 | `TweetSender` | Post tweets via Twitter API |
+| `ZulipSender` | Send stream or private Zulip messages via bot credentials |
+| `TelegramSender` | Send Telegram bot messages to a chat/topic |
+
+### Persona-scoped outbound messaging
+
+`MessagingSettingsService` is the permission-gated server boundary for saving
+accounts, write-only credentials, destinations, and persona routes.
+`PersonaMessagingService` selects the highest-priority matching route, persists
+the message, then runs the normal send lifecycle.
+
+Schema changes are manifest-driven. After upgrading an application, run
+`smrt db:diff` and `smrt db:migrate` to add the account/message columns and the
+`messaging_endpoints` / `persona_message_routes` tables.
+
+When constructing `MessagingSettingsService`, provide
+`resolvePersonaTenantId(personaId)` from the host's persona collection. Route
+writes fail closed unless it proves the persona belongs to the same tenant.
+
+```typescript
+import {
+  messagingPrincipalFromPermissions,
+  PersonaMessagingService,
+} from '@happyvertical/smrt-messages';
+
+const messaging = new PersonaMessagingService({
+  db,
+  tenantId,
+  principal: messagingPrincipalFromPermissions(['messages.send'], { tenantId }),
+});
+
+await messaging.send({
+  personaId,
+  channel: 'telegram', // optional; default route otherwise
+  body: 'The scheduled report is ready.',
+});
+```
+
+Agents receive the persona-fixed tool from `@happyvertical/smrt-personas`:
+
+```typescript
+const tool = createPersonaMessagingTool({ db, tenantId, personaId });
+```
+
+The tool only accepts message content and route intent. Persona, account,
+endpoint, and credential ids remain trusted server state.
+
+Apps can render `MessagingSettingsPanel` from
+`@happyvertical/smrt-messages/svelte` using the sanitized view returned by
+`MessagingSettingsService.list()` and wiring its save callbacks back to the
+service.
 
 ### Credential Security
 
