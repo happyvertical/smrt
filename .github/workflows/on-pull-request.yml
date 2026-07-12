@@ -41,7 +41,10 @@ jobs:
   # hv-agent-policy:start
   lifecycle:
     name: lifecycle
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -82,8 +85,14 @@ jobs:
       - name: Validate lifecycle
         env:
           GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
-        run: python3 "$HV_POLICY_DIR/scripts/hv-agent" check-pr "$PR_NUMBER"
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          "$HV_POLICY_DIR/scripts/hv-agent-lifecycle-prs" | while IFS= read -r number; do
+            python3 "$HV_POLICY_DIR/scripts/hv-agent" check-pr "$number"
+          done
   # hv-agent-policy:end
 
   validate-commits:
@@ -420,9 +429,17 @@ jobs:
       packages: read
 
   required-ci:
-    name: Required CI
-    if: always() && (github.event_name == 'merge_group' || contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+    name: >-
+      ${{
+        (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'pull_request' &&
+        !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))) &&
+        'Lifecycle Event' ||
+        'Required CI'
+      }}
+    if: always()
     needs:
+      - lifecycle
       - validate-commits
       - validate-workflows
       - check-sdk-versions
@@ -435,9 +452,28 @@ jobs:
       - publish-dry-run
     runs-on: ubuntu-latest
     steps:
+      - name: Verify metadata-only lifecycle event
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'pull_request' &&
+          !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+        env:
+          LIFECYCLE: ${{ needs.lifecycle.result }}
+        run: |
+          if [ "$LIFECYCLE" != "success" ]; then
+            echo "lifecycle must succeed, got: $LIFECYCLE"
+            exit 1
+          fi
+          echo "Metadata-only lifecycle event passed without replacing Required CI."
+
       - name: Verify required job set
+        if: >-
+          github.event_name == 'merge_group' ||
+          (github.event_name == 'pull_request' &&
+          contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
         env:
           EVENT_NAME: ${{ github.event_name }}
+          LIFECYCLE: ${{ needs.lifecycle.result }}
           MERGE_QUEUE_ENABLED: ${{ vars.CI_MERGE_QUEUE_ENABLED }}
           VALIDATE_COMMITS: ${{ needs.validate-commits.result }}
           VALIDATE_WORKFLOWS: ${{ needs.validate-workflows.result }}
@@ -462,6 +498,7 @@ jobs:
           }
 
           require_success "Check SDK Version Alignment" "$CHECK_SDK"
+          require_success "Agent Policy lifecycle" "$LIFECYCLE"
           require_success "Check Monorepo Standards" "$CHECK_STANDARDS"
           require_success "Dependency Vulnerability Audit" "$DEPENDENCY_AUDIT"
           require_success "PostgreSQL scope detection" "$POSTGRES_SCOPE"
