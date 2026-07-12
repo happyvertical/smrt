@@ -21,6 +21,7 @@ export {
   type SpecialistRouter,
 } from './human-handoff-service.js';
 export { KeyedMutex } from './keyed-mutex.js';
+export { ProjectAssistanceSupportAdapter } from './project-assistance-adapter.js';
 export {
   DEFAULT_SEVERITY_KEY,
   ESCALATION_JOB_PRIORITY,

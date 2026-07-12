@@ -336,5 +336,22 @@ describe('ServiceTimeEntryService', () => {
         /only 'draft' or 'rejected' entries can be submitted/,
       );
     });
+
+    it('allows rejected evidence to be corrected and resubmitted', async () => {
+      const supportCase = await caseService.openCase({ subject: 'correct' });
+      const entry = await service.record({
+        caseId: supportCase.id,
+        participantKind: 'human',
+        participantProfileId: 'profile-1',
+        source: 'manual',
+        durationSeconds: 600,
+      });
+      await service.submit(entry);
+      entry.status = 'rejected';
+      await entry.save();
+
+      await service.submit(entry, { byProfileId: 'profile-1' });
+      expect(entry.status).toBe('submitted');
+    });
   });
 });

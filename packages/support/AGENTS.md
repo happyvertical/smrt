@@ -7,7 +7,10 @@ systems of record. The package owns the case lifecycle, channel intake, the
 Automated Support Response workflow with lossless **Human Handoff**,
 Project-qualified routing, **Service Target** clocks with timed escalation,
 and auditable **Service Time Entries** whose client charges and provider
-compensation stay separate.
+compensation stay separate. Since #1955 the canonical `ServiceTimeEntry` class
+is owned by `smrt-projects`; this package exposes a compatibility subtype that
+restates the shared fields for isolated manifest scanning. Both imports use the
+unchanged `service_time_entries` table, so no data is duplicated.
 
 **Boundary (FR-29a):** Support owns tickets, interactions, routing, and
 service targets. Delivery Operations owns repository work — a **Delivery
@@ -224,11 +227,12 @@ Components use `smrt-ui` primitives (`smrtRawPrimitives: "strict"`).
 
 ## Dependencies
 
-Leaf package (nothing depends back on it): `smrt-core`, `smrt-tenancy`,
+Package dependencies: `smrt-core`, `smrt-tenancy`, `smrt-projects`,
 `smrt-chat`, `smrt-messages`, `smrt-jobs`, `smrt-users`, `smrt-ui`,
-`@happyvertical/logger`, `@happyvertical/sql`. Profile / smrt-projects /
-subscriptions references are `@crossPackageRef` string ids or plain string
-keys only — no package edge. No inter-`smrt-*` `peerDependencies`.
+`@happyvertical/logger`, `@happyvertical/sql`. Profile and subscriptions
+references are `@crossPackageRef` string ids or plain string
+keys. `smrt-projects` is the intentional shared delivery/evidence edge added
+by #1955. No inter-`smrt-*` `peerDependencies`.
 
 ## Validation
 
