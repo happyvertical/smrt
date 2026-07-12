@@ -265,6 +265,47 @@ describe('commercial usage tracer', () => {
     });
   });
 
+  it('prefers subscriber-specific policy scope over broad subscriber kind', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'All external subscribers',
+      subscriberKind: 'external',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 5,
+      behavior: 'warn',
+      priority: 100,
+    });
+    const specific = await policies.create({
+      tenantId,
+      name: 'Specific external subscriber',
+      subscriberKind: 'external',
+      subscriberExternalId: 'user:1',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 5,
+      behavior: 'block',
+      priority: 0,
+    });
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+    ).evaluate({
+      tenantId,
+      subscriberKind: 'external',
+      subscriberExternalId: 'user:1',
+      metricKey: 'ai.tokens',
+      estimatedAmount: 6,
+      at: new Date('2026-07-10T00:00:00Z'),
+    });
+    expect(decision).toMatchObject({
+      allowed: false,
+      state: 'blocked',
+      matchedPolicyId: specific.id,
+    });
+  });
+
   it('aggregates all metrics for a wildcard spending policy', async () => {
     const tenantId = '11111111-1111-4111-8111-111111111111';
     await policies.create({

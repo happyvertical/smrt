@@ -362,6 +362,7 @@ function selectPolicy(
 function scopeScore(p: SpendingPolicy): number {
   return (
     Number(Boolean(p.subscriberKind)) +
+    Number(Boolean(p.subscriberExternalId)) +
     Number(Boolean(p.projectId)) +
     Number(Boolean(p.serviceKey)) +
     Number(Boolean(p.metricKey))

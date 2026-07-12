@@ -194,6 +194,27 @@ describe('managed application delivery control plane (#1949)', () => {
       ),
     ).toHaveLength(2);
 
+    const invalidSource = await request(projectIntegration.id as string);
+    await expect(
+      service.triage(invalidSource, {
+        decision: 'split',
+        reason: 'Invalid split payload',
+        actorRef: 'operator:1',
+        split: [
+          { type: 'feature', description: 'Valid first part' },
+          { type: 'task', description: '   ' },
+        ],
+      }),
+    ).rejects.toThrow('Split request description is required');
+    expect(invalidSource.status).toBe('submitted');
+    expect(
+      await withTenant({ tenantId: invalidSource.tenantId }, () =>
+        splitRequestCollection.list({
+          where: { origin: `split:${invalidSource.id}` },
+        }),
+      ),
+    ).toHaveLength(0);
+
     const histories = await DevelopmentRequestHistoryCollection.create({ db });
     const audited = await withTenant({ tenantId: 'tenant-1' }, () =>
       histories.list({

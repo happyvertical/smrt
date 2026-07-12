@@ -158,6 +158,12 @@ export class DevelopmentRequestService {
     if (input.decision === 'split') {
       if (!input.split?.length)
         throw new Error('At least one split request is required.');
+      const parts = input.split.map((part) => {
+        const description = part.description.trim();
+        if (!description)
+          throw new Error('Split request description is required.');
+        return { description, type: part.type ?? request.type };
+      });
       const origin = `split:${request.id}`;
       const unmatchedExisting = await withTenant(
         { tenantId: request.tenantId },
@@ -172,11 +178,7 @@ export class DevelopmentRequestService {
             orderBy: 'createdAt ASC',
           }),
       );
-      for (const part of input.split) {
-        const description = part.description.trim();
-        if (!description)
-          throw new Error('Split request description is required.');
-        const type = part.type ?? request.type;
+      for (const { description, type } of parts) {
         const existingIndex = unmatchedExisting.findIndex(
           (candidate) =>
             candidate.description.trim() === description &&
