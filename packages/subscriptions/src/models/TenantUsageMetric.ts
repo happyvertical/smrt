@@ -16,7 +16,7 @@ import {
 @smrt({
   tableName: '_smrt_tenant_usage_metrics',
   api: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { include: ['list', 'get', 'create'] },
   mcp: { include: ['list', 'get'] },
 })
 export class TenantUsageMetric extends SmrtObject {
@@ -42,6 +42,10 @@ export class TenantUsageMetric extends SmrtObject {
   windowEnd: Date = new Date();
   source: string = '';
   sourceId: string = '';
+  projectId: string = '';
+  workRefType: string = '';
+  workRefId: string = '';
+  provider: string = '';
   dimensions: string = '{}';
 
   constructor(options: TenantUsageMetricOptions = {}) {
@@ -64,6 +68,11 @@ export class TenantUsageMetric extends SmrtObject {
     if (options.windowEnd !== undefined) this.windowEnd = options.windowEnd;
     if (options.source !== undefined) this.source = options.source;
     if (options.sourceId !== undefined) this.sourceId = options.sourceId;
+    if (options.projectId !== undefined) this.projectId = options.projectId;
+    if (options.workRefType !== undefined)
+      this.workRefType = options.workRefType;
+    if (options.workRefId !== undefined) this.workRefId = options.workRefId;
+    if (options.provider !== undefined) this.provider = options.provider;
     if (options.dimensions !== undefined) this.dimensions = options.dimensions;
   }
 
@@ -74,6 +83,53 @@ export class TenantUsageMetric extends SmrtObject {
       subscriberKind: this.subscriberKind,
       subscriberExternalId: this.subscriberExternalId,
     });
+    if (this.id) {
+      const row = await this.db.get(this.tableName, { id: this.id });
+      if (row) {
+        const persisted = [
+          row.tenant_id,
+          row.subscriber_kind,
+          row.subscriber_external_id,
+          row.metric_key,
+          row.quantity,
+          row.window_start,
+          row.window_end,
+          row.source,
+          row.source_id,
+          row.project_id,
+          row.work_ref_type,
+          row.work_ref_id,
+          row.provider,
+          row.dimensions,
+        ];
+        const current = [
+          this.tenantId,
+          this.subscriberKind,
+          this.subscriberExternalId,
+          this.metricKey,
+          this.quantity,
+          this.windowStart,
+          this.windowEnd,
+          this.source,
+          this.sourceId,
+          this.projectId,
+          this.workRefType,
+          this.workRefId,
+          this.provider,
+          this.dimensions,
+        ];
+        if (
+          persisted.some(
+            (value, index) =>
+              normalizeEvidence(value) !== normalizeEvidence(current[index]),
+          )
+        ) {
+          throw new Error(
+            'Usage events are immutable; record a new event instead.',
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -107,3 +163,14 @@ export class TenantUsageMetric extends SmrtObject {
 }
 
 export default TenantUsageMetric;
+
+function normalizeEvidence(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') {
+    const timestamp = Date.parse(value);
+    if (/^\d{4}-\d{2}-\d{2}[T ]/.test(value) && Number.isFinite(timestamp)) {
+      return new Date(timestamp).toISOString();
+    }
+  }
+  return String(value ?? '');
+}

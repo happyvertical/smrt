@@ -1,6 +1,7 @@
 # @happyvertical/smrt-subscriptions
 
-Tenant subscriptions, plan features, usage thresholds, and entitlement
+Tenant subscriptions, plan features, immutable/idempotent usage evidence,
+effective-dated client pricing, scoped spending policies, and entitlement
 resolution for SMRT applications.
 
 ## Validation

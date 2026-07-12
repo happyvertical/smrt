@@ -9,6 +9,7 @@ import type {
   UsageSummary,
 } from '../types.js';
 import {
+  deterministicUuid,
   normalizeSubscriber,
   stringifyJson,
   subscriberToColumns,
@@ -24,19 +25,48 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
       subscriberExternalId: options.subscriberExternalId,
     });
     const columns = subscriberToColumns(subscriber);
-    const metric = await this.create({
-      tenantId: columns.tenantId,
-      subscriberKind: columns.subscriberKind,
-      subscriberExternalId: columns.subscriberExternalId,
-      metricKey: options.metricKey,
-      quantity: options.quantity,
-      windowStart: options.windowStart,
-      windowEnd: options.windowEnd,
-      source: options.source ?? '',
-      sourceId: options.sourceId ?? '',
-      dimensions: stringifyJson(options.dimensions ?? {}),
-    });
-    return metric;
+    const sourcedId =
+      options.source && options.sourceId
+        ? await deterministicUuid([
+            'tenant-usage',
+            columns.tenantId,
+            columns.subscriberKind,
+            columns.subscriberExternalId,
+            options.metricKey,
+            options.source,
+            options.sourceId,
+          ])
+        : null;
+    if (options.source && options.sourceId) {
+      const existing = await this.get(sourcedId as string);
+      if (existing) return existing;
+    }
+    try {
+      return await this.create({
+        ...(sourcedId ? { id: sourcedId } : {}),
+        tenantId: columns.tenantId,
+        subscriberKind: columns.subscriberKind,
+        subscriberExternalId: columns.subscriberExternalId,
+        metricKey: options.metricKey,
+        quantity: options.quantity,
+        windowStart: options.windowStart,
+        windowEnd: options.windowEnd,
+        source: options.source ?? '',
+        sourceId: options.sourceId ?? '',
+        projectId: options.projectId ?? '',
+        workRefType: options.workRefType ?? '',
+        workRefId: options.workRefId ?? '',
+        provider: options.provider ?? '',
+        dimensions: stringifyJson(options.dimensions ?? {}),
+        _insertOnly: Boolean(sourcedId),
+      });
+    } catch (error) {
+      if (sourcedId) {
+        const existing = await this.get(sourcedId);
+        if (existing) return existing;
+      }
+      throw error;
+    }
   }
 
   /**
