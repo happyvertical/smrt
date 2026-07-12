@@ -48,12 +48,12 @@ bounded, test-only tmpfs; other runners retain the workspace-backed fallback.
   knowledge checks, and affected PostgreSQL coverage. The complete suite and
   publish dry-run run for `merge_group`.
 
-`Required CI` is the eventual sole required status. Its aggregator explicitly
-checks different expected job sets for PR and merge-group events. Do not change
-the ruleset until this context has completed successfully on ten representative
-PR runs.
+`Required CI` is the sole required repository-validation status. Its aggregator
+explicitly checks different expected job sets for PR and merge-group events. Do
+not change the ruleset until this context has completed successfully on a
+representative code-changing PR run.
 
-After those runs:
+After that canary run:
 
 1. Set `CI_NODE_RUNNER_ENABLED=true` and verify one non-required/shadow run.
 2. Set `CI_POSTGRES_ENABLED=true` after the disposable cluster and runner URL
