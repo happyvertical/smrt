@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.39.4",
+  "version": "0.39.5",
   "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -56,6 +56,7 @@
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:"
   },

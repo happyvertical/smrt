@@ -17,9 +17,9 @@ import { Account } from './Account';
 
 @smrt({
   tableStrategy: 'sti',
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { include: ['list', 'get'] },
 })
 export class EmailAccount extends Account {
   email = '';
@@ -33,6 +33,7 @@ export class EmailAccount extends Account {
       this.providerType = options.providerType;
     if (options.syncIntervalMinutes !== undefined)
       this.syncIntervalMinutes = options.syncIntervalMinutes;
+    this.channelType = 'email';
   }
 
   /**
@@ -67,19 +68,11 @@ export class EmailAccount extends Account {
    */
   async createClient() {
     const { getEmailClient } = await import('@happyvertical/email');
-    let settings: Record<string, unknown>;
-
-    // Use secrets integration if available
-    if (this.credentialSecretId) {
-      const { SecretService } = await import('@happyvertical/smrt-secrets');
-      const secretService = await SecretService.create({ db: this.db });
-
-      const secret = await secretService.retrieve(this.credentialSecretId);
-      settings = JSON.parse(secret.value);
-    } else {
-      // Fallback to plain-text settings (DEPRECATED)
-      settings = this.getSettings();
-    }
+    const settings: Record<string, unknown> = {
+      ...this.getConfiguration(),
+      ...((await this.getCredentials()) ?? {}),
+    };
+    delete settings.email;
 
     return await getEmailClient({
       type: this.providerType as ProviderType,
@@ -322,27 +315,10 @@ export class EmailAccount extends Account {
       category?: string;
     } = {},
   ): Promise<void> {
-    const { SecretService } = await import('@happyvertical/smrt-secrets');
-    const secretService = await SecretService.create({ db: this.db });
-
-    const secretName = `email-account-${this.id}`;
-    const secretValue = JSON.stringify(credentials);
-
-    if (this.credentialSecretId) {
-      await secretService.store(this.credentialSecretId, secretValue, {
-        description: options.description || `IMAP credentials for ${this.name}`,
-        category: options.category || 'email',
-      });
-    } else {
-      await secretService.store(secretName, secretValue, {
-        description: options.description || `IMAP credentials for ${this.name}`,
-        category: options.category || 'email',
-      });
-
-      this.credentialSecretId = secretName;
-      this.updatedAt = new Date();
-      await this.save();
-    }
+    await super.setCredentials(credentials, {
+      description: options.description || `Email credentials for ${this.name}`,
+      category: options.category || 'email',
+    });
   }
 
   /**

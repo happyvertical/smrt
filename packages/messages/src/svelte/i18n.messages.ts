@@ -51,4 +51,54 @@ export const M = defineMessages({
 
   // FolderNav
   'messages.folder_nav.folders': 'Folders',
+
+  // MessagingSettingsPanel
+  'messages.messaging_settings.accounts_title': 'Sending accounts',
+  'messages.messaging_settings.accounts_description':
+    'Provider credentials used by this tenant.',
+  'messages.messaging_settings.add_account': 'Add account',
+  'messages.messaging_settings.credentials_stored': 'Credentials stored',
+  'messages.messaging_settings.credentials_missing': 'Credentials missing',
+  'messages.messaging_settings.no_accounts': 'No sending accounts configured.',
+  'messages.messaging_settings.destinations_title': 'Destinations',
+  'messages.messaging_settings.destinations_description':
+    'Write-only addresses where this persona may contact you.',
+  'messages.messaging_settings.add_destination': 'Add destination',
+  'messages.messaging_settings.no_destinations': 'No destinations configured.',
+  'messages.messaging_settings.routes_title': 'Persona routes',
+  'messages.messaging_settings.routes_description':
+    'Bind this persona to an account and destination.',
+  'messages.messaging_settings.add_route': 'Add route',
+  'messages.messaging_settings.no_routes':
+    'No routes configured for this persona.',
+  'messages.messaging_settings.priority_value': 'Priority {priority}',
+  'messages.messaging_settings.missing_account': 'Missing account',
+  'messages.messaging_settings.missing_destination': 'Missing destination',
+  'messages.messaging_settings.edit_account_title': 'Edit sending account',
+  'messages.messaging_settings.add_account_title': 'Add sending account',
+  'messages.messaging_settings.name': 'Name',
+  'messages.messaging_settings.provider': 'Provider',
+  'messages.messaging_settings.select': 'Select…',
+  'messages.messaging_settings.credentials': 'Credentials',
+  'messages.messaging_settings.credentials_note':
+    'Stored credentials are never displayed. Leave these blank to keep them unchanged.',
+  'messages.messaging_settings.account_active': 'Account active',
+  'messages.messaging_settings.cancel': 'Cancel',
+  'messages.messaging_settings.save_account': 'Save account',
+  'messages.messaging_settings.replace_destination_title':
+    'Replace destination',
+  'messages.messaging_settings.add_destination_title': 'Add destination',
+  'messages.messaging_settings.destination_note':
+    'The current address is not readable. Saving replaces it with the values below.',
+  'messages.messaging_settings.label': 'Label',
+  'messages.messaging_settings.destination_active': 'Destination active',
+  'messages.messaging_settings.save_destination': 'Save destination',
+  'messages.messaging_settings.edit_route_title': 'Edit persona route',
+  'messages.messaging_settings.add_route_title': 'Add persona route',
+  'messages.messaging_settings.sending_account': 'Sending account',
+  'messages.messaging_settings.destination': 'Destination',
+  'messages.messaging_settings.purpose': 'Purpose',
+  'messages.messaging_settings.priority': 'Priority',
+  'messages.messaging_settings.route_enabled': 'Route enabled',
+  'messages.messaging_settings.save_route': 'Save route',
 });

@@ -11,19 +11,30 @@
 import type { ComponentProps } from 'svelte';
 import AgentAdminPanel from './components/AgentAdminPanel.svelte';
 import AgentAdminTabs from './components/AgentAdminTabs.svelte';
+import AgentSettingsForm from './components/AgentSettingsForm.svelte';
 import AgentSettingsShell from './components/AgentSettingsShell.svelte';
 
-export { AgentAdminPanel, AgentAdminTabs, AgentSettingsShell };
+export {
+  AgentAdminPanel,
+  AgentAdminTabs,
+  AgentSettingsForm,
+  AgentSettingsShell,
+};
 
 export type AgentAdminPanelProps = ComponentProps<typeof AgentAdminPanel>;
 export type AgentAdminTabsProps = ComponentProps<typeof AgentAdminTabs>;
 export type AgentSettingsShellProps = ComponentProps<typeof AgentSettingsShell>;
+export type AgentSettingsFormProps = ComponentProps<typeof AgentSettingsForm>;
 
 // The registry contracts the admin shells type against (parity with the former
 // smrt-svelte/admin barrel, which re-exported these). They live in
 // smrt-agents/ui.
 export type {
   AdminPanelBaseProps,
+  AgentSettingField,
+  AgentSettingFieldType,
+  AgentSettingOption,
+  AgentSettingsSchema,
   AgentUIComponentRegistry,
   AgentUISlot,
   AgentUISlots,

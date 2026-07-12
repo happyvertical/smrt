@@ -1,15 +1,15 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379232967,
+  "timestamp": 1783829330316,
   "packageName": "@happyvertical/smrt-messages",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.39.3",
   "objects": {
     "@happyvertical/smrt-messages:AccountCollection": {
       "name": "accountcollection",
       "className": "AccountCollection",
       "qualifiedName": "@happyvertical/smrt-messages:AccountCollection",
       "collection": "accounts",
-      "filePath": "packages/messages/src/collections/AccountCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/AccountCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -133,8 +133,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -172,7 +172,7 @@
             "unique": true
           }
         ],
-        "version": "24f743a2"
+        "version": "766c026b"
       }
     },
     "@happyvertical/smrt-messages:AttachmentCollection": {
@@ -180,7 +180,7 @@
       "className": "AttachmentCollection",
       "qualifiedName": "@happyvertical/smrt-messages:AttachmentCollection",
       "collection": "attachments",
-      "filePath": "packages/messages/src/collections/AttachmentCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/AttachmentCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -403,8 +403,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -442,7 +442,7 @@
             "unique": true
           }
         ],
-        "version": "6c750643"
+        "version": "d1da2552"
       }
     },
     "@happyvertical/smrt-messages:BlacklistCollection": {
@@ -450,7 +450,7 @@
       "className": "BlacklistCollection",
       "qualifiedName": "@happyvertical/smrt-messages:BlacklistCollection",
       "collection": "blacklists",
-      "filePath": "packages/messages/src/collections/BlacklistCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/BlacklistCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -495,8 +495,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -534,7 +534,7 @@
             "unique": true
           }
         ],
-        "version": "ada69438"
+        "version": "4858f9dc"
       }
     },
     "@happyvertical/smrt-messages:EmailAccountCollection": {
@@ -542,7 +542,7 @@
       "className": "EmailAccountCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAccountCollection",
       "collection": "accounts",
-      "filePath": "packages/messages/src/collections/EmailAccountCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/EmailAccountCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -670,7 +670,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "Record<string, any>",
+              "type": "SyncOptions",
               "optional": true
             }
           ],
@@ -744,8 +744,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -783,7 +783,7 @@
             "unique": true
           }
         ],
-        "version": "18aca86e"
+        "version": "334b9255"
       }
     },
     "@happyvertical/smrt-messages:EmailAttachmentCollection": {
@@ -791,7 +791,7 @@
       "className": "EmailAttachmentCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAttachmentCollection",
       "collection": "emailattachments",
-      "filePath": "packages/messages/src/collections/EmailAttachmentCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/EmailAttachmentCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -927,8 +927,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -966,7 +966,7 @@
             "unique": true
           }
         ],
-        "version": "0238ca9e"
+        "version": "87738bdf"
       }
     },
     "@happyvertical/smrt-messages:EmailCollection": {
@@ -974,7 +974,7 @@
       "className": "EmailCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailCollection",
       "collection": "messages",
-      "filePath": "packages/messages/src/collections/EmailCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/EmailCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -1272,8 +1272,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1311,7 +1311,7 @@
             "unique": true
           }
         ],
-        "version": "048943bb"
+        "version": "ef481539"
       }
     },
     "@happyvertical/smrt-messages:EmailFolderCollection": {
@@ -1319,7 +1319,7 @@
       "className": "EmailFolderCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailFolderCollection",
       "collection": "emailfolders",
-      "filePath": "packages/messages/src/collections/EmailFolderCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/EmailFolderCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -1592,8 +1592,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1631,7 +1631,7 @@
             "unique": true
           }
         ],
-        "version": "4f908e28"
+        "version": "05c924b1"
       }
     },
     "@happyvertical/smrt-messages:MessageCollection": {
@@ -1639,7 +1639,7 @@
       "className": "MessageCollection",
       "qualifiedName": "@happyvertical/smrt-messages:MessageCollection",
       "collection": "messages",
-      "filePath": "packages/messages/src/collections/MessageCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/MessageCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -1898,8 +1898,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1937,7 +1937,152 @@
             "unique": true
           }
         ],
-        "version": "73bb867d"
+        "version": "c3d5333a"
+      }
+    },
+    "@happyvertical/smrt-messages:MessagingEndpointCollection": {
+      "name": "messagingendpointcollection",
+      "className": "MessagingEndpointCollection",
+      "qualifiedName": "@happyvertical/smrt-messages:MessagingEndpointCollection",
+      "collection": "messagingendpoints",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/MessagingEndpointCollection.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "messaging_endpoints"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "MessagingEndpoint",
+      "exportName": "MessagingEndpointCollection",
+      "collectionExportName": "MessagingEndpointCollectionCollection",
+      "schema": {
+        "tableName": "messaging_endpoints",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messaging_endpoints\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "messaging_endpoints_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "messaging_endpoints_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "82876ebf"
+      }
+    },
+    "@happyvertical/smrt-messages:PersonaMessageRouteCollection": {
+      "name": "personamessageroutecollection",
+      "className": "PersonaMessageRouteCollection",
+      "qualifiedName": "@happyvertical/smrt-messages:PersonaMessageRouteCollection",
+      "collection": "personamessageroutes",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/PersonaMessageRouteCollection.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {},
+      "methods": {
+        "forPersona": {
+          "name": "forPersona",
+          "async": true,
+          "parameters": [
+            {
+              "name": "personaId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<PersonaMessageRoute[]>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "persona_message_routes"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "PersonaMessageRoute",
+      "exportName": "PersonaMessageRouteCollection",
+      "collectionExportName": "PersonaMessageRouteCollectionCollection",
+      "schema": {
+        "tableName": "persona_message_routes",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"persona_message_routes\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "persona_message_routes_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "persona_message_routes_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "334a1910"
       }
     },
     "@happyvertical/smrt-messages:WhitelistCollection": {
@@ -1945,7 +2090,7 @@
       "className": "WhitelistCollection",
       "qualifiedName": "@happyvertical/smrt-messages:WhitelistCollection",
       "collection": "whitelists",
-      "filePath": "packages/messages/src/collections/WhitelistCollection.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/collections/WhitelistCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -2009,8 +2154,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2048,7 +2193,7 @@
             "unique": true
           }
         ],
-        "version": "5708ab7b"
+        "version": "db7e0e92"
       }
     },
     "@happyvertical/smrt-messages:Account": {
@@ -2056,7 +2201,7 @@
       "className": "Account",
       "qualifiedName": "@happyvertical/smrt-messages:Account",
       "collection": "accounts",
-      "filePath": "packages/messages/src/models/Account.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/Account.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -2069,7 +2214,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -2079,9 +2238,19 @@
           "type": "text",
           "required": false
         },
-        "credentialSecretId": {
+        "channelType": {
           "type": "text",
           "required": false
+        },
+        "credentialSecretId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
         },
         "isActive": {
           "type": "boolean",
@@ -2093,6 +2262,16 @@
           "required": false
         },
         "settings": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "configuration": {
           "type": "text",
           "required": false
         },
@@ -2158,6 +2337,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -2172,7 +2367,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -2184,7 +2379,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -2200,6 +2395,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -2244,6 +2453,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -2271,7 +2494,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -2290,7 +2513,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -2304,7 +2527,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -2334,6 +2557,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -2342,6 +2584,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -2356,6 +2603,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -2370,6 +2622,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -2422,7 +2679,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -2436,7 +2693,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -2521,7 +2778,7 @@
           "name": "getSettings",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -2531,7 +2788,29 @@
           "parameters": [
             {
               "name": "settings",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getConfiguration": {
+          "name": "getConfiguration",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setConfiguration": {
+          "name": "setConfiguration",
+          "async": false,
+          "parameters": [
+            {
+              "name": "configuration",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -2561,7 +2840,7 @@
           "parameters": [
             {
               "name": "credentials",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             },
             {
@@ -2586,7 +2865,7 @@
           "name": "getCredentials",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any> | null>",
+          "returnType": "Promise<Record<string> | null>",
           "isStatic": false,
           "isPublic": true
         }
@@ -2596,10 +2875,7 @@
         "api": {
           "include": [
             "list",
-            "get",
-            "create",
-            "update",
-            "delete"
+            "get"
           ]
         },
         "mcp": {
@@ -2608,7 +2884,15 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "Account",
@@ -2622,13 +2906,13 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"channel_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"configuration\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2659,14 +2943,18 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
             "notNull": false
           },
           "provider_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "channel_type": {
             "type": "TEXT",
             "notNull": false
           },
@@ -2684,6 +2972,10 @@
             "notNull": false
           },
           "settings": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "configuration": {
             "type": "TEXT",
             "notNull": false
           },
@@ -2740,7 +3032,7 @@
             ]
           }
         ],
-        "version": "a96317a5"
+        "version": "3854ea98"
       }
     },
     "@happyvertical/smrt-messages:Attachment": {
@@ -2748,12 +3040,26 @@
       "className": "Attachment",
       "qualifiedName": "@happyvertical/smrt-messages:Attachment",
       "collection": "attachments",
-      "filePath": "packages/messages/src/models/Attachment.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/Attachment.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "messageId": {
           "type": "foreignKey",
@@ -2876,7 +3182,10 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "Attachment",
@@ -2895,8 +3204,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2919,15 +3228,15 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "message_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "filename": {
             "type": "TEXT",
@@ -2983,7 +3292,7 @@
             "unique": true
           }
         ],
-        "version": "23bd0ac9"
+        "version": "989aa463"
       }
     },
     "@happyvertical/smrt-messages:Blacklist": {
@@ -2991,7 +3300,7 @@
       "className": "Blacklist",
       "qualifiedName": "@happyvertical/smrt-messages:Blacklist",
       "collection": "blacklists",
-      "filePath": "packages/messages/src/models/Blacklist.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/Blacklist.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "pattern": {
@@ -3013,6 +3322,23 @@
           "type": "boolean",
           "required": false,
           "default": true
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "generated": true,
+            "source": "tenantScoped_decorator",
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "mode": "required",
+              "field": "tenantId",
+              "autoFilter": true,
+              "autoPopulate": true,
+              "allowSuperAdminBypass": false
+            }
+          }
         }
       },
       "methods": {
@@ -3049,13 +3375,13 @@
       "collectionExportName": "BlacklistCollection",
       "schema": {
         "tableName": "blacklists",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"blacklists\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"reason\" TEXT DEFAULT '',\n  \"auto_archive\" BOOLEAN DEFAULT TRUE\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"blacklists\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"reason\" TEXT DEFAULT '',\n  \"auto_archive\" BOOLEAN DEFAULT TRUE,\n  \"tenant_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3099,6 +3425,12 @@
             "notNull": false,
             "unique": false,
             "default": true
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
@@ -3117,7 +3449,7 @@
             "unique": true
           }
         ],
-        "version": "04c580e7"
+        "version": "63af429e"
       }
     },
     "@happyvertical/smrt-messages:Email": {
@@ -3125,7 +3457,7 @@
       "className": "Email",
       "qualifiedName": "@happyvertical/smrt-messages:Email",
       "collection": "messages",
-      "filePath": "packages/messages/src/models/Email.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/Email.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -3138,12 +3470,40 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "accountId": {
           "type": "foreignKey",
           "required": false,
           "related": "Account"
+        },
+        "personaId": {
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-personas:AgentPersona",
+          "_meta": {
+            "nullable": true
+          }
+        },
+        "endpointId": {
+          "type": "foreignKey",
+          "required": false,
+          "related": "MessagingEndpoint"
+        },
+        "correlationId": {
+          "type": "text",
+          "required": false
         },
         "threadId": {
           "type": "text",
@@ -3357,6 +3717,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -3371,7 +3747,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -3383,7 +3759,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3399,6 +3775,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -3443,6 +3833,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -3470,7 +3874,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -3489,7 +3893,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -3503,7 +3907,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -3533,6 +3937,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -3541,6 +3964,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -3555,6 +3983,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -3569,6 +4002,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -3621,7 +4059,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -3635,7 +4073,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3742,7 +4180,7 @@
           "name": "getMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3752,7 +4190,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -3808,6 +4246,14 @@
         },
         "getAccount": {
           "name": "getAccount",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEndpoint": {
+          "name": "getEndpoint",
           "async": true,
           "parameters": [],
           "returnType": "any",
@@ -4054,13 +4500,13 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"persona_id\" UUID,\n  \"endpoint_id\" UUID,\n  \"correlation_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -4091,13 +4537,27 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "account_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "persona_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "endpoint_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "correlation_id": {
+            "type": "TEXT",
+            "notNull": false
           },
           "thread_id": {
             "type": "TEXT",
@@ -4180,8 +4640,8 @@
           },
           "in_reply_to_message_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "message_id": {
             "type": "TEXT",
@@ -4273,7 +4733,7 @@
             ]
           }
         ],
-        "version": "71fa2fe9"
+        "version": "665916f6"
       }
     },
     "@happyvertical/smrt-messages:EmailAccount": {
@@ -4281,7 +4741,7 @@
       "className": "EmailAccount",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAccount",
       "collection": "accounts",
-      "filePath": "packages/messages/src/models/EmailAccount.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/EmailAccount.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -4294,7 +4754,18 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -4304,9 +4775,19 @@
           "type": "text",
           "required": false
         },
-        "credentialSecretId": {
+        "channelType": {
           "type": "text",
           "required": false
+        },
+        "credentialSecretId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
         },
         "isActive": {
           "type": "boolean",
@@ -4318,6 +4799,16 @@
           "required": false
         },
         "settings": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "configuration": {
           "type": "text",
           "required": false
         },
@@ -4392,6 +4883,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -4406,7 +4913,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -4418,7 +4925,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4434,6 +4941,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -4478,6 +4999,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -4505,7 +5040,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -4524,7 +5059,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -4538,7 +5073,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -4568,6 +5103,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -4576,6 +5130,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -4590,6 +5149,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -4604,6 +5168,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -4656,7 +5225,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -4670,7 +5239,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4755,7 +5324,7 @@
           "name": "getSettings",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4765,7 +5334,29 @@
           "parameters": [
             {
               "name": "settings",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getConfiguration": {
+          "name": "getConfiguration",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setConfiguration": {
+          "name": "setConfiguration",
+          "async": false,
+          "parameters": [
+            {
+              "name": "configuration",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -4795,7 +5386,7 @@
           "parameters": [
             {
               "name": "credentials",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             },
             {
@@ -4820,7 +5411,7 @@
           "name": "getCredentials",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any> | null>",
+          "returnType": "Promise<Record<string> | null>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4904,10 +5495,7 @@
         "api": {
           "include": [
             "list",
-            "get",
-            "create",
-            "update",
-            "delete"
+            "get"
           ]
         },
         "mcp": {
@@ -4916,7 +5504,12 @@
             "get"
           ]
         },
-        "cli": true,
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
         "tableName": "accounts"
       },
       "extends": "Account",
@@ -4936,13 +5529,13 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"channel_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"configuration\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -4973,14 +5566,18 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
             "notNull": false
           },
           "provider_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "channel_type": {
             "type": "TEXT",
             "notNull": false
           },
@@ -4998,6 +5595,10 @@
             "notNull": false
           },
           "settings": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "configuration": {
             "type": "TEXT",
             "notNull": false
           },
@@ -5034,7 +5635,7 @@
             ]
           }
         ],
-        "version": "40d81652"
+        "version": "54e69e81"
       }
     },
     "@happyvertical/smrt-messages:EmailAttachment": {
@@ -5042,7 +5643,7 @@
       "className": "EmailAttachment",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAttachment",
       "collection": "emailattachments",
-      "filePath": "packages/messages/src/models/EmailAttachment.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/EmailAttachment.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -5066,8 +5667,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -5105,7 +5706,7 @@
             "unique": true
           }
         ],
-        "version": "4c0749d7"
+        "version": "70291c59"
       }
     },
     "@happyvertical/smrt-messages:EmailFolder": {
@@ -5113,12 +5714,26 @@
       "className": "EmailFolder",
       "qualifiedName": "@happyvertical/smrt-messages:EmailFolder",
       "collection": "emailfolders",
-      "filePath": "packages/messages/src/models/EmailFolder.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/EmailFolder.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "accountId": {
           "type": "foreignKey",
@@ -5291,7 +5906,10 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "EmailFolder",
@@ -5320,8 +5938,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -5344,15 +5962,15 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "account_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "name": {
             "type": "TEXT",
@@ -5409,7 +6027,7 @@
             "unique": true
           }
         ],
-        "version": "81203ef9"
+        "version": "55c8a788"
       }
     },
     "@happyvertical/smrt-messages:Message": {
@@ -5417,7 +6035,7 @@
       "className": "Message",
       "qualifiedName": "@happyvertical/smrt-messages:Message",
       "collection": "messages",
-      "filePath": "packages/messages/src/models/Message.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/Message.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -5430,12 +6048,43 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "accountId": {
           "type": "foreignKey",
           "required": false,
           "related": "Account"
+        },
+        "personaId": {
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-personas:AgentPersona",
+          "_meta": {
+            "nullable": true
+          }
+        },
+        "endpointId": {
+          "type": "foreignKey",
+          "required": false,
+          "related": "MessagingEndpoint"
+        },
+        "correlationId": {
+          "type": "text",
+          "required": false
         },
         "threadId": {
           "type": "text",
@@ -5583,6 +6232,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -5597,7 +6262,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -5609,7 +6274,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5625,6 +6290,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -5669,6 +6348,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -5696,7 +6389,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -5715,7 +6408,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -5729,7 +6422,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -5759,6 +6452,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -5767,6 +6479,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -5781,6 +6498,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -5795,6 +6517,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -5847,7 +6574,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -5861,7 +6588,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5968,7 +6695,7 @@
           "name": "getMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5978,7 +6705,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -6034,6 +6761,14 @@
         },
         "getAccount": {
           "name": "getAccount",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEndpoint": {
+          "name": "getEndpoint",
           "async": true,
           "parameters": [],
           "returnType": "any",
@@ -6121,7 +6856,10 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "Message",
@@ -6160,13 +6898,13 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"persona_id\" UUID,\n  \"endpoint_id\" UUID,\n  \"correlation_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -6197,13 +6935,27 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "account_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "persona_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "endpoint_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "correlation_id": {
+            "type": "TEXT",
+            "notNull": false
           },
           "thread_id": {
             "type": "TEXT",
@@ -6286,8 +7038,8 @@
           },
           "in_reply_to_message_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "message_id": {
             "type": "TEXT",
@@ -6453,7 +7205,499 @@
             ]
           }
         ],
-        "version": "95f37462"
+        "version": "e535c8c6"
+      }
+    },
+    "@happyvertical/smrt-messages:MessagingEndpoint": {
+      "name": "messagingendpoint",
+      "className": "MessagingEndpoint",
+      "qualifiedName": "@happyvertical/smrt-messages:MessagingEndpoint",
+      "collection": "messagingendpoints",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/MessagingEndpoint.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "profileId": {
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-profiles:Profile",
+          "_meta": {
+            "nullable": true
+          }
+        },
+        "label": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "channel": {
+          "type": "text",
+          "required": true,
+          "default": "email",
+          "_meta": {
+            "required": true
+          }
+        },
+        "address": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true,
+            "sensitive": true
+          },
+          "sensitive": true
+        },
+        "isActive": {
+          "type": "boolean",
+          "required": true,
+          "default": true
+        },
+        "verifiedAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "createdAt": {
+          "type": "text",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {
+        "getAddress": {
+          "name": "getAddress",
+          "async": false,
+          "parameters": [],
+          "returnType": "T",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setAddress": {
+          "name": "setAddress",
+          "async": false,
+          "parameters": [
+            {
+              "name": "address",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMaskedAddress": {
+          "name": "getMaskedAddress",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "messaging_endpoints",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "channel",
+          "label"
+        ],
+        "tenantScoped": {
+          "mode": "required"
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "MessagingEndpoint",
+      "collectionExportName": "MessagingEndpointCollection",
+      "validationRules": [
+        {
+          "field": "tenantId",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "label",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "channel",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "address",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "isActive",
+          "rule": "required",
+          "fieldType": "boolean"
+        }
+      ],
+      "schema": {
+        "tableName": "messaging_endpoints",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messaging_endpoints\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"profile_id\" UUID,\n  \"label\" TEXT NOT NULL,\n  \"channel\" TEXT NOT NULL DEFAULT 'email',\n  \"address\" TEXT NOT NULL,\n  \"is_active\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"verified_at\" TIMESTAMP\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "profile_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false,
+            "unique": false
+          },
+          "label": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "channel": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false,
+            "default": "email"
+          },
+          "address": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "is_active": {
+            "type": "BOOLEAN",
+            "notNull": true,
+            "unique": false,
+            "default": true
+          },
+          "verified_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "messaging_endpoints_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "messaging_endpoints_tenant_id_channel_idx",
+            "columns": [
+              "tenant_id",
+              "channel",
+              "label"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "fca5554d"
+      }
+    },
+    "@happyvertical/smrt-messages:PersonaMessageRoute": {
+      "name": "personamessageroute",
+      "className": "PersonaMessageRoute",
+      "qualifiedName": "@happyvertical/smrt-messages:PersonaMessageRoute",
+      "collection": "personamessageroutes",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/PersonaMessageRoute.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": true,
+              "autoPopulate": true,
+              "nullable": false,
+              "mode": "required",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
+        },
+        "personaId": {
+          "type": "crossPackageRef",
+          "required": true,
+          "related": "@happyvertical/smrt-personas:AgentPersona"
+        },
+        "accountId": {
+          "type": "foreignKey",
+          "required": true,
+          "related": "Account",
+          "_meta": {
+            "required": true
+          }
+        },
+        "endpointId": {
+          "type": "foreignKey",
+          "required": true,
+          "related": "MessagingEndpoint",
+          "_meta": {
+            "required": true
+          }
+        },
+        "purpose": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "priority": {
+          "type": "integer",
+          "required": true,
+          "default": 0
+        },
+        "enabled": {
+          "type": "boolean",
+          "required": true,
+          "default": true
+        },
+        "createdAt": {
+          "type": "text",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "persona_message_routes",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "persona_id",
+          "account_id",
+          "endpoint_id",
+          "purpose"
+        ],
+        "tenantScoped": {
+          "mode": "required"
+        }
+      },
+      "extends": "SmrtObject",
+      "exportName": "PersonaMessageRoute",
+      "collectionExportName": "PersonaMessageRouteCollection",
+      "validationRules": [
+        {
+          "field": "tenantId",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "personaId",
+          "rule": "required",
+          "fieldType": "crossPackageRef"
+        },
+        {
+          "field": "accountId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "endpointId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "purpose",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "priority",
+          "rule": "required",
+          "fieldType": "integer"
+        },
+        {
+          "field": "enabled",
+          "rule": "required",
+          "fieldType": "boolean"
+        }
+      ],
+      "schema": {
+        "tableName": "persona_message_routes",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"persona_message_routes\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"persona_id\" UUID NOT NULL,\n  \"account_id\" UUID NOT NULL,\n  \"endpoint_id\" UUID NOT NULL,\n  \"purpose\" TEXT NOT NULL,\n  \"priority\" INTEGER NOT NULL DEFAULT 0,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": true,
+            "unique": false
+          },
+          "persona_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": true,
+            "unique": false
+          },
+          "account_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false
+          },
+          "endpoint_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": false
+          },
+          "purpose": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "priority": {
+            "type": "INTEGER",
+            "notNull": true,
+            "unique": false,
+            "default": 0
+          },
+          "enabled": {
+            "type": "BOOLEAN",
+            "notNull": true,
+            "unique": false,
+            "default": true
+          }
+        },
+        "indexes": [
+          {
+            "name": "persona_message_routes_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "persona_message_routes_tenant_id_persona_id_idx",
+            "columns": [
+              "tenant_id",
+              "persona_id",
+              "account_id",
+              "endpoint_id",
+              "purpose"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "8729538d"
       }
     },
     "@happyvertical/smrt-messages:SlackAccount": {
@@ -6461,7 +7705,7 @@
       "className": "SlackAccount",
       "qualifiedName": "@happyvertical/smrt-messages:SlackAccount",
       "collection": "accounts",
-      "filePath": "packages/messages/src/models/SlackAccount.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/SlackAccount.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -6474,7 +7718,18 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -6484,9 +7739,19 @@
           "type": "text",
           "required": false
         },
-        "credentialSecretId": {
+        "channelType": {
           "type": "text",
           "required": false
+        },
+        "credentialSecretId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
         },
         "isActive": {
           "type": "boolean",
@@ -6498,6 +7763,16 @@
           "required": false
         },
         "settings": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "configuration": {
           "type": "text",
           "required": false
         },
@@ -6575,6 +7850,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -6589,7 +7880,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -6601,7 +7892,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -6617,6 +7908,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -6661,6 +7966,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -6688,7 +8007,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6707,7 +8026,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6721,7 +8040,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6751,6 +8070,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -6759,6 +8097,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6773,6 +8116,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -6787,6 +8135,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6839,7 +8192,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -6853,7 +8206,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -6938,7 +8291,7 @@
           "name": "getSettings",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -6948,7 +8301,29 @@
           "parameters": [
             {
               "name": "settings",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getConfiguration": {
+          "name": "getConfiguration",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setConfiguration": {
+          "name": "setConfiguration",
+          "async": false,
+          "parameters": [
+            {
+              "name": "configuration",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -6978,7 +8353,7 @@
           "parameters": [
             {
               "name": "credentials",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             },
             {
@@ -7003,7 +8378,7 @@
           "name": "getCredentials",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any> | null>",
+          "returnType": "Promise<Record<string> | null>",
           "isStatic": false,
           "isPublic": true
         }
@@ -7013,10 +8388,7 @@
         "api": {
           "include": [
             "list",
-            "get",
-            "create",
-            "update",
-            "delete"
+            "get"
           ]
         },
         "mcp": {
@@ -7025,7 +8397,12 @@
             "get"
           ]
         },
-        "cli": true,
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
         "tableName": "accounts"
       },
       "extends": "Account",
@@ -7040,13 +8417,13 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"channel_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"configuration\" TEXT,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -7077,14 +8454,18 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
             "notNull": false
           },
           "provider_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "channel_type": {
             "type": "TEXT",
             "notNull": false
           },
@@ -7102,6 +8483,10 @@
             "notNull": false
           },
           "settings": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "configuration": {
             "type": "TEXT",
             "notNull": false
           },
@@ -7141,7 +8526,7 @@
             ]
           }
         ],
-        "version": "d8a95250"
+        "version": "abd905bd"
       }
     },
     "@happyvertical/smrt-messages:SlackMessage": {
@@ -7149,7 +8534,7 @@
       "className": "SlackMessage",
       "qualifiedName": "@happyvertical/smrt-messages:SlackMessage",
       "collection": "messages",
-      "filePath": "packages/messages/src/models/SlackMessage.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/SlackMessage.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -7162,12 +8547,40 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "accountId": {
           "type": "foreignKey",
           "required": false,
           "related": "Account"
+        },
+        "personaId": {
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-personas:AgentPersona",
+          "_meta": {
+            "nullable": true
+          }
+        },
+        "endpointId": {
+          "type": "foreignKey",
+          "required": false,
+          "related": "MessagingEndpoint"
+        },
+        "correlationId": {
+          "type": "text",
+          "required": false
         },
         "threadId": {
           "type": "text",
@@ -7348,6 +8761,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -7362,7 +8791,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -7374,7 +8803,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7390,6 +8819,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -7434,6 +8877,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -7461,7 +8918,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7480,7 +8937,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7494,7 +8951,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7524,6 +8981,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -7532,6 +9008,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -7546,6 +9027,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -7560,6 +9046,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -7612,7 +9103,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -7626,7 +9117,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7733,7 +9224,7 @@
           "name": "getMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7743,7 +9234,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -7799,6 +9290,14 @@
         },
         "getAccount": {
           "name": "getAccount",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEndpoint": {
+          "name": "getEndpoint",
           "async": true,
           "parameters": [],
           "returnType": "any",
@@ -7883,7 +9382,7 @@
           "name": "getBlocks",
           "async": false,
           "parameters": [],
-          "returnType": "any[]",
+          "returnType": "Record<string>[]",
           "isStatic": false,
           "isPublic": true
         },
@@ -7964,13 +9463,13 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"persona_id\" UUID,\n  \"endpoint_id\" UUID,\n  \"correlation_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -8001,13 +9500,27 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "account_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "persona_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "endpoint_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "correlation_id": {
+            "type": "TEXT",
+            "notNull": false
           },
           "thread_id": {
             "type": "TEXT",
@@ -8090,8 +9603,8 @@
           },
           "in_reply_to_message_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "channel_id": {
             "type": "TEXT",
@@ -8150,15 +9663,15 @@
             ]
           }
         ],
-        "version": "d9ea00f2"
+        "version": "ff34e465"
       }
     },
-    "@happyvertical/smrt-messages:Tweet": {
-      "name": "tweet",
-      "className": "Tweet",
-      "qualifiedName": "@happyvertical/smrt-messages:Tweet",
-      "collection": "messages",
-      "filePath": "packages/messages/src/models/Tweet.ts",
+    "@happyvertical/smrt-messages:TelegramAccount": {
+      "name": "telegramaccount",
+      "className": "TelegramAccount",
+      "qualifiedName": "@happyvertical/smrt-messages:TelegramAccount",
+      "collection": "accounts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/TelegramAccount.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -8171,12 +9684,845 @@
         },
         "tenantId": {
           "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
+        },
+        "name": {
+          "type": "text",
           "required": false
+        },
+        "providerType": {
+          "type": "text",
+          "required": false
+        },
+        "channelType": {
+          "type": "text",
+          "required": false
+        },
+        "credentialSecretId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "isActive": {
+          "type": "boolean",
+          "required": true,
+          "default": true
+        },
+        "lastSyncAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "settings": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "configuration": {
+          "type": "text",
+          "required": false
+        },
+        "createdAt": {
+          "type": "text",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {
+        "getAiUsageSnapshot": {
+          "name": "getAiUsageSnapshot",
+          "async": false,
+          "parameters": [],
+          "returnType": "AiUsageSnapshot | undefined",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetAiUsage": {
+          "name": "resetAiUsage",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listAiUsage": {
+          "name": "listAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageListOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<SmrtAiUsageRecord[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeAiUsage": {
+          "name": "summarizeAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageSummaryOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Record<string, AiUsageStats>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "destroy": {
+          "name": "destroy",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadDataFromDb": {
+          "name": "loadDataFromDb",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toJSON": {
+          "name": "toJSON",
+          "async": false,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPlainObject": {
+          "name": "toPlainObject",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getId": {
+          "name": "getId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSavedId": {
+          "name": "getSavedId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSaved": {
+          "name": "isSaved",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "loadFromId": {
+          "name": "loadFromId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromSlug": {
+          "name": "loadFromSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "is": {
+          "name": "is",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "AiOperationOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "do": {
+          "name": "do",
+          "async": true,
+          "parameters": [
+            {
+              "name": "instructions",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "AiOperationOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "describe": {
+          "name": "describe",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiOperationOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "delete": {
+          "name": "delete",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRelatedLoaded": {
+          "name": "isRelatedLoaded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelated": {
+          "name": "loadRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelatedMany": {
+          "name": "loadRelatedMany",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelated": {
+          "name": "getRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAvailableTools": {
+          "name": "getAvailableTools",
+          "async": false,
+          "parameters": [],
+          "returnType": "AITool[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "executeToolCall": {
+          "name": "executeToolCall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toolCall",
+              "type": "ToolCall",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ToolCallResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "remember": {
+          "name": "remember",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recall": {
+          "name": "recall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recallAll": {
+          "name": "recallAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forget": {
+          "name": "forget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forgetScope": {
+          "name": "forgetScope",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateEmbeddings": {
+          "name": "generateEmbeddings",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "GenerateEmbeddingsOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmbedding": {
+          "name": "getEmbedding",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number[] | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStaleEmbeddings": {
+          "name": "hasStaleEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearEmbeddings": {
+          "name": "clearEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSettings": {
+          "name": "getSettings",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setSettings": {
+          "name": "setSettings",
+          "async": false,
+          "parameters": [
+            {
+              "name": "settings",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getConfiguration": {
+          "name": "getConfiguration",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setConfiguration": {
+          "name": "setConfiguration",
+          "async": false,
+          "parameters": [
+            {
+              "name": "configuration",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "activate": {
+          "name": "activate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "deactivate": {
+          "name": "deactivate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setCredentials": {
+          "name": "setCredentials",
+          "async": true,
+          "parameters": [
+            {
+              "name": "credentials",
+              "type": "Record<string>",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createSender": {
+          "name": "createSender",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<MessageSenderInterface>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCredentials": {
+          "name": "getCredentials",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Record<string> | null>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "tableName": "accounts"
+      },
+      "extends": "Account",
+      "exportName": "TelegramAccount",
+      "collectionExportName": "TelegramAccountCollection",
+      "validationRules": [
+        {
+          "field": "isActive",
+          "rule": "required",
+          "fieldType": "boolean"
+        }
+      ],
+      "schema": {
+        "tableName": "accounts",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"channel_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"configuration\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "provider_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "channel_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "credential_secret_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "is_active": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          },
+          "last_sync_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "settings": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "configuration": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "accounts_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "accounts_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "accounts_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "2ed1a264"
+      }
+    },
+    "@happyvertical/smrt-messages:Tweet": {
+      "name": "tweet",
+      "className": "Tweet",
+      "qualifiedName": "@happyvertical/smrt-messages:Tweet",
+      "collection": "messages",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/Tweet.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {
+        "created_at": {
+          "type": "datetime",
+          "required": false
+        },
+        "updated_at": {
+          "type": "datetime",
+          "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "accountId": {
           "type": "foreignKey",
           "required": false,
           "related": "Account"
+        },
+        "personaId": {
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-personas:AgentPersona",
+          "_meta": {
+            "nullable": true
+          }
+        },
+        "endpointId": {
+          "type": "foreignKey",
+          "required": false,
+          "related": "MessagingEndpoint"
+        },
+        "correlationId": {
+          "type": "text",
+          "required": false
         },
         "threadId": {
           "type": "text",
@@ -8365,6 +10711,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -8379,7 +10741,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -8391,7 +10753,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8407,6 +10769,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -8451,6 +10827,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -8478,7 +10868,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -8497,7 +10887,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -8511,7 +10901,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -8541,6 +10931,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -8549,6 +10958,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -8563,6 +10977,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -8577,6 +10996,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -8629,7 +11053,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -8643,7 +11067,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8750,7 +11174,7 @@
           "name": "getMetadata",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8760,7 +11184,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -8816,6 +11240,14 @@
         },
         "getAccount": {
           "name": "getAccount",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEndpoint": {
+          "name": "getEndpoint",
           "async": true,
           "parameters": [],
           "returnType": "any",
@@ -9001,13 +11433,13 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"account_id\" UUID,\n  \"persona_id\" UUID,\n  \"endpoint_id\" UUID,\n  \"correlation_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -9038,13 +11470,27 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "account_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "persona_id": {
+            "type": "UUID",
+            "referenceKind": "crossPackageRef",
+            "notNull": false
+          },
+          "endpoint_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": false
+          },
+          "correlation_id": {
+            "type": "TEXT",
+            "notNull": false
           },
           "thread_id": {
             "type": "TEXT",
@@ -9127,8 +11573,8 @@
           },
           "in_reply_to_message_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "tweet_id": {
             "type": "TEXT",
@@ -9195,7 +11641,7 @@
             ]
           }
         ],
-        "version": "051b8e00"
+        "version": "2b56d8c3"
       }
     },
     "@happyvertical/smrt-messages:TwitterAccount": {
@@ -9203,7 +11649,7 @@
       "className": "TwitterAccount",
       "qualifiedName": "@happyvertical/smrt-messages:TwitterAccount",
       "collection": "accounts",
-      "filePath": "packages/messages/src/models/TwitterAccount.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/TwitterAccount.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
@@ -9216,7 +11662,18 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -9226,9 +11683,19 @@
           "type": "text",
           "required": false
         },
-        "credentialSecretId": {
+        "channelType": {
           "type": "text",
           "required": false
+        },
+        "credentialSecretId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
         },
         "isActive": {
           "type": "boolean",
@@ -9240,6 +11707,16 @@
           "required": false
         },
         "settings": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "configuration": {
           "type": "text",
           "required": false
         },
@@ -9313,6 +11790,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -9327,7 +11820,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -9339,7 +11832,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9355,6 +11848,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -9399,6 +11906,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -9426,7 +11947,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -9445,7 +11966,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -9459,7 +11980,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -9489,6 +12010,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -9497,6 +12037,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -9511,6 +12056,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -9525,6 +12075,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -9577,7 +12132,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -9591,7 +12146,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9676,7 +12231,7 @@
           "name": "getSettings",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, any>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9686,7 +12241,29 @@
           "parameters": [
             {
               "name": "settings",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getConfiguration": {
+          "name": "getConfiguration",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setConfiguration": {
+          "name": "setConfiguration",
+          "async": false,
+          "parameters": [
+            {
+              "name": "configuration",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -9716,7 +12293,7 @@
           "parameters": [
             {
               "name": "credentials",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             },
             {
@@ -9741,7 +12318,7 @@
           "name": "getCredentials",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any> | null>",
+          "returnType": "Promise<Record<string> | null>",
           "isStatic": false,
           "isPublic": true
         }
@@ -9751,10 +12328,7 @@
         "api": {
           "include": [
             "list",
-            "get",
-            "create",
-            "update",
-            "delete"
+            "get"
           ]
         },
         "mcp": {
@@ -9763,7 +12337,12 @@
             "get"
           ]
         },
-        "cli": true,
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
         "tableName": "accounts"
       },
       "extends": "Account",
@@ -9778,13 +12357,13 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"channel_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"configuration\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -9815,14 +12394,18 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
             "notNull": false
           },
           "provider_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "channel_type": {
             "type": "TEXT",
             "notNull": false
           },
@@ -9840,6 +12423,10 @@
             "notNull": false
           },
           "settings": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "configuration": {
             "type": "TEXT",
             "notNull": false
           },
@@ -9875,7 +12462,7 @@
             ]
           }
         ],
-        "version": "7dd75181"
+        "version": "71bd70b9"
       }
     },
     "@happyvertical/smrt-messages:Whitelist": {
@@ -9883,7 +12470,7 @@
       "className": "Whitelist",
       "qualifiedName": "@happyvertical/smrt-messages:Whitelist",
       "collection": "whitelists",
-      "filePath": "packages/messages/src/models/Whitelist.ts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/Whitelist.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "pattern": {
@@ -9904,6 +12491,23 @@
           "type": "text",
           "required": false,
           "default": ""
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "generated": true,
+            "source": "tenantScoped_decorator",
+            "sqlType": "UUID",
+            "__tenancy": {
+              "isTenantIdField": true,
+              "mode": "required",
+              "field": "tenantId",
+              "autoFilter": true,
+              "autoPopulate": true,
+              "allowSuperAdminBypass": false
+            }
+          }
         }
       },
       "methods": {
@@ -9940,13 +12544,13 @@
       "collectionExportName": "WhitelistCollection",
       "schema": {
         "tableName": "whitelists",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"whitelists\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"category\" TEXT,\n  \"description\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"whitelists\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"category\" TEXT,\n  \"description\" TEXT DEFAULT '',\n  \"tenant_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -9989,6 +12593,12 @@
             "notNull": false,
             "unique": false,
             "default": ""
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
@@ -10007,7 +12617,812 @@
             "unique": true
           }
         ],
-        "version": "1374a5c1"
+        "version": "6b3e08bc"
+      }
+    },
+    "@happyvertical/smrt-messages:ZulipAccount": {
+      "name": "zulipaccount",
+      "className": "ZulipAccount",
+      "qualifiedName": "@happyvertical/smrt-messages:ZulipAccount",
+      "collection": "accounts",
+      "filePath": "/Users/will/.codex/worktrees/64fb/smrt/packages/messages/src/models/ZulipAccount.ts",
+      "packageName": "@happyvertical/smrt-messages",
+      "fields": {
+        "created_at": {
+          "type": "datetime",
+          "required": false
+        },
+        "updated_at": {
+          "type": "datetime",
+          "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
+        },
+        "name": {
+          "type": "text",
+          "required": false
+        },
+        "providerType": {
+          "type": "text",
+          "required": false
+        },
+        "channelType": {
+          "type": "text",
+          "required": false
+        },
+        "credentialSecretId": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "isActive": {
+          "type": "boolean",
+          "required": true,
+          "default": true
+        },
+        "lastSyncAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "settings": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "sensitive": true,
+            "readonly": true
+          },
+          "sensitive": true,
+          "readonly": true
+        },
+        "configuration": {
+          "type": "text",
+          "required": false
+        },
+        "createdAt": {
+          "type": "text",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {
+        "getAiUsageSnapshot": {
+          "name": "getAiUsageSnapshot",
+          "async": false,
+          "parameters": [],
+          "returnType": "AiUsageSnapshot | undefined",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetAiUsage": {
+          "name": "resetAiUsage",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listAiUsage": {
+          "name": "listAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageListOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<SmrtAiUsageRecord[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeAiUsage": {
+          "name": "summarizeAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageSummaryOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Record<string, AiUsageStats>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "destroy": {
+          "name": "destroy",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadDataFromDb": {
+          "name": "loadDataFromDb",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toJSON": {
+          "name": "toJSON",
+          "async": false,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPlainObject": {
+          "name": "toPlainObject",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getId": {
+          "name": "getId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSavedId": {
+          "name": "getSavedId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSaved": {
+          "name": "isSaved",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "loadFromId": {
+          "name": "loadFromId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromSlug": {
+          "name": "loadFromSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "is": {
+          "name": "is",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "AiOperationOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "do": {
+          "name": "do",
+          "async": true,
+          "parameters": [
+            {
+              "name": "instructions",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "AiOperationOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "describe": {
+          "name": "describe",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiOperationOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "delete": {
+          "name": "delete",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRelatedLoaded": {
+          "name": "isRelatedLoaded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelated": {
+          "name": "loadRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelatedMany": {
+          "name": "loadRelatedMany",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelated": {
+          "name": "getRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAvailableTools": {
+          "name": "getAvailableTools",
+          "async": false,
+          "parameters": [],
+          "returnType": "AITool[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "executeToolCall": {
+          "name": "executeToolCall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toolCall",
+              "type": "ToolCall",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ToolCallResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "remember": {
+          "name": "remember",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recall": {
+          "name": "recall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recallAll": {
+          "name": "recallAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forget": {
+          "name": "forget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forgetScope": {
+          "name": "forgetScope",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateEmbeddings": {
+          "name": "generateEmbeddings",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "GenerateEmbeddingsOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmbedding": {
+          "name": "getEmbedding",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number[] | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStaleEmbeddings": {
+          "name": "hasStaleEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearEmbeddings": {
+          "name": "clearEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSettings": {
+          "name": "getSettings",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setSettings": {
+          "name": "setSettings",
+          "async": false,
+          "parameters": [
+            {
+              "name": "settings",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getConfiguration": {
+          "name": "getConfiguration",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setConfiguration": {
+          "name": "setConfiguration",
+          "async": false,
+          "parameters": [
+            {
+              "name": "configuration",
+              "type": "Record<string>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "activate": {
+          "name": "activate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "deactivate": {
+          "name": "deactivate",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setCredentials": {
+          "name": "setCredentials",
+          "async": true,
+          "parameters": [
+            {
+              "name": "credentials",
+              "type": "Record<string>",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "createSender": {
+          "name": "createSender",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<MessageSenderInterface>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getCredentials": {
+          "name": "getCredentials",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Record<string> | null>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableStrategy": "sti",
+        "api": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "tableName": "accounts"
+      },
+      "extends": "Account",
+      "exportName": "ZulipAccount",
+      "collectionExportName": "ZulipAccountCollection",
+      "validationRules": [
+        {
+          "field": "isActive",
+          "rule": "required",
+          "fieldType": "boolean"
+        }
+      ],
+      "schema": {
+        "tableName": "accounts",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"channel_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"configuration\" TEXT\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "_meta_type": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "_meta_data": {
+            "type": "JSON",
+            "notNull": false
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "provider_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "channel_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "credential_secret_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "is_active": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          },
+          "last_sync_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "settings": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "configuration": {
+            "type": "TEXT",
+            "notNull": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "accounts_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "accounts_slug_context_meta_type_idx",
+            "columns": [
+              "slug",
+              "context",
+              "_meta_type"
+            ],
+            "unique": true
+          },
+          {
+            "name": "accounts_meta_type_idx",
+            "columns": [
+              "_meta_type"
+            ]
+          }
+        ],
+        "version": "a64c8d38"
       }
     }
   },
@@ -10015,6 +13430,9 @@
   "smrtDependencies": [
     "@happyvertical/smrt-core",
     "@happyvertical/smrt-secrets",
-    "@happyvertical/smrt-tenancy"
+    "@happyvertical/smrt-tenancy",
+    "@happyvertical/smrt-types",
+    "@happyvertical/smrt-ui",
+    "@happyvertical/smrt-users"
   ]
 }

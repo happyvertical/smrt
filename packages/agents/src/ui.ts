@@ -58,6 +58,39 @@ export interface AdminPanelBaseProps<TConfig = unknown> {
   dbConfig?: TConfig;
 }
 
+export type AgentSettingFieldType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'select'
+  | 'textarea'
+  | 'json';
+
+export interface AgentSettingOption {
+  value: string;
+  label: string;
+}
+
+/** A non-secret setting that a host app can render without custom UI code. */
+export interface AgentSettingField {
+  id: string;
+  label: string;
+  type: AgentSettingFieldType;
+  description?: string;
+  required?: boolean;
+  default?: unknown;
+  placeholder?: string;
+  options?: AgentSettingOption[];
+  min?: number;
+  max?: number;
+}
+
+/** Versioned contract for a schema-rendered agent settings panel. */
+export interface AgentSettingsSchema {
+  version: number;
+  fields: AgentSettingField[];
+}
+
 /**
  * Definition of a UI slot that an agent declares
  *
@@ -76,6 +109,10 @@ export interface AgentUISlot {
   order?: number;
   /** Whether the slot is currently unavailable in the admin UI */
   disabled?: boolean;
+  /** Durable owner for settings written through this slot. */
+  scope?: 'agent' | 'persona';
+  /** Optional fallback form when the agent does not register a custom panel. */
+  settingsSchema?: AgentSettingsSchema;
 }
 
 /**

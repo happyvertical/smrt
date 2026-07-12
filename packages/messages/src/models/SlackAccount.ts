@@ -8,9 +8,9 @@ import { Account } from './Account';
 
 @smrt({
   tableStrategy: 'sti',
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { include: ['list', 'get'] },
 })
 export class SlackAccount extends Account {
   workspaceId = '';
@@ -28,6 +28,7 @@ export class SlackAccount extends Account {
 
     // Default provider type
     if (!this.providerType) this.providerType = 'slack';
+    this.channelType = 'slack';
   }
 
   /**

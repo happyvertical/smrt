@@ -4,7 +4,12 @@
  * Common fields shared across email, tweets, slack messages, etc.
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   MessageOptions,
@@ -26,6 +31,13 @@ export class Message extends SmrtObject {
 
   @foreignKey('Account')
   accountId = '';
+  @crossPackageRef('@happyvertical/smrt-personas:AgentPersona', {
+    nullable: true,
+  })
+  personaId: string | null = null;
+  @foreignKey('MessagingEndpoint')
+  endpointId: string | null = null;
+  correlationId = '';
   threadId = '';
   subject = '';
   body = ''; // Normalized plain text
@@ -58,6 +70,10 @@ export class Message extends SmrtObject {
 
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.accountId !== undefined) this.accountId = options.accountId;
+    if (options.personaId !== undefined) this.personaId = options.personaId;
+    if (options.endpointId !== undefined) this.endpointId = options.endpointId;
+    if (options.correlationId !== undefined)
+      this.correlationId = options.correlationId;
     if (options.threadId !== undefined) this.threadId = options.threadId;
     if (options.subject !== undefined) this.subject = options.subject;
     if (options.body !== undefined) this.body = options.body;
@@ -181,6 +197,15 @@ export class Message extends SmrtObject {
     return await collection.get({ id: this.accountId });
   }
 
+  async getEndpoint() {
+    if (!this.endpointId) return null;
+    const { MessagingEndpointCollection } = await import(
+      '../collections/MessagingEndpointCollection.js'
+    );
+    const collection = await MessagingEndpointCollection.create(this.options);
+    return collection.get({ id: this.endpointId });
+  }
+
   /**
    * Get messages in the same thread
    */
@@ -240,8 +265,36 @@ export class Message extends SmrtObject {
       return result;
     }
 
+    if (!account.isActive) {
+      const result: MessageSendResult = {
+        success: false,
+        error: 'Messaging account is inactive',
+        sentAt: new Date(),
+      };
+      this.sendStatus = 'failed';
+      this.sendError = result.error ?? '';
+      this.updatedAt = new Date();
+      await this.save();
+      return result;
+    }
+
     // Get sender from account
-    const sender = await account.createSender();
+    let sender: Awaited<ReturnType<typeof account.createSender>>;
+    try {
+      sender = await account.createSender();
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.sendStatus = 'failed';
+      this.sendError = errorMessage;
+      this.updatedAt = new Date();
+      await this.save();
+      return {
+        success: false,
+        error: errorMessage,
+        sentAt: new Date(),
+      };
+    }
 
     // Claim the send. For a persisted row, do a compare-and-set so only one
     // concurrent sender wins: flip send_status to 'sending' atomically, gated on

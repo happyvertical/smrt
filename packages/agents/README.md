@@ -72,6 +72,42 @@ be enqueued through `@happyvertical/smrt-jobs`, but they should remain distinct
 from the normal scheduled loop so it stays obvious which work is automatic and
 which work is an intentional intervention.
 
+## Schema-driven settings
+
+Agent packages can declare portable, non-secret settings without shipping a
+custom admin component. The manifest preserves the versioned schema and the
+agent admin shell renders `AgentSettingsForm` as a fallback.
+
+```typescript
+static override uiSlots = {
+  notifications: {
+    id: 'notifications',
+    label: 'Notifications',
+    scope: 'persona',
+    settingsSchema: {
+      version: 1,
+      fields: [
+        {
+          id: 'minimumSeverity',
+          label: 'Minimum severity',
+          type: 'select',
+          options: [
+            { value: 'info', label: 'Info' },
+            { value: 'urgent', label: 'Urgent only' },
+          ],
+        },
+      ],
+    },
+  },
+} satisfies AgentUISlots;
+```
+
+`scope: 'persona'` persists under `AgentOptions.personaId`; `scope: 'agent'`
+uses a saved Agent row id. An omitted scope chooses the persona when present and
+otherwise preserves legacy Agent-row behavior. Credentials should not
+be modeled as settings fields—use a package-specific write-only server boundary
+such as `MessagingSettingsService`.
+
 ## API
 
 ### Main Export (`@happyvertical/smrt-agents`)
@@ -110,6 +146,7 @@ which work is an intentional intervention.
 | `createUIRegistry` | Factory for UI registries |
 | `AgentUISlot` | UI slot definition type |
 | `AgentUISlots` | Map of UI slots |
+| `AgentSettingsSchema` | Versioned fallback settings form contract |
 | `AgentAdminRoute` | Admin route metadata (path, component, load) |
 | `AgentAdminExport` | Agent admin module export shape |
 | `AgentAdminNavItem` | Navigation item for admin sidebar |

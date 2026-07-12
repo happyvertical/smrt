@@ -547,7 +547,22 @@ describe('ManifestGenerator coverage', () => {
               staticProperties: {
                 uiSlots: {
                   dashboard: { label: 'Dashboard', icon: 'gauge', order: 1 },
-                  settings: { label: 'Settings', order: 2 },
+                  settings: {
+                    label: 'Settings',
+                    order: 2,
+                    scope: 'persona',
+                    settingsSchema: {
+                      version: 1,
+                      fields: [
+                        {
+                          id: 'tone',
+                          label: 'Tone',
+                          type: 'select',
+                          options: [{ value: 'brief', label: 'Brief' }],
+                        },
+                      ],
+                    },
+                  },
                 },
                 adminRoutes: [{ path: '/admin/town', label: 'Town admin' }],
               },
@@ -582,6 +597,13 @@ describe('ManifestGenerator coverage', () => {
         'settings',
       ]);
       expect(agent?.menuItems[0].path).toBe('/agents/townagent/dashboard');
+      expect(agent?.uiSlots.settings).toMatchObject({
+        scope: 'persona',
+        settingsSchema: {
+          version: 1,
+          fields: [{ id: 'tone', type: 'select' }],
+        },
+      });
       // Component declarations derived from svelte-conditioned exports.
       const componentTypes = agent?.components.map((c) => c.type).sort();
       expect(componentTypes).toEqual(['admin', 'town']);

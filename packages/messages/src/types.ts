@@ -4,6 +4,17 @@
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 
+export type KnownMessagingChannel =
+  | 'email'
+  | 'zulip'
+  | 'telegram'
+  | 'slack'
+  | 'twitter'
+  | 'sms';
+
+/** Open-ended so downstream packages can add channels without changing SMRT. */
+export type MessagingChannel = KnownMessagingChannel | (string & {});
+
 // ─────────────────────────────────────────────────────────────────────────
 // Send Status & Sender Types
 // ─────────────────────────────────────────────────────────────────────────
@@ -83,12 +94,17 @@ export interface MessageSendResult {
 /**
  * Known message types (STI discriminator values)
  */
-export type MessageType = 'Email' | 'Tweet' | 'SlackMessage';
+export type MessageType = 'Message' | 'Email' | 'Tweet' | 'SlackMessage';
 
 /**
  * Known account types (STI discriminator values)
  */
-export type AccountType = 'EmailAccount' | 'SlackAccount' | 'TwitterAccount';
+export type AccountType =
+  | 'EmailAccount'
+  | 'SlackAccount'
+  | 'TwitterAccount'
+  | 'TelegramAccount'
+  | 'ZulipAccount';
 
 /**
  * Email provider type
@@ -106,6 +122,9 @@ export interface MessageOptions extends SmrtObjectOptions {
   id?: string;
   tenantId?: string | null;
   accountId?: string;
+  personaId?: string | null;
+  endpointId?: string | null;
+  correlationId?: string;
   threadId?: string;
   subject?: string;
   body?: string;
@@ -139,12 +158,50 @@ export interface AccountOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   name?: string;
   providerType?: string;
+  channelType?: MessagingChannel;
   credentialSecretId?: string | null;
   isActive?: boolean;
   lastSyncAt?: Date | null;
   settings?: string;
+  configuration?: string;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+export interface MessagingEndpointOptions extends SmrtObjectOptions {
+  id?: string;
+  tenantId?: string;
+  profileId?: string | null;
+  label?: string;
+  channel?: MessagingChannel;
+  address?: string;
+  isActive?: boolean;
+  verifiedAt?: Date | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface PersonaMessageRouteOptions extends SmrtObjectOptions {
+  id?: string;
+  tenantId?: string;
+  personaId?: string;
+  accountId?: string;
+  endpointId?: string;
+  purpose?: string;
+  priority?: number;
+  enabled?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface SendPersonaMessageOptions {
+  personaId: string;
+  body: string;
+  subject?: string;
+  channel?: MessagingChannel;
+  purpose?: string;
+  routeId?: string;
+  correlationId?: string;
 }
 
 /**

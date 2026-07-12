@@ -60,6 +60,54 @@ describe('agent model runtime field registration', () => {
     );
   });
 
+  it('uses personaId as the slot-config owner without persisting an Agent row', async () => {
+    const { getTestDatabase, Agent, AgentConfig } =
+      await loadFreshAgentsModules();
+    const db = await getTestDatabase();
+
+    class PersonaBackedAgent extends Agent {
+      static override uiSlots = {
+        personaSettings: {
+          id: 'personaSettings',
+          label: 'Persona settings',
+          scope: 'persona' as const,
+        },
+        agentSettings: {
+          id: 'agentSettings',
+          label: 'Agent settings',
+          scope: 'agent' as const,
+        },
+      };
+      protected config = { settings: { tone: 'default' } };
+
+      async run(): Promise<void> {}
+    }
+
+    const agent = new PersonaBackedAgent({
+      db,
+      id: 'agent-runtime',
+      personaId: 'persona-support',
+      instanceKey: null,
+    });
+
+    expect(agent.id).toBe('agent-runtime');
+    expect(agent.getConfigOwnerId()).toBe('persona-support');
+    expect(agent.getConfigOwnerId('personaSettings')).toBe('persona-support');
+    expect(agent.getConfigOwnerId('agentSettings')).toBe('agent-runtime');
+
+    await agent.saveSlotConfig('settings', { tone: 'terse' });
+
+    expect(
+      await AgentConfig.forSlot('persona-support', 'settings', { db }),
+    ).toEqual({ tone: 'terse' });
+    expect(await agent.getMergedConfig('settings')).toEqual({ tone: 'terse' });
+
+    await agent.saveSlotConfig('agentSettings', { shared: true });
+    expect(
+      await AgentConfig.forSlot('agent-runtime', 'agentSettings', { db }),
+    ).toEqual({ shared: true });
+  });
+
   it('registers AgentSchedule fields with explicit runtime types', async () => {
     const { ObjectRegistry } = await loadFreshAgentsModules();
     await import('./schedule.js');

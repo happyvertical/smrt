@@ -88,6 +88,12 @@ export {
   reinforceFromFeedback,
 } from './persona-memory.js';
 export {
+  type CreatePersonaMessagingToolOptions,
+  createPersonaMessagingTool,
+  SEND_PERSONA_MESSAGE_FUNCTION_NAME,
+  SEND_PERSONA_MESSAGE_TOOL_SLUG,
+} from './persona-messaging-tool.js';
+export {
   applyPersonaInstructions,
   ensurePersonaInstructionsPrompt,
   type PersonaLike,

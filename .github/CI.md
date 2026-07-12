@@ -97,14 +97,23 @@ Each package is packed once. Pack shards verify that exact tarball and emit a
 schema-versioned manifest containing package name, version, filename, and
 SHA-256. The summary verifies complete package membership and uniform versions.
 The release job publishes those tarballs sequentially and safely skips versions
-already present on npm during a retry. Registry reads prefer fresh metadata, and
-post-publish verification retries six times with bounded exponential backoff so
-temporary npm propagation or stale negative cache entries do not strand the
-release before its Git refs are written. After publication, it supplies the
-release App credential directly to Git instead of relying on checkout's
-path-conditional credential include (ARC workspaces may resolve through a
-symlink). The release commit and tag are pushed atomically, so GitHub cannot
-record only one of the two refs.
+already present on npm during a retry. The final publisher consumes only those
+prebuilt artifacts, so it skips a redundant workspace dependency install and
+retains a 45-minute recovery window for sequential registry writes. Registry
+reads prefer fresh metadata, and post-publish verification retries six times
+with bounded exponential backoff so temporary npm propagation or stale negative
+cache entries do not strand the release before its Git refs are written. After
+publication, it supplies the release App credential directly to Git instead of
+relying on checkout's path-conditional credential include (ARC workspaces may
+resolve through a symlink). The release commit and tag are pushed atomically, so
+GitHub cannot record only one of the two refs.
+
+If an interrupted run publishes only part of a lockstep version, a later main
+commit must not fill in the remaining packages under that same version: the
+artifacts would come from different source trees. Keep the npm collision guard,
+apply the interrupted run's exact generated version patch to reserve that
+version in Git, and let the next merge publish the complete package set at a new
+version.
 
 Documentation installs as an isolated workspace under `docs/`. Its pnpm build
 policy explicitly allows the `core-js` and `sharp` install scripts required by

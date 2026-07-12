@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-personas",
-  "version": "0.39.4",
+  "version": "0.39.5",
   "description": "Tenant-owned, context-scoped agent personas and resolution for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -37,6 +37,7 @@
   "dependencies": {
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-messages": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",

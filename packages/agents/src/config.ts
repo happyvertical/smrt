@@ -25,8 +25,9 @@ import { getAgentTypeName } from './identity.js';
 /**
  * AgentConfig stores agent configuration in the database
  *
- * Each config record maps to a UI slot for an agent instance:
- * - agentId: The agent instance's ID
+ * Each config record maps to a UI slot for an agent configuration owner:
+ * - agentId: The durable config owner ID (persona ID for persona-backed
+ *   instances; Agent STI row ID for legacy/singleton instances)
  * - agentClass: The canonical agent type (qualified name when available)
  * - slotId: The configuration slot (e.g., 'sources', 'settings')
  * - configData: JSON object containing the configuration
@@ -61,7 +62,11 @@ export class AgentConfig extends SmrtObject {
   tenantId: string | null = null;
 
   /**
-   * ID of the agent instance this config belongs to
+   * Durable configuration owner ID.
+   *
+   * The database column retains the historical `agent_id` name for backward
+   * compatibility. Persona-backed runtimes store their `AgentPersona.id` here;
+   * legacy runtimes store the persisted Agent STI row id.
    */
   @field({ type: 'text' })
   agentId: string = '';
@@ -81,9 +86,10 @@ export class AgentConfig extends SmrtObject {
   /**
    * Configuration data stored as JSON
    *
-   * Sensitive (#1540): agent config blobs routinely carry API keys/credentials,
-   * so this is excluded from generated API/MCP responses and rejected as a
-   * `where` filter key.
+   * Sensitive (#1540) for backward compatibility with legacy blobs, so this is
+   * excluded from generated API/MCP responses and rejected as a `where` filter
+   * key. New settings schemas must keep credentials in a dedicated secrets
+   * service rather than this field.
    */
   @field({ type: 'json', sensitive: true })
   configData: Record<string, unknown> = {};
