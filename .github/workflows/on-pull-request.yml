@@ -15,8 +15,18 @@ on:
 
 # Cancel in-progress runs when new commits are pushed
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.merge_group.head_sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: >-
+    ${{ github.workflow }}-${{
+      github.event.pull_request.number ||
+      github.event.merge_group.head_sha ||
+      github.ref
+    }}-${{
+      github.event_name == 'pull_request' &&
+      !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) &&
+      'lifecycle' ||
+      'validation'
+    }}
+  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
