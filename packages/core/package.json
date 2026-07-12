@@ -30,6 +30,11 @@
       "import": "./dist/utils.js",
       "default": "./dist/utils.js"
     },
+    "./filesystem": {
+      "types": "./dist/filesystem.d.ts",
+      "import": "./dist/filesystem.js",
+      "default": "./dist/filesystem.js"
+    },
     "./schema/utils": {
       "types": "./dist/schema/utils.d.ts",
       "import": "./dist/schema/utils.js",

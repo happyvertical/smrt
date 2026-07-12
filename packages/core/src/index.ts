@@ -117,6 +117,13 @@ export * from './dispatch/index';
 // Embeddings support (semantic search)
 export * from './embeddings/index';
 export * from './errors';
+// Filesystem boundary (keeps @happyvertical/files out of neutral bundles)
+export {
+  createFilesystemAdapter,
+  type FilesystemAdapterFactory,
+  registerFilesystemAdapterFactory,
+} from './filesystem-loader';
+export { importOptionalDependency } from './lazy-external';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
