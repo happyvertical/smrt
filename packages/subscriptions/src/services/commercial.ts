@@ -39,11 +39,13 @@ export class CommercialUsageService {
   static async create(
     options: SmrtClassOptions = {},
   ): Promise<CommercialUsageService> {
+    const usage = await TenantUsageMetricCollection.create(options);
+    const sharedOptions = { ...options, db: usage.db };
     return new CommercialUsageService(
-      await TenantUsageMetricCollection.create(options),
-      await PricingRuleCollection.create(options),
-      await ClientChargeCollection.create(options),
-      await BillingAdjustmentCollection.create(options),
+      usage,
+      await PricingRuleCollection.create(sharedOptions),
+      await ClientChargeCollection.create(sharedOptions),
+      await BillingAdjustmentCollection.create(sharedOptions),
     );
   }
 
@@ -257,13 +259,15 @@ export class SpendingPolicyEvaluator {
   constructor(
     private readonly policies: SpendingPolicyCollection,
     private readonly charges: ClientChargeCollection,
-    private readonly adjustments?: BillingAdjustmentCollection,
+    private readonly adjustments: BillingAdjustmentCollection,
   ) {}
   static async create(options: SmrtClassOptions = {}) {
+    const policies = await SpendingPolicyCollection.create(options);
+    const sharedOptions = { ...options, db: policies.db };
     return new SpendingPolicyEvaluator(
-      await SpendingPolicyCollection.create(options),
-      await ClientChargeCollection.create(options),
-      await BillingAdjustmentCollection.create(options),
+      policies,
+      await ClientChargeCollection.create(sharedOptions),
+      await BillingAdjustmentCollection.create(sharedOptions),
     );
   }
 
@@ -321,7 +325,7 @@ export class SpendingPolicyEvaluator {
       .filter((id): id is string => Boolean(id));
     const chargeIdSet = new Set(chargeIds);
     const adjustmentRows =
-      this.adjustments && chargeIds.length > 0
+      chargeIds.length > 0
         ? await this.adjustments.list({
             where: {
               tenantId: input.tenantId,
