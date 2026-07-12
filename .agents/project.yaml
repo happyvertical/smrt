@@ -38,5 +38,10 @@
   },
   "runtime": {
     "agent_policy_workflow": ".github/workflows/on-pull-request.yml"
+  },
+  "github": {
+    "required_status_checks": [
+      "Required CI"
+    ]
   }
 }
