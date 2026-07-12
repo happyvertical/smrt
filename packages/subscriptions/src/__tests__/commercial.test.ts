@@ -124,6 +124,36 @@ describe('commercial usage tracer', () => {
     await expect(charge.save()).rejects.toThrow('Operation failed: save');
   });
 
+  it('shares one resolved database in commercial service factories', async () => {
+    const factory = await CommercialUsageService.create({
+      db: { type: 'sqlite', url: ':memory:' },
+    });
+    const event = await factory.record({
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      metricKey: 'ai.tokens',
+      quantity: 10,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'factory-test',
+      sourceId: 'event-1',
+    });
+    const factoryRules = await PricingRuleCollection.create({ db: event.db });
+    const rule = await factoryRules.create({
+      tenantId: event.tenantId,
+      ruleKey: 'factory-rule',
+      metricKey: 'ai.tokens',
+      strategy: 'fixed_unit',
+      effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+    });
+    rule.setTerms({ unitPrice: 0.5 });
+    await rule.save();
+
+    const charge = await factory.price({ usageEventId: String(event.id) });
+
+    expect(charge).toMatchObject({ amount: 5, usageEventId: event.id });
+    await event.db.close?.();
+  });
+
   it('enforces sourced usage idempotency across concurrent writers', async () => {
     const input = {
       tenantId: '11111111-1111-4111-8111-111111111111',
@@ -307,6 +337,7 @@ describe('commercial usage tracer', () => {
     const decision = await new SpendingPolicyEvaluator(
       policies,
       charges,
+      adjustments,
     ).evaluate({
       tenantId: '11111111-1111-4111-8111-111111111111',
       projectId: 'project-1',
@@ -394,6 +425,7 @@ describe('commercial usage tracer', () => {
     const decision = await new SpendingPolicyEvaluator(
       policies,
       charges,
+      adjustments,
     ).evaluate({
       tenantId,
       subscriberKind: 'external',
@@ -465,6 +497,7 @@ describe('commercial usage tracer', () => {
     const decision = await new SpendingPolicyEvaluator(
       policies,
       charges,
+      adjustments,
     ).evaluate({
       tenantId,
       projectId: 'project-1',
@@ -510,6 +543,7 @@ describe('commercial usage tracer', () => {
     const decision = await new SpendingPolicyEvaluator(
       policies,
       charges,
+      adjustments,
     ).evaluate({
       tenantId,
       projectId: 'project-1',
@@ -550,6 +584,7 @@ describe('commercial usage tracer', () => {
     const decision = await new SpendingPolicyEvaluator(
       policies,
       charges,
+      adjustments,
     ).evaluate({
       tenantId,
       metricKey: 'ai.tokens',
@@ -590,6 +625,7 @@ describe('commercial usage tracer', () => {
     const decision = await new SpendingPolicyEvaluator(
       policies,
       charges,
+      adjustments,
     ).evaluate({
       tenantId,
       projectId: 'project-1',
