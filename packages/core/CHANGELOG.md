@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.39.7
+
+### Patch Changes
+
+- ### Features
+
+  - offer custom PrincipalTools through the streamed persona conversation (#1973) (chat)
+  - @happyvertical/smrt-config@0.39.7
+  - @happyvertical/smrt-types@0.39.7
+  - @happyvertical/smrt-scanner@0.39.7
+
 ## 0.39.6
 
 ### Patch Changes
