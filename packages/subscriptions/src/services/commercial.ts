@@ -59,7 +59,15 @@ export class CommercialUsageService {
       where: { usageEventId: options.usageEventId },
       limit: 1,
     });
-    if (existing[0]) return existing[0];
+    if (existing[0]) {
+      const charge = existing[0];
+      if (options.approved && charge.status === 'draft') {
+        charge.status = 'approved';
+        charge.approvedAt = new Date();
+        await charge.save();
+      }
+      return charge;
+    }
     const usage = await this.usage.get(options.usageEventId);
     if (!usage)
       throw new Error(`Usage event ${options.usageEventId} was not found.`);
@@ -243,8 +251,9 @@ export class SpendingPolicyEvaluator {
     const [start, end] = policyWindow(policy, at);
     const chargeWhere: Record<string, unknown> = {
       tenantId: input.tenantId,
-      'createdAt >=': start.toISOString(),
-      'createdAt <': end.toISOString(),
+      currency: policy.currency,
+      'approvedAt >=': start.toISOString(),
+      'approvedAt <': end.toISOString(),
     };
     if (policy.metricKey) chargeWhere.metricKey = policy.metricKey;
     const rows = await this.charges.list({ where: chargeWhere });
@@ -255,7 +264,9 @@ export class SpendingPolicyEvaluator {
     );
     const chargeIds = new Set(scopedCharges.map((charge) => charge.id));
     const adjustmentRows = this.adjustments
-      ? await this.adjustments.list({ where: { tenantId: input.tenantId } })
+      ? await this.adjustments.list({
+          where: { tenantId: input.tenantId, currency: policy.currency },
+        })
       : [];
     const spent = scopedCharges.reduce((sum, charge) => sum + charge.amount, 0);
     const correctedSpent =
@@ -354,6 +365,7 @@ function selectPolicy(
 function scopeScore(p: SpendingPolicy): number {
   return (
     Number(Boolean(p.subscriberKind)) +
+    Number(Boolean(p.subscriberExternalId)) +
     Number(Boolean(p.projectId)) +
     Number(Boolean(p.serviceKey)) +
     Number(Boolean(p.metricKey))

@@ -178,6 +178,16 @@ export class BillingAdjustment extends SmrtObject {
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: '_smrt_spending_policies',
+  conflictColumns: [
+    'tenant_id',
+    'subscriber_kind',
+    'subscriber_external_id',
+    'project_id',
+    'service_key',
+    'metric_key',
+    'period',
+    'name',
+  ],
   api: true,
   cli: true,
   mcp: true,

@@ -60,6 +60,28 @@ describe('commercial usage tracer', () => {
     });
     expect(duplicate.id).toBe(event.id);
     expect(duplicate.quantity).toBe(120);
+    const otherMetric = await service.record({
+      tenantId: event.tenantId as string,
+      metricKey: 'ai.requests',
+      quantity: 1,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'ai-run',
+      sourceId: 'run-1',
+    });
+    const otherSubscriber = await service.record({
+      tenantId: event.tenantId as string,
+      subscriberKind: 'external',
+      subscriberExternalId: 'user:1',
+      metricKey: 'ai.tokens',
+      quantity: 3,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'ai-run',
+      sourceId: 'run-1',
+    });
+    expect(otherMetric.id).not.toBe(event.id);
+    expect(otherSubscriber.id).not.toBe(event.id);
     event.quantity = 121;
     await expect(event.save()).rejects.toThrow('Operation failed: save');
     const rule = await rules.create({
@@ -71,12 +93,16 @@ describe('commercial usage tracer', () => {
       terms: JSON.stringify({ includedQuantity: 100, overageUnitPrice: 0.02 }),
     });
     expect(rule.id).toBeTruthy();
+    const draftCharge = await service.price({ usageEventId: String(event.id) });
+    expect(draftCharge.status).toBe('draft');
     const charge = await service.price({
       usageEventId: String(event.id),
       approved: true,
     });
+    expect(charge.id).toBe(draftCharge.id);
     expect(charge.amount).toBe(0.4);
     expect(charge.status).toBe('approved');
+    expect(charge.approvedAt).toBeInstanceOf(Date);
     expect(charge.getPricingSnapshot()).toMatchObject({
       ruleKey: 'tokens-v1',
       strategy: 'included_overage',
@@ -195,6 +221,91 @@ describe('commercial usage tracer', () => {
     });
   });
 
+  it('scopes spending policy name conflicts by tenant and policy scope', async () => {
+    const tenantA = '11111111-1111-4111-8111-111111111111';
+    const tenantB = '22222222-2222-4222-8222-222222222222';
+    const first = await policies.create({
+      tenantId: tenantA,
+      name: 'Monthly cap',
+      projectId: 'project-1',
+      serviceKey: 'ai',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 10,
+      behavior: 'warn',
+    });
+    const otherTenant = await policies.create({
+      tenantId: tenantB,
+      name: 'Monthly cap',
+      projectId: 'project-1',
+      serviceKey: 'ai',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 20,
+      behavior: 'block',
+    });
+    const otherProject = await policies.create({
+      tenantId: tenantA,
+      name: 'Monthly cap',
+      projectId: 'project-2',
+      serviceKey: 'ai',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 30,
+      behavior: 'approval_required',
+    });
+
+    expect(new Set([first.id, otherTenant.id, otherProject.id]).size).toBe(3);
+    expect(first).toMatchObject({ tenantId: tenantA, limitAmount: 10 });
+    expect(otherTenant).toMatchObject({ tenantId: tenantB, limitAmount: 20 });
+    expect(otherProject).toMatchObject({
+      tenantId: tenantA,
+      projectId: 'project-2',
+      limitAmount: 30,
+    });
+  });
+
+  it('prefers subscriber-specific policy scope over broad subscriber kind', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'All external subscribers',
+      subscriberKind: 'external',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 5,
+      behavior: 'warn',
+      priority: 100,
+    });
+    const specific = await policies.create({
+      tenantId,
+      name: 'Specific external subscriber',
+      subscriberKind: 'external',
+      subscriberExternalId: 'user:1',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 5,
+      behavior: 'block',
+      priority: 0,
+    });
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+    ).evaluate({
+      tenantId,
+      subscriberKind: 'external',
+      subscriberExternalId: 'user:1',
+      metricKey: 'ai.tokens',
+      estimatedAmount: 6,
+      at: new Date('2026-07-10T00:00:00Z'),
+    });
+    expect(decision).toMatchObject({
+      allowed: false,
+      state: 'blocked',
+      matchedPolicyId: specific.id,
+    });
+  });
+
   it('aggregates all metrics for a wildcard spending policy', async () => {
     const tenantId = '11111111-1111-4111-8111-111111111111';
     await policies.create({
@@ -229,6 +340,88 @@ describe('commercial usage tracer', () => {
       metricKey: 'ai.tokens',
       estimatedAmount: 2,
       at: new Date('2026-07-31T00:00:00Z'),
+    });
+    expect(decision).toMatchObject({
+      allowed: false,
+      state: 'blocked',
+      projectedAmount: 11,
+    });
+  });
+
+  it('only counts charges in the spending policy currency', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'USD project cap',
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 10,
+      currency: 'USD',
+      behavior: 'block',
+    });
+    for (const [currency, amount] of [
+      ['USD', 4],
+      ['EUR', 100],
+    ] as const) {
+      await charges.create({
+        tenantId,
+        usageEventId: `usage-${currency.toLowerCase()}`,
+        projectId: 'project-1',
+        metricKey: 'ai.tokens',
+        amount,
+        currency,
+        status: 'approved',
+        approvedAt: new Date('2026-07-02T00:00:00Z'),
+      });
+    }
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+    ).evaluate({
+      tenantId,
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      estimatedAmount: 2,
+      at: new Date('2026-07-10T00:00:00Z'),
+    });
+    expect(decision).toMatchObject({
+      allowed: true,
+      state: 'ok',
+      projectedAmount: 6,
+    });
+  });
+
+  it('counts approved charges in the policy period when approval occurred', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'July approval cap',
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 10,
+      behavior: 'block',
+    });
+    await charges.create({
+      tenantId,
+      usageEventId: 'usage-approved-in-july',
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      amount: 9,
+      status: 'approved',
+      createdAt: new Date('2026-06-30T23:59:00Z'),
+      approvedAt: new Date('2026-07-02T00:00:00Z'),
+    });
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+    ).evaluate({
+      tenantId,
+      projectId: 'project-1',
+      metricKey: 'ai.tokens',
+      estimatedAmount: 2,
+      at: new Date('2026-07-10T00:00:00Z'),
     });
     expect(decision).toMatchObject({
       allowed: false,

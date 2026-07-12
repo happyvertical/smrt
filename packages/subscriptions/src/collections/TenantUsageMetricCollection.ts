@@ -18,10 +18,19 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
   static readonly _itemClass = TenantUsageMetric;
 
   async recordUsage(options: RecordUsageOptions): Promise<TenantUsageMetric> {
+    const subscriber = normalizeSubscriber({
+      tenantId: options.tenantId,
+      subscriberKind: options.subscriberKind,
+      subscriberExternalId: options.subscriberExternalId,
+    });
+    const columns = subscriberToColumns(subscriber);
     if (options.source && options.sourceId) {
       const existing = await this.list({
         where: {
-          tenantId: options.tenantId,
+          tenantId: columns.tenantId,
+          subscriberKind: columns.subscriberKind,
+          subscriberExternalId: columns.subscriberExternalId,
+          metricKey: options.metricKey,
           source: options.source,
           sourceId: options.sourceId,
         },
@@ -29,12 +38,6 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
       });
       if (existing[0]) return existing[0];
     }
-    const subscriber = normalizeSubscriber({
-      tenantId: options.tenantId,
-      subscriberKind: options.subscriberKind,
-      subscriberExternalId: options.subscriberExternalId,
-    });
-    const columns = subscriberToColumns(subscriber);
     const metric = await this.create({
       tenantId: columns.tenantId,
       subscriberKind: columns.subscriberKind,
