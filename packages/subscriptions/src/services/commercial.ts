@@ -275,11 +275,16 @@ export class SpendingPolicyEvaluator {
     serviceKey?: string;
     metricKey: string;
     estimatedAmount: number;
+    currency: string;
     at?: Date;
   }): Promise<SpendingDecision> {
     const at = input.at ?? new Date();
     const candidates = await this.policies.list({
-      where: { tenantId: input.tenantId, active: true },
+      where: {
+        tenantId: input.tenantId,
+        currency: input.currency,
+        active: true,
+      },
     });
     const policy = selectPolicy(candidates, input);
     if (!policy)
@@ -409,6 +414,7 @@ function selectPolicy(
       (p) =>
         hasValidSubscriberScope(p) &&
         (!p.metricKey || p.metricKey === input.metricKey) &&
+        p.currency === input.currency &&
         (!p.projectId || p.projectId === input.projectId) &&
         (!p.serviceKey || p.serviceKey === input.serviceKey) &&
         (!p.subscriberKind ||

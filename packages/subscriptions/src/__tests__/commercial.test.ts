@@ -313,6 +313,7 @@ describe('commercial usage tracer', () => {
       serviceKey: 'ai',
       metricKey: 'ai.tokens',
       estimatedAmount: 6,
+      currency: 'USD',
       at: new Date('2026-07-10T00:00:00Z'),
     });
     expect(decision).toMatchObject({
@@ -399,6 +400,7 @@ describe('commercial usage tracer', () => {
       subscriberExternalId: 'user:1',
       metricKey: 'ai.tokens',
       estimatedAmount: 6,
+      currency: 'USD',
       at: new Date('2026-07-10T00:00:00Z'),
     });
     expect(decision).toMatchObject({
@@ -468,6 +470,7 @@ describe('commercial usage tracer', () => {
       projectId: 'project-1',
       metricKey: 'ai.tokens',
       estimatedAmount: 2,
+      currency: 'USD',
       at: new Date('2026-07-31T00:00:00Z'),
     });
     expect(decision).toMatchObject({
@@ -512,12 +515,54 @@ describe('commercial usage tracer', () => {
       projectId: 'project-1',
       metricKey: 'ai.tokens',
       estimatedAmount: 2,
+      currency: 'USD',
       at: new Date('2026-07-10T00:00:00Z'),
     });
     expect(decision).toMatchObject({
       allowed: true,
       state: 'ok',
       projectedAmount: 6,
+    });
+  });
+
+  it('selects spending policies in the prospective charge currency', async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    await policies.create({
+      tenantId,
+      name: 'USD cap',
+      metricKey: 'ai.tokens',
+      currency: 'USD',
+      period: 'month',
+      limitAmount: 1,
+      behavior: 'block',
+      priority: 100,
+    });
+    const euroPolicy = await policies.create({
+      tenantId,
+      name: 'EUR cap',
+      metricKey: 'ai.tokens',
+      currency: 'EUR',
+      period: 'month',
+      limitAmount: 10,
+      behavior: 'block',
+    });
+
+    const decision = await new SpendingPolicyEvaluator(
+      policies,
+      charges,
+    ).evaluate({
+      tenantId,
+      metricKey: 'ai.tokens',
+      estimatedAmount: 2,
+      currency: 'EUR',
+      at: new Date('2026-07-10T00:00:00Z'),
+    });
+
+    expect(decision).toMatchObject({
+      allowed: true,
+      state: 'ok',
+      projectedAmount: 2,
+      matchedPolicyId: euroPolicy.id,
     });
   });
 
@@ -550,6 +595,7 @@ describe('commercial usage tracer', () => {
       projectId: 'project-1',
       metricKey: 'ai.tokens',
       estimatedAmount: 2,
+      currency: 'USD',
       at: new Date('2026-07-10T00:00:00Z'),
     });
     expect(decision).toMatchObject({
