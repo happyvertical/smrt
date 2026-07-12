@@ -83,6 +83,7 @@ jobs:
           tar -xzf "$archive" -C "$policy_dir"
           echo "HV_POLICY_DIR=$policy_dir" >> "$GITHUB_ENV"
       - name: Validate lifecycle
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
