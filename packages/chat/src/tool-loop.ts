@@ -183,6 +183,17 @@ export interface ToolLoopOptions {
   executeTool?: (ctx: ToolExecutionContext) => Promise<unknown>;
   /** Notified after each tool invocation (for streaming/telemetry). */
   onInvocation?: (invocation: ToolInvocation) => void | Promise<void>;
+  /**
+   * Token sink for live streaming (#1936). When set, each `ai.chat` round is run
+   * with `stream: true` and the model's text deltas are forwarded here as they
+   * arrive. It is best-effort: a provider that cannot stream (or streams no text
+   * on a tool-call round) simply never calls it, and the fully-resolved response
+   * is still returned. Deltas across ALL rounds are forwarded — a tool-call
+   * round may narrate before calling a tool — so the emitted tokens are a live
+   * PREVIEW; the loop's final `content` (persisted + surfaced by the caller as
+   * the authoritative message) is the source of truth.
+   */
+  onToken?: (chunk: string) => void;
   /** The originating user the turn runs on behalf of (audited). */
   onBehalfOfUserId?: string | null;
   /** Canonical agent class, recorded in the audit entry. */
@@ -524,6 +535,7 @@ export async function runToolLoop(
     toolChoice = 'auto',
     executeTool,
     onInvocation,
+    onToken,
     onBehalfOfUserId,
     agentClass,
     audit,
@@ -578,6 +590,9 @@ export async function runToolLoop(
           maxTokens,
           tools: offerTools ? aiTools : undefined,
           toolChoice: offerTools ? toolChoice : 'none',
+          // Live token streaming (#1936). Best-effort: providers that don't
+          // stream ignore these and still resolve the full response below.
+          ...(onToken ? { stream: true, onProgress: onToken } : {}),
         });
         totalTokens += response.usage?.totalTokens ?? 0;
 

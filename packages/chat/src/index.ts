@@ -56,8 +56,6 @@ import './__smrt-register__.js';
 // methods (getAgentSession, findActiveAgentSessions, getThread, listRoomThreads,
 // getThreadMessages, getRoomMessages, getRoomForMember, ...).
 
-// Conversational harness (L3, #1891): the persona-bound agentic tool-loop and
-// in-chat feedback capture. `chat → personas` is the new acyclic edge.
 export {
   acceptAppliedChange,
   type CaptureChatFeedbackOptions,
@@ -71,6 +69,28 @@ export {
   thumbsDown,
   thumbsUp,
 } from './chat-feedback.js';
+// Conversational harness (L3, #1891): the persona-bound agentic tool-loop and
+// in-chat feedback capture. `chat → personas` is the new acyclic edge.
+export {
+  ChatStreamBadRequestError,
+  type ChatStreamContext,
+  type ChatStreamControlCommand,
+  ChatStreamError,
+  type ChatStreamEvent,
+  type ChatStreamHandlerOptions,
+  type ChatStreamMessage,
+  type ChatStreamPersonaBinding,
+  type ChatStreamRequestBody,
+  type ChatStreamRole,
+  type ChatStreamSession,
+  ChatStreamUnauthorizedError,
+  createChatStreamHandler,
+  encodeChatStreamEvent,
+  MAX_CHAT_STREAM_CONTENT_LENGTH,
+  MAX_CHAT_STREAM_MESSAGES,
+  type RunChatConversationStreamOptions,
+  runChatConversationStream,
+} from './chat-stream.js';
 // Models
 export {
   AgentSession,
