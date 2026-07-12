@@ -24,37 +24,47 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
       subscriberExternalId: options.subscriberExternalId,
     });
     const columns = subscriberToColumns(subscriber);
+    const sourcedId =
+      options.source && options.sourceId
+        ? await sourcedUsageId({
+            tenantId: columns.tenantId,
+            subscriberKind: columns.subscriberKind,
+            subscriberExternalId: columns.subscriberExternalId,
+            metricKey: options.metricKey,
+            source: options.source,
+            sourceId: options.sourceId,
+          })
+        : null;
     if (options.source && options.sourceId) {
-      const existing = await this.list({
-        where: {
-          tenantId: columns.tenantId,
-          subscriberKind: columns.subscriberKind,
-          subscriberExternalId: columns.subscriberExternalId,
-          metricKey: options.metricKey,
-          source: options.source,
-          sourceId: options.sourceId,
-        },
-        limit: 1,
-      });
-      if (existing[0]) return existing[0];
+      const existing = await this.get(sourcedId as string);
+      if (existing) return existing;
     }
-    const metric = await this.create({
-      tenantId: columns.tenantId,
-      subscriberKind: columns.subscriberKind,
-      subscriberExternalId: columns.subscriberExternalId,
-      metricKey: options.metricKey,
-      quantity: options.quantity,
-      windowStart: options.windowStart,
-      windowEnd: options.windowEnd,
-      source: options.source ?? '',
-      sourceId: options.sourceId ?? '',
-      projectId: options.projectId ?? '',
-      workRefType: options.workRefType ?? '',
-      workRefId: options.workRefId ?? '',
-      provider: options.provider ?? '',
-      dimensions: stringifyJson(options.dimensions ?? {}),
-    });
-    return metric;
+    try {
+      return await this.create({
+        ...(sourcedId ? { id: sourcedId } : {}),
+        tenantId: columns.tenantId,
+        subscriberKind: columns.subscriberKind,
+        subscriberExternalId: columns.subscriberExternalId,
+        metricKey: options.metricKey,
+        quantity: options.quantity,
+        windowStart: options.windowStart,
+        windowEnd: options.windowEnd,
+        source: options.source ?? '',
+        sourceId: options.sourceId ?? '',
+        projectId: options.projectId ?? '',
+        workRefType: options.workRefType ?? '',
+        workRefId: options.workRefId ?? '',
+        provider: options.provider ?? '',
+        dimensions: stringifyJson(options.dimensions ?? {}),
+        _insertOnly: Boolean(sourcedId),
+      });
+    } catch (error) {
+      if (sourcedId) {
+        const existing = await this.get(sourcedId);
+        if (existing) return existing;
+      }
+      throw error;
+    }
   }
 
   /**
@@ -223,6 +233,40 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
       windowEnd: options.window.end,
     };
   }
+}
+
+async function sourcedUsageId(input: {
+  tenantId: string;
+  subscriberKind: string;
+  subscriberExternalId: string;
+  metricKey: string;
+  source: string;
+  sourceId: string;
+}): Promise<string> {
+  const bytes = new TextEncoder().encode(
+    JSON.stringify([
+      input.tenantId,
+      input.subscriberKind,
+      input.subscriberExternalId,
+      input.metricKey,
+      input.source,
+      input.sourceId,
+    ]),
+  );
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const uuid = digest.slice(0, 16);
+  uuid[6] = (uuid[6] & 0x0f) | 0x50;
+  uuid[8] = (uuid[8] & 0x3f) | 0x80;
+  const hex = Array.from(uuid, (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
 }
 
 function firstRow(result: unknown): Record<string, unknown> {
