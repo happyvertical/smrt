@@ -286,7 +286,7 @@ jobs:
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
     runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     concurrency:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
@@ -343,7 +343,10 @@ jobs:
         uses: ./.github/actions/setup-environment
         with:
           node-version: '24.18.0'
-          install-deps: 'true'
+          # This job consumes already-built, verified tarballs and its release
+          # scripts use only Node built-ins. Reinstalling the workspace can
+          # exhaust the recovery window before sequential npm publication.
+          install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://registry.npmjs.org'
           auth-token: ${{ secrets.NPM_TOKEN }}
