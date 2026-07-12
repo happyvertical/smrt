@@ -134,15 +134,16 @@ export class CommissionPayoutService {
    *    from the rows that were VERIFIABLY claimed — the payout's totals
    *    are always reproducible from its member rows.
    *
-   * Concurrency: claims are conditional with post-save verification, which
-   * narrows but does not eliminate races between batches with different
-   * keys (the collection layer exposes no cross-row transaction — the same
-   * stance as commerce/ledgers compensation). The single-writer-per-earner
-   * expectation is relaxed by SCOPING: two batches scoped to different
-   * sources (or disjoint `commissionIds`) gather disjoint row sets, so they
-   * settle concurrently without contending, and `claimForPayout` skips any
-   * row a different batch already owns even when scopes overlap. Totals are
-   * correct-by-construction from claimed rows either way.
+   * Concurrency: each row is claimed by an ATOMIC guarded UPDATE (row-level
+   * compare-and-set — see `CommissionCollection.claimForPayout`), so a
+   * commission can never be counted into two payouts even when batches run
+   * concurrently with overlapping scopes: the loser's UPDATE matches zero
+   * rows and its re-read excludes the row. Scoping different sources (or
+   * disjoint `commissionIds`) additionally makes batches gather disjoint
+   * sets so they don't contend at all. Totals are correct-by-construction
+   * from the rows each batch verifiably owns. (A batch still isn't wrapped
+   * in one DB transaction — an interrupted claim pass is healed by the
+   * repair-on-replay above, not by rollback.)
    */
   async createPayoutBatch(
     input: CreatePayoutBatchInput,
@@ -487,7 +488,11 @@ export class CommissionPayoutService {
   private async gatherBatchCommissions(
     input: CreatePayoutBatchInput,
   ): Promise<Commission[]> {
-    if (input.commissionIds && input.commissionIds.length > 0) {
+    // A PRESENT `commissionIds` (even `[]`) is an explicit scope — an empty
+    // list settles nothing, it must never fall through to the earner-wide
+    // gather.
+    if (input.commissionIds !== undefined) {
+      if (input.commissionIds.length === 0) return [];
       const rows = await this.deps.commissions.listByIds(input.commissionIds);
       return rows.filter(
         (c) =>
@@ -518,7 +523,9 @@ export class CommissionPayoutService {
   private static adjustmentParentPredicate(
     input: CreatePayoutBatchInput,
   ): ((parent: Commission) => boolean) | undefined {
-    if (input.commissionIds && input.commissionIds.length > 0) {
+    // A present `commissionIds` (even `[]`) scopes adjustments to that set;
+    // an empty set matches nothing.
+    if (input.commissionIds !== undefined) {
       const ids = new Set(input.commissionIds);
       return (parent) => !!parent.id && ids.has(parent.id);
     }
@@ -536,7 +543,12 @@ export class CommissionPayoutService {
    * batch requires its own `idempotencyKey` (no natural default exists).
    */
   private static assertScope(input: CreatePayoutBatchInput): void {
-    const hasIds = !!(input.commissionIds && input.commissionIds.length > 0);
+    // A PRESENT `commissionIds` is an explicit scope regardless of length —
+    // an empty list is a valid "settle nothing" request, not an unscoped
+    // batch. Guarding on presence (not length) is what makes a
+    // dynamically-computed `[]` fail closed instead of settling the whole
+    // earner.
+    const hasIds = input.commissionIds !== undefined;
     const hasSourceKind = !!input.sourceKind;
     const hasSourceId = !!input.sourceId;
     if (hasSourceKind !== hasSourceId) {
@@ -567,10 +579,14 @@ export class CommissionPayoutService {
   }
 
   /**
-   * `${earnerId}:${currency}:${YYYY-MM-DD}` — or, when scoped by source,
-   * `${earnerId}:${currency}:${sourceKind}:${sourceId}:${YYYY-MM-DD}` so a
-   * per-network batch and the earner-wide batch on the same day get distinct
-   * keys. See the input doc.
+   * `${earnerId}:${currency}:${YYYY-MM-DD}` — or, when scoped by source, a
+   * key that folds the source in so a per-network batch and the earner-wide
+   * batch on the same day get distinct keys. `sourceKind`/`sourceId` are
+   * unconstrained generic strings, so each is LENGTH-PREFIXED (`len:value`)
+   * to keep the encoding unambiguous: a literal `:` inside a source string
+   * can't make two different `(sourceKind, sourceId)` pairs collide (e.g.
+   * `('a:b','c')` → `…:src:3:a:b:1:c:…` vs `('a','b:c')` → `…:src:1:a:3:b:c:…`).
+   * See the input doc.
    */
   private static defaultIdempotencyKey(
     earnerId: string,
@@ -580,7 +596,8 @@ export class CommissionPayoutService {
   ): string {
     const date = periodEnd.toISOString().slice(0, 10);
     if (scope) {
-      return `${earnerId}:${currency}:${scope.sourceKind}:${scope.sourceId}:${date}`;
+      const enc = (s: string) => `${s.length}:${s}`;
+      return `${earnerId}:${currency}:src:${enc(scope.sourceKind)}:${enc(scope.sourceId)}:${date}`;
     }
     return `${earnerId}:${currency}:${date}`;
   }

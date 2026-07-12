@@ -809,6 +809,119 @@ describe('Balances and payout batches', () => {
       ).rejects.toThrow(/requires an idempotencyKey/);
     });
 
+    it('a present empty commissionIds settles nothing (never fails open) — codex P1', async () => {
+      // Payable rows exist for the earner...
+      const c1 = await createCommission({
+        status: 'payable',
+        amountCents: 3000,
+      });
+      const c2 = await createCommission({
+        status: 'payable',
+        amountCents: 4000,
+      });
+
+      // ...but a dynamically-computed empty explicit set must claim NONE of
+      // them, not fall through to an earner-wide sweep.
+      const batch = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        idempotencyKey: 'empty-set-1',
+        commissionIds: [],
+      });
+      expect(batch.created).toBe(false);
+      expect(batch.reason).toBe('nothing_payable');
+      expect(batch.settledCommissionIds).toEqual([]);
+      expect((await commissions.get({ id: c1.id }))?.payoutId).toBeFalsy();
+      expect((await commissions.get({ id: c2.id }))?.payoutId).toBeFalsy();
+    });
+
+    it('a present empty commissionIds still requires an idempotencyKey', async () => {
+      await expect(
+        payoutService.createPayoutBatch({
+          earnerId: earner.id as string,
+          currency: 'USD',
+          commissionIds: [],
+        }),
+      ).rejects.toThrow(/requires an idempotencyKey/);
+    });
+
+    it('length-prefixed source keys do not collide for ambiguous strings — codex P2', async () => {
+      // net-a source ('a:b','c') and ('a','b:c') would collide under naive
+      // `${sourceKind}:${sourceId}` concatenation; each must mint its own.
+      const x = await createCommission({
+        status: 'payable',
+        amountCents: 1000,
+        sourceKind: 'a:b',
+        sourceId: 'c',
+      });
+      const y = await createCommission({
+        status: 'payable',
+        amountCents: 2000,
+        sourceKind: 'a',
+        sourceId: 'b:c',
+      });
+      const now = new Date('2026-09-01T00:00:00Z');
+      const first = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'a:b',
+        sourceId: 'c',
+        now,
+      });
+      const second = await payoutService.createPayoutBatch({
+        earnerId: earner.id as string,
+        currency: 'USD',
+        sourceKind: 'a',
+        sourceId: 'b:c',
+        now,
+      });
+      // Distinct keys → two distinct payouts, each settling its own row.
+      expect(first.created).toBe(true);
+      expect(second.created).toBe(true);
+      expect(first.payout?.id).not.toBe(second.payout?.id);
+      expect(first.settledCommissionIds).toEqual([x.id]);
+      expect(second.settledCommissionIds).toEqual([y.id]);
+    });
+
+    it('atomic claim: an overlapping source + earner-wide batch never double-count a row — codex P1', async () => {
+      // One payable row belonging to net-a.
+      const shared = await createCommission({
+        status: 'payable',
+        amountCents: 5000,
+        sourceKind: 'ad_network',
+        sourceId: 'net-a',
+      });
+
+      // A source-scoped batch and an earner-wide batch (distinct keys) race
+      // for the same row.
+      const [scoped, wide] = await Promise.all([
+        payoutService.createPayoutBatch({
+          earnerId: earner.id as string,
+          currency: 'USD',
+          sourceKind: 'ad_network',
+          sourceId: 'net-a',
+          idempotencyKey: 'race-scoped',
+        }),
+        payoutService.createPayoutBatch({
+          earnerId: earner.id as string,
+          currency: 'USD',
+          idempotencyKey: 'race-wide',
+        }),
+      ]);
+
+      const settledIn = [scoped, wide].filter((b) =>
+        b.settledCommissionIds.includes(shared.id as string),
+      );
+      // The row is claimed by EXACTLY ONE payout — never both.
+      expect(settledIn).toHaveLength(1);
+      const owner = settledIn[0].payout?.id;
+      expect((await commissions.get({ id: shared.id }))?.payoutId).toBe(owner);
+      // The winner counts 5000; the loser counts nothing from this row.
+      expect(settledIn[0].payout?.commissionTotalCents).toBe(5000);
+      const loser = [scoped, wide].find((b) => b.payout?.id !== owner);
+      expect(loser?.settledCommissionIds ?? []).not.toContain(shared.id);
+    });
+
     it('repairs an interrupted scoped batch without pulling out-of-scope rows', async () => {
       const a1 = await createCommission({
         status: 'payable',

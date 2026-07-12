@@ -95,18 +95,24 @@ export class CommissionCollection extends SmrtCollection<Commission> {
   }
 
   /**
-   * Conditionally claim rows for a payout batch: each row is re-loaded
-   * fresh and stamped with `payoutId` only when it is still payable and
-   * unclaimed (or already claimed by THIS payout — the idempotent-retry /
-   * repair case). Rows claimed by a DIFFERENT payout are skipped, and every
-   * claim is verified by a post-save re-read so a lost race never counts
-   * toward the caller's totals.
+   * Atomically claim rows for a payout batch. Each row is stamped with
+   * `payoutId` through a single guarded `UPDATE ... WHERE id = ? AND
+   * (payout_id IS NULL OR payout_id = '') AND status = 'payable'` — a
+   * row-level compare-and-set: the database serializes concurrent writers,
+   * so if two batches race for the same row exactly one UPDATE matches and
+   * the other stamps zero rows. Ownership is then confirmed by a re-read, so
+   * a lost race never counts toward the caller's totals. A row already owned
+   * by THIS payout (idempotent retry / repair) doesn't re-match the UPDATE
+   * but is still returned via the re-read; a row owned by a DIFFERENT payout
+   * is skipped.
    *
-   * This is the single place claim semantics live. It narrows the
-   * concurrent-batch window to the re-read granularity; true compare-and-set
-   * needs DB transactions the collection layer doesn't expose (settlement
-   * runs are expected to be single-writer per earner — see
-   * `CommissionPayoutService`).
+   * This is the single place claim semantics live. Because the stamp is
+   * atomic, a commission can never be claimed into two payouts even when
+   * batch scopes overlap or run concurrently. The raw UPDATE deliberately
+   * bypasses the model save hooks (status-transition / dedupe guards,
+   * tenancy interceptor): it mutates only `payout_id` on a row already
+   * resolved in-scope by the caller's gather, so those guards have nothing
+   * to add.
    *
    * Returns the claimed rows (freshly loaded, `payoutId` verified).
    */
@@ -116,14 +122,9 @@ export class CommissionCollection extends SmrtCollection<Commission> {
   ): Promise<Commission[]> {
     const claimed: Commission[] = [];
     for (const id of commissionIds) {
-      const row = await this.get({ id });
-      if (!row) continue;
-      if (row.payoutId && row.payoutId !== payoutId) continue; // other batch
-      if (!row.payoutId) {
-        if (!row.isPayable()) continue; // no longer eligible
-        row.payoutId = payoutId;
-        await row.save();
-      }
+      if (!id) continue;
+      await this.db
+        .execute`UPDATE commissions SET payout_id = ${payoutId} WHERE id = ${id} AND (payout_id IS NULL OR payout_id = '') AND status = 'payable'`;
       const verified = await this.get({ id });
       if (verified && verified.payoutId === payoutId) {
         claimed.push(verified);
