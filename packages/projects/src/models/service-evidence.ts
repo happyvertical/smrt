@@ -16,6 +16,7 @@ import type {
 import { parseProjectJson } from './delivery-control-plane.js';
 
 const FROZEN_FIELDS = [
+  'tenantId',
   'caseId',
   'workRefType',
   'workRefId',
@@ -29,6 +30,7 @@ const FROZEN_FIELDS = [
   'endedAt',
   'durationSeconds',
   'evidence',
+  'correctionOfId',
 ] as const;
 
 const STATUS_TRANSITIONS: Record<

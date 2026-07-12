@@ -187,7 +187,15 @@ export class ServiceEvidenceService {
   ): Promise<ServiceTimeEntry> {
     if (entry.status !== 'approved')
       throw new Error('Only approved service time may be corrected.');
-    const correction = await this.record(input);
+    if (input.tenantId !== undefined && input.tenantId !== entry.tenantId) {
+      throw new Error(
+        'Service time corrections must remain in the original tenant.',
+      );
+    }
+    const correction = await this.record({
+      ...input,
+      tenantId: entry.tenantId,
+    });
     correction.correctionOfId = entry.id ?? null;
     await correction.save();
     entry.status = 'corrected';

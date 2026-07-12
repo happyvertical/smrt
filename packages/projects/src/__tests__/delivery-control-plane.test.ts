@@ -441,6 +441,7 @@ describe('managed application delivery control plane (#1949)', () => {
       }),
     ).rejects.toThrow(/startedAt must be before endedAt/i);
     const entry = await service.record({
+      tenantId: 'tenant-1',
       workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
       workRefId: 'request-1',
       participantKind: 'agent',
@@ -490,6 +491,19 @@ describe('managed application delivery control plane (#1949)', () => {
       }),
     ).rejects.toThrow(/case or work reference/i);
     expect(entry.status).toBe('approved');
+    await expect(
+      service.correct(entry, {
+        tenantId: 'tenant-2',
+        workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+        workRefId: 'request-1',
+        participantKind: 'agent',
+        agentRef: 'agent:builder',
+        source: 'agent',
+        description: 'Cross-tenant correction',
+        durationSeconds: 60,
+      }),
+    ).rejects.toThrow(/original tenant/i);
+    expect(entry.status).toBe('approved');
     const correction = await service.correct(entry, {
       workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
       workRefId: 'request-1',
@@ -501,6 +515,11 @@ describe('managed application delivery control plane (#1949)', () => {
     });
     expect(entry.status).toBe('corrected');
     expect(correction.correctionOfId).toBe(entry.id);
+    expect(correction.tenantId).toBe(entry.tenantId);
+    await service.submit(correction);
+    await service.approve(correction, { approvalPath: 'automatic' });
+    correction.correctionOfId = null;
+    await expect(correction.save()).rejects.toThrow(/immutable/i);
     charges[0].amount = 1;
     await expect(charges[0].save()).rejects.toThrow(/immutable/i);
     compensation[0].amount = 1;
