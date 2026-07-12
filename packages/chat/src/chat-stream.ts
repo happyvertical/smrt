@@ -223,6 +223,13 @@ async function* streamPersonaConversation(
   history: AIMessage[],
   userMessage: string,
 ): AsyncGenerator<ChatStreamEvent> {
+  // The producer (the turn's onToken) enqueues without awaiting the consumer, so
+  // a slow client lets `queue` grow — but only up to ONE turn's emitted tokens,
+  // which is bounded by the server-set `maxSteps`×`maxTokens` ceiling (the turn
+  // runs to completion and then stops emitting). Tokens are intentionally NOT
+  // coalesced: the widget lip-syncs each sentence as it streams, so per-delta
+  // granularity is the contract. The browser-facing delivery is still
+  // backpressured by the `ReadableStream` in `sseBody` (pull-based).
   const queue: ChatStreamEvent[] = [];
   let notify: (() => void) | null = null;
   let finished = false;
@@ -540,12 +547,22 @@ function resolvePersonaDoneMessage(turn: {
   return synthesizeAssistantMessage(turn.result.content);
 }
 
+/**
+ * Coerce a persisted `ChatMessageRole` (which also includes `'tool'`) into the
+ * narrower wire role. A `done` message is always the authored assistant reply,
+ * so any non-conversational role collapses to `'assistant'` rather than leaking
+ * an invalid value onto the contract.
+ */
+function toWireRole(role: unknown): ChatStreamRole {
+  return role === 'user' || role === 'system' ? role : 'assistant';
+}
+
 /** Project a persisted `ChatMessage` onto the stable wire shape. */
 function toStreamMessage(message: ChatMessage): ChatStreamMessage {
   const createdAt = (message as { createdAt?: unknown }).createdAt;
   return {
     id: (message.id as string | undefined) ?? crypto.randomUUID(),
-    role: (message.role as ChatStreamRole) ?? 'assistant',
+    role: toWireRole(message.role),
     content: message.content ?? '',
     createdAt: toIsoString(createdAt),
   };

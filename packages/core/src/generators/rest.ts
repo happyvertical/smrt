@@ -1401,7 +1401,12 @@ export class APIGenerator {
   private createCorsResponse(req: Request): Response {
     const headers: Record<string, string> = {
       'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      // `Last-Event-ID` is allow-listed for the `_events` SSE route (#1861): a
+      // fetch-based cross-origin SSE client that resumes from a cursor sends it
+      // as a request header, which is not CORS-safelisted and would otherwise
+      // fail preflight. Harmless on the other routes, which ignore it.
+      'Access-Control-Allow-Headers':
+        'Content-Type,Authorization,Last-Event-ID',
       'Access-Control-Max-Age': '86400',
     };
     const origin = this.resolveAllowedOrigin(req);
@@ -1429,7 +1434,12 @@ export class APIGenerator {
       'Access-Control-Allow-Methods',
       'GET,POST,PUT,PATCH,DELETE,OPTIONS',
     );
-    headers.set('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    // `Last-Event-ID` so a fetch-based cross-origin SSE client can resume the
+    // `_events` stream from a cursor (#1861); see createCorsResponse.
+    headers.set(
+      'Access-Control-Allow-Headers',
+      'Content-Type,Authorization,Last-Event-ID',
+    );
     // Credentialed CORS (#1861): only when opted in, and only alongside a
     // concrete echoed origin (never `*`) so cookies can flow to an allow-listed
     // cross-origin client (e.g. a credentialed EventSource on `_events`).

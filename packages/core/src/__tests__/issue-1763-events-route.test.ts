@@ -900,6 +900,11 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
         expect(preflight.headers.get('access-control-allow-credentials')).toBe(
           'true',
         );
+        // `Last-Event-ID` must be allow-listed so a fetch-based cross-origin SSE
+        // client can resume the stream from a cursor (Copilot review, #1861).
+        expect(preflight.headers.get('access-control-allow-headers')).toContain(
+          'Last-Event-ID',
+        );
       });
 
       it('omits credentials when allowCredentials is not opted in (fail-closed default)', async () => {
