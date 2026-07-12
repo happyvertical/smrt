@@ -29,7 +29,7 @@ let message = $state('');
 
 async function submit(event: SubmitEvent) {
   event.preventDefault();
-  if (!onsubmit || !subject.trim() || !message.trim()) return;
+  if (disabled || !onsubmit || !subject.trim() || !message.trim()) return;
   await onsubmit({
     requesterId,
     subject: subject.trim(),
@@ -50,11 +50,11 @@ async function submit(event: SubmitEvent) {
     </header>
     <label>
       {t(M['projects.assistance.subject'])}
-      <Input bind:value={subject} required />
+      <Input bind:value={subject} required {disabled} />
     </label>
     <label>
       {t(M['projects.assistance.need'])}
-      <Textarea bind:value={message} rows={4} required></Textarea>
+      <Textarea bind:value={message} rows={4} required {disabled}></Textarea>
     </label>
     <footer>
       <Button type="submit" {disabled}>

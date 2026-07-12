@@ -20,7 +20,7 @@ const { t } = useI18n();
     <strong>{preview.status}</strong>
   </div>
   {#if preview.previewUrl}
-    <a href={preview.previewUrl} target="_blank" rel="noreferrer">
+    <a href={preview.previewUrl} target="_blank" rel="noopener noreferrer">
       {t(M['projects.preview.open'])}
     </a>
   {/if}

@@ -7,6 +7,7 @@ import {
   PreviewApprovalCollection,
   type ProjectDeliveryEvent,
   ProjectDeliveryEventCollection,
+  parseProjectJson,
 } from '../models/delivery-control-plane.js';
 import type { ProjectIntegration } from '../models/ProjectIntegration.js';
 import type { DeliveryEventType } from '../types.js';
@@ -77,7 +78,10 @@ export class ProjectDeliveryService {
         }),
       )
     )[0];
-    if (existing) return existing;
+    if (existing) {
+      await this.applySideEffects(input.integration, existing);
+      return existing;
+    }
     const request = await this.requestForIntegration(
       input.integration,
       input.requestId,
@@ -102,26 +106,40 @@ export class ProjectDeliveryService {
     await withTenant({ tenantId: input.integration.tenantId }, () =>
       event.save(),
     );
-    if (input.type === 'preview')
-      await this.upsertPreview(request, input.payload);
+    await this.applySideEffects(input.integration, event, request);
+    return event;
+  }
+
+  private async applySideEffects(
+    integration: ProjectIntegration,
+    event: ProjectDeliveryEvent,
+    loadedRequest?: DevelopmentRequest,
+  ): Promise<void> {
+    const request =
+      loadedRequest ??
+      (await this.requestForIntegration(integration, event.requestId));
+    const payload = parseProjectJson<Record<string, unknown>>(
+      event.payload,
+      {},
+    );
+    if (event.type === 'preview') await this.upsertPreview(request, payload);
     if (
-      (input.type === 'completed' || input.type === 'deployment') &&
+      (event.type === 'completed' || event.type === 'deployment') &&
       request.status !== 'completed'
     )
-      await this.requests.transitionStatus(request.tenantId, input.requestId, {
+      await this.requests.transitionStatus(request.tenantId, event.requestId, {
         status: 'completed',
         actorType: 'integration',
-        actorId: input.integration.id ?? '',
-        note: input.type,
+        actorId: integration.id ?? '',
+        note: event.type,
       });
-    if (input.type === 'rejected' && request.status !== 'declined')
-      await this.requests.transitionStatus(request.tenantId, input.requestId, {
+    if (event.type === 'rejected' && request.status !== 'declined')
+      await this.requests.transitionStatus(request.tenantId, event.requestId, {
         status: 'declined',
         actorType: 'integration',
-        actorId: input.integration.id ?? '',
-        note: String(input.payload.reason ?? 'Delivery rejected'),
+        actorId: integration.id ?? '',
+        note: String(payload.reason ?? 'Delivery rejected'),
       });
-    return event;
   }
 
   async listForIntegration(

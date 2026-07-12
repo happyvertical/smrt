@@ -8,6 +8,7 @@ import { DevelopmentRequestCollection } from '../collections/DevelopmentRequests
 import { ProjectIntegrationCollection } from '../collections/ProjectIntegrations.js';
 import {
   PreviewApprovalCollection,
+  ProjectDeliveryEventCollection,
   ServiceChargeSnapshotCollection,
   ServiceCompensationSnapshotCollection,
 } from '../models/index.js';
@@ -126,6 +127,16 @@ describe('managed application delivery control plane (#1949)', () => {
 
     const target = await request(projectIntegration.id as string);
     const merged = await request(projectIntegration.id as string);
+    await expect(
+      service.triage(merged, {
+        decision: 'merge',
+        mergeIntoRequestId: 'missing-request',
+        reason: 'Duplicate request',
+        actorRef: 'operator:1',
+      }),
+    ).rejects.toThrow(/same project and tenant/i);
+    expect(await service.linksFor(merged)).toHaveLength(0);
+    expect(merged.status).toBe('submitted');
     const mergeResult = await service.triage(merged, {
       decision: 'merge',
       mergeIntoRequestId: target.id as string,
@@ -295,6 +306,47 @@ describe('managed application delivery control plane (#1949)', () => {
     ).rejects.toThrow(/stale/i);
   });
 
+  it('reapplies missing side effects when an idempotent delivery event is retried', async () => {
+    const projectIntegration = await integration(['delivery:write']);
+    const developmentRequest = await request(projectIntegration.id as string);
+    const events = await ProjectDeliveryEventCollection.create({ db });
+    const stranded = await withTenant({ tenantId: 'tenant-1' }, () =>
+      events.create({
+        tenantId: 'tenant-1',
+        integrationId: projectIntegration.id as string,
+        requestId: developmentRequest.id as string,
+        idempotencyKey: 'stranded-preview',
+        sequence: 9,
+        type: 'preview',
+        payload: JSON.stringify({
+          previewId: 'pv-recovered',
+          previewUrl: 'https://preview.invalid/recovered',
+        }),
+      }),
+    );
+    await withTenant({ tenantId: 'tenant-1' }, () => stranded.save());
+
+    const delivery = await ProjectDeliveryService.create({ db });
+    const retried = await delivery.record({
+      integration: projectIntegration,
+      requestId: developmentRequest.id as string,
+      idempotencyKey: 'stranded-preview',
+      sequence: 9,
+      type: 'preview',
+      payload: {},
+    });
+
+    expect(retried.id).toBe(stranded.id);
+    const previews = await withTenant({ tenantId: 'tenant-1' }, async () =>
+      (await PreviewApprovalCollection.create({ db })).list(),
+    );
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toMatchObject({
+      previewId: 'pv-recovered',
+      previewUrl: 'https://preview.invalid/recovered',
+    });
+  });
+
   it('shares immutable service evidence with separate commercial snapshots', async () => {
     const service = await ServiceEvidenceService.create(
       { db },
@@ -321,6 +373,23 @@ describe('managed application delivery control plane (#1949)', () => {
       description: 'Implemented request',
       durationSeconds: 3600,
       evidence: [{ kind: 'pull_request', ref: 'pr:42' }],
+    });
+    const rejected = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-rejected',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Evidence awaiting correction',
+      durationSeconds: 60,
+    });
+    await service.submit(rejected);
+    rejected.status = 'rejected';
+    await rejected.save();
+    await service.submit(rejected, 'profile:reviewer');
+    expect(rejected).toMatchObject({
+      status: 'submitted',
+      submittedByProfileId: 'profile:reviewer',
     });
     await service.submit(entry);
     await service.approve(entry, { approvalPath: 'automatic' });

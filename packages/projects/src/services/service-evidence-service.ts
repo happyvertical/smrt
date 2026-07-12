@@ -104,8 +104,8 @@ export class ServiceEvidenceService {
     entry: ServiceTimeEntry,
     profileId?: string,
   ): Promise<ServiceTimeEntry> {
-    if (entry.status !== 'draft')
-      throw new Error('Only draft service time may be submitted.');
+    if (entry.status !== 'draft' && entry.status !== 'rejected')
+      throw new Error('Only draft or rejected service time may be submitted.');
     entry.status = 'submitted';
     entry.submittedAt = new Date();
     entry.submittedByProfileId = profileId ?? null;

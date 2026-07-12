@@ -60,6 +60,28 @@ describe('commercial usage tracer', () => {
     });
     expect(duplicate.id).toBe(event.id);
     expect(duplicate.quantity).toBe(120);
+    const otherMetric = await service.record({
+      tenantId: event.tenantId as string,
+      metricKey: 'ai.requests',
+      quantity: 1,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'ai-run',
+      sourceId: 'run-1',
+    });
+    const otherSubscriber = await service.record({
+      tenantId: event.tenantId as string,
+      subscriberKind: 'external',
+      subscriberExternalId: 'user:1',
+      metricKey: 'ai.tokens',
+      quantity: 3,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+      source: 'ai-run',
+      sourceId: 'run-1',
+    });
+    expect(otherMetric.id).not.toBe(event.id);
+    expect(otherSubscriber.id).not.toBe(event.id);
     event.quantity = 121;
     await expect(event.save()).rejects.toThrow('Operation failed: save');
     const rule = await rules.create({
@@ -71,12 +93,16 @@ describe('commercial usage tracer', () => {
       terms: JSON.stringify({ includedQuantity: 100, overageUnitPrice: 0.02 }),
     });
     expect(rule.id).toBeTruthy();
+    const draftCharge = await service.price({ usageEventId: String(event.id) });
+    expect(draftCharge.status).toBe('draft');
     const charge = await service.price({
       usageEventId: String(event.id),
       approved: true,
     });
+    expect(charge.id).toBe(draftCharge.id);
     expect(charge.amount).toBe(0.4);
     expect(charge.status).toBe('approved');
+    expect(charge.approvedAt).toBeInstanceOf(Date);
     expect(charge.getPricingSnapshot()).toMatchObject({
       ruleKey: 'tokens-v1',
       strategy: 'included_overage',

@@ -134,6 +134,15 @@ export class DevelopmentRequestService {
     if (input.decision === 'merge') {
       if (!input.mergeIntoRequestId)
         throw new Error('mergeIntoRequestId is required.');
+      if (input.mergeIntoRequestId === request.id)
+        throw new Error('A Development Request cannot be merged into itself.');
+      const target = await withTenant({ tenantId: request.tenantId }, () =>
+        this.requests.get({ id: input.mergeIntoRequestId }),
+      );
+      if (!target || target.projectId !== request.projectId)
+        throw new Error(
+          'Merge target must be a Development Request in the same project and tenant.',
+        );
       createdLinks.push(
         await this.linkWork(request, {
           type: '@happyvertical/smrt-projects:DevelopmentRequest',

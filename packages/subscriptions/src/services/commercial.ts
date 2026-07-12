@@ -59,7 +59,15 @@ export class CommercialUsageService {
       where: { usageEventId: options.usageEventId },
       limit: 1,
     });
-    if (existing[0]) return existing[0];
+    if (existing[0]) {
+      const charge = existing[0];
+      if (options.approved && charge.status === 'draft') {
+        charge.status = 'approved';
+        charge.approvedAt = new Date();
+        await charge.save();
+      }
+      return charge;
+    }
     const usage = await this.usage.get(options.usageEventId);
     if (!usage)
       throw new Error(`Usage event ${options.usageEventId} was not found.`);
