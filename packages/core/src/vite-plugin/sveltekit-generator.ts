@@ -55,8 +55,22 @@ export interface SvelteKitOptions {
    * is auth-guarded fail-closed, same-origin only); set `enabled: false` to
    * skip. `maxSubscribers` caps active streams per process (#1860); 0 means
    * unlimited.
+   *
+   * Cross-origin subscription (#1861) is opt-in and fail-closed: provide
+   * `allowedOrigins` (an explicit allowlist — never `*`) and set
+   * `allowCredentials: true` so an allow-listed browser client can subscribe
+   * with a credentialed `EventSource` (`withCredentials: true`). The generated
+   * route echoes the specific request `Origin` only when it is allow-listed,
+   * adds `Access-Control-Allow-Credentials: true`, and otherwise stays
+   * same-origin only. Auth (an authenticated principal on `locals`) is
+   * unchanged — CORS only lets the cookie reach the guard.
    */
-  eventsRoute?: { enabled?: boolean; maxSubscribers?: number };
+  eventsRoute?: {
+    enabled?: boolean;
+    maxSubscribers?: number;
+    allowedOrigins?: string[];
+    allowCredentials?: boolean;
+  };
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.

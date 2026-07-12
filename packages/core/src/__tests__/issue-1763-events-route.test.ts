@@ -841,6 +841,109 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       expect(unauth.status).toBe(401);
     });
 
+    describe('credentialed CORS (#1861)', () => {
+      const corsConfig = {
+        basePath: '/api/v1',
+        authMiddleware: allowAuth,
+        enableCors: true,
+        allowedOrigins: ['https://widget.example'],
+        allowCredentials: true,
+      } as const;
+
+      it('echoes an allow-listed Origin with credentials on the SSE response', async () => {
+        const generator = new APIGenerator(corsConfig, { db });
+        const handler = generator.generateHandler();
+        const res = await handler(
+          new Request('http://x/api/v1/_events', {
+            headers: { origin: 'https://widget.example' },
+          }),
+        );
+        expect(res.status).toBe(200);
+        expect(res.headers.get('Content-Type')).toBe('text/event-stream');
+        expect(res.headers.get('access-control-allow-origin')).toBe(
+          'https://widget.example',
+        );
+        expect(res.headers.get('access-control-allow-credentials')).toBe(
+          'true',
+        );
+        expect(res.headers.get('vary')).toBe('Origin');
+        await (res.body as ReadableStream<Uint8Array>).cancel();
+      });
+
+      it('never echoes credentials to a non-allow-listed Origin', async () => {
+        const generator = new APIGenerator(corsConfig, { db });
+        const handler = generator.generateHandler();
+        const res = await handler(
+          new Request('http://x/api/v1/_events', {
+            headers: { origin: 'https://evil.example' },
+          }),
+        );
+        expect(res.status).toBe(200);
+        expect(res.headers.get('access-control-allow-origin')).toBeNull();
+        expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+        await (res.body as ReadableStream<Uint8Array>).cancel();
+      });
+
+      it('answers a credentialed preflight for an allow-listed Origin', async () => {
+        const generator = new APIGenerator(corsConfig, { db });
+        const handler = generator.generateHandler();
+        const preflight = await handler(
+          new Request('http://x/api/v1/_events', {
+            method: 'OPTIONS',
+            headers: { origin: 'https://widget.example' },
+          }),
+        );
+        expect(preflight.status).toBe(200);
+        expect(preflight.headers.get('access-control-allow-origin')).toBe(
+          'https://widget.example',
+        );
+        expect(preflight.headers.get('access-control-allow-credentials')).toBe(
+          'true',
+        );
+      });
+
+      it('omits credentials when allowCredentials is not opted in (fail-closed default)', async () => {
+        // enableCors + allowlist, but allowCredentials defaults to false: the
+        // origin may be echoed, yet cookies must NOT be authorized to flow.
+        const generator = new APIGenerator(
+          {
+            basePath: '/api/v1',
+            authMiddleware: allowAuth,
+            enableCors: true,
+            allowedOrigins: ['https://widget.example'],
+          },
+          { db },
+        );
+        const handler = generator.generateHandler();
+        const res = await handler(
+          new Request('http://x/api/v1/_events', {
+            headers: { origin: 'https://widget.example' },
+          }),
+        );
+        expect(res.headers.get('access-control-allow-origin')).toBe(
+          'https://widget.example',
+        );
+        expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+        await (res.body as ReadableStream<Uint8Array>).cancel();
+      });
+
+      it('stays same-origin only (no CORS surface) when CORS is disabled', async () => {
+        const generator = new APIGenerator(
+          { basePath: '/api/v1', authMiddleware: allowAuth },
+          { db },
+        );
+        const handler = generator.generateHandler();
+        const res = await handler(
+          new Request('http://x/api/v1/_events', {
+            headers: { origin: 'https://widget.example' },
+          }),
+        );
+        expect(res.headers.get('access-control-allow-origin')).toBeNull();
+        expect(res.headers.get('access-control-allow-credentials')).toBeNull();
+        await (res.body as ReadableStream<Uint8Array>).cancel();
+      });
+    });
+
     it('streams a live signal end-to-end through generateHandler', async () => {
       const generator = new APIGenerator(
         { basePath: '/api/v1', authMiddleware: allowAuth },
