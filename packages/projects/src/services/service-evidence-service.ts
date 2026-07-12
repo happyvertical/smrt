@@ -97,6 +97,16 @@ export class ServiceEvidenceService {
       durationSeconds: duration,
       evidence: JSON.stringify(input.evidence ?? []),
       metadata: JSON.stringify(input.metadata ?? {}),
+      status: 'draft',
+      submittedAt: null,
+      submittedByProfileId: null,
+      approvedAt: null,
+      approvedByProfileId: null,
+      approvalPath: '',
+      rejectedAt: null,
+      rejectedByProfileId: null,
+      rejectionReason: '',
+      correctionOfId: null,
     });
     await entry.save();
     return entry;
@@ -151,23 +161,45 @@ export class ServiceEvidenceService {
     const provider = existingCompensation
       ? null
       : await this.commercial.compensateProvider(entry);
-    if (provider)
-      await (
+    if (provider) {
+      const snapshotId = await deterministicSnapshotId(
+        'service-compensation-snapshot',
+        timeEntryId,
+      );
+      try {
         await this.compensation.create({
+          id: snapshotId,
           tenantId: entry.tenantId,
           timeEntryId,
           amount: provider.amount,
           currency: provider.currency ?? 'USD',
           termsVersion: provider.version,
           rateSnapshot: JSON.stringify(provider.terms),
-        })
-      ).save();
+          _insertOnly: true,
+        });
+      } catch (error) {
+        const concurrent =
+          (await this.compensation.get(snapshotId)) ??
+          (
+            await this.compensation.list({
+              where: { timeEntryId },
+              limit: 1,
+            })
+          )[0];
+        if (!concurrent) throw error;
+      }
+    }
     const client = existingCharge
       ? null
       : await this.commercial.priceClient(entry);
-    if (client)
-      await (
+    if (client) {
+      const snapshotId = await deterministicSnapshotId(
+        'service-charge-snapshot',
+        timeEntryId,
+      );
+      try {
         await this.charges.create({
+          id: snapshotId,
           tenantId: entry.tenantId,
           timeEntryId,
           amount: client.amount,
@@ -176,8 +208,20 @@ export class ServiceEvidenceService {
           strategy: client.strategy ?? '',
           rateSnapshot: JSON.stringify(client.terms),
           sourceChargeRef: client.sourceRef ?? '',
-        })
-      ).save();
+          _insertOnly: true,
+        });
+      } catch (error) {
+        const concurrent =
+          (await this.charges.get(snapshotId)) ??
+          (
+            await this.charges.list({
+              where: { timeEntryId },
+              limit: 1,
+            })
+          )[0];
+        if (!concurrent) throw error;
+      }
+    }
     return entry;
   }
 
@@ -202,4 +246,25 @@ export class ServiceEvidenceService {
     await entry.save();
     return correction;
   }
+}
+
+async function deterministicSnapshotId(
+  kind: string,
+  timeEntryId: string,
+): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify([kind, timeEntryId]));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const uuid = digest.slice(0, 16);
+  uuid[6] = (uuid[6] & 0x0f) | 0x50;
+  uuid[8] = (uuid[8] & 0x3f) | 0x80;
+  const hex = Array.from(uuid, (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join('-');
 }

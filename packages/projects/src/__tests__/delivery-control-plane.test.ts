@@ -12,6 +12,7 @@ import {
   ProjectDeliveryEventCollection,
   ServiceChargeSnapshotCollection,
   ServiceCompensationSnapshotCollection,
+  ServiceTimeEntryCollection,
 } from '../models/index.js';
 import { AssistanceRequestService } from '../services/assistance-request-service.js';
 import { ProjectDeliveryService } from '../services/delivery-service.js';
@@ -19,7 +20,10 @@ import {
   DevelopmentRequestService,
   type DevelopmentWorkAdapter,
 } from '../services/development-request-service.js';
-import { ServiceEvidenceService } from '../services/service-evidence-service.js';
+import {
+  type RecordServiceTimeInput,
+  ServiceEvidenceService,
+} from '../services/service-evidence-service.js';
 import { SubscriptionServiceCommercialResolver } from '../services/subscription-commercial-resolver.js';
 
 describe('managed application delivery control plane (#1949)', () => {
@@ -427,6 +431,27 @@ describe('managed application delivery control plane (#1949)', () => {
         }),
       },
     );
+    const forged = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-forged-status',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Must begin as draft',
+      durationSeconds: 60,
+      status: 'approved',
+      approvedAt: new Date('2026-07-01T00:00:00Z'),
+      approvalPath: 'forged',
+    } as RecordServiceTimeInput & {
+      status: 'approved';
+      approvedAt: Date;
+      approvalPath: string;
+    });
+    expect(forged).toMatchObject({
+      status: 'draft',
+      approvedAt: null,
+      approvalPath: '',
+    });
     await expect(
       service.record({
         workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
@@ -526,6 +551,81 @@ describe('managed application delivery control plane (#1949)', () => {
     await expect(compensation[0].save()).rejects.toThrow(/immutable/i);
     entry.durationSeconds = 1;
     await expect(entry.save()).rejects.toThrow(/immutable/i);
+  });
+
+  it('deduplicates immutable snapshots across concurrent approvals', async () => {
+    let compensationCalls = 0;
+    let clientCalls = 0;
+    let releaseResolvers!: () => void;
+    const bothResolversReady = new Promise<void>((resolve) => {
+      releaseResolvers = resolve;
+    });
+    const service = await ServiceEvidenceService.create(
+      { db },
+      {
+        compensateProvider: async () => {
+          const call = ++compensationCalls;
+          if (compensationCalls === 2) releaseResolvers();
+          await bothResolversReady;
+          return {
+            amount: call * 10,
+            version: `terms-v${call}`,
+            terms: { call },
+          };
+        },
+        priceClient: async () => {
+          const call = ++clientCalls;
+          return {
+            amount: call * 20,
+            version: `pricing-v${call}`,
+            terms: { call },
+          };
+        },
+      },
+    );
+    const entry = await service.record({
+      workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+      workRefId: 'request-concurrent-approval',
+      participantKind: 'agent',
+      agentRef: 'agent:builder',
+      source: 'agent',
+      description: 'Concurrent approval',
+      durationSeconds: 60,
+    });
+    await service.submit(entry);
+    const entries = await ServiceTimeEntryCollection.create({ db });
+    const [first, second] = await Promise.all([
+      entries.get(String(entry.id)),
+      entries.get(String(entry.id)),
+    ]);
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+
+    await Promise.all([
+      service.approve(first as NonNullable<typeof first>, {
+        approvalPath: 'automatic',
+      }),
+      service.approve(second as NonNullable<typeof second>, {
+        approvalPath: 'automatic',
+      }),
+    ]);
+
+    const chargeRows = await (
+      await ServiceChargeSnapshotCollection.create({ db })
+    ).list();
+    const compensationRows = await (
+      await ServiceCompensationSnapshotCollection.create({ db })
+    ).list();
+    expect(chargeRows).toHaveLength(1);
+    expect(compensationRows).toHaveLength(1);
+    expect(chargeRows[0].id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    );
+    expect(compensationRows[0].id).toMatch(
+      /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    );
+    expect(compensationCalls).toBe(2);
+    expect(clientCalls).toBe(2);
   });
 
   it('does not price the client when provider compensation fails after approval', async () => {
