@@ -79,6 +79,8 @@ export class ServiceEvidenceService {
       throw new Error('Agent service time requires agentRef.');
     if (input.source === 'timer' && (!input.startedAt || !input.endedAt))
       throw new Error('Timer service time requires startedAt and endedAt.');
+    if (input.startedAt && input.endedAt && input.startedAt >= input.endedAt)
+      throw new Error('Service time startedAt must be before endedAt.');
     const duration =
       input.durationSeconds ??
       (input.startedAt && input.endedAt

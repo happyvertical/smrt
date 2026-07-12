@@ -221,6 +221,50 @@ describe('commercial usage tracer', () => {
     });
   });
 
+  it('scopes spending policy name conflicts by tenant and policy scope', async () => {
+    const tenantA = '11111111-1111-4111-8111-111111111111';
+    const tenantB = '22222222-2222-4222-8222-222222222222';
+    const first = await policies.create({
+      tenantId: tenantA,
+      name: 'Monthly cap',
+      projectId: 'project-1',
+      serviceKey: 'ai',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 10,
+      behavior: 'warn',
+    });
+    const otherTenant = await policies.create({
+      tenantId: tenantB,
+      name: 'Monthly cap',
+      projectId: 'project-1',
+      serviceKey: 'ai',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 20,
+      behavior: 'block',
+    });
+    const otherProject = await policies.create({
+      tenantId: tenantA,
+      name: 'Monthly cap',
+      projectId: 'project-2',
+      serviceKey: 'ai',
+      metricKey: 'ai.tokens',
+      period: 'month',
+      limitAmount: 30,
+      behavior: 'approval_required',
+    });
+
+    expect(new Set([first.id, otherTenant.id, otherProject.id]).size).toBe(3);
+    expect(first).toMatchObject({ tenantId: tenantA, limitAmount: 10 });
+    expect(otherTenant).toMatchObject({ tenantId: tenantB, limitAmount: 20 });
+    expect(otherProject).toMatchObject({
+      tenantId: tenantA,
+      projectId: 'project-2',
+      limitAmount: 30,
+    });
+  });
+
   it('aggregates all metrics for a wildcard spending policy', async () => {
     const tenantId = '11111111-1111-4111-8111-111111111111';
     await policies.create({

@@ -364,6 +364,19 @@ describe('managed application delivery control plane (#1949)', () => {
         }),
       },
     );
+    await expect(
+      service.record({
+        workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
+        workRefId: 'request-reversed',
+        participantKind: 'agent',
+        agentRef: 'agent:builder',
+        source: 'manual',
+        description: 'Reversed period',
+        startedAt: new Date('2026-07-01T11:00:00Z'),
+        endedAt: new Date('2026-07-01T10:00:00Z'),
+        durationSeconds: 60,
+      }),
+    ).rejects.toThrow(/startedAt must be before endedAt/i);
     const entry = await service.record({
       workRefType: '@happyvertical/smrt-projects:DevelopmentRequest',
       workRefId: 'request-1',
