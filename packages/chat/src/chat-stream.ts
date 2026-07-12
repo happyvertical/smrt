@@ -28,7 +28,10 @@
  */
 
 import type { AIInterface, AIMessage } from '@happyvertical/ai';
-import type { PrincipalAuditSink } from '@happyvertical/smrt-agents';
+import type {
+  PrincipalAuditSink,
+  PrincipalTool,
+} from '@happyvertical/smrt-agents';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import type { AgentSession } from './models/AgentSession.js';
 import type { ChatMessage } from './models/ChatMessage.js';
@@ -135,6 +138,21 @@ export interface ChatStreamPersonaBinding {
   onBehalfOfUserId?: string | null;
   /** Recall configuration, or `false` to skip memory recall. */
   recall?: PersonaRecallOptions | false;
+  /**
+   * Non-manifest custom tools to offer this streamed turn — e.g. the persona
+   * messaging tool (`messages.send`) or an assistance-request/lead-ticket tool
+   * backed by a `@smrt({ api:false, mcp:false })` service, which can only reach
+   * the loop as `extraTools` (never as a generated manifest tool). Forwarded to
+   * {@link runPersonaConversationTurn} exactly like the non-streaming persona
+   * path, so a streamed persona chat can *act*, not just answer.
+   *
+   * This is resolved by the app's server-side `authorize` callback (trusted),
+   * never taken from untrusted request input. Offering a tool is NOT authorizing
+   * it: each entry is still filtered by the persona's `allowedTools` (the offer
+   * gate) and its `execute` re-asserts the bound principal's RBAC + the
+   * fail-closed `assertToolAllowed` (the execution gate), unchanged.
+   */
+  extraTools?: PrincipalTool[];
   /** Audit sink forwarded to the principal execution. */
   audit?: PrincipalAuditSink;
   /** Opt into Postgres RLS transaction wrapping. */
@@ -267,6 +285,10 @@ async function* streamPersonaConversation(
         session: binding.session,
         threadId: binding.threadId,
         recall: binding.recall,
+        // Custom tools resolved server-side by `authorize`; still offer-gated by
+        // the persona's `allowedTools` inside the turn (a tool being offered is
+        // not the same as authorized).
+        extraTools: binding.extraTools,
         model: context.model,
         temperature: context.temperature,
         maxTokens: context.maxTokens,
