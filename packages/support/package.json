@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-support",
-  "version": "0.39.11",
+  "version": "0.39.12",
   "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",

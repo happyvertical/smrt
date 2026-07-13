@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.39.12
+
+### Patch Changes
+
+- ### Features
+
+  - support auto-generated versions (content)
+
+  ### Bug Fixes
+
+  - preserve tools on availability errors (smrt-svelte)
+
+  ### Other Changes
+
+  - test: close version kind database (content)
+  - docs: migrate draft metadata to auto-generated versions (content)
+  - @happyvertical/smrt-config@0.39.12
+  - @happyvertical/smrt-types@0.39.12
+  - @happyvertical/smrt-scanner@0.39.12
+
 ## 0.39.11
 
 ### Patch Changes
