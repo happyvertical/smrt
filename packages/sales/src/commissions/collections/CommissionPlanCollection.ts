@@ -8,7 +8,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import { assertTenantReadAllowed } from '@happyvertical/smrt-tenancy';
 import {
   CommissionPlan,
   validateCommissionPlanComponents,
@@ -65,39 +65,54 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
     at: Date = new Date(),
     tenantId?: string | null,
   ): Promise<CommissionPlan | null> {
-    const results =
-      tenantId === undefined
-        ? await this.list({
-            where: { planKey, status: 'active' },
-            orderBy: 'version DESC',
-          })
-        : (tenantId === null
-            ? await queryGlobal<CommissionPlan>(this)
-            : await queryWithGlobals<CommissionPlan>(
-                this,
-                tenantId,
-                'CommissionPlanCollection.latestActiveByKey',
-              )
-          )
-            .filter(
-              (plan) => plan.planKey === planKey && plan.status === 'active',
-            )
-            .sort((a, b) => b.version - a.version);
-    const inEffect = results.filter(
-      (plan) => plan.effectiveFrom === null || plan.effectiveFrom <= at,
-    );
     if (tenantId === undefined) {
       // No explicit scope: ambient tenant scoping (when present) applies.
-      return inEffect[0] ?? null;
+      const results = await this.list({
+        where: { planKey, status: 'active' },
+        orderBy: 'version DESC',
+      });
+      return (
+        results.find(
+          (plan) => plan.effectiveFrom === null || plan.effectiveFrom <= at,
+        ) ?? null
+      );
     }
+
     // Explicit scope (system/background paths run without ambient tenant
     // context): the tenant's own versions form their own key-space; global
     // (NULL-tenant) versions are the fallback. Never another tenant's.
-    return (
-      inEffect.find((plan) => plan.tenantId === tenantId) ??
-      inEffect.find((plan) => plan.tenantId === null) ??
-      null
+    const atIso = at.toISOString();
+    if (tenantId === null) {
+      const results = await this.query(
+        `SELECT * FROM ${this.tableName}
+         WHERE tenant_id IS NULL
+           AND plan_key = ?
+           AND status = ?
+           AND (effective_from IS NULL OR effective_from <= ?)
+         ORDER BY version DESC
+         LIMIT 1`,
+        [planKey, 'active', atIso],
+        { allowRawOnTenantScoped: true },
+      );
+      return results[0] ?? null;
+    }
+
+    assertTenantReadAllowed(
+      tenantId,
+      'CommissionPlanCollection.latestActiveByKey',
     );
+    const results = await this.query(
+      `SELECT * FROM ${this.tableName}
+       WHERE (tenant_id = ? OR tenant_id IS NULL)
+         AND plan_key = ?
+         AND status = ?
+         AND (effective_from IS NULL OR effective_from <= ?)
+       ORDER BY CASE WHEN tenant_id = ? THEN 0 ELSE 1 END, version DESC
+       LIMIT 1`,
+      [tenantId, planKey, 'active', atIso, tenantId],
+      { allowRawOnTenantScoped: true },
+    );
+    return results[0] ?? null;
   }
 
   /**
