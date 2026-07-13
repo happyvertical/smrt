@@ -97,9 +97,10 @@ async function createLoosePackage(
 async function createProject(
   projectRoot: string,
   manifest: SmartObjectManifest,
+  packageName = 'runtime-check-fixture',
 ): Promise<void> {
   await writeJson(resolve(projectRoot, 'package.json'), {
-    name: 'runtime-check-fixture',
+    name: packageName,
     private: true,
     type: 'module',
     dependencies: {
@@ -267,6 +268,169 @@ describe('runRuntimeCheck', () => {
       (finding) => finding.severity === 'error',
     );
 
+    expect(errors, errors.map((finding) => finding.message).join('\n')).toEqual(
+      [],
+    );
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'pass',
+          code: 'runtime-check-passed',
+        }),
+      ]),
+    );
+  });
+
+  it('accepts external-only aggregate manifests without hydrating dependency entries as local', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    const family = (packageName: string, childName: string) => ({
+      [`${packageName}:FixtureProfile`]: {
+        className: 'FixtureProfile',
+        qualifiedName: `${packageName}:FixtureProfile`,
+        packageName,
+        collection: 'profiles',
+        fields: { displayName: { type: 'text' as const, required: false } },
+      },
+      [`${packageName}:${childName}`]: {
+        className: childName,
+        qualifiedName: `${packageName}:${childName}`,
+        packageName,
+        collection: 'profiles',
+        extends: 'FixtureProfile',
+        fields: { role: { type: 'text' as const, required: false } },
+      },
+    });
+    const familyA = family('@fixture/profiles-a', 'FixtureStaffProfile');
+    const familyB = family('@fixture/profiles-b', 'FixtureMemberProfile');
+
+    await createExternalPackage(projectRoot, '@fixture/profiles-a', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/profiles-a',
+      objects: familyA,
+    });
+    await createExternalPackage(projectRoot, '@fixture/profiles-b', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/profiles-b',
+      objects: familyB,
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      smrtDependencies: ['@fixture/profiles-a', '@fixture/profiles-b'],
+      objects: { ...familyA, ...familyB },
+    });
+    await createRegisterFile(projectRoot);
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+    const errors = result.findings.filter(
+      (finding) => finding.severity === 'error',
+    );
+
+    expect(errors, errors.map((finding) => finding.message).join('\n')).toEqual(
+      [],
+    );
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'pass',
+          code: 'runtime-check-passed',
+        }),
+      ]),
+    );
+  });
+
+  it('retains containerless local entries identified by the project package name', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(projectRoot, '@fixture/widgets', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/widgets',
+      objects: {
+        '@fixture/widgets:Widget': {
+          className: 'Widget',
+          qualifiedName: '@fixture/widgets:Widget',
+          packageName: '@fixture/widgets',
+          collection: 'widgets',
+          fields: { externalName: { type: 'text', required: false } },
+        },
+      },
+    });
+
+    await createProject(
+      projectRoot,
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        smrtDependencies: ['@fixture/widgets'],
+        objects: {
+          '@test/app:Widget': {
+            className: 'Widget',
+            qualifiedName: '@test/app:Widget',
+            packageName: '@test/app',
+            collection: 'widgets',
+            fields: { localName: { type: 'text', required: false } },
+          },
+        },
+      },
+      '@test/app',
+    );
+    await createRegisterFile(projectRoot);
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(result.projectPackageName).toBe('@test/app');
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'warning',
+          code: 'duplicate-short-name',
+        }),
+      ]),
+    );
+  });
+
+  it('hydrates unqualified local entries with the inferred project package owner', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createProject(
+      projectRoot,
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        objects: {
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            fields: { title: { type: 'text', required: true } },
+          },
+        },
+      },
+      '@test/app',
+    );
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+    const errors = result.findings.filter(
+      (finding) => finding.severity === 'error',
+    );
+
+    expect(result.projectPackageName).toBe('@test/app');
     expect(errors, errors.map((finding) => finding.message).join('\n')).toEqual(
       [],
     );

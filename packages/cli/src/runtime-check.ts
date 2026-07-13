@@ -107,6 +107,24 @@ function getManifestPackageName(
   return manifest.packageName || fallback;
 }
 
+function readProjectPackageName(projectRoot: string): string | undefined {
+  const packageJsonPath = resolve(projectRoot, 'package.json');
+  if (!existsSync(packageJsonPath)) {
+    return undefined;
+  }
+
+  try {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
+      name?: unknown;
+    };
+    return typeof packageJson.name === 'string' && packageJson.name
+      ? packageJson.name
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function getEntryClassName(
   key: string,
   definition: SmartObjectDefinition,
@@ -179,8 +197,9 @@ function flattenManifestEntries(
 
 function getOwnedProjectManifest(
   manifest: SmartObjectManifest,
+  fallbackPackageName?: string,
 ): SmartObjectManifest {
-  const packageName = manifest.packageName;
+  const packageName = getManifestPackageName(manifest, fallbackPackageName);
   if (!packageName) {
     return manifest;
   }
@@ -193,7 +212,7 @@ function getOwnedProjectManifest(
     ),
   );
 
-  return { ...manifest, objects };
+  return { ...manifest, packageName, objects };
 }
 
 function findProjectManifest(
@@ -395,17 +414,21 @@ async function loadDependencyManifests(
   return Array.from(loaded.values(), (entry) => entry.manifest);
 }
 
+function registerManifestEntries(manifest: SmartObjectManifest): void {
+  for (const [name, objectDef] of Object.entries(manifest.objects || {})) {
+    ObjectRegistry.registerFromManifest(
+      name,
+      objectDef,
+      resolveManifestEntryPackageName(name, objectDef, manifest.packageName),
+    );
+  }
+}
+
 function registerDependencyManifests(
   dependencyManifests: SmartObjectManifest[],
 ): void {
   for (const manifest of dependencyManifests) {
-    for (const [name, objectDef] of Object.entries(manifest.objects || {})) {
-      ObjectRegistry.registerFromManifest(
-        name,
-        objectDef,
-        resolveManifestEntryPackageName(name, objectDef, manifest.packageName),
-      );
-    }
+    registerManifestEntries(manifest);
   }
 }
 
@@ -892,7 +915,14 @@ export async function runRuntimeCheck(
   const projectManifest = (await loadManifestFile(
     projectManifestInfo.path,
   )) as unknown as SmartObjectManifest;
-  const ownedProjectManifest = getOwnedProjectManifest(projectManifest);
+  const projectPackageName = getManifestPackageName(
+    projectManifest,
+    readProjectPackageName(projectRoot),
+  );
+  const ownedProjectManifest = getOwnedProjectManifest(
+    projectManifest,
+    projectPackageName,
+  );
   const dependencyManifests = await loadDependencyManifests(
     projectManifest,
     projectRoot,
@@ -906,11 +936,7 @@ export async function runRuntimeCheck(
   );
 
   const allEntries = [
-    ...flattenManifestEntries(
-      projectManifest,
-      'project',
-      projectManifest.packageName,
-    ),
+    ...flattenManifestEntries(projectManifest, 'project', projectPackageName),
     ...dependencyManifests.flatMap((manifest) =>
       flattenManifestEntries(manifest, 'dependency', manifest.packageName),
     ),
@@ -934,10 +960,13 @@ export async function runRuntimeCheck(
     return {
       projectRoot,
       projectManifestPath: projectManifestInfo.path,
-      projectPackageName: projectManifest.packageName,
+      projectPackageName,
       discoveredManifestCount: discovered.length,
       findings,
     };
+  }
+  if (!projectManifest.packageName && projectPackageName) {
+    registerManifestEntries(ownedProjectManifest);
   }
   registerDependencyManifests(dependencyManifests);
   await checkRuntimeHydration(
@@ -959,7 +988,7 @@ export async function runRuntimeCheck(
   return {
     projectRoot,
     projectManifestPath: projectManifestInfo.path,
-    projectPackageName: projectManifest.packageName,
+    projectPackageName,
     discoveredManifestCount: discovered.length,
     findings,
   };
