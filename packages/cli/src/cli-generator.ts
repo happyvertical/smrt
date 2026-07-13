@@ -24,6 +24,7 @@ import {
   type ParsedArgs,
   parseCliArgs,
 } from '@happyvertical/utils';
+import { resolveManifestEntryPackageName } from './discovery/manifest-identity.js';
 
 // Read version from package.json (ESM-compatible)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -562,7 +563,11 @@ export class CLIGenerator {
         ObjectRegistry.registerFromManifest(
           name,
           objectDef,
-          manifest.packageName,
+          resolveManifestEntryPackageName(
+            name,
+            objectDef,
+            manifest.packageName,
+          ),
         );
       }
     }
