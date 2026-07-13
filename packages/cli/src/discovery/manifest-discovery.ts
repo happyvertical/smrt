@@ -11,7 +11,10 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createLogger } from '@happyvertical/logger';
 import type { SmartObjectDefinition } from '@happyvertical/smrt-core';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  getPackageFromQualifiedName,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import glob from 'fast-glob';
 
 const logger = createLogger({ level: 'info' });
@@ -37,6 +40,25 @@ export interface LoadedManifestFile {
   version?: string;
   smrtDependencies?: unknown;
   [key: string]: unknown;
+}
+
+export function resolveManifestEntryPackageName(
+  name: string,
+  definition: SmartObjectDefinition,
+  fallback?: string,
+): string | undefined {
+  // Only explicit entry provenance may override the containing manifest.
+  // Qualified keys and qualifiedName are identity values that runtime:check
+  // validates, so neither may let a malformed local entry reclassify itself
+  // as external when the container already has an owner.
+  return (
+    definition.packageName ||
+    fallback ||
+    getPackageFromQualifiedName(name) ||
+    (definition.qualifiedName
+      ? getPackageFromQualifiedName(definition.qualifiedName)
+      : undefined)
+  );
 }
 
 /**
@@ -315,11 +337,13 @@ export async function loadManifest(manifestPath: string): Promise<void> {
   for (const [name, objectDef] of Object.entries(manifest.objects)) {
     // Manifest entries are loaded from JSON as `unknown`; at this boundary they
     // are the runtime SmartObjectDefinition shape the registry expects.
-    ObjectRegistry.registerFromManifest(
+    const definition = objectDef as SmartObjectDefinition;
+    const packageName = resolveManifestEntryPackageName(
       name,
-      objectDef as SmartObjectDefinition,
+      definition,
       manifest.packageName,
     );
+    ObjectRegistry.registerFromManifest(name, definition, packageName);
   }
 }
 
