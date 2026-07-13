@@ -107,6 +107,23 @@ describe('runRuntimeCheck', () => {
     expect(findCodes(result.findings)).toContain('manifest-key-mismatch');
   });
 
+  it('flags a manifest-key mismatch when a qualified key disagrees with the container package', async () => {
+    writeManifest(tempDir, {
+      version: '1.0.0',
+      packageName: '@app/example',
+      objects: {
+        '@other/pkg:Widget': {
+          className: 'Widget',
+          fields: { id: { type: 'text' } },
+        },
+      },
+    });
+
+    const result = await runRuntimeCheck(tempDir);
+
+    expect(findCodes(result.findings)).toContain('manifest-key-mismatch');
+  });
+
   it('warns when a class is missing package identity', async () => {
     writeManifest(tempDir, {
       version: '1.0.0',
