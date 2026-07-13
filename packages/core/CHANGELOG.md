@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.39.11
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - support ownerless aggregate manifests (cli)
+  - validate qualified manifest keys (cli)
+  - preserve manifest container identity (cli)
+  - address release metadata review (cli)
+  - support aggregated consumer manifests (cli)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.78.1 (deps)
+  - @happyvertical/smrt-config@0.39.11
+  - @happyvertical/smrt-types@0.39.11
+  - @happyvertical/smrt-scanner@0.39.11
+
 ## 0.39.10
 
 ### Patch Changes
