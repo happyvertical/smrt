@@ -192,6 +192,8 @@ const versions = await article.listVersions();
 await versions.restoreIntoContent(versionId);
 ```
 
+#### Migrating automated producers
+
 Automated producers should use `kind: 'auto-generated'` instead of encoding
 generation as `kind: 'draft'` plus `metadata.generated = 'auto'`. Keep
 source-specific metadata such as `metadata.source` when it provides useful
