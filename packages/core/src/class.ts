@@ -1,7 +1,9 @@
 import type { AIClientOptions } from '@happyvertical/ai';
 import { type AIClient, getAI } from '@happyvertical/ai';
-import type { FilesystemAdapterOptions } from '@happyvertical/files';
-import { FilesystemAdapter } from '@happyvertical/files';
+import type {
+  FilesystemAdapter,
+  FilesystemAdapterOptions,
+} from '@happyvertical/files';
 import { createLogger, type LoggerConfig } from '@happyvertical/logger';
 import type {
   AiTokenUsage,
@@ -34,6 +36,7 @@ import type {
 } from './config.js';
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
+import { createFilesystemAdapter } from './filesystem-loader.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {
@@ -645,7 +648,10 @@ export class SmrtClass {
     if (!this._runtimeServicesInitPromise) {
       this._runtimeServicesInitPromise = (async () => {
         if (this.options.fs && !this._fs) {
-          this._fs = await FilesystemAdapter.create(this.options.fs);
+          // Acquired through the boundary in filesystem-loader.ts so the
+          // @happyvertical/files SDK (S3/googleapis) never enters
+          // provider-neutral consumer bundles (#1977/#1979).
+          this._fs = await createFilesystemAdapter(this.options.fs);
         }
 
         // Initialize AI client with environment variable support

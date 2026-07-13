@@ -88,6 +88,40 @@ export interface MessageSendResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Provider transport factories (#1979)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Structural view of the SDK message clients used by senders. Kept structural
+// (rather than typed against @happyvertical/messages) so the provider-neutral
+// package surface carries no reference to the SDK wrappers whose roots import
+// googleapis/nodemailer/@slack/web-api. Concrete factories are registered on
+// MessagingProviderDefinition by the explicit provider entry points
+// (`@happyvertical/smrt-messages/providers/*`).
+
+/** Result shape returned by SDK message-client `send()` implementations. */
+export interface MessagingTransportSendResult {
+  success: boolean;
+  messageId?: string;
+  providerResponse?: Record<string, unknown>;
+  timestamp?: Date;
+}
+
+/** Minimal structural contract of an SDK message client (Slack, Twitter, …). */
+export interface MessagingTransportClient {
+  connect(): Promise<unknown>;
+  disconnect(): Promise<unknown>;
+  send(
+    message: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ): Promise<MessagingTransportSendResult>;
+}
+
+/** Creates a connected-capable SDK message client for a provider config. */
+export type MessageClientFactory = (
+  config: { type: string } & Record<string, unknown>,
+) => Promise<MessagingTransportClient>;
+
+// ─────────────────────────────────────────────────────────────────────────
 // Discriminator Types
 // ─────────────────────────────────────────────────────────────────────────
 
