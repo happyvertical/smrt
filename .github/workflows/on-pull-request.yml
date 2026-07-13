@@ -418,6 +418,7 @@ jobs:
               - 'packages/analytics/**'
               - 'packages/cli/**'
               - 'packages/core/**'
+              - 'packages/sales/**'
               - 'packages/users/**'
               - 'packages/vitest/**'
               - 'scripts/run-with-ci-postgres.mjs'

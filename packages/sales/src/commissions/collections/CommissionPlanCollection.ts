@@ -8,6 +8,7 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
 import {
   CommissionPlan,
   validateCommissionPlanComponents,
@@ -64,10 +65,24 @@ export class CommissionPlanCollection extends SmrtCollection<CommissionPlan> {
     at: Date = new Date(),
     tenantId?: string | null,
   ): Promise<CommissionPlan | null> {
-    const results = await this.list({
-      where: { planKey, status: 'active' },
-      orderBy: 'version DESC',
-    });
+    const results =
+      tenantId === undefined
+        ? await this.list({
+            where: { planKey, status: 'active' },
+            orderBy: 'version DESC',
+          })
+        : (tenantId === null
+            ? await queryGlobal<CommissionPlan>(this)
+            : await queryWithGlobals<CommissionPlan>(
+                this,
+                tenantId,
+                'CommissionPlanCollection.latestActiveByKey',
+              )
+          )
+            .filter(
+              (plan) => plan.planKey === planKey && plan.status === 'active',
+            )
+            .sort((a, b) => b.version - a.version);
     const inEffect = results.filter(
       (plan) => plan.effectiveFrom === null || plan.effectiveFrom <= at,
     );

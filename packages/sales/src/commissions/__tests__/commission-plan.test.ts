@@ -315,6 +315,15 @@ describe('CommissionPlan', () => {
     const forC = await plans.latestActiveByKey('lane-plan', now, 'tenant-c');
     expect(forC?.version).toBe(3);
     expect(forC?.tenantId).toBeNull();
+
+    // An exact tenant lane still wins even when a higher global version exists.
+    const forAWithGlobal = await plans.latestActiveByKey(
+      'lane-plan',
+      now,
+      'tenant-a',
+    );
+    expect(forAWithGlobal?.version).toBe(1);
+    expect(forAWithGlobal?.tenantId).toBe('tenant-a');
   });
 
   it('refuses a fresh create onto an existing plan version (codex P1)', async () => {

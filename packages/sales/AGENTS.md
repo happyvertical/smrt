@@ -9,6 +9,10 @@ Modular sales: CRM (Leads, Opportunities, Pipelines), referral intake with versi
 
 The root export re-exports every TS module. Internal module dependency order is `crm → commissions` and `referrals → commissions` (by string references only); `commissions` never imports from `crm`/`referrals` and never assumes advertising, Referral, Lead, or Opportunity semantics.
 
+## Validation
+
+Run `pnpm --filter @happyvertical/smrt-sales test` and `pnpm --filter @happyvertical/smrt-sales typecheck` for package changes. PostgreSQL-sensitive changes must also run `pnpm --filter @happyvertical/smrt-sales test:postgres`; the command uses the repository's disposable PostgreSQL harness and is registered in the PostgreSQL CI shard.
+
 ## Roles vs. money
 
 Referrers and Sales Representatives are **distinct roles** and stay that way. Both connect to money through one neutral financial account:
