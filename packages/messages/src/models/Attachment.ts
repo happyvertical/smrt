@@ -4,7 +4,12 @@
  * Uses messageId instead of emailId for cross-type support.
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  importOptionalDependency,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AttachmentOptions } from '../types';
 
@@ -117,12 +122,19 @@ export class Attachment extends SmrtObject {
 
   /**
    * Read file content (if stored externally)
+   *
+   * The files SDK is loaded through core's bundler-invisible optional-import
+   * boundary so it never enters provider-neutral consumer bundles (#1979).
+   * Absence of the SDK at runtime degrades to the existing null contract.
    */
   async readContent(): Promise<Buffer | null> {
     if (!this.filePath) return null;
 
     try {
-      const { getFilesystem } = await import('@happyvertical/files');
+      const { getFilesystem } = (await importOptionalDependency(
+        '@happyvertical/files',
+        "Import '@happyvertical/smrt-core/filesystem' (or '@happyvertical/smrt-assets/filesystem') during server startup to read externally-stored attachments in bundled builds.",
+      )) as typeof import('@happyvertical/files');
       const files = await getFilesystem({ type: 'local' });
       const data = await files.read(this.filePath);
       return data instanceof Buffer ? data : Buffer.from(data);

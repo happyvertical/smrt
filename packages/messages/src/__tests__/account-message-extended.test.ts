@@ -7,8 +7,9 @@
  * orchestration (status transitions).
  *
  * Mocking policy: only the external SDK transport getMessageClient() from
- * '@happyvertical/messages' is mocked (used indirectly via SlackSender during
- * Message.send). All models/collections/DB are real.
+ * '@happyvertical/messages' is mocked (reached through the explicit Slack
+ * provider entry via SlackSender during Message.send, #1979). All
+ * models/collections/DB are real.
  */
 
 import { getTestDatabase } from '@happyvertical/smrt-core';
@@ -31,6 +32,10 @@ import { Attachment } from '../models/Attachment';
 import { Message } from '../models/Message';
 import { SlackAccount } from '../models/SlackAccount';
 import { SlackMessage } from '../models/SlackMessage';
+// Explicit provider entry registers the Slack SDK transport on the provider
+// registry — the same opt-in production servers perform (#1979). Its dynamic
+// SDK import resolves to the vi.mock above.
+import '../providers/slack';
 
 let db: DatabaseInterface;
 

@@ -71,6 +71,7 @@ Registered slots: `asset-manager` (admin), `asset-grid` / `asset-list` (list), `
 
 ## Gotchas
 
+- **Files SDK is a lazy boundary (#1979)**: `AssetStore` loads `@happyvertical/files` through `src/files-runtime.ts` (bundler-invisible), because smrt-assets is reachable from provider-neutral consumer graphs via profiles. Node/tsx/vite-dev runtimes resolve it on first file operation; fully-bundled deployments import `@happyvertical/smrt-assets/filesystem` at startup. Never import the files SDK statically from modules reachable from `src/index.ts`.
 - **Version history manual**: `findVersions()` chaining required — no ORM shortcut
 - **Tag management uses raw SQL**: `asset_tags` is a join table, not an SMRT model
 - **Folder tree traversal**: via `SmrtHierarchical` (`getParent`/`getChildren`/`getAncestors`/`getDescendants`/`getHierarchy`/`moveTo`); `FolderCollection.getTree(rootId?)` and `getPath(folderId)` wrap these for convenience

@@ -1,10 +1,18 @@
 /**
  * TweetSender — sends tweets via the SDK MessageClient
+ *
+ * The SDK transport comes from the messaging provider registry (populated by
+ * `@happyvertical/smrt-messages/providers/twitter`) or constructor injection —
+ * never a direct `@happyvertical/messages` import, which would drag the SDK
+ * (and transitively googleapis/nodemailer via its email wrapper) into
+ * provider-neutral consumer bundles (#1979).
  */
 
 import type { Tweet } from '../models/Tweet';
 import type { TwitterAccount } from '../models/TwitterAccount';
+import { getMessagingProvider } from '../providers.js';
 import type {
+  MessageClientFactory,
   MessageSenderInterface,
   MessageSendResult,
   SendMessageOptions,
@@ -13,9 +21,14 @@ import type {
 export class TweetSender implements MessageSenderInterface {
   readonly providerType = 'twitter';
   private account: TwitterAccount;
+  private createMessageClient?: MessageClientFactory;
 
-  constructor(account: TwitterAccount) {
+  constructor(
+    account: TwitterAccount,
+    createMessageClient?: MessageClientFactory,
+  ) {
     this.account = account;
+    this.createMessageClient = createMessageClient;
   }
 
   isReady(): boolean {
@@ -26,7 +39,17 @@ export class TweetSender implements MessageSenderInterface {
     message: Tweet,
     _options?: SendMessageOptions,
   ): Promise<MessageSendResult> {
-    const { getMessageClient } = await import('@happyvertical/messages');
+    const createMessageClient =
+      this.createMessageClient ??
+      getMessagingProvider(this.providerType)?.createMessageClient;
+    if (!createMessageClient) {
+      return {
+        success: false,
+        error:
+          "Twitter provider has no transport registered. Import '@happyvertical/smrt-messages/providers/twitter' (or '/providers/all') during server startup.",
+        sentAt: new Date(),
+      };
+    }
 
     const credentials = await this.account.getCredentials();
     if (
@@ -42,7 +65,7 @@ export class TweetSender implements MessageSenderInterface {
       };
     }
 
-    const client = await getMessageClient({
+    const client = await createMessageClient({
       type: 'twitter',
       apiKey: credentials.apiKey as string,
       apiSecret: credentials.apiSecret as string,
@@ -68,7 +91,7 @@ export class TweetSender implements MessageSenderInterface {
         success: result.success,
         providerMessageId: result.messageId,
         providerResponse: result.providerResponse,
-        sentAt: result.timestamp,
+        sentAt: result.timestamp ?? new Date(),
       };
     } catch (error) {
       return {

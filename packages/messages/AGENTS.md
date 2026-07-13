@@ -43,6 +43,33 @@ directly. Credential descriptor schemas contain field definitions, never values.
 
 `message.send()`: resolves account → creates provider sender → updates sendStatus. Retry support with `maxRetries` budget.
 
+## Provider entry points (bundle boundary, #1979)
+
+The package root is provider-neutral: models, collections, services,
+permissions, and the provider registry carry **zero provider-SDK weight**.
+Provider SDK wrappers (`@happyvertical/email`, `@happyvertical/messages`) are
+reachable only through explicit entry points, imported once at server startup:
+
+```ts
+import '@happyvertical/smrt-messages/providers/email';   // smtp/imap/pop3/gmail
+import '@happyvertical/smrt-messages/providers/slack';
+import '@happyvertical/smrt-messages/providers/twitter';
+import '@happyvertical/smrt-messages/providers/all';     // all of the above
+```
+
+- Without the matching entry, `EmailAccount.createClient()` (send + mailbox
+  sync) throws an actionable error and `SlackSender`/`TweetSender` return a
+  failure result naming the entry to import. Telegram and Zulip are
+  fetch-based and always work from the root.
+- Builtin registry definitions stay metadata-only (setup fields for UIs); the
+  entries upgrade them with `createEmailClient`/`createMessageClient`/
+  `createSender` hooks. Never import a provider SDK from any module reachable
+  from `src/index.ts` — the consumer bundle gate (`packages/bundle-gate`)
+  fails CI when one becomes reachable.
+- `Attachment.readContent()` loads `@happyvertical/files` through core's
+  `importOptionalDependency` boundary and keeps its null-on-failure contract
+  in builds where the SDK is absent.
+
 ## Gotchas
 
 - **STI `_meta_type`**: qualified format `@happyvertical/smrt-messages:Email`

@@ -18,6 +18,22 @@
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
+    "./providers/email": {
+      "types": "./dist/providers/email.d.ts",
+      "import": "./dist/providers/email.js"
+    },
+    "./providers/slack": {
+      "types": "./dist/providers/slack.d.ts",
+      "import": "./dist/providers/slack.js"
+    },
+    "./providers/twitter": {
+      "types": "./dist/providers/twitter.d.ts",
+      "import": "./dist/providers/twitter.js"
+    },
+    "./providers/all": {
+      "types": "./dist/providers/all.d.ts",
+      "import": "./dist/providers/all.js"
+    },
     "./ui": {
       "types": "./dist/ui.d.ts",
       "import": "./dist/ui.js"
@@ -32,6 +48,13 @@
       "import": "./dist/svelte/index.js"
     }
   },
+  "sideEffects": [
+    "./dist/index.js",
+    "./dist/__smrt-register__.js",
+    "./dist/providers/*.js",
+    "./dist/chunks/*.js",
+    "./dist/svelte/index.js"
+  ],
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
@@ -46,7 +69,6 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
-    "@happyvertical/ai": "catalog:",
     "@happyvertical/email": "catalog:",
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",

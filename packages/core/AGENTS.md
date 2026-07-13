@@ -182,6 +182,7 @@ emitDecoratorMetadata: true`.
 
 ## Gotchas
 
+- **Filesystem support is a lazy boundary (#1979)**: `SmrtClass` acquires `options.fs` adapters via `createFilesystemAdapter()` (`src/filesystem-loader.ts`), never a static `@happyvertical/files` import — the files SDK statically pulls @aws-sdk/client-s3 and reaches googleapis, and a static edge here would land it in every downstream SSR bundle. Node/tsx/vite-dev runtimes resolve it on first use; fully-bundled deployments import `@happyvertical/smrt-core/filesystem` at startup. Use `importOptionalDependency()` (`src/lazy-external.ts`) for any similar optional heavyweight dependency.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime only verifies and fails clearly

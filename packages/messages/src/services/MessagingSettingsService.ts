@@ -20,6 +20,7 @@ import {
   listMessagingProviders,
   type MessagingProviderDefinition,
   type MessagingProviderField,
+  type MessagingProviderFunctionKey,
 } from '../providers.js';
 import type { MessagingChannel } from '../types.js';
 
@@ -86,12 +87,19 @@ export class MessagingSettingsService {
 
   getProviderDefinitions(options: { includeUnavailable?: boolean } = {}) {
     return listMessagingProviders(options).map(
-      ({ createSender: _, ...provider }) => provider,
+      ({
+        createSender: _createSender,
+        createEmailClient: _createEmailClient,
+        createMessageClient: _createMessageClient,
+        ...provider
+      }) => provider,
     );
   }
 
   async list(personaId: string): Promise<{
-    providers: Array<Omit<MessagingProviderDefinition, 'createSender'>>;
+    providers: Array<
+      Omit<MessagingProviderDefinition, MessagingProviderFunctionKey>
+    >;
     accounts: MessagingAccountView[];
     endpoints: MessagingEndpointView[];
     routes: PersonaMessageRoute[];

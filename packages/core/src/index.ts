@@ -117,6 +117,12 @@ export * from './dispatch/index';
 // Embeddings support (semantic search)
 export * from './embeddings/index';
 export * from './errors';
+// Filesystem boundary (keeps @happyvertical/files out of neutral bundles)
+export {
+  createFilesystemAdapter,
+  type FilesystemAdapterFactory,
+  registerFilesystemAdapterFactory,
+} from './filesystem-loader';
 // Code generators (tree-shakeable)
 export * from './generators/index';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
@@ -145,6 +151,10 @@ export {
   resolveLazyConfig,
   unregisterConfigResolver,
 } from './lazy-config';
+export {
+  importOptionalDependency,
+  registerOptionalDependency,
+} from './lazy-external';
 // Learning memory — confidence-scored, self-correcting recall/capture (#1886)
 export {
   DEFAULT_LEARNING_CONFIG,

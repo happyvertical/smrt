@@ -1,7 +1,12 @@
+import type { EmailClient, GetEmailClientOptions } from '@happyvertical/email';
 import type { Account } from './models/Account.js';
 import { TelegramSender } from './senders/TelegramSender.js';
 import { ZulipSender } from './senders/ZulipSender.js';
-import type { MessageSenderInterface, MessagingChannel } from './types.js';
+import type {
+  MessageClientFactory,
+  MessageSenderInterface,
+  MessagingChannel,
+} from './types.js';
 
 export type MessagingProviderFieldType =
   | 'string'
@@ -32,7 +37,30 @@ export interface MessagingProviderDefinition {
   credentialFields: MessagingProviderField[];
   endpointFields: MessagingProviderField[];
   createSender?: (account: Account) => Promise<MessageSenderInterface>;
+  /**
+   * Creates the SDK email client for this provider. Absent on the builtin
+   * metadata-only definitions — registered by the explicit
+   * `@happyvertical/smrt-messages/providers/email` entry point so the
+   * @happyvertical/email SDK (googleapis/nodemailer) never enters
+   * provider-neutral consumer bundles (#1979).
+   */
+  createEmailClient?: (options: GetEmailClientOptions) => Promise<EmailClient>;
+  /**
+   * Creates the SDK message client (Slack, Twitter, …) for this provider.
+   * Registered by the matching `@happyvertical/smrt-messages/providers/*`
+   * entry point; absent until that entry is imported.
+   */
+  createMessageClient?: MessageClientFactory;
 }
+
+/**
+ * Function-valued definition keys. Stripped by MessagingSettingsService before
+ * definitions are serialized to setup UIs.
+ */
+export type MessagingProviderFunctionKey =
+  | 'createSender'
+  | 'createEmailClient'
+  | 'createMessageClient';
 
 const REGISTRY_KEY = Symbol.for('smrt.messaging.providers');
 
@@ -69,6 +97,23 @@ export function listMessagingProviders(
 
 let builtinsRegistered = false;
 
+/**
+ * Registers a builtin definition only when its id is still absent.
+ *
+ * The registry lives on globalThis (survives HMR and duplicate module
+ * instances) while the `builtinsRegistered` flag is module-scoped, so a
+ * second module instance re-runs this function against a registry that may
+ * already hold upgraded definitions — e.g. the functional client hooks
+ * registered by the explicit `providers/*` entry points (#1979). Builtins
+ * therefore only fill gaps; they never overwrite an existing definition.
+ */
+function registerBuiltinMessagingProvider(
+  provider: MessagingProviderDefinition,
+): void {
+  if (registry().has(provider.id)) return;
+  registerMessagingProvider(provider);
+}
+
 export function ensureBuiltinMessagingProvidersRegistered(): void {
   if (builtinsRegistered) return;
   builtinsRegistered = true;
@@ -96,7 +141,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
   ];
 
   for (const id of ['smtp', 'imap', 'pop3'] as const) {
-    registerMessagingProvider({
+    registerBuiltinMessagingProvider({
       id,
       label: id.toUpperCase(),
       channel: 'email',
@@ -109,7 +154,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     });
   }
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'gmail',
     label: 'Gmail',
     channel: 'email',
@@ -141,7 +186,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     endpointFields: emailEndpoint,
   });
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'zulip',
     label: 'Zulip',
     channel: 'zulip',
@@ -175,7 +220,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     createSender: async (account) => new ZulipSender(account),
   });
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'telegram',
     label: 'Telegram',
     channel: 'telegram',
@@ -191,7 +236,7 @@ export function ensureBuiltinMessagingProvidersRegistered(): void {
     createSender: async (account) => new TelegramSender(account),
   });
 
-  registerMessagingProvider({
+  registerBuiltinMessagingProvider({
     id: 'sms',
     label: 'SMS (provider required)',
     channel: 'sms',
