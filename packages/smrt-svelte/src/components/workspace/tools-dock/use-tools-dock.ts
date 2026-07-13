@@ -18,7 +18,7 @@
  * @example
  * ```svelte
  * <script lang="ts">
- *   import { useToolsDock } from '@happyvertical/smrt-svelte/workspace';
+ *   import { useToolsDock } from '@happyvertical/smrt-svelte/workspace/legacy';
  *   const dock = useToolsDock();
  * </script>
  *

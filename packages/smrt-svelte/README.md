@@ -156,9 +156,18 @@ scaffold adopts AdminShell as its default chrome exactly this way; copy its
 | `@happyvertical/smrt-ui/data` | DataTable, CollectionList/ContentList, CollectionToolbar |
 | `@happyvertical/smrt-svelte/registry` | ModuleUIRegistry for agent admin panels |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
+| `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
 | `@happyvertical/smrt-svelte/browser-ai` | Browser AI client (STT/TTS/LLM adapters, capability detection) |
 | `@happyvertical/smrt-svelte/browser-ai/svelte` | Svelte AI components (VoiceInput, CapabilityGate, etc.) |
 | `@happyvertical/smrt-svelte/styles/tokens.css` | Design tokens CSS |
+
+Legacy ToolsDock availability is presentation-only, not authorization.
+`fetchAvailability` failures intentionally keep controls usable using the
+current context's last-known-good result, or registered-tool metadata after a
+context change. Every tool operation and server endpoint must independently
+enforce permissions. Consumers can surface current-context degraded state
+through `dock.availabilityError`; a context change or later valid refresh
+clears it.
 
 ### Components by Category
 

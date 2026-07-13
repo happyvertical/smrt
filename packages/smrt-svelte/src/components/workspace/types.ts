@@ -112,7 +112,7 @@ export interface ToolDef {
    * ```svelte
    * <script lang="ts">
    *   import type { ToolsDockApi, ToolsDockContext } from
-   *     '@happyvertical/smrt-svelte/workspace';
+   *     '@happyvertical/smrt-svelte/workspace/legacy';
    *
    *   interface MyData { siteSlug: string; contentId: string }
    *   interface MyActions { triggerSave(): void }
@@ -358,6 +358,16 @@ export interface ToolsDockApi<
   readonly activeTool: string | null;
   readonly isOpen: boolean;
   readonly availableTools: ReadonlyArray<AvailableTool>;
+  /**
+   * The current context's latest `fetchAvailability` failure, or `null`
+   * before a failure, after a context change, and after the next successful
+   * refresh. A failure leaves `availableTools` on its last-known-good snapshot
+   * for the current context; a context change resets to registered-tool
+   * metadata before fetching so contextual labels and badges do not cross
+   * boundaries. Optional for structural compatibility with pre-existing
+   * `ToolsDockApi` adapters.
+   */
+  readonly availabilityError?: unknown;
   /**
    * The current dock context (route data, selection, etc.) as supplied via
    * `setContext()`. Typed against the factory's `<TData, TActions>` generics —

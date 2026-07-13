@@ -24,7 +24,8 @@ export type ContentVersionKind =
   | 'draft'
   | 'review'
   | 'publication'
-  | 'correction';
+  | 'correction'
+  | 'auto-generated';
 
 export type ContentCorrectionType = 'fact' | 'safety' | 'copy' | 'custom';
 

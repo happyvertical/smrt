@@ -82,7 +82,8 @@ the top-of-stack, domain-aware pieces:
 | Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
 | Module | `ModulePanel` |
 | Settings (`/settings`) | `SettingsCatalog`, `paginateSettingsCatalog` |
-| Workspace (`/workspace`) | `WorkspaceShell`, `NavTree`, `Breadcrumbs`, `ToolsDock`, `RoleShell` |
+| Workspace (`/workspace`) | `AdminShell`, `ShellState`, `TenantNav`, focus tools, settings, activities, and system/app panels |
+| Legacy workspace (`/workspace/legacy`) | First-generation `ToolsDock` compatibility surface during AdminShell migration |
 
 ### Gap primitives & S10 consolidation (L3 #1422)
 
@@ -120,7 +121,8 @@ library. Which barrel for what:
 | `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` | `@happyvertical/smrt-svelte/feedback` |
 | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-svelte/layout` |
 | Chat message bubble, reaction picker, typing indicator | `@happyvertical/smrt-svelte/chat` |
-| Admin shell, nav tree, breadcrumbs, tools dock | `@happyvertical/smrt-svelte/workspace` |
+| Admin shell, tenant navigation, focus tools, settings, and activities | `@happyvertical/smrt-svelte/workspace` |
+| First-generation ToolsDock during AdminShell migration | `@happyvertical/smrt-svelte/workspace/legacy` |
 | Server-paged settings search, selection, and list/detail layout | `@happyvertical/smrt-svelte/settings` |
 
 The package root re-exports `./ui`, `./forms`, etc., so `from
@@ -268,7 +270,9 @@ activities, tenant nav, app/system panels) from `workspace/admin-shell/`.
 The first-generation workspace family (`WorkspaceShell`, `RoleShell`,
 `NavTree`, `Breadcrumbs`, `ToolsDock`) remains in source as migration reference
 only. Do not re-export it from the public `./workspace` barrel just to preserve
-compatibility.
+compatibility. Applications that still need ToolsDock during migration may use
+the explicit `@happyvertical/smrt-svelte/workspace/legacy` subpath; keep legacy
+additions isolated there so the canonical workspace surface remains AdminShell.
 
 **Principles**:
 - SvelteKit-agnostic core — no `$app/state` or `$app/navigation` imports
@@ -349,3 +353,13 @@ Recommended pattern: in the consumer's `+server.ts` endpoint that backs
 unconditionally visible (back-compat). Anytown's hand-coded
 `apps/dashboard/src/lib/server/content-tool-dock.ts` is a candidate for
 migration in a follow-up.
+
+Legacy ToolsDock treats availability fetch failures as degraded presentation
+state: it preserves the current context's last successful tool IDs, labels,
+and badges. Before the first success, or after a context change, it falls back
+to registered-tool metadata so contextual values do not cross boundaries.
+Consumers can read `dock.availabilityError` to surface the current context's
+failure; a context change or later successful refresh clears the signal, and
+success applies the new snapshot.
+Availability is never an authorization boundary—server operations must still
+enforce permissions.

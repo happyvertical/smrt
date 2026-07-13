@@ -174,8 +174,15 @@ are created automatically when governed content is published.
 ```typescript
 // Manual version snapshot
 await article.mutateVersionAction({
-  kind: 'publication',
-  summary: 'Content published.',
+  kind: 'manual',
+  summary: 'Before the editorial rewrite.',
+});
+
+// Snapshot created by an ingestion or generation worker
+await article.mutateVersionAction({
+  kind: 'auto-generated',
+  summary: 'Planning asset extracted.',
+  metadata: { source: 'planning-asset-ingestion' },
 });
 
 // List version history
@@ -184,6 +191,13 @@ const versions = await article.listVersions();
 // Restore a previous version
 await versions.restoreIntoContent(versionId);
 ```
+
+#### Migrating automated producers
+
+Automated producers should use `kind: 'auto-generated'` instead of encoding
+generation as `kind: 'draft'` plus `metadata.generated = 'auto'`. Keep
+source-specific metadata such as `metadata.source` when it provides useful
+provenance.
 
 ### References & Drift Detection
 
@@ -503,7 +517,7 @@ thumbnail selection, and save payload behavior as the package editors.
 | `ContentReference` | Junction model for content-to-content links; nullable `targetVersion` pins citation-time `ContentVersion.version` for drift detection |
 | `ContentReview` | AI review result tied to a governance policy |
 | `ContentCorrection` | Post-publication correction record |
-| `ContentVersion` | Content snapshot with kind (`'publication'`, `'manual'`) and transparency metadata |
+| `ContentVersion` | Content snapshot with kind (`'manual'`, `'draft'`, `'review'`, `'publication'`, `'correction'`, or `'auto-generated'`) and transparency metadata |
 | `ContentContribution` | Held inbound submission with approval, rejection, withdrawal, and promotion actions |
 | `ContentContributions` | Contribution collection with web intake, email ingestion, inbox, and contributor views |
 | `ContentContributionType` | Persisted contribution-type override for app-defined intake rules and promotion mapping |
@@ -561,7 +575,7 @@ thumbnail selection, and save payload behavior as the package editors.
 | `ContentReviewResult` | AI review output with findings |
 | `ContentReviewFinding` | Individual issue from a review |
 | `ContentCorrectionType` | `'correction' \| 'retraction' \| 'update' \| 'clarification'` |
-| `ContentVersionKind` | `'publication' \| 'manual'` |
+| `ContentVersionKind` | `'manual' \| 'draft' \| 'review' \| 'publication' \| 'correction' \| 'auto-generated'` |
 | `ContentTransparencyData` | Full transparency report data shape |
 | `ContentPublishReadinessState` | Profile evaluation result |
 
