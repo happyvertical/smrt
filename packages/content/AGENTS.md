@@ -8,7 +8,7 @@ STI content management with governance workflows, contribution intake, AI review
 - **Article**, **ContentDocument**, **Mirror**: STI subclasses — all share `contents` table via `_meta_type`
 - **ContentReview**: AI review result tied to a governance policy. Fields: `contentId`, `policyKey`, `kind`, `status` (accepted/flagged/rejected), `findings`, `fingerprint`, `metadata`
 - **ContentCorrection**: Post-publication change record. Fields: `contentId`, `type` (correction/retraction/update/clarification), `summary`, `note`, `status`, `metadata`
-- **ContentVersion**: Content snapshot. Fields: `contentId`, `kind` (publication/manual), `versionNumber`, `summary`, `metadata` (includes `transparency` for publication versions)
+- **ContentVersion**: Content snapshot. Fields: `contentId`, `kind` (manual/draft/review/publication/correction/auto-generated), `versionNumber`, `summary`, `metadata` (includes `transparency` for publication versions)
 - **ContentReference**: Junction model for content-to-content links (`content_references` table). Nullable `targetVersion` pins a citation to a specific `ContentVersion.version` for drift detection.
 - **ContentGovernancePolicy**: Persisted review policy (key, label, kind, instructions)
 - **ContentGovernanceProfile**: Persisted review profile (key, label, requirements array)

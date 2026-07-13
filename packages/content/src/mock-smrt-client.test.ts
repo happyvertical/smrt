@@ -277,7 +277,9 @@ describe('mock-smrt-client', () => {
       summary: 'Fix claim',
     });
     await client.contents.getVersions('content-1');
-    await client.contents.createVersion('content-1', { kind: 'manual' });
+    await client.contents.createVersion('content-1', {
+      kind: 'auto-generated',
+    });
     await client.contents.restoreVersion('content-1', 3);
     await client.contentGovernancePolicies.list();
     await client.contentGovernancePolicies.get('policy-1');
@@ -374,7 +376,7 @@ describe('mock-smrt-client', () => {
         {
           url: '/api/v1/contents/content-1/versions',
           method: 'POST',
-          body: { kind: 'manual' },
+          body: { kind: 'auto-generated' },
         },
         {
           url: '/api/v1/contents/content-1/versions',
