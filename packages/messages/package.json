@@ -52,7 +52,8 @@
     "./dist/index.js",
     "./dist/__smrt-register__.js",
     "./dist/providers/*.js",
-    "./dist/chunks/*.js"
+    "./dist/chunks/*.js",
+    "./dist/svelte/index.js"
   ],
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",

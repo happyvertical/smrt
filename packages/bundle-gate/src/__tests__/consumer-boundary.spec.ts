@@ -43,7 +43,7 @@
  * instead fails on FORBIDDEN modules, do not touch the budget — a provider
  * SDK became reachable and the reported import chain is the bug.
  */
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
