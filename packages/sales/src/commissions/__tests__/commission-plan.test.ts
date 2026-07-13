@@ -6,6 +6,11 @@
  */
 
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CommissionPlanCollection } from '../collections/CommissionPlanCollection.js';
@@ -315,6 +320,32 @@ describe('CommissionPlan', () => {
     const forC = await plans.latestActiveByKey('lane-plan', now, 'tenant-c');
     expect(forC?.version).toBe(3);
     expect(forC?.tenantId).toBeNull();
+
+    // An exact tenant lane still wins even when a higher global version exists.
+    const forAWithGlobal = await plans.latestActiveByKey(
+      'lane-plan',
+      now,
+      'tenant-a',
+    );
+    expect(forAWithGlobal?.version).toBe(1);
+    expect(forAWithGlobal?.tenantId).toBe('tenant-a');
+  });
+
+  it('rejects an explicit cross-tenant plan lookup', async () => {
+    enableTenancy();
+    try {
+      await expect(
+        withTenant({ tenantId: 'tenant-a' }, () =>
+          plans.latestActiveByKey(
+            'lane-plan',
+            new Date('2026-07-01T00:00:00Z'),
+            'tenant-b',
+          ),
+        ),
+      ).rejects.toThrow(/Tenant isolation violation/);
+    } finally {
+      disableTenancy();
+    }
   });
 
   it('refuses a fresh create onto an existing plan version (codex P1)', async () => {
