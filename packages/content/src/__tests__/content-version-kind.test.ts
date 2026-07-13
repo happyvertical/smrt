@@ -37,44 +37,48 @@ describe('ContentVersionKind', () => {
       type: 'sqlite',
       url: `file:${path.join(os.tmpdir(), `smrt-content-version-${crypto.randomUUID()}.db`)}`,
     });
-    await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
-    const versions = await ContentVersionCollection.create({ db });
-    const kind: ContentVersionKind = 'auto-generated';
+    try {
+      await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+      const versions = await ContentVersionCollection.create({ db });
+      const kind: ContentVersionKind = 'auto-generated';
 
-    const created = await versions.create({
-      slug: 'generated-version-v1',
-      contentId: crypto.randomUUID(),
-      version: 1,
-      kind,
-      summary: 'Created by planning-asset ingestion',
-      snapshot: { title: 'Generated planning asset' },
-      metadata: { source: 'planning-asset-ingestion' },
-    });
+      const created = await versions.create({
+        slug: 'generated-version-v1',
+        contentId: crypto.randomUUID(),
+        version: 1,
+        kind,
+        summary: 'Created by planning-asset ingestion',
+        snapshot: { title: 'Generated planning asset' },
+        metadata: { source: 'planning-asset-ingestion' },
+      });
 
-    expect(created.kind).toBe('auto-generated');
+      expect(created.kind).toBe('auto-generated');
 
-    const queried = await versions.list({ where: { kind } });
-    expect(queried).toHaveLength(1);
-    expect(queried[0]?.kind).toBe('auto-generated');
+      const queried = await versions.list({ where: { kind } });
+      expect(queried).toHaveLength(1);
+      expect(queried[0]?.kind).toBe('auto-generated');
 
-    const persisted = queried[0];
-    if (!persisted) throw new Error('Expected persisted content version');
-    persisted.kind = 'manual';
-    await persisted.save();
-    persisted.kind = kind;
-    persisted.summary = 'Generated snapshot retained';
-    await persisted.save();
+      const persisted = queried[0];
+      if (!persisted) throw new Error('Expected persisted content version');
+      persisted.kind = 'manual';
+      await persisted.save();
+      persisted.kind = kind;
+      persisted.summary = 'Generated snapshot retained';
+      await persisted.save();
 
-    const reloaded = await versions.get(created.id as string);
-    expect(reloaded).toMatchObject({
-      kind: 'auto-generated',
-      summary: 'Generated snapshot retained',
-    });
-    expect(serializeContentVersion(reloaded)).toMatchObject({
-      kind: 'auto-generated',
-      snapshot: { title: 'Generated planning asset' },
-      metadata: { source: 'planning-asset-ingestion' },
-    });
+      const reloaded = await versions.get(created.id as string);
+      expect(reloaded).toMatchObject({
+        kind: 'auto-generated',
+        summary: 'Generated snapshot retained',
+      });
+      expect(serializeContentVersion(reloaded)).toMatchObject({
+        kind: 'auto-generated',
+        snapshot: { title: 'Generated planning asset' },
+        metadata: { source: 'planning-asset-ingestion' },
+      });
+    } finally {
+      await db.close?.();
+    }
   });
 
   it('keeps generated persistence surfaces text-backed and compatible', () => {
