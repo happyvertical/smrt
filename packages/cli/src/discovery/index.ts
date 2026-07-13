@@ -8,5 +8,5 @@ export {
   discoverManifests,
   loadManifest,
   loadManifestFile,
-  resolveManifestEntryPackageName,
 } from './manifest-discovery.js';
+export { resolveManifestEntryPackageName } from './manifest-identity.js';

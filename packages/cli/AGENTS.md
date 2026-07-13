@@ -33,6 +33,7 @@ migrations are manifest-driven through registered objects and project manifests.
 
 - **Lazy command loading**: commands loaded on-demand via dynamic import (~100ms overhead on first use)
 - **Manifest discovery**: auto-finds `.smrt/manifest.json` + scans `node_modules/@happyvertical/smrt-*`
+- **Aggregate manifest identity**: preload and schema discovery resolve package ownership per entry (`definition.packageName` before the container), so dependency objects retain their qualified registrations
 - **Class loading order**: config.entryPoint → package.json exports['.'] → package.json main → `./dist/index.js`
 - **Object method exposure**: custom methods on SMRT objects auto-become CLI commands
 
