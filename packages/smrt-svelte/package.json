@@ -37,6 +37,12 @@
       "import": "./dist/components/workspace/index.js",
       "default": "./dist/components/workspace/index.js"
     },
+    "./workspace/legacy": {
+      "types": "./dist/components/workspace/legacy.d.ts",
+      "svelte": "./dist/components/workspace/legacy.js",
+      "import": "./dist/components/workspace/legacy.js",
+      "default": "./dist/components/workspace/legacy.js"
+    },
     "./workspace/server": {
       "types": "./dist/components/workspace/server/index.d.ts",
       "import": "./dist/components/workspace/server/index.js",

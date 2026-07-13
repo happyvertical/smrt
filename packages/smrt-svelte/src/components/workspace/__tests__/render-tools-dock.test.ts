@@ -314,4 +314,28 @@ describe('<ToolsDock> rail layout', () => {
     const empty = target.querySelector('.tools-dock__empty');
     expect(empty?.textContent).toContain('No tools');
   });
+
+  it('keeps registered rail controls usable after an initial availability rejection', async () => {
+    const target = render({
+      tools: [{ id: 'chat', label: 'Chat' }],
+      fetchAvailability: async () => {
+        throw new Error('temporary availability failure');
+      },
+      setContextOnMount: { type: 'route' },
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+
+    const chatButton = target.querySelector<HTMLButtonElement>(
+      '.tools-dock__rail-button',
+    );
+    expect(chatButton).not.toBeNull();
+    chatButton?.click();
+    flushSync();
+    expect(chatButton?.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      target.querySelector('.tools-dock__panel-header h3')?.textContent,
+    ).toBe('Chat');
+  });
 });

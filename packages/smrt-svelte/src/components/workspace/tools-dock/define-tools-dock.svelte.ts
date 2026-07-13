@@ -17,7 +17,7 @@
  * @example Register a dock and a tool
  * ```ts
  * // somewhere in a +layout.svelte:
- * import { defineToolsDock } from '@happyvertical/smrt-svelte/workspace';
+ * import { defineToolsDock } from '@happyvertical/smrt-svelte/workspace/legacy';
  * import ChatTool from './ChatTool.svelte';
  *
  * const dock = defineToolsDock({
@@ -80,13 +80,24 @@ export interface DefineToolsDockOptions<
   /** Registered tools. Order is preserved when rendering the activation rail/topbar. */
   tools: ToolDef[];
   /**
-   * Optional backend-driven gating callback. Returns the subset of tools that
-   * should be exposed for the current `context`. When omitted, every
-   * registered tool is treated as available.
+   * Optional backend-driven presentation-gating callback. Returns the subset
+   * of tools that should be exposed for the current `context`. When omitted,
+   * every registered tool is treated as available.
+   *
+   * This is not an authorization boundary. Failures intentionally keep the
+   * dock usable, so every tool operation and server endpoint must enforce its
+   * own permissions independently.
    *
    * The callback may return tool ids that aren't present in `tools` — these
    * are ignored. Conversely, tools missing from the callback's response are
    * hidden from the dock UI.
+   *
+   * A thrown error, rejected promise, or malformed response preserves the
+   * last-known-good availability for the current context and is exposed
+   * through `dock.availabilityError`. Before the first success, and whenever
+   * context changes, the fallback is the registered tool set with registered
+   * labels and badges. A later valid response clears the error and replaces
+   * availability normally.
    *
    * The `ctx` parameter is typed against the factory's `TData` / `TActions`
    * generics — narrow them at the factory site for typed access to
@@ -229,13 +240,39 @@ export function defineToolsDock<
   // reference equality and avoids the `state_proxy_equality_mismatch`
   // warning.
   let rawContextRef: ToolsDockContext | null = null;
-  let availableTools = $state<AvailableTool[]>(
-    registeredTools.map((t) => ({ id: t.id, label: t.label, badge: t.badge })),
-  );
+  let availableTools = $state<AvailableTool[]>(registeredAvailability());
+  let availabilityError = $state<unknown>(null);
 
   // Race-handle: each fetchAvailability call gets a token; only the most
   // recent token may apply its result.
   let availabilityToken = 0;
+
+  function registeredAvailability(): AvailableTool[] {
+    return registeredTools.map((tool) => ({
+      id: tool.id,
+      label: tool.label,
+      badge: tool.badge,
+    }));
+  }
+
+  function isAvailableTool(value: unknown): value is AvailableTool {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate.id !== 'string' || candidate.id.trim().length === 0) {
+      return false;
+    }
+    if (candidate.label !== undefined && typeof candidate.label !== 'string') {
+      return false;
+    }
+    return (
+      candidate.badge === undefined ||
+      candidate.badge === null ||
+      typeof candidate.badge === 'string' ||
+      (typeof candidate.badge === 'number' && Number.isFinite(candidate.badge))
+    );
+  }
 
   /**
    * Set to `true` once the factory has finished wiring the instance. Used
@@ -431,13 +468,7 @@ export function defineToolsDock<
   function refreshAvailability(): void {
     if (!fetchAvailability) {
       // Static availability — every registered tool.
-      applyAvailability(
-        registeredTools.map((t) => ({
-          id: t.id,
-          label: t.label,
-          badge: t.badge,
-        })),
-      );
+      applyAvailability(registeredAvailability());
       return;
     }
     const token = ++availabilityToken;
@@ -459,12 +490,22 @@ export function defineToolsDock<
     void pending
       .then((result) => {
         if (token !== availabilityToken) return; // stale
-        applyAvailability(Array.isArray(result) ? result : []);
+        if (!Array.isArray(result) || !result.every(isAvailableTool)) {
+          availabilityError = new TypeError(
+            'fetchAvailability must resolve to valid AvailableTool entries',
+          );
+          return;
+        }
+        availabilityError = null;
+        applyAvailability(result);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (token !== availabilityToken) return;
-        // On error, surface zero availability rather than stale state.
-        applyAvailability([]);
+        // Preserve the last-known-good snapshot. Before the first successful
+        // request this is the safe registered-tool fallback seeded above, so a
+        // transient backend failure never makes open()/toggle() inert.
+        availabilityError =
+          error ?? new Error('fetchAvailability rejected without a reason');
       });
   }
 
@@ -567,13 +608,19 @@ export function defineToolsDock<
     if (erased === rawContextRef) return;
     rawContextRef = erased;
     context = erased;
-    if (fetchAvailability) refreshAvailability();
+    if (fetchAvailability) {
+      // A successful snapshot can contain context-specific labels and badges.
+      // Reset those to registration metadata before fetching for a new
+      // context, so a failure cannot carry tenant/user details across it.
+      availabilityError = null;
+      applyAvailability(registeredAvailability());
+      refreshAvailability();
+    }
     // Emit AFTER kicking off availability refresh. The refresh is async and
     // may emit a second event later if it clears `activeTool` — that is
     // the intended behaviour (one event per observable state transition).
-    // `contextChanged: true` fires `'dock:context-changed'`; `stateChanged`
-    // stays false here because `setContext` itself doesn't touch isOpen/
-    // activeTool (the async availability refresh handles that).
+    // `contextChanged: true` fires `'dock:context-changed'`; any observable
+    // availability reset above emits its own legacy change event.
     emitChange({ stateChanged: false, contextChanged: true });
   }
 
@@ -587,6 +634,9 @@ export function defineToolsDock<
     },
     get availableTools() {
       return availableTools;
+    },
+    get availabilityError() {
+      return availabilityError;
     },
     // Internal `context` `$state` is typed as the default-generic shape so
     // the runtime store stays homogeneous. Cast at the public boundary —

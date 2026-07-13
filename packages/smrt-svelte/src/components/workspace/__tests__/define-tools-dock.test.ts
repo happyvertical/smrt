@@ -86,6 +86,7 @@ describe('defineToolsDock', () => {
     expect(dock.activeTool).toBeNull();
     expect(dock.layout).toBe('rail');
     expect(dock.storageKey).toBeNull();
+    expect(dock.availabilityError).toBeNull();
     expect(dock.availableTools.map((t) => t.id)).toEqual(['chat', 'jobs']);
   });
 
@@ -243,6 +244,51 @@ describe('defineToolsDock', () => {
     expect(dock.availableTools.map((t) => t.id)).toEqual(['jobs']);
   });
 
+  it('drops stale fetchAvailability failures after a newer success', async () => {
+    let rejectFirst: ((reason: Error) => void) | null = null;
+    let resolveSecond: ((value: { id: string }[]) => void) | null = null;
+
+    const fetchAvailability = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ id: string }[]>((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ id: string }[]>((resolve) => {
+            resolveSecond = resolve;
+          }),
+      );
+
+    const { dock } = track(
+      mountDock({
+        tools: [
+          { id: 'chat', label: 'Chat', component: noopTool },
+          { id: 'jobs', label: 'Jobs', component: noopTool },
+        ],
+        fetchAvailability,
+      }),
+    );
+
+    dock.setContext({ type: 'A' });
+    dock.setContext({ type: 'B' });
+    resolveSecond?.([{ id: 'jobs' }]);
+    await Promise.resolve();
+    await Promise.resolve();
+    flushSync();
+
+    rejectFirst?.(new Error('stale failure'));
+    await Promise.resolve();
+    await Promise.resolve();
+    flushSync();
+
+    expect(dock.availableTools.map((tool) => tool.id)).toEqual(['jobs']);
+    expect(dock.availabilityError).toBeNull();
+  });
+
   it('emit / on / unsubscribe', () => {
     const { dock } = track(
       mountDock({
@@ -375,9 +421,10 @@ describe('defineToolsDock', () => {
     expect(dock.availableTools[0].badge).toBeNull();
   });
 
-  it('handles synchronous throws from fetchAvailability without surfacing them', async () => {
+  it('preserves the registered fallback and exposes synchronous availability errors', async () => {
+    const failure = new Error('sync boom');
     const fetchAvailability = vi.fn(() => {
-      throw new Error('sync boom');
+      throw failure;
     });
 
     const { dock } = track(
@@ -393,10 +440,192 @@ describe('defineToolsDock', () => {
     // propagate out of setContext to the caller.
     expect(() => dock.setContext({ type: 'a' })).not.toThrow();
 
-    // The internal `.catch` applies an empty-availability result.
+    // The failure is exposed without replacing the safe initial fallback.
     await new Promise((r) => setTimeout(r, 0));
     flushSync();
-    expect(dock.availableTools).toEqual([]);
+    expect(dock.availableTools.map((tool) => tool.id)).toEqual(['chat']);
+    expect(dock.availabilityError).toBe(failure);
+
+    dock.open('chat');
+    flushSync();
+    expect(dock.isOpen).toBe(true);
+    expect(dock.activeTool).toBe('chat');
+  });
+
+  it('exposes a consumable error for a reasonless rejection', async () => {
+    const fetchAvailability = vi.fn().mockRejectedValueOnce(undefined);
+
+    const { dock } = track(
+      mountDock({
+        tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        fetchAvailability,
+      }),
+    );
+
+    dock.setContext({ type: 'route' });
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+
+    expect(dock.availableTools.map((tool) => tool.id)).toEqual(['chat']);
+    expect(dock.availabilityError).toBeInstanceOf(Error);
+    expect((dock.availabilityError as Error).message).toContain(
+      'without a reason',
+    );
+  });
+
+  it('preserves last-known-good availability and badges after a rejected refresh', async () => {
+    const failure = new Error('availability offline');
+    const fetchAvailability = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { id: 'chat', badge: 2 },
+        { id: 'jobs', badge: 7 },
+      ])
+      .mockRejectedValueOnce(failure);
+
+    const { dock } = track(
+      mountDock({
+        tools: [
+          { id: 'chat', label: 'Chat', component: noopTool },
+          { id: 'jobs', label: 'Jobs', component: noopTool },
+        ],
+        fetchAvailability,
+      }),
+    );
+
+    dock.setContext({ type: 'route' });
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(dock.availableTools).toEqual([
+      { id: 'chat', label: 'Chat', badge: 2 },
+      { id: 'jobs', label: 'Jobs', badge: 7 },
+    ]);
+
+    dock.open('jobs');
+    dock.refreshAvailability();
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+
+    expect(dock.availabilityError).toBe(failure);
+    expect(dock.availableTools).toEqual([
+      { id: 'chat', label: 'Chat', badge: 2 },
+      { id: 'jobs', label: 'Jobs', badge: 7 },
+    ]);
+    expect(dock.isOpen).toBe(true);
+    expect(dock.activeTool).toBe('jobs');
+
+    dock.toggle('jobs');
+    flushSync();
+    expect(dock.isOpen).toBe(false);
+    dock.toggle('jobs');
+    flushSync();
+    expect(dock.isOpen).toBe(true);
+    expect(dock.activeTool).toBe('jobs');
+  });
+
+  it('preserves last-known-good availability after malformed entries', async () => {
+    const fetchAvailability = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'jobs', badge: 4 }])
+      .mockResolvedValueOnce([
+        { label: 'Missing id' },
+      ] as unknown as import('../types.js').AvailableTool[]);
+
+    const { dock } = track(
+      mountDock({
+        tools: [
+          { id: 'chat', label: 'Chat', component: noopTool },
+          { id: 'jobs', label: 'Jobs', component: noopTool },
+        ],
+        fetchAvailability,
+      }),
+    );
+
+    dock.setContext({ type: 'route' });
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(dock.availableTools).toEqual([
+      { id: 'jobs', label: 'Jobs', badge: 4 },
+    ]);
+
+    dock.refreshAvailability();
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+
+    expect(dock.availableTools).toEqual([
+      { id: 'jobs', label: 'Jobs', badge: 4 },
+    ]);
+    expect(dock.availabilityError).toBeInstanceOf(TypeError);
+  });
+
+  it('resets contextual availability before a new-context failure', async () => {
+    const failure = new Error('tenant B unavailable');
+    const fetchAvailability = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'jobs', label: 'Tenant A jobs', badge: 9 }])
+      .mockRejectedValueOnce(failure);
+
+    const { dock } = track(
+      mountDock({
+        tools: [
+          { id: 'chat', label: 'Chat', component: noopTool },
+          { id: 'jobs', label: 'Jobs', badge: 1, component: noopTool },
+        ],
+        fetchAvailability,
+      }),
+    );
+
+    dock.setContext({ type: 'tenant-a' });
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(dock.availableTools).toEqual([
+      { id: 'jobs', label: 'Tenant A jobs', badge: 9 },
+    ]);
+
+    dock.setContext({ type: 'tenant-b' });
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+
+    expect(dock.availabilityError).toBe(failure);
+    expect(dock.availableTools).toEqual([
+      { id: 'chat', label: 'Chat', badge: null },
+      { id: 'jobs', label: 'Jobs', badge: 1 },
+    ]);
+  });
+
+  it('recovers after a later successful availability refresh', async () => {
+    const failure = new Error('temporary failure');
+    const fetchAvailability = vi
+      .fn()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce([{ id: 'jobs', badge: 3 }]);
+
+    const { dock } = track(
+      mountDock({
+        tools: [
+          { id: 'chat', label: 'Chat', component: noopTool },
+          { id: 'jobs', label: 'Jobs', component: noopTool },
+        ],
+        fetchAvailability,
+      }),
+    );
+
+    dock.setContext({ type: 'route' });
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(dock.availabilityError).toBe(failure);
+    expect(dock.availableTools.map((tool) => tool.id)).toEqual([
+      'chat',
+      'jobs',
+    ]);
+
+    dock.refreshAvailability();
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(dock.availabilityError).toBeNull();
+    expect(dock.availableTools).toEqual([
+      { id: 'jobs', label: 'Jobs', badge: 3 },
+    ]);
   });
 
   describe('refreshAvailability()', () => {
