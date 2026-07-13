@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.39.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve global commission plans (sales)
+
+  ### Other Changes
+
+  - perf: constrain commission plan lookups (sales)
+  - @happyvertical/smrt-config@0.39.10
+  - @happyvertical/smrt-types@0.39.10
+  - @happyvertical/smrt-scanner@0.39.10
+
 ## 0.39.9
 
 ### Patch Changes
