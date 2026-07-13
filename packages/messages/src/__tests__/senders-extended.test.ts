@@ -4,7 +4,9 @@
  *
  * Mocking policy: only the EXTERNAL transport is mocked.
  *  - EmailSender takes an injected EmailClient — we pass a fake client.
- *  - SlackSender / TweetSender dynamically import getMessageClient() from the
+ *  - SlackSender / TweetSender resolve their transport from the messaging
+ *    provider registry, populated here by the explicit provider entry points
+ *    (#1979). Those entries dynamically import getMessageClient() from the
  *    SDK package '@happyvertical/messages'; that single external boundary is
  *    mocked with vi.mock. Accounts/messages are real model instances.
  *
@@ -34,6 +36,11 @@ import { SlackAccount } from '../models/SlackAccount';
 import { SlackMessage } from '../models/SlackMessage';
 import { Tweet } from '../models/Tweet';
 import { TwitterAccount } from '../models/TwitterAccount';
+// Explicit provider entries register the SDK transports on the provider
+// registry — the same opt-in production servers perform (#1979). Their
+// dynamic SDK import resolves to the vi.mock above.
+import '../providers/slack';
+import '../providers/twitter';
 import { EmailSender } from '../senders/EmailSender';
 import { SlackSender } from '../senders/SlackSender';
 import { TweetSender } from '../senders/TweetSender';

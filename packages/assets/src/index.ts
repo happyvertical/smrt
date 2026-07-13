@@ -84,6 +84,11 @@ export {
 export { AssetType } from './asset-type';
 export { AssetTypeCollection } from './asset-types';
 export { AssetCollection } from './assets';
+export {
+  getFilesystemLazy,
+  isFileNotFoundError,
+  registerFilesModule,
+} from './files-runtime';
 export { Folder } from './folder';
 export { FolderCollection } from './folders';
 export {

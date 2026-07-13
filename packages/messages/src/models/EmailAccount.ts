@@ -65,16 +65,33 @@ export class EmailAccount extends Account {
   /**
    * Create an EmailClient from stored settings
    * Retrieves credentials from smrt-secrets if credentialSecretId is set
+   *
+   * The client factory comes from the messaging provider registry rather than
+   * a direct `@happyvertical/email` import so the email SDK
+   * (googleapis/nodemailer) never becomes reachable from provider-neutral
+   * consumer bundles (#1979). Server code that uses email accounts must
+   * import '@happyvertical/smrt-messages/providers/email' (or
+   * '/providers/all') once during startup.
    */
   async createClient() {
-    const { getEmailClient } = await import('@happyvertical/email');
+    const { getMessagingProvider } = await import('../providers.js');
+    const createEmailClient = getMessagingProvider(
+      this.providerType,
+    )?.createEmailClient;
+    if (!createEmailClient) {
+      throw new Error(
+        `Email provider '${this.providerType}' has no client implementation registered. ` +
+          "Import '@happyvertical/smrt-messages/providers/email' (or '/providers/all') " +
+          'during server startup to enable outbound email and mailbox sync.',
+      );
+    }
     const settings: Record<string, unknown> = {
       ...this.getConfiguration(),
       ...((await this.getCredentials()) ?? {}),
     };
     delete settings.email;
 
-    return await getEmailClient({
+    return await createEmailClient({
       type: this.providerType as ProviderType,
       ...settings,
     } as GetEmailClientOptions);

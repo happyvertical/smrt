@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.39.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - keep the svelte registration entry in the sideEffects allowlist (messages)
+  - global optional-dependency registry so filesystem entries satisfy every lazy caller (core)
+  - builtin provider registration gap-fills instead of clobbering entry hooks (messages)
+  - satisfy package standards and barrel export ordering (bundle-gate)
+  - move provider SDK transports behind explicit provider entry points (messages)
+  - load @happyvertical/files lazily behind an explicit filesystem entry (assets)
+  - route SmrtClass filesystem support through a lazy bundler-invisible boundary (core)
+
+  ### Other Changes
+
+  - test: add consumer bundle reachability and size regression gate (bundle-gate)
+  - @happyvertical/smrt-config@0.39.9
+  - @happyvertical/smrt-types@0.39.9
+  - @happyvertical/smrt-scanner@0.39.9
+
 ## 0.39.8
 
 ### Patch Changes
