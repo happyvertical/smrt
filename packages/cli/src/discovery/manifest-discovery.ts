@@ -47,13 +47,17 @@ export function resolveManifestEntryPackageName(
   definition: SmartObjectDefinition,
   fallback?: string,
 ): string | undefined {
+  // Only explicit entry provenance or a qualified manifest key may override
+  // the containing manifest. A qualifiedName is also an identity value that
+  // runtime:check validates, so it must not let a malformed local entry
+  // reclassify itself as external when the container already has an owner.
   return (
     definition.packageName ||
+    getPackageFromQualifiedName(name) ||
+    fallback ||
     (definition.qualifiedName
       ? getPackageFromQualifiedName(definition.qualifiedName)
-      : undefined) ||
-    getPackageFromQualifiedName(name) ||
-    fallback
+      : undefined)
   );
 }
 
