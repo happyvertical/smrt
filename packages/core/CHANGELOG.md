@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.39.16
+
+### Patch Changes
+
+- ### Features
+
+  - add cross-channel campaign coordination (marketing)
+
+  ### Bug Fixes
+
+  - address campaign review feedback (marketing)
+  - authorize payout membership before outcomes (sales)
+
+  ### Other Changes
+
+  - test: fix OIDC matrix review assertions (users)
+  - test: codify OIDC provisioning matrix (users)
+  - @happyvertical/smrt-config@0.39.16
+  - @happyvertical/smrt-types@0.39.16
+  - @happyvertical/smrt-scanner@0.39.16
+
 ## 0.39.15
 
 ### Patch Changes
