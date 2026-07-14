@@ -10,6 +10,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { normalizeIdentityEmail } from '@happyvertical/smrt-profiles';
 import type { User as UserContract } from '@happyvertical/smrt-types';
 import { UserStatus } from '../types/index.js';
 
@@ -46,7 +47,7 @@ export function isValidEmail(email: string): boolean {
  */
 export function normalizeEmail(email: string): string {
   if (!email || typeof email !== 'string') return '';
-  return email.trim().toLowerCase();
+  return email.trim() ? normalizeIdentityEmail(email) : '';
 }
 
 /**
@@ -76,13 +77,17 @@ export class User extends SmrtObject implements UserContract {
   /**
    * Foreign key to smrt-profiles Profile (cross-package)
    */
-  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { unique: true })
   profileId: string = '';
 
   /**
    * User's email address (unique, used for lookup)
    */
   email: string = '';
+
+  /** Durable normalized key for cross-connection email uniqueness. */
+  @field({ type: 'text', nullable: true, unique: true, readonly: true })
+  emailKey: string | null = null;
 
   /**
    * User account status
@@ -138,5 +143,12 @@ export class User extends SmrtObject implements UserContract {
    */
   recordLogin(): void {
     this.lastLoginAt = new Date();
+  }
+
+  /** Keep the durable email key derived from the public email field. */
+  override async save(): Promise<this> {
+    this.email = normalizeEmail(this.email);
+    this.emailKey = this.email || null;
+    return super.save();
   }
 }

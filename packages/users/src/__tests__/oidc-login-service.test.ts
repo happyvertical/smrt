@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
+import { ProfileCollection } from '@happyvertical/smrt-profiles';
 import {
   createIsolatedTestDb,
   type IsolatedTestDbResult,
@@ -18,11 +20,16 @@ import {
 import {
   closeAllOidcServers,
   OIDC_USERS_TEST_SCHEMA,
+  prepareOidcEmailKeyBackfills,
   startOidcServer,
 } from './helpers/oidc-test-server.js';
 
 async function createOidcTestDb(): Promise<IsolatedTestDbResult> {
-  return createIsolatedTestDb({ schema: OIDC_USERS_TEST_SCHEMA });
+  const isolated = await createIsolatedTestDb({
+    schema: OIDC_USERS_TEST_SCHEMA,
+  });
+  await prepareOidcEmailKeyBackfills(isolated.db);
+  return isolated;
 }
 
 function toFetchUrl(input: Parameters<typeof fetch>[0]): string {
@@ -203,7 +210,7 @@ describe('OidcLoginService', () => {
     });
 
     expect(response.status).toBe(401);
-    await expect(response.text()).resolves.toContain('signature');
+    await expect(response.text()).resolves.toBe('OIDC login failed.');
     expect(jar.has('smrt_oidc_dex')).toBe(false);
   });
 
@@ -308,6 +315,184 @@ describe('OidcLoginService', () => {
     expect(fetchUrls).toContain(`${server.issuer}/jwks`);
   });
 
+  it('runs a pre-provision resolver inside the stock token-exchange flow', async () => {
+    const server = await startOidcServer();
+    cleanup.push(server.close);
+    const isolated = await createOidcTestDb();
+    cleanup.push(isolated.cleanup);
+    const { db } = isolated;
+    const profileId = randomUUID();
+    await db.query(
+      `INSERT INTO profiles
+        (id, slug, context, _meta_type, tenant_id, email, email_key, name)
+       VALUES (?, ?, '', '@happyvertical/smrt-profiles:Person', NULL, ?, ?, 'Existing Person')`,
+      profileId,
+      `profile-${profileId}`,
+      'dex.user@example.com',
+      'dex.user@example.com',
+    );
+
+    const options: Parameters<typeof beginOidcLogin>[1] = {
+      db,
+      provider: 'dex',
+      providers: {
+        dex: {
+          clientId: 'smrt-client',
+          clientSecret: 'secret',
+          issuer: server.issuer,
+          kind: 'dex' as const,
+          redirectUri: `${server.issuer}/auth/dex/callback`,
+        },
+      },
+      resolveProfile: async ({ db: tx }) => {
+        const profiles = await ProfileCollection.create({ db: tx });
+        return profiles.get({ id: profileId });
+      },
+    };
+    const { cookies, jar } = createCookieJar();
+    const loginUrl = new URL(
+      `${server.issuer}/auth/dex/login?returnTo=/dashboard`,
+    );
+    const { transaction } = await beginOidcLogin(
+      {
+        cookies,
+        params: { provider: 'dex' },
+        request: new Request(loginUrl),
+        url: loginUrl,
+      },
+      options,
+    );
+    server.setNonce(transaction.nonce);
+    const callbackUrl = new URL(`${server.issuer}/auth/dex/callback`);
+    callbackUrl.searchParams.set('code', 'authorization-code');
+    callbackUrl.searchParams.set('state', transaction.state);
+    const handler = createOidcCallbackHandler(options);
+
+    const response = await handler({
+      cookies,
+      getClientAddress: () => '127.0.0.1',
+      params: { provider: 'dex' },
+      request: new Request(callbackUrl),
+      url: callbackUrl,
+    });
+
+    expect(response.status, await response.clone().text()).toBe(303);
+    expect(response.headers.get('location')).toBe('/dashboard');
+    expect(jar.has('sid')).toBe(true);
+    await expect(countRows(db, 'users')).resolves.toBe(1);
+    await expect(countRows(db, 'oidc_identities')).resolves.toBe(1);
+    await expect(countRows(db, 'sessions')).resolves.toBe(1);
+  });
+
+  it('fails before User and session creation on a Profile-only collision', async () => {
+    const server = await startOidcServer();
+    cleanup.push(server.close);
+    const isolated = await createOidcTestDb();
+    cleanup.push(isolated.cleanup);
+    const { db } = isolated;
+    const profileId = randomUUID();
+    await db.query(
+      `INSERT INTO profiles
+        (id, slug, context, _meta_type, tenant_id, email, email_key, name)
+       VALUES (?, ?, '', '@happyvertical/smrt-profiles:Organization', NULL, ?, ?, 'Collision')`,
+      profileId,
+      `profile-${profileId}`,
+      'dex.user@example.com',
+      'dex.user@example.com',
+    );
+
+    const service = new OidcLoginService({
+      db,
+      provider: {
+        clientId: 'smrt-client',
+        issuer: server.issuer,
+        kind: 'dex',
+        redirectUri: `${server.issuer}/auth/dex/callback`,
+        tokenEndpointAuthMethod: 'none',
+      },
+      providerName: 'dex',
+    });
+    const transaction = service.createTransaction('/dashboard');
+    server.setNonce(transaction.nonce);
+    const callbackUrl = new URL(`${server.issuer}/auth/dex/callback`);
+    callbackUrl.searchParams.set('code', 'authorization-code');
+    callbackUrl.searchParams.set('state', transaction.state);
+    const { cookies } = createCookieJar({
+      smrt_oidc_dex: encodeOidcTransaction(transaction),
+    });
+    const handler = createOidcCallbackHandler({
+      db,
+      provider: 'dex',
+      providers: {
+        dex: {
+          clientId: 'smrt-client',
+          issuer: server.issuer,
+          kind: 'dex',
+          redirectUri: `${server.issuer}/auth/dex/callback`,
+          tokenEndpointAuthMethod: 'none',
+        },
+      },
+    });
+
+    const response = await handler({
+      cookies,
+      getClientAddress: () => '127.0.0.1',
+      params: { provider: 'dex' },
+      request: new Request(callbackUrl),
+      url: callbackUrl,
+    });
+
+    expect(response.status).toBe(401);
+    const failureBody = await response.text();
+    expect(failureBody).toBe('OIDC login failed.');
+    expect(failureBody).not.toContain('dex.user@example.com');
+    expect(failureBody).not.toContain(profileId);
+    expect(failureBody).not.toContain('Organization');
+    await expect(countRows(db, 'users')).resolves.toBe(0);
+    await expect(countRows(db, 'oidc_identities')).resolves.toBe(0);
+    await expect(countRows(db, 'sessions')).resolves.toBe(0);
+
+    const resolverTransaction = service.createTransaction('/dashboard');
+    server.setNonce(resolverTransaction.nonce);
+    callbackUrl.searchParams.set('state', resolverTransaction.state);
+    const { cookies: resolverCookies } = createCookieJar({
+      smrt_oidc_dex: encodeOidcTransaction(resolverTransaction),
+    });
+    const internalResolverMessage = `resolver-secret:${profileId}:dex.user@example.com`;
+    const resolverHandler = createOidcCallbackHandler({
+      db,
+      provider: 'dex',
+      providers: {
+        dex: {
+          clientId: 'smrt-client',
+          issuer: server.issuer,
+          kind: 'dex',
+          redirectUri: `${server.issuer}/auth/dex/callback`,
+          tokenEndpointAuthMethod: 'none',
+        },
+      },
+      resolveProfile: () => {
+        throw new Error(internalResolverMessage);
+      },
+    });
+
+    const resolverResponse = await resolverHandler({
+      cookies: resolverCookies,
+      getClientAddress: () => '127.0.0.1',
+      params: { provider: 'dex' },
+      request: new Request(callbackUrl),
+      url: callbackUrl,
+    });
+    const resolverFailureBody = await resolverResponse.text();
+    expect(resolverResponse.status).toBe(401);
+    expect(resolverFailureBody).toBe('OIDC login failed.');
+    expect(resolverFailureBody).not.toContain(internalResolverMessage);
+    expect(resolverFailureBody).not.toContain(profileId);
+    expect(resolverFailureBody).not.toContain('dex.user@example.com');
+    await expect(countRows(db, 'users')).resolves.toBe(0);
+    await expect(countRows(db, 'sessions')).resolves.toBe(0);
+  });
+
   it('form-encodes client credentials for client_secret_basic token requests', async () => {
     const clientId = 'smrt client:dev@local';
     const clientSecret = 's:e+c ret ü';
@@ -381,6 +566,36 @@ describe('OidcLoginService', () => {
     expect(server.userinfoRequests[0]?.authorization).toBe(
       'Bearer access-token',
     );
+  });
+
+  it('does not borrow ID-token verification for a userinfo email', async () => {
+    const server = await startOidcServer({
+      idTokenEmailVerified: true,
+      includeEmailInIdToken: false,
+      userInfoEmailVerified: false,
+    });
+    cleanup.push(server.close);
+    const service = new OidcLoginService({
+      db: { type: 'sqlite', url: ':memory:' },
+      provider: {
+        clientId: 'smrt-client',
+        clientSecret: 'secret',
+        issuer: server.issuer,
+        kind: 'dex',
+        redirectUri: `${server.issuer}/auth/dex/callback`,
+      },
+      providerName: 'dex',
+    });
+    const transaction = service.createTransaction('/dashboard');
+    server.setNonce(transaction.nonce);
+    const callbackUrl = new URL(`${server.issuer}/auth/dex/callback`);
+    callbackUrl.searchParams.set('code', 'authorization-code');
+    callbackUrl.searchParams.set('state', transaction.state);
+
+    const result = await service.exchangeCallback(callbackUrl, transaction);
+
+    expect(result.claims.email).toBe('dex.user@example.com');
+    expect(result.claims.email_verified).toBe(false);
   });
 
   it('rejects multi-audience ID tokens with a mismatched authorized party', async () => {
@@ -468,3 +683,11 @@ describe('OidcLoginService', () => {
     expect(jar.has('smrt_oidc_dex')).toBe(false);
   });
 });
+
+async function countRows(
+  db: IsolatedTestDbResult['db'],
+  table: 'oidc_identities' | 'sessions' | 'users',
+): Promise<number> {
+  const result = await db.query(`SELECT count(*) AS count FROM ${table}`);
+  return Number(result.rows[0]?.count ?? 0);
+}

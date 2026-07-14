@@ -374,6 +374,136 @@ can pass `transactionCookieSecret` to the route helpers. On success it creates
 or reuses a SMRT `Profile`, links an `OidcIdentity`, creates or reuses a `User`,
 records `lastLoginAt`, and sets the standard SMRT session cookie.
 
+Verified-email provisioning is fail-closed. The default resolver reuses a
+Profile only when exactly one case-insensitive email match exists and that row
+is an unowned, global `Person`. A tenant-scoped Profile, a non-`Person` STI row,
+duplicate email matches, or a Profile already owned by another `User` rejects
+the callback before User or session creation. An existing OIDC issuer/subject
+link without a User must still identify the unique global `Person` for the
+current verified claim email. Once a User owns it, the stable issuer/subject
+link continues to select its canonical global `Person` and existing User.
+
+Canonical Profile failures use `CanonicalPersonProfileError` from
+`@happyvertical/smrt-profiles`, with codes `ambiguous_email`, `email_mismatch`,
+`email_key_backfill_required`, `missing_profile`, `non_person`,
+`reservation_conflict`, or `tenant_scoped`.
+User ownership/provisioning failures use `OidcProvisioningError`, with codes
+`ambiguous_identity`, `concurrency_conflict`, `profile_owned`, `rejected`,
+`transaction_required`, `user_email_backfill_required`, or
+`user_email_conflict`. `completeOidcLogin()` rejects with the full error. The
+ready-made callback handler passes that error to a configured `failureRedirect`
+callback; without one it returns a generic 401 and does not expose account,
+resolver, or database details to the browser.
+
+Applications that already own an identity-reconciliation policy can provide a
+`resolveProfile` hook without replacing transaction cookies, token exchange,
+claim verification, or session creation:
+
+```typescript
+// src/routes/auth/[provider]/callback/+server.ts
+import { createOidcCallbackHandler } from '@happyvertical/smrt-users/sveltekit';
+
+export const GET = createOidcCallbackHandler({
+  db: { type: 'postgres', url: process.env.DATABASE_URL! },
+  resolveProfile: async ({ claims, db }) => {
+    // All reads and writes must use this transaction-bound `db` handle.
+    const profile = await resolveApplicationIdentity({ claims, db });
+
+    // undefined: use SMRT's secure default
+    // null: reject this login
+    // Profile: select an application-reconciled canonical global Person
+    return profile;
+  },
+  successRedirect: '/dashboard',
+});
+```
+
+The service and SvelteKit handler run the hook after protocol claim validation
+and inside the same provisioning transaction as OIDC identity and User
+creation. Direct `UserCollection.getOrCreateFromOidc()` callers must first
+validate and trust their supplied claims. The hook may run again after a
+concurrent unique-key conflict, so it must be idempotent. For a new
+issuer/subject, a supplied Profile is still validated as the unique, unowned
+global `Person` for a verified email; resolver reuse is rejected unless
+`email_verified` is exactly `true`. For an exact existing issuer/subject,
+`null` still rejects login, a supplied Profile must be the already-linked
+Profile and cannot rebind it, and stable-link owner/canonical-Person checks
+still apply. The resolver receives a separate frozen claims snapshot; retry
+locks, identity lookups, and persistence retain SMRT's immutable internal
+snapshot.
+
+When userinfo supplies a missing email, its `email_verified` value travels with
+that email as one source-bound pair. SMRT never borrows a verification flag
+from the ID token for a userinfo address, or from userinfo for an ID-token
+address.
+
+The concurrency guarantee uses four database arbiters: nullable unique
+`OidcIdentity.identityKey`, private unique
+`oidc_profile_email_reservations.email_key`, nullable unique `User.emailKey`,
+and unique `User.profileId`. `User.emailKey` is derived from the trimmed,
+lowercase email on every save, preventing independent database connections from
+creating ambiguous User rows for the same address. Profile and User keys share
+the exported TypeScript `normalizeIdentityEmail()` implementation; identity
+lookups never depend on adapter-specific SQL `lower()` or `trim()` behavior.
+Before trusting those keys, identity lookup verifies that every stored key
+on a returned candidate still equals the application-normalized source email.
+Every OIDC path validates or synchronizes its canonical Profile and therefore
+requires the Profile email-key readiness marker. Creating a User or checking
+User email uniqueness additionally requires the User email-key marker. A stable
+issuer/subject that already has an owning User skips only the User email-key
+lookup and marker. Full table validation stays in the explicit backfill, while
+guarded runtime paths use only indexed candidate rows.
+In-process callbacks also acquire the exact issuer/subject and normalized email
+locks in deterministic order, including when the same subject presents changed
+email claims on independent database handles. SQLite and DuckDB also acquire a
+database-URL transaction lock because one adapter cannot safely overlap
+unrelated root transactions; PostgreSQL deadlock and serialization failures use
+a bounded transaction retry. New OIDC Profiles use non-semantic unique slugs,
+so equal IdP display names cannot overwrite one another through SMRT's
+natural-key upsert.
+Existing installations must run `smrt db:status`, `smrt db:migrate`, then
+`smrt db:status` before deploying this users version; legacy identities reserve
+an address only after the Profile passes canonical validation, and existing
+issuer/subject reuse synchronizes that reservation with the Profile's current
+stored email. Stop or upgrade old Profile and User writers before migration.
+Before migration, find duplicate ownership links:
+
+```sql
+SELECT profile_id, COUNT(*) AS user_count
+FROM users
+WHERE profile_id IS NOT NULL
+GROUP BY profile_id
+HAVING COUNT(*) > 1;
+```
+
+Reconcile every result before applying the unique Profile constraint; legacy
+empty-string Profile placeholders should be normalized to `NULL`. Multiple
+`NULL` links remain valid. After the schema migration, populate both durable
+keys from a single deploy process:
+
+```typescript
+import { backfillProfileEmailKeys } from '@happyvertical/smrt-profiles';
+import { backfillUserEmailKeys } from '@happyvertical/smrt-users';
+
+await backfillProfileEmailKeys(database);
+await backfillUserEmailKeys(database);
+```
+
+The supported backfills are transactional and idempotent. The User backfill
+fails without changing rows if legacy emails are still ambiguous; reconcile
+the reported normalized keys and rerun it. All OIDC paths require the Profile
+marker; paths that create a User or arbitrate User email uniqueness also require
+the User marker. Run both before enabling OIDC provisioning. Pass the
+root database to provisioning on adapters such as DuckDB that do not support
+nested savepoints; root adapters must expose `beginTransaction`. A handle
+exposing only `transaction()` is ambiguous and fails closed before resolver
+writes rather than risking a nested transaction that could roll back
+caller-owned work. A transaction-bound handle reads an existing
+`_smrt_backfills` table but never attempts tracker DDL; pass the root database
+when initialization or recovery is needed. OIDC `iss` and `sub` are preserved as exact opaque,
+case-sensitive identifiers (trim is used only to reject blank claims), so
+whitespace-distinct subjects never reuse one another.
+
 With `postgresRls: true`, SMRT opens a request-scoped Postgres transaction,
 loads the session, resolves permissions, and sets session variables used by the
 generated RLS helpers:
@@ -447,7 +577,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 
 | Export | Description |
 |--------|-------------|
-| `User` | Auth identity. Email auto-lowercased. `profileId` links to smrt-profiles (plain string). |
+| `User` | Auth identity. Email auto-lowercased. `profileId` is a unique cross-package Profile reference (one User per non-null Profile). |
 | `Tenant` | Organizational boundary. STI. Hierarchical via `parentTenantId`/`hierarchyPath`. |
 | `Role` | Permission template. `tenantId = null` for system roles. `isSystem` blocks deletion. |
 | `Permission` | Named capability. Slug format: `resource.action`. |
@@ -480,6 +610,9 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `generatePostgresPermissionSql()`, `applyPostgresPermissionPolicies()` | Preview or apply Postgres RLS helper functions and table policies. |
 | `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
+| `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
+| `OidcProfileResolver` | Transaction-bound pre-provision hook for application identity reconciliation. |
+| `NormalizedOidcClaims` | Frozen resolver claims with required normalized `email`. |
 | `withSessionPermissionContext()` | Loads a session, optionally enters tenancy context, and exposes a request-scoped database/permission context. |
 | `getCurrentSessionPermissionContext()`, `getRequestScopedDatabase()` | Read the active request/session context inside app code. |
 | `TenantService` | Policy-driven tenant lifecycle. `ensureTenantForUser()`, `createTenantWithOwnership()`. |

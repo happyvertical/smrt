@@ -142,21 +142,21 @@ describe('Profile model misc methods', () => {
     expect(await Profile.searchByEmail('x@example.com')).toBeNull();
   });
 
-  it('links and reads OIDC identities through the profile model', async () => {
+  it('refuses to plant a new OIDC identity through the profile model', async () => {
     const { mkProfile } = await setup(dbUrl);
     const profile = await mkProfile('Olive');
 
-    const identity = await profile.linkOidcIdentity({
-      provider: 'github',
-      issuer: 'https://github.com',
-      subject: 'gh-123',
-      email: 'olive@example.com',
-    });
-    expect(identity.profileId).toBe(profile.id);
+    await expect(
+      profile.linkOidcIdentity({
+        provider: 'github',
+        issuer: 'https://github.com',
+        subject: 'gh-123',
+        email: 'olive@example.com',
+      }),
+    ).rejects.toThrow('no longer creates authentication links');
 
     const identities = await profile.getOidcIdentities();
-    expect(identities).toHaveLength(1);
-    expect(identities[0].subject).toBe('gh-123');
+    expect(identities).toHaveLength(0);
   });
 
   it('links and reads Nostr identities through the profile model', async () => {

@@ -10,9 +10,11 @@
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getDatabase } from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ApiKey,
+  backfillProfileEmailKeys,
   createAuthEvent,
   createProfileFromNostr,
   createProfileFromOidc,
@@ -50,8 +52,11 @@ async function createProfile(dbUrl: string, email: string) {
 describe('resolveIdentity', () => {
   let dbUrl: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbUrl = getTestDbUrl('resolve-identity');
+    const db = await getDatabase({ type: 'sqlite', url: dbUrl });
+    await ProfileCollection.create({ db });
+    await backfillProfileEmailKeys(db);
   });
 
   it('resolves via API key', async () => {
@@ -88,6 +93,56 @@ describe('resolveIdentity', () => {
     expect(result.source).toBe('oidc');
     expect(result.profile?.id).toBe(profile.id);
     expect(result.oidcIdentity?.lastUsedAt).toBeInstanceOf(Date);
+  });
+
+  it('fails closed on duplicate legacy issuer-subject mappings', async () => {
+    const db = { type: 'sqlite' as const, url: dbUrl };
+    const first = await createProfileFromOidc(
+      {
+        sub: 'legacy-first',
+        iss: 'https://legacy-first.example.com',
+        email: `legacy-first-${randomUUID()}@example.com`,
+        email_verified: true,
+      },
+      'legacy',
+      { db },
+    );
+    const second = await createProfileFromOidc(
+      {
+        sub: 'legacy-second',
+        iss: 'https://legacy-second.example.com',
+        email: `legacy-second-${randomUUID()}@example.com`,
+        email_verified: true,
+      },
+      'legacy',
+      { db },
+    );
+    const database = await getDatabase(db);
+    try {
+      await database.query(
+        `UPDATE oidc_identities
+           SET issuer = ?, subject = ?, identity_key = NULL
+         WHERE id IN (?, ?)`,
+        'https://duplicate.example.com',
+        'duplicate-subject',
+        first.oidcIdentity.id,
+        second.oidcIdentity.id,
+      );
+
+      await expect(
+        resolveIdentity({
+          oidcSession: {
+            iss: 'https://duplicate.example.com',
+            sub: 'duplicate-subject',
+          },
+          db,
+        }),
+      ).rejects.toThrow(
+        'Multiple OIDC identities match the same issuer and subject.',
+      );
+    } finally {
+      await database.close?.();
+    }
   });
 
   it('resolves via a Nostr signed auth event', async () => {
@@ -217,27 +272,37 @@ describe('createProfileFromNostr', () => {
 describe('OidcIdentity model and collection', () => {
   let dbUrl: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbUrl = getTestDbUrl('oidc-identity');
+    const db = await getDatabase({ type: 'sqlite', url: dbUrl });
+    await ProfileCollection.create({ db });
+    await backfillProfileEmailKeys(db);
   });
 
-  it('links, finds, updates, and unlinks OIDC identities', async () => {
-    const { db, profile } = await createProfile(
-      dbUrl,
-      `oidc-coll-${randomUUID()}@example.com`,
+  it('reuses, finds, updates, and unlinks exact OIDC identities', async () => {
+    const db = { type: 'sqlite' as const, url: dbUrl };
+    const created = await createProfileFromOidc(
+      {
+        email: `oidc-coll-${randomUUID()}@example.com`,
+        email_verified: true,
+        iss: 'https://accounts.google.com',
+        sub: 'google-1',
+      },
+      'google',
+      { db },
     );
     const identities = await OidcIdentityCollection.create({ db });
 
-    const identity = await identities.linkToProfile(profile, {
+    const identity = await identities.linkToProfile(created.profile, {
       provider: 'google',
       issuer: 'https://accounts.google.com',
       subject: 'google-1',
       email: 'g@example.com',
     });
-    expect(identity.profileId).toBe(profile.id);
+    expect(identity.profileId).toBe(created.profile.id);
 
     // Re-linking the same issuer+subject updates rather than duplicates.
-    const relinked = await identities.linkToProfile(profile, {
+    const relinked = await identities.linkToProfile(created.profile, {
       provider: 'google',
       issuer: 'https://accounts.google.com',
       subject: 'google-1',
@@ -246,9 +311,9 @@ describe('OidcIdentity model and collection', () => {
     expect(relinked.id).toBe(identity.id);
     expect(relinked.email).toBe('updated@example.com');
 
-    expect(await identities.findByProfile(profile.id as string)).toHaveLength(
-      1,
-    );
+    expect(
+      await identities.findByProfile(created.profile.id as string),
+    ).toHaveLength(1);
     expect(await identities.findByProvider('google')).toHaveLength(1);
     expect(
       (
@@ -262,18 +327,18 @@ describe('OidcIdentity model and collection', () => {
     // recordUsage bumps lastUsedAt.
     await identity.recordUsage();
     expect(identity.lastUsedAt).toBeInstanceOf(Date);
-    expect((await identity.getProfile())?.id).toBe(profile.id);
+    expect((await identity.getProfile())?.id).toBe(created.profile.id);
 
     expect(
       await identities.unlinkFromProfile(
-        profile.id as string,
+        created.profile.id as string,
         'https://accounts.google.com',
         'google-1',
       ),
     ).toBe(true);
     expect(
       await identities.unlinkFromProfile(
-        profile.id as string,
+        created.profile.id as string,
         'https://accounts.google.com',
         'missing',
       ),

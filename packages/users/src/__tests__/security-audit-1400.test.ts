@@ -15,6 +15,7 @@
  */
 
 import { existsSync, rmSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
@@ -34,6 +35,10 @@ import {
   TenantCollection,
   UserCollection,
 } from '../index.js';
+import {
+  OIDC_USERS_TEST_SCHEMA,
+  prepareOidcEmailKeyBackfills,
+} from './helpers/oidc-test-server.js';
 
 // ---------------------------------------------------------------------------
 // 1. RBAC / identity generated CRUD lockdown (#1400)
@@ -127,6 +132,30 @@ describe('RBAC/identity generated CRUD lockdown (#1400)', () => {
       (membership as { config: SurfaceConfig }).config,
     );
     expect(api).toEqual(['list', 'get']);
+  });
+
+  it('keeps the generated User ownership and email arbiters unique', async () => {
+    const manifest = JSON.parse(
+      await readFile(
+        new URL('../../.smrt/manifest.json', import.meta.url),
+        'utf8',
+      ),
+    ) as {
+      objects: Record<
+        string,
+        {
+          fields?: Record<
+            string,
+            { _meta?: { unique?: boolean }; readonly?: boolean }
+          >;
+        }
+      >;
+    };
+    const user = manifest.objects['@happyvertical/smrt-users:User'];
+
+    expect(user?.fields?.profileId?._meta?.unique).toBe(true);
+    expect(user?.fields?.emailKey?._meta?.unique).toBe(true);
+    expect(user?.fields?.emailKey?.readonly).toBe(true);
   });
 });
 
@@ -326,72 +355,13 @@ describe('deleteExpired atomic cleanup (#1400)', () => {
 // 4. OIDC email_verified enforcement (#1400)
 // ---------------------------------------------------------------------------
 
-const PROFILE_SCHEMA = `
-CREATE TABLE IF NOT EXISTS "profile_types" (
-  "id" TEXT PRIMARY KEY NOT NULL,
-  "slug" TEXT NOT NULL,
-  "context" TEXT NOT NULL DEFAULT '',
-  "_meta_type" TEXT NOT NULL,
-  "_meta_data" JSON,
-  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "tenant_id" TEXT,
-  "name" TEXT DEFAULT '',
-  "description" TEXT
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "profile_types_slug_context_meta_type_idx" ON "profile_types" ("slug", "context", "_meta_type");
-
-CREATE TABLE IF NOT EXISTS "profiles" (
-  "id" TEXT PRIMARY KEY NOT NULL,
-  "slug" TEXT NOT NULL,
-  "context" TEXT NOT NULL DEFAULT '',
-  "_meta_type" TEXT NOT NULL,
-  "_meta_data" JSON,
-  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "tenant_id" TEXT,
-  "type_id" TEXT,
-  "email" TEXT,
-  "name" TEXT DEFAULT '',
-  "description" TEXT
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "profiles_slug_context_meta_type_idx" ON "profiles" ("slug", "context", "_meta_type");
-
-CREATE TABLE IF NOT EXISTS "oidc_identities" (
-  "id" TEXT PRIMARY KEY NOT NULL,
-  "slug" TEXT NOT NULL,
-  "context" TEXT NOT NULL DEFAULT '',
-  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "profile_id" TEXT,
-  "provider" TEXT DEFAULT '',
-  "issuer" TEXT DEFAULT '',
-  "subject" TEXT DEFAULT '',
-  "email" TEXT DEFAULT '',
-  "last_used_at" TIMESTAMP
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "oidc_identities_slug_context_idx" ON "oidc_identities" ("slug", "context");
-
-CREATE TABLE IF NOT EXISTS "users" (
-  "id" TEXT PRIMARY KEY NOT NULL,
-  "slug" TEXT NOT NULL,
-  "context" TEXT NOT NULL DEFAULT '',
-  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "profile_id" TEXT DEFAULT '',
-  "email" TEXT DEFAULT '',
-  "status" TEXT,
-  "last_login_at" TIMESTAMP
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "users_slug_context_idx" ON "users" ("slug", "context");
-`;
-
 describe('OIDC email_verified enforcement (#1400)', () => {
   let isolated: IsolatedTestDbResult;
   let users: UserCollection;
 
   beforeEach(async () => {
-    isolated = await createIsolatedTestDb({ schema: PROFILE_SCHEMA });
+    isolated = await createIsolatedTestDb({ schema: OIDC_USERS_TEST_SCHEMA });
+    await prepareOidcEmailKeyBackfills(isolated.db);
     users = await UserCollection.create({ db: isolated.db });
   });
 

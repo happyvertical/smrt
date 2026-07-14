@@ -10,9 +10,16 @@ export {
   type Nip05Response,
   NostrIdentityCollection,
 } from './NostrIdentityCollection';
-export { OidcIdentityCollection } from './OidcIdentityCollection';
+export {
+  AmbiguousOidcIdentityError,
+  OidcIdentityCollection,
+} from './OidcIdentityCollection';
 export { ProfileAssetCollection } from './ProfileAssetCollection';
-export { ProfileCollection } from './ProfileCollection';
+export {
+  CanonicalPersonProfileError,
+  type CanonicalPersonProfileErrorCode,
+  ProfileCollection,
+} from './ProfileCollection';
 export { ProfileMetadataCollection } from './ProfileMetadataCollection';
 export { ProfileMetafieldCollection } from './ProfileMetafieldCollection';
 export { ProfileRelationshipCollection } from './ProfileRelationshipCollection';

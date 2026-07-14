@@ -19,6 +19,10 @@
       "types": "./dist/utils.d.ts",
       "import": "./dist/utils.js"
     },
+    "./internal/oidc-provisioning": {
+      "types": "./dist/oidc-provisioning.d.ts",
+      "import": "./dist/internal/oidc-provisioning.js"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"
   },

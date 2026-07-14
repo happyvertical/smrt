@@ -4,9 +4,28 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import type { OidcIdentity, Profile } from '@happyvertical/smrt-profiles';
+import { BackfillTracker } from '@happyvertical/smrt-core/migrations';
+import {
+  AmbiguousOidcIdentityError,
+  normalizeIdentityEmail,
+  OidcIdentity,
+  OidcIdentityCollection,
+  type Profile,
+} from '@happyvertical/smrt-profiles';
+import {
+  coordinateOidcProvisioning,
+  createOidcProvisioningPerson,
+  insertOidcProvisioningIdentity,
+  isOidcProvisioningRaceConflict,
+  saveOidcRaceArbiter,
+} from '@happyvertical/smrt-profiles/internal/oidc-provisioning';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import type { getDatabase } from '@happyvertical/sql';
+import { USER_EMAIL_KEY_BACKFILL_NAME } from '../migrations/backfillUserEmailKeys.js';
 import { User } from '../models/User.js';
 import { UserStatus } from '../types/index.js';
+
+type DatabaseInterface = Awaited<ReturnType<typeof getDatabase>>;
 
 /**
  * OIDC claims used for identity resolution
@@ -26,6 +45,9 @@ export interface OidcClaims {
   preferred_username?: string;
 }
 
+/** OIDC claims after the provisioning boundary validates and normalizes email. */
+export type NormalizedOidcClaims = Readonly<OidcClaims & { email: string }>;
+
 /**
  * Result of OIDC identity resolution
  */
@@ -38,6 +60,59 @@ export interface OidcIdentityResult {
   oidcIdentity: OidcIdentity;
   /** Whether the profile was newly created */
   created: boolean;
+}
+
+/** Context passed after OIDC claims are validated and before provisioning. */
+export interface OidcProfileResolverContext {
+  /** Transaction-bound database; use this for every resolver read/write. */
+  db: DatabaseInterface;
+  /**
+   * Frozen normalized claim snapshot. OidcLoginService supplies
+   * protocol-validated claims; direct collection callers must provide claims
+   * from a trusted boundary.
+   */
+  claims: NormalizedOidcClaims;
+  /** Configured provider key. */
+  provider: string;
+  /** Transaction-bound User collection. */
+  users: UserCollection;
+}
+
+/**
+ * Resolve a consumer-owned canonical Profile before User/session creation.
+ *
+ * Return `undefined` for the secure default, `null` to reject login, or a
+ * Profile to select it explicitly. For a new issuer/subject, a supplied Profile
+ * is still required to be the unique, unowned global Person for the verified
+ * email. For an exact existing issuer/subject, `null` still rejects login and a
+ * supplied Profile must be the already-linked Profile; the hook cannot rebind
+ * identity authority. Stable-link owner and canonical-Person checks still
+ * apply. The hook may be retried after a concurrent unique-key race and must
+ * therefore be idempotent.
+ */
+export type OidcProfileResolver = (
+  context: OidcProfileResolverContext,
+) => Profile | null | undefined | Promise<Profile | null | undefined>;
+
+export type OidcProvisioningErrorCode =
+  | 'ambiguous_identity'
+  | 'concurrency_conflict'
+  | 'profile_owned'
+  | 'rejected'
+  | 'transaction_required'
+  | 'user_email_backfill_required'
+  | 'user_email_conflict';
+
+/** Fail-closed OIDC identity provisioning error. */
+export class OidcProvisioningError extends Error {
+  constructor(
+    readonly code: OidcProvisioningErrorCode,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'OidcProvisioningError';
+  }
 }
 
 /**
@@ -54,6 +129,13 @@ export interface GetOrCreateFromOidcOptions {
    * assertion, so it cannot be enforced.
    */
   allowUnverifiedEmail?: boolean;
+  /**
+   * Optional application resolver invoked inside the provisioning transaction
+   * after token/claim validation and before OIDC identity, User, or session
+   * creation. Return a canonical Profile, `null` to reject, or `undefined` to
+   * use SMRT's secure default.
+   */
+  resolveProfile?: OidcProfileResolver;
 }
 
 /**
@@ -61,6 +143,7 @@ export interface GetOrCreateFromOidcOptions {
  */
 export class UserCollection extends SmrtCollection<User> {
   static readonly _itemClass = User;
+  private userEmailKeysReadyPromise: Promise<void> | null = null;
 
   /**
    * Find user by email address
@@ -139,9 +222,20 @@ export class UserCollection extends SmrtCollection<User> {
    * 2. Link OidcIdentity to the Profile
    * 3. Find or create User linked to the Profile
    *
-   * @param claims - OIDC token claims (sub, iss, email, name)
+   * Direct callers must supply claims from a trusted, already validated token
+   * boundary. OidcLoginService performs discovery, token exchange, issuer and
+   * subject validation, and verified-email source pairing before calling this
+   * collection method.
+   *
+   * @param claims - Trusted OIDC token claims (sub, iss, email, name)
    * @param provider - Provider name (e.g., 'kanidm', 'keycloak', 'google')
-   * @param options - Optional settings (recordLogin)
+   * @param options - Login recording, unverified-email compatibility, and an
+   * application Profile resolver. The resolver runs inside the provisioning
+   * transaction before provisioning returns, may be retried, and must be
+   * idempotent. For a new identity, its returned Profile is still checked as
+   * the unique, global, unowned Person for the verified normalized email. For
+   * an exact existing identity, it may only confirm the already-linked Profile
+   * and cannot rebind it.
    * @returns User, Profile, OidcIdentity, and whether profile was created
    *
    * @example
@@ -169,20 +263,28 @@ export class UserCollection extends SmrtCollection<User> {
     options?: GetOrCreateFromOidcOptions,
   ): Promise<OidcIdentityResult> {
     // Validate required OIDC claims at runtime
-    const sub = claims?.sub?.trim();
-    const iss = claims?.iss?.trim();
-    if (!sub || !iss) {
+    const sub = claims?.sub;
+    const iss = claims?.iss;
+    if (
+      typeof sub !== 'string' ||
+      sub.trim().length === 0 ||
+      typeof iss !== 'string' ||
+      iss.trim().length === 0
+    ) {
       throw new Error(
         'Invalid OIDC claims: both "sub" and "iss" must be non-empty strings.',
       );
     }
 
-    // Email is required for user creation
-    if (!claims.email) {
+    // Email is required for user creation and is canonicalized before any
+    // resolver or persistence operation.
+    const suppliedEmail = claims.email;
+    if (typeof suppliedEmail !== 'string' || !suppliedEmail.trim()) {
       throw new Error(
         'OIDC claims missing required "email" for user creation.',
       );
     }
+    const email = normalizeIdentityEmail(suppliedEmail);
 
     // #1400: refuse an email the IdP explicitly marked unverified. Only an
     // explicit `email_verified === false` hard-fails; an absent claim makes no
@@ -194,46 +296,398 @@ export class UserCollection extends SmrtCollection<User> {
       );
     }
 
-    // Dynamic import to avoid circular dependency between smrt-users and smrt-profiles.
-    // Both packages need to reference each other's types, so we defer the import.
-    const { createProfileFromOidc } = await import(
-      '@happyvertical/smrt-profiles'
-    );
+    const normalizedClaims: NormalizedOidcClaims = Object.freeze({
+      ...claims,
+      sub,
+      iss,
+      email,
+    });
+    const db = this.requireProvisioningDatabase();
+    return coordinateOidcProvisioning({
+      db,
+      lockKeys: [
+        `identity:${OidcIdentity.buildIdentityKey(iss, sub)}`,
+        `email:${email}`,
+      ],
+      isRaceConflict: isUserOidcRaceConflict,
+      createTransactionError: (message, cause) =>
+        new OidcProvisioningError('transaction_required', message, {
+          cause,
+        }),
+      createConcurrencyError: (cause) =>
+        new OidcProvisioningError(
+          'concurrency_conflict',
+          'Concurrent OIDC provisioning did not converge on one identity.',
+          { cause },
+        ),
+      rebindRootResult: (result, rootDb) =>
+        this.rebindOidcProvisioningResult(result, rootDb),
+      provision: (tx) =>
+        withSystemContext(async () => {
+          const users =
+            tx === db ? this : await UserCollection.create({ db: tx });
+          return users.provisionOidcIdentity(
+            normalizedClaims,
+            provider,
+            options,
+            tx,
+          );
+        }),
+    });
+  }
 
-    // Get database options from this collection
-    const dbOptions = { db: this.options.db };
+  private requireProvisioningDatabase(): DatabaseInterface {
+    const db = this.options.db;
+    if (!db || typeof db !== 'object' || !('query' in db)) {
+      throw new OidcProvisioningError(
+        'transaction_required',
+        'OIDC provisioning requires an initialized database.',
+      );
+    }
+    return db as DatabaseInterface;
+  }
 
-    // Create or find profile with linked OIDC identity
-    const { profile, oidcIdentity, created } = await createProfileFromOidc(
+  private async provisionOidcIdentity(
+    claims: NormalizedOidcClaims,
+    provider: string,
+    options: GetOrCreateFromOidcOptions | undefined,
+    db: DatabaseInterface,
+  ): Promise<OidcIdentityResult> {
+    const { ProfileCollection } = await import('@happyvertical/smrt-profiles');
+    const profileCollection = await ProfileCollection.create({ db });
+    const identityCollection = await OidcIdentityCollection.create({ db });
+    const existingIdentity = await this.findUniqueOidcIdentity(
+      identityCollection,
       claims,
-      provider,
-      dbOptions,
     );
-
-    const shouldRecordLogin = options?.recordLogin !== false;
-
-    // Get or create user for this profile. SmrtCollection.create() persists, so
-    // pass lastLoginAt during creation to avoid an extra first-login write.
-    const existingUser = await this.findByProfile(profile.id as string);
-    const user =
-      existingUser ??
-      (await this.create({
-        email: claims.email,
-        ...(shouldRecordLogin ? { lastLoginAt: new Date() } : {}),
-        profileId: profile.id as string,
-        status: UserStatus.ACTIVE,
-      }));
-
-    if (existingUser && shouldRecordLogin) {
-      existingUser.recordLogin();
-      await existingUser.save();
+    const resolvedProfile = options?.resolveProfile
+      ? await options.resolveProfile({
+          // Never expose the internal snapshot used for retry locks and
+          // persistence. A frozen copy keeps an application resolver from
+          // changing the authenticated identity across attempts.
+          claims: Object.freeze({ ...claims }),
+          db,
+          provider,
+          users: this,
+        })
+      : undefined;
+    if (resolvedProfile === null) {
+      throw new OidcProvisioningError(
+        'rejected',
+        'OIDC provisioning was rejected by the application resolver.',
+      );
     }
 
-    return {
-      user,
+    if (existingIdentity) {
+      const profileId = requireId(
+        existingIdentity.profileId,
+        'OIDC identity Profile',
+      );
+      if (
+        resolvedProfile &&
+        requireId(resolvedProfile.id, 'Resolved Profile') !== profileId
+      ) {
+        throw new OidcProvisioningError(
+          'rejected',
+          'An application resolver cannot rebind an existing OIDC identity.',
+        );
+      }
+      const owners = await this.findProfileOwners(profileId);
+      if (owners.length > 1) {
+        throw new OidcProvisioningError(
+          'profile_owned',
+          `Profile ${profileId} belongs to multiple Users.`,
+        );
+      }
+      const profile = await profileCollection.reserveCanonicalIdentityEmail(
+        profileId,
+        owners[0] ? undefined : claims.email,
+      );
+
+      const user = await this.finishUserProvisioning(
+        profile,
+        owners[0],
+        claims.email,
+        options,
+      );
+      existingIdentity.email = claims.email;
+      existingIdentity.lastUsedAt = new Date();
+      await existingIdentity.save();
+      return {
+        user,
+        profile,
+        oidcIdentity: existingIdentity,
+        created: false,
+      };
+    }
+
+    let profile: Profile | null | undefined = resolvedProfile;
+    let created = false;
+
+    if (profile) {
+      if (claims.email_verified !== true) {
+        throw new OidcProvisioningError(
+          'rejected',
+          'An application resolver cannot reuse a Profile without a verified OIDC email.',
+        );
+      }
+      profile = await profileCollection.reserveCanonicalIdentityEmail(
+        requireId(profile.id, 'Resolved Profile'),
+        claims.email,
+      );
+    } else if (claims.email_verified === true) {
+      profile = await profileCollection.findUniqueGlobalPersonByEmail(
+        claims.email,
+      );
+      if (profile) {
+        profile = await profileCollection.reserveCanonicalIdentityEmail(
+          requireId(profile.id, 'Matched Profile'),
+          claims.email,
+        );
+      }
+    } else {
+      // Never link an unverified/unspecified email to an existing identity.
+      const collision = await profileCollection.findUniqueGlobalPersonByEmail(
+        claims.email,
+      );
+      if (collision) {
+        throw new OidcProvisioningError(
+          'rejected',
+          `OIDC email ${claims.email} is not verified and already belongs to a Profile.`,
+        );
+      }
+    }
+
+    if (!profile) {
+      profile = await createOidcProvisioningPerson<Profile>(db, {
+        email: claims.email,
+        name: claims.name,
+        preferredUsername: claims.preferred_username,
+        subject: claims.sub,
+      });
+      created = true;
+    }
+
+    const profileId = requireId(profile.id, 'OIDC Profile');
+    const owners = await this.findProfileOwners(profileId);
+    if (owners.length > 0) {
+      // A concurrent first login can commit the exact issuer+subject mapping
+      // after this transaction's initial identity lookup but before its
+      // profile ownership check. Re-read the durable identity arbiter before
+      // rejecting the now-owned Profile so the same identity converges while
+      // every different identity still fails closed.
+      const concurrentIdentity = await this.findUniqueOidcIdentity(
+        identityCollection,
+        claims,
+      );
+      if (owners.length === 1 && concurrentIdentity?.profileId === profileId) {
+        const user = await this.finishUserProvisioning(
+          profile,
+          owners[0],
+          claims.email,
+          options,
+        );
+        concurrentIdentity.email = claims.email;
+        concurrentIdentity.lastUsedAt = new Date();
+        await concurrentIdentity.save();
+        return {
+          user,
+          profile,
+          oidcIdentity: concurrentIdentity,
+          created: false,
+        };
+      }
+      throw new OidcProvisioningError(
+        'profile_owned',
+        `Profile ${profileId} already belongs to another User.`,
+      );
+    }
+
+    // Initial lookup already proved this issuer+subject absent. Insert only:
+    // a concurrent winner must surface the unique identity-key conflict so the
+    // whole transaction rolls back and retries against the committed winner.
+    const oidcIdentity = await insertOidcProvisioningIdentity<OidcIdentity>(
+      db,
+      {
+        email: claims.email,
+        issuer: claims.iss,
+        profileId,
+        provider,
+        subject: claims.sub,
+      },
+    );
+    const user = await this.finishUserProvisioning(
       profile,
-      oidcIdentity,
-      created,
-    };
+      undefined,
+      claims.email,
+      options,
+    );
+
+    return { user, profile, oidcIdentity, created };
   }
+
+  private async findProfileOwners(profileId: string): Promise<User[]> {
+    return this.list({ where: { profileId }, limit: 2 });
+  }
+
+  private async rebindOidcProvisioningResult(
+    result: OidcIdentityResult,
+    rootDb: DatabaseInterface,
+  ): Promise<OidcIdentityResult> {
+    const profileId = requireId(result.profile.id, 'OIDC Profile');
+    const identityId = requireId(result.oidcIdentity.id, 'OIDC identity');
+    const userId = requireId(result.user.id, 'OIDC User');
+    return withSystemContext(async () => {
+      const { ProfileCollection } = await import(
+        '@happyvertical/smrt-profiles'
+      );
+      const users = await UserCollection.create({ db: rootDb });
+      const profiles = await ProfileCollection.create({ db: rootDb });
+      const identities = await OidcIdentityCollection.create({ db: rootDb });
+      const [user, profile, oidcIdentity] = await Promise.all([
+        users.get({ id: userId }),
+        profiles.get({ id: profileId }),
+        identities.get({ id: identityId }),
+      ]);
+      if (!user || !profile || !oidcIdentity) {
+        throw new OidcProvisioningError(
+          'concurrency_conflict',
+          'Committed OIDC provisioning result was not found.',
+        );
+      }
+      return { ...result, user, profile, oidcIdentity };
+    });
+  }
+
+  private async findUniqueOidcIdentity(
+    identities: OidcIdentityCollection,
+    claims: Pick<NormalizedOidcClaims, 'iss' | 'sub'>,
+  ): Promise<OidcIdentity | undefined> {
+    try {
+      return (
+        (await identities.findBySubject(claims.iss, claims.sub)) ?? undefined
+      );
+    } catch (error) {
+      if (error instanceof AmbiguousOidcIdentityError) {
+        throw new OidcProvisioningError(
+          'ambiguous_identity',
+          `Multiple OIDC identities exist for ${claims.iss} subject ${claims.sub}.`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async finishUserProvisioning(
+    profile: Profile,
+    existingOwner: User | undefined,
+    email: string,
+    options: GetOrCreateFromOidcOptions | undefined,
+  ): Promise<User> {
+    const shouldRecordLogin = options?.recordLogin !== false;
+    if (existingOwner) {
+      if (shouldRecordLogin) {
+        existingOwner.recordLogin();
+        await existingOwner.save();
+      }
+      return existingOwner;
+    }
+
+    const emailUsers = await this.findUsersByNormalizedEmail(email);
+    if (emailUsers.length > 0) {
+      throw new OidcProvisioningError(
+        'user_email_conflict',
+        `A User already exists for ${email} without the selected Profile.`,
+      );
+    }
+
+    return saveOidcRaceArbiter(() =>
+      this.create({
+        email,
+        ...(shouldRecordLogin ? { lastLoginAt: new Date() } : {}),
+        profileId: requireId(profile.id, 'OIDC Profile'),
+        status: UserStatus.ACTIVE,
+      }),
+    );
+  }
+
+  private async findUsersByNormalizedEmail(email: string): Promise<User[]> {
+    const db = this.requireProvisioningDatabase();
+    await this.ensureUserEmailKeysReady(db);
+    const result = await db.query(
+      `SELECT id, email, email_key
+       FROM users
+       WHERE email_key = ?
+       ORDER BY created_at ASC, id ASC
+       LIMIT 2`,
+      email,
+    );
+    for (const row of result.rows) {
+      this.assertUserEmailKeyCurrent(row, email);
+    }
+    const users = await Promise.all(
+      result.rows.map((row) =>
+        typeof row.id === 'string' ? this.get({ id: row.id }) : null,
+      ),
+    );
+    return users.filter((user): user is User => user !== null);
+  }
+
+  /** Require the deploy-time backfill marker before indexed identity reads. */
+  private async ensureUserEmailKeysReady(db: DatabaseInterface): Promise<void> {
+    if (!this.userEmailKeysReadyPromise) {
+      this.userEmailKeysReadyPromise = this.checkUserEmailKeysReady(db).catch(
+        (error) => {
+          this.userEmailKeysReadyPromise = null;
+          throw error;
+        },
+      );
+    }
+    return this.userEmailKeysReadyPromise;
+  }
+
+  private async checkUserEmailKeysReady(db: DatabaseInterface): Promise<void> {
+    if (
+      await new BackfillTracker({ db }).isApplied(USER_EMAIL_KEY_BACKFILL_NAME)
+    )
+      return;
+    throw new OidcProvisioningError(
+      'user_email_backfill_required',
+      'User email keys are not marked ready; run backfillUserEmailKeys() before OIDC provisioning.',
+    );
+  }
+
+  private assertUserEmailKeyCurrent(
+    row: Record<string, unknown>,
+    normalizedEmail?: string,
+  ): void {
+    const storedEmail = typeof row.email === 'string' ? row.email : '';
+    const expectedKey = storedEmail.trim()
+      ? normalizeIdentityEmail(storedEmail)
+      : null;
+    const storedKey = typeof row.email_key === 'string' ? row.email_key : null;
+    if (
+      storedKey !== expectedKey ||
+      (normalizedEmail !== undefined && expectedKey !== normalizedEmail)
+    ) {
+      throw new OidcProvisioningError(
+        'user_email_backfill_required',
+        `User ${String(row.id ?? '<unknown>')} has a missing or stale email key; run backfillUserEmailKeys() before OIDC provisioning.`,
+      );
+    }
+  }
+}
+
+function requireId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !value) {
+    throw new Error(`${label} did not produce an id.`);
+  }
+  return value;
+}
+
+function isUserOidcRaceConflict(error: unknown): boolean {
+  return isOidcProvisioningRaceConflict(error, {
+    messagePatterns: [/users[._].*profile_id|users_profile_id/iu],
+  });
 }

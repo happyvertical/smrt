@@ -5,69 +5,46 @@ Central identity system with multi-auth (Nostr/OIDC/API keys/magic links), relat
 ## Installation
 
 ```bash
-pnpm add @happyvertical/smrt-profiles
+pnpm add @happyvertical/smrt-profiles @happyvertical/sql
 ```
 
 ## Usage
 
 ```typescript
 import {
-  Profile,
-  ProfileCollection,
-  OidcIdentity,
-  OidcIdentityCollection,
-  ApiKey,
-  ApiKeyCollection,
-  NostrIdentity,
-  generateNostrKeypair,
+  backfillProfileEmailKeys,
   createProfileFromOidc,
 } from '@happyvertical/smrt-profiles';
+import { getDatabase } from '@happyvertical/sql';
 
-// Create a profile
-const profile = new Profile({
-  name: 'Alice Johnson',
-  email: 'alice@example.com',
-});
-await profile.save();
+// Connect after applying schema migrations.
+const persistence = { type: 'sqlite' as const, url: 'file:profiles.db' };
+// Mark migrated Profile email keys ready before enabling OIDC provisioning.
+const db = await getDatabase(persistence);
+await backfillProfileEmailKeys(db);
 
-// OIDC identity (Keycloak/Google/GitHub)
-const oidcProfile = await createProfileFromOidc({
-  issuer: 'https://accounts.google.com',
-  subject: 'abc123',
-  email: 'alice@example.com',
-  name: 'Alice Johnson',
-});
-
-// Nostr identity (encrypted keypair, requires SERVER_MASTER_SECRET)
-const keypair = generateNostrKeypair();
-const nostr = new NostrIdentity({
-  profileId: profile.id,
-  pubkey: keypair.pubkey,
-});
-await nostr.save();
-
-// API key (plaintext returned once only)
-const { key, apiKey } = await ApiKey.generate({
-  profileId: profile.id,
-  scope: 'read:profiles',
-  expiresAt: new Date('2025-12-31'),
-});
-// key = plaintext (store now), apiKey.keyPrefix = visible identifier
-
-// Relationships (auto-creates reciprocal inverse)
-const bob = new Profile({ name: 'Bob Smith', email: 'bob@example.com' });
-await bob.save();
-await profile.addRelationship(bob, 'friend');
-const friends = await profile.getRelationships({ direction: 'from' });
+// Provision a new OIDC Profile or reuse its exact issuer/subject link.
+const { profile, oidcIdentity, created } = await createProfileFromOidc(
+  {
+    iss: 'https://accounts.google.com',
+    sub: 'abc123',
+    email: 'olivia@example.com',
+    email_verified: true,
+    name: 'Olivia Smith',
+  },
+  'google',
+  { db },
+);
 ```
 
 ### Owned assets
 
 ```typescript
 import { AssetCollection } from '@happyvertical/smrt-assets';
+import { ProfileCollection } from '@happyvertical/smrt-profiles';
 
-const profiles = await ProfileCollection.create();
-const assets = await AssetCollection.create();
+const profiles = await ProfileCollection.create({ db });
+const assets = await AssetCollection.create({ db });
 
 const headshot = await assets.create({
   name: 'alice-headshot.jpg',
@@ -128,6 +105,77 @@ const galleryAssets = await profiles.getAssets(profile.id!, 'gallery');
 | `NostrIdentityCollection` | Nostr identity lookup (includes NIP-05) |
 | `OidcIdentityCollection` | OIDC identity lookup |
 
+`ProfileCollection.findUniqueGlobalPersonByEmail(email)` is the supported
+verified-identity lookup. It reads across tenant scopes and returns a Profile
+only when the case-insensitive email has exactly one match and that row is a
+global `Person`; tenant-scoped, non-Person, and duplicate matches throw a
+`CanonicalPersonProfileError`. Matching uses readonly, indexed
+`Profile.emailKey`, derived with the exported TypeScript
+`normalizeIdentityEmail()` helper so Unicode casing and whitespace behave the
+same on every database adapter. Use
+`requireCanonicalGlobalPerson(profileId, email?)` to validate an
+application-selected Profile against the same invariant. When `email` is
+omitted, the helper validates uniqueness using the Profile's current stored
+email. `reserveCanonicalIdentityEmail(profileId, email)` additionally claims
+the normalized address in the private
+`oidc_profile_email_reservations` table. Omit `email` to synchronize the
+reservation from the Profile's current stored email; changing the address moves
+the reservation, and clearing it removes the reservation. Legacy simple
+`Person` STI discriminators remain valid and are handled by core's normal
+upgrade path.
+
+`OidcIdentity.identityKey` stores a nullable, unique issuer/subject natural key
+for transaction-safe first-login races. The model derives it from issuer and
+subject on every save, so callers cannot desynchronize it. New links populate
+it and legacy rows backfill it when reused. Issuer and subject are opaque,
+case-sensitive OIDC identifiers: surrounding whitespace is preserved and is
+part of the key; trimming is used only to reject an all-whitespace claim. The
+generated REST, MCP, and CLI surfaces are read-only because identity mutation
+is an authentication authority change; trusted callers link identities through
+the transactional provisioning APIs. The legacy
+`OidcIdentity.findOrCreate()` method is deprecated: it transactionally reuses
+one exact safe issuer/subject link for compatibility but refuses to create a
+new authentication link. Use `createProfileFromOidc()` or the users package's
+owner-aware provisioning API for creation. The deprecated
+`OidcIdentityCollection.linkToProfile()` and `Profile.linkOidcIdentity()`
+helpers delegate to the same exact-reuse-only path and cannot plant or rebind a
+link.
+Existing installations must stop or upgrade legacy Profile writers, run
+`smrt db:status`, `smrt db:migrate`, and then `smrt db:status` before deploying
+this version to add the identity keys and private email-reservation table. Then
+run `backfillProfileEmailKeys(db)` once from a single deploy process before
+enabling verified-email provisioning. The transaction-safe backfill is
+idempotent; canonical email lookup and reservation fail closed with
+`email_key_backfill_required` while the standard `_smrt_backfills` readiness
+marker is absent. Exact issuer/subject reuse does not depend on email-key
+readiness because it does not perform email-based linking.
+The identity-boundary helpers use the readiness guard and indexed key. The
+general-purpose `ProfileCollection.findByEmail()` retains its compatible legacy
+lookup behavior and is not suitable for identity linking. Only the explicit
+deploy-time backfill scans the Profile table and records readiness; guarded
+runtime identity lookups use the indexed key and validate returned candidates.
+`createProfileFromOidc()` requires a transaction-capable database. Pass the
+root database, which must expose `beginTransaction`, and SMRT owns the
+transaction; an already transaction-bound handle is supported through a
+savepoint. Paths that perform canonical email lookup or reservation require
+`_smrt_backfills` to exist first. Provisioning never attempts tracker DDL on
+a caller-owned transaction; for those paths, if the table is absent, pass the
+root database so SMRT can initialize it outside the transaction. Exact
+issuer/subject reuse skips the email-key readiness-marker lookup, but root
+coordination still initializes the shared tracker table. Caller-owned exact
+reuse does not consult the tracker and therefore does not require that table.
+A handle exposing only `transaction()` is ambiguous and fails closed. For
+adapters without nested savepoint support, including DuckDB, pass
+the root database rather than calling the helper inside an outer transaction.
+Provisioning fails before durable writes when neither safe path is available.
+The Profile-only helper preserves exact issuer/subject reuse, including legacy
+links to tenant-scoped or non-Person Profiles, but never attaches a new identity
+to an existing email match because this package cannot prove whether a User owns
+that Profile. User/session provisioning still rejects those unsafe linked
+Profiles before creating authentication state. Use
+`UserCollection.getOrCreateFromOidc()` from `@happyvertical/smrt-users` for
+owner-aware verified-email reuse and the supported pre-provision resolver hook.
+
 `Profile` and `ProfileCollection` both expose `getAssets()`, `addAsset()`, and
 `removeAsset()` helpers backed by `profile_assets`. Typical relationships are
 `avatar`, `gallery`, and `attachment`.
@@ -137,7 +185,10 @@ const galleryAssets = await profiles.getAssets(profile.id!, 'gallery');
 | Export | Description |
 |--------|------------|
 | `resolveIdentity` | Resolve profile from any auth method |
-| `createProfileFromOidc` | Create profile + OIDC identity in one call |
+| `createProfileFromOidc` | Create a Profile + OIDC identity or reuse an exact issuer/subject link; existing email matches fail closed |
+| `normalizeIdentityEmail` | Adapter-independent Unicode/whitespace email canonicalizer used by identity keys |
+| `backfillProfileEmailKeys` | Transactionally populate normalized keys for migrated Profiles |
+| `PROFILE_EMAIL_KEY_BACKFILL_NAME` | Durable readiness-marker name recorded by the Profile email-key backfill |
 | `createProfileFromNostr` | Create profile + Nostr identity in one call |
 | `createAuthEvent` | Create a Nostr auth event |
 | `verifyAuthEvent` | Verify a Nostr auth event signature |
@@ -161,7 +212,7 @@ const galleryAssets = await profiles.getAssets(profile.id!, 'gallery');
 
 ### Key Types
 
-`ProfileOptions`, `ProfileTypeOptions`, `ProfileMetadataOptions`, `ProfileMetafieldOptions`, `ProfileRelationshipOptions`, `ProfileRelationshipTypeOptions`, `ProfileRelationshipTermOptions`, `OidcIdentityOptions`, `NostrIdentityOptions`, `ApiKeyOptions`, `GenerateKeyResult`, `MagicLinkTokenOptions`, `GenerateTokenResult`, `AuditLogOptions`, `AuditSource`, `AuthContext`, `ResolveIdentityResult`, `InitiateResult`, `VerifyResult`, `MagicLinkConfig`, `MagicLinkService`, `Nip05HandlerConfig`, `Nip05HandlerResult`, `Nip05Request`, `Nip05Response`, `NostrEvent`, `NostrKeypair`, `EncryptedKey`, `ValidationSchema`, `ValidatorFunction`, `ReciprocalHandler`
+`ProfileOptions`, `ProfileTypeOptions`, `ProfileMetadataOptions`, `ProfileMetafieldOptions`, `ProfileRelationshipOptions`, `ProfileRelationshipTypeOptions`, `ProfileRelationshipTermOptions`, `OidcIdentityOptions`, `CanonicalPersonProfileErrorCode`, `NostrIdentityOptions`, `ApiKeyOptions`, `GenerateKeyResult`, `MagicLinkTokenOptions`, `GenerateTokenResult`, `AuditLogOptions`, `AuditSource`, `AuthContext`, `ResolveIdentityResult`, `InitiateResult`, `VerifyResult`, `MagicLinkConfig`, `MagicLinkService`, `Nip05HandlerConfig`, `Nip05HandlerResult`, `Nip05Request`, `Nip05Response`, `NostrEvent`, `NostrKeypair`, `EncryptedKey`, `ValidationSchema`, `ValidatorFunction`, `ReciprocalHandler`
 
 ## Dependencies
 

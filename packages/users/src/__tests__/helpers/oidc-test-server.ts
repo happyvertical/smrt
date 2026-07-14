@@ -13,12 +13,20 @@ import {
   type Server,
   type ServerResponse,
 } from 'node:http';
+import {
+  BackfillTracker,
+  type DatabaseInterface,
+} from '@happyvertical/smrt-core/migrations';
+import { PROFILE_EMAIL_KEY_BACKFILL_NAME } from '@happyvertical/smrt-profiles';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { USER_EMAIL_KEY_BACKFILL_NAME } from '../../migrations/backfillUserEmailKeys.js';
 
 export interface OidcTestServerOptions {
   audience?: string | string[];
   authorizedParty?: string;
+  idTokenEmailVerified?: boolean;
   includeEmailInIdToken?: boolean;
+  userInfoEmailVerified?: boolean;
 }
 
 export interface OidcTestServer {
@@ -36,6 +44,13 @@ export interface OidcTestServer {
  * and sessions. Extend with further DDL per suite as needed.
  */
 export const OIDC_USERS_TEST_SCHEMA = `
+CREATE TABLE IF NOT EXISTS "_smrt_backfills" (
+  "name" TEXT PRIMARY KEY NOT NULL,
+  "applied_at" TIMESTAMP DEFAULT current_timestamp,
+  "description" TEXT,
+  "package_name" TEXT
+);
+
 CREATE TABLE IF NOT EXISTS "profile_types" (
   "id" TEXT PRIMARY KEY NOT NULL,
   "slug" TEXT NOT NULL,
@@ -62,11 +77,26 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "tenant_id" TEXT,
   "type_id" TEXT,
   "email" TEXT,
+  "email_key" TEXT,
   "name" TEXT DEFAULT '',
   "description" TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "profiles_slug_context_meta_type_idx" ON "profiles" ("slug", "context", "_meta_type");
 CREATE INDEX IF NOT EXISTS "profiles_meta_type_idx" ON "profiles" ("_meta_type");
+CREATE INDEX IF NOT EXISTS "profiles_email_key_idx" ON "profiles" ("email_key");
+
+CREATE TABLE IF NOT EXISTS "oidc_profile_email_reservations" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "profile_id" TEXT NOT NULL,
+  "email_key" TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "oidc_profile_email_reservations_slug_context_idx" ON "oidc_profile_email_reservations" ("slug", "context");
+CREATE UNIQUE INDEX IF NOT EXISTS "oidc_profile_email_reservations_profile_id_idx" ON "oidc_profile_email_reservations" ("profile_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "oidc_profile_email_reservations_email_key_idx" ON "oidc_profile_email_reservations" ("email_key");
 
 CREATE TABLE IF NOT EXISTS "oidc_identities" (
   "id" TEXT PRIMARY KEY NOT NULL,
@@ -74,14 +104,16 @@ CREATE TABLE IF NOT EXISTS "oidc_identities" (
   "context" TEXT NOT NULL DEFAULT '',
   "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
   "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
-  "profile_id" TEXT,
+  "profile_id" TEXT NOT NULL,
   "provider" TEXT DEFAULT '',
   "issuer" TEXT DEFAULT '',
   "subject" TEXT DEFAULT '',
+  "identity_key" TEXT,
   "email" TEXT DEFAULT '',
   "last_used_at" TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "oidc_identities_slug_context_idx" ON "oidc_identities" ("slug", "context");
+CREATE UNIQUE INDEX IF NOT EXISTS "oidc_identities_identity_key_idx" ON "oidc_identities" ("identity_key");
 
 CREATE TABLE IF NOT EXISTS "users" (
   "id" TEXT PRIMARY KEY NOT NULL,
@@ -91,10 +123,13 @@ CREATE TABLE IF NOT EXISTS "users" (
   "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
   "profile_id" TEXT DEFAULT '',
   "email" TEXT DEFAULT '',
+  "email_key" TEXT,
   "status" TEXT,
   "last_login_at" TIMESTAMP
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "users_slug_context_idx" ON "users" ("slug", "context");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_profile_id_idx" ON "users" ("profile_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key_idx" ON "users" ("email_key");
 
 CREATE TABLE IF NOT EXISTS "sessions" (
   "id" TEXT PRIMARY KEY NOT NULL,
@@ -113,6 +148,21 @@ CREATE TABLE IF NOT EXISTS "sessions" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "sessions_slug_context_idx" ON "sessions" ("slug", "context");
 `;
+
+/** Mark a freshly-created, empty test schema ready for indexed OIDC reads. */
+export async function prepareOidcEmailKeyBackfills(
+  db: DatabaseInterface,
+): Promise<void> {
+  const tracker = new BackfillTracker({ db });
+  await tracker.recordApplied(PROFILE_EMAIL_KEY_BACKFILL_NAME, {
+    description: 'Canonical Profile identity email keys are current.',
+    packageName: '@happyvertical/smrt-profiles',
+  });
+  await tracker.recordApplied(USER_EMAIL_KEY_BACKFILL_NAME, {
+    description: 'Canonical User identity email keys are current.',
+    packageName: '@happyvertical/smrt-users',
+  });
+}
 
 const activeServers = new Set<Server>();
 
@@ -203,9 +253,11 @@ export async function startOidcServer(
       };
       if (options.includeEmailInIdToken !== false) {
         idTokenClaims.email = 'dex.user@example.com';
-        idTokenClaims.email_verified = true;
+        idTokenClaims.email_verified = options.idTokenEmailVerified ?? true;
         idTokenClaims.name = 'Dex User';
         idTokenClaims.preferred_username = 'dex-user';
+      } else if (options.idTokenEmailVerified !== undefined) {
+        idTokenClaims.email_verified = options.idTokenEmailVerified;
       }
       if (options.authorizedParty) {
         idTokenClaims.azp = options.authorizedParty;
@@ -235,7 +287,7 @@ export async function startOidcServer(
       });
       sendJson(response, 200, {
         email: 'dex.user@example.com',
-        email_verified: true,
+        email_verified: options.userInfoEmailVerified ?? true,
         name: 'Dex User',
         preferred_username: 'dex-user',
         sub: 'dex-user-123',

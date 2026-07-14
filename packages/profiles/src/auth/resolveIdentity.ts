@@ -11,12 +11,26 @@
  * 4. Actor header (CI pass-through) → Profile lookup
  */
 
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import {
+  resolveDatabase,
+  type SmrtObjectOptions,
+} from '@happyvertical/smrt-core';
+import { withSystemContext } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { ApiKey } from '../models/ApiKey';
 import { NostrIdentity } from '../models/NostrIdentity';
 import { OidcIdentity } from '../models/OidcIdentity';
 import type { Profile } from '../models/Profile';
+import { normalizeIdentityEmail } from './normalizeIdentityEmail';
 import { type NostrEvent, verifyAuthEvent } from './nostrCrypto';
+import {
+  coordinateOidcProvisioning,
+  isOidcProvisioningRaceConflict,
+} from './oidcProvisioningCoordinator';
+import {
+  createOidcProvisioningPerson,
+  insertOidcProvisioningIdentity,
+} from './oidcProvisioningPrimitives';
 
 /**
  * Context provided to resolveIdentity
@@ -270,23 +284,21 @@ async function findProfileByExternalId(
 /**
  * Create a profile from OIDC claims if it doesn't exist
  *
- * Supports email-based account linking: if a user signs in with Google
- * and later with GitHub using the same email, they get the same profile.
- *
  * Resolution order:
  * 1. If OIDC identity (iss + sub) already exists → return linked profile
- * 2. If verified email provided, check if profile with same email exists → link new identity
+ * 2. If the email matches an existing Profile, fail closed because this
+ *    package cannot prove whether a User owns it
  * 3. Otherwise, create new profile + identity
  *
  * Security considerations:
- * - Email-based linking only occurs when `email_verified` is true. This prevents
- *   attackers from claiming unverified emails to hijack accounts.
- * - Linking is automatic and irreversible through this API. Multiple OIDC
- *   identities from different providers sharing the same verified email will
- *   be associated to the same Profile.
- * - If an OIDC provider does not supply an email, or the email changes later,
- *   existing links are not automatically updated. New sign-ins without an email
- *   or with a different email may result in a new Profile being created.
+ * - Existing issuer/subject links always keep their already-linked Profile,
+ *   including legacy tenant-scoped or non-Person Profiles, and refresh the
+ *   cached identity email. This exact-link compatibility does not perform
+ *   email-based canonical reuse.
+ * - New identities never attach to an existing email match through this
+ *   Profile-only helper because Profile ownership belongs to the users package.
+ *   Use `UserCollection.getOrCreateFromOidc()` for owner-aware verified-email
+ *   reuse and its supported pre-provision resolver hook.
  * - This function trusts the OIDC provider to assert correct email_verified status.
  *   Only use with trusted providers.
  *
@@ -307,108 +319,267 @@ export async function createProfileFromOidc(
   provider: string,
   options: SmrtObjectOptions,
 ): Promise<{ profile: Profile; oidcIdentity: OidcIdentity; created: boolean }> {
-  // 1. If OIDC identity already exists for this issuer+subject, return linked profile
-  const existingIdentity = await OidcIdentity.findBySubject(
+  return coordinateProfileOidcProvisioning(claims, provider, options);
+}
+
+/**
+ * @internal Transactionally reuse one exact legacy issuer/subject link.
+ *
+ * This path cannot create or rebind authority. It intentionally preserves
+ * existing tenant-scoped and non-Person Profile links; canonical global Person
+ * validation remains mandatory for every path that creates a User/session.
+ */
+export async function reuseExistingOidcIdentityForProfile(
+  profileId: string,
+  claims: {
+    sub: string;
+    iss: string;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    preferred_username?: string;
+  },
+  provider: string,
+  options: SmrtObjectOptions,
+): Promise<{ profile: Profile; oidcIdentity: OidcIdentity; created: false }> {
+  const normalizedClaims = normalizeOidcProfileClaims(claims);
+  const db = await resolveOidcProfileDatabase(options.db);
+  return coordinateOidcProvisioning({
+    db,
+    lockKeys: [
+      `identity:${OidcIdentity.buildIdentityKey(
+        normalizedClaims.iss,
+        normalizedClaims.sub,
+      )}`,
+    ],
+    isRaceConflict: isOidcProvisioningRaceConflict,
+    createTransactionError: (message, cause) =>
+      new Error(message, cause === undefined ? undefined : { cause }),
+    createConcurrencyError: (cause) =>
+      new Error(
+        'Concurrent exact OIDC identity reuse did not converge.',
+        cause === undefined ? undefined : { cause },
+      ),
+    rebindRootResult: rebindOidcProfileResult,
+    provision: (tx) =>
+      withSystemContext(async () => {
+        const { OidcIdentityCollection } = await import(
+          '../collections/OidcIdentityCollection'
+        );
+        const identity = await (
+          await OidcIdentityCollection.create({ db: tx })
+        ).findBySubject(normalizedClaims.iss, normalizedClaims.sub);
+        if (!identity) {
+          throw new Error(
+            'OidcIdentity.findOrCreate() no longer creates authentication links; use UserCollection.getOrCreateFromOidc() or createProfileFromOidc().',
+          );
+        }
+        if (identity.profileId !== profileId) {
+          throw new Error(
+            `OIDC identity ${normalizedClaims.iss} subject ${normalizedClaims.sub} belongs to a different Profile.`,
+          );
+        }
+        const profile = await identity.getProfile();
+        if (!profile) {
+          throw new Error('The exact OIDC identity has no linked Profile.');
+        }
+        identity.provider = provider;
+        if (normalizedClaims.email) identity.email = normalizedClaims.email;
+        identity.lastUsedAt = new Date();
+        await identity.save();
+        return { profile, oidcIdentity: identity, created: false as const };
+      }),
+  });
+}
+
+async function coordinateProfileOidcProvisioning(
+  claims: {
+    sub: string;
+    iss: string;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    preferred_username?: string;
+  },
+  provider: string,
+  options: SmrtObjectOptions,
+): Promise<{ profile: Profile; oidcIdentity: OidcIdentity; created: boolean }> {
+  const normalizedClaims = normalizeOidcProfileClaims(claims);
+  const db = await resolveOidcProfileDatabase(options.db);
+  return coordinateOidcProvisioning({
+    db,
+    lockKeys: [
+      `identity:${OidcIdentity.buildIdentityKey(
+        normalizedClaims.iss,
+        normalizedClaims.sub,
+      )}`,
+      ...(normalizedClaims.email ? [`email:${normalizedClaims.email}`] : []),
+    ],
+    isRaceConflict: isOidcProvisioningRaceConflict,
+    createTransactionError: (message, cause) =>
+      new Error(message, cause === undefined ? undefined : { cause }),
+    createConcurrencyError: (cause) =>
+      new Error(
+        'Concurrent OIDC Profile provisioning did not converge.',
+        cause === undefined ? undefined : { cause },
+      ),
+    rebindRootResult: rebindOidcProfileResult,
+    provision: (tx) =>
+      withSystemContext(() =>
+        provisionOidcProfile(normalizedClaims, provider, {
+          ...options,
+          db: tx,
+        }),
+      ),
+  });
+}
+
+async function provisionOidcProfile(
+  claims: {
+    sub: string;
+    iss: string;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    preferred_username?: string;
+  },
+  provider: string,
+  options: SmrtObjectOptions & { db: DatabaseInterface },
+): Promise<{ profile: Profile; oidcIdentity: OidcIdentity; created: boolean }> {
+  const { OidcIdentityCollection } = await import(
+    '../collections/OidcIdentityCollection'
+  );
+  const identityCollection = await OidcIdentityCollection.create(options);
+  const existingIdentity = await identityCollection.findBySubject(
     claims.iss,
     claims.sub,
-    options,
   );
-
   if (existingIdentity) {
     const profile = await existingIdentity.getProfile();
-    if (profile) {
-      // Update identity with latest claims
-      if (claims.email) existingIdentity.email = claims.email;
-      existingIdentity.lastUsedAt = new Date();
-      await existingIdentity.save();
-
-      return {
-        profile,
-        oidcIdentity: existingIdentity,
-        created: false,
-      };
+    if (!profile) {
+      throw new Error('The exact OIDC identity has no linked Profile.');
     }
+    if (claims.email) existingIdentity.email = claims.email;
+    existingIdentity.lastUsedAt = new Date();
+    await existingIdentity.save();
+    return { profile, oidcIdentity: existingIdentity, created: false };
   }
 
-  // 2. Email-based account linking: only link if email is verified (security)
-  if (claims.email && claims.email_verified) {
-    const { ProfileCollection } = await import(
-      '../collections/ProfileCollection'
+  const { ProfileCollection } = await import(
+    '../collections/ProfileCollection'
+  );
+  const profileCollection = await ProfileCollection.create(options);
+  if (claims.email) {
+    const collision = await profileCollection.findUniqueGlobalPersonByEmail(
+      claims.email,
     );
-
-    const profileCollection = await ProfileCollection.create(options);
-    const existingProfile = await profileCollection.findByEmail(claims.email);
-
-    if (existingProfile) {
-      // Link new OIDC identity to existing profile (email-based linking)
-      const oidcIdentity = await OidcIdentity.findOrCreate(
-        existingProfile,
-        {
-          provider,
-          issuer: claims.iss,
-          subject: claims.sub,
-          email: claims.email,
-        },
-        options,
+    if (collision) {
+      if (claims.email_verified !== true) {
+        throw new Error(
+          `OIDC email ${claims.email} is not verified and already belongs to a Profile.`,
+        );
+      }
+      throw new Error(
+        `OIDC email ${claims.email} already belongs to a Profile; createProfileFromOidc() cannot prove that Profile is unowned. Use UserCollection.getOrCreateFromOidc() for owner-aware linking.`,
       );
-
-      return {
-        profile: existingProfile,
-        oidcIdentity,
-        created: false,
-      };
     }
   }
 
-  // 3. Create new profile
-  const { Person } = await import('../models/ProfileTypes');
-  const { ProfileTypeCollection } = await import(
-    '../collections/ProfileTypeCollection'
-  );
-
-  // Get or create the 'person' type
-  const typeCollection = await ProfileTypeCollection.create(options);
-  let personType = await typeCollection.getBySlug('person');
-
-  if (!personType) {
-    // Create the person type if it doesn't exist
-    const { ProfileType } = await import('../models/ProfileType');
-    personType = new ProfileType({
-      ...options,
-      slug: 'person',
-      name: 'Person',
-      description: 'Individual person profile',
-    });
-    await personType.initialize();
-    await personType.save();
-  }
-
-  const profile = new Person({
-    ...options,
-    typeId: personType.id as string,
-    email: claims.email || '',
-    name: claims.name || claims.preferred_username || claims.sub,
+  const profile = await createOidcProvisioningPerson(options.db, {
+    email: claims.email ?? '',
+    name: claims.name,
+    preferredUsername: claims.preferred_username,
+    subject: claims.sub,
   });
-  await profile.initialize();
-  await profile.save();
+  const oidcIdentity = await insertOidcProvisioningIdentity(options.db, {
+    email: claims.email,
+    issuer: claims.iss,
+    profileId: requireOidcProfileId(profile.id),
+    provider,
+    subject: claims.sub,
+  });
+  return { profile, oidcIdentity, created: true };
+}
 
-  // Link OIDC identity
-  const oidcIdentity = await OidcIdentity.findOrCreate(
-    profile,
-    {
-      provider,
-      issuer: claims.iss,
-      subject: claims.sub,
-      email: claims.email,
-    },
-    options,
+async function rebindOidcProfileResult<
+  T extends {
+    profile: Profile;
+    oidcIdentity: OidcIdentity;
+    created: boolean;
+  },
+>(result: T, rootDb: DatabaseInterface): Promise<T> {
+  const { OidcIdentityCollection } = await import(
+    '../collections/OidcIdentityCollection'
   );
+  const { ProfileCollection } = await import(
+    '../collections/ProfileCollection'
+  );
+  const profileId = requireOidcProfileId(result.profile.id);
+  const identityId = requireOidcProfileId(result.oidcIdentity.id);
+  const [profile, oidcIdentity] = await withSystemContext(async () => {
+    const profiles = await ProfileCollection.create({ db: rootDb });
+    const identities = await OidcIdentityCollection.create({ db: rootDb });
+    return Promise.all([
+      profiles.get({ id: profileId }),
+      identities.get({ id: identityId }),
+    ]);
+  });
+  if (!profile || !oidcIdentity) {
+    throw new Error(
+      'Committed OIDC Profile provisioning result was not found.',
+    );
+  }
+  return { ...result, profile, oidcIdentity };
+}
 
+function normalizeOidcProfileClaims(claims: {
+  sub: string;
+  iss: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+  preferred_username?: string;
+}) {
+  const sub = claims?.sub;
+  const iss = claims?.iss;
+  if (
+    typeof sub !== 'string' ||
+    sub.trim().length === 0 ||
+    typeof iss !== 'string' ||
+    iss.trim().length === 0
+  ) {
+    throw new Error(
+      'Invalid OIDC claims: both "sub" and "iss" must be non-empty strings.',
+    );
+  }
+  const suppliedEmail = claims.email;
   return {
-    profile,
-    oidcIdentity,
-    created: true,
+    ...claims,
+    sub,
+    iss,
+    email:
+      typeof suppliedEmail === 'string' && suppliedEmail.trim()
+        ? normalizeIdentityEmail(suppliedEmail)
+        : undefined,
   };
+}
+
+function requireOidcProfileId(value: unknown): string {
+  if (typeof value !== 'string' || !value) {
+    throw new Error('OIDC Profile provisioning did not produce an id.');
+  }
+  return value;
+}
+
+async function resolveOidcProfileDatabase(
+  db: SmrtObjectOptions['db'],
+): Promise<DatabaseInterface> {
+  if (!db) {
+    throw new Error(
+      'OIDC Profile provisioning requires an initialized database.',
+    );
+  }
+  return resolveDatabase(db as Parameters<typeof resolveDatabase>[0]);
 }
 
 /**
@@ -437,7 +608,7 @@ export async function createProfileFromNostr(
   nostrIdentity: NostrIdentity;
   created: boolean;
 }> {
-  const normalizedEmail = email.toLowerCase();
+  const normalizedEmail = normalizeIdentityEmail(email);
 
   // Check if Nostr identity already exists
   const existingIdentity = await NostrIdentity.findByEmail(

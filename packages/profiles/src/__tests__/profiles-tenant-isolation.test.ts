@@ -105,4 +105,18 @@ describe('profiles tenant isolation (#1600)', () => {
       ),
     ).toEqual(['g-profile', 't2-profile']);
   });
+
+  it('ProfileTypeCollection.getOrCreateBySlug preserves tenant auto-population', async () => {
+    const types = await ProfileTypeCollection.create({ db });
+    const created = await withTenant({ tenantId: 'tenant-1' }, () =>
+      types.getOrCreateBySlug('tenant-person', { name: 'Tenant Person' }),
+    );
+
+    expect(created.tenantId).toBe('tenant-1');
+    const stored = await db.query(
+      'SELECT tenant_id FROM profile_types WHERE id = ?',
+      created.id,
+    );
+    expect(stored.rows[0]?.tenant_id).toBe('tenant-1');
+  });
 });

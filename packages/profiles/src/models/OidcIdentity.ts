@@ -25,7 +25,10 @@ export interface OidcIdentityOptions extends SmrtObjectOptions {
 
 @smrt({
   tableName: 'oidc_identities',
-  api: { exclude: ['delete'] },
+  // Identity linking is an authentication authority change. Generated routes
+  // authenticate callers but do not authorize Profile ownership, so mutations
+  // must stay behind the trusted provisioning APIs below.
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
 })
@@ -45,14 +48,24 @@ export class OidcIdentity extends SmrtObject {
   /**
    * OIDC issuer URL (e.g., https://keycloak.example.com/realms/bmp)
    */
-  @field({ type: 'text' })
+  @field({ type: 'text', indexed: true })
   issuer: string = '';
 
   /**
    * OIDC subject claim - unique identifier from the provider
    */
-  @field({ type: 'text' })
+  @field({ type: 'text', indexed: true })
   subject: string = '';
+
+  /**
+   * Stable issuer+subject key used as the database race arbiter.
+   *
+   * Nullable for legacy rows; every newly linked or reused identity backfills
+   * it. A separate unique constraint makes concurrent first login fail with a
+   * retryable conflict instead of creating two identities.
+   */
+  @field({ type: 'text', nullable: true, unique: true, readonly: true })
+  identityKey: string | null = null;
 
   /**
    * Cached email from the IdP (for display/lookup)
@@ -95,13 +108,30 @@ export class OidcIdentity extends SmrtObject {
       '../collections/OidcIdentityCollection'
     );
     const collection = await OidcIdentityCollection.create(options);
-    return await collection.findOne({
-      where: { issuer, subject },
-    });
+    return await collection.findBySubject(issuer, subject);
+  }
+
+  /** Build the collision-free natural key for one OIDC issuer subject. */
+  static buildIdentityKey(issuer: string, subject: string): string {
+    return JSON.stringify([issuer, subject]);
+  }
+
+  /** Keep the durable key derived from its natural-key source fields. */
+  override async save(): Promise<this> {
+    this.identityKey =
+      this.issuer.trim() && this.subject.trim()
+        ? OidcIdentity.buildIdentityKey(this.issuer, this.subject)
+        : null;
+    return super.save();
   }
 
   /**
-   * Find or create identity for a profile
+   * Reuse an existing exact identity for its unchanged Profile.
+   *
+   * @deprecated Authentication links must be created through transactional
+   * provisioning. This compatibility method only refreshes a unique mapping
+   * that already belongs to the supplied Profile, including legacy Profile
+   * types, and deliberately refuses to create or rebind authority.
    */
   static async findOrCreate(
     profile: Profile,
@@ -113,32 +143,29 @@ export class OidcIdentity extends SmrtObject {
     },
     options: SmrtObjectOptions = {},
   ): Promise<OidcIdentity> {
-    const existing = await OidcIdentity.findBySubject(
-      oidcData.issuer,
-      oidcData.subject,
-      options,
-    );
-
-    if (existing) {
-      // Update last used
-      existing.lastUsedAt = new Date();
-      if (oidcData.email) existing.email = oidcData.email;
-      await existing.save();
-      return existing;
+    const profileId = profile.id;
+    if (typeof profileId !== 'string' || !profileId) {
+      throw new Error('OidcIdentity.findOrCreate() requires a saved Profile.');
     }
-
-    // Create new
-    const identity = new OidcIdentity({
-      ...options,
-      profileId: profile.id as string,
-      provider: oidcData.provider,
-      issuer: oidcData.issuer,
-      subject: oidcData.subject,
-      email: oidcData.email || '',
-    });
-    await identity.initialize();
-    await identity.save();
-    return identity;
+    const { reuseExistingOidcIdentityForProfile } = await import(
+      '../auth/resolveIdentity'
+    );
+    const profileOptions = profile.options ?? {};
+    const result = await reuseExistingOidcIdentityForProfile(
+      profileId,
+      {
+        email: oidcData.email,
+        iss: oidcData.issuer,
+        sub: oidcData.subject,
+      },
+      oidcData.provider,
+      {
+        ...profileOptions,
+        ...options,
+        db: options.db ?? profileOptions.db,
+      },
+    );
+    return result.oidcIdentity;
   }
 
   /**
