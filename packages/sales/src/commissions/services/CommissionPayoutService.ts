@@ -66,6 +66,8 @@ interface TxTransitionOutcome {
   outcome: 'transitioned' | 'already_applied' | 'refused';
   payoutId: string | null;
   refusal?: { reason: PayoutTransitionRefusalReason; detail: string };
+  /** Prevent payout rehydration when source ownership was not proven. */
+  authorizationFailed?: true;
   releasedCommissionIds?: string[];
   releasedAdjustmentIds?: string[];
 }
@@ -196,9 +198,11 @@ export interface TransitionPayoutForSourceInput {
   action: PayoutSourceTransitionAction;
   /**
    * Optimistic concurrency guard: refuse with `status_conflict` when the
-   * LOCKED payout's status differs. Omit to let the action's own
-   * from-status rule arbitrate (concurrent duplicate calls then resolve as
-   * one `transitioned` + one `already_applied`).
+   * LOCKED payout's status differs, after source membership is authorized.
+   * Omit to let the action's own from-status rule arbitrate (concurrent
+   * duplicate calls for actions that retain membership then resolve as one
+   * `transitioned` + one `already_applied`; `reject` replays fail
+   * `membership_empty` after releasing that evidence).
    */
   expectedStatus?: CommissionPayoutStatus;
   /** Required for `complete`. */
@@ -222,7 +226,9 @@ export interface TransitionPayoutForSourceResult {
   outcome: 'transitioned' | 'already_applied' | 'refused';
   /**
    * The payout re-read AFTER the transaction (bound to the service's own
-   * connection). `null` only for `payout_not_found`.
+   * connection). `null` for `payout_not_found` and every membership
+   * authorization refusal, so an unverified caller receives no payout
+   * lifecycle or settlement data.
    */
   payout: CommissionPayout | null;
   /** Set exactly when {@link outcome} is `refused`. */
@@ -868,26 +874,28 @@ export class CommissionPayoutService {
    *
    * Under the lock, in order:
    *
-   * 1. **Hydrate + already-applied** — a payout already in the action's
-   *    target status returns `already_applied` WITHOUT writing (terminal
-   *    completion metadata — `paymentReference`, `providerRef`, `paidAt` —
-   *    is never overwritten by a replay). A missing/cross-tenant id
+   * 1. **Hydrate** — load the locked payout. A missing/cross-tenant id
    *    refuses `payout_not_found`.
-   * 2. **Expected state** — `expectedStatus`, when given, must match the
-   *    locked status or the call refuses `status_conflict`; the action's
-   *    own from-status rule then applies. Concurrent duplicate calls
-   *    therefore resolve deterministically: one `transitioned`, the rest
-   *    `already_applied` (or `status_conflict` when they raced a
-   *    DIFFERENT action).
-   * 3. **Source authorization** — every member commission, and every
+   * 2. **Source authorization** — every member commission, and every
    *    member adjustment through its parent commission, must carry exactly
    *    the requested `(sourceKind, sourceId)` and agree with the payout on
    *    earner/currency/tenant; anything unprovable refuses fail-closed
    *    (`source_mismatch`, `adjustment_parent_missing`, mismatches,
    *    `membership_empty` — note this means memberless raced-away batch
-   *    artifacts cannot be transitioned through this source-authorized
-   *    door, and an `already_applied` echo performs no source check since
-   *    nothing is written).
+   *    artifacts cannot receive any status-derived outcome through this
+   *    source-authorized door).
+   * 3. **Status outcome** — after authorization, a payout already in the
+   *    action's target status returns `already_applied` WITHOUT writing
+   *    (terminal completion metadata — `paymentReference`, `providerRef`,
+   *    `paidAt` — is never overwritten by a replay). `expectedStatus`, when
+   *    given, must then match the locked status or the call refuses
+   *    `status_conflict`; the action's own from-status rule applies last.
+   *    Concurrent duplicate calls for actions that RETAIN membership
+   *    therefore resolve deterministically: one `transitioned`, the rest
+   *    `already_applied` (or `status_conflict` when they raced a DIFFERENT
+   *    action). `reject` releases the membership evidence, so a serialized
+   *    replay fails closed as `membership_empty` rather than exposing the
+   *    rejected status.
    * 4. **Totals recompute** — commission/adjustment/total amounts are
    *    recomputed from the locked membership; drift refuses `totals_drift`
    *    for the money-forward actions (`approve`, `mark_processing`,
@@ -991,25 +999,6 @@ export class CommissionPayoutService {
         }
         const payoutId = payout.id ?? '';
 
-        if (payout.status === targetStatus) {
-          return { outcome: 'already_applied' as const, payoutId };
-        }
-        if (input.expectedStatus && payout.status !== input.expectedStatus) {
-          return CommissionPayoutService.txRefusal(
-            payoutId,
-            'status_conflict',
-            `expected status '${input.expectedStatus}' but payout is '${payout.status}'`,
-          );
-        }
-        const legalFrom = CommissionPayoutService.TRANSITION_FROM[input.action];
-        if (!legalFrom.includes(payout.status)) {
-          return CommissionPayoutService.txRefusal(
-            payoutId,
-            'status_conflict',
-            `cannot ${input.action} from status '${payout.status}'`,
-          );
-        }
-
         const members = await tx.commissions.findByPayout(payoutId);
         const memberAdjustments = await tx.adjustments.findByPayout(payoutId);
 
@@ -1039,11 +1028,9 @@ export class CommissionPayoutService {
           rawCommissionCount !== members.length ||
           rawAdjustmentCount !== memberAdjustments.length
         ) {
-          return CommissionPayoutService.txRefusal(
+          return CommissionPayoutService.txAuthorizationRefusal(
             payoutId,
             'tenant_mismatch',
-            `payout has ${rawCommissionCount} commission and ${rawAdjustmentCount} adjustment rows stamped, ` +
-              `but only ${members.length} and ${memberAdjustments.length} are visible in the current tenant scope`,
           );
         }
 
@@ -1061,10 +1048,28 @@ export class CommissionPayoutService {
           sourceId: input.sourceId,
         });
         if (!verdict.ok) {
-          return CommissionPayoutService.txRefusal(
+          return CommissionPayoutService.txAuthorizationRefusal(
             payoutId,
             verdict.reason,
-            verdict.detail,
+          );
+        }
+
+        if (payout.status === targetStatus) {
+          return { outcome: 'already_applied' as const, payoutId };
+        }
+        if (input.expectedStatus && payout.status !== input.expectedStatus) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            'status_conflict',
+            `expected status '${input.expectedStatus}' but payout is '${payout.status}'`,
+          );
+        }
+        const legalFrom = CommissionPayoutService.TRANSITION_FROM[input.action];
+        if (!legalFrom.includes(payout.status)) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            'status_conflict',
+            `cannot ${input.action} from status '${payout.status}'`,
           );
         }
 
@@ -1158,9 +1163,10 @@ export class CommissionPayoutService {
 
     // Rehydrate OUTSIDE the transaction so the returned instance is bound
     // to the service's own connection, not the released transaction.
-    const payout = outcome.payoutId
-      ? await this.deps.payouts.get({ id: outcome.payoutId })
-      : null;
+    const payout =
+      outcome.payoutId && !outcome.authorizationFailed
+        ? await this.deps.payouts.get({ id: outcome.payoutId })
+        : null;
     const result: TransitionPayoutForSourceResult = {
       outcome: outcome.outcome,
       payout,
@@ -1222,6 +1228,26 @@ export class CommissionPayoutService {
     refusal: { reason: PayoutTransitionRefusalReason; detail: string };
   } {
     return { outcome: 'refused', payoutId, refusal: { reason, detail } };
+  }
+
+  /**
+   * A membership refusal means the requested source was never authorized.
+   * Keep the typed reason for callers while withholding both the payout and
+   * member-specific detail (actual source, ids, account, tenant, or money).
+   */
+  private static txAuthorizationRefusal(
+    payoutId: string,
+    reason: PayoutMembershipRefusalReason,
+  ): TxTransitionOutcome {
+    return {
+      outcome: 'refused',
+      payoutId,
+      authorizationFailed: true,
+      refusal: {
+        reason,
+        detail: 'requested source is not authorized for this payout membership',
+      },
+    };
   }
 
   /**
