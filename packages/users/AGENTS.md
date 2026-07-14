@@ -240,8 +240,12 @@ the package root).
   refuses to provision a user when the IdP explicitly returns
   `email_verified: false` (opt out with `{ allowUnverifiedEmail: true }`). An
   absent claim makes no assertion and is not enforced.
-- **Verified-email Profile reuse is fail-closed.** Default provisioning reuses
-  only one unowned, global `Person`. Tenant-scoped, non-Person, duplicate-email,
+- **Verified-email Profile reuse is fail-closed.** The typed canonical scenarios
+  live in
+  `packages/profiles/src/testing/oidcProvisioningDecisionMatrix.ts`; both
+  package suites execute that matrix and public docs reference it rather than
+  maintaining another behavioral table. Default provisioning reuses only one
+  unowned, global `Person`. Tenant-scoped, non-Person, duplicate-email,
   and already-owned matches fail before User/session creation. An existing
   issuer/subject link without a User must still be the unique global Person for
   the current verified claim email; once owned, the stable issuer/subject link

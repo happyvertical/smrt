@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   backfillProfileEmailKeys,
   createProfileFromOidc,
+  PROFILE_EMAIL_KEY_BACKFILL_NAME,
 } from '@happyvertical/smrt-profiles';
 import {
   getTestDbConfig,
@@ -9,14 +10,43 @@ import {
 } from '@happyvertical/smrt-vitest';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  getOidcProvisioningDecisionScenario,
+  getOidcProvisioningPublicErrorCode,
+  OIDC_PROVISIONING_DECISION_MATRIX,
+} from '../../../profiles/src/testing/oidcProvisioningDecisionMatrix.js';
 import { UserCollection } from '../collections/UserCollection.js';
-import { backfillUserEmailKeys } from '../migrations/backfillUserEmailKeys.js';
+import {
+  backfillUserEmailKeys,
+  USER_EMAIL_KEY_BACKFILL_NAME,
+} from '../migrations/backfillUserEmailKeys.js';
 import {
   OIDC_USERS_TEST_SCHEMA,
   prepareOidcEmailKeyBackfills,
 } from './helpers/oidc-test-server.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
+const POSTGRES_USER_MATRIX_IDS = OIDC_PROVISIONING_DECISION_MATRIX.filter(
+  (scenario) =>
+    scenario.adapters.postgres.status === 'required' &&
+    scenario.expectations.users !== undefined,
+).map((scenario) => scenario.id);
+const EXECUTED_POSTGRES_USER_MATRIX_IDS = [
+  'concurrent-winner-and-observer',
+  'concurrent-email-competitors',
+  'resolver-durable-arbiter-retry',
+  'caller-owned-transaction',
+  'root-transaction-resolver-rollback',
+] as const;
+const POSTGRES_PROFILE_MATRIX_IDS = OIDC_PROVISIONING_DECISION_MATRIX.filter(
+  (scenario) =>
+    scenario.adapters.postgres.status === 'required' &&
+    scenario.expectations.profiles !== undefined,
+).map((scenario) => scenario.id);
+const EXECUTED_POSTGRES_PROFILE_MATRIX_IDS = [
+  'concurrent-winner-and-observer',
+  'caller-owned-transaction',
+] as const;
 
 describePostgres('Postgres OIDC provisioning concurrency', () => {
   let adminDb: DatabaseInterface | undefined;
@@ -33,7 +63,18 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     schemaName = undefined;
   });
 
-  it('converges independent first-login transactions on one identity and User', async () => {
+  it('executes every PostgreSQL-required matrix row for each applicable surface', () => {
+    expect([...EXECUTED_POSTGRES_USER_MATRIX_IDS].sort()).toEqual(
+      [...POSTGRES_USER_MATRIX_IDS].sort(),
+    );
+    expect([...EXECUTED_POSTGRES_PROFILE_MATRIX_IDS].sort()).toEqual(
+      [...POSTGRES_PROFILE_MATRIX_IDS].sort(),
+    );
+  });
+
+  it.each([
+    getOidcProvisioningDecisionScenario('concurrent-winner-and-observer'),
+  ])('$id — $title (Users)', async (scenario) => {
     const fixture = await createFixture();
     await seedPersonType(fixture.rootDb);
 
@@ -81,6 +122,7 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
       }),
     ]);
 
+    expect(arrivals).toBeGreaterThanOrEqual(2);
     expect(second.profile.id).toBe(first.profile.id);
     expect(second.user.id).toBe(first.user.id);
     expect(second.oidcIdentity.id).toBe(first.oidcIdentity.id);
@@ -96,7 +138,9 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     ).resolves.toBe(1);
   });
 
-  it('reinvokes an idempotent resolver after a durable-arbiter retry', async () => {
+  it.each([
+    getOidcProvisioningDecisionScenario('resolver-durable-arbiter-retry'),
+  ])('$id — $title (Users)', async (scenario) => {
     const fixture = await createFixture();
     await seedPersonType(fixture.rootDb);
 
@@ -129,7 +173,7 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     );
 
     expect(injectedConflicts).toBe(1);
-    expect(resolverCalls).toBe(2);
+    expect(resolverCalls).toBe(scenario.expectations.users?.resolverCalls);
     expect(result.created).toBe(true);
     await expect(countRows(rootDb, 'profiles')).resolves.toBe(1);
     await expect(countRows(rootDb, 'users')).resolves.toBe(1);
@@ -139,7 +183,9 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     ).resolves.toBe(1);
   });
 
-  it('allows only one subject to claim a verified email across independent transactions', async () => {
+  it.each([
+    getOidcProvisioningDecisionScenario('concurrent-email-competitors'),
+  ])('$id — $title (Users)', async (scenario) => {
     const fixture = await createFixture();
     await seedPersonType(fixture.rootDb);
 
@@ -184,7 +230,9 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     ).toHaveLength(1);
     expect(results.filter((result) => result.status === 'rejected')).toEqual([
       expect.objectContaining({
-        reason: expect.objectContaining({ code: 'profile_owned' }),
+        reason: expect.objectContaining({
+          code: getOidcProvisioningPublicErrorCode(scenario.expectations.users),
+        }),
       }),
     ]);
     await expect(countRows(firstDb, 'profiles')).resolves.toBe(1);
@@ -388,7 +436,9 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     ]);
   });
 
-  it('serializes unrelated provisions on one transaction-bound client', async () => {
+  it.each([
+    getOidcProvisioningDecisionScenario('caller-owned-transaction'),
+  ])('$id — $title (Users)', async (scenario) => {
     const fixture = await createFixture();
     await seedPersonType(fixture.rootDb);
     if (!fixture.rootDb.beginTransaction) {
@@ -396,8 +446,13 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     }
     const tx = await fixture.rootDb.beginTransaction();
     let trackerDdl = 0;
+    let resolverCalls = 0;
     const observeTrackerDdl = (sql: string) => {
       if (/create\s+table[\s\S]*_smrt_backfills/iu.test(sql)) trackerDdl += 1;
+    };
+    const resolver = async () => {
+      resolverCalls += 1;
+      return undefined;
     };
 
     try {
@@ -416,6 +471,7 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
             sub: 'outer-first-subject',
           },
           'dex',
+          { resolveProfile: resolver },
         ),
         secondUsers.getOrCreateFromOidc(
           {
@@ -425,6 +481,7 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
             sub: 'outer-second-subject',
           },
           'dex',
+          { resolveProfile: resolver },
         ),
       ]);
 
@@ -435,9 +492,99 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
       });
       expect(tx.isActive()).toBe(true);
       expect(trackerDdl).toBe(0);
+      expect(resolverCalls).toBe(
+        (scenario.expectations.users?.resolverCalls ?? 0) * 2,
+      );
+      expect(await countRows(tx, 'users')).toBe(
+        (scenario.expectations.users?.createdRows.user ?? 0) * 2,
+      );
     } finally {
       if (tx.isActive()) await tx.rollback();
     }
+  });
+
+  it.each([
+    getOidcProvisioningDecisionScenario('caller-owned-transaction'),
+  ])('$id — $title (Profiles)', async (scenario) => {
+    const fixture = await createFixture();
+    await seedPersonType(fixture.rootDb);
+    if (!fixture.rootDb.beginTransaction) {
+      throw new Error('Expected PostgreSQL manual transaction support.');
+    }
+    const tx = await fixture.rootDb.beginTransaction();
+    try {
+      const result = await createProfileFromOidc(
+        {
+          email: 'postgres-profile-caller@example.com',
+          email_verified: true,
+          iss: 'https://issuer.example.com',
+          sub: 'postgres-profile-caller-subject',
+        },
+        'dex',
+        { db: tx },
+      );
+
+      expect(result.created).toBe(true);
+      expect(tx.isActive()).toBe(true);
+      await expect(countRows(tx, 'profiles')).resolves.toBe(
+        scenario.expectations.profiles?.createdRows.profile,
+      );
+      await expect(countRows(tx, 'oidc_identities')).resolves.toBe(
+        scenario.expectations.profiles?.createdRows.oidcIdentity,
+      );
+    } finally {
+      if (tx.isActive()) await tx.rollback();
+    }
+  });
+
+  it.each([
+    getOidcProvisioningDecisionScenario('root-transaction-resolver-rollback'),
+  ])('$id — $title (Users)', async (scenario) => {
+    const fixture = await createFixture();
+    await seedPersonType(fixture.rootDb);
+    await fixture.rootDb.query(
+      'DELETE FROM _smrt_backfills WHERE name IN (?, ?)',
+      PROFILE_EMAIL_KEY_BACKFILL_NAME,
+      USER_EMAIL_KEY_BACKFILL_NAME,
+    );
+    const users = await UserCollection.create({ db: fixture.rootDb });
+    let resolverCalls = 0;
+    const probeProfileId = randomUUID();
+
+    await expect(
+      users.getOrCreateFromOidc(
+        {
+          email: 'postgres-root-rollback@example.com',
+          email_verified: true,
+          iss: 'https://issuer.example.com',
+          sub: 'postgres-root-rollback-subject',
+        },
+        'dex',
+        {
+          resolveProfile: async ({ db: tx }) => {
+            resolverCalls += 1;
+            await tx.query(
+              `INSERT INTO profiles
+                (id, slug, context, _meta_type, tenant_id, email, email_key, name)
+               VALUES (?, ?, '', '@happyvertical/smrt-profiles:Person', NULL, ?, ?, 'Rollback Probe')`,
+              probeProfileId,
+              `rollback-probe-${probeProfileId}`,
+              'rollback-probe@example.com',
+              'rollback-probe@example.com',
+            );
+            return null;
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: getOidcProvisioningPublicErrorCode(scenario.expectations.users),
+    });
+
+    expect(resolverCalls).toBe(scenario.expectations.users?.resolverCalls);
+    await expect(countRows(fixture.rootDb, 'profiles')).resolves.toBe(0);
+    await expect(countRows(fixture.rootDb, 'oidc_identities')).resolves.toBe(0);
+    await expect(countRows(fixture.rootDb, 'users')).resolves.toBe(0);
+    await expect(countRows(fixture.rootDb, 'sessions')).resolves.toBe(0);
   });
 
   it('reinitializes dropped backfill state on the same root before provisioning', async () => {
@@ -467,7 +614,9 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     await expect(countRows(fixture.rootDb, 'users')).resolves.toBe(1);
   });
 
-  it('converges public Profile helper calls across independent transactions', async () => {
+  it.each([
+    getOidcProvisioningDecisionScenario('concurrent-winner-and-observer'),
+  ])('$id — $title (Profiles)', async (scenario) => {
     const fixture = await createFixture();
     await seedPersonType(fixture.rootDb);
 
@@ -511,6 +660,7 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     await expect(
       countRows(firstDb, 'oidc_profile_email_reservations'),
     ).resolves.toBe(1);
+    expect(scenario.expectations.profiles?.createdRows.profile).toBe(1);
   });
 
   it('creates one stable Person type during unseeded independent logins', async () => {
@@ -630,6 +780,7 @@ async function countRows(
     | 'oidc_identities'
     | 'oidc_profile_email_reservations'
     | 'profiles'
+    | 'sessions'
     | 'users',
 ): Promise<number> {
   const result = await db.query(`SELECT count(*) AS count FROM ${table}`);
