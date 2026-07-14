@@ -291,9 +291,10 @@ async function findProfileByExternalId(
  * 3. Otherwise, create new profile + identity
  *
  * Security considerations:
- * - Existing issuer/subject links always keep their canonical Profile and
- *   refresh the cached identity email. An unverified address cannot reuse an
- *   existing email match.
+ * - Existing issuer/subject links always keep their already-linked Profile,
+ *   including legacy tenant-scoped or non-Person Profiles, and refresh the
+ *   cached identity email. This exact-link compatibility does not perform
+ *   email-based canonical reuse.
  * - New identities never attach to an existing email match through this
  *   Profile-only helper because Profile ownership belongs to the users package.
  *   Use `UserCollection.getOrCreateFromOidc()` for owner-aware verified-email
@@ -448,26 +449,26 @@ async function provisionOidcProfile(
   const { OidcIdentityCollection } = await import(
     '../collections/OidcIdentityCollection'
   );
-  const { ProfileCollection } = await import(
-    '../collections/ProfileCollection'
-  );
   const identityCollection = await OidcIdentityCollection.create(options);
   const existingIdentity = await identityCollection.findBySubject(
     claims.iss,
     claims.sub,
   );
-  const profileCollection = await ProfileCollection.create(options);
   if (existingIdentity) {
-    const profileId = requireOidcProfileId(existingIdentity.profileId);
-    let profile =
-      await profileCollection.requireCanonicalGlobalPerson(profileId);
-    profile = await profileCollection.reserveCanonicalIdentityEmail(profileId);
+    const profile = await existingIdentity.getProfile();
+    if (!profile) {
+      throw new Error('The exact OIDC identity has no linked Profile.');
+    }
     if (claims.email) existingIdentity.email = claims.email;
     existingIdentity.lastUsedAt = new Date();
     await existingIdentity.save();
     return { profile, oidcIdentity: existingIdentity, created: false };
   }
 
+  const { ProfileCollection } = await import(
+    '../collections/ProfileCollection'
+  );
+  const profileCollection = await ProfileCollection.create(options);
   if (claims.email) {
     const collision = await profileCollection.findUniqueGlobalPersonByEmail(
       claims.email,

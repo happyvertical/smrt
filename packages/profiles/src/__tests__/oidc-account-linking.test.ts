@@ -258,7 +258,24 @@ describe('OIDC Account Linking', () => {
         await database.close?.();
       }
 
-      const reused = await OidcIdentity.findOrCreate(created.profile, {
+      const exactReuse = await createProfileFromOidc(
+        {
+          ...claims,
+          email: 'legacy-organization-updated@example.com',
+        },
+        'legacy',
+        { db },
+      );
+
+      expect(exactReuse.created).toBe(false);
+      expect(exactReuse.profile.id).toBe(created.profile.id);
+      expect(exactReuse.oidcIdentity.id).toBe(created.oidcIdentity.id);
+      expect(exactReuse.profile.tenantId).toBe('legacy-tenant');
+      expect(exactReuse.profile._meta_type).toBe(
+        '@happyvertical/smrt-profiles:Organization',
+      );
+
+      const reused = await OidcIdentity.findOrCreate(exactReuse.profile, {
         email: 'legacy-organization-updated@example.com',
         issuer: claims.iss,
         provider: 'legacy',

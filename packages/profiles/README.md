@@ -145,8 +145,10 @@ Existing installations must stop or upgrade legacy Profile writers, run
 this version to add the identity keys and private email-reservation table. Then
 run `backfillProfileEmailKeys(db)` once from a single deploy process before
 enabling verified-email provisioning. The transaction-safe backfill is
-idempotent; provisioning fails closed with `email_key_backfill_required` while
-the standard `_smrt_backfills` readiness marker is absent.
+idempotent; canonical email lookup and reservation fail closed with
+`email_key_backfill_required` while the standard `_smrt_backfills` readiness
+marker is absent. Exact issuer/subject reuse does not depend on email-key
+readiness because it does not perform email-based linking.
 The identity-boundary helpers use the readiness guard and indexed key. The
 general-purpose `ProfileCollection.findByEmail()` retains its compatible legacy
 lookup behavior and is not suitable for identity linking. Only the explicit
@@ -155,16 +157,22 @@ runtime identity lookups use the indexed key and validate returned candidates.
 `createProfileFromOidc()` requires a transaction-capable database. Pass the
 root database, which must expose `beginTransaction`, and SMRT owns the
 transaction; an already transaction-bound handle is supported through a
-savepoint when `_smrt_backfills` already exists. Provisioning never attempts
-tracker DDL on a caller-owned transaction; if the table is absent, pass the
-root database so SMRT can initialize it outside the transaction. A handle
-exposing only `transaction()` is ambiguous and fails closed. For adapters
-without nested savepoint support, including DuckDB, pass
+savepoint. Paths that perform canonical email lookup or reservation require
+`_smrt_backfills` to exist first. Provisioning never attempts tracker DDL on
+a caller-owned transaction; for those paths, if the table is absent, pass the
+root database so SMRT can initialize it outside the transaction. Exact
+issuer/subject reuse skips the email-key readiness-marker lookup, but root
+coordination still initializes the shared tracker table. Caller-owned exact
+reuse does not consult the tracker and therefore does not require that table.
+A handle exposing only `transaction()` is ambiguous and fails closed. For
+adapters without nested savepoint support, including DuckDB, pass
 the root database rather than calling the helper inside an outer transaction.
 Provisioning fails before durable writes when neither safe path is available.
-The Profile-only helper preserves exact issuer/subject reuse but never attaches
-a new identity to an existing email match because this package cannot prove
-whether a User owns that Profile. Use
+The Profile-only helper preserves exact issuer/subject reuse, including legacy
+links to tenant-scoped or non-Person Profiles, but never attaches a new identity
+to an existing email match because this package cannot prove whether a User owns
+that Profile. User/session provisioning still rejects those unsafe linked
+Profiles before creating authentication state. Use
 `UserCollection.getOrCreateFromOidc()` from `@happyvertical/smrt-users` for
 owner-aware verified-email reuse and the supported pre-provision resolver hook.
 

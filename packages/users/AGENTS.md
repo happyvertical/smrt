@@ -257,9 +257,12 @@ the package root).
   claim source; verification is never borrowed across sources.
   Resolver reads/writes use the supplied `db`, and the hook must be idempotent
   because a concurrent unique-key conflict can retry it. `undefined` chooses
-  the secure default, `null` rejects, and a supplied Profile is still validated
-  as the unique, unowned global Person for the verified email. The hook receives
-  a separate frozen claims snapshot; internal retry and persistence state is not
+  the secure default and `null` rejects, including exact issuer/subject reuse.
+  For a new identity, a supplied Profile is still validated as the unique,
+  unowned global Person for the verified email. For an exact existing identity,
+  it must be the already-linked Profile and cannot rebind identity authority;
+  stable-link owner and canonical-Person checks still apply. The hook receives a
+  separate frozen claims snapshot; internal retry and persistence state is not
   exposed for mutation.
 - **OIDC first login is atomic.** The Profile, `OidcIdentity`, and User are one
   transaction. The database arbiters are `OidcIdentity.identityKey`,

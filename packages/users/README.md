@@ -422,12 +422,15 @@ The service and SvelteKit handler run the hook after protocol claim validation
 and inside the same provisioning transaction as OIDC identity and User
 creation. Direct `UserCollection.getOrCreateFromOidc()` callers must first
 validate and trust their supplied claims. The hook may run again after a
-concurrent unique-key conflict, so it must be idempotent. A supplied Profile is
-still validated as the unique global `Person` for a verified email; resolver
-reuse is rejected unless `email_verified` is exactly `true`, and an
-already-owned Profile is always rejected for a new issuer/subject link. The
-resolver receives a separate frozen claims snapshot; retry locks, identity
-lookups, and persistence retain SMRT's immutable internal snapshot.
+concurrent unique-key conflict, so it must be idempotent. For a new
+issuer/subject, a supplied Profile is still validated as the unique, unowned
+global `Person` for a verified email; resolver reuse is rejected unless
+`email_verified` is exactly `true`. For an exact existing issuer/subject,
+`null` still rejects login, a supplied Profile must be the already-linked
+Profile and cannot rebind it, and stable-link owner/canonical-Person checks
+still apply. The resolver receives a separate frozen claims snapshot; retry
+locks, identity lookups, and persistence retain SMRT's immutable internal
+snapshot.
 
 When userinfo supplies a missing email, its `email_verified` value travels with
 that email as one source-bound pair. SMRT never borrows a verification flag

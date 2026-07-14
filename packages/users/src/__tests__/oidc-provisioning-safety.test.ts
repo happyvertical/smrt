@@ -445,7 +445,9 @@ describe('safe OIDC provisioning', () => {
         }),
       ]);
 
-      expect(resolverCalls).toBe(1);
+      // Each callback crosses the application rejection boundary, including
+      // the serialized callback that observes the winner's exact identity.
+      expect(resolverCalls).toBe(2);
       expect(maxActiveResolvers).toBe(1);
       expect(second.profile.id).toBe(first.profile.id);
       expect(second.user.id).toBe(first.user.id);
@@ -613,6 +615,77 @@ describe('safe OIDC provisioning', () => {
     await expect(countRows(db, 'profiles')).resolves.toBe(1);
     await expect(countRows(db, 'users')).resolves.toBe(1);
     await expect(countRows(db, 'oidc_identities')).resolves.toBe(1);
+  });
+
+  it('runs the resolver before exact identity reuse and rejects without User or session creation', async () => {
+    const profileId = await seedProfile(db, {
+      email: 'resolver-returning@example.com',
+    });
+    await seedIdentity(db, profileId, {
+      email: 'resolver-returning@example.com',
+      subject: 'resolver-returning-subject',
+    });
+    let resolverCalls = 0;
+
+    await expect(
+      users.getOrCreateFromOidc(
+        claims({
+          email: 'resolver-returning@example.com',
+          sub: 'resolver-returning-subject',
+        }),
+        'dex',
+        {
+          resolveProfile: ({ claims: resolvedClaims }) => {
+            resolverCalls += 1;
+            expect(resolvedClaims.sub).toBe('resolver-returning-subject');
+            return null;
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'rejected' });
+
+    expect(resolverCalls).toBe(1);
+    await expect(countRows(db, 'profiles')).resolves.toBe(1);
+    await expect(countRows(db, 'users')).resolves.toBe(0);
+    await expect(countRows(db, 'sessions')).resolves.toBe(0);
+    await expect(countRows(db, 'oidc_identities')).resolves.toBe(1);
+  });
+
+  it('prevents the resolver from rebinding an exact OIDC identity', async () => {
+    const linkedProfileId = await seedProfile(db, {
+      email: 'resolver-linked@example.com',
+    });
+    const otherProfileId = await seedProfile(db, {
+      email: 'resolver-other@example.com',
+    });
+    await seedIdentity(db, linkedProfileId, {
+      email: 'resolver-linked@example.com',
+      subject: 'resolver-rebind-subject',
+    });
+
+    await expect(
+      users.getOrCreateFromOidc(
+        claims({
+          email: 'resolver-linked@example.com',
+          sub: 'resolver-rebind-subject',
+        }),
+        'dex',
+        {
+          resolveProfile: async ({ db: tx }) =>
+            (await ProfileCollection.create({ db: tx })).get({
+              id: otherProfileId,
+            }),
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'rejected' });
+
+    const identities = await db.query(
+      'SELECT profile_id FROM oidc_identities WHERE subject = ?',
+      'resolver-rebind-subject',
+    );
+    expect(identities.rows).toEqual([{ profile_id: linkedProfileId }]);
+    await expect(countRows(db, 'users')).resolves.toBe(0);
+    await expect(countRows(db, 'sessions')).resolves.toBe(0);
   });
 
   it('preserves the exact opaque issuer and subject claims', async () => {

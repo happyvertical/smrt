@@ -95,12 +95,18 @@ import { smrtProfilesGenerateBioPrompt } from '@happyvertical/smrt-profiles';
   unrelated root transactions safely and retries bounded PostgreSQL
   deadlock/serialization failures. New OIDC Profiles use per-profile,
   non-semantic slugs so duplicate display names never invoke natural-key upsert.
-  Caller-owned transactions never execute `_smrt_backfills` DDL; the table must
-  already exist or the caller must retry with the root database.
+  Caller-owned transactions never execute `_smrt_backfills` DDL; paths that
+  perform canonical email lookup or reservation require the table to already
+  exist or the caller must retry with the root database. Exact issuer/subject
+  reuse skips the email-key readiness-marker lookup, but root coordination still
+  initializes the shared tracker table. Caller-owned exact reuse does not
+  consult the tracker and therefore does not require that table.
 - **Profile-only OIDC linking fails closed on existing email matches**:
-  `createProfileFromOidc()` preserves exact issuer/subject reuse, but profiles
-  cannot prove whether a User owns a same-email Profile. New identities therefore
-  never attach to an existing email match through this helper. Use
+  `createProfileFromOidc()` preserves exact issuer/subject reuse, including
+  legacy tenant-scoped and non-Person links, but profiles cannot prove whether a
+  User owns a same-email Profile. New identities therefore never attach to an
+  existing email match through this helper; User/session provisioning still
+  rejects unsafe linked Profiles before creating authentication state. Use
   `UserCollection.getOrCreateFromOidc()` for owner-aware verified-email reuse and
   its supported transaction-bound resolver hook.
 - **Email storage and identity matching differ**: `Profile.email` has an

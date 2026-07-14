@@ -82,9 +82,13 @@ export interface OidcProfileResolverContext {
  * Resolve a consumer-owned canonical Profile before User/session creation.
  *
  * Return `undefined` for the secure default, `null` to reject login, or a
- * Profile to select it explicitly. A supplied Profile is still required to be
- * the unique, unowned global Person for the verified email. The hook may be
- * retried after a concurrent unique-key race and must therefore be idempotent.
+ * Profile to select it explicitly. For a new issuer/subject, a supplied Profile
+ * is still required to be the unique, unowned global Person for the verified
+ * email. For an exact existing issuer/subject, `null` still rejects login and a
+ * supplied Profile must be the already-linked Profile; the hook cannot rebind
+ * identity authority. Stable-link owner and canonical-Person checks still
+ * apply. The hook may be retried after a concurrent unique-key race and must
+ * therefore be idempotent.
  */
 export type OidcProfileResolver = (
   context: OidcProfileResolverContext,
@@ -227,9 +231,11 @@ export class UserCollection extends SmrtCollection<User> {
    * @param provider - Provider name (e.g., 'kanidm', 'keycloak', 'google')
    * @param options - Login recording, unverified-email compatibility, and an
    * application Profile resolver. The resolver runs inside the provisioning
-   * transaction before identity/User creation, may be retried, and must be
-   * idempotent. Its returned Profile is still checked as the unique, global,
-   * unowned Person for the verified normalized email.
+   * transaction before provisioning returns, may be retried, and must be
+   * idempotent. For a new identity, its returned Profile is still checked as
+   * the unique, global, unowned Person for the verified normalized email. For
+   * an exact existing identity, it may only confirm the already-linked Profile
+   * and cannot rebind it.
    * @returns User, Profile, OidcIdentity, and whether profile was created
    *
    * @example
@@ -354,11 +360,38 @@ export class UserCollection extends SmrtCollection<User> {
       identityCollection,
       claims,
     );
+    const resolvedProfile = options?.resolveProfile
+      ? await options.resolveProfile({
+          // Never expose the internal snapshot used for retry locks and
+          // persistence. A frozen copy keeps an application resolver from
+          // changing the authenticated identity across attempts.
+          claims: Object.freeze({ ...claims }),
+          db,
+          provider,
+          users: this,
+        })
+      : undefined;
+    if (resolvedProfile === null) {
+      throw new OidcProvisioningError(
+        'rejected',
+        'OIDC provisioning was rejected by the application resolver.',
+      );
+    }
+
     if (existingIdentity) {
       const profileId = requireId(
         existingIdentity.profileId,
         'OIDC identity Profile',
       );
+      if (
+        resolvedProfile &&
+        requireId(resolvedProfile.id, 'Resolved Profile') !== profileId
+      ) {
+        throw new OidcProvisioningError(
+          'rejected',
+          'An application resolver cannot rebind an existing OIDC identity.',
+        );
+      }
       const owners = await this.findProfileOwners(profileId);
       if (owners.length > 1) {
         throw new OidcProvisioningError(
@@ -386,24 +419,6 @@ export class UserCollection extends SmrtCollection<User> {
         oidcIdentity: existingIdentity,
         created: false,
       };
-    }
-
-    const resolvedProfile = options?.resolveProfile
-      ? await options.resolveProfile({
-          // Never expose the internal snapshot used for retry locks and
-          // persistence. A frozen copy keeps an application resolver from
-          // changing the authenticated identity across attempts.
-          claims: Object.freeze({ ...claims }),
-          db,
-          provider,
-          users: this,
-        })
-      : undefined;
-    if (resolvedProfile === null) {
-      throw new OidcProvisioningError(
-        'rejected',
-        'OIDC provisioning was rejected by the application resolver.',
-      );
     }
 
     let profile: Profile | null | undefined = resolvedProfile;
