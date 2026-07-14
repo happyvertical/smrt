@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.39.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - run resolver for exact OIDC links (users)
+  - harden OIDC profile provisioning (users)
+  - @happyvertical/smrt-config@0.39.15
+  - @happyvertical/smrt-types@0.39.15
+  - @happyvertical/smrt-scanner@0.39.15
+
 ## 0.39.14
 
 ### Patch Changes
