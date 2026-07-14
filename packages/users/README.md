@@ -374,14 +374,15 @@ can pass `transactionCookieSecret` to the route helpers. On success it creates
 or reuses a SMRT `Profile`, links an `OidcIdentity`, creates or reuses a `User`,
 records `lastLoginAt`, and sets the standard SMRT session cookie.
 
-Verified-email provisioning is fail-closed. The default resolver reuses a
-Profile only when exactly one case-insensitive email match exists and that row
-is an unowned, global `Person`. A tenant-scoped Profile, a non-`Person` STI row,
-duplicate email matches, or a Profile already owned by another `User` rejects
-the callback before User or session creation. An existing OIDC issuer/subject
-link without a User must still identify the unique global `Person` for the
-current verified claim email. Once a User owns it, the stable issuer/subject
-link continues to select its canonical global `Person` and existing User.
+The typed [OIDC provisioning decision matrix](../profiles/src/testing/oidcProvisioningDecisionMatrix.ts)
+is the canonical behavior contract shared with Profiles. Its executable rows
+declare exact reuse and new-identity outcomes, resolver invocation and
+rebinding, ownership/collision failures, readiness, retries, adapter support,
+public errors, and permitted Profile/OIDC identity/User/session creation. For a
+new identity, the Users path is deliberately fail-closed before User or session
+creation unless the selected Profile is the one safe, unowned global `Person`
+allowed by that matrix. An exact issuer/subject link may instead continue to
+its already-owned canonical global `Person`, but it cannot be rebound.
 
 Canonical Profile failures use `CanonicalPersonProfileError` from
 `@happyvertical/smrt-profiles`, with codes `ambiguous_email`, `email_mismatch`,

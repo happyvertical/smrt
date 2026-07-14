@@ -12,7 +12,11 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
-import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import {
+  type DatabaseInterface,
+  getDatabase,
+  syncSchema,
+} from '@happyvertical/sql';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createProfileFromOidc } from '../auth/index.js';
 import { OidcIdentityCollection } from '../collections/OidcIdentityCollection.js';
@@ -21,6 +25,52 @@ import { ProfileTypeCollection } from '../collections/ProfileTypeCollection.js';
 import { isOidcProvisioningRaceConflict } from '../internal/oidc-provisioning.js';
 import { backfillProfileEmailKeys } from '../migrations/backfillProfileEmailKeys.js';
 import { OidcIdentity } from '../models/OidcIdentity.js';
+import {
+  getOidcProvisioningDecisionScenario,
+  OIDC_PROVISIONING_DECISION_MATRIX,
+  type OidcProvisioningScenario,
+  type OidcProvisioningSurfaceExpectation,
+} from '../testing/oidcProvisioningDecisionMatrix.js';
+
+const PROFILE_MATRIX_SCENARIOS: readonly OidcProvisioningScenario[] =
+  OIDC_PROVISIONING_DECISION_MATRIX.filter(
+    (scenario) =>
+      scenario.adapters.sqlite.status === 'required' &&
+      scenario.expectations.profiles !== undefined,
+  );
+
+const OIDC_PROFILES_DUCKDB_TEST_SCHEMA = `
+CREATE TABLE IF NOT EXISTS "profiles" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "_meta_type" TEXT NOT NULL,
+  "_meta_data" JSON,
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "tenant_id" TEXT,
+  "type_id" TEXT,
+  "email" TEXT,
+  "email_key" TEXT,
+  "name" TEXT DEFAULT '',
+  "description" TEXT
+);
+
+CREATE TABLE IF NOT EXISTS "oidc_identities" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "profile_id" TEXT NOT NULL,
+  "provider" TEXT DEFAULT '',
+  "issuer" TEXT DEFAULT '',
+  "subject" TEXT DEFAULT '',
+  "identity_key" TEXT,
+  "email" TEXT DEFAULT '',
+  "last_used_at" TIMESTAMP
+);
+`;
 
 describe('OIDC identity generated authority surface', () => {
   it('exposes no generated REST or MCP mutations', () => {
@@ -134,6 +184,17 @@ describe('OIDC Account Linking', () => {
     await personType.save();
     const db = await getDatabase({ type: 'sqlite', url: dbUrl });
     await backfillProfileEmailKeys(db);
+  });
+
+  describe('executable decision matrix (SQLite)', () => {
+    it.each(PROFILE_MATRIX_SCENARIOS)('$id — $title', async (scenario) => {
+      const db = await getDatabase({ type: 'sqlite', url: dbUrl });
+      try {
+        await runProfileMatrixScenario(db, scenario);
+      } finally {
+        await db.close?.();
+      }
+    });
   });
 
   describe('createProfileFromOidc', () => {
@@ -703,14 +764,18 @@ describe('OIDC Account Linking', () => {
       }
     });
 
-    it('fails closed on a DuckDB manual transaction without corrupting it', async () => {
+    it.each([
+      getOidcProvisioningDecisionScenario('duckdb-caller-owned-transaction'),
+    ])('$id — $title (Profiles manual transaction)', async (scenario) => {
       const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+      await syncSchema({ db, schema: OIDC_PROFILES_DUCKDB_TEST_SCHEMA });
+      const before = await profileMatrixRowCounts(db);
       if (!db.beginTransaction) {
         throw new Error('Expected DuckDB manual transaction support.');
       }
       const tx = await db.beginTransaction();
       try {
-        await expect(
+        await expectProfileMatrixRejection(
           createProfileFromOidc(
             {
               sub: 'duckdb-manual-profile',
@@ -721,7 +786,14 @@ describe('OIDC Account Linking', () => {
             'example',
             { db: tx },
           ),
-        ).rejects.toThrow('root database');
+          scenario.expectations.profiles?.publicError ?? null,
+        );
+
+        await expectProfileMatrixRowDelta(
+          tx,
+          before,
+          scenario.expectations.profiles,
+        );
 
         expect(tx.isActive()).toBe(true);
         await tx.query('CREATE TABLE profile_outer_probe (id INTEGER)');
@@ -736,14 +808,18 @@ describe('OIDC Account Linking', () => {
       }
     });
 
-    it('fails closed on a DuckDB callback transaction without corrupting it', async () => {
+    it.each([
+      getOidcProvisioningDecisionScenario('duckdb-caller-owned-transaction'),
+    ])('$id — $title (Profiles callback transaction)', async (scenario) => {
       const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+      await syncSchema({ db, schema: OIDC_PROFILES_DUCKDB_TEST_SCHEMA });
+      const before = await profileMatrixRowCounts(db);
       if (!db.transaction) {
         throw new Error('Expected DuckDB callback transaction support.');
       }
       try {
         await db.transaction(async (tx) => {
-          await expect(
+          await expectProfileMatrixRejection(
             createProfileFromOidc(
               {
                 sub: 'duckdb-callback-profile',
@@ -754,7 +830,14 @@ describe('OIDC Account Linking', () => {
               'example',
               { db: tx },
             ),
-          ).rejects.toThrow('root database');
+            scenario.expectations.profiles?.publicError ?? null,
+          );
+
+          await expectProfileMatrixRowDelta(
+            tx,
+            before,
+            scenario.expectations.profiles,
+          );
 
           await tx.query('CREATE TABLE profile_callback_probe (id INTEGER)');
           await tx.query('INSERT INTO profile_callback_probe VALUES (1)');
@@ -902,6 +985,338 @@ describe('OIDC Account Linking', () => {
     });
   });
 });
+
+interface ProfileMatrixResult {
+  created: boolean;
+  profile: { id?: string };
+  oidcIdentity: { id?: string };
+}
+
+async function runProfileMatrixScenario(
+  db: DatabaseInterface,
+  scenario: OidcProvisioningScenario,
+): Promise<void> {
+  const expected = scenario.expectations.profiles;
+  if (!expected) {
+    throw new Error(`Missing Profiles expectation for ${scenario.id}`);
+  }
+
+  const email = 'matrix@example.com';
+  const subject = `matrix-${scenario.id}`;
+  let identityProfileId: string | undefined;
+  let identityId: string | undefined;
+  let emailProfileId: string | undefined;
+
+  if (scenario.identity === 'exact_missing_profile') {
+    identityId = await seedProfileMatrixIdentity(
+      db,
+      randomUUID(),
+      email,
+      subject,
+      false,
+    );
+  } else if (scenario.identity !== 'none') {
+    const identityEmail =
+      scenario.email === 'different_global_person'
+        ? 'linked-matrix@example.com'
+        : email;
+    identityProfileId = await seedProfileMatrixProfile(db, {
+      email: identityEmail,
+      metaType:
+        scenario.identity === 'exact_legacy_non_person_profile'
+          ? '@happyvertical/smrt-profiles:Organization'
+          : undefined,
+      tenantId:
+        scenario.identity === 'exact_legacy_tenant_profile'
+          ? randomUUID()
+          : undefined,
+    });
+    const legacyIdentity =
+      scenario.identity.startsWith('exact_legacy_') ||
+      scenario.identity === 'exact_ambiguous_legacy_links';
+    identityId = await seedProfileMatrixIdentity(
+      db,
+      identityProfileId,
+      identityEmail,
+      subject,
+      legacyIdentity,
+    );
+    if (scenario.identity === 'exact_ambiguous_legacy_links') {
+      const duplicateProfileId = await seedProfileMatrixProfile(db, {
+        email: identityEmail,
+      });
+      await seedProfileMatrixIdentity(
+        db,
+        duplicateProfileId,
+        identityEmail,
+        subject,
+        true,
+      );
+    }
+    if (scenario.email === 'different_global_person') {
+      emailProfileId = await seedProfileMatrixProfile(db, { email });
+    }
+  } else if (
+    scenario.email === 'one_unowned_global_person' ||
+    scenario.email === 'tenant_scoped_collision' ||
+    scenario.email === 'non_person_collision' ||
+    scenario.email === 'duplicate_normalized_profiles'
+  ) {
+    emailProfileId = await seedProfileMatrixProfile(db, {
+      email,
+      metaType:
+        scenario.email === 'non_person_collision'
+          ? '@happyvertical/smrt-profiles:Organization'
+          : undefined,
+      tenantId:
+        scenario.email === 'tenant_scoped_collision' ? randomUUID() : undefined,
+    });
+    if (scenario.email === 'duplicate_normalized_profiles') {
+      await seedProfileMatrixProfile(db, { email: ' MATRIX@example.com ' });
+    }
+  }
+
+  if (expected.readiness === 'none') {
+    await db.query(
+      `DELETE FROM _smrt_backfills
+       WHERE name = ?`,
+      '@happyvertical/smrt-profiles:profile-email-keys:v1',
+    );
+  }
+
+  const before = await profileMatrixRowCounts(db);
+  const identityBindingsBefore = await profileMatrixIdentityBindings(
+    db,
+    subject,
+  );
+  const claims = {
+    email: scenario.email === 'missing' ? undefined : email,
+    email_verified:
+      scenario.verification === 'claim_missing'
+        ? undefined
+        : scenario.verification === 'verified',
+    iss: 'https://issuer.example.com',
+    name: 'Matrix Profile',
+    sub: subject,
+  };
+  const invoke = (database: DatabaseInterface = db) =>
+    createProfileFromOidc(claims, 'matrix', { db: database });
+  const values: ProfileMatrixResult[] = [];
+  const errors: unknown[] = [];
+
+  if (scenario.execution === 'concurrent_winner_and_observer') {
+    collectProfileMatrixSettled(
+      await Promise.allSettled([invoke(), invoke()]),
+      values,
+      errors,
+    );
+  } else if (scenario.execution === 'caller_owned_transaction') {
+    const transaction = db.transaction;
+    if (!transaction) throw new Error('SQLite matrix requires transaction().');
+    await collectProfileMatrixPromise(
+      transaction.call(db, (tx) => invoke(tx)),
+      values,
+      errors,
+    );
+  } else {
+    await collectProfileMatrixPromise(invoke(), values, errors);
+  }
+
+  expectProfileMatrixOutcome(expected, values, errors);
+  expectProfileMatrixCreatedResult(expected, values);
+  expect(expected.resolverCalls).toBe(0);
+  const profileIds = values.map((value) => value.profile.id);
+  if (expected.selectedProfile === 'concurrent_winner') {
+    expect(new Set(profileIds).size).toBe(1);
+  } else if (expected.selectedProfile === 'exact_identity_profile') {
+    expect(profileIds.every((id) => id === identityProfileId)).toBe(true);
+    expect(values.every((value) => value.oidcIdentity.id === identityId)).toBe(
+      true,
+    );
+  } else if (expected.selectedProfile === 'new_profile') {
+    expect(profileIds.every((id) => typeof id === 'string')).toBe(true);
+    expect(profileIds).not.toContain(emailProfileId);
+  }
+
+  await expectProfileMatrixRowDelta(db, before, expected);
+  if (scenario.identity !== 'none' && !expected.rebindAllowed) {
+    await expect(profileMatrixIdentityBindings(db, subject)).resolves.toEqual(
+      identityBindingsBefore,
+    );
+  }
+}
+
+async function seedProfileMatrixProfile(
+  db: DatabaseInterface,
+  options: { email: string; metaType?: string; tenantId?: string },
+): Promise<string> {
+  const id = randomUUID();
+  await db.query(
+    `INSERT INTO profiles
+      (id, slug, context, _meta_type, tenant_id, email, email_key, name)
+     VALUES (?, ?, '', ?, ?, ?, ?, 'Matrix Profile')`,
+    id,
+    `matrix-${id}`,
+    options.metaType ?? '@happyvertical/smrt-profiles:Person',
+    options.tenantId ?? null,
+    options.email,
+    options.email.trim().toLowerCase(),
+  );
+  return id;
+}
+
+async function seedProfileMatrixIdentity(
+  db: DatabaseInterface,
+  profileId: string,
+  email: string,
+  subject: string,
+  legacy: boolean,
+): Promise<string> {
+  const id = randomUUID();
+  await db.query(
+    `INSERT INTO oidc_identities
+      (id, slug, context, profile_id, provider, issuer, subject, identity_key, email)
+     VALUES (?, ?, '', ?, 'matrix', 'https://issuer.example.com', ?, ?, ?)`,
+    id,
+    `matrix-${id}`,
+    profileId,
+    subject,
+    legacy ? null : JSON.stringify(['https://issuer.example.com', subject]),
+    email,
+  );
+  return id;
+}
+
+async function profileMatrixIdentityBindings(
+  db: DatabaseInterface,
+  subject: string,
+): Promise<Array<{ id: string; profileId: string }>> {
+  const result = await db.query(
+    `SELECT id, profile_id
+     FROM oidc_identities
+     WHERE issuer = ? AND subject = ?
+     ORDER BY id`,
+    'https://issuer.example.com',
+    subject,
+  );
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    profileId: String(row.profile_id),
+  }));
+}
+
+async function profileMatrixRowCounts(
+  db: DatabaseInterface,
+): Promise<{ profile: number; oidcIdentity: number }> {
+  const [profile, oidcIdentity] = await Promise.all([
+    countRows(db, 'profiles'),
+    countRows(db, 'oidc_identities'),
+  ]);
+  return { profile, oidcIdentity };
+}
+
+async function expectProfileMatrixRowDelta(
+  db: DatabaseInterface,
+  before: { profile: number; oidcIdentity: number },
+  expected: OidcProvisioningSurfaceExpectation | undefined,
+): Promise<void> {
+  if (!expected) throw new Error('Missing Profiles matrix expectation.');
+  const after = await profileMatrixRowCounts(db);
+  expect({
+    profile: after.profile - before.profile,
+    oidcIdentity: after.oidcIdentity - before.oidcIdentity,
+    user: 0,
+    session: 0,
+  }).toEqual(expected.createdRows);
+}
+
+async function collectProfileMatrixPromise(
+  promise: Promise<ProfileMatrixResult>,
+  values: ProfileMatrixResult[],
+  errors: unknown[],
+): Promise<void> {
+  try {
+    values.push(await promise);
+  } catch (error) {
+    errors.push(error);
+  }
+}
+
+function collectProfileMatrixSettled(
+  results: PromiseSettledResult<ProfileMatrixResult>[],
+  values: ProfileMatrixResult[],
+  errors: unknown[],
+): void {
+  for (const result of results) {
+    if (result.status === 'fulfilled') values.push(result.value);
+    else errors.push(result.reason);
+  }
+}
+
+function expectProfileMatrixOutcome(
+  expected: OidcProvisioningSurfaceExpectation,
+  values: ProfileMatrixResult[],
+  errors: unknown[],
+): void {
+  if (expected.outcome === 'success') {
+    expect(values.length).toBeGreaterThan(0);
+    expect(errors).toHaveLength(0);
+  } else {
+    expect(values).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+  }
+  for (const error of errors) {
+    expectProfileMatrixPublicError(error, expected.publicError);
+  }
+}
+
+function expectProfileMatrixCreatedResult(
+  expected: OidcProvisioningSurfaceExpectation,
+  values: ProfileMatrixResult[],
+): void {
+  const created = values.map((value) => value.created);
+  if (expected.resultCreated === 'none') expect(created).toHaveLength(0);
+  else if (expected.resultCreated === 'created') {
+    expect(created.every(Boolean)).toBe(true);
+  } else if (expected.resultCreated === 'reused') {
+    expect(created.every((value) => !value)).toBe(true);
+  } else {
+    expect(created).toContain(true);
+    expect(created).toContain(false);
+  }
+}
+
+function expectProfileMatrixPublicError(
+  error: unknown,
+  publicError: OidcProvisioningSurfaceExpectation['publicError'],
+): void {
+  expect(publicError).not.toBeNull();
+  if (!publicError) return;
+  if ('code' in publicError) {
+    expect(error).toEqual(expect.objectContaining({ code: publicError.code }));
+  } else if ('name' in publicError) {
+    expect(error).toEqual(expect.objectContaining({ name: publicError.name }));
+  } else {
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining(publicError.messageIncludes),
+      }),
+    );
+  }
+}
+
+async function expectProfileMatrixRejection(
+  promise: Promise<unknown>,
+  publicError: OidcProvisioningSurfaceExpectation['publicError'],
+): Promise<void> {
+  try {
+    await promise;
+  } catch (error) {
+    expectProfileMatrixPublicError(error, publicError);
+    return;
+  }
+  throw new Error('Expected OIDC Profile provisioning to reject.');
+}
 
 function withIdentityLookupObserver(
   db: DatabaseInterface,

@@ -102,6 +102,10 @@ import { smrtProfilesGenerateBioPrompt } from '@happyvertical/smrt-profiles';
   initializes the shared tracker table. Caller-owned exact reuse does not
   consult the tracker and therefore does not require that table.
 - **Profile-only OIDC linking fails closed on existing email matches**:
+  the typed canonical scenario contract is
+  `src/testing/oidcProvisioningDecisionMatrix.ts`, executed by both Profiles
+  and Users tests; keep public docs pointed at it instead of adding a second
+  behavioral table.
   `createProfileFromOidc()` preserves exact issuer/subject reuse, including
   legacy tenant-scoped and non-Person links, but profiles cannot prove whether a
   User owns a same-email Profile. New identities therefore never attach to an
