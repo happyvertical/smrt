@@ -31,6 +31,8 @@ import { CommissionPayoutService } from '../services/CommissionPayoutService.js'
 
 const NETWORK_A = { sourceKind: 'ad_network', sourceId: 'net-a' };
 const NETWORK_B = { sourceKind: 'ad_network', sourceId: 'net-b' };
+const AUTHORIZATION_REFUSAL_DETAIL =
+  'requested source is not authorized for this payout membership';
 
 describe('Source-authorized payout lifecycle transitions (#1987)', () => {
   let db: DatabaseInterface;
@@ -149,7 +151,8 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       });
       expect(refused.outcome).toBe('refused');
       expect(refused.refusal?.reason).toBe('source_mismatch');
-      expect(refused.payout?.isPending()).toBe(true);
+      expect(refused.refusal?.detail).toBe(AUTHORIZATION_REFUSAL_DETAIL);
+      expect(refused.payout).toBeNull();
     });
 
     it('refuses when membership mixes sources or an earner/currency disagrees', async () => {
@@ -254,7 +257,8 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       });
       expect(refused.outcome).toBe('refused');
       expect(refused.refusal?.reason).toBe('earner_mismatch');
-      expect(refused.refusal?.detail).toMatch(/parent commission/);
+      expect(refused.refusal?.detail).toBe(AUTHORIZATION_REFUSAL_DETAIL);
+      expect(refused.payout).toBeNull();
     });
 
     it('proves adjustment ownership through the parent and fails closed when the parent cannot vouch', async () => {
@@ -494,6 +498,59 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
   });
 
   describe('expected state and concurrency determinism', () => {
+    it('authorizes membership before status-derived outcomes and preserves same-source replay', async () => {
+      await createPayableCommission(NETWORK_A);
+      const payout = await cutPendingBatch(NETWORK_A, 'authorization-order');
+      const approved = await service.transitionPayoutForSource({
+        payoutId: payout.id as string,
+        ...NETWORK_A,
+        action: 'approve',
+      });
+      expect(approved.outcome).toBe('transitioned');
+
+      const replay = await service.transitionPayoutForSource({
+        payoutId: payout.id as string,
+        ...NETWORK_A,
+        action: 'approve',
+      });
+      expect(replay.outcome).toBe('already_applied');
+      expect(replay.payout?.isApproved()).toBe(true);
+
+      const foreignResults = await Promise.all([
+        service.transitionPayoutForSource({
+          payoutId: payout.id as string,
+          ...NETWORK_B,
+          action: 'approve',
+        }),
+        service.transitionPayoutForSource({
+          payoutId: payout.id as string,
+          ...NETWORK_B,
+          action: 'mark_processing',
+          expectedStatus: 'pending',
+        }),
+        service.transitionPayoutForSource({
+          payoutId: payout.id as string,
+          ...NETWORK_B,
+          action: 'complete',
+          paymentReference: 'foreign-wire',
+        }),
+      ]);
+
+      expect(
+        foreignResults.map(
+          (result) => result.refusal?.reason ?? result.outcome,
+        ),
+      ).toEqual(['source_mismatch', 'source_mismatch', 'source_mismatch']);
+      expect(foreignResults.every((result) => result.payout === null)).toBe(
+        true,
+      );
+      expect(
+        foreignResults.every(
+          (result) => result.refusal?.detail === AUTHORIZATION_REFUSAL_DETAIL,
+        ),
+      ).toBe(true);
+    });
+
     it('enforces expectedStatus against the locked row', async () => {
       await createPayableCommission(NETWORK_A);
       const payout = await cutPendingBatch(NETWORK_A, 'expected');
@@ -512,6 +569,7 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       expect(stale.outcome).toBe('refused');
       expect(stale.refusal?.reason).toBe('status_conflict');
       expect(stale.refusal?.detail).toMatch(/expected status 'pending'/);
+      expect(stale.payout?.isApproved()).toBe(true);
     });
 
     it('resolves concurrent duplicate actions as exactly one transition plus already_applied echoes', async () => {
@@ -674,14 +732,16 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       });
       expect(rebatch.payout?.totalAmountCents).toBe(2100);
 
-      // The rejected batch is terminal.
+      // Rejection makes the batch terminal and releases its membership, so
+      // the source-authorized door fails closed before exposing that state.
       const revive = await service.transitionPayoutForSource({
         payoutId: payout.id as string,
         ...NETWORK_A,
         action: 'approve',
       });
       expect(revive.outcome).toBe('refused');
-      expect(revive.refusal?.reason).toBe('status_conflict');
+      expect(revive.refusal?.reason).toBe('membership_empty');
+      expect(revive.payout).toBeNull();
     });
 
     it('reject is refused once processing has started', async () => {
@@ -773,9 +833,8 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       );
       expect(refused.outcome).toBe('refused');
       expect(refused.refusal?.reason).toBe('tenant_mismatch');
-      expect(refused.refusal?.detail).toMatch(
-        /visible in the current tenant scope/,
-      );
+      expect(refused.refusal?.detail).toBe(AUTHORIZATION_REFUSAL_DETAIL);
+      expect(refused.payout).toBeNull();
 
       // The stamped-but-foreign row also keeps the payout out of tenant
       // A's source history, fail-closed with the same reason.
