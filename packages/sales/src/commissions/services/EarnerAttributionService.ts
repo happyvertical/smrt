@@ -109,11 +109,20 @@ export class EarnerAttributionService {
   }
 
   /**
-   * Register (or re-point) the mapping for one external key. Idempotent:
-   * an existing mapping is updated in place — never duplicated — and the
-   * displaced earner is reported. Throws when the earner does not exist,
-   * when the key is incomplete, or when the key already holds MULTIPLE rows
-   * (the NULL-tenant ambiguity — repair before registering again).
+   * Register (or re-point) the mapping for one external key WITHIN ONE
+   * TENANT. The registration's target tenant is `input.tenantId` when
+   * given, else the earner's own `tenantId` — and the update-vs-create
+   * decision considers only that tenant's rows, so an operator/scheduled
+   * registration (no tenant context) can never re-point or re-tenant
+   * ANOTHER tenant's mapping for the same key, and legitimate per-tenant
+   * mappings of one key are never mistaken for duplicates. A mapping's
+   * tenant is fixed at registration (re-tenanting is not supported).
+   *
+   * Idempotent: an existing target-tenant mapping is updated in place —
+   * never duplicated — and the displaced earner is reported. Throws when
+   * the earner does not exist, when the key is incomplete, or when the key
+   * already holds MULTIPLE rows within the target tenant (duplicates
+   * minted outside the model layer — repair before registering again).
    *
    * Two concurrent first registrations of the same key converge through the
    * natural-key upsert (the adapters' null-aware upsert covers NULL-tenant
@@ -135,14 +144,25 @@ export class EarnerAttributionService {
       );
     }
 
-    const existing = await this.deps.attributions.findBySource(
-      input.sourceKind,
-      input.sourceId,
+    // '' and NULL both mean "no tenant" depending on dialect — normalize.
+    const tenantOf = (value: string | null | undefined) => value || null;
+    const targetTenant = tenantOf(
+      input.tenantId !== undefined ? input.tenantId : earner.tenantId,
     );
+    // Only the TARGET tenant's rows participate in the update-vs-create
+    // decision. In tenant context the interceptor already narrows the
+    // query; without context (operator/scheduled) this filter is what
+    // keeps another tenant's mapping for the same key untouchable.
+    const existing = (
+      await this.deps.attributions.findBySource(
+        input.sourceKind,
+        input.sourceId,
+      )
+    ).filter((row) => tenantOf(row.tenantId) === targetTenant);
     if (existing.length > 1) {
       throw new Error(
         `EarnerAttributionService: source '${input.sourceKind}:${input.sourceId}' ` +
-          `holds ${existing.length} mappings — deactivate the duplicates before registering`,
+          `holds ${existing.length} mappings in the target tenant scope — deactivate the duplicates before registering`,
       );
     }
 
@@ -153,13 +173,12 @@ export class EarnerAttributionService {
       current.earnerId = input.earnerId;
       current.status = input.status ?? 'active';
       if (input.metadata !== undefined) current.metadata = input.metadata;
-      if (input.tenantId !== undefined) current.tenantId = input.tenantId;
       await current.save();
       return { attribution: current, created: false, previousEarnerId };
     }
 
     const attribution = await this.deps.attributions.create({
-      tenantId: input.tenantId !== undefined ? input.tenantId : earner.tenantId,
+      tenantId: targetTenant,
       earnerId: input.earnerId,
       sourceKind: input.sourceKind,
       sourceId: input.sourceId,

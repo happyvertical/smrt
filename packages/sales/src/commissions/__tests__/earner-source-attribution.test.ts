@@ -233,15 +233,15 @@ describe('EarnerSourceAttribution (#1986)', () => {
       expect(result.earner).toBeNull();
       expect(result.reason).toBe('ambiguous_mapping');
 
-      // registerAttribution refuses to touch the ambiguous key until it
-      // is repaired.
-      await expect(
-        service.registerAttribution({
-          earnerId: first.id as string,
-          sourceKind: KIND,
-          sourceId: 'prop-dup',
-        }),
-      ).rejects.toThrow(/holds 2 mappings/);
+      // Cross-tenant rows are NOT registration duplicates: re-registering
+      // within tenant-a updates tenant-a's mapping only.
+      const registered = await service.registerAttribution({
+        earnerId: first.id as string,
+        sourceKind: KIND,
+        sourceId: 'prop-dup',
+      });
+      expect(registered.created).toBe(false);
+      expect(registered.attribution.tenantId).toBe('tenant-a');
 
       // Repair: deactivate one duplicate — the key resolves again.
       rows[1].status = 'inactive';
@@ -251,6 +251,78 @@ describe('EarnerSourceAttribution (#1986)', () => {
         sourceId: 'prop-dup',
       });
       expect(repaired.earner?.id).toBe(first.id);
+    });
+
+    it('operator-context registration is tenant-scoped and never touches another tenant’s mapping', async () => {
+      // Regression for the PR #2004 P1 review finding: without an active
+      // tenant context, the update-vs-create decision must consider only
+      // the TARGET tenant's rows for the key.
+      const earnerA = await createEarner({ tenantId: 'tenant-a' });
+      const earnerA2 = await createEarner({ tenantId: 'tenant-a' });
+      const earnerB = await createEarner({ tenantId: 'tenant-b' });
+
+      const forA = await service.registerAttribution({
+        earnerId: earnerA.id as string,
+        sourceKind: KIND,
+        sourceId: 'prop-multi',
+      });
+      expect(forA.created).toBe(true);
+      expect(forA.attribution.tenantId).toBe('tenant-a');
+
+      // Same key for tenant-b: a NEW mapping, never a re-point of A's.
+      const forB = await service.registerAttribution({
+        earnerId: earnerB.id as string,
+        sourceKind: KIND,
+        sourceId: 'prop-multi',
+      });
+      expect(forB.created).toBe(true);
+      expect(forB.previousEarnerId).toBeNull();
+      expect(forB.attribution.tenantId).toBe('tenant-b');
+      expect(forB.attribution.id).not.toBe(forA.attribution.id);
+
+      // Re-pointing within tenant-a updates ONLY tenant-a's row.
+      const repointA = await service.registerAttribution({
+        earnerId: earnerA2.id as string,
+        sourceKind: KIND,
+        sourceId: 'prop-multi',
+      });
+      expect(repointA.created).toBe(false);
+      expect(repointA.previousEarnerId).toBe(earnerA.id);
+      expect(repointA.attribution.id).toBe(forA.attribution.id);
+      const untouchedB = await attributions.get({
+        id: forB.attribution.id as string,
+      });
+      expect(untouchedB?.earnerId).toBe(earnerB.id);
+      expect(untouchedB?.tenantId).toBe('tenant-b');
+
+      // A TRUE duplicate within one tenant scope still refuses
+      // registration until repaired. The unique index makes this
+      // impossible for non-NULL tenants (it just threw above the model
+      // layer), so the only representable variant is the GLOBAL scope —
+      // NULL tenants are distinct to the index.
+      const globalEarner = await createEarner();
+      await service.registerAttribution({
+        earnerId: globalEarner.id as string,
+        sourceKind: KIND,
+        sourceId: 'prop-global-dup',
+      });
+      await db.query(
+        `INSERT INTO earner_source_attributions (
+          id, slug, context, tenant_id, earner_id, source_kind, source_id,
+          status, metadata
+        ) VALUES ($1, $2, '', NULL, $3, $4, 'prop-global-dup', 'active', '{}')`,
+        '00000000-0000-4000-8000-00000000d0b1',
+        'import-dup-prop-global',
+        globalEarner.id,
+        KIND,
+      );
+      await expect(
+        service.registerAttribution({
+          earnerId: globalEarner.id as string,
+          sourceKind: KIND,
+          sourceId: 'prop-global-dup',
+        }),
+      ).rejects.toThrow(/holds 2 mappings in the target tenant scope/);
     });
   });
 
