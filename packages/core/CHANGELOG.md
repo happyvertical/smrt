@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.39.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve aggregate manifest identities (cli)
+
+  ### Other Changes
+
+  - ci: extend publish dry-run timeout
+  - @happyvertical/smrt-config@0.39.13
+  - @happyvertical/smrt-types@0.39.13
+  - @happyvertical/smrt-scanner@0.39.13
+
 ## 0.39.12
 
 ### Patch Changes
