@@ -39,7 +39,7 @@
     "dev": "npm run build:watch",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/permission-postgres-rls.test.ts src/__tests__/principal-permission-context-postgres.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/permission-postgres-rls.test.ts src/__tests__/principal-permission-context-postgres.test.ts src/__tests__/oidc-provisioning-postgres.test.ts",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
@@ -61,11 +61,11 @@
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/sql": "catalog:",
     "jose": "^6.2.3"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@types/node": "24.13.2",

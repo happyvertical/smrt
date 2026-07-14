@@ -1,6 +1,12 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { BackfillTracker } from './backfill-tracker.js';
+import {
+  BackfillTableUnavailableError,
+  BackfillTracker,
+} from './backfill-tracker.js';
 
 describe('BackfillTracker', () => {
   let db: DatabaseInterface;
@@ -167,6 +173,135 @@ describe('BackfillTracker', () => {
     db.query = originalQuery as typeof db.query;
   });
 
+  it('shares initialization across tracker instances for one database client', async () => {
+    let createCalls = 0;
+    const originalQuery = db.query.bind(db);
+    db.query = ((sql: string, ...args: unknown[]) => {
+      if (sql.includes('CREATE TABLE') && sql.includes('_smrt_backfills')) {
+        createCalls += 1;
+      }
+      return originalQuery(sql as unknown as string, ...(args as []));
+    }) as unknown as typeof db.query;
+
+    await Promise.all([
+      new BackfillTracker({ db }).initialize(),
+      new BackfillTracker({ db }).initialize(),
+      new BackfillTracker({ db }).initialize(),
+    ]);
+
+    expect(createCalls).toBe(1);
+    db.query = originalQuery as typeof db.query;
+  });
+
+  it('does not cache transaction-local DDL that is later rolled back', async () => {
+    const transaction = db.transaction;
+    if (!transaction)
+      throw new Error('SQLite test database requires transaction().');
+
+    await expect(
+      transaction.call(db, async (tx) => {
+        await new BackfillTracker({ db: tx }).initialize();
+        throw new Error('roll back tracker initialization');
+      }),
+    ).rejects.toThrow('roll back tracker initialization');
+
+    const freshTracker = new BackfillTracker({ db });
+    await expect(freshTracker.isApplied('after-rollback')).resolves.toBe(false);
+  });
+
+  it('skips transaction DDL after inheriting durable root initialization', async () => {
+    await tracker.recordApplied('root-ready');
+    const transaction = db.transaction;
+    if (!transaction)
+      throw new Error('SQLite test database requires transaction().');
+
+    await transaction.call(db, async (tx) => {
+      let transactionCreates = 0;
+      const observedTx = new Proxy(tx, {
+        get(target, property, receiver) {
+          if (property === 'query') {
+            return async (sql: string, ...params: unknown[]) => {
+              if (
+                sql.includes('CREATE TABLE') &&
+                sql.includes('_smrt_backfills')
+              ) {
+                transactionCreates += 1;
+              }
+              return target.query(sql, ...params);
+            };
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      BackfillTracker.inheritInitialization(observedTx, db);
+
+      await expect(
+        new BackfillTracker({ db: observedTx }).isApplied('root-ready'),
+      ).resolves.toBe(true);
+      expect(transactionCreates).toBe(0);
+    });
+  });
+
+  it('does not reuse initialization across fresh clients with the same URL', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-backfill-tracker-'));
+    const url = join(directory, 'tracker.sqlite');
+    const firstDb = await getDatabase({
+      type: 'sqlite',
+      url,
+      dbid: 'backfill-same-url-first',
+    });
+    let secondDb: DatabaseInterface | undefined;
+
+    try {
+      await new BackfillTracker({ db: firstDb }).initialize();
+      await firstDb.query('DROP TABLE _smrt_backfills');
+      await closeDatabase(firstDb);
+
+      secondDb = await getDatabase({
+        type: 'sqlite',
+        url,
+        dbid: 'backfill-same-url-second',
+      });
+      await expect(
+        new BackfillTracker({ db: secondDb }).isApplied('fresh-client'),
+      ).resolves.toBe(false);
+    } finally {
+      await closeDatabase(secondDb);
+      await closeDatabase(firstDb);
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it('reinitializes after the table is dropped on the same client', async () => {
+    await tracker.initialize();
+    await db.query('DROP TABLE _smrt_backfills');
+
+    await tracker.initialize();
+    await expect(
+      new BackfillTracker({ db }).isApplied('same-client-reset'),
+    ).resolves.toBe(false);
+  });
+
+  it('invalidates the root cache when an inherited transaction finds the table missing', async () => {
+    await tracker.initialize();
+    await db.query('DROP TABLE _smrt_backfills');
+    const transaction = db.transaction;
+    if (!transaction)
+      throw new Error('SQLite test database requires transaction().');
+
+    await expect(
+      transaction.call(db, async (tx) => {
+        BackfillTracker.inheritInitialization(tx, db);
+        return new BackfillTracker({ db: tx }).isApplied('missing-in-tx');
+      }),
+    ).rejects.toBeInstanceOf(BackfillTableUnavailableError);
+
+    await expect(
+      new BackfillTracker({ db }).isApplied('root-recovers'),
+    ).resolves.toBe(false);
+  });
+
   it('initialize allows retry after a failed CREATE TABLE', async () => {
     let attempts = 0;
     const originalQuery = db.query.bind(db);
@@ -192,3 +327,14 @@ describe('BackfillTracker', () => {
     db.query = originalQuery as typeof db.query;
   });
 });
+
+async function closeDatabase(
+  database: DatabaseInterface | undefined,
+): Promise<void> {
+  const close = (
+    database as
+      | (DatabaseInterface & { close?: () => Promise<void> })
+      | undefined
+  )?.close;
+  if (close) await close.call(database).catch(() => undefined);
+}

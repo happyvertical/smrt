@@ -275,6 +275,13 @@ export function getWorkspaceViteAliases(
       `${packageName}/internal/agent-runtime`,
       join(packageRoot, 'src/internal/agent-runtime.ts'),
     );
+    // smrt-profiles exposes trusted OIDC primitives only to framework package
+    // integrations, outside its application-facing root entry.
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/internal/oidc-provisioning`,
+      join(packageRoot, 'src/internal/oidc-provisioning.ts'),
+    );
 
     if (packageName === '@happyvertical/smrt-core') {
       addAliasIfPresent(

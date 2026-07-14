@@ -6,6 +6,17 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import { OidcIdentity } from '../models/OidcIdentity';
 import type { Profile } from '../models/Profile';
 
+/** More than one legacy row maps the same opaque OIDC issuer and subject. */
+export class AmbiguousOidcIdentityError extends Error {
+  constructor(
+    readonly issuer: string,
+    readonly subject: string,
+  ) {
+    super('Multiple OIDC identities match the same issuer and subject.');
+    this.name = 'AmbiguousOidcIdentityError';
+  }
+}
+
 export class OidcIdentityCollection extends SmrtCollection<OidcIdentity> {
   static readonly _itemClass = OidcIdentity;
 
@@ -25,9 +36,14 @@ export class OidcIdentityCollection extends SmrtCollection<OidcIdentity> {
     issuer: string,
     subject: string,
   ): Promise<OidcIdentity | null> {
-    return await this.findOne({
+    const matches = await this.list({
       where: { issuer, subject },
+      limit: 2,
     });
+    if (matches.length > 1) {
+      throw new AmbiguousOidcIdentityError(issuer, subject);
+    }
+    return matches[0] ?? null;
   }
 
   /**
@@ -40,7 +56,11 @@ export class OidcIdentityCollection extends SmrtCollection<OidcIdentity> {
   }
 
   /**
-   * Link a new OIDC identity to a profile
+   * Reuse an existing exact OIDC identity for its unchanged Profile.
+   *
+   * @deprecated New authentication links require the owner-aware,
+   * transactional provisioning APIs. This compatibility helper may refresh a
+   * legacy Profile type, but refuses to create or rebind authority.
    */
   async linkToProfile(
     profile: Profile,
@@ -51,31 +71,7 @@ export class OidcIdentityCollection extends SmrtCollection<OidcIdentity> {
       email?: string;
     },
   ): Promise<OidcIdentity> {
-    // Check if already exists
-    const existing = await this.findBySubject(
-      oidcData.issuer,
-      oidcData.subject,
-    );
-    if (existing) {
-      // Update and return existing
-      existing.lastUsedAt = new Date();
-      if (oidcData.email) existing.email = oidcData.email;
-      await existing.save();
-      return existing;
-    }
-
-    // Create new
-    const identity = new OidcIdentity({
-      ...this.options,
-      profileId: profile.id as string,
-      provider: oidcData.provider,
-      issuer: oidcData.issuer,
-      subject: oidcData.subject,
-      email: oidcData.email || '',
-    });
-    await identity.initialize();
-    await identity.save();
-    return identity;
+    return OidcIdentity.findOrCreate(profile, oidcData, this.options);
   }
 
   /**

@@ -53,7 +53,12 @@ export {
 // Core collections
 export {
   type GetOrCreateFromOidcOptions,
+  type NormalizedOidcClaims,
   type OidcClaims,
   type OidcIdentityResult,
+  type OidcProfileResolver,
+  type OidcProfileResolverContext,
+  OidcProvisioningError,
+  type OidcProvisioningErrorCode,
   UserCollection,
 } from './UserCollection.js';

@@ -22,6 +22,7 @@ export {
   type Nip05Request,
   parseNip05Identifier,
 } from './nip05Handler';
+export { normalizeIdentityEmail } from './normalizeIdentityEmail';
 // Nostr crypto utilities
 export {
   computeEventId,

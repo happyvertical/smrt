@@ -6,7 +6,7 @@ Multi-tenant user management with RBAC, hierarchical tenants, session handling, 
 
 | Model | Key Pattern |
 |-------|-------------|
-| User | Auth identity. `profileId` is plain string (not FK) to smrt-profiles. Email auto-lowercased. |
+| User | Auth identity. `profileId` is a unique cross-package reference to smrt-profiles (one User per non-null Profile). Email auto-lowercased; readonly nullable unique `emailKey` is derived on save for durable normalized uniqueness. |
 | AccessRequest | "Request access / waitlist" record captured before a `User` exists. CLOSED generated surface (`api`/`mcp`/`cli` = `[]`) — all access via `AccessRequestService`. Email normalized + indexed; JSON `requestContext` (NOT `context` — reserved for slug scoping). |
 | Tenant | **STI** + hierarchical parent-child. `hierarchyPath` (materialized path), `hierarchyLevel`. Max depth 10. |
 | Session | Server-side. Secure UUID. TTL in **seconds** (not ms). Status auto-updates to EXPIRED on access. |
@@ -240,6 +240,58 @@ the package root).
   refuses to provision a user when the IdP explicitly returns
   `email_verified: false` (opt out with `{ allowUnverifiedEmail: true }`). An
   absent claim makes no assertion and is not enforced.
+- **Verified-email Profile reuse is fail-closed.** Default provisioning reuses
+  only one unowned, global `Person`. Tenant-scoped, non-Person, duplicate-email,
+  and already-owned matches fail before User/session creation. An existing
+  issuer/subject link without a User must still be the unique global Person for
+  the current verified claim email; once owned, the stable issuer/subject link
+  reuses its canonical Person and owner.
+  Issuer and subject are opaque, case-sensitive identifiers; preserve their
+  exact value and use trim only to reject blank claims.
+- **`resolveProfile` is the application reconciliation boundary.** The
+  SvelteKit handlers, `OidcLoginService`, and `getOrCreateFromOidc` accept the
+  same hook inside the provisioning transaction. The service/handler path
+  supplies protocol-validated claims; direct collection callers must validate
+  and trust their claim source before calling `getOrCreateFromOidc`.
+  Token/userinfo merging keeps `email` and `email_verified` paired to the same
+  claim source; verification is never borrowed across sources.
+  Resolver reads/writes use the supplied `db`, and the hook must be idempotent
+  because a concurrent unique-key conflict can retry it. `undefined` chooses
+  the secure default, `null` rejects, and a supplied Profile is still validated
+  as the unique, unowned global Person for the verified email. The hook receives
+  a separate frozen claims snapshot; internal retry and persistence state is not
+  exposed for mutation.
+- **OIDC first login is atomic.** The Profile, `OidcIdentity`, and User are one
+  transaction. The database arbiters are `OidcIdentity.identityKey`,
+  private `oidc_profile_email_reservations.email_key`, `User.emailKey`, and the
+  unique `User.profileId`; local callbacks acquire exact issuer/subject and normalized
+  email locks in deterministic order so changed email claims also serialize.
+  SQLite and DuckDB callbacks additionally serialize transactions per database
+  URL because one adapter cannot safely overlap unrelated root transactions;
+  PostgreSQL deadlock and serialization errors use a bounded transaction retry.
+  Newly provisioned Profiles use non-semantic per-profile slugs so equal IdP
+  display names cannot trigger a natural-key upsert;
+  run
+  `smrt db:status`, `smrt db:migrate`, then `smrt db:status` before deployment.
+  Stop or upgrade old writers first. Before migration, group
+  non-null `users.profile_id` values, then reconcile duplicates. After
+  migration, run public `backfillProfileEmailKeys(db)` followed by
+  `backfillUserEmailKeys(db)` from one deploy process. Both use the shared
+  TypeScript `normalizeIdentityEmail()` implementation transactionally and are
+  idempotent; the User backfill fails before writes if normalized duplicates
+  remain. Every OIDC path requires the Profile email-key readiness marker;
+  creating a User or checking User email uniqueness additionally requires the
+  User marker. A stable issuer/subject with an existing owning User skips only
+  the User email-key lookup and marker. Full scans remain in the explicit deploy
+  step; guarded runtime paths use indexed keys and validate only returned
+  candidates. Multiple null links remain valid.
+  Legacy race keys backfill only after canonical validation. Pass a root
+  database on adapters such as DuckDB that cannot create nested savepoints.
+  Root adapters must expose `beginTransaction`; transaction-only handles are
+  ambiguous and fail closed before provisioning writes. Caller-owned
+  transactions never run `_smrt_backfills` DDL and require that table to
+  already exist; use the root database when initialization or recovery is
+  needed.
 
 ## Gotchas
 
