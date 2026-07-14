@@ -162,8 +162,10 @@ export type CommissionStatus =
  * Legacy payout status values.
  *
  * @deprecated Use the `CommissionPayoutStatus` union
- * (`'pending' | 'approved' | 'processing' | 'completed' | 'failed'`) from
- * `@happyvertical/smrt-sales` — the string values align exactly.
+ * (`'pending' | 'approved' | 'processing' | 'completed' | 'failed' |
+ * 'rejected'`) from `@happyvertical/smrt-sales` — the legacy value set is a
+ * subset (legacy affiliates had no reject) and the shared string values
+ * align exactly.
  */
 export const PayoutStatus = Object.freeze({
   PENDING: 'pending',

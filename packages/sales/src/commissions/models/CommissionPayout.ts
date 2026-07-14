@@ -23,8 +23,12 @@
  *
  * Lifecycle: `pending → approved → processing → completed | failed`, with
  * `failed` reachable from approved/processing and resettable to `pending`
- * only via {@link resetFromFailed}. Transition helpers mutate and stamp but
- * DO NOT save — the caller saves (same convention as Commission).
+ * only via {@link resetFromFailed}, and `rejected` the terminal
+ * operator-decline exit from pending/approved (see {@link reject} — the
+ * membership release lives in
+ * `CommissionPayoutService.transitionPayoutForSource`). Transition helpers
+ * mutate and stamp but DO NOT save — the caller saves (same convention as
+ * Commission).
  *
  * @packageDocumentation
  */
@@ -53,12 +57,15 @@ const PAYOUT_STATUS_TRANSITIONS: Record<
   CommissionPayoutStatus,
   CommissionPayoutStatus[]
 > = {
-  pending: ['approved'],
-  approved: ['processing', 'failed'],
+  pending: ['approved', 'rejected'],
+  approved: ['processing', 'failed', 'rejected'],
   processing: ['completed', 'failed'],
   completed: [],
   // FAILED is resettable to PENDING via resetFromFailed().
   failed: ['pending'],
+  // REJECTED is terminal — the batch was declined and its membership
+  // released; the released rows settle through a FUTURE batch instead.
+  rejected: [],
 };
 
 /**
@@ -158,6 +165,23 @@ export class CommissionPayout extends SmrtObject {
   @field({ required: true })
   idempotencyKey: string = '';
 
+  /**
+   * DERIVED single-source stamp: when every member commission — and every
+   * member adjustment's parent commission — shares exactly one non-empty
+   * `(sourceKind, sourceId)`, that source is stamped here; otherwise both
+   * stay `''` (mixed-source, unknown-source, or empty membership). The
+   * payout service maintains the stamp from VERIFIED claimed membership at
+   * batch/repair time (`restampPayoutSource` is the backfill for payouts
+   * minted before the stamp existed). It is the index behind the
+   * source-scoped payout-history listing, which still re-verifies
+   * membership per page — never an authorization input by itself.
+   */
+  sourceKind: string = '';
+
+  /** Id half of the derived single-source stamp — see {@link sourceKind}. */
+  @field({ indexed: true })
+  sourceId: string = '';
+
   /** Additional metadata as a JSON string. */
   metadata: string = '{}';
 
@@ -189,6 +213,8 @@ export class CommissionPayout extends SmrtObject {
     if (options.notes !== undefined) this.notes = options.notes;
     if (options.idempotencyKey !== undefined)
       this.idempotencyKey = options.idempotencyKey;
+    if (options.sourceKind !== undefined) this.sourceKind = options.sourceKind;
+    if (options.sourceId !== undefined) this.sourceId = options.sourceId;
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
 
@@ -227,6 +253,10 @@ export class CommissionPayout extends SmrtObject {
 
   isFailed(): boolean {
     return this.status === 'failed';
+  }
+
+  isRejected(): boolean {
+    return this.status === 'rejected';
   }
 
   // -------- Transition methods (mutate only — caller saves) --------
@@ -279,6 +309,33 @@ export class CommissionPayout extends SmrtObject {
     this.status = 'completed';
     this.paymentReference = paymentReference;
     this.paidAt = now;
+  }
+
+  /**
+   * `pending | approved → rejected` (operator declined the batch before
+   * remittance started). Terminal — there is no reset from rejected; the
+   * released membership settles through a future batch. Requires a reason,
+   * appended to {@link notes}. This mutates the payout only: use
+   * `CommissionPayoutService.transitionPayoutForSource` to reject, which
+   * also RELEASES the batch's membership (clears `payoutId` on its
+   * commissions and adjustments) in the same operation — a rejected payout
+   * that kept its rows stamped would strand them unsettleable forever.
+   * Does NOT save — the caller saves.
+   */
+  reject(reason: string): void {
+    if (this.status !== 'pending' && this.status !== 'approved') {
+      throw new Error(
+        `CommissionPayout ${this.id ?? '<new>'}: cannot reject from status '${this.status}' — processing/terminal batches use fail()/resetFromFailed()`,
+      );
+    }
+    if (!reason) {
+      throw new Error(
+        `CommissionPayout ${this.id ?? '<new>'}: reject() requires a reason`,
+      );
+    }
+    this.status = 'rejected';
+    const memo = `Rejected: ${reason}`;
+    this.notes = this.notes ? `${this.notes}\n${memo}` : memo;
   }
 
   /**
@@ -411,7 +468,7 @@ export class CommissionPayout extends SmrtObject {
       throw new Error(
         `CommissionPayout ${this.id}: illegal status transition '${prior}' ` +
           `→ '${this.status}'. Use approve() / markProcessing() / ` +
-          'complete() / fail() / resetFromFailed().',
+          'complete() / fail() / reject() / resetFromFailed().',
       );
     }
   }

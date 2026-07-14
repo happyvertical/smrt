@@ -25,6 +25,18 @@ export const EARNER_STATUSES = ['pending', 'active', 'suspended'] as const;
 export type EarnerStatus = (typeof EARNER_STATUSES)[number];
 
 /**
+ * Lifecycle of an {@link EarnerSourceAttribution} mapping row. `inactive`
+ * rows are retained for audit but never resolve through the attribution
+ * lookups.
+ */
+export const EARNER_SOURCE_ATTRIBUTION_STATUSES = [
+  'active',
+  'inactive',
+] as const;
+export type EarnerSourceAttributionStatus =
+  (typeof EARNER_SOURCE_ATTRIBUTION_STATUSES)[number];
+
+/**
  * How a payout is delivered. Shared between {@link Earner} (preference) and
  * {@link CommissionPayout} (what a specific batch will use).
  */
@@ -93,7 +105,11 @@ export type CommissionAdjustmentKind =
  *
  * `pending → approved → processing → completed | failed`, with `failed`
  * reachable from `approved`/`processing` and resettable to `pending` only via
- * the dedicated `resetFromFailed()` helper.
+ * the dedicated `resetFromFailed()` helper. `rejected` is the terminal
+ * operator-decline exit from `pending`/`approved` — rejecting releases the
+ * batch's membership back to unsettled so a future batch can re-gather it
+ * (`reject()` on the model mutates status only; the release lives in
+ * `CommissionPayoutService.transitionPayoutForSource`).
  */
 export const COMMISSION_PAYOUT_STATUSES = [
   'pending',
@@ -101,6 +117,7 @@ export const COMMISSION_PAYOUT_STATUSES = [
   'processing',
   'completed',
   'failed',
+  'rejected',
 ] as const;
 export type CommissionPayoutStatus =
   (typeof COMMISSION_PAYOUT_STATUSES)[number];
@@ -249,6 +266,16 @@ export interface EarnerOptions extends SmrtObjectOptions {
   metadata?: string;
 }
 
+/** Options for constructing an {@link EarnerSourceAttribution}. */
+export interface EarnerSourceAttributionOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  earnerId?: string;
+  sourceKind?: string;
+  sourceId?: string;
+  status?: EarnerSourceAttributionStatus;
+  metadata?: string;
+}
+
 /** Options for constructing a {@link CommissionPlan}. */
 export interface CommissionPlanOptions extends SmrtObjectOptions {
   tenantId?: string | null;
@@ -342,5 +369,7 @@ export interface CommissionPayoutOptions extends SmrtObjectOptions {
   invoiceId?: string;
   notes?: string;
   idempotencyKey?: string;
+  sourceKind?: string;
+  sourceId?: string;
   metadata?: string;
 }

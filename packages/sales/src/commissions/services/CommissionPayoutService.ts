@@ -9,21 +9,66 @@
  * gathered rows, and later flips the batch's commissions to `paid` when the
  * payout completes.
  *
+ * Batch creation is deliberately non-transactional (conditional claims +
+ * disjoint scopes — see {@link createPayoutBatch}). Two surfaces layered on
+ * top serve per-source consumers:
+ *
+ * - {@link getSourcePayoutHistory} — the source-scoped, paginated,
+ *   membership-verified payout history (#1985), indexed by the derived
+ *   single-source stamp each batch/repair pass maintains.
+ * - {@link transitionPayoutForSource} — atomic source-authorized lifecycle
+ *   transitions (#1987): payout row locked, membership re-verified and
+ *   totals recomputed under the lock, transition + member writes committed
+ *   together on the same transaction database.
+ *
  * @packageDocumentation
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustmentCollection.js';
 import { CommissionCollection } from '../collections/CommissionCollection.js';
 import { CommissionPayoutCollection } from '../collections/CommissionPayoutCollection.js';
 import { EarnerCollection } from '../collections/EarnerCollection.js';
 import type { Commission } from '../models/Commission.js';
+import type { CommissionAdjustment } from '../models/CommissionAdjustment.js';
 import type { CommissionPayout } from '../models/CommissionPayout.js';
 import {
   ADJUSTMENT_SETTLEABLE_COMMISSION_STATUSES,
+  type CommissionPayoutStatus,
   type CommissionStatus,
   type PayoutMethod,
 } from '../types.js';
+
+/** The subset of adapter capabilities the transactional transition uses. */
+type TransactionCapableDatabase = DatabaseInterface & {
+  transaction?: <T>(
+    callback: (tx: DatabaseInterface) => Promise<T>,
+  ) => Promise<T>;
+  acquireSession?: unknown;
+};
+
+/**
+ * Per-database promise chain serializing transactional transitions on
+ * engines that multiplex every transaction over ONE shared connection
+ * (SQLite, DuckDB, JSON) — concurrent `BEGIN`/`COMMIT` pairs would
+ * interleave there. PostgreSQL (pooled per-transaction connections) skips
+ * the chain entirely. WeakMap so the tail GCs with the database instance.
+ */
+const singleConnectionTransitionTails = new WeakMap<object, Promise<unknown>>();
+
+/**
+ * What the transactional transition callback reports back across the
+ * commit boundary — ids only, so the public result can rehydrate on the
+ * service's own connection.
+ */
+interface TxTransitionOutcome {
+  outcome: 'transitioned' | 'already_applied' | 'refused';
+  payoutId: string | null;
+  refusal?: { reason: PayoutTransitionRefusalReason; detail: string };
+  releasedCommissionIds?: string[];
+  releasedAdjustmentIds?: string[];
+}
 
 /** Collaborators for {@link CommissionPayoutService}. */
 export interface CommissionPayoutServiceDeps {
@@ -90,6 +135,137 @@ export interface CreatePayoutBatchResult {
   settledCommissionIds: string[];
   /** Ids of the adjustments THIS call stamped onto the payout. */
   settledAdjustmentIds: string[];
+}
+
+/**
+ * Why a payout's membership failed source verification. Every reason is
+ * fail-closed: the payout is excluded from source-scoped listings and
+ * refused source-authorized transitions until repaired.
+ *
+ * - `membership_empty` — no rows are stamped with the payout's id (nothing
+ *   proves ownership; e.g. a raced-away batch artifact or a rejected batch
+ *   whose rows were released).
+ * - `source_mismatch` — a member commission (or an adjustment's parent
+ *   commission) carries a different or empty `(sourceKind, sourceId)`.
+ * - `adjustment_parent_missing` — a member adjustment's parent commission
+ *   cannot be loaded, so its ownership cannot be proven.
+ * - `earner_mismatch` / `currency_mismatch` / `tenant_mismatch` — a member
+ *   row disagrees with the payout on that axis.
+ */
+export type PayoutMembershipRefusalReason =
+  | 'membership_empty'
+  | 'source_mismatch'
+  | 'adjustment_parent_missing'
+  | 'earner_mismatch'
+  | 'currency_mismatch'
+  | 'tenant_mismatch';
+
+/** Why {@link CommissionPayoutService.transitionPayoutForSource} refused. */
+export type PayoutTransitionRefusalReason =
+  | PayoutMembershipRefusalReason
+  | 'payout_not_found'
+  | 'status_conflict'
+  | 'totals_drift'
+  | 'non_positive_total';
+
+/**
+ * Source-authorized lifecycle actions. Targets:
+ * `approve` (pending → approved), `mark_processing` (approved →
+ * processing), `complete` (processing → completed, requires
+ * `paymentReference`), `fail` (approved|processing → failed, requires
+ * `reason`), `reject` (pending|approved → rejected, requires `reason`;
+ * releases the batch's membership).
+ */
+export type PayoutSourceTransitionAction =
+  | 'approve'
+  | 'mark_processing'
+  | 'complete'
+  | 'fail'
+  | 'reject';
+
+/** Input for {@link CommissionPayoutService.transitionPayoutForSource}. */
+export interface TransitionPayoutForSourceInput {
+  payoutId: string;
+  /**
+   * The earning source this transition is authorized against. EVERY member
+   * commission — and every member adjustment through its parent commission
+   * — must belong to exactly this source or the call is refused.
+   */
+  sourceKind: string;
+  sourceId: string;
+  action: PayoutSourceTransitionAction;
+  /**
+   * Optimistic concurrency guard: refuse with `status_conflict` when the
+   * LOCKED payout's status differs. Omit to let the action's own
+   * from-status rule arbitrate (concurrent duplicate calls then resolve as
+   * one `transitioned` + one `already_applied`).
+   */
+  expectedStatus?: CommissionPayoutStatus;
+  /** Required for `complete`. */
+  paymentReference?: string;
+  /** Required for `fail` and `reject`; appended to the payout's notes. */
+  reason?: string;
+  /** Clock override for deterministic tests. */
+  now?: Date;
+}
+
+/** Result of {@link CommissionPayoutService.transitionPayoutForSource}. */
+export interface TransitionPayoutForSourceResult {
+  /**
+   * `transitioned` — THIS call performed the transition.
+   * `already_applied` — the payout was already in the action's target
+   * status; nothing was written (terminal completion metadata —
+   * `paymentReference`, `providerRef`, `paidAt` — is never overwritten by
+   * a replay).
+   * `refused` — fail-closed; see {@link refusal}.
+   */
+  outcome: 'transitioned' | 'already_applied' | 'refused';
+  /**
+   * The payout re-read AFTER the transaction (bound to the service's own
+   * connection). `null` only for `payout_not_found`.
+   */
+  payout: CommissionPayout | null;
+  /** Set exactly when {@link outcome} is `refused`. */
+  refusal?: { reason: PayoutTransitionRefusalReason; detail: string };
+  /** Commissions a `reject` released back to unsettled. */
+  releasedCommissionIds?: string[];
+  /** Adjustments a `reject` released back to unsettled. */
+  releasedAdjustmentIds?: string[];
+}
+
+/** Input for {@link CommissionPayoutService.getSourcePayoutHistory}. */
+export interface SourcePayoutHistoryInput {
+  sourceKind: string;
+  sourceId: string;
+  /** Page size, 1–100. Default 25. */
+  limit?: number;
+  /** Rows to skip (offset pagination). Default 0. */
+  offset?: number;
+}
+
+/** One page of {@link CommissionPayoutService.getSourcePayoutHistory}. */
+export interface SourcePayoutHistoryPage {
+  /**
+   * The page's VERIFIED payouts, newest first (`created_at DESC, id DESC`).
+   * May hold fewer than `limit` rows even when {@link nextOffset} is set —
+   * rows that failed verification are in {@link excluded} instead.
+   */
+  payouts: CommissionPayout[];
+  /** Stamped rows on this page excluded fail-closed, with reasons. */
+  excluded: {
+    payoutId: string;
+    reason: PayoutMembershipRefusalReason;
+    detail: string;
+  }[];
+  /** Echo of the requested offset. */
+  offset: number;
+  /** Echo of the effective page size. */
+  limit: number;
+  /**
+   * Offset of the next page (advances by the SCANNED count, so excluded
+   * rows never cause skips), or `null` when the history is exhausted.
+   */
+  nextOffset: number | null;
 }
 
 export class CommissionPayoutService {
@@ -316,12 +492,36 @@ export class CommissionPayoutService {
    * from the claimed rows and saved when they drift from what the payout
    * carries. In the pathological all-rows-raced-away case the payout keeps
    * zero totals and a note — auditable, never double-paid.
+   *
+   * The pass also derives the payout's single-source stamp
+   * (`sourceKind`/`sourceId`) from the verified claimed membership — set
+   * when every claimed commission and every claimed adjustment's parent
+   * shares exactly one non-empty source, empty otherwise — which is what
+   * the source-scoped history listing indexes on.
+   *
+   * A fresh status re-read gates the pass: only a payout that is STILL
+   * pending claims rows. This narrows (but, like every claim here, does not
+   * transactionally eliminate) the race against a concurrent lifecycle
+   * transition of the same payout — replaying a batch while its payout is
+   * being approved/rejected is an overlapping concurrent scope the caller
+   * must serialize, same as the documented batch-scope contract.
    */
   private async claimAndReconcile(
-    payout: CommissionPayout,
+    stalePayout: CommissionPayout,
     input: CreatePayoutBatchInput,
   ): Promise<Omit<CreatePayoutBatchResult, 'created'>> {
-    const payoutId = payout.id ?? '';
+    const payoutId = stalePayout.id ?? '';
+
+    // Authoritative re-read: claims may only land on a payout that is
+    // still pending. (The stale instance is the pre-lookup snapshot.)
+    const payout = (await this.deps.payouts.get({ id: payoutId })) ?? null;
+    if (!payout?.isPending()) {
+      return {
+        payout: payout ?? stalePayout,
+        settledCommissionIds: [],
+        settledAdjustmentIds: [],
+      };
+    }
 
     const previouslyClaimed =
       await this.deps.commissions.findByPayout(payoutId);
@@ -369,14 +569,31 @@ export class CommissionPayoutService {
     );
     const totalAmountCents = commissionTotalCents + adjustmentTotalCents;
 
+    // Derive the single-source stamp from the VERIFIED claimed membership
+    // (adjustments prove their source through their parent commission).
+    const parentById = await this.loadAdjustmentParents(
+      this.deps.commissions,
+      claimedCommissions,
+      claimedAdjustments,
+    );
+    const derivedSource = CommissionPayoutService.deriveMembershipSource(
+      claimedCommissions,
+      claimedAdjustments,
+      parentById,
+    );
+
     if (
       payout.commissionTotalCents !== commissionTotalCents ||
       payout.adjustmentTotalCents !== adjustmentTotalCents ||
-      payout.totalAmountCents !== totalAmountCents
+      payout.totalAmountCents !== totalAmountCents ||
+      payout.sourceKind !== derivedSource.sourceKind ||
+      payout.sourceId !== derivedSource.sourceId
     ) {
       payout.commissionTotalCents = commissionTotalCents;
       payout.adjustmentTotalCents = adjustmentTotalCents;
       payout.totalAmountCents = totalAmountCents;
+      payout.sourceKind = derivedSource.sourceKind;
+      payout.sourceId = derivedSource.sourceId;
       if (claimedCommissions.length === 0 && claimedAdjustments.length === 0) {
         payout.notes =
           'no rows claimed (raced by a concurrent batch); nothing will be paid';
@@ -449,6 +666,712 @@ export class CommissionPayoutService {
     payout.fail(reason);
     await payout.save();
     return payout;
+  }
+
+  /**
+   * One page of the payout history belonging to ONE earning source,
+   * newest first (`created_at DESC, id DESC` — deterministic across ties).
+   *
+   * Candidates come from the indexed single-source stamp
+   * (`CommissionPayout.sourceKind`/`sourceId`, maintained from verified
+   * claimed membership at batch/repair time), so database work is bounded
+   * by the page size — a sparse source never forces a scan of the global
+   * payout history. Each page is then RE-VERIFIED against its actual
+   * membership in three batched queries (commissions, adjustments,
+   * adjustment parents — no per-payout N+1): every member commission and
+   * every adjustment's parent must carry exactly the requested source and
+   * agree with the payout on earner/currency/tenant. Rows the stamp alone
+   * cannot prove are excluded fail-closed and reported in `excluded`
+   * (mixed-source membership, missing adjustment parents, memberless
+   * artifacts, released/rejected batches).
+   *
+   * Adjustment-only payouts are first-class: a batch that settled only
+   * CommissionAdjustment rows proves its source through each adjustment's
+   * parent commission and lists normally.
+   *
+   * Payouts minted before the stamp existed carry an empty stamp and are
+   * invisible here until backfilled — see {@link restampPayoutSource}.
+   *
+   * Offset pagination contract: `nextOffset` advances by the SCANNED count
+   * (verified + excluded), so pages never skip rows; a page may hold fewer
+   * than `limit` verified payouts. Newly minted payouts prepend to the
+   * history between calls, as with any offset listing. Tenant interception
+   * applies to every query (candidates, membership, parents), so a tenant
+   * context sees only its own history.
+   */
+  async getSourcePayoutHistory(
+    input: SourcePayoutHistoryInput,
+  ): Promise<SourcePayoutHistoryPage> {
+    if (!input.sourceKind || !input.sourceId) {
+      throw new Error(
+        'CommissionPayoutService.getSourcePayoutHistory: sourceKind and sourceId are required',
+      );
+    }
+    const limit = Math.max(1, Math.min(100, Math.trunc(input.limit ?? 25)));
+    const offset = Math.max(0, Math.trunc(input.offset ?? 0));
+
+    // limit + 1 probes for a further page without a COUNT query.
+    const probed = await this.deps.payouts.findBySource(
+      input.sourceKind,
+      input.sourceId,
+      { limit: limit + 1, offset },
+    );
+    const hasMore = probed.length > limit;
+    const candidates = hasMore ? probed.slice(0, limit) : probed;
+
+    const payoutIds = candidates
+      .map((p) => p.id)
+      .filter((id): id is string => !!id);
+    const members = await this.deps.commissions.findByPayouts(payoutIds);
+    const memberAdjustments =
+      await this.deps.adjustments.findByPayouts(payoutIds);
+    const parentById = await this.loadAdjustmentParents(
+      this.deps.commissions,
+      members,
+      memberAdjustments,
+    );
+
+    const membersByPayout = new Map<string, Commission[]>();
+    for (const commission of members) {
+      const bucket = membersByPayout.get(commission.payoutId);
+      if (bucket) bucket.push(commission);
+      else membersByPayout.set(commission.payoutId, [commission]);
+    }
+    const adjustmentsByPayout = new Map<string, CommissionAdjustment[]>();
+    for (const adjustment of memberAdjustments) {
+      const bucket = adjustmentsByPayout.get(adjustment.payoutId);
+      if (bucket) bucket.push(adjustment);
+      else adjustmentsByPayout.set(adjustment.payoutId, [adjustment]);
+    }
+
+    const page: SourcePayoutHistoryPage = {
+      payouts: [],
+      excluded: [],
+      offset,
+      limit,
+      nextOffset: hasMore ? offset + candidates.length : null,
+    };
+    for (const payout of candidates) {
+      const id = payout.id ?? '';
+      const verdict = CommissionPayoutService.verifySourceMembership({
+        payout,
+        commissions: membersByPayout.get(id) ?? [],
+        adjustments: adjustmentsByPayout.get(id) ?? [],
+        parentById,
+        sourceKind: input.sourceKind,
+        sourceId: input.sourceId,
+      });
+      if (verdict.ok) {
+        page.payouts.push(payout);
+      } else {
+        page.excluded.push({
+          payoutId: id,
+          reason: verdict.reason,
+          detail: verdict.detail,
+        });
+      }
+    }
+    return page;
+  }
+
+  /**
+   * Backfill/repair the derived single-source stamp of ONE payout from its
+   * actual membership — the documented migration path for payouts minted
+   * before the stamp existed (they carry `''`/`''` and are invisible to
+   * {@link getSourcePayoutHistory} until restamped). Safe on any status:
+   * the stamp is derived data, and a payout whose membership is mixed or
+   * unprovable derives back to the empty stamp.
+   *
+   * One-time migration loop: page through `payouts.list({})` and call this
+   * per row (idempotent — an already-correct stamp saves nothing).
+   */
+  async restampPayoutSource(payoutId: string): Promise<{
+    payout: CommissionPayout | null;
+    sourceKind: string;
+    sourceId: string;
+    changed: boolean;
+  }> {
+    const payout = await this.deps.payouts.get({ id: payoutId });
+    if (!payout) {
+      return { payout: null, sourceKind: '', sourceId: '', changed: false };
+    }
+    const members = await this.deps.commissions.findByPayout(payoutId);
+    const memberAdjustments =
+      await this.deps.adjustments.findByPayout(payoutId);
+    const parentById = await this.loadAdjustmentParents(
+      this.deps.commissions,
+      members,
+      memberAdjustments,
+    );
+    const derived = CommissionPayoutService.deriveMembershipSource(
+      members,
+      memberAdjustments,
+      parentById,
+    );
+    if (
+      payout.sourceKind === derived.sourceKind &&
+      payout.sourceId === derived.sourceId
+    ) {
+      return { payout, ...derived, changed: false };
+    }
+    payout.sourceKind = derived.sourceKind;
+    payout.sourceId = derived.sourceId;
+    await payout.save();
+    return { payout, ...derived, changed: true };
+  }
+
+  /**
+   * Atomically authorize ONE payout against ONE earning source and perform
+   * a lifecycle transition — the multi-replica-safe alternative to loading
+   * the payout, querying membership, and calling the model transitions
+   * yourself (which leaves a TOCTOU window between authorization and
+   * transition).
+   *
+   * Everything runs on the SAME transaction database: the payout row is
+   * locked (PostgreSQL `SELECT … FOR UPDATE`, so concurrent calls across
+   * app replicas serialize on the row; single-connection engines get
+   * equivalent behavior from the transaction plus an in-process
+   * per-database queue), membership is re-read and re-verified under the
+   * lock, totals are recomputed under the lock, and the transition + every
+   * member write commit or roll back together.
+   *
+   * Under the lock, in order:
+   *
+   * 1. **Hydrate + already-applied** — a payout already in the action's
+   *    target status returns `already_applied` WITHOUT writing (terminal
+   *    completion metadata — `paymentReference`, `providerRef`, `paidAt` —
+   *    is never overwritten by a replay). A missing/cross-tenant id
+   *    refuses `payout_not_found`.
+   * 2. **Expected state** — `expectedStatus`, when given, must match the
+   *    locked status or the call refuses `status_conflict`; the action's
+   *    own from-status rule then applies. Concurrent duplicate calls
+   *    therefore resolve deterministically: one `transitioned`, the rest
+   *    `already_applied` (or `status_conflict` when they raced a
+   *    DIFFERENT action).
+   * 3. **Source authorization** — every member commission, and every
+   *    member adjustment through its parent commission, must carry exactly
+   *    the requested `(sourceKind, sourceId)` and agree with the payout on
+   *    earner/currency/tenant; anything unprovable refuses fail-closed
+   *    (`source_mismatch`, `adjustment_parent_missing`, mismatches,
+   *    `membership_empty` — note this means memberless raced-away batch
+   *    artifacts cannot be transitioned through this source-authorized
+   *    door, and an `already_applied` echo performs no source check since
+   *    nothing is written).
+   * 4. **Totals recompute** — commission/adjustment/total amounts are
+   *    recomputed from the locked membership; drift refuses `totals_drift`
+   *    for the money-forward actions (`approve`, `mark_processing`,
+   *    `complete` — repair via a `createPayoutBatch` replay while the
+   *    payout is pending). The defensive actions (`fail`, `reject`)
+   *    proceed despite drift — rejecting a drifted batch IS the remedy. A
+   *    non-positive recomputed total refuses `approve` with
+   *    `non_positive_total`.
+   * 5. **Apply** — `complete` flips the batch's payable commissions to
+   *    `paid` and completes the payout in the same transaction (no more
+   *    retryable-but-partial completion); `reject` RELEASES the batch's
+   *    membership (clears `payoutId` on every member commission and
+   *    adjustment, model-layer per row) so the rows settle through a
+   *    future batch, then marks the payout rejected — terminal.
+   *
+   * Replaying a `createPayoutBatch` for the same payout concurrently with
+   * a transition is an overlapping concurrent scope (same contract as
+   * overlapping batch scopes): the batch side re-checks pending before
+   * claiming, which narrows but does not transactionally close that race —
+   * serialize those two call sites per payout.
+   */
+  async transitionPayoutForSource(
+    input: TransitionPayoutForSourceInput,
+  ): Promise<TransitionPayoutForSourceResult> {
+    const now = input.now ?? new Date();
+    if (!input.sourceKind || !input.sourceId) {
+      throw new Error(
+        'CommissionPayoutService.transitionPayoutForSource: sourceKind and sourceId are required',
+      );
+    }
+    const targetStatus =
+      CommissionPayoutService.TRANSITION_TARGET[input.action];
+    if (!targetStatus) {
+      throw new Error(
+        `CommissionPayoutService.transitionPayoutForSource: unknown action '${String(input.action)}'`,
+      );
+    }
+    if (input.action === 'complete' && !input.paymentReference) {
+      throw new Error(
+        "CommissionPayoutService.transitionPayoutForSource: action 'complete' requires a paymentReference",
+      );
+    }
+    if (
+      (input.action === 'fail' || input.action === 'reject') &&
+      !input.reason
+    ) {
+      throw new Error(
+        `CommissionPayoutService.transitionPayoutForSource: action '${input.action}' requires a reason`,
+      );
+    }
+    // A malformed id can't match a payout, and would abort the whole query
+    // as an invalid cast on native-uuid columns — refuse it as not-found.
+    if (!CommissionPayoutService.UUID_RE.test(input.payoutId)) {
+      return {
+        outcome: 'refused',
+        payout: null,
+        refusal: {
+          reason: 'payout_not_found',
+          detail: `payout id '${input.payoutId}' is not a valid id`,
+        },
+      };
+    }
+
+    const db = this.resolveDatabase();
+    const outcome = await this.runSerializedTransaction<TxTransitionOutcome>(
+      db,
+      async (txDb): Promise<TxTransitionOutcome> => {
+        const tx = {
+          payouts: await CommissionPayoutCollection.create(
+            CommissionPayoutService.txOptions(txDb),
+          ),
+          commissions: await CommissionCollection.create(
+            CommissionPayoutService.txOptions(txDb),
+          ),
+          adjustments: await CommissionAdjustmentCollection.create(
+            CommissionPayoutService.txOptions(txDb),
+          ),
+        };
+
+        // Row lock: PostgreSQL serializes concurrent transitions of one
+        // payout across replicas here. Single-connection engines (SQLite,
+        // DuckDB) don't support FOR UPDATE and don't need it — their whole
+        // transaction is serialized by runSerializedTransaction.
+        if (
+          typeof (db as TransactionCapableDatabase).acquireSession ===
+          'function'
+        ) {
+          await txDb.query(
+            `SELECT id FROM ${tx.payouts.tableName} WHERE id = $1 FOR UPDATE`,
+            input.payoutId,
+          );
+        }
+
+        const payout = await tx.payouts.get({ id: input.payoutId });
+        if (!payout) {
+          return CommissionPayoutService.txRefusal(
+            null,
+            'payout_not_found',
+            `payout '${input.payoutId}' not found`,
+          );
+        }
+        const payoutId = payout.id ?? '';
+
+        if (payout.status === targetStatus) {
+          return { outcome: 'already_applied' as const, payoutId };
+        }
+        if (input.expectedStatus && payout.status !== input.expectedStatus) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            'status_conflict',
+            `expected status '${input.expectedStatus}' but payout is '${payout.status}'`,
+          );
+        }
+        const legalFrom = CommissionPayoutService.TRANSITION_FROM[input.action];
+        if (!legalFrom.includes(payout.status)) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            'status_conflict',
+            `cannot ${input.action} from status '${payout.status}'`,
+          );
+        }
+
+        const members = await tx.commissions.findByPayout(payoutId);
+        const memberAdjustments = await tx.adjustments.findByPayout(payoutId);
+        const parentById = await this.loadAdjustmentParents(
+          tx.commissions,
+          members,
+          memberAdjustments,
+        );
+        const verdict = CommissionPayoutService.verifySourceMembership({
+          payout,
+          commissions: members,
+          adjustments: memberAdjustments,
+          parentById,
+          sourceKind: input.sourceKind,
+          sourceId: input.sourceId,
+        });
+        if (!verdict.ok) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            verdict.reason,
+            verdict.detail,
+          );
+        }
+
+        const commissionTotalCents = members.reduce(
+          (sum, c) => sum + c.amountCents,
+          0,
+        );
+        const adjustmentTotalCents = memberAdjustments.reduce(
+          (sum, a) => sum + a.amountCents,
+          0,
+        );
+        const totalAmountCents = commissionTotalCents + adjustmentTotalCents;
+        const drifted =
+          payout.commissionTotalCents !== commissionTotalCents ||
+          payout.adjustmentTotalCents !== adjustmentTotalCents ||
+          payout.totalAmountCents !== totalAmountCents;
+        const moneyForward =
+          input.action === 'approve' ||
+          input.action === 'mark_processing' ||
+          input.action === 'complete';
+        if (drifted && moneyForward) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            'totals_drift',
+            `persisted totals (commission=${payout.commissionTotalCents} adjustment=${payout.adjustmentTotalCents} total=${payout.totalAmountCents}) ` +
+              `do not match membership (commission=${commissionTotalCents} adjustment=${adjustmentTotalCents} total=${totalAmountCents}) — ` +
+              'repair via a createPayoutBatch replay while pending',
+          );
+        }
+        if (input.action === 'approve' && payout.totalAmountCents <= 0) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            'non_positive_total',
+            `cannot approve a batch with non-positive total (${payout.totalAmountCents} cents)`,
+          );
+        }
+
+        const releasedCommissionIds: string[] = [];
+        const releasedAdjustmentIds: string[] = [];
+        switch (input.action) {
+          case 'approve':
+            payout.approve();
+            break;
+          case 'mark_processing':
+            payout.markProcessing();
+            break;
+          case 'fail':
+            payout.fail(input.reason ?? '');
+            break;
+          case 'reject': {
+            // Release the membership FIRST (model-layer per row — tenancy-
+            // and dialect-safe), then the terminal decline; the transaction
+            // makes the pair atomic. Stranded stamped rows would otherwise
+            // be unsettleable forever.
+            for (const commission of members) {
+              commission.payoutId = '';
+              await commission.save();
+              if (commission.id) releasedCommissionIds.push(commission.id);
+            }
+            for (const adjustment of memberAdjustments) {
+              adjustment.payoutId = '';
+              await adjustment.save();
+              if (adjustment.id) releasedAdjustmentIds.push(adjustment.id);
+            }
+            payout.reject(input.reason ?? '');
+            break;
+          }
+          case 'complete': {
+            // Members flip to paid in the SAME transaction as the terminal
+            // payout write — a mid-loop failure rolls everything back
+            // instead of leaving a partially-paid batch.
+            for (const commission of members) {
+              if (commission.isPayable()) {
+                commission.markPaid(now);
+                await commission.save();
+              }
+            }
+            payout.complete(input.paymentReference ?? '', now);
+            break;
+          }
+        }
+        await payout.save();
+        return {
+          outcome: 'transitioned' as const,
+          payoutId,
+          releasedCommissionIds,
+          releasedAdjustmentIds,
+        };
+      },
+    );
+
+    // Rehydrate OUTSIDE the transaction so the returned instance is bound
+    // to the service's own connection, not the released transaction.
+    const payout = outcome.payoutId
+      ? await this.deps.payouts.get({ id: outcome.payoutId })
+      : null;
+    const result: TransitionPayoutForSourceResult = {
+      outcome: outcome.outcome,
+      payout,
+    };
+    if (outcome.refusal) result.refusal = outcome.refusal;
+    if (outcome.releasedCommissionIds?.length) {
+      result.releasedCommissionIds = outcome.releasedCommissionIds;
+    }
+    if (outcome.releasedAdjustmentIds?.length) {
+      result.releasedAdjustmentIds = outcome.releasedAdjustmentIds;
+    }
+    return result;
+  }
+
+  // -------- Source membership verification internals --------
+
+  /** Target status per action — also the `already_applied` echo test. */
+  private static readonly TRANSITION_TARGET: Record<
+    PayoutSourceTransitionAction,
+    CommissionPayoutStatus
+  > = {
+    approve: 'approved',
+    mark_processing: 'processing',
+    complete: 'completed',
+    fail: 'failed',
+    reject: 'rejected',
+  };
+
+  /** Legal from-statuses per action (mirrors the model transition guards). */
+  private static readonly TRANSITION_FROM: Record<
+    PayoutSourceTransitionAction,
+    CommissionPayoutStatus[]
+  > = {
+    approve: ['pending'],
+    mark_processing: ['approved'],
+    complete: ['processing'],
+    fail: ['approved', 'processing'],
+    reject: ['pending', 'approved'],
+  };
+
+  private static txOptions(txDb: DatabaseInterface): SmrtClassOptions {
+    return {
+      db: txDb,
+      // The transaction database is the SAME initialized database on a
+      // pinned connection — skip system-table bootstrap and runtime
+      // service setup (signals/AI) for these short-lived bindings.
+      _reuseInitializedDb: true,
+      _deferRuntimeInitialization: true,
+    };
+  }
+
+  private static txRefusal(
+    payoutId: string | null,
+    reason: PayoutTransitionRefusalReason,
+    detail: string,
+  ): {
+    outcome: 'refused';
+    payoutId: string | null;
+    refusal: { reason: PayoutTransitionRefusalReason; detail: string };
+  } {
+    return { outcome: 'refused', payoutId, refusal: { reason, detail } };
+  }
+
+  /**
+   * Parents of the given adjustments, keyed by commission id — member
+   * commissions are reused, only the rest are fetched (one `IN` query).
+   */
+  private async loadAdjustmentParents(
+    commissions: CommissionCollection,
+    memberCommissions: Commission[],
+    adjustments: CommissionAdjustment[],
+  ): Promise<Map<string, Commission>> {
+    const parentById = new Map<string, Commission>();
+    for (const commission of memberCommissions) {
+      if (commission.id) parentById.set(commission.id, commission);
+    }
+    const missingIds = [
+      ...new Set(
+        adjustments
+          .map((a) => a.commissionId)
+          .filter((id) => !!id && !parentById.has(id)),
+      ),
+    ];
+    if (missingIds.length > 0) {
+      const fetched = await commissions.listByIds(missingIds);
+      for (const parent of fetched) {
+        if (parent.id) parentById.set(parent.id, parent);
+      }
+    }
+    return parentById;
+  }
+
+  /**
+   * The single `(sourceKind, sourceId)` a payout's membership provably
+   * belongs to — or the empty stamp when membership is empty, any member's
+   * source is missing, an adjustment parent is unloadable, or more than
+   * one source appears.
+   */
+  private static deriveMembershipSource(
+    memberCommissions: Commission[],
+    adjustments: CommissionAdjustment[],
+    parentById: Map<string, Commission>,
+  ): { sourceKind: string; sourceId: string } {
+    const empty = { sourceKind: '', sourceId: '' };
+    if (memberCommissions.length === 0 && adjustments.length === 0) {
+      return empty;
+    }
+    const sources = new Map<string, { sourceKind: string; sourceId: string }>();
+    const add = (sourceKind: string, sourceId: string) => {
+      sources.set(`${sourceKind.length}:${sourceKind}:${sourceId}`, {
+        sourceKind,
+        sourceId,
+      });
+    };
+    for (const commission of memberCommissions) {
+      if (!commission.sourceKind || !commission.sourceId) return empty;
+      add(commission.sourceKind, commission.sourceId);
+    }
+    for (const adjustment of adjustments) {
+      const parent = parentById.get(adjustment.commissionId);
+      if (!parent?.sourceKind || !parent.sourceId) return empty;
+      add(parent.sourceKind, parent.sourceId);
+    }
+    if (sources.size !== 1) return empty;
+    const [only] = sources.values();
+    return only;
+  }
+
+  /**
+   * Prove that EVERY member of a payout belongs to the requested source
+   * and agrees with the payout on earner/currency/tenant. Adjustments
+   * prove their source through their parent commission. Fail-closed: the
+   * first unprovable member decides the verdict.
+   */
+  private static verifySourceMembership(input: {
+    payout: CommissionPayout;
+    commissions: Commission[];
+    adjustments: CommissionAdjustment[];
+    parentById: Map<string, Commission>;
+    sourceKind: string;
+    sourceId: string;
+  }):
+    | { ok: true }
+    | { ok: false; reason: PayoutMembershipRefusalReason; detail: string } {
+    const { payout } = input;
+    // '' and NULL both mean "no tenant" depending on dialect — normalize.
+    const tenantOf = (value: string | null | undefined) => value || null;
+    if (input.commissions.length === 0 && input.adjustments.length === 0) {
+      return {
+        ok: false,
+        reason: 'membership_empty',
+        detail: 'no commissions or adjustments are stamped with this payout',
+      };
+    }
+    for (const commission of input.commissions) {
+      if (commission.earnerId !== payout.earnerId) {
+        return {
+          ok: false,
+          reason: 'earner_mismatch',
+          detail: `commission ${commission.id} belongs to earner '${commission.earnerId}', payout to '${payout.earnerId}'`,
+        };
+      }
+      if (commission.currency !== payout.currency) {
+        return {
+          ok: false,
+          reason: 'currency_mismatch',
+          detail: `commission ${commission.id} is ${commission.currency}, payout is ${payout.currency}`,
+        };
+      }
+      if (tenantOf(commission.tenantId) !== tenantOf(payout.tenantId)) {
+        return {
+          ok: false,
+          reason: 'tenant_mismatch',
+          detail: `commission ${commission.id} and the payout disagree on tenant`,
+        };
+      }
+      if (
+        commission.sourceKind !== input.sourceKind ||
+        commission.sourceId !== input.sourceId
+      ) {
+        return {
+          ok: false,
+          reason: 'source_mismatch',
+          detail: `commission ${commission.id} belongs to source '${commission.sourceKind}:${commission.sourceId}', not '${input.sourceKind}:${input.sourceId}'`,
+        };
+      }
+    }
+    for (const adjustment of input.adjustments) {
+      if (adjustment.earnerId !== payout.earnerId) {
+        return {
+          ok: false,
+          reason: 'earner_mismatch',
+          detail: `adjustment ${adjustment.id} belongs to earner '${adjustment.earnerId}', payout to '${payout.earnerId}'`,
+        };
+      }
+      if (adjustment.currency !== payout.currency) {
+        return {
+          ok: false,
+          reason: 'currency_mismatch',
+          detail: `adjustment ${adjustment.id} is ${adjustment.currency}, payout is ${payout.currency}`,
+        };
+      }
+      if (tenantOf(adjustment.tenantId) !== tenantOf(payout.tenantId)) {
+        return {
+          ok: false,
+          reason: 'tenant_mismatch',
+          detail: `adjustment ${adjustment.id} and the payout disagree on tenant`,
+        };
+      }
+      const parent = input.parentById.get(adjustment.commissionId);
+      if (!parent) {
+        return {
+          ok: false,
+          reason: 'adjustment_parent_missing',
+          detail: `adjustment ${adjustment.id} parent commission '${adjustment.commissionId}' cannot be loaded to prove source ownership`,
+        };
+      }
+      if (
+        parent.sourceKind !== input.sourceKind ||
+        parent.sourceId !== input.sourceId
+      ) {
+        return {
+          ok: false,
+          reason: 'source_mismatch',
+          detail: `adjustment ${adjustment.id} parent commission belongs to source '${parent.sourceKind}:${parent.sourceId}', not '${input.sourceKind}:${input.sourceId}'`,
+        };
+      }
+    }
+    return { ok: true };
+  }
+
+  /** The initialized database behind the payout collection. */
+  private resolveDatabase(): DatabaseInterface {
+    const db = this.deps.payouts.options.db;
+    if (!db || typeof db === 'string' || !('query' in db)) {
+      throw new Error(
+        'CommissionPayoutService: the payout collection has no initialized database',
+      );
+    }
+    return db as DatabaseInterface;
+  }
+
+  /**
+   * Run `fn` inside a database transaction. PostgreSQL transactions get
+   * their own pooled connection, so they run concurrently (the FOR UPDATE
+   * row lock inside `fn` provides the per-payout serialization, replica-
+   * safe). Single-connection engines (SQLite, DuckDB, JSON) multiplex
+   * every transaction over one connection where concurrent BEGIN/COMMIT
+   * pairs would interleave — their transitions chain per database
+   * instance, giving equivalent serialized behavior in-process. An engine
+   * with no transaction support at all still gets the serialized chain.
+   */
+  private async runSerializedTransaction<T>(
+    db: DatabaseInterface,
+    fn: (txDb: DatabaseInterface) => Promise<T>,
+  ): Promise<T> {
+    const capable = db as TransactionCapableDatabase;
+    const runTx = () =>
+      typeof capable.transaction === 'function'
+        ? capable.transaction(fn)
+        : fn(db);
+    if (typeof capable.acquireSession === 'function') {
+      return await runTx();
+    }
+    const previous =
+      singleConnectionTransitionTails.get(db) ?? Promise.resolve();
+    // Chain regardless of the predecessor's outcome — a failed transition
+    // must not poison the queue behind it.
+    const turn = previous.then(runTx, runTx);
+    singleConnectionTransitionTails.set(
+      db,
+      turn.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return await turn;
   }
 
   /**

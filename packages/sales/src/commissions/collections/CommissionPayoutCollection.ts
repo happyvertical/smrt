@@ -39,6 +39,29 @@ export class CommissionPayoutCollection extends SmrtCollection<CommissionPayout>
   }
 
   /**
+   * One page of payouts carrying the derived single-source stamp for
+   * `(sourceKind, sourceId)`, newest first with a deterministic id
+   * tiebreak. This is the RAW indexed page — stamped rows only, membership
+   * unverified. Consumers want
+   * `CommissionPayoutService.getSourcePayoutHistory`, which re-verifies
+   * each page's membership and fails closed on rows the stamp alone cannot
+   * prove.
+   */
+  async findBySource(
+    sourceKind: string,
+    sourceId: string,
+    page: { limit: number; offset: number },
+  ): Promise<CommissionPayout[]> {
+    if (!sourceKind || !sourceId) return [];
+    return await this.list({
+      where: { sourceKind, sourceId },
+      orderBy: ['created_at DESC', 'id DESC'],
+      limit: page.limit,
+      offset: page.offset,
+    });
+  }
+
+  /**
    * Σ totalAmountCents of COMPLETED payouts for an earner+currency —
    * lifetime settled earnings (integer cents).
    */

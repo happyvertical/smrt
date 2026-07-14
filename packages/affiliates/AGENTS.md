@@ -27,9 +27,10 @@ imports `@happyvertical/smrt-sales` directly.
 ## Name/value mapping notes
 
 - `PartnerStatus` values align exactly with the `EarnerStatus` union.
-- `PayoutStatus` values align exactly with the `CommissionPayoutStatus`
-  union; `PayoutMethod` values align with the new `PayoutMethod` union
-  (which adds `'other'`).
+- `PayoutStatus` values are a subset of the `CommissionPayoutStatus` union
+  (which adds `'rejected'`; legacy affiliates had no reject) — the shared
+  string values align exactly. `PayoutMethod` values align with the new
+  `PayoutMethod` union (which adds `'other'`).
 - `CommissionStatus.INCLUDED` (`'included'`) has **no direct equivalent**;
   the nearest new state is `'payable'` with `payoutId` set. `PENDING`/`PAID`
   align.

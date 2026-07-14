@@ -346,36 +346,56 @@ describe('payout timeline and gating', () => {
     expect(steps.at(-1)?.state).toBe('current');
   });
 
+  it('collapses the timeline to the decline actually taken for rejected batches', () => {
+    const steps = payoutStatusTimeline('rejected');
+    expect(steps).toEqual([
+      { status: 'pending', state: 'done' },
+      { status: 'rejected', state: 'current' },
+    ]);
+  });
+
   it('gates operator actions by batch status', () => {
     expect(payoutActionsFor('pending')).toEqual({
       canApprove: true,
       canMarkProcessing: false,
       canComplete: false,
       canFail: false,
+      canReject: true,
     });
     expect(payoutActionsFor('approved')).toEqual({
       canApprove: false,
       canMarkProcessing: true,
       canComplete: false,
       canFail: true,
+      canReject: true,
     });
     expect(payoutActionsFor('processing')).toEqual({
       canApprove: false,
       canMarkProcessing: false,
       canComplete: true,
       canFail: true,
+      canReject: false,
     });
     expect(payoutActionsFor('completed')).toEqual({
       canApprove: false,
       canMarkProcessing: false,
       canComplete: false,
       canFail: false,
+      canReject: false,
     });
     expect(payoutActionsFor('failed')).toEqual({
       canApprove: false,
       canMarkProcessing: false,
       canComplete: false,
       canFail: false,
+      canReject: false,
+    });
+    expect(payoutActionsFor('rejected')).toEqual({
+      canApprove: false,
+      canMarkProcessing: false,
+      canComplete: false,
+      canFail: false,
+      canReject: false,
     });
   });
 });
