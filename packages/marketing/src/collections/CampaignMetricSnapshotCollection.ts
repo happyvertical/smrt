@@ -25,14 +25,13 @@ export class CampaignMetricSnapshotCollection extends SmrtCollection<CampaignMet
     const existing = await this.findByDedupeKey(dedupeKey);
     if (existing) return { snapshot: existing, created: false };
 
-    const { periodStart, periodEnd, ...rest } = options;
     try {
       const snapshot = await this.create({
-        ...rest,
-        ...(periodStart !== undefined
-          ? { periodStart: new Date(periodStart) }
-          : {}),
-        ...(periodEnd !== undefined ? { periodEnd: new Date(periodEnd) } : {}),
+        ...options,
+        // Keep runtime values uncoerced so the model rejects null/invalid
+        // periods instead of allowing Date(null) to become the Unix epoch.
+        periodStart: options.periodStart as Date | undefined,
+        periodEnd: options.periodEnd as Date | undefined,
         _insertOnly: true,
       });
       return { snapshot, created: true };

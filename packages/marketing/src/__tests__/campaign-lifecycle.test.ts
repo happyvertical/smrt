@@ -159,6 +159,14 @@ describe('Campaign model and lifecycle', () => {
         status: 'draft',
       }),
     ).rejects.toThrow(/illegal status transition/);
+
+    await expect(
+      campaigns.create({
+        campaignKey: 'guarded',
+        name: 'Natural-key overwrite',
+        status: 'draft',
+      }),
+    ).rejects.toThrow(/illegal status transition/);
   });
 
   it('round-trips guarded metadata and date values', async () => {

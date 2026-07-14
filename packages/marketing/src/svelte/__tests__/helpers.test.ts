@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatCents } from '../format.js';
 import {
   calculateChannelMix,
   campaignStatusBadgeVariant,
@@ -8,6 +9,13 @@ import {
 } from '../types.js';
 
 describe('marketing Svelte helpers', () => {
+  it('keeps currency formatting render-safe for invalid inputs', () => {
+    expect(formatCents(12_345, 'NOT_A_CODE', 'en-US')).toBe(
+      '123.45 NOT_A_CODE',
+    );
+    expect(formatCents(Number.NaN, 'USD', 'en-US')).toBe('—');
+  });
+
   it('summarizes campaign metrics without mixing currencies', () => {
     const summary = summarizeMarketingDashboard([
       {

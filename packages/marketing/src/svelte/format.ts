@@ -5,10 +5,17 @@ export function formatCents(
   currency: string,
   locale?: string,
 ): string {
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-  }).format(cents / 100);
+  if (!Number.isFinite(cents)) return '—';
+  const sign = cents < 0 ? -1 : 1;
+  const major = (sign * Math.round(Math.abs(cents))) / 100;
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+    }).format(major);
+  } catch {
+    return `${major.toFixed(2)} ${currency}`.trim();
+  }
 }
 
 export function formatNumber(value: number, locale?: string): string {

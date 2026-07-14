@@ -144,6 +144,17 @@ export class Campaign extends SmrtObject {
         // DB not ready / table absent; fall through to the hydrated state.
       }
     }
+    if (this.campaignKey) {
+      try {
+        const row = await this.db.get(this.tableName, {
+          tenant_id: this.tenantId,
+          campaign_key: this.campaignKey,
+        });
+        if (row && row.status != null) return row.status as CampaignStatus;
+      } catch {
+        // DB not ready / table absent; fall through to the hydrated state.
+      }
+    }
     return loadedCampaignStatus.get(this);
   }
 

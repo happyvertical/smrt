@@ -48,6 +48,16 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
         where: { campaignKey: 'postgres-global-campaign' },
       }),
     ).toHaveLength(1);
+    second.transitionTo('scheduled');
+    await second.save();
+    second.transitionTo('active');
+    await second.save();
+    await expect(
+      campaigns.create({
+        campaignKey: 'postgres-global-campaign',
+        name: 'Lifecycle bypass attempt',
+      }),
+    ).rejects.toThrow(/illegal status transition/);
 
     const tenantA = randomUUID();
     const tenantB = randomUUID();

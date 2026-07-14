@@ -116,6 +116,57 @@ describe('metric ingestion and budget pacing', () => {
         periodStart: 'not-a-date',
       }),
     ).rejects.toThrow(/valid dates/);
+
+    await expect(
+      ingestion.ingest({
+        ...input,
+        dedupeKey: 'missing-period',
+        periodStart: null as unknown as Date,
+      }),
+    ).rejects.toThrow(/requires periodStart and periodEnd/);
+    await expect(
+      ingestion.ingest({
+        ...input,
+        dedupeKey: 'missing-period-end',
+        periodEnd: null as unknown as Date,
+      }),
+    ).rejects.toThrow(/requires periodStart and periodEnd/);
+
+    await expect(
+      snapshots.getOrCreateByDedupeKey({
+        ...input,
+        dedupeKey: 'null-period',
+        periodStart: null as unknown as Date,
+      }),
+    ).rejects.toThrow(/valid dates/);
+  });
+
+  it('rejects channel evidence attributed to a different campaign', async () => {
+    const campaignA = await campaigns.create({
+      campaignKey: 'channel-scope-a',
+      name: 'Channel scope A',
+    });
+    const campaignB = await campaigns.create({
+      campaignKey: 'channel-scope-b',
+      name: 'Channel scope B',
+    });
+    const channelB = await channels.create({
+      campaignId: campaignB.id ?? '',
+      channelKind: 'ad_group',
+      channelRef: 'campaign-b-ad-group',
+    });
+
+    const ingestion = new MetricIngestionService(snapshots);
+    await expect(
+      ingestion.ingest({
+        campaignId: campaignA.id ?? '',
+        campaignChannelId: channelB.id ?? '',
+        periodStart: new Date('2026-07-03T00:00:00Z'),
+        periodEnd: new Date('2026-07-03T23:59:59Z'),
+        source: 'channel-sync',
+        dedupeKey: 'mismatched-channel-campaign',
+      }),
+    ).rejects.toThrow(/does not belong to campaignId/);
   });
 
   it('uses campaign rollups when present and otherwise sums channel evidence', async () => {

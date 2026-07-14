@@ -95,6 +95,7 @@ export class CampaignMetricSnapshot extends SmrtObject {
 
   override async save(): Promise<this> {
     this.assertMetrics();
+    await this.assertChannelMatchesCampaign();
     const captured = persistedSnapshotState.get(this);
     if (captured !== undefined) {
       if (captured !== this.serializeState()) {
@@ -174,6 +175,19 @@ export class CampaignMetricSnapshot extends SmrtObject {
       (!Number.isInteger(this.revenueCents) || this.revenueCents < 0)
     ) {
       throw new Error('revenueCents must be null or a non-negative integer.');
+    }
+  }
+
+  private async assertChannelMatchesCampaign(): Promise<void> {
+    if (!this.campaignChannelId) return;
+    const channel = (await this.loadRelated(
+      'campaignChannelId',
+    )) as CampaignChannel;
+    if (channel.campaignId !== this.campaignId) {
+      throw new Error(
+        `CampaignMetricSnapshot campaignChannelId '${this.campaignChannelId}' ` +
+          `does not belong to campaignId '${this.campaignId}'.`,
+      );
     }
   }
 

@@ -31,9 +31,10 @@ publish-surface changes.
   use integer cents and dates.
 - **CampaignMetricSnapshot**: immutable period evidence with a global
   `dedupe_key` natural key. A snapshot always carries `campaignId`; a null
-  `campaignChannelId` means campaign-level rollup evidence. API/MCP/CLI expose
-  create/list/get only, and the save guard rejects hydrated edits, blind-id
-  overwrites, and natural-key overwrites. Programmatic deletion is rejected.
+  `campaignChannelId` means campaign-level rollup evidence; when present, the
+  channel must belong to that same campaign. API/MCP/CLI expose create/list/get
+  only, and the save guard rejects hydrated edits, blind-id overwrites, and
+  natural-key overwrites. Programmatic deletion is rejected.
 
 Every model is `@TenantScoped({ mode: 'optional' })` with nullable `tenantId`.
 All generated surfaces are explicit; never omit `api`, `mcp`, or `cli` config.

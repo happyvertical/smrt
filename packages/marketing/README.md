@@ -52,6 +52,9 @@ await ingestion.ingest({
   dedupeKey: `${tenantId}:summer-demand-2026:ad-group-42:2026-07-01`,
 });
 
+// Channel-scoped evidence is accepted only when the channel belongs to the
+// supplied campaign. Reporting periods are required valid date-like values.
+
 const pacing = await BudgetPacingService.create({ db });
 console.log(await pacing.getCampaignPacing(campaign.id));
 ```

@@ -27,7 +27,7 @@ export class MetricIngestionService {
     if (!options.dedupeKey?.trim()) {
       throw new Error('Metric ingestion requires dedupeKey.');
     }
-    if (options.periodStart === undefined || options.periodEnd === undefined) {
+    if (options.periodStart == null || options.periodEnd == null) {
       throw new Error('Metric ingestion requires periodStart and periodEnd.');
     }
     return await this.snapshots.getOrCreateByDedupeKey(options);
