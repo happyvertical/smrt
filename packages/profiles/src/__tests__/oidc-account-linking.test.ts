@@ -1127,7 +1127,7 @@ async function runProfileMatrixScenario(
   expect(expected.resolverCalls).toBe(0);
   const profileIds = values.map((value) => value.profile.id);
   if (expected.selectedProfile === 'concurrent_winner') {
-    expect(new Set(profileIds)).toHaveLength(1);
+    expect(new Set(profileIds).size).toBe(1);
   } else if (expected.selectedProfile === 'exact_identity_profile') {
     expect(profileIds.every((id) => id === identityProfileId)).toBe(true);
     expect(values.every((value) => value.oidcIdentity.id === identityId)).toBe(

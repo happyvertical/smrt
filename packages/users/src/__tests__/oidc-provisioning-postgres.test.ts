@@ -544,7 +544,8 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     await seedPersonType(fixture.rootDb);
     await fixture.rootDb.query(
       'DELETE FROM _smrt_backfills WHERE name IN (?, ?)',
-      [PROFILE_EMAIL_KEY_BACKFILL_NAME, USER_EMAIL_KEY_BACKFILL_NAME],
+      PROFILE_EMAIL_KEY_BACKFILL_NAME,
+      USER_EMAIL_KEY_BACKFILL_NAME,
     );
     const users = await UserCollection.create({ db: fixture.rootDb });
     let resolverCalls = 0;
