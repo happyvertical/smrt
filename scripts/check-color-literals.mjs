@@ -49,6 +49,7 @@ const STRICT_PACKAGES = new Set([
   'projects',
   'users',
   'messages',
+  'marketing',
 ]);
 
 /**

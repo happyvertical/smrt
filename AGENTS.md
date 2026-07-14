@@ -27,7 +27,7 @@ for package-specific architecture and validation.
 - Foundation: `core`, `config`, `types`, `scanner`, `tenancy`, `vitest`, `cli`.
 - Runtime: `agents`, `jobs`, `users`, `profiles`, `personas`.
 - Domain packages include content/media, commerce, events, places, facts, sites,
-  properties, tags, social, and secrets.
+  properties, tags, social, marketing, and secrets.
 - Client/tooling packages include `smrt-web`, `smrt-svelte`, mobile packages,
   templates, and `smrt-dev-mcp`. The private `bundle-gate` package is the CI
   consumer bundle reachability/size gate (#1980).
