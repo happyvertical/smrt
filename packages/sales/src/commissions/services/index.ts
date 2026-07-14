@@ -15,5 +15,21 @@ export {
   type CommissionPayoutServiceDeps,
   type CreatePayoutBatchInput,
   type CreatePayoutBatchResult,
+  type PayoutMembershipRefusalReason,
+  type PayoutSourceTransitionAction,
+  type PayoutTransitionRefusalReason,
+  type SourcePayoutHistoryInput,
+  type SourcePayoutHistoryPage,
+  type TransitionPayoutForSourceInput,
+  type TransitionPayoutForSourceResult,
 } from './CommissionPayoutService.js';
 export { CommissionSettlementService } from './CommissionSettlementService.js';
+export {
+  EarnerAttributionService,
+  type EarnerAttributionServiceDeps,
+  type EarnerSourceResolutionRefusal,
+  type RegisterAttributionInput,
+  type RegisterAttributionResult,
+  type ResolveActiveEarnerResult,
+  type ResolveActiveEarnersBySourcesResult,
+} from './EarnerAttributionService.js';

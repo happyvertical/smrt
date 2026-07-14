@@ -11,4 +11,5 @@ export {
   validateCommissionPlanComponents,
 } from './CommissionPlan.js';
 export { Earner } from './Earner.js';
+export { EarnerSourceAttribution } from './EarnerSourceAttribution.js';
 export { EarningEvent } from './EarningEvent.js';

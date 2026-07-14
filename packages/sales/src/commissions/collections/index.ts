@@ -11,4 +11,5 @@ export {
   CommissionPlanCollection,
 } from './CommissionPlanCollection.js';
 export { EarnerCollection } from './EarnerCollection.js';
+export { EarnerSourceAttributionCollection } from './EarnerSourceAttributionCollection.js';
 export { EarningEventCollection } from './EarningEventCollection.js';

@@ -418,6 +418,7 @@ export function payoutStatusBadgeVariant(
     case 'completed':
       return 'success';
     case 'failed':
+    case 'rejected':
       return 'error';
     default:
       return 'default';
@@ -739,15 +740,18 @@ export interface PayoutTimelineStep {
 /**
  * Linear settlement timeline for a payout batch. The happy path is
  * `pending → approved → processing → completed`; for a `failed` batch the
- * terminal marker replaces `completed`.
+ * terminal marker replaces `completed`, and a `rejected` batch collapses to
+ * the decline it actually took (`pending → rejected`).
  */
 export function payoutStatusTimeline(
   status: CommissionPayoutStatus,
 ): PayoutTimelineStep[] {
   const path: CommissionPayoutStatus[] =
-    status === 'failed'
-      ? ['pending', 'approved', 'processing', 'failed']
-      : ['pending', 'approved', 'processing', 'completed'];
+    status === 'rejected'
+      ? ['pending', 'rejected']
+      : status === 'failed'
+        ? ['pending', 'approved', 'processing', 'failed']
+        : ['pending', 'approved', 'processing', 'completed'];
   const index = path.indexOf(status);
   return path.map((step, i) => ({
     status: step,
@@ -761,12 +765,14 @@ export interface PayoutActions {
   canMarkProcessing: boolean;
   canComplete: boolean;
   canFail: boolean;
+  canReject: boolean;
 }
 
 /**
  * Action gating for {@link PayoutBatchReview}, mirroring the CommissionPayout
  * transition guard: `pending → approved → processing → completed | failed`,
- * with `failed` reachable from `approved`/`processing`.
+ * with `failed` reachable from `approved`/`processing` and the terminal
+ * decline `rejected` reachable from `pending`/`approved`.
  */
 export function payoutActionsFor(
   status: CommissionPayoutStatus,
@@ -776,6 +782,7 @@ export function payoutActionsFor(
     canMarkProcessing: status === 'approved',
     canComplete: status === 'processing',
     canFail: status === 'approved' || status === 'processing',
+    canReject: status === 'pending' || status === 'approved',
   };
 }
 
