@@ -2587,6 +2587,9 @@ importers:
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
+      '@happyvertical/sql':
+        specifier: ^0.78.1
+        version: 0.78.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       jose:
         specifier: ^6.2.3
         version: 6.2.3
@@ -2594,9 +2597,6 @@ importers:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
-      '@happyvertical/sql':
-        specifier: ^0.78.3
-        version: 0.78.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.56.4)(typescript@5.9.3)

@@ -61,6 +61,20 @@ export class CommissionAdjustmentCollection extends SmrtCollection<CommissionAdj
   }
 
   /**
+   * Adjustments settled by ANY of the given payout batches, in one `IN`
+   * query — the adjustment twin of `CommissionCollection.findByPayouts`.
+   * Empty input returns `[]` without querying.
+   */
+  async findByPayouts(payoutIds: string[]): Promise<CommissionAdjustment[]> {
+    const ids = [...new Set(payoutIds.filter(Boolean))];
+    if (ids.length === 0) return [];
+    return await this.list({
+      where: { payoutId: ids },
+      orderBy: 'created_at ASC',
+    });
+  }
+
+  /**
    * Conditionally claim adjustment rows for a payout batch — the adjustment
    * twin of `CommissionCollection.claimForPayout`. Rows already claimed by a
    * DIFFERENT payout are skipped; rows already claimed by THIS payout pass

@@ -27,6 +27,7 @@ import '../__smrt-register__.js';
 
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type { OidcProfileResolver } from '../collections/UserCollection.js';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
 import {
   decodeOidcTransaction,
@@ -51,6 +52,11 @@ import {
   type TerminalAuthServiceOptions,
 } from '../services/TerminalAuthService.js';
 
+export type {
+  NormalizedOidcClaims,
+  OidcProfileResolver,
+  OidcProfileResolverContext,
+} from '../collections/UserCollection.js';
 export {
   MobileAuthError,
   type MobileAuthErrorCode,
@@ -196,6 +202,12 @@ export interface OidcSvelteKitOptions
   sessionTtl?: number;
   /** Optional tenant to bind to the session. */
   tenantId?: OidcStringResolver<string | null | undefined>;
+  /**
+   * Resolve or reject the canonical Profile after validated claims and before
+   * User/session creation. The resolver runs inside the provisioning
+   * transaction and may be retried after a concurrent unique-key race.
+   */
+  resolveProfile?: OidcProfileResolver;
   /** Redirect target after successful callback. */
   successRedirect?: OidcStringResolver<string>;
   /** Redirect target after failed callback. If omitted, failures return 401. */
@@ -780,9 +792,11 @@ function redirectResponse(location: string | URL): Response {
   });
 }
 
-function failureResponse(error: unknown): Response {
-  const message = error instanceof Error ? error.message : 'OIDC login failed.';
-  return new Response(message, {
+function failureResponse(_error: unknown): Response {
+  // The callback is unauthenticated. Provisioning and resolver errors can
+  // contain emails, Profile IDs, tenancy state, or database details; expose
+  // the full Error only through the server-side failureRedirect callback.
+  return new Response('OIDC login failed.', {
     status: 401,
     headers: {
       'content-type': 'text/plain; charset=utf-8',

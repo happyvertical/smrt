@@ -1,5 +1,29 @@
 # @happyvertical/smrt-cli
 
+## 0.39.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.39.14
+  - @happyvertical/smrt-agents@0.39.14
+  - @happyvertical/smrt-dev-mcp@0.39.14
+  - @happyvertical/smrt-config@0.39.14
+  - @happyvertical/smrt-playground@0.39.14
+  - @happyvertical/smrt-types@0.39.14
+
+## 0.39.13
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.39.13
+  - @happyvertical/smrt-agents@0.39.13
+  - @happyvertical/smrt-dev-mcp@0.39.13
+  - @happyvertical/smrt-config@0.39.13
+  - @happyvertical/smrt-playground@0.39.13
+  - @happyvertical/smrt-types@0.39.13
+
 ## 0.39.12
 
 ### Patch Changes

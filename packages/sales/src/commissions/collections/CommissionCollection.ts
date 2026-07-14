@@ -95,6 +95,21 @@ export class CommissionCollection extends SmrtCollection<Commission> {
   }
 
   /**
+   * Commissions settled by ANY of the given payout batches, in one `IN`
+   * query — the batched-membership primitive behind the source-scoped
+   * payout-history verification (one query per page instead of one per
+   * payout). Empty input returns `[]` without querying.
+   */
+  async findByPayouts(payoutIds: string[]): Promise<Commission[]> {
+    const ids = [...new Set(payoutIds.filter(Boolean))];
+    if (ids.length === 0) return [];
+    return await this.list({
+      where: { payoutId: ids },
+      orderBy: 'created_at ASC',
+    });
+  }
+
+  /**
    * Conditionally claim rows for a payout batch: each row is re-loaded
    * fresh and stamped with `payoutId` only when it is still payable and
    * unclaimed (or already claimed by THIS payout — the idempotent-retry /

@@ -44,6 +44,7 @@ export {
   type Nip05Request,
   type NostrEvent,
   type NostrKeypair,
+  normalizeIdentityEmail,
   npubToPubkey,
   nsecToPrivkey,
   parseNip05Identifier,
@@ -56,7 +57,6 @@ export {
   verifyAuthEvent,
   verifyNostrSignature,
 } from './auth';
-
 // Auth-related collections
 export { ApiKeyCollection } from './collections/ApiKeyCollection';
 export { AuditLogCollection } from './collections/AuditLogCollection';
@@ -65,16 +65,29 @@ export {
   type Nip05Response,
   NostrIdentityCollection,
 } from './collections/NostrIdentityCollection';
-export { OidcIdentityCollection } from './collections/OidcIdentityCollection';
+export {
+  AmbiguousOidcIdentityError,
+  OidcIdentityCollection,
+} from './collections/OidcIdentityCollection';
 export { ProfileAssetCollection } from './collections/ProfileAssetCollection';
 // Export collections
-export { ProfileCollection } from './collections/ProfileCollection';
+export {
+  CanonicalPersonProfileError,
+  type CanonicalPersonProfileErrorCode,
+  ProfileCollection,
+} from './collections/ProfileCollection';
 export { ProfileMetadataCollection } from './collections/ProfileMetadataCollection';
 export { ProfileMetafieldCollection } from './collections/ProfileMetafieldCollection';
 export { ProfileRelationshipCollection } from './collections/ProfileRelationshipCollection';
 export { ProfileRelationshipTermCollection } from './collections/ProfileRelationshipTermCollection';
 export { ProfileRelationshipTypeCollection } from './collections/ProfileRelationshipTypeCollection';
 export { ProfileTypeCollection } from './collections/ProfileTypeCollection';
+// Deploy-time data migrations
+export {
+  type BackfillProfileEmailKeysResult,
+  backfillProfileEmailKeys,
+  PROFILE_EMAIL_KEY_BACKFILL_NAME,
+} from './migrations/backfillProfileEmailKeys.js';
 export type { ApiKeyOptions, GenerateKeyResult } from './models/ApiKey';
 // Auth-related models
 export { ApiKey } from './models/ApiKey';

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-sales",
-  "version": "0.39.12",
+  "version": "0.39.14",
   "description": "Modular sales for the SMRT framework: CRM (Leads, Opportunities, Pipelines), referral intake with versioned attribution policies, neutral commissions with snapshots and payouts, and reusable Svelte surfaces",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,7 +42,7 @@
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/commissions/__tests__/commission-plan.postgres.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run .postgres.test",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

@@ -30,6 +30,12 @@ describe('getWorkspaceViteAliases', () => {
     );
   });
 
+  it('aliases the trusted profiles OIDC integration subpath to source', () => {
+    expect(
+      byFind.get('@happyvertical/smrt-profiles/internal/oidc-provisioning'),
+    ).toMatch(/packages\/profiles\/src\/internal\/oidc-provisioning\.ts$/);
+  });
+
   it('aliases the S11 component-test harness subpaths (smrt-vitest special-case)', () => {
     expect(byFind.get('@happyvertical/smrt-vitest/svelte')).toMatch(
       /src\/svelte\.ts$/,

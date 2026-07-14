@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-profiles",
-  "version": "0.39.12",
+  "version": "0.39.14",
   "description": "Profile management system with relationships, metadata, and reciprocal associations for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -18,6 +18,10 @@
     "./utils": {
       "types": "./dist/utils.d.ts",
       "import": "./dist/utils.js"
+    },
+    "./internal/oidc-provisioning": {
+      "types": "./dist/oidc-provisioning.d.ts",
+      "import": "./dist/internal/oidc-provisioning.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"

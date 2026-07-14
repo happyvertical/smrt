@@ -73,8 +73,13 @@ export {
   MagicLinkTokenCollection,
   MembershipCollection,
   MembershipOverrideCollection,
+  type NormalizedOidcClaims,
   type OidcClaims,
   type OidcIdentityResult,
+  type OidcProfileResolver,
+  type OidcProfileResolverContext,
+  OidcProvisioningError,
+  type OidcProvisioningErrorCode,
   PermissionCollection,
   RoleCollection,
   RolePermissionCollection,
@@ -92,6 +97,14 @@ export {
   UsersCliAuthRequestCollection,
   UsersMagicLinkTokenCollection,
 } from './collections/index.js';
+// Deploy-time data migrations
+export {
+  type BackfillUserEmailKeysResult,
+  backfillUserEmailKeys,
+  type DuplicateUserEmailKey,
+  UserEmailKeyBackfillError,
+  type UserEmailKeyBackfillErrorCode,
+} from './migrations/backfillUserEmailKeys.js';
 // Models
 export {
   AccessRequest,

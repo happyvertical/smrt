@@ -33,6 +33,7 @@ import {
   closeAllOidcServers,
   OIDC_USERS_TEST_SCHEMA,
   type OidcTestServer,
+  prepareOidcEmailKeyBackfills,
   startOidcServer,
 } from './helpers/oidc-test-server.js';
 
@@ -939,6 +940,7 @@ describe('mobile auth default user provisioning', () => {
     const { getDatabase, syncSchema } = await import('@happyvertical/sql');
     const handle = await getDatabase(db);
     await syncSchema({ db: handle, schema: OIDC_USERS_TEST_SCHEMA });
+    await prepareOidcEmailKeyBackfills(handle);
     server = await startOidcServer();
   });
 

@@ -1,5 +1,40 @@
 # @happyvertical/smrt-core
 
+## 0.39.14
+
+### Patch Changes
+
+- ### Features
+
+  - source-scoped payout history, earner attribution lookups, atomic transitions (sales)
+
+  ### Bug Fixes
+
+  - harden source APIs per codex review of PR #2004 (sales)
+  - scope registerAttribution to the target tenant (sales)
+
+  ### Other Changes
+
+  - docs: align CommissionPlan natural-key note with the null-aware upsert (sales)
+  - @happyvertical/smrt-config@0.39.14
+  - @happyvertical/smrt-types@0.39.14
+  - @happyvertical/smrt-scanner@0.39.14
+
+## 0.39.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve aggregate manifest identities (cli)
+
+  ### Other Changes
+
+  - ci: extend publish dry-run timeout
+  - @happyvertical/smrt-config@0.39.13
+  - @happyvertical/smrt-types@0.39.13
+  - @happyvertical/smrt-scanner@0.39.13
+
 ## 0.39.12
 
 ### Patch Changes

@@ -21,6 +21,7 @@ import {
 import {
   type OidcClaims,
   type OidcIdentityResult,
+  type OidcProfileResolver,
   UserCollection,
 } from '../collections/UserCollection.js';
 
@@ -143,6 +144,11 @@ export interface OidcLoginServiceOptions extends SmrtClassOptions {
   clockTolerance?: number | string;
   /** Provider metadata cache TTL in milliseconds. Defaults to 5 minutes. */
   metadataCacheTtlMs?: number;
+  /**
+   * Application Profile resolver invoked after claims validation and before
+   * OIDC identity, User, or session creation.
+   */
+  resolveProfile?: OidcProfileResolver;
 }
 
 export class OidcLoginError extends Error {
@@ -311,11 +317,16 @@ function mergeClaims(
     throw new OidcLoginError('OIDC userinfo subject does not match ID token.');
   }
 
+  const useIdTokenEmail = idTokenClaims.email !== undefined;
   return {
     ...idTokenClaims,
-    email: idTokenClaims.email ?? userInfoClaims.email,
-    email_verified:
-      idTokenClaims.email_verified ?? userInfoClaims.email_verified,
+    // Email verification is meaningful only for the email asserted by the
+    // same source. Never borrow an ID-token verification flag for a userinfo
+    // address (or vice versa).
+    email: useIdTokenEmail ? idTokenClaims.email : userInfoClaims.email,
+    email_verified: useIdTokenEmail
+      ? idTokenClaims.email_verified
+      : userInfoClaims.email_verified,
     name: idTokenClaims.name ?? userInfoClaims.name,
     preferred_username:
       idTokenClaims.preferred_username ?? userInfoClaims.preferred_username,
@@ -452,6 +463,7 @@ export class OidcLoginService {
   private readonly clockTolerance: number | string;
   private readonly fetchImpl: typeof fetch;
   private readonly metadataCacheTtlMs: number;
+  private readonly resolveProfile?: OidcProfileResolver;
   private metadataFetchedAt = 0;
   private metadataPromise?: Promise<OidcProviderMetadata>;
   private remoteJwks?: JWTVerifyGetKey;
@@ -465,6 +477,7 @@ export class OidcLoginService {
       metadataCacheTtlMs,
       provider,
       providerName,
+      resolveProfile,
       ...classOptions
     } = options;
 
@@ -479,6 +492,7 @@ export class OidcLoginService {
     this.fetchImpl = ensureFetch(fetchOverride);
     this.metadataCacheTtlMs =
       metadataCacheTtlMs ?? DEFAULT_METADATA_CACHE_TTL_MS;
+    this.resolveProfile = resolveProfile;
     this.provider = {
       ...provider,
       issuer: normalizeIssuer(provider.issuer),
@@ -610,7 +624,9 @@ export class OidcLoginService {
       transaction,
     );
     const users = await UserCollection.create(this.classOptions);
-    const result = await users.getOrCreateFromOidc(claims, this.providerName);
+    const result = await users.getOrCreateFromOidc(claims, this.providerName, {
+      resolveProfile: this.resolveProfile,
+    });
 
     return {
       ...result,

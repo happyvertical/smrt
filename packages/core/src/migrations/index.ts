@@ -12,6 +12,7 @@
 // Backfill tracking (data corrections, not schema migrations)
 export {
   type BackfillRecord,
+  BackfillTableUnavailableError,
   BackfillTracker,
   type BackfillTrackerOptions,
 } from './backfill-tracker.js';

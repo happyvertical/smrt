@@ -1,14 +1,14 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379238701,
+  "timestamp": 1784000192728,
   "packageName": "@happyvertical/smrt-profiles",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.39.12",
   "objects": {
     "@happyvertical/smrt-profiles:ApiKeyCollection": {
       "name": "apikeycollection",
       "className": "ApiKeyCollection",
       "qualifiedName": "@happyvertical/smrt-profiles:ApiKeyCollection",
-      "collection": "apikeies",
+      "collection": "apikeys",
       "filePath": "packages/profiles/src/collections/ApiKeyCollection.ts",
       "packageName": "@happyvertical/smrt-profiles",
       "fields": {},
@@ -139,8 +139,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -178,7 +178,7 @@
             "unique": true
           }
         ],
-        "version": "0cb00ee9"
+        "version": "a8704e4a"
       }
     },
     "@happyvertical/smrt-profiles:AuditLogCollection": {
@@ -332,8 +332,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -371,7 +371,7 @@
             "unique": true
           }
         ],
-        "version": "4db3924e"
+        "version": "8934683a"
       }
     },
     "@happyvertical/smrt-profiles:MagicLinkTokenCollection": {
@@ -552,8 +552,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -591,7 +591,7 @@
             "unique": true
           }
         ],
-        "version": "e406b402"
+        "version": "1276befb"
       }
     },
     "@happyvertical/smrt-profiles:NostrIdentityCollection": {
@@ -788,8 +788,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -827,7 +827,7 @@
             "unique": true
           }
         ],
-        "version": "cb131355"
+        "version": "042a84e0"
       }
     },
     "@happyvertical/smrt-profiles:OidcIdentityCollection": {
@@ -944,8 +944,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -983,7 +983,72 @@
             "unique": true
           }
         ],
-        "version": "fd355bfc"
+        "version": "38013ce3"
+      }
+    },
+    "@happyvertical/smrt-profiles:OidcProfileEmailReservationCollection": {
+      "name": "oidcprofileemailreservationcollection",
+      "className": "OidcProfileEmailReservationCollection",
+      "qualifiedName": "@happyvertical/smrt-profiles:OidcProfileEmailReservationCollection",
+      "collection": "oidcprofileemailreservations",
+      "filePath": "packages/profiles/src/collections/OidcProfileEmailReservationCollection.ts",
+      "packageName": "@happyvertical/smrt-profiles",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "oidc_profile_email_reservations"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "OidcProfileEmailReservation",
+      "exportName": "OidcProfileEmailReservationCollection",
+      "collectionExportName": "OidcProfileEmailReservationCollectionCollection",
+      "schema": {
+        "tableName": "oidc_profile_email_reservations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_profile_email_reservations\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "oidc_profile_email_reservations_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "oidc_profile_email_reservations_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "2c5044ab"
       }
     },
     "@happyvertical/smrt-profiles:ProfileAssetCollection": {
@@ -1196,8 +1261,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1235,7 +1300,7 @@
             "unique": true
           }
         ],
-        "version": "919e91b5"
+        "version": "e6aeda33"
       }
     },
     "@happyvertical/smrt-profiles:ProfileCollection": {
@@ -1258,6 +1323,58 @@
             }
           ],
           "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findUniqueGlobalPersonByEmail": {
+          "name": "findUniqueGlobalPersonByEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "email",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Profile | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireCanonicalGlobalPerson": {
+          "name": "requireCanonicalGlobalPerson",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "email",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "reserveCanonicalIdentityEmail": {
+          "name": "reserveCanonicalIdentityEmail",
+          "async": true,
+          "parameters": [
+            {
+              "name": "profileId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "email",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Profile>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1285,7 +1402,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<Map<string, Record<string, any>>>",
+          "returnType": "Promise<Map<string, Record<string, string>>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1463,8 +1580,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1502,7 +1619,7 @@
             "unique": true
           }
         ],
-        "version": "5ff9ed7e"
+        "version": "324ffa91"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetadataCollection": {
@@ -1538,7 +1655,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<Record<string, any>>",
+          "returnType": "Promise<Record<string, string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -1574,8 +1691,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1613,7 +1730,7 @@
             "unique": true
           }
         ],
-        "version": "e19c06c6"
+        "version": "388f4e8b"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetafieldCollection": {
@@ -1671,8 +1788,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1710,7 +1827,7 @@
             "unique": true
           }
         ],
-        "version": "d50afde1"
+        "version": "50171869"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipCollection": {
@@ -1816,8 +1933,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1855,7 +1972,7 @@
             "unique": true
           }
         ],
-        "version": "c2512065"
+        "version": "27e5548a"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTermCollection": {
@@ -1922,8 +2039,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -1961,7 +2078,7 @@
             "unique": true
           }
         ],
-        "version": "0b826567"
+        "version": "5905c22e"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTypeCollection": {
@@ -2035,8 +2152,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2074,7 +2191,7 @@
             "unique": true
           }
         ],
-        "version": "65243ce8"
+        "version": "f2c054a3"
       }
     },
     "@happyvertical/smrt-profiles:ProfileTypeCollection": {
@@ -2118,6 +2235,25 @@
           "returnType": "Promise<ProfileType>",
           "isStatic": false,
           "isPublic": true
+        },
+        "getOrCreateGlobalBySlug": {
+          "name": "getOrCreateGlobalBySlug",
+          "async": true,
+          "parameters": [
+            {
+              "name": "slug",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "defaults",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ProfileType>",
+          "isStatic": false,
+          "isPublic": true
         }
       },
       "decoratorConfig": {},
@@ -2132,8 +2268,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2171,14 +2307,14 @@
             "unique": true
           }
         ],
-        "version": "e0c2639e"
+        "version": "b169ded1"
       }
     },
     "@happyvertical/smrt-profiles:ApiKey": {
       "name": "apikey",
       "className": "ApiKey",
       "qualifiedName": "@happyvertical/smrt-profiles:ApiKey",
-      "collection": "apikeies",
+      "collection": "apikeys",
       "filePath": "packages/profiles/src/models/ApiKey.ts",
       "packageName": "@happyvertical/smrt-profiles",
       "fields": {
@@ -2343,7 +2479,8 @@
             "get",
             "create",
             "revoke"
-          ]
+          ],
+          "skipApiCheck": true
         }
       },
       "extends": "SmrtObject",
@@ -2363,8 +2500,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2387,9 +2524,9 @@
           },
           "profile_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "key_hash": {
             "type": "TEXT",
@@ -2447,7 +2584,7 @@
             "unique": true
           }
         ],
-        "version": "8a5e44ea"
+        "version": "675b5c1a"
       }
     },
     "@happyvertical/smrt-profiles:AuditLog": {
@@ -2460,7 +2597,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": true
+            }
+          }
         },
         "profileId": {
           "type": "foreignKey",
@@ -2562,6 +2713,10 @@
           "include": [
             "list"
           ]
+        },
+        "tenantScoped": {
+          "mode": "optional",
+          "allowSuperAdminBypass": true
         }
       },
       "extends": "SmrtObject",
@@ -2581,8 +2736,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2605,15 +2760,15 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "profile_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "action": {
             "type": "TEXT",
@@ -2647,9 +2802,9 @@
           },
           "on_behalf_of_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           }
         },
         "indexes": [
@@ -2668,7 +2823,7 @@
             "unique": true
           }
         ],
-        "version": "11439cb2"
+        "version": "42bf3450"
       }
     },
     "@happyvertical/smrt-profiles:MagicLinkToken": {
@@ -2857,8 +3012,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -2881,9 +3036,9 @@
           },
           "nostr_identity_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "token_hash": {
             "type": "TEXT",
@@ -2930,7 +3085,7 @@
             "unique": true
           }
         ],
-        "version": "18deb8e3"
+        "version": "fc26af5c"
       }
     },
     "@happyvertical/smrt-profiles:NostrIdentity": {
@@ -3159,8 +3314,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3183,9 +3338,9 @@
           },
           "profile_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "pubkey": {
             "type": "TEXT",
@@ -3250,7 +3405,7 @@
             "unique": true
           }
         ],
-        "version": "964d72ef"
+        "version": "b5de7c6f"
       }
     },
     "@happyvertical/smrt-profiles:OidcIdentity": {
@@ -3272,26 +3427,43 @@
         "provider": {
           "type": "text",
           "required": false,
-          "default": ""
+          "_meta": {}
         },
         "issuer": {
           "type": "text",
           "required": false,
-          "default": ""
+          "_meta": {
+            "indexed": true
+          }
         },
         "subject": {
           "type": "text",
           "required": false,
-          "default": ""
+          "_meta": {
+            "indexed": true
+          }
+        },
+        "identityKey": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "nullable": true,
+            "unique": true,
+            "readonly": true
+          },
+          "readonly": true
         },
         "email": {
           "type": "text",
           "required": false,
-          "default": ""
+          "_meta": {}
         },
         "lastUsedAt": {
           "type": "datetime",
-          "required": false
+          "required": false,
+          "_meta": {
+            "nullable": true
+          }
         }
       },
       "methods": {
@@ -3325,6 +3497,33 @@
           ],
           "returnType": "Promise<OidcIdentity | null>",
           "isStatic": true,
+          "isPublic": true
+        },
+        "buildIdentityKey": {
+          "name": "buildIdentityKey",
+          "async": false,
+          "parameters": [
+            {
+              "name": "issuer",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "subject",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "string",
+          "isStatic": true,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
           "isPublic": true
         },
         "findOrCreate": {
@@ -3363,8 +3562,9 @@
       "decoratorConfig": {
         "tableName": "oidc_identities",
         "api": {
-          "exclude": [
-            "delete"
+          "include": [
+            "list",
+            "get"
           ]
         },
         "mcp": {
@@ -3392,13 +3592,13 @@
       ],
       "schema": {
         "tableName": "oidc_identities",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID NOT NULL,\n  \"provider\" TEXT DEFAULT '',\n  \"issuer\" TEXT DEFAULT '',\n  \"subject\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"last_used_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID NOT NULL,\n  \"provider\" TEXT,\n  \"issuer\" TEXT,\n  \"subject\" TEXT,\n  \"identity_key\" TEXT UNIQUE,\n  \"email\" TEXT,\n  \"last_used_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -3421,33 +3621,34 @@
           },
           "profile_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "provider": {
             "type": "TEXT",
             "notNull": false,
-            "unique": false,
-            "default": ""
+            "unique": false
           },
           "issuer": {
             "type": "TEXT",
             "notNull": false,
-            "unique": false,
-            "default": ""
+            "unique": false
           },
           "subject": {
             "type": "TEXT",
             "notNull": false,
-            "unique": false,
-            "default": ""
+            "unique": false
+          },
+          "identity_key": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": true
           },
           "email": {
             "type": "TEXT",
             "notNull": false,
-            "unique": false,
-            "default": ""
+            "unique": false
           },
           "last_used_at": {
             "type": "TIMESTAMP",
@@ -3469,9 +3670,131 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "oidc_identities_issuer_idx",
+            "columns": [
+              "issuer"
+            ]
+          },
+          {
+            "name": "oidc_identities_subject_idx",
+            "columns": [
+              "subject"
+            ]
           }
         ],
-        "version": "7bfcab24"
+        "version": "0686d3f4"
+      }
+    },
+    "@happyvertical/smrt-profiles:OidcProfileEmailReservation": {
+      "name": "oidcprofileemailreservation",
+      "className": "OidcProfileEmailReservation",
+      "qualifiedName": "@happyvertical/smrt-profiles:OidcProfileEmailReservation",
+      "collection": "oidcprofileemailreservations",
+      "filePath": "packages/profiles/src/models/OidcProfileEmailReservation.ts",
+      "packageName": "@happyvertical/smrt-profiles",
+      "fields": {
+        "profileId": {
+          "type": "foreignKey",
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true,
+            "unique": true
+          }
+        },
+        "emailKey": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true,
+            "unique": true,
+            "readonly": true
+          },
+          "readonly": true
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "oidc_profile_email_reservations",
+        "api": false,
+        "mcp": false,
+        "cli": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "OidcProfileEmailReservation",
+      "collectionExportName": "OidcProfileEmailReservationCollection",
+      "validationRules": [
+        {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "emailKey",
+          "rule": "required",
+          "fieldType": "text"
+        }
+      ],
+      "schema": {
+        "tableName": "oidc_profile_email_reservations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_profile_email_reservations\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID NOT NULL UNIQUE,\n  \"email_key\" TEXT NOT NULL UNIQUE\n);",
+        "columns": {
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "profile_id": {
+            "type": "UUID",
+            "referenceKind": "foreignKey",
+            "notNull": true,
+            "unique": true
+          },
+          "email_key": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": true
+          }
+        },
+        "indexes": [
+          {
+            "name": "oidc_profile_email_reservations_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "oidc_profile_email_reservations_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "311f2b6f"
       }
     },
     "@happyvertical/smrt-profiles:Profile": {
@@ -3492,7 +3815,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "typeId": {
           "type": "foreignKey",
@@ -3508,6 +3845,16 @@
           "_meta": {
             "unique": true
           }
+        },
+        "emailKey": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "nullable": true,
+            "indexed": true,
+            "readonly": true
+          },
+          "readonly": true
         },
         "name": {
           "type": "text",
@@ -3596,6 +3943,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -3610,7 +3973,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -3622,7 +3985,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3638,6 +4001,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -3678,8 +4055,22 @@
           "name": "save",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise",
           "isStatic": false,
+          "isPublic": true
+        },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
           "isPublic": true
         },
         "loadFromId": {
@@ -3709,7 +4100,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -3728,7 +4119,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -3742,7 +4133,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -3772,6 +4163,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -3780,6 +4190,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -3794,6 +4209,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -3808,6 +4228,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -3860,7 +4285,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -3874,7 +4299,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4000,7 +4425,7 @@
           "name": "getMetadata",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any>>",
+          "returnType": "Promise<Record<string, string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4010,7 +4435,7 @@
           "parameters": [
             {
               "name": "metadata",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -4253,7 +4678,7 @@
           "name": "getApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4261,7 +4686,7 @@
           "name": "getActiveApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4275,7 +4700,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<object>",
+          "returnType": "Promise<GenerateKeyResult>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4283,7 +4708,7 @@
           "name": "getOidcIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<OidcIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4297,7 +4722,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<OidcIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4305,7 +4730,7 @@
           "name": "getNostrIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<NostrIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4319,7 +4744,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<NostrIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4333,7 +4758,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<AuditLog[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4347,7 +4772,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<AuditLog>",
           "isStatic": false,
           "isPublic": true
         }
@@ -4371,7 +4796,10 @@
             "update"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "Profile",
@@ -4390,13 +4818,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -4427,15 +4855,19 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email_key": {
             "type": "TEXT",
             "notNull": false
           },
@@ -4470,9 +4902,15 @@
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "profiles_email_key_idx",
+            "columns": [
+              "email_key"
+            ]
           }
         ],
-        "version": "dab71e12"
+        "version": "6f91abae"
       }
     },
     "@happyvertical/smrt-profiles:ProfileAsset": {
@@ -4485,7 +4923,21 @@
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "profileId": {
           "type": "foreignKey",
@@ -4523,7 +4975,10 @@
         ],
         "api": false,
         "mcp": false,
-        "cli": false
+        "cli": false,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "ProfileAsset",
@@ -4557,8 +5012,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -4581,21 +5036,21 @@
           },
           "tenant_id": {
             "type": "UUID",
+            "referenceKind": "tenantId",
             "notNull": false,
-            "unique": false,
-            "referenceKind": "tenantId"
+            "unique": false
           },
           "profile_id": {
             "type": "UUID",
+            "referenceKind": "foreignKey",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "foreignKey"
+            "unique": false
           },
           "asset_id": {
             "type": "UUID",
+            "referenceKind": "crossPackageRef",
             "notNull": true,
-            "unique": false,
-            "referenceKind": "crossPackageRef"
+            "unique": false
           },
           "relationship": {
             "type": "TEXT",
@@ -4626,7 +5081,7 @@
             "unique": true
           }
         ],
-        "version": "784ce134"
+        "version": "251cd922"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetadata": {
@@ -4647,7 +5102,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "profileId": {
           "type": "foreignKey",
@@ -4727,6 +5196,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -4741,7 +5226,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -4753,7 +5238,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -4769,6 +5254,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -4813,6 +5312,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -4840,7 +5353,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -4859,7 +5372,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -4873,7 +5386,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -4903,6 +5416,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -4911,6 +5443,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -4925,6 +5462,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -4939,6 +5481,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -4991,7 +5538,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -5005,7 +5552,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5120,7 +5667,10 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "ProfileMetadata",
@@ -5149,8 +5699,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -5181,18 +5731,18 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "profile_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "metafield_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "value": {
             "type": "TEXT",
@@ -5223,7 +5773,7 @@
             ]
           }
         ],
-        "version": "b33758b8"
+        "version": "d4570a13"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetafield": {
@@ -5244,7 +5794,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -5260,8 +5824,7 @@
         },
         "validation": {
           "type": "json",
-          "required": false,
-          "default": {}
+          "required": false
         }
       },
       "methods": {
@@ -5317,6 +5880,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -5331,7 +5910,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -5343,7 +5922,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5359,6 +5938,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -5403,6 +5996,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -5430,7 +6037,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -5449,7 +6056,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -5463,7 +6070,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -5493,6 +6100,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -5501,6 +6127,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -5515,6 +6146,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -5529,6 +6165,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -5581,7 +6222,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -5595,7 +6236,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5754,7 +6395,10 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "ProfileMetafield",
@@ -5768,13 +6412,13 @@
       ],
       "schema": {
         "tableName": "profile_metafields",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafields\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"validation\" JSON DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafields\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"validation\" JSON\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -5805,8 +6449,8 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
@@ -5819,8 +6463,7 @@
           },
           "validation": {
             "type": "JSON",
-            "notNull": false,
-            "default": {}
+            "notNull": false
           }
         },
         "indexes": [
@@ -5846,7 +6489,7 @@
             ]
           }
         ],
-        "version": "e6b89f44"
+        "version": "afe420df"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationship": {
@@ -5867,7 +6510,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "fromProfileId": {
           "type": "foreignKey",
@@ -5957,6 +6614,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -5971,7 +6644,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -5983,7 +6656,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -5999,6 +6672,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -6043,6 +6730,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -6070,7 +6771,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6089,7 +6790,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6103,7 +6804,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6133,6 +6834,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -6141,6 +6861,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6155,6 +6880,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -6169,6 +6899,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6221,7 +6956,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -6235,7 +6970,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -6390,7 +7125,10 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "ProfileRelationship",
@@ -6419,8 +7157,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -6451,28 +7189,28 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "from_profile_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "to_profile_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "context_profile_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           }
         },
         "indexes": [
@@ -6498,7 +7236,7 @@
             ]
           }
         ],
-        "version": "27104553"
+        "version": "8a5a4b64"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTerm": {
@@ -6590,6 +7328,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -6604,7 +7358,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -6616,7 +7370,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -6632,6 +7386,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -6676,6 +7444,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -6703,7 +7485,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6722,7 +7504,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6736,7 +7518,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -6766,6 +7548,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -6774,6 +7575,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6788,6 +7594,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -6802,6 +7613,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6854,7 +7670,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -6868,7 +7684,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7021,8 +7837,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -7053,8 +7869,8 @@
           },
           "relationship_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "started_at": {
             "type": "TIMESTAMP",
@@ -7088,7 +7904,7 @@
             ]
           }
         ],
-        "version": "5f5314f3"
+        "version": "643f97d0"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipType": {
@@ -7174,6 +7990,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -7188,7 +8020,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -7200,7 +8032,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7216,6 +8048,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -7260,6 +8106,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -7287,7 +8147,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7306,7 +8166,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7320,7 +8180,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7350,6 +8210,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -7358,6 +8237,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -7372,6 +8256,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -7386,6 +8275,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -7438,7 +8332,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -7452,7 +8346,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7630,8 +8524,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -7694,7 +8588,7 @@
             ]
           }
         ],
-        "version": "0d5e7b48"
+        "version": "719fe0d9"
       }
     },
     "@happyvertical/smrt-profiles:ProfileType": {
@@ -7715,7 +8609,21 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            }
+          }
         },
         "name": {
           "type": "text",
@@ -7783,6 +8691,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -7797,7 +8721,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -7809,7 +8733,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -7825,6 +8749,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -7869,6 +8807,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -7896,7 +8848,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7915,7 +8867,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7929,7 +8881,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -7959,6 +8911,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -7967,6 +8938,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -7981,6 +8957,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -7995,6 +8976,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -8047,7 +9033,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -8061,7 +9047,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8173,7 +9159,10 @@
             "get"
           ]
         },
-        "cli": true
+        "cli": true,
+        "tenantScoped": {
+          "mode": "optional"
+        }
       },
       "extends": "SmrtObject",
       "exportName": "ProfileType",
@@ -8192,8 +9181,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -8224,8 +9213,8 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "name": {
             "type": "TEXT",
@@ -8260,7 +9249,7 @@
             ]
           }
         ],
-        "version": "dd5baf19"
+        "version": "0fb37aeb"
       }
     },
     "@happyvertical/smrt-profiles:Person": {
@@ -8281,7 +9270,18 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "typeId": {
           "type": "foreignKey",
@@ -8297,6 +9297,16 @@
           "_meta": {
             "unique": true
           }
+        },
+        "emailKey": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "nullable": true,
+            "indexed": true,
+            "readonly": true
+          },
+          "readonly": true
         },
         "name": {
           "type": "text",
@@ -8385,6 +9395,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -8399,7 +9425,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -8411,7 +9437,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8427,6 +9453,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -8471,6 +9511,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -8498,7 +9552,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -8517,7 +9571,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -8531,7 +9585,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -8561,6 +9615,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -8569,6 +9642,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -8583,6 +9661,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -8597,6 +9680,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -8649,7 +9737,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -8663,7 +9751,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8789,7 +9877,7 @@
           "name": "getMetadata",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any>>",
+          "returnType": "Promise<Record<string, string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8799,7 +9887,7 @@
           "parameters": [
             {
               "name": "metadata",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -9042,7 +10130,7 @@
           "name": "getApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9050,7 +10138,7 @@
           "name": "getActiveApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9064,7 +10152,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<object>",
+          "returnType": "Promise<GenerateKeyResult>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9072,7 +10160,7 @@
           "name": "getOidcIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<OidcIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9086,7 +10174,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<OidcIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9094,7 +10182,7 @@
           "name": "getNostrIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<NostrIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9108,7 +10196,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<NostrIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9122,7 +10210,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<AuditLog[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9136,7 +10224,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<AuditLog>",
           "isStatic": false,
           "isPublic": true
         }
@@ -9162,13 +10250,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -9199,15 +10287,19 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email_key": {
             "type": "TEXT",
             "notNull": false
           },
@@ -9242,9 +10334,15 @@
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "profiles_email_key_idx",
+            "columns": [
+              "email_key"
+            ]
           }
         ],
-        "version": "119055e0"
+        "version": "23f35a07"
       }
     },
     "@happyvertical/smrt-profiles:Organization": {
@@ -9265,7 +10363,18 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "typeId": {
           "type": "foreignKey",
@@ -9281,6 +10390,16 @@
           "_meta": {
             "unique": true
           }
+        },
+        "emailKey": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "nullable": true,
+            "indexed": true,
+            "readonly": true
+          },
+          "readonly": true
         },
         "name": {
           "type": "text",
@@ -9369,6 +10488,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -9383,7 +10518,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -9395,7 +10530,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9411,6 +10546,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -9455,6 +10604,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -9482,7 +10645,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -9501,7 +10664,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -9515,7 +10678,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -9545,6 +10708,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -9553,6 +10735,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -9567,6 +10754,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -9581,6 +10773,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -9633,7 +10830,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -9647,7 +10844,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9773,7 +10970,7 @@
           "name": "getMetadata",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any>>",
+          "returnType": "Promise<Record<string, string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -9783,7 +10980,7 @@
           "parameters": [
             {
               "name": "metadata",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -10026,7 +11223,7 @@
           "name": "getApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10034,7 +11231,7 @@
           "name": "getActiveApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10048,7 +11245,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<object>",
+          "returnType": "Promise<GenerateKeyResult>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10056,7 +11253,7 @@
           "name": "getOidcIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<OidcIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10070,7 +11267,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<OidcIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10078,7 +11275,7 @@
           "name": "getNostrIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<NostrIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10092,7 +11289,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<NostrIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10106,7 +11303,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<AuditLog[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10120,7 +11317,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<AuditLog>",
           "isStatic": false,
           "isPublic": true
         }
@@ -10146,13 +11343,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -10183,15 +11380,19 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email_key": {
             "type": "TEXT",
             "notNull": false
           },
@@ -10226,9 +11427,15 @@
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "profiles_email_key_idx",
+            "columns": [
+              "email_key"
+            ]
           }
         ],
-        "version": "1dbcdde7"
+        "version": "144faf5c"
       }
     },
     "@happyvertical/smrt-profiles:Bot": {
@@ -10249,7 +11456,18 @@
         },
         "tenantId": {
           "type": "text",
-          "required": false
+          "required": false,
+          "_meta": {
+            "sqlType": "UUID",
+            "nullable": true,
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true
+            }
+          }
         },
         "typeId": {
           "type": "foreignKey",
@@ -10265,6 +11483,16 @@
           "_meta": {
             "unique": true
           }
+        },
+        "emailKey": {
+          "type": "text",
+          "required": false,
+          "_meta": {
+            "nullable": true,
+            "indexed": true,
+            "readonly": true
+          },
+          "readonly": true
         },
         "name": {
           "type": "text",
@@ -10353,6 +11581,22 @@
           "isStatic": false,
           "isPublic": true
         },
+        "markAsPersisted": {
+          "name": "markAsPersisted",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "requireInsertOnSave": {
+          "name": "requireInsertOnSave",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "initialize": {
           "name": "initialize",
           "async": true,
@@ -10367,7 +11611,7 @@
           "parameters": [
             {
               "name": "data",
-              "type": "any",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -10379,7 +11623,7 @@
           "name": "getFields",
           "async": true,
           "parameters": [],
-          "returnType": "any",
+          "returnType": "Promise<any>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10395,6 +11639,20 @@
           "name": "toPlainObject",
           "async": false,
           "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPublicJSON": {
+          "name": "toPublicJSON",
+          "async": false,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "PublicJsonOptions",
+              "optional": true
+            }
+          ],
           "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
@@ -10439,6 +11697,20 @@
           "isStatic": false,
           "isPublic": true
         },
+        "classifyConstraintError": {
+          "name": "classifyConstraintError",
+          "async": false,
+          "parameters": [
+            {
+              "name": "message",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "'unique' | 'not_null' | null",
+          "isStatic": true,
+          "isPublic": true
+        },
         "loadFromId": {
           "name": "loadFromId",
           "async": true,
@@ -10466,7 +11738,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -10485,7 +11757,7 @@
             },
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -10499,7 +11771,7 @@
           "parameters": [
             {
               "name": "options",
-              "type": "any",
+              "type": "AiOperationOptions",
               "optional": true
             }
           ],
@@ -10529,6 +11801,25 @@
           "isStatic": false,
           "isPublic": true
         },
+        "_setLoadedRelationship": {
+          "name": "_setLoadedRelationship",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
         "loadRelated": {
           "name": "loadRelated",
           "async": true,
@@ -10537,6 +11828,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -10551,6 +11847,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -10565,6 +11866,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -10617,7 +11923,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any | null>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -10631,7 +11937,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<Map<string, any>>",
+          "returnType": "Promise<Map<string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10757,7 +12063,7 @@
           "name": "getMetadata",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Record<string, any>>",
+          "returnType": "Promise<Record<string, string>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10767,7 +12073,7 @@
           "parameters": [
             {
               "name": "metadata",
-              "type": "Record<string, any>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -11010,7 +12316,7 @@
           "name": "getApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11018,7 +12324,7 @@
           "name": "getActiveApiKeys",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<ApiKey[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11032,7 +12338,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<object>",
+          "returnType": "Promise<GenerateKeyResult>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11040,7 +12346,7 @@
           "name": "getOidcIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<OidcIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11054,7 +12360,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<OidcIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11062,7 +12368,7 @@
           "name": "getNostrIdentities",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<NostrIdentity[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11076,7 +12382,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<NostrIdentity>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11090,7 +12396,7 @@
               "optional": true
             }
           ],
-          "returnType": "Promise<any[]>",
+          "returnType": "Promise<AuditLog[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -11104,7 +12410,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<any>",
+          "returnType": "Promise<AuditLog>",
           "isStatic": false,
           "isPublic": true
         }
@@ -11130,13 +12436,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"email_key\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true,
-            "referenceKind": "id"
+            "referenceKind": "id",
+            "notNull": true
           },
           "slug": {
             "type": "TEXT",
@@ -11167,15 +12473,19 @@
           },
           "tenant_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "tenantId"
+            "referenceKind": "tenantId",
+            "notNull": false
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false,
-            "referenceKind": "foreignKey"
+            "referenceKind": "foreignKey",
+            "notNull": false
           },
           "email": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "email_key": {
             "type": "TEXT",
             "notNull": false
           },
@@ -11210,9 +12520,15 @@
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "profiles_email_key_idx",
+            "columns": [
+              "email_key"
+            ]
           }
         ],
-        "version": "8ebc0e80"
+        "version": "38738f31"
       }
     }
   },

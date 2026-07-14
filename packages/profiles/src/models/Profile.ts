@@ -22,6 +22,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { normalizeIdentityEmail } from '../auth/normalizeIdentityEmail';
 import {
   promptMessageOptions,
   smrtProfilesGenerateBioPrompt,
@@ -60,6 +61,10 @@ export class Profile extends SmrtObject {
   @field({ unique: true })
   email?: string; // Optional email address
 
+  /** Adapter-independent identity lookup key derived from email on save. */
+  @field({ type: 'text', nullable: true, indexed: true, readonly: true })
+  emailKey: string | null = null;
+
   @field({ required: true })
   name: string = ''; // Display name
 
@@ -87,6 +92,14 @@ export class Profile extends SmrtObject {
     if (options.name) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
+  }
+
+  /** Keep the durable identity key derived from the public email field. */
+  override async save(): Promise<this> {
+    this.emailKey = this.email?.trim()
+      ? normalizeIdentityEmail(this.email)
+      : null;
+    return super.save();
   }
 
   /**
@@ -681,10 +694,13 @@ export class Profile extends SmrtObject {
   }
 
   /**
-   * Link a new OIDC identity to this profile
+   * Reuse an existing exact OIDC identity for this unchanged Profile.
    *
    * @param oidcData - OIDC provider data
    * @returns The linked OIDC identity record
+   * @deprecated New authentication links require owner-aware transactional
+   * provisioning. This compatibility helper may refresh a legacy Profile
+   * type, but refuses to create or rebind authority.
    */
   async linkOidcIdentity(oidcData: {
     provider: string;
