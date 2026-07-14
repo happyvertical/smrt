@@ -483,7 +483,9 @@ describe('runToolLoop', () => {
       );
       // Permitted op ran and produced a row.
       expect(create?.ok).toBe(true);
-      expect((create?.observation as { title?: string }).title).toBe('Hello');
+      expect(
+        (create?.observation as { title?: string } | undefined)?.title,
+      ).toBe('Hello');
       // Un-permitted op was denied by the catalog assert.
       expect(del?.ok).toBe(false);
       expect(del?.rejected).toBe(true);
@@ -530,9 +532,9 @@ describe('runToolLoop', () => {
         (i) => i.slug === 'tool_loop_notes.archive',
       );
       expect(archive?.ok).toBe(true);
-      expect((archive?.observation as { archived?: boolean }).archived).toBe(
-        true,
-      );
+      expect(
+        (archive?.observation as { archived?: boolean } | undefined)?.archived,
+      ).toBe(true);
     });
   });
 });

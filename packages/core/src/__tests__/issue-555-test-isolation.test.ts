@@ -151,7 +151,9 @@ describe('Issue #555: Test isolation - class name collision', () => {
       // Verify it's registered as a stub
       const stubRegistration = ObjectRegistry.getClass('ManifestStub555');
       expect(stubRegistration).toBeDefined();
-      expect((stubRegistration?.constructor as any)._isManifestStub).toBe(true);
+      expect((stubRegistration?.constructor as any)?._isManifestStub).toBe(
+        true,
+      );
 
       // Now register the "real" class
       @smrt({ name: 'ManifestStub555' })
@@ -163,7 +165,7 @@ describe('Issue #555: Test isolation - class name collision', () => {
       const realRegistration = ObjectRegistry.getClass('ManifestStub555');
       expect(realRegistration).toBeDefined();
       expect(
-        (realRegistration?.constructor as any)._isManifestStub,
+        (realRegistration?.constructor as any)?._isManifestStub,
       ).toBeUndefined();
       expect(realRegistration?.constructor).toBe(RealClass555);
     });

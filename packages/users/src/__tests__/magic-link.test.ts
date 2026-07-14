@@ -137,7 +137,7 @@ describe('MagicLinkService', () => {
     expect(rejected).toHaveLength(1);
     expect(fulfilled[0]?.value.email).toBe('race@example.com');
     expect(rejected[0]?.reason).toBeInstanceOf(MagicLinkError);
-    expect((rejected[0]?.reason as Error).message).toBe(
+    expect((rejected[0]?.reason as Error | undefined)?.message).toBe(
       'Token has already been used or has expired',
     );
   });
