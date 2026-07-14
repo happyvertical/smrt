@@ -1,0 +1,80 @@
+{
+  "name": "@happyvertical/smrt-marketing",
+  "version": "0.39.15",
+  "description": "Cross-channel campaign coordination, immutable performance evidence, budget pacing, and reusable Svelte marketing surfaces for SMRT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "test": "vitest run && vitest run --config vitest.svelte.config.ts",
+    "test:coverage": "vitest run --coverage --coverage.reportsDirectory=coverage/models && vitest run --coverage --config vitest.svelte.config.ts --coverage.reportsDirectory=coverage/svelte",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/marketing.postgres.test.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "svelte": "^5.56.4"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@sveltejs/package": "^2.5.8",
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@testing-library/svelte": "^5.4.2",
+    "@types/node": "24.13.2",
+    "jsdom": "^26.1.0",
+    "svelte": "^5.56.4",
+    "svelte-check": "^4.7.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.3",
+    "vitest": "^4.1.9"
+  },
+  "smrtRawPrimitives": "strict",
+  "keywords": [
+    "smrt",
+    "marketing",
+    "campaigns",
+    "budget-pacing",
+    "multi-tenant"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/marketing"
+  }
+}
