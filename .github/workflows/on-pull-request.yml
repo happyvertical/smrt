@@ -379,7 +379,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
-          version: '11.11.0'
+          version: '11.13.0'
           run_install: false
 
       # Sweep S8 (#1413): fail the PR on any high/critical advisory. Accepted

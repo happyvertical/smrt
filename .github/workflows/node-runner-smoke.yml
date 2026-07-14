@@ -20,7 +20,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(node --version)" = "v24.18.0"
-          test "$(pnpm --version)" = "11.11.0"
+          test "$(pnpm --version)" = "11.13.0"
           command -v psql
           if command -v postgres; then exit 1; fi
           if command -v docker; then exit 1; fi

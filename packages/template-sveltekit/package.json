@@ -38,7 +38,7 @@
   "devDependencies": {
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
-    "vitest": "^4.1.9"
+    "vitest": "4.1.10"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
