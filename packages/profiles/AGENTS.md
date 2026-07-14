@@ -118,4 +118,9 @@ import { smrtProfilesGenerateBioPrompt } from '@happyvertical/smrt-profiles';
   `Profile.emailKey`, derived by the shared TypeScript
   `normalizeIdentityEmail()` helper rather than adapter-specific SQL casing or
   trimming, and deliberately fail closed on duplicate normalized keys.
+- **Manifest objects must remain root-importable**: the non-API
+  `OidcProfileEmailReservation` model and collection are public root exports
+  because generated consumer registration imports every advertised manifest
+  symbol from `@happyvertical/smrt-profiles`. Release-pack validation imports
+  the actual generated register file from the packed tarball.
 - **Optional tenancy** on Profile; AuditLog allows super-admin bypass

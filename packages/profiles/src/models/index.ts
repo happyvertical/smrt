@@ -12,6 +12,10 @@ export {
 } from './MagicLinkToken';
 export { NostrIdentity, type NostrIdentityOptions } from './NostrIdentity';
 export { OidcIdentity, type OidcIdentityOptions } from './OidcIdentity';
+export {
+  OidcProfileEmailReservation,
+  type OidcProfileEmailReservationOptions,
+} from './OidcProfileEmailReservation';
 export { Profile } from './Profile';
 export { ProfileMetadata } from './ProfileMetadata';
 export { ProfileMetafield } from './ProfileMetafield';
