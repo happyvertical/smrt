@@ -79,7 +79,8 @@ export interface RegisterAttributionInput {
   /**
    * Tenant for the mapping. Defaults to the earner's own `tenantId` so
    * registrations from operator/scheduled contexts land in the earner's
-   * tenant.
+   * tenant. When given explicitly it MUST equal the earner's tenant — a
+   * mapping lives in its earner's tenant (model save guard).
    */
   tenantId?: string | null;
   status?: EarnerSourceAttributionStatus;
@@ -153,20 +154,27 @@ export class EarnerAttributionService {
     // decision. In tenant context the interceptor already narrows the
     // query; without context (operator/scheduled) this filter is what
     // keeps another tenant's mapping for the same key untouchable.
-    const existing = (
+    const scoped = (
       await this.deps.attributions.findBySource(
         input.sourceKind,
         input.sourceId,
       )
     ).filter((row) => tenantOf(row.tenantId) === targetTenant);
-    if (existing.length > 1) {
+    // Ambiguity means more than one ACTIVE row — inactive duplicates are
+    // exactly what the documented repair (deactivation) produces, and they
+    // must not keep blocking registration afterwards.
+    const active = scoped.filter((row) => row.isActive());
+    if (active.length > 1) {
       throw new Error(
         `EarnerAttributionService: source '${input.sourceKind}:${input.sourceId}' ` +
-          `holds ${existing.length} mappings in the target tenant scope — deactivate the duplicates before registering`,
+          `holds ${active.length} active mappings in the target tenant scope — deactivate the duplicates before registering`,
       );
     }
 
-    const current = existing[0];
+    // Prefer the single active row; with only inactive rows (a repaired
+    // duplicate set), reuse the OLDEST deterministically instead of
+    // inserting a sibling.
+    const current = active[0] ?? scoped[0];
     if (current) {
       const previousEarnerId =
         current.earnerId !== input.earnerId ? current.earnerId : null;
@@ -177,7 +185,7 @@ export class EarnerAttributionService {
       return { attribution: current, created: false, previousEarnerId };
     }
 
-    const attribution = await this.deps.attributions.create({
+    const minted = await this.deps.attributions.create({
       tenantId: targetTenant,
       earnerId: input.earnerId,
       sourceKind: input.sourceKind,
@@ -185,6 +193,18 @@ export class EarnerAttributionService {
       status: input.status ?? 'active',
       metadata: input.metadata ?? '{}',
     });
+    // Adopt the PERSISTED row: two workers racing the first registration
+    // of one key both reach the natural-key upsert, and the loser's
+    // in-memory instance carries an id the database no longer holds
+    // (same convergence pattern as createPayoutBatch).
+    const persisted = (
+      await this.deps.attributions.findBySource(
+        input.sourceKind,
+        input.sourceId,
+      )
+    ).filter((row) => tenantOf(row.tenantId) === targetTenant);
+    const attribution =
+      persisted.length === 1 ? persisted[0] : (persisted[0] ?? minted);
     return { attribution, created: true, previousEarnerId: null };
   }
 

@@ -328,9 +328,10 @@ describe('Source-scoped payout history (#1985)', () => {
           limit: 10,
         });
         expect(history.payouts).toHaveLength(2);
-        // One stamped-page query + batched membership loads — never a walk
-        // of NETWORK_B's 40-payout history and never per-payout queries.
-        expect(queries).toBeLessThanOrEqual(4);
+        // One stamped-page query + batched membership loads + the two
+        // cardinality-guard counts — never a walk of NETWORK_B's
+        // 40-payout history and never per-payout queries.
+        expect(queries).toBeLessThanOrEqual(6);
       } finally {
         db.query = originalQuery;
       }

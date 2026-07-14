@@ -200,7 +200,7 @@ describePostgres('Source-scoped commissions APIs on PostgreSQL', () => {
           sourceKind: kind,
           sourceId: 'prop-dup',
         }),
-      ).rejects.toThrow(/holds 2 mappings/);
+      ).rejects.toThrow(/holds 2 active mappings/);
     });
   });
 

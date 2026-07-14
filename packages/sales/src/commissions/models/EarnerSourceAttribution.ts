@@ -59,7 +59,11 @@
  */
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type {
   EarnerSourceAttributionOptions,
   EarnerSourceAttributionStatus,
@@ -73,11 +77,12 @@ import type {
   // ambiguity.
   conflictColumns: ['tenant_id', 'source_kind', 'source_id'],
   // Configuration rows: full read plus create/update (deactivate via
-  // status). No generated delete — deactivation preserves the audit trail
-  // of who was credited for a surface, matching Earner's surface.
+  // status). No generated delete on ANY surface — deactivation preserves
+  // the audit trail of who was credited for a surface (a bare `cli: true`
+  // would regenerate the delete verb this contract closes).
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create'] },
-  cli: true,
+  cli: { include: ['list', 'get', 'create', 'update'] },
 })
 export class EarnerSourceAttribution extends SmrtObject {
   /** Tenant ID for multi-tenant isolation (nullable → global mappings). */
@@ -146,8 +151,18 @@ export class EarnerSourceAttribution extends SmrtObject {
   }
 
   /**
-   * Save with a completeness guard: a mapping without an earner or a full
-   * external key can never resolve, so it must never persist.
+   * Save with two guards:
+   *
+   * 1. **Completeness** — a mapping without an earner or a full external
+   *    key can never resolve, so it must never persist.
+   * 2. **Tenant coherence** — the mapping's tenant must equal its earner's
+   *    tenant (both normalized; `''` and `NULL` mean "no tenant"). A tenant
+   *    A mapping crediting a tenant B earner would be unresolvable in
+   *    tenant scope yet credit across tenants in operator scope — fail
+   *    closed at the model boundary, for the generated create/update
+   *    surface as much as the service. The earner row is read RAW (no
+   *    tenant interception) because the guard must see the earner's true
+   *    tenant even when saving from another tenant's context.
    */
   override async save(): Promise<this> {
     if (!this.earnerId || !this.sourceKind || !this.sourceId) {
@@ -156,7 +171,40 @@ export class EarnerSourceAttribution extends SmrtObject {
           'sourceKind, and sourceId are all required.',
       );
     }
+    await this.assertEarnerTenantCoherence();
     return (await super.save()) as this;
+  }
+
+  private async assertEarnerTenantCoherence(): Promise<void> {
+    let earnerRow: Record<string, unknown> | null = null;
+    try {
+      earnerRow = await this.db.get('earners', { id: this.earnerId });
+    } catch {
+      // DB not ready / earners table absent — nothing to compare against
+      // (the FK layer owns pure existence).
+      return;
+    }
+    if (!earnerRow) {
+      throw new Error(
+        `EarnerSourceAttribution ${this.id ?? '<new>'}: earner ` +
+          `'${this.earnerId}' does not exist.`,
+      );
+    }
+    const tenantOf = (value: unknown) => (value ? String(value) : null);
+    const earnerTenant = tenantOf(earnerRow.tenant_id);
+    // Compare against the EFFECTIVE tenant: an unset tenantId is
+    // auto-stamped from the active tenant context by the tenancy
+    // interceptor during save, after this guard runs.
+    const mappingTenant =
+      tenantOf(this.tenantId) ?? tenantOf(getCurrentTenant()?.tenantId);
+    if (earnerTenant !== mappingTenant) {
+      throw new Error(
+        `EarnerSourceAttribution ${this.id ?? '<new>'}: mapping tenant ` +
+          `'${mappingTenant ?? 'global'}' does not match earner tenant ` +
+          `'${earnerTenant ?? 'global'}' — a mapping must live in its ` +
+          "earner's tenant.",
+      );
+    }
   }
 }
 

@@ -3,10 +3,12 @@
  * PayoutBatchReview — operator settlement approvals (#1933).
  *
  * One card per payout batch with actions gated by the batch status
- * (`pending → approved → processing → completed | failed`): approve, start
- * processing, complete (requires a payment reference), and mark failed
- * (requires a reason). The gating mirrors the CommissionPayout transition
- * guard via the pure `payoutActionsFor` helper.
+ * (`pending → approved → processing → completed | failed`, plus the
+ * terminal decline `rejected` from pending/approved): approve, reject
+ * (requires a reason), start processing, complete (requires a payment
+ * reference), and mark failed (requires a reason). The gating mirrors the
+ * CommissionPayout transition guard via the pure `payoutActionsFor`
+ * helper.
  */
 import { FormGroup, Input } from '@happyvertical/smrt-ui/forms';
 import { Badge, Button, Card } from '@happyvertical/smrt-ui/ui';
@@ -29,6 +31,11 @@ export interface Props {
   onComplete?: (payoutId: string, paymentReference: string) => void;
   /** Mark an approved/processing batch failed with a reason. */
   onFail?: (payoutId: string, reason: string) => void;
+  /**
+   * Reject a pending/approved batch with a reason (terminal decline —
+   * the service releases the batch's membership for a future batch).
+   */
+  onReject?: (payoutId: string, reason: string) => void;
 }
 
 let {
@@ -39,11 +46,13 @@ let {
   onMarkProcessing,
   onComplete,
   onFail,
+  onReject,
 }: Props = $props();
 
 // Per-payout drafts.
 let referenceDrafts = $state<Record<string, string>>({});
 let failReasonDrafts = $state<Record<string, string>>({});
+let rejectReasonDrafts = $state<Record<string, string>>({});
 
 function setReference(payoutId: string, value: string) {
   referenceDrafts = { ...referenceDrafts, [payoutId]: value };
@@ -51,6 +60,10 @@ function setReference(payoutId: string, value: string) {
 
 function setFailReason(payoutId: string, value: string) {
   failReasonDrafts = { ...failReasonDrafts, [payoutId]: value };
+}
+
+function setRejectReason(payoutId: string, value: string) {
+  rejectReasonDrafts = { ...rejectReasonDrafts, [payoutId]: value };
 }
 
 function complete(payoutId: string) {
@@ -61,6 +74,11 @@ function complete(payoutId: string) {
 function fail(payoutId: string) {
   const reason = (failReasonDrafts[payoutId] ?? '').trim();
   if (reason !== '') onFail?.(payoutId, reason);
+}
+
+function reject(payoutId: string) {
+  const reason = (rejectReasonDrafts[payoutId] ?? '').trim();
+  if (reason !== '') onReject?.(payoutId, reason);
 }
 
 function methodLabel(method: string): string {
@@ -120,7 +138,7 @@ function methodLabel(method: string): string {
           </p>
         {/if}
 
-        {#if payout.status === 'failed' && payout.notes}
+        {#if (payout.status === 'failed' || payout.status === 'rejected') && payout.notes}
           <p class="failed-note">{payout.notes}</p>
         {/if}
 
@@ -198,6 +216,35 @@ function methodLabel(method: string): string {
               onclick={() => fail(payout.id)}
             >
               Mark failed
+            </Button>
+          </div>
+        {/if}
+
+        {#if actions.canReject && onReject}
+          <div class="actions actions--form">
+            <FormGroup
+              label="Rejection reason"
+              required
+              hint="Terminal decline — the batch's rows return to unsettled for a future batch."
+            >
+              <Input
+                value={rejectReasonDrafts[payout.id] ?? ''}
+                disabled={busy}
+                oninput={(event) =>
+                  setRejectReason(
+                    payout.id,
+                    (event.currentTarget as HTMLInputElement).value,
+                  )}
+              />
+            </FormGroup>
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={busy ||
+                (rejectReasonDrafts[payout.id] ?? '').trim() === ''}
+              onclick={() => reject(payout.id)}
+            >
+              Reject
             </Button>
           </div>
         {/if}

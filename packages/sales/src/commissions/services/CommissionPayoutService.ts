@@ -730,6 +730,20 @@ export class CommissionPayoutService {
       members,
       memberAdjustments,
     );
+    // Cardinality guard (see countStampedRows): rows a tenant scope cannot
+    // see must still fail the page's membership proof, not silently thin
+    // it out.
+    const db = this.resolveDatabase();
+    const rawCommissionCounts = await CommissionPayoutService.countStampedRows(
+      db,
+      this.deps.commissions.tableName,
+      payoutIds,
+    );
+    const rawAdjustmentCounts = await CommissionPayoutService.countStampedRows(
+      db,
+      this.deps.adjustments.tableName,
+      payoutIds,
+    );
 
     const membersByPayout = new Map<string, Commission[]>();
     for (const commission of members) {
@@ -753,10 +767,27 @@ export class CommissionPayoutService {
     };
     for (const payout of candidates) {
       const id = payout.id ?? '';
+      const visibleMembers = membersByPayout.get(id) ?? [];
+      const visibleAdjustments = adjustmentsByPayout.get(id) ?? [];
+      const rawCommissionCount = rawCommissionCounts.get(id) ?? 0;
+      const rawAdjustmentCount = rawAdjustmentCounts.get(id) ?? 0;
+      if (
+        rawCommissionCount !== visibleMembers.length ||
+        rawAdjustmentCount !== visibleAdjustments.length
+      ) {
+        page.excluded.push({
+          payoutId: id,
+          reason: 'tenant_mismatch',
+          detail:
+            `payout has ${rawCommissionCount} commission and ${rawAdjustmentCount} adjustment rows stamped, ` +
+            `but only ${visibleMembers.length} and ${visibleAdjustments.length} are visible in the current tenant scope`,
+        });
+        continue;
+      }
       const verdict = CommissionPayoutService.verifySourceMembership({
         payout,
-        commissions: membersByPayout.get(id) ?? [],
-        adjustments: adjustmentsByPayout.get(id) ?? [],
+        commissions: visibleMembers,
+        adjustments: visibleAdjustments,
         parentById,
         sourceKind: input.sourceKind,
         sourceId: input.sourceId,
@@ -981,6 +1012,41 @@ export class CommissionPayoutService {
 
         const members = await tx.commissions.findByPayout(payoutId);
         const memberAdjustments = await tx.adjustments.findByPayout(payoutId);
+
+        // Cardinality guard: the reads above are tenant-scoped, so a
+        // foreign tenant's row stamped onto this payout would be invisible
+        // — and verification over the visible subset would authorize
+        // incomplete membership. Compare against RAW counts (count-only,
+        // no row data crosses the tenant boundary) and fail closed on any
+        // excess.
+        const rawCommissionCount =
+          (
+            await CommissionPayoutService.countStampedRows(
+              txDb,
+              tx.commissions.tableName,
+              [input.payoutId],
+            )
+          ).get(input.payoutId) ?? 0;
+        const rawAdjustmentCount =
+          (
+            await CommissionPayoutService.countStampedRows(
+              txDb,
+              tx.adjustments.tableName,
+              [input.payoutId],
+            )
+          ).get(input.payoutId) ?? 0;
+        if (
+          rawCommissionCount !== members.length ||
+          rawAdjustmentCount !== memberAdjustments.length
+        ) {
+          return CommissionPayoutService.txRefusal(
+            payoutId,
+            'tenant_mismatch',
+            `payout has ${rawCommissionCount} commission and ${rawAdjustmentCount} adjustment rows stamped, ` +
+              `but only ${members.length} and ${memberAdjustments.length} are visible in the current tenant scope`,
+          );
+        }
+
         const parentById = await this.loadAdjustmentParents(
           tx.commissions,
           members,
@@ -1159,6 +1225,41 @@ export class CommissionPayoutService {
   }
 
   /**
+   * RAW stamped-row counts per payout id — deliberately UNSCOPED
+   * (count-only, reviewed): tenant-scoped reads cannot see a foreign
+   * tenant's row stamped onto a payout, so membership verification that
+   * trusted only the visible subset would authorize (or list) incomplete
+   * membership. No row data crosses the tenant boundary — only per-payout
+   * counts, compared against the visible membership; any excess fails
+   * closed as `tenant_mismatch`. Ids must be UUID-shaped (callers pass
+   * validated payout ids), and the payout-id predicate never touches the
+   * empty-FK encoding, so the query is dialect-safe.
+   */
+  private static async countStampedRows(
+    db: DatabaseInterface,
+    table: string,
+    payoutIds: string[],
+  ): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    const ids = payoutIds.filter((id) =>
+      CommissionPayoutService.UUID_RE.test(id),
+    );
+    if (ids.length === 0) return counts;
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+    const res = await db.query(
+      `SELECT payout_id, COUNT(*) AS row_count FROM ${table} WHERE payout_id IN (${placeholders}) GROUP BY payout_id`,
+      ...ids,
+    );
+    const rows = Array.isArray(res)
+      ? (res as Record<string, unknown>[])
+      : ((res as { rows?: Record<string, unknown>[] }).rows ?? []);
+    for (const row of rows) {
+      counts.set(String(row.payout_id), Number(row.row_count));
+    }
+    return counts;
+  }
+
+  /**
    * Parents of the given adjustments, keyed by commission id — member
    * commissions are reused, only the rest are fetched (one `IN` query).
    */
@@ -1310,6 +1411,31 @@ export class CommissionPayoutService {
           ok: false,
           reason: 'adjustment_parent_missing',
           detail: `adjustment ${adjustment.id} parent commission '${adjustment.commissionId}' cannot be loaded to prove source ownership`,
+        };
+      }
+      // The PARENT must agree with the payout on account axes too — an
+      // adjustment's earner/currency/tenant are denormalized by
+      // convention, not enforced, so a coherent-looking adjustment can
+      // still hang off another account's commission.
+      if (parent.earnerId !== payout.earnerId) {
+        return {
+          ok: false,
+          reason: 'earner_mismatch',
+          detail: `adjustment ${adjustment.id} parent commission belongs to earner '${parent.earnerId}', payout to '${payout.earnerId}'`,
+        };
+      }
+      if (parent.currency !== payout.currency) {
+        return {
+          ok: false,
+          reason: 'currency_mismatch',
+          detail: `adjustment ${adjustment.id} parent commission is ${parent.currency}, payout is ${payout.currency}`,
+        };
+      }
+      if (tenantOf(parent.tenantId) !== tenantOf(payout.tenantId)) {
+        return {
+          ok: false,
+          reason: 'tenant_mismatch',
+          detail: `adjustment ${adjustment.id} parent commission and the payout disagree on tenant`,
         };
       }
       if (

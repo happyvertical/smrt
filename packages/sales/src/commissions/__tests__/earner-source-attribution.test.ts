@@ -8,7 +8,7 @@
  * Real in-memory SQLite — no mocks of database operations.
  */
 
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
   enableTenancy,
@@ -57,6 +57,51 @@ describe('EarnerSourceAttribution (#1986)', () => {
   }
 
   describe('model + registration', () => {
+    it('closes delete on every generated surface and registers the natural key', () => {
+      const config = ObjectRegistry.getConfig('EarnerSourceAttribution');
+      expect(config.conflictColumns).toEqual([
+        'tenant_id',
+        'source_kind',
+        'source_id',
+      ]);
+      // Deactivation preserves the audit trail — a bare `true` on any
+      // surface would regenerate the delete verb this contract closes.
+      for (const surface of [config.api, config.mcp, config.cli] as {
+        include?: string[];
+      }[]) {
+        expect(surface).toBeDefined();
+        expect(surface.include).toBeDefined();
+        expect(surface.include).not.toContain('delete');
+      }
+    });
+
+    it('refuses a mapping whose tenant does not match its earner', async () => {
+      const earner = await createEarner({ tenantId: 'tenant-a' });
+      await expect(
+        attributions.create({
+          tenantId: 'tenant-b',
+          earnerId: earner.id as string,
+          sourceKind: KIND,
+          sourceId: 'prop-incoherent',
+        }),
+      ).rejects.toThrow(/does not match earner tenant/);
+      await expect(
+        service.registerAttribution({
+          earnerId: earner.id as string,
+          sourceKind: KIND,
+          sourceId: 'prop-incoherent',
+          tenantId: null,
+        }),
+      ).rejects.toThrow(/does not match earner tenant/);
+      // The coherent registration (defaulted to the earner's tenant) works.
+      const ok = await service.registerAttribution({
+        earnerId: earner.id as string,
+        sourceKind: KIND,
+        sourceId: 'prop-incoherent',
+      });
+      expect(ok.attribution.tenantId).toBe('tenant-a');
+    });
+
     it('requires earnerId, sourceKind, and sourceId to persist', async () => {
       const earner = await createEarner();
       await expect(
@@ -322,7 +367,24 @@ describe('EarnerSourceAttribution (#1986)', () => {
           sourceKind: KIND,
           sourceId: 'prop-global-dup',
         }),
-      ).rejects.toThrow(/holds 2 mappings in the target tenant scope/);
+      ).rejects.toThrow(/holds 2 active mappings in the target tenant scope/);
+
+      // The documented repair — deactivate the extra — must actually
+      // unblock registration (inactive duplicates stay for audit).
+      const dupes = await attributions.findBySource(KIND, 'prop-global-dup');
+      const extra = dupes.find(
+        (row) => row.id === '00000000-0000-4000-8000-00000000d0b1',
+      );
+      if (!extra) throw new Error('expected the raw-SQL duplicate row');
+      extra.status = 'inactive';
+      await extra.save();
+      const repaired = await service.registerAttribution({
+        earnerId: globalEarner.id as string,
+        sourceKind: KIND,
+        sourceId: 'prop-global-dup',
+      });
+      expect(repaired.created).toBe(false);
+      expect(repaired.attribution.isActive()).toBe(true);
     });
   });
 

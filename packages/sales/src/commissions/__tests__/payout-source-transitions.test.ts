@@ -13,6 +13,11 @@
  */
 
 import { GlobalInterceptors, getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustmentCollection.js';
@@ -58,6 +63,7 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
 
   afterEach(async () => {
     GlobalInterceptors.unregister('test-terminal-save-fault');
+    disableTenancy();
     if (db && typeof db.close === 'function') {
       await db.close();
     }
@@ -209,6 +215,46 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       expect(currencyMismatch.refusal?.reason).toBe('currency_mismatch');
       euro.payoutId = '';
       await euro.save();
+    });
+
+    it('checks the adjustment parent against the payout account, not just its source', async () => {
+      // An adjustment whose DENORMALIZED earner/currency match the payout
+      // can still hang off another earner's commission — the parent must
+      // agree with the payout on every account axis.
+      const stranger = await earners.create({
+        profileId: 'profile-parent-check',
+        displayName: 'Stranger',
+        status: 'active',
+      });
+      const strangerCommission = await commissions.create({
+        earnerId: stranger.id as string,
+        amountCents: 700,
+        currency: 'USD',
+        status: 'payable',
+        dedupeKey: 'trans-stranger-parent',
+        ...NETWORK_A,
+      });
+      await createPayableCommission(NETWORK_A);
+      const payout = await cutPendingBatch(NETWORK_A, 'parent-account');
+      await adjustments.create({
+        commissionId: strangerCommission.id as string,
+        // Denormalized fields LOOK coherent with the payout…
+        earnerId: earner.id as string,
+        adjustmentKind: 'credit',
+        amountCents: 100,
+        currency: 'USD',
+        reason: 'mis-parented credit',
+        payoutId: payout.id as string,
+      });
+
+      const refused = await service.transitionPayoutForSource({
+        payoutId: payout.id as string,
+        ...NETWORK_A,
+        action: 'approve',
+      });
+      expect(refused.outcome).toBe('refused');
+      expect(refused.refusal?.reason).toBe('earner_mismatch');
+      expect(refused.refusal?.detail).toMatch(/parent commission/);
     });
 
     it('proves adjustment ownership through the parent and fails closed when the parent cannot vouch', async () => {
@@ -656,6 +702,94 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       });
       expect(late.outcome).toBe('refused');
       expect(late.refusal?.reason).toBe('status_conflict');
+    });
+  });
+
+  describe('tenant-scope cardinality guard', () => {
+    it('refuses a transition when stamped rows are invisible to the tenant scope', async () => {
+      enableTenancy();
+      // Tenant A's coherent batch…
+      const { payout } = await withTenant(
+        { tenantId: 'tenant-a' },
+        async () => {
+          const scoped = await earners.create({
+            profileId: 'profile-tenant-a',
+            displayName: 'Tenant A earner',
+            status: 'active',
+            payoutThresholdCents: 1,
+          });
+          const member = await commissions.create({
+            earnerId: scoped.id as string,
+            amountCents: 1000,
+            currency: 'USD',
+            status: 'payable',
+            dedupeKey: 'tenant-a-member',
+            ...NETWORK_A,
+          });
+          const minted = await payouts.create({
+            earnerId: scoped.id as string,
+            currency: 'USD',
+            status: 'pending',
+            commissionTotalCents: 1000,
+            adjustmentTotalCents: 0,
+            totalAmountCents: 1000,
+            idempotencyKey: 'tenant-a-cardinality',
+            ...NETWORK_A,
+          });
+          member.payoutId = minted.id as string;
+          await member.save();
+          return { payout: minted };
+        },
+      );
+
+      // …plus a FOREIGN tenant's row stamped onto the same payout (only
+      // representable outside sanctioned paths — exactly what the guard
+      // must catch).
+      const foreignEarner = await earners.create({
+        profileId: 'profile-tenant-b',
+        displayName: 'Tenant B earner',
+        status: 'active',
+        tenantId: 'tenant-b',
+      });
+      await commissions.create({
+        tenantId: 'tenant-b',
+        earnerId: foreignEarner.id as string,
+        amountCents: 500,
+        currency: 'USD',
+        status: 'payable',
+        dedupeKey: 'tenant-b-intruder',
+        ...NETWORK_A,
+        payoutId: payout.id as string,
+      });
+
+      // Inside tenant A the foreign row is invisible — verification over
+      // the visible subset alone would authorize incomplete membership.
+      const refused = await withTenant({ tenantId: 'tenant-a' }, () =>
+        service.transitionPayoutForSource({
+          payoutId: payout.id as string,
+          ...NETWORK_A,
+          action: 'approve',
+        }),
+      );
+      expect(refused.outcome).toBe('refused');
+      expect(refused.refusal?.reason).toBe('tenant_mismatch');
+      expect(refused.refusal?.detail).toMatch(
+        /visible in the current tenant scope/,
+      );
+
+      // The stamped-but-foreign row also keeps the payout out of tenant
+      // A's source history, fail-closed with the same reason.
+      const history = await withTenant({ tenantId: 'tenant-a' }, () =>
+        service.getSourcePayoutHistory({ ...NETWORK_A, limit: 10 }),
+      );
+      expect(history.payouts).toEqual([]);
+      expect(history.excluded).toEqual([
+        {
+          payoutId: payout.id,
+          reason: 'tenant_mismatch',
+          detail: expect.stringMatching(/visible in the current tenant scope/),
+        },
+      ]);
     });
   });
 
