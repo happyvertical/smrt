@@ -285,6 +285,34 @@ for (const pkg of shardPackages) {
     fail(`Packed export verification failed for ${pkg.name}`);
   }
 
+  if (pkg.name === '@happyvertical/smrt-profiles') {
+    const registerImportResult = spawnSync(
+      process.execPath,
+      [
+        join(repoRoot, 'scripts', 'verify-generated-register-import.mjs'),
+        '--package-dir',
+        pkg.dir,
+        '--tarball',
+        tarballPath,
+      ],
+      {
+        cwd: repoRoot,
+        stdio: 'inherit',
+        env: process.env,
+      },
+    );
+
+    if (registerImportResult.error) {
+      fail(
+        `Failed to verify generated registration for ${pkg.name}: ${registerImportResult.error.message}`,
+      );
+    }
+
+    if (registerImportResult.status !== 0) {
+      fail(`Generated registration verification failed for ${pkg.name}`);
+    }
+  }
+
   const packageJson = JSON.parse(
     readFileSync(join(pkg.dir, 'package.json'), 'utf8'),
   );

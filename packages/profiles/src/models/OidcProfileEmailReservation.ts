@@ -6,7 +6,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 
-interface OidcProfileEmailReservationOptions extends SmrtObjectOptions {
+export interface OidcProfileEmailReservationOptions extends SmrtObjectOptions {
   emailKey?: string;
   profileId?: string;
 }
