@@ -13,6 +13,13 @@ import {
 import { getDatabase, syncSchema } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  getOidcProvisioningDecisionScenario,
+  getOidcProvisioningPublicErrorCode,
+  OIDC_PROVISIONING_DECISION_MATRIX,
+  type OidcProvisioningScenario,
+  type OidcProvisioningSurfaceExpectation,
+} from '../../../profiles/src/testing/oidcProvisioningDecisionMatrix.js';
+import {
   type OidcClaims,
   type OidcProvisioningError,
   UserCollection,
@@ -24,6 +31,12 @@ import {
 
 const PERSON_META_TYPE = '@happyvertical/smrt-profiles:Person';
 const ORGANIZATION_META_TYPE = '@happyvertical/smrt-profiles:Organization';
+const USER_MATRIX_SCENARIOS: readonly OidcProvisioningScenario[] =
+  OIDC_PROVISIONING_DECISION_MATRIX.filter(
+    (scenario) =>
+      scenario.adapters.sqlite.status === 'required' &&
+      scenario.expectations.users !== undefined,
+  );
 
 describe('safe OIDC provisioning', () => {
   let isolated: IsolatedTestDbResult;
@@ -39,6 +52,25 @@ describe('safe OIDC provisioning', () => {
 
   afterEach(async () => {
     await isolated.cleanup();
+  });
+
+  describe('executable decision matrix (SQLite)', () => {
+    it.each(USER_MATRIX_SCENARIOS)('$id — $title', async (scenario) => {
+      if (
+        scenario.execution === 'concurrent_winner_and_observer' ||
+        scenario.execution === 'concurrent_email_competitors' ||
+        scenario.execution === 'durable_arbiter_retry' ||
+        scenario.execution === 'caller_owned_transaction' ||
+        scenario.execution === 'root_transaction_rollback'
+      ) {
+        await isolated.db.rollback();
+        db = isolated.baseDb;
+        await prepareOidcEmailKeyBackfills(db);
+        users = await UserCollection.create({ db });
+      }
+
+      await runUserMatrixScenario({ db, scenario, users });
+    });
   });
 
   it('reuses one unowned global Person for a verified email', async () => {
@@ -1098,11 +1130,15 @@ describe('safe OIDC provisioning', () => {
     await expectNoProvisioningWrites(db, 0);
   });
 
-  it('fails closed on a DuckDB manual transaction without corrupting it', async () => {
+  it.each([
+    getOidcProvisioningDecisionScenario('duckdb-caller-owned-transaction'),
+  ])('$id — $title (Users manual transaction)', async (scenario) => {
     const duckDb = (await getDatabase({
       type: 'duckdb',
       url: ':memory:',
     })) as DatabaseInterface;
+    await syncSchema({ db: duckDb, schema: OIDC_USERS_TEST_SCHEMA });
+    const before = await provisioningRowCounts(duckDb);
     if (!duckDb.beginTransaction) {
       throw new Error('Expected DuckDB manual transaction support.');
     }
@@ -1114,7 +1150,11 @@ describe('safe OIDC provisioning', () => {
           claims({ email: 'duckdb-manual-user@example.com' }),
           'dex',
         ),
-      ).rejects.toMatchObject({ code: 'transaction_required' });
+      ).rejects.toMatchObject({
+        code: getOidcProvisioningPublicErrorCode(scenario.expectations.users),
+      });
+
+      await expectUserMatrixRowDelta(tx, before, scenario.expectations.users);
 
       expect(tx.isActive()).toBe(true);
       await tx.query('CREATE TABLE user_outer_probe (id INTEGER)');
@@ -1129,11 +1169,15 @@ describe('safe OIDC provisioning', () => {
     }
   });
 
-  it('fails closed on a DuckDB callback transaction without corrupting it', async () => {
+  it.each([
+    getOidcProvisioningDecisionScenario('duckdb-caller-owned-transaction'),
+  ])('$id — $title (Users callback transaction)', async (scenario) => {
     const duckDb = (await getDatabase({
       type: 'duckdb',
       url: ':memory:',
     })) as DatabaseInterface;
+    await syncSchema({ db: duckDb, schema: OIDC_USERS_TEST_SCHEMA });
+    const before = await provisioningRowCounts(duckDb);
     if (!duckDb.transaction) {
       throw new Error('Expected DuckDB callback transaction support.');
     }
@@ -1145,7 +1189,11 @@ describe('safe OIDC provisioning', () => {
             claims({ email: 'duckdb-callback-user@example.com' }),
             'dex',
           ),
-        ).rejects.toMatchObject({ code: 'transaction_required' });
+        ).rejects.toMatchObject({
+          code: getOidcProvisioningPublicErrorCode(scenario.expectations.users),
+        });
+
+        await expectUserMatrixRowDelta(tx, before, scenario.expectations.users);
 
         await tx.query('CREATE TABLE user_callback_probe (id INTEGER)');
         await tx.query('INSERT INTO user_callback_probe VALUES (1)');
@@ -1157,35 +1205,6 @@ describe('safe OIDC provisioning', () => {
     } finally {
       await closeDatabase(duckDb);
     }
-  });
-
-  it('rolls back resolver writes when provisioning owns the root transaction', async () => {
-    await isolated.db.rollback();
-    db = isolated.baseDb;
-    await prepareOidcEmailKeyBackfills(db);
-    users = await UserCollection.create({ db });
-    const attemptedUserId = randomUUID();
-
-    await expect(
-      users.getOrCreateFromOidc(
-        claims({ email: 'root-rejection@example.com' }),
-        'dex',
-        {
-          resolveProfile: async ({ db: tx }) => {
-            await tx.query(
-              `INSERT INTO users
-                (id, slug, context, profile_id, email, email_key, status)
-               VALUES (?, ?, '', '', 'partial@example.com', 'partial@example.com', 'active')`,
-              attemptedUserId,
-              `partial-${attemptedUserId}`,
-            );
-            return null;
-          },
-        },
-      ),
-    ).rejects.toMatchObject({ code: 'rejected' });
-
-    await expectNoProvisioningWrites(db, 0);
   });
 
   it('does not retry an unrelated resolver unique constraint', async () => {
@@ -1219,6 +1238,468 @@ describe('safe OIDC provisioning', () => {
     await expect(countRows(db, 'oidc_identities')).resolves.toBe(0);
   });
 });
+
+interface UserMatrixRunOptions {
+  db: DatabaseInterface;
+  scenario: OidcProvisioningScenario;
+  users: UserCollection;
+}
+
+interface UserMatrixResult {
+  created: boolean;
+  profile: { id?: string };
+  user: { id?: string };
+  oidcIdentity: { id?: string };
+}
+
+interface ProvisioningRowCounts {
+  profile: number;
+  oidcIdentity: number;
+  user: number;
+  session: number;
+}
+
+async function runUserMatrixScenario({
+  db,
+  scenario,
+  users,
+}: UserMatrixRunOptions): Promise<void> {
+  const expected = scenario.expectations.users;
+  if (!expected)
+    throw new Error(`Missing Users expectation for ${scenario.id}`);
+
+  const email = 'matrix@example.com';
+  const subject = `matrix-${scenario.id}`;
+  let identityProfileId: string | undefined;
+  let identityId: string | undefined;
+  let emailProfileId: string | undefined;
+  let resolverProfileId: string | undefined;
+
+  if (scenario.identity === 'exact_missing_profile') {
+    identityId = await seedIdentity(db, randomUUID(), {
+      email,
+      identityKey: JSON.stringify(['https://issuer.example.com', subject]),
+      subject,
+    });
+  } else if (scenario.identity !== 'none') {
+    const identityEmail =
+      scenario.email === 'different_global_person'
+        ? 'linked-matrix@example.com'
+        : email;
+    identityProfileId = await seedProfile(db, {
+      email: identityEmail,
+      metaType:
+        scenario.identity === 'exact_legacy_non_person_profile'
+          ? ORGANIZATION_META_TYPE
+          : undefined,
+      tenantId:
+        scenario.identity === 'exact_legacy_tenant_profile'
+          ? randomUUID()
+          : undefined,
+    });
+    const legacyIdentity =
+      scenario.identity.startsWith('exact_legacy_') ||
+      scenario.identity === 'exact_ambiguous_legacy_links';
+    identityId = await seedIdentity(db, identityProfileId, {
+      email: identityEmail,
+      identityKey: legacyIdentity
+        ? null
+        : JSON.stringify(['https://issuer.example.com', subject]),
+      subject,
+    });
+    if (scenario.identity === 'exact_ambiguous_legacy_links') {
+      const duplicateProfileId = await seedProfile(db, {
+        email: identityEmail,
+      });
+      await seedIdentity(db, duplicateProfileId, {
+        email: identityEmail,
+        identityKey: null,
+        subject,
+      });
+    }
+    if (scenario.email === 'already_owned_global_person') {
+      await seedUser(db, identityProfileId, email);
+    }
+    if (scenario.email === 'different_global_person') {
+      emailProfileId = await seedProfile(db, { email });
+    }
+  }
+
+  if (scenario.identity === 'none') {
+    if (
+      scenario.email === 'one_unowned_global_person' ||
+      scenario.email === 'already_owned_global_person' ||
+      scenario.email === 'tenant_scoped_collision' ||
+      scenario.email === 'non_person_collision' ||
+      scenario.email === 'duplicate_normalized_profiles'
+    ) {
+      emailProfileId = await seedProfile(db, {
+        email,
+        metaType:
+          scenario.email === 'non_person_collision'
+            ? ORGANIZATION_META_TYPE
+            : undefined,
+        tenantId:
+          scenario.email === 'tenant_scoped_collision'
+            ? randomUUID()
+            : undefined,
+      });
+      if (scenario.email === 'duplicate_normalized_profiles') {
+        await seedProfile(db, { email: ' MATRIX@example.com ' });
+      }
+      if (scenario.email === 'already_owned_global_person') {
+        await seedUser(db, emailProfileId, email);
+      }
+    }
+  }
+
+  if (scenario.resolver === 'different_profile') {
+    resolverProfileId =
+      emailProfileId ??
+      (await seedProfile(db, { email: 'different-matrix@example.com' }));
+  } else if (scenario.resolver === 'same_profile') {
+    resolverProfileId = identityProfileId ?? emailProfileId;
+  } else if (scenario.resolver === 'owned_profile') {
+    resolverProfileId = emailProfileId;
+  }
+
+  if (expected.readiness === 'none') {
+    await deleteBackfillMarker(
+      db,
+      '@happyvertical/smrt-profiles:profile-email-keys:v1',
+    );
+  }
+  if (expected.readiness !== 'profile_and_user_email_keys') {
+    await deleteBackfillMarker(
+      db,
+      '@happyvertical/smrt-users:user-email-keys:v1',
+    );
+  }
+
+  const before = await provisioningRowCounts(db);
+  const identityBindingsBefore = await userMatrixIdentityBindings(db, subject);
+  let resolverCalls = 0;
+  const resolveProfile =
+    scenario.resolver === 'absent'
+      ? undefined
+      : async ({ db: resolverDb }: { db: DatabaseInterface }) => {
+          resolverCalls += 1;
+          if (scenario.execution === 'root_transaction_rollback') {
+            const probeProfileId = randomUUID();
+            await resolverDb.query(
+              `INSERT INTO profiles
+                (id, slug, context, _meta_type, tenant_id, email, email_key, name)
+               VALUES (?, ?, '', '@happyvertical/smrt-profiles:Person', NULL, ?, ?, 'Rollback Probe')`,
+              probeProfileId,
+              `rollback-probe-${probeProfileId}`,
+              'rollback-probe@example.com',
+              'rollback-probe@example.com',
+            );
+            return null;
+          }
+          if (scenario.resolver === 'undefined') return undefined;
+          if (scenario.resolver === 'null') return null;
+          if (scenario.resolver === 'throws') {
+            throw new Error('matrix resolver failure');
+          }
+          const profileId = resolverProfileId;
+          if (!profileId) {
+            throw new Error(`Scenario ${scenario.id} has no resolver Profile.`);
+          }
+          return (await ProfileCollection.create({ db: resolverDb })).get({
+            id: profileId,
+          });
+        };
+  const oidcClaims = claims({
+    email: scenario.email === 'missing' ? undefined : email,
+    email_verified:
+      scenario.verification === 'claim_missing'
+        ? undefined
+        : scenario.verification === 'verified',
+    sub: subject,
+  });
+  if (scenario.email === 'missing') delete oidcClaims.email;
+  if (scenario.verification === 'claim_missing') {
+    delete oidcClaims.email_verified;
+  }
+
+  const values: UserMatrixResult[] = [];
+  const errors: unknown[] = [];
+  const invoke = (collection = users, claimsOverride = oidcClaims) =>
+    collection.getOrCreateFromOidc(claimsOverride, 'dex', {
+      ...(resolveProfile ? { resolveProfile } : {}),
+    });
+
+  if (scenario.execution === 'concurrent_winner_and_observer') {
+    collectSettled(
+      await Promise.allSettled([invoke(), invoke()]),
+      values,
+      errors,
+    );
+  } else if (scenario.execution === 'concurrent_email_competitors') {
+    collectSettled(
+      await Promise.allSettled([
+        invoke(users, { ...oidcClaims, sub: `${subject}-first` }),
+        invoke(users, { ...oidcClaims, sub: `${subject}-second` }),
+      ]),
+      values,
+      errors,
+    );
+  } else if (scenario.execution === 'durable_arbiter_retry') {
+    const retryingUsers = await UserCollection.create({
+      db: withFirstMatrixIdentityConflict(db),
+    });
+    await collectPromise(invoke(retryingUsers), values, errors);
+  } else if (scenario.execution === 'caller_owned_transaction') {
+    const transaction = db.transaction;
+    if (!transaction) throw new Error('SQLite matrix requires transaction().');
+    await collectPromise(
+      transaction.call(db, async (tx) =>
+        invoke(await UserCollection.create({ db: tx })),
+      ),
+      values,
+      errors,
+    );
+  } else {
+    await collectPromise(invoke(), values, errors);
+  }
+
+  expectMatrixOutcome(expected, values, errors);
+  expectMatrixCreatedResult(expected, values);
+  expectMatrixResolverCalls(resolverCalls, expected.resolverCalls);
+  expectMatrixRetryContract(scenario, expected, resolverCalls);
+  assertSelectedProfile({
+    emailProfileId,
+    expected,
+    identityProfileId,
+    resolverProfileId,
+    values,
+  });
+  if (expected.selectedProfile === 'exact_identity_profile') {
+    expect(values.every((value) => value.oidcIdentity.id === identityId)).toBe(
+      true,
+    );
+  }
+
+  await expectUserMatrixRowDelta(db, before, expected);
+  if (scenario.identity !== 'none' && !expected.rebindAllowed) {
+    await expect(userMatrixIdentityBindings(db, subject)).resolves.toEqual(
+      identityBindingsBefore,
+    );
+  }
+}
+
+async function collectPromise(
+  promise: Promise<UserMatrixResult>,
+  values: UserMatrixResult[],
+  errors: unknown[],
+): Promise<void> {
+  try {
+    values.push(await promise);
+  } catch (error) {
+    errors.push(error);
+  }
+}
+
+function collectSettled(
+  results: PromiseSettledResult<UserMatrixResult>[],
+  values: UserMatrixResult[],
+  errors: unknown[],
+): void {
+  for (const result of results) {
+    if (result.status === 'fulfilled') values.push(result.value);
+    else errors.push(result.reason);
+  }
+}
+
+function expectMatrixOutcome(
+  expected: OidcProvisioningSurfaceExpectation,
+  values: UserMatrixResult[],
+  errors: unknown[],
+): void {
+  if (expected.outcome === 'success') {
+    expect(values.length).toBeGreaterThan(0);
+    expect(errors).toHaveLength(0);
+  } else if (expected.outcome === 'rejected') {
+    expect(values).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+  } else {
+    expect(values).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+  }
+  for (const error of errors) {
+    expectMatrixPublicError(error, expected.publicError);
+  }
+}
+
+function expectMatrixCreatedResult(
+  expected: OidcProvisioningSurfaceExpectation,
+  values: UserMatrixResult[],
+): void {
+  const created = values.map((value) => value.created);
+  if (expected.resultCreated === 'none') expect(created).toHaveLength(0);
+  else if (expected.resultCreated === 'created') {
+    expect(created.every(Boolean)).toBe(true);
+  } else if (expected.resultCreated === 'reused') {
+    expect(created.every((value) => !value)).toBe(true);
+  } else {
+    expect(created).toContain(true);
+    expect(created).toContain(false);
+  }
+}
+
+function expectMatrixResolverCalls(
+  actual: number,
+  expected: OidcProvisioningSurfaceExpectation['resolverCalls'],
+): void {
+  if (expected === 'at_least_2') expect(actual).toBeGreaterThanOrEqual(2);
+  else expect(actual).toBe(expected);
+}
+
+function expectMatrixRetryContract(
+  scenario: OidcProvisioningScenario,
+  expected: OidcProvisioningSurfaceExpectation,
+  resolverCalls: number,
+): void {
+  if (expected.retry === 'once_after_race') {
+    expect([
+      'concurrent_winner_and_observer',
+      'durable_arbiter_retry',
+    ]).toContain(scenario.execution);
+    expect(resolverCalls).toBeGreaterThanOrEqual(2);
+  } else if (scenario.execution === 'durable_arbiter_retry') {
+    throw new Error(`${scenario.id} must declare its resolver retry contract.`);
+  }
+}
+
+function expectMatrixPublicError(
+  error: unknown,
+  publicError: OidcProvisioningSurfaceExpectation['publicError'],
+): void {
+  expect(publicError).not.toBeNull();
+  if (!publicError) return;
+  if ('code' in publicError) {
+    expect(error).toEqual(expect.objectContaining({ code: publicError.code }));
+  } else if ('name' in publicError) {
+    expect(error).toEqual(expect.objectContaining({ name: publicError.name }));
+  } else {
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining(publicError.messageIncludes),
+      }),
+    );
+  }
+}
+
+function assertSelectedProfile(options: {
+  emailProfileId?: string;
+  expected: OidcProvisioningSurfaceExpectation;
+  identityProfileId?: string;
+  resolverProfileId?: string;
+  values: UserMatrixResult[];
+}): void {
+  const { expected, values } = options;
+  if (expected.selectedProfile === null) return;
+  const profileIds = values.map((value) => value.profile.id);
+  if (expected.selectedProfile === 'concurrent_winner') {
+    expect(new Set(profileIds)).toHaveLength(1);
+    return;
+  }
+  const expectedId =
+    expected.selectedProfile === 'email_match'
+      ? options.emailProfileId
+      : expected.selectedProfile === 'exact_identity_profile'
+        ? options.identityProfileId
+        : expected.selectedProfile === 'resolver_profile'
+          ? options.resolverProfileId
+          : undefined;
+  if (expected.selectedProfile === 'new_profile') {
+    expect(profileIds.every((id) => typeof id === 'string')).toBe(true);
+    expect(profileIds).not.toContain(options.emailProfileId);
+    expect(profileIds).not.toContain(options.identityProfileId);
+    return;
+  }
+  expect(expectedId).toBeDefined();
+  expect(profileIds.every((id) => id === expectedId)).toBe(true);
+}
+
+async function provisioningRowCounts(
+  db: DatabaseInterface,
+): Promise<ProvisioningRowCounts> {
+  const [profile, oidcIdentity, user, session] = await Promise.all([
+    countRows(db, 'profiles'),
+    countRows(db, 'oidc_identities'),
+    countRows(db, 'users'),
+    countRows(db, 'sessions'),
+  ]);
+  return { profile, oidcIdentity, user, session };
+}
+
+function rowCountDelta(
+  before: ProvisioningRowCounts,
+  after: ProvisioningRowCounts,
+): ProvisioningRowCounts {
+  return {
+    profile: after.profile - before.profile,
+    oidcIdentity: after.oidcIdentity - before.oidcIdentity,
+    user: after.user - before.user,
+    session: after.session - before.session,
+  };
+}
+
+async function expectUserMatrixRowDelta(
+  db: DatabaseInterface,
+  before: ProvisioningRowCounts,
+  expected: OidcProvisioningSurfaceExpectation | undefined,
+): Promise<void> {
+  if (!expected) throw new Error('Missing Users matrix expectation.');
+  const after = await provisioningRowCounts(db);
+  expect(rowCountDelta(before, after)).toEqual(expected.createdRows);
+}
+
+function withFirstMatrixIdentityConflict(
+  db: DatabaseInterface,
+): DatabaseInterface {
+  const transaction = db.transaction;
+  if (!transaction) throw new Error('SQLite matrix requires transaction().');
+  let injected = false;
+  return new Proxy(db, {
+    get(target, property, receiver) {
+      if (property === 'transaction') {
+        return async <T>(
+          callback: (tx: DatabaseInterface) => Promise<T>,
+        ): Promise<T> =>
+          transaction.call(target, (tx) =>
+            callback(
+              new Proxy(tx, {
+                get(txTarget, txProperty, txReceiver) {
+                  if (txProperty === 'upsert') {
+                    return async (
+                      ...args: Parameters<DatabaseInterface['upsert']>
+                    ) => {
+                      if (!injected && args[0] === 'oidc_identities') {
+                        injected = true;
+                        throw new Error(
+                          'UNIQUE constraint failed: oidc_identities.identity_key',
+                        );
+                      }
+                      return txTarget.upsert(...args);
+                    };
+                  }
+                  const value = Reflect.get(txTarget, txProperty, txReceiver);
+                  return typeof value === 'function'
+                    ? value.bind(txTarget)
+                    : value;
+                },
+              }),
+            ),
+          );
+      }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
 
 function claims(overrides: Partial<OidcClaims> = {}): OidcClaims {
   return {
@@ -1276,21 +1757,45 @@ async function seedUser(
 async function seedIdentity(
   db: DatabaseInterface,
   profileId: string,
-  options: { email: string; issuer?: string; subject: string },
+  options: {
+    email: string;
+    identityKey?: string | null;
+    issuer?: string;
+    subject: string;
+  },
 ): Promise<string> {
   const id = randomUUID();
   await db.query(
     `INSERT INTO oidc_identities
       (id, slug, context, profile_id, provider, issuer, subject, identity_key, email)
-     VALUES (?, ?, '', ?, 'dex', ?, ?, NULL, ?)`,
+     VALUES (?, ?, '', ?, 'dex', ?, ?, ?, ?)`,
     id,
     `seed-${id}`,
     profileId,
     options.issuer ?? 'https://issuer.example.com',
     options.subject,
+    options.identityKey ?? null,
     options.email,
   );
   return id;
+}
+
+async function userMatrixIdentityBindings(
+  db: DatabaseInterface,
+  subject: string,
+): Promise<Array<{ id: string; profileId: string }>> {
+  const result = await db.query(
+    `SELECT id, profile_id
+     FROM oidc_identities
+     WHERE issuer = ? AND subject = ?
+     ORDER BY id`,
+    'https://issuer.example.com',
+    subject,
+  );
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    profileId: String(row.profile_id),
+  }));
 }
 
 async function countRows(

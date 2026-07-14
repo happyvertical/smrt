@@ -168,13 +168,14 @@ A handle exposing only `transaction()` is ambiguous and fails closed. For
 adapters without nested savepoint support, including DuckDB, pass
 the root database rather than calling the helper inside an outer transaction.
 Provisioning fails before durable writes when neither safe path is available.
-The Profile-only helper preserves exact issuer/subject reuse, including legacy
-links to tenant-scoped or non-Person Profiles, but never attaches a new identity
-to an existing email match because this package cannot prove whether a User owns
-that Profile. User/session provisioning still rejects those unsafe linked
-Profiles before creating authentication state. Use
-`UserCollection.getOrCreateFromOidc()` from `@happyvertical/smrt-users` for
-owner-aware verified-email reuse and the supported pre-provision resolver hook.
+The typed [OIDC provisioning decision matrix](./src/testing/oidcProvisioningDecisionMatrix.ts)
+is the canonical package-by-package behavior contract. It records exact reuse,
+new identity and resolver outcomes, readiness, retries, adapter support, public
+errors, and permitted row creation; the Profiles and Users suites execute its
+applicable rows directly. In particular, Profile-only exact reuse preserves an
+established legacy link because it creates no User/session authentication state,
+while `UserCollection.getOrCreateFromOidc()` remains owner-aware and fail-closed.
+Use the Users API for verified-email reuse and application reconciliation.
 
 `Profile` and `ProfileCollection` both expose `getAssets()`, `addAsset()`, and
 `removeAsset()` helpers backed by `profile_assets`. Typical relationships are
