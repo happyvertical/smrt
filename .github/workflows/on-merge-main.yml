@@ -31,7 +31,7 @@ jobs:
   cancel-pr-checks:
     name: Cancel PR Validation Checks
     if: github.event_name == 'push' && vars.CI_MERGE_QUEUE_ENABLED != 'true'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository

@@ -43,7 +43,7 @@ jobs:
   build:
     name: Build
     if: inputs.mode == 'full'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 15
 
     steps:
@@ -122,7 +122,7 @@ jobs:
     name: Typecheck
     needs: build
     if: inputs.mode == 'full'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 15
 
     steps:
@@ -168,7 +168,7 @@ jobs:
     name: Affected Build, Typecheck, and Tests
     needs: affected-scope
     if: inputs.mode == 'affected'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -196,7 +196,7 @@ jobs:
     name: Affected Knowledge Freshness
     needs: affected-scope
     if: inputs.mode == 'affected' && needs.affected-scope.outputs.knowledge == 'true'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 15
     steps:
       - name: Checkout repository
@@ -225,7 +225,7 @@ jobs:
     name: Knowledge Freshness
     needs: build
     if: inputs.mode == 'full'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 10
 
     steps:
@@ -264,7 +264,7 @@ jobs:
     name: Coverage Gate
     needs: build
     if: always() && (inputs.mode == 'affected' || needs.build.result == 'success')
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 25
 
     steps:
@@ -298,7 +298,7 @@ jobs:
     name: Test Core (${{ matrix.shard }})
     needs: build
     if: inputs.mode == 'full'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     # A remote-cache outage can add several minutes of cold setup and build
     # time. Match the package-shard ceiling so cache misses cannot cancel an
     # otherwise healthy core suite.
@@ -353,7 +353,7 @@ jobs:
     name: Test Integration
     needs: build
     if: inputs.mode == 'full'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 10
 
     steps:
@@ -388,7 +388,7 @@ jobs:
     name: Test Packages (${{ matrix.shard }})
     needs: build
     if: inputs.mode == 'full'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     # Each shard runs ~1/3 of package tests and lets Turbo build only their
     # dependency closures. Keep the wider timeout for runner-pool contention.
     timeout-minutes: 25

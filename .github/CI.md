@@ -1,9 +1,10 @@
 # Continuous integration architecture
 
-SMRT uses hosted runners for static checks and HappyVertical ARC runners for
-builds and tests. The internal Turborepo server is the build-output cache;
-GitHub Actions cache archives are deliberately not used for `.turbo/cache`.
-If the remote cache is unavailable, Turbo performs a cold build.
+SMRT uses hosted runners for lightweight static and control-plane checks and
+the shared `ci-linux-x64` pool for general builds, tests, and publishing. The
+internal Turborepo server is the build-output cache; GitHub Actions cache
+archives are deliberately not used for `.turbo/cache`. If the remote cache is
+unavailable, Turbo performs a cold build.
 
 ## Manifest generation
 
@@ -21,22 +22,25 @@ never prevent the tests from running.
 
 ## Runner selection
 
-- `arc-happyvertical-node` is the normal Node.js runner. It has exact Node and
-  pnpm versions, native build dependencies, and a PostgreSQL client. It has no
-  Docker daemon or privileged sidecar.
-- `arc-happyvertical` is the compatibility runner for workflows that require
-  Docker or deployment tooling.
-- SMRT jobs select the node runner when the repository variable
-  `CI_NODE_RUNNER_ENABLED` is `true`; otherwise they use the compatibility
-  runner. PostgreSQL shadow validation always targets the node runner.
+- `ci-linux-x64` is the default selector for general Linux work. It combines
+  ARC capacity with allowlisted PXE hosts using one workflow-facing label.
+- `arc-happyvertical-node` is reserved for the runner-image smoke test and
+  PostgreSQL shadow validation. Those jobs depend on its cluster-local database
+  URL mount and intentionally do not join the general pool.
+- Lightweight lifecycle, policy, aggregation, stale-management, and mobile
+  jobs remain GitHub-hosted when they do not benefit from a self-hosted cache.
+
+The retired `CI_NODE_RUNNER_ENABLED` switch no longer controls job placement
+and can be removed from the repository after this workflow migration is live.
 
 The pnpm store and runner workspace must remain on the same node-local
-filesystem so pnpm can hardlink packages. Do not restore the RAM-backed split
+filesystem so pnpm can hardlink packages. Do not restore RAM-backed split
 mounts without measuring runner memory and install latency. The shared setup
 action also points `TMPDIR` at the workspace-backed runner temp directory so
 SQLite fixtures and other temporary test files bypass the container overlay
-filesystem. ARC runners can provide `CI_TEST_TMPDIR` to route those files to a
-bounded, test-only tmpfs; other runners retain the workspace-backed fallback.
+filesystem. Self-hosted runners can provide `CI_TEST_TMPDIR` to route those
+files to a bounded, test-only tmpfs; other runners retain the workspace-backed
+fallback.
 
 ## Pull requests and merge groups
 
@@ -55,7 +59,7 @@ representative code-changing PR run.
 
 After that canary run:
 
-1. Set `CI_NODE_RUNNER_ENABLED=true` and verify one non-required/shadow run.
+1. Verify the `ci-linux-x64` ARC/PXE canary and one representative SMRT run.
 2. Set `CI_POSTGRES_ENABLED=true` after the disposable cluster and runner URL
    mount pass the manual shadow workflow.
 3. Set `CI_MERGE_QUEUE_ENABLED=true`.
@@ -135,8 +139,9 @@ p95 exceeds 45 seconds, runner memory exceeds 8 GiB, required contexts vanish,
 or retries/failures increase. Target setup p50 below 30 seconds, queue p95 below
 two minutes, and at least 30% fewer self-hosted runner-minutes per PR.
 
-Rollback by clearing the three repository variables, restoring the previous
-required status list, and removing the merge-queue rule. PostgreSQL can be
-removed from the required aggregator without altering SQLite coverage. The
-artifact publisher can temporarily fall back to Changesets through manual
-dispatch.
+Rollback runner placement by restoring general jobs to
+`arc-happyvertical-node`. Merge-queue rollout can be reversed independently by
+clearing `CI_MERGE_QUEUE_ENABLED`, restoring the previous required status list,
+and removing the merge-queue rule. PostgreSQL can be removed from the required
+aggregator without altering SQLite coverage. The artifact publisher can
+temporarily fall back to Changesets through manual dispatch.
