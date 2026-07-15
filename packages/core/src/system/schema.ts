@@ -330,6 +330,9 @@ CREATE INDEX IF NOT EXISTS idx_smrt_changes_created_at
 /** PostgreSQL helper used to isolate best-effort feed appends (#2026). */
 export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME = '_smrt_append_change';
 
+/** Exact PostgreSQL identity used for catalog lookup of the append helper. */
+export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(text,text,text,text,timestamp without time zone)`;
+
 /**
  * PostgreSQL-only change-feed append function.
  *
@@ -389,6 +392,84 @@ BEGIN
   END;
 END;
 $smrt_change_feed$;
+`;
+
+/**
+ * Serialize PostgreSQL helper replacement inside one server-side statement.
+ *
+ * The transaction-scoped advisory lock prevents concurrent bootstraps from
+ * racing on PostgreSQL's `pg_proc` uniqueness constraint. The nested dollar
+ * quote keeps the complete function DDL atomic from the client's perspective.
+ */
+export const REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION = `
+DO $smrt_replace_change_feed$
+BEGIN
+  PERFORM pg_advisory_xact_lock(
+    hashtext('smrt'),
+    hashtext('system-tables')
+  );
+  EXECUTE $smrt_change_feed_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
+$smrt_change_feed_ddl$;
+END;
+$smrt_replace_change_feed$;
+`;
+
+/**
+ * Install the PostgreSQL helper only when missing, serialized server-side.
+ *
+ * A client-side catalog probe remains the fast path for already-initialized
+ * read handles. This guarded statement is the cold-path race boundary: both
+ * the advisory lock and the post-lock catalog check run before function DDL.
+ */
+export const ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION = `
+DO $smrt_ensure_change_feed$
+BEGIN
+  PERFORM pg_advisory_xact_lock(
+    hashtext('smrt'),
+    hashtext('system-tables')
+  );
+  IF to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') IS NULL THEN
+    EXECUTE $smrt_change_feed_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
+$smrt_change_feed_ddl$;
+  END IF;
+END;
+$smrt_ensure_change_feed$;
+`;
+
+const POSTGRES_CHANGE_FEED_SCHEMA_DDL = CREATE_SMRT_CHANGES_TABLE.split(';')
+  .map((statement) => statement.trim())
+  .filter((statement) => statement.length > 0)
+  .map(
+    (statement) => `EXECUTE $smrt_change_feed_schema_ddl$
+${statement}
+$smrt_change_feed_schema_ddl$;`,
+  )
+  .join('\n');
+
+/**
+ * Install the complete PostgreSQL change-feed schema under the bootstrap lock.
+ *
+ * The lock is deliberately acquired before table or index DDL. Framework
+ * bootstrap uses the same ordering, so a raw-handle cold start cannot retain
+ * catalog locks while waiting behind a framework bootstrap transaction.
+ */
+export const ENSURE_POSTGRES_CHANGE_FEED_SCHEMA = `
+DO $smrt_ensure_change_feed_schema$
+BEGIN
+  PERFORM pg_advisory_xact_lock(
+    hashtext('smrt'),
+    hashtext('system-tables')
+  );
+${POSTGRES_CHANGE_FEED_SCHEMA_DDL}
+  IF to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') IS NULL THEN
+    EXECUTE $smrt_change_feed_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
+$smrt_change_feed_ddl$;
+  END IF;
+END;
+$smrt_ensure_change_feed_schema$;
 `;
 
 /**

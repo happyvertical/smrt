@@ -99,9 +99,12 @@ import { GlobalInterceptors, type InterceptorContext } from './interceptors.js';
 import type { SmrtObject } from './object.js';
 import { detectEngine } from './schema/ddl/index.js';
 import {
-  CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   CREATE_SMRT_CHANGES_TABLE,
+  ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  ENSURE_POSTGRES_CHANGE_FEED_SCHEMA,
+  POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME,
+  REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
 } from './system/schema.js';
 
 const logger = createLogger({ level: 'info' });
@@ -342,34 +345,78 @@ function isUniqueViolation(error: unknown): boolean {
  */
 const ensuredHandles = new WeakSet<object>();
 
+async function postgresChangeFeedAppendFunctionExists(
+  db: DatabaseInterface,
+): Promise<boolean> {
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name`,
+    ),
+  );
+  return Boolean(rows[0]?.function_name);
+}
+
+async function postgresChangeFeedSchemaExists(
+  db: DatabaseInterface,
+): Promise<boolean> {
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT
+         to_regclass('${CHANGE_FEED_TABLE}') AS table_name,
+         to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name`,
+    ),
+  );
+  return Boolean(rows[0]?.table_name && rows[0]?.function_name);
+}
+
 /**
  * Install/refresh the PostgreSQL exception-subtransaction append boundary.
  *
  * Framework bootstrap calls this while applying the system-schema version that
  * introduced the helper, so upgraded databases acquire it before the migration
- * is recorded. Non-PostgreSQL adapters are a no-op.
+ * is recorded. Raw-handle initialization passes `replaceExisting: false` so a
+ * read route does not require function ownership when the installed helper is
+ * already current. A missing helper is installed by one server-side statement
+ * that locks and rechecks before DDL. Non-PostgreSQL adapters are a no-op.
  *
  * @internal
  */
 export async function ensurePostgresChangeFeedAppendFunction(
   db: DatabaseInterface,
-  typeHint?: string,
+  options: {
+    replaceExisting?: boolean;
+    typeHint?: string;
+  } = {},
 ): Promise<void> {
-  if (getEngine(db, typeHint) !== 'postgres') return;
-  await db.query(CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
+  if (getEngine(db, options.typeHint) !== 'postgres') return;
+
+  if (options.replaceExisting === false) {
+    if (await postgresChangeFeedAppendFunctionExists(db)) return;
+    await db.query(ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
+    return;
+  }
+
+  await db.query(REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
 }
 
 export async function ensureChangeFeedTable(
   db: DatabaseInterface,
 ): Promise<void> {
   if (ensuredHandles.has(db)) return;
-  const statements = CREATE_SMRT_CHANGES_TABLE.split(';')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
-  for (const statement of statements) {
-    await db.query(statement);
+  if (getEngine(db) === 'postgres') {
+    if (await postgresChangeFeedSchemaExists(db)) {
+      ensuredHandles.add(db);
+      return;
+    }
+    await db.query(ENSURE_POSTGRES_CHANGE_FEED_SCHEMA);
+  } else {
+    const statements = CREATE_SMRT_CHANGES_TABLE.split(';')
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0);
+    for (const statement of statements) {
+      await db.query(statement);
+    }
   }
-  await ensurePostgresChangeFeedAppendFunction(db);
   ensuredHandles.add(db);
 }
 

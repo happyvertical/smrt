@@ -976,7 +976,9 @@ export class SmrtClass {
       await db.query(statement);
     }
 
-    await ensurePostgresChangeFeedAppendFunction(db, this._dbEngineHint);
+    await ensurePostgresChangeFeedAppendFunction(db, {
+      typeHint: this._dbEngineHint,
+    });
 
     // Record current schema version
     // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)

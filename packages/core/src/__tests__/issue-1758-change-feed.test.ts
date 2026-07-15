@@ -27,6 +27,7 @@ import {
   bumpChangeFeed,
   CHANGE_FEED_INTERCEPTOR_NAME,
   type ChangeFeedEntry,
+  ensureChangeFeedTable,
   getChangesSince,
   getTenantScopedChangesSince,
   pruneChangeFeed,
@@ -571,6 +572,64 @@ describe('change feed spine (issue #1758)', () => {
   });
 
   describe('append allocation', () => {
+    it('skips Postgres function DDL on raw handles when the helper exists', async () => {
+      const query = vi.fn(async (sql: string) => {
+        if (sql.includes('to_regclass')) {
+          return {
+            rows: [
+              {
+                function_name: '_smrt_append_change',
+                table_name: '_smrt_changes',
+              },
+            ],
+          };
+        }
+        if (sql.includes('to_regprocedure')) {
+          return {
+            rows: [{ function_name: '_smrt_append_change' }],
+          };
+        }
+        return { rows: [] };
+      });
+      const rawDb = {
+        url: 'postgresql://localhost/smrt',
+        query,
+      } as unknown as DatabaseInterface;
+
+      await ensureChangeFeedTable(rawDb);
+
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining('to_regclass'),
+      );
+      expect(
+        query.mock.calls.some(([sql]) =>
+          /CREATE (?:TABLE|INDEX|OR REPLACE FUNCTION)/.test(sql),
+        ),
+      ).toBe(false);
+    });
+
+    it('installs the Postgres schema under the bootstrap lock when it is missing', async () => {
+      const query = vi.fn(async () => ({ rows: [] }));
+      const rawDb = {
+        url: 'postgresql://localhost/smrt',
+        query,
+      } as unknown as DatabaseInterface;
+
+      await ensureChangeFeedTable(rawDb);
+
+      const install = query.mock.calls
+        .map(([sql]) => sql)
+        .find((sql) =>
+          sql.includes('CREATE TABLE IF NOT EXISTS _smrt_changes'),
+        );
+      expect(install).toContain(
+        'CREATE OR REPLACE FUNCTION _smrt_append_change',
+      );
+      expect(install?.indexOf('pg_advisory_xact_lock')).toBeLessThan(
+        install?.indexOf('CREATE TABLE IF NOT EXISTS _smrt_changes') ?? -1,
+      );
+    });
+
     it('retries a unique SQLSTATE returned by the Postgres append function', async () => {
       const query = vi
         .fn()

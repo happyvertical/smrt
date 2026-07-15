@@ -23,6 +23,8 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   appendChange,
+  ensureChangeFeedTable,
+  ensurePostgresChangeFeedAppendFunction,
   getChangesSince,
   registerChangeFeedWriter,
 } from '../change-feed';
@@ -52,6 +54,20 @@ function rowsOf(result: unknown): Record<string, unknown>[] {
     if (Array.isArray(rows)) return rows as Record<string, unknown>[];
   }
   return [];
+}
+
+function transactionBoundBootstrapHandle(
+  tx: DatabaseInterface,
+  suffix: string,
+): DatabaseInterface {
+  const separator = pgUrl?.includes('?') ? '&' : '?';
+  return {
+    query: tx.query.bind(tx),
+    transaction: async (
+      callback: (db: DatabaseInterface) => Promise<unknown>,
+    ) => callback(tx),
+    url: `${pgUrl}${separator}smrt_test_handle=${suffix}`,
+  } as unknown as DatabaseInterface;
 }
 
 describe.skipIf(!pgUrl)(
@@ -102,20 +118,241 @@ describe.skipIf(!pgUrl)(
     });
 
     afterAll(async () => {
-      await writerA?.query(
-        'ALTER TABLE _smrt_changes DROP CONSTRAINT IF EXISTS issue_2026_forced_failure',
-      );
-      await writerA?.query(
-        'DROP TRIGGER IF EXISTS issue_2026_assert_feed_failure ON _smrt_changes',
-      );
-      await writerA?.query(
-        'DROP FUNCTION IF EXISTS issue_2026_assert_feed_failure()',
-      );
-      await writerA?.query('DELETE FROM _smrt_changes');
-      await writerA?.query(`DROP TABLE IF EXISTS ${TRANSACTION_WIDGETS_TABLE}`);
-      await writerA?.close?.();
-      await writerB?.close?.();
+      try {
+        await writerA?.query(
+          'ALTER TABLE _smrt_changes DROP CONSTRAINT IF EXISTS issue_2026_forced_failure',
+        );
+        await writerA?.query(
+          'DROP TRIGGER IF EXISTS issue_2026_assert_feed_failure ON _smrt_changes',
+        );
+        await writerA?.query(
+          'DROP FUNCTION IF EXISTS issue_2026_assert_feed_failure()',
+        );
+        await writerA?.query('DELETE FROM _smrt_changes');
+        await writerA?.query(
+          `DROP TABLE IF EXISTS ${TRANSACTION_WIDGETS_TABLE}`,
+        );
+      } finally {
+        try {
+          if (writerA) {
+            await ensurePostgresChangeFeedAppendFunction(writerA);
+          }
+        } finally {
+          await writerA?.close?.();
+          await writerB?.close?.();
+        }
+      }
     });
+
+    it('short-circuits all DDL when the Postgres schema exists in a read-only transaction', async () => {
+      if (!writerA.transaction) {
+        throw new Error('Expected PostgreSQL transaction support');
+      }
+
+      await writerA.transaction(async (tx) => {
+        await tx.query('SET TRANSACTION READ ONLY');
+        await ensureChangeFeedTable(tx);
+
+        const probe = rowsOf(await tx.query('SELECT 1 AS read_only_usable'));
+        expect(probe[0]?.read_only_usable).toBe(1);
+      });
+    });
+
+    it('serializes a cold helper install across two caller transactions', async () => {
+      if (!writerA.transaction || !writerB.transaction) {
+        throw new Error('Expected PostgreSQL transaction support');
+      }
+
+      await writerA.query('DROP FUNCTION IF EXISTS _smrt_append_change');
+
+      let readyProbes = 0;
+      let releaseProbes!: () => void;
+      const probesReady = new Promise<void>((resolve) => {
+        releaseProbes = resolve;
+      });
+      const probeTimeout = setTimeout(releaseProbes, 5_000);
+
+      const install = async (db: DatabaseInterface) => {
+        if (!db.transaction) {
+          throw new Error('Expected PostgreSQL transaction support');
+        }
+        await db.transaction(async (tx) => {
+          const rawHandle = {
+            url: tx.url,
+            query: async (...args: Parameters<DatabaseInterface['query']>) => {
+              const [sql] = args;
+              if (sql.includes('to_regclass')) {
+                return {
+                  rowCount: 1,
+                  rows: [
+                    {
+                      function_name: null,
+                      table_name: '_smrt_changes',
+                    },
+                  ],
+                };
+              }
+
+              const result = await tx.query(...args);
+              if (sql.includes('SELECT to_regprocedure')) {
+                expect(rowsOf(result)[0]?.function_name).toBeNull();
+                readyProbes += 1;
+                if (readyProbes === 2) releaseProbes();
+                await probesReady;
+              }
+              return result;
+            },
+          } as unknown as DatabaseInterface;
+
+          await ensureChangeFeedTable(rawHandle);
+          const probe = rowsOf(
+            await tx.query('SELECT 1 AS transaction_still_usable'),
+          );
+          expect(probe[0]?.transaction_still_usable).toBe(1);
+        });
+      };
+
+      let results: PromiseSettledResult<void>[] = [];
+      try {
+        results = await Promise.allSettled([
+          install(writerA),
+          install(writerB),
+        ]);
+      } finally {
+        clearTimeout(probeTimeout);
+        releaseProbes();
+        await ensurePostgresChangeFeedAppendFunction(writerA);
+      }
+
+      expect(
+        results.flatMap((result) =>
+          result.status === 'rejected' ? [String(result.reason)] : [],
+        ),
+      ).toEqual([]);
+      const installed = rowsOf(
+        await writerA.query(
+          `SELECT to_regprocedure(
+            '_smrt_append_change(text,text,text,text,timestamp without time zone)'
+          ) AS function_name`,
+        ),
+      );
+      expect(installed[0]?.function_name).toBeTruthy();
+    });
+
+    it('uses one advisory-lock domain when a raw install overlaps framework bootstrap', async () => {
+      if (!writerA.transaction || !writerB.transaction) {
+        throw new Error('Expected PostgreSQL transaction support');
+      }
+
+      await writerA.query(
+        "DELETE FROM _smrt_migrations WHERE version = '1.8.0'",
+      );
+      await writerA.query('DROP FUNCTION IF EXISTS _smrt_append_change');
+      await writerA.query('DROP TABLE IF EXISTS _smrt_changes');
+
+      let releaseSystemLockAcquired!: () => void;
+      const systemLockAcquired = new Promise<void>((resolve) => {
+        releaseSystemLockAcquired = resolve;
+      });
+      let releaseRawInstallStarted!: () => void;
+      const rawInstallStarted = new Promise<void>((resolve) => {
+        releaseRawInstallStarted = resolve;
+      });
+      const barrierTimeout = setTimeout(() => {
+        releaseSystemLockAcquired();
+        releaseRawInstallStarted();
+      }, 5_000);
+      let rawBackendPid = 0;
+
+      const coldRawInstall = writerA.transaction(async (tx) => {
+        await tx.query("SET LOCAL lock_timeout = '5s'");
+        rawBackendPid = Number(
+          rowsOf(await tx.query('SELECT pg_backend_pid() AS backend_pid'))[0]
+            ?.backend_pid,
+        );
+        await systemLockAcquired;
+
+        const rawHandle = {
+          url: tx.url,
+          query: async (...args: Parameters<DatabaseInterface['query']>) => {
+            if (args[0].includes('CREATE TABLE IF NOT EXISTS _smrt_changes')) {
+              releaseRawInstallStarted();
+            }
+            return tx.query(...args);
+          },
+        } as unknown as DatabaseInterface;
+        await ensureChangeFeedTable(rawHandle);
+
+        const probe = rowsOf(await tx.query('SELECT 1 AS raw_first_usable'));
+        expect(probe[0]?.raw_first_usable).toBe(1);
+      });
+
+      const lockedFrameworkBootstrap = writerB.transaction(async (tx) => {
+        await tx.query("SET LOCAL lock_timeout = '5s'");
+        await tx.query(
+          "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
+        );
+        releaseSystemLockAcquired();
+        await rawInstallStarted;
+
+        // Prove the raw backend is waiting on this transaction's advisory
+        // lock before framework DDL begins. With the old raw ordering, that
+        // backend already retained an uncommitted table/catalog lock here.
+        let observedWait = false;
+        const waitDeadline = Date.now() + 3_000;
+        while (!observedWait && Date.now() < waitDeadline) {
+          const locks = rowsOf(
+            await tx.query(
+              `SELECT COUNT(*) AS total
+               FROM pg_locks
+               WHERE pid = $1
+                 AND locktype = 'advisory'
+                 AND granted = false`,
+              rawBackendPid,
+            ),
+          );
+          observedWait = Number(locks[0]?.total) > 0;
+          if (!observedWait) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 10));
+          }
+        }
+        expect(observedWait).toBe(true);
+
+        const widget = new ChangeFeedTransactionWidget({
+          db: transactionBoundBootstrapHandle(tx, 'system-first'),
+          name: 'system-first',
+        });
+        await widget.initialize();
+
+        const probe = rowsOf(await tx.query('SELECT 1 AS system_first_usable'));
+        expect(probe[0]?.system_first_usable).toBe(1);
+      });
+
+      let results: PromiseSettledResult<void>[] = [];
+      try {
+        results = await Promise.allSettled([
+          coldRawInstall,
+          lockedFrameworkBootstrap,
+        ]);
+      } finally {
+        clearTimeout(barrierTimeout);
+        releaseSystemLockAcquired();
+        releaseRawInstallStarted();
+        await writerA.transaction(async (tx) => {
+          const widget = new ChangeFeedTransactionWidget({
+            db: transactionBoundBootstrapHandle(tx, 'restore'),
+            name: 'restore',
+          });
+          await widget.initialize();
+        });
+      }
+
+      expect(
+        results.flatMap((result) =>
+          result.status === 'rejected' ? [String(result.reason)] : [],
+        ),
+      ).toEqual([]);
+    }, 120_000);
 
     it('racing appends across two connections yields contiguous sequences — no gaps, no duplicates', async () => {
       const PER_WRITER = 150;
@@ -184,6 +421,11 @@ describe.skipIf(!pgUrl)(
         const transactionsReady = new Promise<void>((resolve) => {
           releaseTransactions = resolve;
         });
+        let barrierTimedOut = false;
+        const barrierTimeout = setTimeout(() => {
+          barrierTimedOut = true;
+          releaseTransactions();
+        }, 5_000);
         const backendPids = new Set<number>();
 
         const writeTransaction = async (
@@ -225,10 +467,23 @@ describe.skipIf(!pgUrl)(
 
         // Distinct transaction-bound collections race on genuine Postgres
         // connections, matching the concurrent dashboard/OIDC shape in #2026.
-        await Promise.all([
-          writeTransaction(writerA, 'transaction-a'),
-          writeTransaction(writerB, 'transaction-b'),
-        ]);
+        let results: PromiseSettledResult<void>[] = [];
+        try {
+          results = await Promise.allSettled([
+            writeTransaction(writerA, 'transaction-a'),
+            writeTransaction(writerB, 'transaction-b'),
+          ]);
+        } finally {
+          clearTimeout(barrierTimeout);
+          releaseTransactions();
+        }
+        expect(
+          results.flatMap((result) =>
+            result.status === 'rejected' ? [String(result.reason)] : [],
+          ),
+        ).toEqual([]);
+        expect(barrierTimedOut).toBe(false);
+        expect(readyTransactions).toBe(2);
         expect(backendPids.size).toBe(2);
 
         const committed = rowsOf(
