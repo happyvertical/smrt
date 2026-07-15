@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.39.17
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - export manifest registration classes (profiles)
+  - @happyvertical/smrt-config@0.39.17
+  - @happyvertical/smrt-types@0.39.17
+  - @happyvertical/smrt-scanner@0.39.17
+
 ## 0.39.16
 
 ### Patch Changes
