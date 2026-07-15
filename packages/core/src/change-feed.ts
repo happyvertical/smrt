@@ -39,10 +39,11 @@
  * see `system/schema.ts`.)
  *
  * Contention note: appends serialize on the head of the log. Each append is
- * a single small INSERT (issued from the write path *after* the user's row
- * was written), so the serialization window is one statement; conflicts
- * resolve with a bounded retry loop and are impossible on single-writer
- * engines (SQLite).
+ * one small INSERT (issued from the write path *after* the user's row was
+ * written), so the serialization window is one statement; conflicts resolve
+ * with a bounded retry loop and are impossible on single-writer engines
+ * (SQLite). PostgreSQL invokes that INSERT through the framework-owned
+ * `_smrt_append_change` function so failure isolation remains one statement.
  *
  * ## Failure semantics
  *
@@ -51,10 +52,12 @@
  * database) and continues. The trade-off is availability of the user's
  * write over completeness of the feed — consumers already need a
  * full-resync path for cursors older than the retention window, and the
- * same path covers a (rare) dropped feed row. When the user's write runs
- * inside a caller-managed transaction on the same handle, the append joins
- * it and shares its fate (a rollback removes the change row with the data
- * row).
+ * same path covers a (rare) dropped feed row. PostgreSQL runs the INSERT in a
+ * PL/pgSQL exception subtransaction and returns a caught SQLSTATE as data;
+ * JavaScript only throws/logs after PostgreSQL has restored the caller's
+ * transaction, so a swallowed append failure cannot surface later as 25P02.
+ * The append still joins a caller-managed transaction on the same handle and
+ * shares its fate (a rollback removes the change row with the data row).
  *
  * ## Known gaps (documented in the PRD)
  *
@@ -95,7 +98,14 @@ import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import { GlobalInterceptors, type InterceptorContext } from './interceptors.js';
 import type { SmrtObject } from './object.js';
 import { detectEngine } from './schema/ddl/index.js';
-import { CREATE_SMRT_CHANGES_TABLE } from './system/schema.js';
+import {
+  CREATE_SMRT_CHANGES_TABLE,
+  ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  ENSURE_POSTGRES_CHANGE_FEED_SCHEMA,
+  POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME,
+  REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+} from './system/schema.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -251,11 +261,14 @@ type DatabaseWithConfig = DatabaseInterface & {
   type?: string;
 };
 
-function getEngine(db: DatabaseInterface): ReturnType<typeof detectEngine> {
+function getEngine(
+  db: DatabaseInterface,
+  typeHint?: string,
+): ReturnType<typeof detectEngine> {
   const withConfig = db as DatabaseWithConfig;
   return detectEngine(
     db.url || withConfig.config?.url || '',
-    withConfig.type || withConfig.config?.type,
+    typeHint || withConfig.type || withConfig.config?.type,
   );
 }
 
@@ -332,15 +345,77 @@ function isUniqueViolation(error: unknown): boolean {
  */
 const ensuredHandles = new WeakSet<object>();
 
+async function postgresChangeFeedAppendFunctionExists(
+  db: DatabaseInterface,
+): Promise<boolean> {
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name`,
+    ),
+  );
+  return Boolean(rows[0]?.function_name);
+}
+
+async function postgresChangeFeedSchemaExists(
+  db: DatabaseInterface,
+): Promise<boolean> {
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT
+         to_regclass('${CHANGE_FEED_TABLE}') AS table_name,
+         to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name`,
+    ),
+  );
+  return Boolean(rows[0]?.table_name && rows[0]?.function_name);
+}
+
+/**
+ * Install/refresh the PostgreSQL exception-subtransaction append boundary.
+ *
+ * Framework bootstrap calls this while applying the system-schema version that
+ * introduced the helper, so upgraded databases acquire it before the migration
+ * is recorded. Raw-handle initialization passes `replaceExisting: false` so a
+ * read route does not require function ownership when the installed helper is
+ * already current. A missing helper is installed by one server-side statement
+ * that locks and rechecks before DDL. Non-PostgreSQL adapters are a no-op.
+ *
+ * @internal
+ */
+export async function ensurePostgresChangeFeedAppendFunction(
+  db: DatabaseInterface,
+  options: {
+    replaceExisting?: boolean;
+    typeHint?: string;
+  } = {},
+): Promise<void> {
+  if (getEngine(db, options.typeHint) !== 'postgres') return;
+
+  if (options.replaceExisting === false) {
+    if (await postgresChangeFeedAppendFunctionExists(db)) return;
+    await db.query(ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
+    return;
+  }
+
+  await db.query(REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
+}
+
 export async function ensureChangeFeedTable(
   db: DatabaseInterface,
 ): Promise<void> {
   if (ensuredHandles.has(db)) return;
-  const statements = CREATE_SMRT_CHANGES_TABLE.split(';')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
-  for (const statement of statements) {
-    await db.query(statement);
+  if (getEngine(db) === 'postgres') {
+    if (await postgresChangeFeedSchemaExists(db)) {
+      ensuredHandles.add(db);
+      return;
+    }
+    await db.query(ENSURE_POSTGRES_CHANGE_FEED_SCHEMA);
+  } else {
+    const statements = CREATE_SMRT_CHANGES_TABLE.split(';')
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.length > 0);
+    for (const statement of statements) {
+      await db.query(statement);
+    }
   }
   ensuredHandles.add(db);
 }
@@ -361,17 +436,14 @@ export async function ensureChangeFeedTable(
  * conflicts or on any non-conflict database error; the framework's
  * interceptor catches and logs instead of failing the user's write.
  *
- * **Transaction assumption.** The conflict retry assumes an autocommit
- * handle, which is the default framework path: `save()`/`delete()` run their
- * statements as independent autocommit calls, so a conflicting append aborts
- * nothing and the retry recomputes `MAX(seq)` against the committed head. If a
- * caller instead wraps `save()` in its own transaction on an MVCC engine
- * (e.g. Postgres), a duplicate-key error can abort the *surrounding*
- * transaction — the retry is then futile and the caller's write rolls back.
- * Callers wrapping mutations in a transaction under genuine seq-head write
- * contention should disable the feed writer for that path or accept that
- * risk. Savepoint-scoped protection is a possible follow-up; it is
- * intentionally out of scope for the v1 spine.
+ * **PostgreSQL transaction safety (#2026).** The INSERT runs inside the
+ * framework-owned `_smrt_append_change` PL/pgSQL function. Its exception
+ * handler is a PostgreSQL subtransaction: a failed attempt is rolled back
+ * before the function returns `{ error_code, error_message }`. This method
+ * then throws in JavaScript, where the existing retry/swallow policy applies
+ * without aborting a caller-managed transaction. Keeping isolation inside one
+ * database statement also prevents concurrent work on the same transaction
+ * handle from interleaving inside a manual SAVEPOINT scope.
  */
 export async function appendChange(
   db: DatabaseInterface,
@@ -390,23 +462,25 @@ export async function appendChange(
     );
   }
 
+  const engine = getEngine(db);
   const p = placeholders(db);
-  // `RETURNING seq` yields the ACTUAL sequence the INSERT allocated, in the
-  // SAME statement — atomic. This matters for correctness, not just tidiness: a
-  // separate follow-up `SELECT MAX(seq)` is racy under concurrent appends (a
-  // peer can commit a higher seq in between), which would hand two distinct
-  // changes the same SSE `id` (a client that dedupes by id drops one → stale)
-  // and let a client's `Last-Event-ID` overshoot a change it never received.
-  // RETURNING closes that: each caller gets its own row's seq. SQLite (3.35+),
-  // Postgres, and DuckDB all support it, and the sql adapters surface the
-  // returned rows through `getQueryRows`. The allocator stays `MAX+1` under the
+  // The INSERT yields the ACTUAL sequence it allocated in the SAME statement
+  // (directly via RETURNING on portable engines, through the function on
+  // PostgreSQL). A separate follow-up `SELECT MAX(seq)` is racy under concurrent
+  // appends (a peer can commit a higher seq in between), which would hand two
+  // distinct changes the same SSE `id` and let a client's `Last-Event-ID`
+  // overshoot a change it never received. The allocator stays `MAX+1` under the
   // unique-PK retry, so committed sequences remain contiguous (the cursor
   // guarantee — see module docs).
   const sql =
-    `INSERT INTO ${CHANGE_FEED_TABLE} ` +
-    '(seq, table_name, row_id, operation, tenant_id, created_at) ' +
-    `SELECT COALESCE(MAX(seq), 0) + 1, ${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)} ` +
-    `FROM ${CHANGE_FEED_TABLE} RETURNING seq`;
+    engine === 'postgres'
+      ? `SELECT allocated_seq, error_code, error_message FROM ` +
+        `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(` +
+        `${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)})`
+      : `INSERT INTO ${CHANGE_FEED_TABLE} ` +
+        '(seq, table_name, row_id, operation, tenant_id, created_at) ' +
+        `SELECT COALESCE(MAX(seq), 0) + 1, ${p(1)}, ${p(2)}, ${p(3)}, ${p(4)}, ${p(5)} ` +
+        `FROM ${CHANGE_FEED_TABLE} RETURNING seq`;
   const params = [
     table,
     input.rowId ?? null,
@@ -418,7 +492,18 @@ export async function appendChange(
   for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
     try {
       const rows = getQueryRows(await db.query(sql, ...params));
-      return toSeqNumber(rows[0]?.seq);
+      const row = rows[0];
+      if (!row) {
+        throw new Error('Change feed append returned no result row');
+      }
+      if (engine === 'postgres' && row.error_code != null) {
+        const error = new Error(
+          String(row.error_message || 'PostgreSQL change-feed append failed'),
+        ) as Error & { code: string };
+        error.code = String(row.error_code);
+        throw error;
+      }
+      return toSeqNumber(engine === 'postgres' ? row.allocated_seq : row.seq);
     } catch (error) {
       if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
         throw error;
