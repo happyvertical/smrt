@@ -70,6 +70,8 @@ export interface AgreementExecutionOptions extends SmrtObjectOptions {
   auditTrailMediaType?: string;
   auditTrailFilename?: string;
   attemptCount?: number;
+  createLeaseId?: string;
+  createLeaseExpiresAt?: Date | string | number | null;
   lastError?: string;
   metadata?: string;
 }
@@ -91,6 +93,15 @@ export interface AgreementExecutionEventOptions extends SmrtObjectOptions {
   signerEvidence?: string;
   payload?: string;
 }
+
+export type VerifiedAgreementExecutionEventOptions =
+  AgreementExecutionEventOptions &
+    Required<
+      Pick<
+        AgreementExecutionEventOptions,
+        'dedupeKey' | 'occurredAt' | 'receivedAt'
+      >
+    >;
 
 export interface ExecutedAgreementOptions extends SmrtObjectOptions {
   tenantId?: string;

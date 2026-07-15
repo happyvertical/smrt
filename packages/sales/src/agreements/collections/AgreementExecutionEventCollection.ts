@@ -1,6 +1,6 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { AgreementExecutionEvent } from '../models/AgreementExecutionEvent.js';
-import type { AgreementExecutionEventOptions } from '../types.js';
+import type { VerifiedAgreementExecutionEventOptions } from '../types.js';
 import { coerceAgreementDate } from '../types.js';
 
 export class AgreementExecutionEventCollection extends SmrtCollection<AgreementExecutionEvent> {
@@ -14,27 +14,35 @@ export class AgreementExecutionEventCollection extends SmrtCollection<AgreementE
   }
 
   async recordVerified(
-    options: AgreementExecutionEventOptions,
+    options: VerifiedAgreementExecutionEventOptions,
   ): Promise<{ event: AgreementExecutionEvent; created: boolean }> {
     if (!options.dedupeKey) {
       throw new Error('AgreementExecutionEvent requires a dedupe key');
     }
+    const occurredAt = coerceAgreementDate(options.occurredAt);
+    if (!occurredAt) {
+      throw new Error('AgreementExecutionEvent requires a valid occurredAt');
+    }
+    const receivedAt = coerceAgreementDate(options.receivedAt);
+    if (!receivedAt) {
+      throw new Error('AgreementExecutionEvent requires a valid receivedAt');
+    }
     const existing = await this.findByDedupeKey(options.dedupeKey);
     if (existing) {
-      this.assertSameVerifiedEvent(existing, options);
+      this.assertSameVerifiedEvent(existing, options, occurredAt, receivedAt);
       return { event: existing, created: false };
     }
-    const { occurredAt, receivedAt, ...rest } = options;
+    const {
+      occurredAt: _occurredAt,
+      receivedAt: _receivedAt,
+      ...rest
+    } = options;
     try {
       return {
         event: await this.create({
           ...rest,
-          ...(occurredAt !== undefined
-            ? { occurredAt: coerceAgreementDate(occurredAt) ?? new Date() }
-            : {}),
-          ...(receivedAt !== undefined
-            ? { receivedAt: coerceAgreementDate(receivedAt) ?? new Date() }
-            : {}),
+          occurredAt,
+          receivedAt,
           _insertOnly: true,
         }),
         created: true,
@@ -42,14 +50,16 @@ export class AgreementExecutionEventCollection extends SmrtCollection<AgreementE
     } catch (error) {
       const raced = await this.findByDedupeKey(options.dedupeKey);
       if (!raced) throw error;
-      this.assertSameVerifiedEvent(raced, options);
+      this.assertSameVerifiedEvent(raced, options, occurredAt, receivedAt);
       return { event: raced, created: false };
     }
   }
 
   private assertSameVerifiedEvent(
     existing: AgreementExecutionEvent,
-    options: AgreementExecutionEventOptions,
+    options: VerifiedAgreementExecutionEventOptions,
+    occurredAt: Date,
+    receivedAt: Date,
   ): void {
     if (
       existing.executionId !== options.executionId ||
@@ -60,8 +70,8 @@ export class AgreementExecutionEventCollection extends SmrtCollection<AgreementE
       existing.orderingKey !== (options.orderingKey ?? '') ||
       existing.eventType !== (options.eventType ?? '') ||
       existing.status !== options.status ||
-      existing.occurredAt.toISOString() !==
-        coerceAgreementDate(options.occurredAt)?.toISOString() ||
+      existing.occurredAt.toISOString() !== occurredAt.toISOString() ||
+      existing.receivedAt.toISOString() !== receivedAt.toISOString() ||
       existing.payloadSha256 !== (options.payloadSha256 ?? '') ||
       existing.signerEvidence !== (options.signerEvidence ?? '[]') ||
       existing.payload !== (options.payload ?? '{}')

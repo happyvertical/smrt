@@ -168,4 +168,66 @@ describePostgres('agreement execution evidence on PostgreSQL', () => {
       ).rejects.toThrow();
     });
   });
+
+  it('claims an expired provider-create lease exactly once within its tenant', async () => {
+    const tenantId = randomUUID();
+    const otherTenantId = randomUUID();
+    const executionId = await withTenant({ tenantId }, async () => {
+      const execution = await executions.create({
+        tenantId,
+        provider: 'idempotent-provider',
+        idempotencyKey: `lease-${randomUUID()}`,
+        sourceKind: 'referral_agreement',
+        sourceId: randomUUID(),
+        sourceVersion: 1,
+        status: 'prepared',
+        attemptCount: 1,
+        createLeaseId: 'expired-operation',
+        createLeaseExpiresAt: new Date('2026-07-14T20:00:00Z'),
+        _insertOnly: true,
+      });
+      const input = {
+        tenantId,
+        executionId: execution.id as string,
+        expectedAttemptCount: 1,
+        expectedLeaseId: 'expired-operation',
+        expectedStatus: 'prepared',
+        expectedLastError: '',
+        leaseExpiresAt: new Date('2026-07-14T20:10:00Z'),
+        now: new Date('2026-07-14T20:05:00Z'),
+      };
+      const attempts = await Promise.all([
+        executions.claimCreateAttempt({
+          ...input,
+          operationId: 'recovery-operation-a',
+        }),
+        executions.claimCreateAttempt({
+          ...input,
+          operationId: 'recovery-operation-b',
+        }),
+      ]);
+
+      expect(attempts.filter(Boolean)).toHaveLength(1);
+      const claimed = await executions.get({ id: execution.id });
+      expect(claimed?.attemptCount).toBe(2);
+      expect(claimed?.createLeaseId).toMatch(/^recovery-operation-[ab]$/);
+      return execution.id as string;
+    });
+
+    await withTenant({ tenantId: otherTenantId }, async () => {
+      await expect(
+        executions.claimCreateAttempt({
+          tenantId,
+          executionId,
+          expectedAttemptCount: 2,
+          expectedLeaseId: 'recovery-operation-a',
+          expectedStatus: 'prepared',
+          expectedLastError: '',
+          operationId: 'cross-tenant-operation',
+          leaseExpiresAt: new Date('2026-07-14T20:20:00Z'),
+          now: new Date('2026-07-14T20:15:00Z'),
+        }),
+      ).rejects.toThrow(/tenant mismatch/);
+    });
+  });
 });

@@ -20,6 +20,7 @@ import { AgreementExecutionCollection } from '../collections/AgreementExecutionC
 import { AgreementExecutionEventCollection } from '../collections/AgreementExecutionEventCollection.js';
 import { ExecutedAgreementCollection } from '../collections/ExecutedAgreementCollection.js';
 import { AgreementExecutionService } from '../services/AgreementExecutionService.js';
+import type { VerifiedAgreementExecutionEventOptions } from '../types.js';
 
 const TENANT = 'tenant-a';
 const PDF = Buffer.from('%PDF-source-agreement');
@@ -119,6 +120,93 @@ describe('AgreementExecutionService', () => {
       const first = await firstPromise;
       expect(first.providerRequestId).toBe('request-1');
       expect(provider.createRequest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('refuses an abandoned create lease when provider idempotency is not atomic', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      let currentTime = new Date('2026-07-14T20:00:00.000Z');
+      let releaseProvider!: () => void;
+      let providerStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        providerStarted = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseProvider = resolve;
+      });
+      provider.createRequest.mockImplementationOnce(async () => {
+        providerStarted();
+        await release;
+        return request('sent');
+      });
+      service = new AgreementExecutionService({
+        provider,
+        assets,
+        executions,
+        events,
+        executedAgreements,
+        now: () => currentTime,
+        createLeaseDurationMs: 1_000,
+      });
+
+      const firstPromise = service.createExecution(createInput());
+      await started;
+      currentTime = new Date('2026-07-14T20:00:02.000Z');
+
+      await expect(service.createExecution(createInput())).rejects.toThrow(
+        /provider-create lease expired.*reconcile or adopt/,
+      );
+      expect(provider.createRequest).toHaveBeenCalledTimes(1);
+
+      releaseProvider();
+      await expect(firstPromise).resolves.toMatchObject({
+        providerRequestId: 'request-1',
+      });
+    });
+  });
+
+  it('atomically reclaims an abandoned create for an idempotent provider', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      let currentTime = new Date('2026-07-14T20:00:00.000Z');
+      let releaseProvider!: () => void;
+      let providerStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        providerStarted = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseProvider = resolve;
+      });
+      provider.capabilities.providerEnforcedIdempotency = true;
+      provider.createRequest.mockImplementationOnce(async () => {
+        providerStarted();
+        await release;
+        return request('sent');
+      });
+      service = new AgreementExecutionService({
+        provider,
+        assets,
+        executions,
+        events,
+        executedAgreements,
+        now: () => currentTime,
+        createLeaseDurationMs: 1_000,
+      });
+
+      const firstPromise = service.createExecution(createInput());
+      await started;
+      currentTime = new Date('2026-07-14T20:00:02.000Z');
+      const recovered = await service.createExecution(createInput());
+
+      expect(recovered.providerRequestId).toBe('request-1');
+      expect(provider.createRequest).toHaveBeenCalledTimes(2);
+      expect(
+        (await executions.get({ id: recovered.executionId }))?.attemptCount,
+      ).toBe(2);
+
+      releaseProvider();
+      await expect(firstPromise).resolves.toMatchObject({
+        providerRequestId: 'request-1',
+      });
     });
   });
 
@@ -239,6 +327,50 @@ describe('AgreementExecutionService', () => {
           tenantId: TENANT,
           payload: '{"event":"viewed","mutated":true}',
           signature: 'valid',
+        }),
+      ).rejects.toThrow(/collides with different verified evidence/);
+    });
+  });
+
+  it('requires deterministic timestamps for verified event evidence', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      const created = await service.createExecution(createInput());
+      const base = {
+        tenantId: TENANT,
+        executionId: created.executionId,
+        provider: 'boldsign',
+        providerEventId: 'event-timestamp-required',
+        dedupeKey: 'event-timestamp-required',
+        orderingKey: 'request-1',
+        eventType: 'viewed',
+        status: 'viewed' as const,
+        occurredAt: new Date('2026-07-14T21:00:00Z'),
+        receivedAt: new Date('2026-07-14T21:00:01Z'),
+        payloadSha256: hash(Buffer.from('{"event":"viewed"}')),
+        signerEvidence: '[]',
+        payload: '{"event":"viewed"}',
+      };
+
+      await expect(
+        events.recordVerified({
+          ...base,
+          occurredAt: undefined,
+        } as unknown as VerifiedAgreementExecutionEventOptions),
+      ).rejects.toThrow(/valid occurredAt/);
+      await expect(
+        events.recordVerified({
+          ...base,
+          receivedAt: 'not-a-date',
+        }),
+      ).rejects.toThrow(/valid receivedAt/);
+
+      await expect(events.recordVerified(base)).resolves.toMatchObject({
+        created: true,
+      });
+      await expect(
+        events.recordVerified({
+          ...base,
+          receivedAt: new Date('2026-07-14T21:00:02Z'),
         }),
       ).rejects.toThrow(/collides with different verified evidence/);
     });

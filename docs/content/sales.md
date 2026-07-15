@@ -33,12 +33,16 @@ tenant id. Provider responses, webhooks, and stored Assets are checked against
 that same boundary. Provider request ids cannot be bound to two executions,
 and lifecycle reconciliation never regresses terminal or progressive state.
 An uncertain provider create is not blindly retried when the provider lacks
-atomic idempotency; reconcile it and call
-`adoptProviderRequest()` with the confirmed remote request id.
+atomic idempotency. A durable create-operation lease prevents concurrent sends;
+once it expires, non-atomic providers fail closed and require reconciliation
+plus `adoptProviderRequest()` with the confirmed remote request id. Providers
+that advertise atomic idempotency may reclaim an expired lease and resend the
+same idempotency key.
 
 `AgreementExecution` and `AgreementExecutionEvent` are private orchestration
 objects: they have no generated API, MCP, or CLI mutations. Operator and
-provider operations append start/success/failure-or-uncertain audit records.
+provider operations append start/success/failure-or-uncertain audit records;
+verified event evidence requires explicit occurrence and receipt timestamps.
 `ExecutedAgreement` exposes read-only list/get surfaces and freezes exact Asset
 ids, SHA-256 values, byte sizes, filenames, media types, signed signer evidence,
 acceptance/effective dates, and amendment provenance. Webhook signature headers

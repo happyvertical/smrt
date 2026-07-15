@@ -101,6 +101,13 @@ export class AgreementExecution extends SmrtObject {
   auditTrailMediaType: string = '';
   auditTrailFilename: string = '';
   attemptCount: number = 0;
+
+  /** Operation id holding the current provider-create lease. */
+  createLeaseId: string = '';
+
+  /** A crashed create attempt stops fencing recovery after this instant. */
+  createLeaseExpiresAt: Date | null = null;
+
   lastError: string = '';
   metadata: string = '{}';
 
@@ -176,6 +183,12 @@ export class AgreementExecution extends SmrtObject {
       this.auditTrailFilename = options.auditTrailFilename;
     if (options.attemptCount !== undefined)
       this.attemptCount = options.attemptCount;
+    if (options.createLeaseId !== undefined)
+      this.createLeaseId = options.createLeaseId;
+    if (options.createLeaseExpiresAt !== undefined)
+      this.createLeaseExpiresAt = coerceAgreementDate(
+        options.createLeaseExpiresAt,
+      );
     if (options.lastError !== undefined) this.lastError = options.lastError;
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
@@ -188,6 +201,7 @@ export class AgreementExecution extends SmrtObject {
     this.completedAt = coerceAgreementDate(this.completedAt);
     this.effectiveFrom = coerceAgreementDate(this.effectiveFrom);
     this.effectiveTo = coerceAgreementDate(this.effectiveTo);
+    this.createLeaseExpiresAt = coerceAgreementDate(this.createLeaseExpiresAt);
     if (this.isPersisted)
       persistedExecutionIdentity.set(this, this.captureIdentity());
     return this;

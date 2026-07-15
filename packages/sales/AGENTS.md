@@ -25,10 +25,10 @@ Referrers and Sales Representatives are **distinct roles** and stay that way. Bo
 
 ### agreements — verified execution evidence
 
-- **AgreementExecution**: private required-tenant orchestration state keyed by `(tenant_id, idempotency_key)`, with a collision-checked provider request/status, source version/hash/size/Asset, intended signer identity/auth method, cancellation/expiry, reconciliation, exact staged artifact metadata, and secret-store references only.
-- **AgreementExecutionEvent**: private append-only evidence for verified webhooks and operator/provider operations. Provider events are deduped by tenant/provider replay key; exact payload/hash are retained, while signature headers are never stored. Stale or regressive events are audited without regressing lifecycle state.
+- **AgreementExecution**: private required-tenant orchestration state keyed by `(tenant_id, idempotency_key)`, with a collision-checked provider request/status, an expiring create-operation lease, source version/hash/size/Asset, intended signer identity/auth method, cancellation/expiry, reconciliation, exact staged artifact metadata, and secret-store references only.
+- **AgreementExecutionEvent**: private append-only evidence for verified webhooks and operator/provider operations. Provider events are deduped by tenant/provider replay key; explicit occurrence/receipt timestamps and the exact payload/hash are retained, while signature headers are never stored. Stale or regressive events are audited without regressing lifecycle state.
 - **ExecutedAgreement**: immutable read-only source version plus signed-document and audit-trail Asset ids/hashes/sizes/filenames/media types, completed signer evidence, acceptance/effective dates, and supersession reference. Amendments create new records.
-- **AgreementExecutionService**: accepts an SDK `SignatureProvider` and shared `AssetRuntimeLike`; enforces ambient tenant equality, remote-attempt fencing, create idempotency, verified webhook ingestion/replay, monotonic lifecycle state, cancellation/expiry/reconciliation, exact artifact hashing, and immutable finalization. A provider create with no confirmed request id must be reconciled/adopted before retry.
+- **AgreementExecutionService**: accepts an SDK `SignatureProvider` and shared `AssetRuntimeLike`; enforces ambient tenant equality, expiring remote-attempt fencing, create idempotency, verified webhook ingestion/replay, monotonic lifecycle state, cancellation/expiry/reconciliation, exact artifact hashing, and immutable finalization. An expired create lease may be reclaimed only when the provider advertises atomic idempotency; otherwise a create with no confirmed request id must be reconciled/adopted before retry.
 
 ### commissions — neutral financial core
 

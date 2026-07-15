@@ -34,6 +34,7 @@ export interface AgreementExecutionServiceDeps {
   events: AgreementExecutionEventCollection;
   executedAgreements: ExecutedAgreementCollection;
   now?: () => Date;
+  createLeaseDurationMs?: number;
 }
 
 export interface AdoptAgreementProviderRequestInput {
@@ -76,11 +77,22 @@ const STATUS_PROGRESS = new Map([
   ['partially_signed', 4],
 ]);
 
+const DEFAULT_CREATE_LEASE_DURATION_MS = 5 * 60 * 1000;
+
 export class AgreementExecutionService {
   private readonly now: () => Date;
+  private readonly createLeaseDurationMs: number;
 
   constructor(private readonly deps: AgreementExecutionServiceDeps) {
     this.now = deps.now ?? (() => new Date());
+    this.createLeaseDurationMs =
+      deps.createLeaseDurationMs ?? DEFAULT_CREATE_LEASE_DURATION_MS;
+    if (
+      !Number.isFinite(this.createLeaseDurationMs) ||
+      this.createLeaseDurationMs <= 0
+    ) {
+      throw new Error('Agreement execution create lease must be positive');
+    }
   }
 
   async createExecution(
@@ -147,6 +159,8 @@ export class AgreementExecutionService {
     );
     if (!sourceAsset.id) throw new Error('Stored source Asset has no id');
 
+    const operationId = randomUUID();
+    const createLeaseExpiresAt = this.newCreateLeaseExpiry();
     let execution: AgreementExecution;
     try {
       execution = await this.deps.executions.create({
@@ -174,6 +188,8 @@ export class AgreementExecutionService {
         // idempotency race. Other callers observe an in-flight attempt and
         // never issue a second provider create.
         attemptCount: 1,
+        createLeaseId: operationId,
+        createLeaseExpiresAt,
         _insertOnly: true,
       });
     } catch (error) {
@@ -194,25 +210,29 @@ export class AgreementExecutionService {
     } catch (error) {
       execution.status = 'failed';
       execution.lastError = summarizeError(error, false);
+      this.clearCreateLease(execution);
       await execution.save();
       throw error;
     }
-    return await this.sendProviderRequest(execution, input, sourceBytes, true);
+    return await this.sendProviderRequest(
+      execution,
+      input,
+      sourceBytes,
+      operationId,
+    );
   }
 
   private async sendProviderRequest(
     execution: AgreementExecution,
     input: CreateAgreementExecutionInput,
     sourceBytes: Buffer,
-    attemptAlreadyClaimed = false,
+    operationId: string,
   ): Promise<AgreementExecutionResult> {
-    if (!attemptAlreadyClaimed) {
-      execution.attemptCount += 1;
-      execution.status = 'prepared';
-      execution.lastError = '';
-      await execution.save();
+    if (execution.createLeaseId !== operationId) {
+      throw new Error(
+        `AgreementExecution ${execution.id}: provider-create lease is not owned by this operation`,
+      );
     }
-    const operationId = randomUUID();
     try {
       await this.recordOperationAudit(
         execution,
@@ -225,6 +245,7 @@ export class AgreementExecutionService {
       // No provider mutation occurred, so a later idempotent caller may retry.
       execution.status = 'failed';
       execution.lastError = summarizeError(error, false);
+      this.clearCreateLease(execution);
       await execution.save();
       throw error;
     }
@@ -267,12 +288,14 @@ export class AgreementExecutionService {
       execution.status = request.status;
       execution.expiresAt = request.expiresAt ?? null;
       execution.lastError = '';
+      this.clearCreateLease(execution);
       await execution.save();
     } catch (error) {
       const mayHaveSucceeded =
         providerResponded || requestMayHaveSucceeded(error);
       execution.status = 'failed';
       execution.lastError = summarizeError(error, mayHaveSucceeded);
+      this.clearCreateLease(execution);
       await execution.save();
       await this.recordOperationAudit(
         execution,
@@ -302,14 +325,20 @@ export class AgreementExecutionService {
     sourceBytes: Buffer,
   ): Promise<AgreementExecutionResult> {
     if (execution.providerRequestId) return this.result(execution, true);
-    if (
-      execution.status === 'prepared' &&
-      execution.attemptCount > 0 &&
-      !execution.lastError
-    ) {
+    const now = this.now();
+    if (this.isCreateLeaseActive(execution, now)) {
       return this.result(execution, true);
     }
-    if (!this.canSafelyRetryCreate(execution)) {
+    const abandonedCreate = this.isAbandonedCreate(execution);
+    if (
+      abandonedCreate &&
+      !this.deps.provider.capabilities.providerEnforcedIdempotency
+    ) {
+      throw new Error(
+        `AgreementExecution ${execution.id}: the provider-create lease expired without a confirmed request id; reconcile or adopt the provider request before retrying`,
+      );
+    }
+    if (!abandonedCreate && !this.canSafelyRetryCreate(execution)) {
       throw new Error(
         `AgreementExecution ${execution.id}: the prior provider create has no confirmed request id; reconcile or adopt the provider request before retrying`,
       );
@@ -320,7 +349,36 @@ export class AgreementExecutionService {
       execution.sourceAssetId,
       'source_document',
     );
-    return await this.sendProviderRequest(execution, input, sourceBytes);
+    const operationId = randomUUID();
+    const claimed = await this.deps.executions.claimCreateAttempt({
+      tenantId: input.tenantId,
+      executionId: execution.id ?? '',
+      expectedAttemptCount: execution.attemptCount,
+      expectedLeaseId: execution.createLeaseId,
+      expectedStatus: execution.status,
+      expectedLastError: execution.lastError,
+      operationId,
+      leaseExpiresAt: this.newCreateLeaseExpiry(now),
+      now,
+    });
+    if (!claimed) {
+      const latest = await this.requireExecution(execution.id ?? '');
+      if (
+        latest.providerRequestId ||
+        this.isCreateLeaseActive(latest, this.now())
+      ) {
+        return this.result(latest, true);
+      }
+      throw new Error(
+        `AgreementExecution ${execution.id}: provider-create state changed while claiming recovery; retry the operation`,
+      );
+    }
+    return await this.sendProviderRequest(
+      claimed,
+      input,
+      sourceBytes,
+      operationId,
+    );
   }
 
   /**
@@ -1024,6 +1082,36 @@ export class AgreementExecutionService {
     } catch {
       return false;
     }
+  }
+
+  private isAbandonedCreate(execution: AgreementExecution): boolean {
+    return (
+      execution.status === 'prepared' &&
+      execution.attemptCount > 0 &&
+      !execution.providerRequestId &&
+      !execution.lastError
+    );
+  }
+
+  private isCreateLeaseActive(
+    execution: AgreementExecution,
+    at: Date,
+  ): boolean {
+    return Boolean(
+      this.isAbandonedCreate(execution) &&
+        execution.createLeaseId &&
+        execution.createLeaseExpiresAt &&
+        execution.createLeaseExpiresAt.getTime() > at.getTime(),
+    );
+  }
+
+  private newCreateLeaseExpiry(from = this.now()): Date {
+    return new Date(from.getTime() + this.createLeaseDurationMs);
+  }
+
+  private clearCreateLease(execution: AgreementExecution): void {
+    execution.createLeaseId = '';
+    execution.createLeaseExpiresAt = null;
   }
 
   private async ensureAssetAssociation(
