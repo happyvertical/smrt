@@ -3,7 +3,6 @@
 import {
   crossPackageRef,
   field,
-  foreignKey,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
@@ -82,7 +81,11 @@ export class AgreementExecution extends SmrtObject {
   effectiveFrom: Date | null = null;
   effectiveTo: Date | null = null;
 
-  @foreignKey('ExecutedAgreement')
+  /**
+   * Opaque prior-evidence provenance copied into the immutable result.
+   * The authoritative relationship is on ExecutedAgreement; making this
+   * mutable orchestration hint a foreign key would create a registry cycle.
+   */
   supersedesExecutedAgreementId: string = '';
 
   @crossPackageRef('@happyvertical/smrt-assets:Asset')
