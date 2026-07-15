@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.40.3
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: use writable corepack cache on runners
+  - chore: fix biome 2.5.3 lint findings and let CI read packageManager
+  - chore: apply org toolchain standards
+  - @happyvertical/smrt-config@0.40.3
+  - @happyvertical/smrt-types@0.40.3
+  - @happyvertical/smrt-scanner@0.40.3
+
 ## 0.40.2
 
 ### Patch Changes
