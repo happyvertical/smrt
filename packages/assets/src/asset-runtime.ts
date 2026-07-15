@@ -112,6 +112,13 @@ export interface AssetRuntimeLike {
   readonly associations: AssetAssociationCollection;
   readonly store: AssetStore;
   readonly capabilityProviders?: readonly AssetCapabilityProvider[];
+
+  /** Persist original bytes and their Asset record through the shared store. */
+  storeSourceAsset(
+    name: string,
+    data: Buffer,
+    opts: StoreOptions,
+  ): Promise<Asset>;
 }
 
 /**

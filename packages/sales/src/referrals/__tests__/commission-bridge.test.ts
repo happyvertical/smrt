@@ -140,6 +140,8 @@ describe('ReferralCommissionService (referrals → commissions bridge)', () => {
       commissionPlanVersion: 0,
       clearingDays: params.clearingDays ?? 30,
       approvalMode: 'manual',
+      executionId: 'test-agreement-execution',
+      executedAgreementId: 'test-executed-agreement',
     });
     const referral = await referrals.create({
       referrerId: params.referrer.id ?? '',

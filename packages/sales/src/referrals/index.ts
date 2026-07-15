@@ -71,6 +71,13 @@ export {
   type ResolveExceptionInput,
 } from './services/AttributionService.js';
 export {
+  type ApplyExecutedReferralAgreementInput,
+  REFERRAL_AGREEMENT_SOURCE_KIND,
+  ReferralAgreementExecutionService,
+  type ReferralAgreementExecutionServiceDeps,
+  type RequestReferralAgreementSignatureInput,
+} from './services/ReferralAgreementExecutionService.js';
+export {
   type ProcessEarningEventInput,
   type ProcessEarningEventResult,
   REFERRAL_TERMS_SNAPSHOT_KIND,

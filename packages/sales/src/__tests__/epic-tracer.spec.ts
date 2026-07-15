@@ -345,8 +345,7 @@ describe('epic tracer (#1935): referred Opportunity → explainable payable Comm
     expect(planV1.getComponents()).toEqual(PLAN_V1_COMPONENTS);
 
     // ACTIVE ReferralAgreement v1 pinning plan v1, clearingDays 7, manual
-    // approval. Execution evidence (contractRef + artifact fields) stays
-    // mutable after activation — e-signature completes downstream.
+    // approval, with immutable executed-evidence references.
     agreement = await agreements.create({
       referrerId: referrer.id ?? '',
       programId,
@@ -356,11 +355,9 @@ describe('epic tracer (#1935): referred Opportunity → explainable payable Comm
       commissionPlanVersion: 1,
       clearingDays: CLEARING_DAYS,
       approvalMode: 'manual',
+      executionId: 'agreement-execution-tracer-1',
+      executedAgreementId: 'executed-agreement-tracer-1',
     });
-    agreement.contractRef = 'commerce-contract-tracer-1';
-    agreement.executedArtifactUrl = 'https://esign.test/tracer-agreement.pdf';
-    agreement.executedArtifactHash = 'sha256:tracer-artifact';
-    await agreement.save();
     expect(agreement.isActive()).toBe(true);
   });
 
@@ -961,11 +958,8 @@ describe('epic tracer (#1935): referred Opportunity → explainable payable Comm
 
     // ... and the executed agreement row carries its execution evidence.
     const executed = await agreements.get({ id: agreement.id });
-    expect(executed?.contractRef).toBe('commerce-contract-tracer-1');
-    expect(executed?.executedArtifactUrl).toBe(
-      'https://esign.test/tracer-agreement.pdf',
-    );
-    expect(executed?.executedArtifactHash).toBe('sha256:tracer-artifact');
+    expect(executed?.executionId).toBe('agreement-execution-tracer-1');
+    expect(executed?.executedAgreementId).toBe('executed-agreement-tracer-1');
 
     // HOW MUCH and WHY THAT MUCH: every commission amount reproduces from
     // its own persisted trace.

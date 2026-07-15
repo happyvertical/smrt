@@ -171,6 +171,8 @@ describe('rounding, currency, splits, and attribution gates (#1932)', () => {
       commissionPlanVersion: 0,
       clearingDays: 0,
       approvalMode: 'auto',
+      executionId: 'test-agreement-execution',
+      executedAgreementId: 'test-executed-agreement',
     });
   }
 

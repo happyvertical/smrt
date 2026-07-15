@@ -4,6 +4,8 @@
  * Modular sales for the SMRT framework, shipped as one installable package
  * with distinct modules:
  *
+ * - `agreements` (`@happyvertical/smrt-sales/agreements`): provider-neutral
+ *   e-signature lifecycle, verified events, and immutable executed evidence.
  * - `crm` (`@happyvertical/smrt-sales/crm`): Leads, Opportunities,
  *   configurable Pipelines, sales activity, ownership, and idempotent
  *   conversion links.
@@ -27,6 +29,7 @@
 // module loads below.
 import './__smrt-register__.js';
 
+export * from './agreements/index.js';
 export * from './commissions/index.js';
 export * from './crm/index.js';
 export * from './referrals/index.js';
