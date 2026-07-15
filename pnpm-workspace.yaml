@@ -24,6 +24,7 @@ overrides:
   '@happyvertical/projects': ^0.78.1
   '@happyvertical/repos': ^0.78.1
   '@happyvertical/secrets': ^0.78.1
+  '@happyvertical/signatures': ^0.80.0
   '@happyvertical/speech': ^0.78.1
   '@happyvertical/spider': ^1.1.10
   '@happyvertical/sql': ^0.78.1
@@ -80,6 +81,7 @@ minimumReleaseAgeExclude:
   - '@happyvertical/projects@0.78.0 || 0.78.1'
   - '@happyvertical/repos@0.78.0 || 0.78.1'
   - '@happyvertical/secrets@0.78.0 || 0.78.1'
+  - '@happyvertical/signatures@0.80.0'
   - '@happyvertical/speech@0.78.0 || 0.78.1'
   - '@happyvertical/sql@0.78.0 || 0.78.1'
   - '@happyvertical/utils@0.78.0 || 0.78.1'
@@ -104,6 +106,7 @@ catalog:
   '@happyvertical/projects': ^0.78.1
   '@happyvertical/repos': ^0.78.1
   '@happyvertical/secrets': ^0.78.1
+  '@happyvertical/signatures': ^0.80.0
   '@happyvertical/speech': ^0.78.1
   '@happyvertical/spider': ^1.1.10
   '@happyvertical/sql': ^0.78.1

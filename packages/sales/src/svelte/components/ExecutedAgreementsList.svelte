@@ -4,8 +4,7 @@
  *
  * Table of agreement versions: version, status, effective window, the pinned
  * commission plan (`key@version`), clearing days, approval mode, and the
- * executed-artifact evidence (URL + content hash) when the agreement has been
- * executed.
+ * immutable Asset-backed signed document and audit evidence when executed.
  */
 import { Badge } from '@happyvertical/smrt-ui/ui';
 import { formatDate } from '../format.js';
@@ -17,9 +16,14 @@ export interface Props {
   agreements?: AgreementVersionView[];
   /** BCP 47 locale for date formatting. */
   locale?: string;
+  /** Build an authorized application URL for an agreement evidence artifact. */
+  artifactHref?: (
+    agreementId: string,
+    kind: 'signed_document' | 'audit_trail',
+  ) => string;
 }
 
-let { agreements = [], locale }: Props = $props();
+let { agreements = [], locale, artifactHref }: Props = $props();
 </script>
 
 <div class="sales-agreements">
@@ -62,14 +66,32 @@ let { agreements = [], locale }: Props = $props();
             <td class="num">{agreement.clearingDays} days</td>
             <td>{agreement.approvalMode}</td>
             <td>
-              {#if agreement.artifactUrl}
-                <a href={agreement.artifactUrl} target="_blank" rel="noopener noreferrer">
-                  executed copy
-                </a>
-                {#if agreement.artifactHash}
-                  <code class="hash" title={agreement.artifactHash}>
-                    {agreement.artifactHash.slice(0, 12)}…
+              {#if agreement.signedDocumentAssetId}
+                {#if artifactHref}
+                  <a
+                    href={artifactHref(agreement.id, 'signed_document')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >signed copy</a>
+                {:else}
+                  <code title={agreement.signedDocumentAssetId}>signed asset</code>
+                {/if}
+                {#if agreement.signedDocumentSha256}
+                  <code class="hash" title={agreement.signedDocumentSha256}>
+                    {agreement.signedDocumentSha256.slice(0, 12)}…
                   </code>
+                {/if}
+                {#if agreement.auditTrailAssetId}
+                  <span class="separator">·</span>
+                  {#if artifactHref}
+                    <a
+                      href={artifactHref(agreement.id, 'audit_trail')}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >audit trail</a>
+                  {:else}
+                    <code title={agreement.auditTrailAssetId}>audit asset</code>
+                  {/if}
                 {/if}
               {:else}
                 —
@@ -128,6 +150,10 @@ let { agreements = [], locale }: Props = $props();
   .hash {
     margin-left: var(--smrt-spacing-1, 0.25rem);
     color: var(--smrt-color-on-surface-variant, #64748b);
+  }
+
+  .separator {
+    margin: 0 var(--smrt-spacing-1, 0.25rem);
   }
 
   a {

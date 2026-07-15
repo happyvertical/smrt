@@ -36,6 +36,8 @@ import { getTestDatabase } from '../testing/database';
 
 @smrt({ tableName: 'issue_1472_contents' })
 class Issue1472Content extends SmrtObject {
+  observedPersistedDuringInitialize: boolean = false;
+
   @field()
   title: string = '';
 
@@ -46,6 +48,12 @@ class Issue1472Content extends SmrtObject {
     super(options as any);
     if (options.title !== undefined) this.title = options.title;
     if (options.status !== undefined) this.status = options.status;
+  }
+
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    this.observedPersistedDuringInitialize = this.isPersisted;
+    return this;
   }
 }
 
@@ -113,6 +121,7 @@ describe('Issue #1472: save() after renaming a natural-key field', () => {
 
     const loaded = requireFound(await contents.get(String(item.id)));
     expect(loaded.isPersisted).toBe(true);
+    expect(loaded.observedPersistedDuringInitialize).toBe(true);
 
     loaded.slug = 'new-slug';
     await loaded.save();

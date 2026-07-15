@@ -38,6 +38,7 @@ overrides:
   '@happyvertical/projects': ^0.78.1
   '@happyvertical/repos': ^0.78.1
   '@happyvertical/secrets': ^0.78.1
+  '@happyvertical/signatures': ^0.80.0
   '@happyvertical/speech': ^0.78.1
   '@happyvertical/spider': ^1.1.10
   '@happyvertical/sql': ^0.78.1
@@ -1900,6 +1901,12 @@ importers:
 
   packages/sales:
     dependencies:
+      '@happyvertical/signatures':
+        specifier: ^0.80.0
+        version: 0.80.0
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -3808,6 +3815,9 @@ packages:
   '@happyvertical/secrets@0.78.1':
     resolution: {integrity: sha512-QkozWVfCR/pTgah+EmE42UOxp53qBvF28IUY7UIVRYqhh2djpcPTMm4Ph9T0Aksot7I6OMN/XeAM7LhbhT/anQ==}
     hasBin: true
+
+  '@happyvertical/signatures@0.80.0':
+    resolution: {integrity: sha512-Wc819n11WLmYzSlhJTMaEwkm1KeGbTWoSDWSVNL/9Va50xVvz42wUZkbKgN8mt4bBRplMy6HyXNa7K+qxv/BDw==}
 
   '@happyvertical/speech@0.78.1':
     resolution: {integrity: sha512-ni7W2dLS0K3Y3lpl1nY/ougVIoEhqxJ2V9PQHTa3cN0PYxTCYzsgElw42nj6SIDSNdhX0OMB89HJlunILVQYMw==}
@@ -11622,6 +11632,8 @@ snapshots:
       - encoding
       - pg-native
       - utf-8-validate
+
+  '@happyvertical/signatures@0.80.0': {}
 
   '@happyvertical/speech@0.78.1': {}
 
