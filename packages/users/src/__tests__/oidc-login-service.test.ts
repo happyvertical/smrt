@@ -384,6 +384,93 @@ describe('OidcLoginService', () => {
     await expect(countRows(db, 'sessions')).resolves.toBe(1);
   });
 
+  it('forwards owner authorization through the stock SvelteKit callback flow', async () => {
+    const server = await startOidcServer();
+    cleanup.push(server.close);
+    const isolated = await createOidcTestDb();
+    cleanup.push(isolated.cleanup);
+    const { db } = isolated;
+    const profileId = randomUUID();
+    const userId = randomUUID();
+    await db.query(
+      `INSERT INTO profiles
+        (id, slug, context, _meta_type, tenant_id, email, email_key, name)
+       VALUES (?, ?, '', '@happyvertical/smrt-profiles:Person', NULL, ?, ?, 'Approved Person')`,
+      profileId,
+      `profile-${profileId}`,
+      'dex.user@example.com',
+      'dex.user@example.com',
+    );
+    await db.query(
+      `INSERT INTO users
+        (id, slug, context, profile_id, email, email_key, status)
+       VALUES (?, ?, '', ?, ?, ?, 'active')`,
+      userId,
+      `user-${userId}`,
+      profileId,
+      'dex.user@example.com',
+      'dex.user@example.com',
+    );
+    let authorizerCalls = 0;
+    const options: Parameters<typeof beginOidcLogin>[1] = {
+      db,
+      provider: 'dex',
+      providers: {
+        dex: {
+          clientId: 'smrt-client',
+          clientSecret: 'secret',
+          issuer: server.issuer,
+          kind: 'dex' as const,
+          redirectUri: `${server.issuer}/auth/dex/callback`,
+        },
+      },
+      authorizeProfileOwner: async ({ claims, db: tx, users }) => {
+        authorizerCalls += 1;
+        expect(claims.email).toBe('dex.user@example.com');
+        expect(claims.email_verified).toBe(true);
+        expect(Object.isFrozen(claims)).toBe(true);
+        const profiles = await ProfileCollection.create({ db: tx });
+        const [profile, user] = await Promise.all([
+          profiles.get({ id: profileId }),
+          users.get({ id: userId }),
+        ]);
+        if (!profile || !user) throw new Error('Missing approved fixture.');
+        return { profile, user };
+      },
+    };
+    const { cookies, jar } = createCookieJar();
+    const loginUrl = new URL(`${server.issuer}/auth/dex/login`);
+    const { transaction } = await beginOidcLogin(
+      {
+        cookies,
+        params: { provider: 'dex' },
+        request: new Request(loginUrl),
+        url: loginUrl,
+      },
+      options,
+    );
+    server.setNonce(transaction.nonce);
+    const callbackUrl = new URL(`${server.issuer}/auth/dex/callback`);
+    callbackUrl.searchParams.set('code', 'authorization-code');
+    callbackUrl.searchParams.set('state', transaction.state);
+
+    const response = await createOidcCallbackHandler(options)({
+      cookies,
+      getClientAddress: () => '127.0.0.1',
+      params: { provider: 'dex' },
+      request: new Request(callbackUrl),
+      url: callbackUrl,
+    });
+
+    expect(response.status, await response.clone().text()).toBe(303);
+    expect(authorizerCalls).toBe(1);
+    expect(jar.has('sid')).toBe(true);
+    await expect(countRows(db, 'profiles')).resolves.toBe(1);
+    await expect(countRows(db, 'users')).resolves.toBe(1);
+    await expect(countRows(db, 'oidc_identities')).resolves.toBe(1);
+    await expect(countRows(db, 'sessions')).resolves.toBe(1);
+  });
+
   it('fails before User and session creation on a Profile-only collision', async () => {
     const server = await startOidcServer();
     cleanup.push(server.close);

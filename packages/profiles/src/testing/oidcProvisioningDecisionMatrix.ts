@@ -37,6 +37,13 @@ export type OidcProvisioningResolverResult =
   | 'owned_profile'
   | 'throws';
 
+export type OidcProvisioningOwnerAuthorizationResult =
+  | 'matching_owner'
+  | 'multiple_owners'
+  | 'no_owner'
+  | 'null'
+  | 'wrong_user';
+
 export type OidcProvisioningExecutionState =
   | 'first_callback'
   | 'exact_subsequent_callback'
@@ -44,12 +51,14 @@ export type OidcProvisioningExecutionState =
   | 'concurrent_email_competitors'
   | 'durable_arbiter_retry'
   | 'caller_owned_transaction'
+  | 'concurrent_authorized_callbacks'
   | 'root_transaction_rollback'
   | 'duckdb_caller_owned_transaction';
 
 export type OidcProvisioningPublicErrorCode =
   | 'ambiguous_email'
   | 'ambiguous_identity'
+  | 'email_mismatch'
   | 'email_key_backfill_required'
   | 'missing_profile'
   | 'non_person'
@@ -58,6 +67,7 @@ export type OidcProvisioningPublicErrorCode =
   | 'tenant_scoped'
   | 'transaction_required'
   | 'user_email_backfill_required'
+  | 'user_email_conflict'
   | null;
 
 export type OidcProvisioningPublicError =
@@ -71,6 +81,7 @@ export type OidcProvisioningSelectedProfile =
   | 'email_match'
   | 'exact_identity_profile'
   | 'resolver_profile'
+  | 'authorized_profile'
   | 'concurrent_winner'
   | null;
 
@@ -91,6 +102,7 @@ export interface OidcProvisioningSurfaceExpectation {
   publicError: OidcProvisioningPublicError;
   selectedProfile: OidcProvisioningSelectedProfile;
   resolverCalls: number | 'at_least_2';
+  ownerAuthorizerCalls: number | 'at_least_2';
   /** Exact issuer/subject authority is never rebindable. */
   rebindAllowed: false;
   /** Backfill marker state installed by the runner for this surface. */
@@ -119,6 +131,7 @@ export interface OidcProvisioningScenario {
   email: OidcProvisioningEmailState;
   verification: OidcProvisioningVerificationState;
   resolver: OidcProvisioningResolverResult;
+  ownerAuthorization?: OidcProvisioningOwnerAuthorizationResult;
   execution: OidcProvisioningExecutionState;
   adapters: {
     sqlite: OidcProvisioningAdapterExpectation;
@@ -186,6 +199,7 @@ function expectation(
     publicError: null,
     selectedProfile: 'new_profile',
     resolverCalls: 0,
+    ownerAuthorizerCalls: 0,
     rebindAllowed: false,
     readiness: 'none',
     retry: 'none',
@@ -413,6 +427,306 @@ export const OIDC_PROVISIONING_DECISION_MATRIX = [
         publicError: { code: 'profile_owned' },
         selectedProfile: null,
         readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-first-binding',
+    title:
+      'explicit owner authorization binds a verified first identity to its pre-provisioned User',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        selectedProfile: 'authorized_profile',
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_and_user_email_keys',
+        resultCreated: 'reused',
+        createdRows: { ...noRows(), oidcIdentity: 1 },
+      }),
+    },
+  },
+  {
+    id: 'owner-authorizer-rejects',
+    title: 'a null owner authorization rejects before identity creation',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'null',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'rejected' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-unverified',
+    title: 'owner authorization never overrides an explicitly unverified email',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'unverified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'rejected' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-missing-verification',
+    title: 'owner authorization requires an explicit true verification claim',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'claim_missing',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'rejected' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-profile-email-mismatch',
+    title: 'an authorized Profile must match the verified claim email',
+    identity: 'none',
+    email: 'different_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'email_mismatch' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-user-email-mismatch',
+    title: 'the authorized owner must match the verified claim email',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'user_email_conflict' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_and_user_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-tenant-profile',
+    title: 'owner authorization cannot select a tenant-scoped Profile',
+    identity: 'none',
+    email: 'tenant_scoped_collision',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'tenant_scoped' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-non-person',
+    title: 'owner authorization cannot select a non-Person Profile',
+    identity: 'none',
+    email: 'non_person_collision',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'non_person' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-ambiguous-profile',
+    title: 'owner authorization cannot select an ambiguous Profile email',
+    identity: 'none',
+    email: 'duplicate_normalized_profiles',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'ambiguous_email' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-no-owner',
+    title: 'owner authorization requires exactly one Profile owner',
+    identity: 'none',
+    email: 'one_unowned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'no_owner',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'profile_owned' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-multiple-owners',
+    title: 'owner authorization rejects legacy multiple Profile owners',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'multiple_owners',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'profile_owned' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-wrong-user',
+    title: 'owner authorization rejects a User that does not own the Profile',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'wrong_user',
+    execution: 'first_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'profile_owned' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-conflicting-identity',
+    title: 'owner authorization cannot rebind an exact conflicting identity',
+    identity: 'exact_global_person',
+    email: 'different_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'exact_subsequent_callback',
+    adapters: ROOT_ADAPTERS,
+    expectations: {
+      users: expectation({
+        outcome: 'rejected',
+        publicError: { code: 'rejected' },
+        selectedProfile: null,
+        ownerAuthorizerCalls: 1,
+        readiness: 'profile_and_user_email_keys',
+      }),
+    },
+  },
+  {
+    id: 'owner-authorized-concurrent-callbacks',
+    title:
+      'concurrent authorized callbacks converge on one existing User and identity',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'concurrent_authorized_callbacks',
+    adapters: POSTGRES_SENSITIVE_ADAPTERS,
+    expectations: {
+      users: expectation({
+        selectedProfile: 'authorized_profile',
+        ownerAuthorizerCalls: 'at_least_2',
+        readiness: 'profile_and_user_email_keys',
+        resultCreated: 'reused',
+        createdRows: { ...noRows(), oidcIdentity: 1 },
+      }),
+    },
+  },
+  {
+    id: 'owner-authorizer-durable-arbiter-retry',
+    title: 'a durable race retry invokes the idempotent owner authorizer again',
+    identity: 'none',
+    email: 'already_owned_global_person',
+    verification: 'verified',
+    resolver: 'absent',
+    ownerAuthorization: 'matching_owner',
+    execution: 'durable_arbiter_retry',
+    adapters: POSTGRES_SENSITIVE_ADAPTERS,
+    expectations: {
+      users: expectation({
+        selectedProfile: 'authorized_profile',
+        ownerAuthorizerCalls: 2,
+        readiness: 'profile_and_user_email_keys',
+        retry: 'once_after_race',
+        resultCreated: 'reused',
+        createdRows: { ...noRows(), oidcIdentity: 1 },
       }),
     },
   },

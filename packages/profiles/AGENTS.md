@@ -112,7 +112,11 @@ import { smrtProfilesGenerateBioPrompt } from '@happyvertical/smrt-profiles';
   existing email match through this helper; User/session provisioning still
   rejects unsafe linked Profiles before creating authentication state. Use
   `UserCollection.getOrCreateFromOidc()` for owner-aware verified-email reuse and
-  its supported transaction-bound resolver hook.
+  its supported transaction-bound hooks. A pre-provisioned owned Person remains
+  fail-closed unless the application explicitly uses `authorizeProfileOwner`
+  to select both the canonical Profile and its existing approved sole owner;
+  the users package revalidates those IDs, emails, and identity authority in
+  the provisioning transaction.
 - **Email storage and identity matching differ**: `Profile.email` has an
   exact-value DB constraint. Identity boundaries query readonly indexed
   `Profile.emailKey`, derived by the shared TypeScript

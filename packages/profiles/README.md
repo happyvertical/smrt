@@ -175,7 +175,12 @@ errors, and permitted row creation; the Profiles and Users suites execute its
 applicable rows directly. In particular, Profile-only exact reuse preserves an
 established legacy link because it creates no User/session authentication state,
 while `UserCollection.getOrCreateFromOidc()` remains owner-aware and fail-closed.
-Use the Users API for verified-email reuse and application reconciliation.
+Use the Users API for verified-email reuse and application reconciliation. Its
+`authorizeProfileOwner` option is the only supported exception for a new
+issuer/subject targeting a pre-provisioned owned Person: the users package
+atomically verifies the canonical Profile, sole approved owner, matching User
+email, and non-rebindable identity. Without that explicit application
+authorization, the owned Profile still returns `profile_owned`.
 
 `Profile` and `ProfileCollection` both expose `getAssets()`, `addAsset()`, and
 `removeAsset()` helpers backed by `profile_assets`. Typical relationships are

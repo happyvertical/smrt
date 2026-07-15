@@ -381,8 +381,10 @@ rebinding, ownership/collision failures, readiness, retries, adapter support,
 public errors, and permitted Profile/OIDC identity/User/session creation. For a
 new identity, the Users path is deliberately fail-closed before User or session
 creation unless the selected Profile is the one safe, unowned global `Person`
-allowed by that matrix. An exact issuer/subject link may instead continue to
-its already-owned canonical global `Person`, but it cannot be rebound.
+allowed by that matrix. An owned Profile still returns `profile_owned` unless
+the application explicitly supplies the owner authorization described below.
+An exact issuer/subject link may instead continue to its already-owned canonical
+global `Person`, but it cannot be rebound.
 
 Canonical Profile failures use `CanonicalPersonProfileError` from
 `@happyvertical/smrt-profiles`, with codes `ambiguous_email`, `email_mismatch`,
@@ -433,6 +435,52 @@ still apply. The resolver receives a separate frozen claims snapshot; retry
 locks, identity lookups, and persistence retain SMRT's immutable internal
 snapshot.
 
+An invitation or approval workflow that pre-provisions both the canonical
+global `Person` and its approved owning `User` can authorize the first identity
+binding with `authorizeProfileOwner`:
+
+```typescript
+// src/routes/auth/[provider]/callback/+server.ts
+import { ProfileCollection } from '@happyvertical/smrt-profiles';
+import { createOidcCallbackHandler } from '@happyvertical/smrt-users/sveltekit';
+
+export const GET = createOidcCallbackHandler({
+  db: { type: 'postgres', url: process.env.DATABASE_URL! },
+  authorizeProfileOwner: async ({ claims, db, users }) => {
+    // This application record is the authorization decision. Select by its
+    // approved IDs; do not authorize an account from matching email alone.
+    const approval = await findApprovedOidcUser({
+      db,
+      email: claims.email,
+    });
+    if (!approval) return undefined; // preserve SMRT's secure default
+
+    const profiles = await ProfileCollection.create({ db });
+    const [profile, user] = await Promise.all([
+      profiles.get({ id: approval.profileId }),
+      users.get({ id: approval.userId }),
+    ]);
+    if (!profile || !user) return null; // explicitly reject stale approval
+    return { profile, user };
+  },
+  successRedirect: '/dashboard',
+});
+```
+
+The authorizer runs after protocol validation and inside the provisioning
+transaction. It receives frozen normalized claims, the transaction-bound `db`,
+and a `UserCollection` bound to that same transaction. Return both selected
+objects only after application authorization; `undefined` uses the fail-closed
+default and `null` rejects. SMRT reloads and verifies the selected IDs rather
+than trusting the returned objects: `email_verified` must be exactly `true`,
+the Profile must be the unique canonical global `Person` for the claim email,
+exactly one User must own it, and that User must have the same normalized email.
+An exact issuer/subject cannot be rebound. Identity creation and login remain
+atomic, and a race retry may invoke the authorizer again, so its reads and
+writes must use only the supplied handles and be idempotent. Supplying both
+`resolveProfile` and `authorizeProfileOwner` is allowed only when they select
+the same Profile.
+
 When userinfo supplies a missing email, its `email_verified` value travels with
 that email as one source-bound pair. SMRT never borrows a verification flag
 from the ID token for a userinfo address, or from userinfo for an ID-token
@@ -459,7 +507,9 @@ locks in deterministic order, including when the same subject presents changed
 email claims on independent database handles. SQLite and DuckDB also acquire a
 database-URL transaction lock because one adapter cannot safely overlap
 unrelated root transactions; PostgreSQL deadlock and serialization failures use
-a bounded transaction retry. New OIDC Profiles use non-semantic unique slugs,
+a bounded transaction retry. Owner-authorized binding uses the same contract:
+pass the DuckDB root handle and let SMRT serialize the callback transaction.
+New OIDC Profiles use non-semantic unique slugs,
 so equal IdP display names cannot overwrite one another through SMRT's
 natural-key upsert.
 Existing installations must run `smrt db:status`, `smrt db:migrate`, then
@@ -613,6 +663,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
 | `OidcProfileResolver` | Transaction-bound pre-provision hook for application identity reconciliation. |
+| `OidcProfileOwnerAuthorizer` | Transaction-bound application authorization for binding a first identity to an existing canonical Profile and its sole approved User owner. |
 | `NormalizedOidcClaims` | Frozen resolver claims with required normalized `email`. |
 | `withSessionPermissionContext()` | Loads a session, optionally enters tenancy context, and exposes a request-scoped database/permission context. |
 | `getCurrentSessionPermissionContext()`, `getRequestScopedDatabase()` | Read the active request/session context inside app code. |
