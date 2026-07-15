@@ -6,6 +6,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SmartObjectManifest } from '../scanner/types';
+import { selectApiClientEntries } from '../vite-plugin/api-client-entries.js';
 import { selectWebCollectionEntries } from '../vite-plugin/web-collections.js';
 
 export interface PrebuildOptions {
@@ -162,17 +163,9 @@ declare module '@smrt/manifest' {
 }`;
 
   // Generate client module declaration
-  const collectionNames = [
-    ...new Set(Object.values(manifest.objects).map((obj) => obj.collection)),
-  ];
-
-  const apiClientInterface = collectionNames
-    .map((collection) => {
-      const dataType = Object.entries(manifest.objects).find(
-        ([, obj]) => obj.collection === collection,
-      )?.[1].className;
-      const interfaceName = dataType ? `${dataType}Data` : 'any';
-      return `    ${collection}: CrudOperations<${interfaceName}>;`;
+  const apiClientInterface = selectApiClientEntries(manifest)
+    .map(({ clientKey, dataInterfaceName }) => {
+      return `    ${clientKey}: CrudOperations<${dataInterfaceName}>;`;
     })
     .join('\n');
 
