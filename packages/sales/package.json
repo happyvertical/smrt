@@ -1,7 +1,7 @@
 {
   "name": "@happyvertical/smrt-sales",
   "version": "0.40.1",
-  "description": "Modular sales for the SMRT framework: CRM (Leads, Opportunities, Pipelines), referral intake with versioned attribution policies, neutral commissions with snapshots and payouts, and reusable Svelte surfaces",
+  "description": "Modular sales for the SMRT framework: agreement execution, CRM, referral intake, neutral commissions, and reusable Svelte surfaces",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./agreements": {
+      "types": "./dist/agreements.d.ts",
+      "import": "./dist/agreements.js"
     },
     "./crm": {
       "types": "./dist/crm.d.ts",
@@ -48,6 +52,8 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
+    "@happyvertical/signatures": "catalog:",
+    "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",

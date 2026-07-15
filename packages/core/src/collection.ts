@@ -2123,6 +2123,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Instantiate the correct subclass
     const instance = new registeredClass.constructor(params);
+    if (hydrationOptions.hydrateOnly) {
+      // Models need to distinguish authoritative DB hydration from a fresh
+      // `_skipLoad` instance while initialize() captures immutable state.
+      instance.markAsPersisted();
+    }
     await instance.initialize();
 
     // Ensure _meta_type is set on the instance (fix for issue #442)
@@ -2727,9 +2732,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         formattedData,
         { hydrateOnly: true },
       );
-      // Hydrated from an existing row — save() must update by primary key
-      // even if natural-key fields change (issue #1472).
-      polymorphicInstance.markAsPersisted();
       return polymorphicInstance;
     }
 
@@ -2743,6 +2745,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     };
 
     const instance = new this._itemClass(instanceParams);
+    // Mark before initialize() so model lifecycle guards can safely snapshot
+    // authoritative hydrated values without probing the database. A fresh
+    // caller-created `_skipLoad` instance remains unpersisted.
+    instance.markAsPersisted();
     await instance.initialize();
 
     if (isSTI) {
@@ -2753,9 +2759,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         registeredClass?.qualifiedName || this._itemClass.name;
     }
 
-    // Hydrated from an existing row — save() must update by primary key
-    // even if natural-key fields change (issue #1472).
-    instance.markAsPersisted();
     return instance;
   }
 

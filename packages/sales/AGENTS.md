@@ -1,13 +1,14 @@
 # @happyvertical/smrt-sales
 
-Modular sales: CRM (Leads, Opportunities, Pipelines), referral intake with versioned attribution policies, a neutral commissions financial core with immutable term snapshots, and reusable Svelte surfaces. One installable package, four modules with distinct subpath exports:
+Modular sales: provider-neutral agreement execution, CRM, referral intake, a neutral commissions financial core, and reusable Svelte surfaces. One installable package with distinct subpath exports:
 
+- `@happyvertical/smrt-sales/agreements`
 - `@happyvertical/smrt-sales/crm`
 - `@happyvertical/smrt-sales/referrals`
 - `@happyvertical/smrt-sales/commissions`
 - `@happyvertical/smrt-sales/svelte`
 
-The root export re-exports every TS module. Internal module dependency order is `crm → commissions` and `referrals → commissions` (by string references only); `commissions` never imports from `crm`/`referrals` and never assumes advertising, Referral, Lead, or Opportunity semantics.
+The root export re-exports every TS module. `agreements` depends on the provider-neutral `@happyvertical/signatures` contract and `smrt-assets`; provider credentials stay in the injected SDK adapter/secret store. `referrals` binds its versioned terms to `agreements`.
 
 ## Validation
 
@@ -21,6 +22,13 @@ Referrers and Sales Representatives are **distinct roles** and stay that way. Bo
 - **SalesRepresentative** (crm) and **Referrer** (referrals): role models, each holding `profileId` (cross-package string ref to smrt-profiles) and `earnerId`.
 
 ## Modules
+
+### agreements — verified execution evidence
+
+- **AgreementExecution**: private required-tenant orchestration state keyed by `(tenant_id, idempotency_key)`, with a collision-checked provider request/status, an expiring create-operation lease, source version/hash/size/Asset, intended signer identity/auth method, cancellation/expiry, reconciliation, exact staged artifact metadata, and secret-store references only.
+- **AgreementExecutionEvent**: private append-only evidence for verified webhooks and operator/provider operations. Provider events are deduped by tenant/provider replay key; explicit occurrence/first-receipt timestamps and the exact payload/hash are retained, while signature headers are never stored. A later receipt time for the same verified provider event is an idempotent replay. Stale, regressive, or conflicting terminal events are audited without regressing lifecycle state or creating executed evidence.
+- **ExecutedAgreement**: immutable read-only source version plus signed-document and audit-trail Asset ids/hashes/sizes/filenames/media types, completed signer evidence, acceptance/effective dates, and supersession reference. Amendments create new records.
+- **AgreementExecutionService**: accepts an SDK `SignatureProvider` and shared `AssetRuntimeLike`; enforces ambient tenant equality, expiring remote-attempt fencing, create idempotency, verified webhook ingestion/replay, tenant-fenced lifecycle compare-and-set with monotonic provider-event ordering, partial audit/failure updates that cannot overwrite lifecycle state, cancellation/expiry/reconciliation, exact artifact hashing, and immutable finalization. An expired create lease may be reclaimed only when the provider advertises atomic idempotency; otherwise a create with no confirmed request id must be reconciled/adopted before retry.
 
 ### commissions — neutral financial core
 
@@ -53,9 +61,9 @@ Referrers and Sales Representatives are **distinct roles** and stay that way. Bo
 - **ReferralTouch**: immutable attribution evidence (`click|code_entry|manual_assignment|partner_entry`) with subject hints and evidence JSON.
 - **Referral**: the introduction — generic qualifying target (`targetKind`/`targetId`: lead, opportunity, client, project, subscription, …), resolved policy version, credit fraction (splits create sibling Referrals sharing `splitGroupId`), lifecycle `pending → attributed → qualified | disqualified | expired | under_review`.
 - **AttributionException**: conflict review queue. Conclusive policy resolves automatically; ambiguity creates an exception; overrides require a `resolutionReason` and are audited.
-- **ReferralAgreement**: versioned per-Referrer terms binding — pins `commissionPlanKey`/`planVersion`, effective dating, optional cross-package string refs to a commerce Contract and executed-artifact evidence (e-signature execution lives downstream).
+- **ReferralAgreement**: versioned per-Referrer terms binding — pins `commissionPlanKey`/`planVersion`, effective dating, and an immutable `ExecutedAgreement` before activation. Amendments are fresh unsigned drafts and never inherit execution evidence.
 - **ReferralTermSnapshot**: immutable at qualification — freezes agreement/plan/policy version refs plus the calculation inputs needed to reproduce every later earning.
-- **Services**: `AttributionService` (resolve touches → Referral(s) or exception; typed refusals `existing_client_ineligible | no_active_policy | no_eligible_touches`; `override()` requires a reason, audits via a resolved AttributionException, pins the displaced credit's policy version, and throws `QualifiedReferralOverrideError` on qualified referrals), `ReferralQualificationService` (eligibility + frozen snapshot + transition; `requalify()` is the explicit apply-amendment path), `ReferralCommissionService` (bridge: qualified Referral + EarningEvent → Commissions through the snapshot with `termsSnapshotKind = REFERRAL_TERMS_SNAPSHOT_KIND`; occurrence limits counted per `(termsSnapshotId, componentKey)`; fully idempotent on replay).
+- **Services**: `ReferralAgreementExecutionService` binds generated Referral Agreement versions to the generic execution service and activates/supersedes them transactionally with future-effective amendment support; `AttributionService`, `ReferralQualificationService`, and `ReferralCommissionService` retain their existing attribution/qualification/earning responsibilities.
 
 ### svelte
 
@@ -71,7 +79,7 @@ Every model is `@TenantScoped({ mode: 'optional' })` with `@tenantId({ nullable:
 
 ## Cross-package references (plain strings)
 
-`profileId` → smrt-profiles Profile; `invoiceId` (CommissionPayout) → smrt-commerce Invoice; `contractRef` (ReferralAgreement) → smrt-commerce Contract. No static imports of sibling domain packages.
+`profileId` → smrt-profiles Profile; `invoiceId` (CommissionPayout) → smrt-commerce Invoice; agreement artifacts → smrt-assets Asset ids. No static imports of unrelated sibling domain packages.
 
 ## smrt-affiliates migration
 
@@ -90,7 +98,7 @@ Every model is `@TenantScoped({ mode: 'optional' })` with `@tenantId({ nullable:
 - **`reject()` alone strands rows**: the model method only flips status — always reject through `transitionPayoutForSource`, which releases the batch's membership in the same transaction; stamped rows on a rejected payout would be unsettleable forever.
 - **The payout source stamp is derived data, never authorization**: `sourceKind`/`sourceId` on CommissionPayout index the history listing; both the listing and the lifecycle service re-verify actual membership and fail closed when the stamp cannot be proven.
 - **`sweepClearing` treats `clearingEndsAt: null` as immediately sweepable** (no clearing configured ⇒ nothing to wait for).
-- **Agreement freeze scope**: activating a ReferralAgreement freezes referrer/program/version/plan refs/clearingDays/approvalMode/effectiveFrom; `effectiveTo` (end-dating) and the evidence fields (`contractRef`, artifact url/hash, `acceptanceEvidence`) stay writable — e-signature completes downstream.
+- **Agreement freeze scope**: activating a ReferralAgreement requires and freezes its execution/evidence refs along with its commercial terms. `effectiveTo` remains writable for explicit end-dating; signed bytes, hashes, signer evidence, and audit trail exist only on immutable ExecutedAgreement/Asset records.
 - **Circular FK pair by design**: `Referral.snapshotId ↔ ReferralTermSnapshot.referralId`. Fine on SQLite (and no cross-table DDL constraints are emitted for these string FKs); keep an eye on strict-DDL environments.
 - **Attribution resolution is single-writer per (target, program)**: `resolve()` is idempotent against PERSISTED state, but two workers resolving the same target concurrently can both pass the existence check and create duplicate credit — the collection layer has no cross-row transaction (the same stance as payout batching, which relies on disjoint scopes for concurrency). Run intake resolution serially per target (it naturally is, in a request handler); duplicates are visible in the portal and correctable via `override()`.
 - **`ObjectRegistry.getConfig(X)` needs the class module imported** (decorator side effects) — manifest-only registration doesn't carry api/mcp/conflictColumns; tests asserting surface configs need a side-effect import of the module barrel.

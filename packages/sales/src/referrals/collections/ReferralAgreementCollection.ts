@@ -25,10 +25,6 @@ export interface ReferralAgreementAmendmentChanges {
   approvalMode?: ReferralAgreementApprovalMode;
   effectiveFrom?: Date | null;
   effectiveTo?: Date | null;
-  contractRef?: string;
-  executedArtifactUrl?: string;
-  executedArtifactHash?: string;
-  acceptanceEvidence?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
 
@@ -108,15 +104,10 @@ export class ReferralAgreementCollection extends SmrtCollection<ReferralAgreemen
         changes.effectiveTo !== undefined
           ? changes.effectiveTo
           : latest.effectiveTo,
-      contractRef: changes.contractRef ?? latest.contractRef,
-      executedArtifactUrl:
-        changes.executedArtifactUrl ?? latest.executedArtifactUrl,
-      executedArtifactHash:
-        changes.executedArtifactHash ?? latest.executedArtifactHash,
-      acceptanceEvidence:
-        changes.acceptanceEvidence !== undefined
-          ? JSON.stringify(changes.acceptanceEvidence)
-          : latest.acceptanceEvidence,
+      // An amendment is a fresh unsigned version. Executed evidence belongs
+      // to the exact terms that were accepted and is never copied forward.
+      executionId: '',
+      executedAgreementId: '',
       metadata:
         changes.metadata !== undefined
           ? JSON.stringify(changes.metadata)

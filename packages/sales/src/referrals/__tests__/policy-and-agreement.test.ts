@@ -257,6 +257,11 @@ describe('ReferralAgreement versioning', () => {
     expect(() => draft.activate()).toThrow(/commissionPlanKey is required/);
 
     draft.commissionPlanKey = 'referral-standard';
+    expect(() => draft.activate()).toThrow(
+      /AgreementExecution and immutable ExecutedAgreement evidence are required/,
+    );
+    draft.bindExecution('execution-1');
+    draft.bindExecutedAgreement('executed-1');
     draft.activate();
     await expect(draft.save()).resolves.toBeDefined();
   });
@@ -269,6 +274,8 @@ describe('ReferralAgreement versioning', () => {
       status: 'active',
       commissionPlanKey: 'referral-standard',
       clearingDays: 30,
+      executionId: 'execution-1',
+      executedAgreementId: 'executed-1',
     });
     await expect(
       agreements.create({
@@ -293,6 +300,8 @@ describe('ReferralAgreement versioning', () => {
       commissionPlanKey: 'referral-standard',
       effectiveFrom: new Date('2026-01-01T00:00:00Z'),
       effectiveTo: new Date('2026-06-30T23:59:59Z'),
+      executionId: 'execution-1',
+      executedAgreementId: 'executed-1',
     });
 
     expect(
@@ -326,6 +335,8 @@ describe('ReferralAgreement versioning', () => {
       version: 1,
       status: 'active',
       commissionPlanKey: 'referral-standard',
+      executionId: 'execution-1',
+      executedAgreementId: 'executed-1',
     });
     const v2 = await agreements.createAmendment(referrerId, programId, {
       clearingDays: 45,
@@ -336,6 +347,10 @@ describe('ReferralAgreement versioning', () => {
       1,
     );
 
+    expect(v2.executionId).toBe('');
+    expect(v2.executedAgreementId).toBe('');
+    v2.bindExecution('execution-2');
+    v2.bindExecutedAgreement('executed-2');
     v2.activate();
     await v2.save();
     // Both momentarily active — the newest version wins.
@@ -354,7 +369,7 @@ describe('ReferralAgreement versioning', () => {
     expect(await agreements.activeFor(referrerId, programId)).toBeNull();
   });
 
-  it('freezes terms once active but keeps evidence fields and effectiveTo mutable', async () => {
+  it('freezes terms and evidence bindings once active but keeps effectiveTo mutable', async () => {
     await agreements.create({
       referrerId,
       programId,
@@ -362,6 +377,8 @@ describe('ReferralAgreement versioning', () => {
       status: 'active',
       commissionPlanKey: 'referral-standard',
       clearingDays: 30,
+      executionId: 'execution-1',
+      executedAgreementId: 'executed-1',
     });
 
     const frozen = await agreements.activeFor(referrerId, programId);
@@ -369,14 +386,16 @@ describe('ReferralAgreement versioning', () => {
     frozen.clearingDays = 0;
     await expect(frozen.save()).rejects.toThrow(/terms are immutable/);
 
-    // Evidence and end-dating remain legal on active rows.
+    // Evidence references are part of the immutable accepted version.
     const evidence = await agreements.activeFor(referrerId, programId);
     if (!evidence) throw new Error('expected active agreement');
-    evidence.executedArtifactUrl = 'https://esign.example/artifact.pdf';
-    evidence.executedArtifactHash = 'sha256:abc';
-    evidence.setAcceptanceEvidence({ signer: 'profile-1' });
-    evidence.effectiveTo = new Date('2026-12-31T00:00:00Z');
-    await expect(evidence.save()).resolves.toBeDefined();
+    evidence.executedAgreementId = 'executed-evil';
+    await expect(evidence.save()).rejects.toThrow(/terms are immutable/);
+
+    const endDated = await agreements.activeFor(referrerId, programId);
+    if (!endDated) throw new Error('expected active agreement');
+    endDated.effectiveTo = new Date('2026-12-31T00:00:00Z');
+    await expect(endDated.save()).resolves.toBeDefined();
   });
 
   it('save-guards illegal agreement status transitions', async () => {
@@ -386,6 +405,8 @@ describe('ReferralAgreement versioning', () => {
       version: 1,
       status: 'active',
       commissionPlanKey: 'referral-standard',
+      executionId: 'execution-1',
+      executedAgreementId: 'executed-1',
     });
     agreement.status = 'draft';
     await expect(agreement.save()).rejects.toThrow(/illegal status transition/);
@@ -408,7 +429,8 @@ describe('ReferralAgreement versioning', () => {
       commissionPlanVersion: 3,
       clearingDays: 30,
       approvalMode: 'auto',
-      contractRef: 'contract-uuid',
+      executionId: 'execution-1',
+      executedAgreementId: 'executed-1',
     });
     const amendment = await agreements.createAmendment(referrerId, programId, {
       commissionPlanVersion: 0,
@@ -419,7 +441,8 @@ describe('ReferralAgreement versioning', () => {
     expect(amendment.commissionPlanVersion).toBe(0);
     expect(amendment.clearingDays).toBe(30);
     expect(amendment.approvalMode).toBe('auto');
-    expect(amendment.contractRef).toBe('contract-uuid');
+    expect(amendment.executionId).toBe('');
+    expect(amendment.executedAgreementId).toBe('');
   });
 
   it('refuses to amend a pair with no versions', async () => {

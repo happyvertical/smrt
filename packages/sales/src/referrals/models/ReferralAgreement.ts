@@ -10,28 +10,20 @@
  *
  * Lifecycle: `draft → active | terminated`; `active → superseded |
  * terminated`; `superseded` / `terminated` are terminal. Activation requires
- * a non-empty {@link commissionPlanKey}.
+ * bound commercial terms and an immutable {@link executedAgreementId}.
  *
  * Immutability: once a row has been saved non-draft, its TERMS
  * (`referrerId`, `programId`, `version`, `commissionPlanKey`,
  * `commissionPlanVersion`, `clearingDays`, `approvalMode`, `effectiveFrom`)
  * are frozen via the WeakMap-serialize guard (commerce `LicenseSale`
- * pattern). Status transitions stay allowed, `effectiveTo` stays mutable so
- * an operator can end-date an agreement, and the execution-evidence fields
- * ({@link contractRef}, {@link executedArtifactUrl},
- * {@link executedArtifactHash}, {@link acceptanceEvidence}) stay mutable —
- * e-signature execution completes downstream and its artifacts may arrive
- * after activation. These are reference/evidence fields only.
+ * pattern). Status transitions stay allowed and `effectiveTo` stays mutable
+ * so an operator can end-date an agreement. Signed artifacts and signer/audit
+ * evidence live only on immutable `ExecutedAgreement` records.
  *
  * @packageDocumentation
  */
 
-import {
-  crossPackageRef,
-  foreignKey,
-  SmrtObject,
-  smrt,
-} from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ReferralAgreementApprovalMode,
@@ -127,25 +119,13 @@ export class ReferralAgreement extends SmrtObject {
   /** How earned commissions are approved downstream. */
   approvalMode: ReferralAgreementApprovalMode = 'manual';
 
-  /**
-   * Optional cross-package string reference to a smrt-commerce Contract
-   * representing the executed legal agreement.
-   */
-  @crossPackageRef('@happyvertical/smrt-commerce:Contract')
-  contractRef: string = '';
+  /** Current provider workflow while this version is being signed. */
+  @foreignKey('AgreementExecution')
+  executionId: string = '';
 
-  /** URL of the executed agreement artifact (e-signature PDF, …). */
-  executedArtifactUrl: string = '';
-
-  /** Content hash of the executed artifact for tamper evidence. */
-  executedArtifactHash: string = '';
-
-  /**
-   * Acceptance evidence as a JSON object string (click-through record, IP,
-   * timestamp, signer, …). Use
-   * {@link getAcceptanceEvidence}/{@link setAcceptanceEvidence}.
-   */
-  acceptanceEvidence: string = '{}';
+  /** Immutable executed evidence required before this version can activate. */
+  @foreignKey('ExecutedAgreement')
+  executedAgreementId: string = '';
 
   /**
    * Free-form JSON object stored as a string. Use
@@ -172,14 +152,10 @@ export class ReferralAgreement extends SmrtObject {
       this.clearingDays = options.clearingDays;
     if (options.approvalMode !== undefined)
       this.approvalMode = options.approvalMode;
-    if (options.contractRef !== undefined)
-      this.contractRef = options.contractRef;
-    if (options.executedArtifactUrl !== undefined)
-      this.executedArtifactUrl = options.executedArtifactUrl;
-    if (options.executedArtifactHash !== undefined)
-      this.executedArtifactHash = options.executedArtifactHash;
-    if (options.acceptanceEvidence !== undefined)
-      this.acceptanceEvidence = options.acceptanceEvidence;
+    if (options.executionId !== undefined)
+      this.executionId = options.executionId;
+    if (options.executedAgreementId !== undefined)
+      this.executedAgreementId = options.executedAgreementId;
     if (options.metadata !== undefined) this.metadata = options.metadata;
   }
 
@@ -193,7 +169,7 @@ export class ReferralAgreement extends SmrtObject {
     await super.initialize();
     this.effectiveFrom = ReferralAgreement.coerceDate(this.effectiveFrom);
     this.effectiveTo = ReferralAgreement.coerceDate(this.effectiveTo);
-    if (await this.isSaved()) {
+    if (this.isPersisted) {
       loadedAgreementStatus.set(this, this.status);
       if (this.status !== 'draft') {
         frozenAgreementSnapshot.set(this, this.serializeFrozenTerms());
@@ -228,24 +204,6 @@ export class ReferralAgreement extends SmrtObject {
   }
 
   // -------- JSON helpers --------
-
-  /** Parse {@link acceptanceEvidence}; returns `{}` on malformed content. */
-  getAcceptanceEvidence(): Record<string, unknown> {
-    if (!this.acceptanceEvidence) return {};
-    try {
-      const parsed = JSON.parse(this.acceptanceEvidence) as unknown;
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-        ? (parsed as Record<string, unknown>)
-        : {};
-    } catch {
-      return {};
-    }
-  }
-
-  /** Serialize and store {@link acceptanceEvidence}. */
-  setAcceptanceEvidence(evidence: Record<string, unknown>): void {
-    this.acceptanceEvidence = JSON.stringify(evidence ?? {});
-  }
 
   /** Parse {@link metadata}; returns `{}` on malformed content. */
   getMetadata(): Record<string, unknown> {
@@ -283,7 +241,51 @@ export class ReferralAgreement extends SmrtObject {
         `ReferralAgreement ${this.referrerId}/${this.programId}@${this.version}: commissionPlanKey is required to activate`,
       );
     }
+    if (!this.executionId || !this.executedAgreementId) {
+      throw new Error(
+        `ReferralAgreement ${this.referrerId}/${this.programId}@${this.version}: AgreementExecution and immutable ExecutedAgreement evidence are required to activate`,
+      );
+    }
     this.status = 'active';
+  }
+
+  /** Bind the provider workflow to an unsigned draft. */
+  bindExecution(executionId: string): void {
+    if (this.status !== 'draft') {
+      throw new Error('Only draft ReferralAgreements can bind an execution');
+    }
+    if (!executionId) throw new Error('executionId is required');
+    if (this.executionId && this.executionId !== executionId) {
+      throw new Error(
+        'ReferralAgreement is already bound to another execution',
+      );
+    }
+    this.executionId = executionId;
+  }
+
+  /** Bind immutable completed evidence to an unsigned draft. */
+  bindExecutedAgreement(executedAgreementId: string): void {
+    if (this.status !== 'draft') {
+      throw new Error(
+        'Only draft ReferralAgreements can bind executed evidence',
+      );
+    }
+    if (!this.executionId) {
+      throw new Error(
+        'Bind the AgreementExecution before its executed evidence',
+      );
+    }
+    if (!executedAgreementId)
+      throw new Error('executedAgreementId is required');
+    if (
+      this.executedAgreementId &&
+      this.executedAgreementId !== executedAgreementId
+    ) {
+      throw new Error(
+        'ReferralAgreement is already bound to different executed evidence',
+      );
+    }
+    this.executedAgreementId = executedAgreementId;
   }
 
   /** Transition `active → superseded` (a newer version took over). */
@@ -324,10 +326,17 @@ export class ReferralAgreement extends SmrtObject {
     this.assertStatusTransition(prior);
     this.assertFrozenTermsUnchanged();
     await this.assertNaturalKeyNotTaken();
-    if (this.status === 'active' && !this.commissionPlanKey) {
-      throw new Error(
-        `ReferralAgreement ${this.referrerId}/${this.programId}@${this.version}: commissionPlanKey is required while active`,
-      );
+    if (this.status === 'active') {
+      if (!this.commissionPlanKey) {
+        throw new Error(
+          `ReferralAgreement ${this.referrerId}/${this.programId}@${this.version}: commissionPlanKey is required while active`,
+        );
+      }
+      if (!this.executionId || !this.executedAgreementId) {
+        throw new Error(
+          `ReferralAgreement ${this.referrerId}/${this.programId}@${this.version}: AgreementExecution and ExecutedAgreement evidence are required while active`,
+        );
+      }
     }
     const result = (await super.save()) as this;
     loadedAgreementStatus.set(this, this.status);
@@ -434,6 +443,8 @@ export class ReferralAgreement extends SmrtObject {
       effectiveFrom: this.effectiveFrom
         ? this.effectiveFrom.toISOString()
         : null,
+      executionId: this.executionId,
+      executedAgreementId: this.executedAgreementId,
     });
   }
 

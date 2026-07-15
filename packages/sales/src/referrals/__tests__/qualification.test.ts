@@ -119,6 +119,8 @@ describe('ReferralQualificationService', () => {
       commissionPlanVersion: 0,
       clearingDays: 30,
       approvalMode: 'auto',
+      executionId: 'test-agreement-execution',
+      executedAgreementId: 'test-executed-agreement',
       ...overrides,
     });
   }

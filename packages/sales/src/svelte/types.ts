@@ -307,9 +307,13 @@ export interface AgreementVersionView {
   planVersion: number;
   clearingDays: number;
   approvalMode: ReferralAgreementApprovalMode;
-  /** Executed-artifact evidence, when the agreement has been executed. */
-  artifactUrl?: string;
-  artifactHash?: string;
+  executionId?: string;
+  executedAgreementId?: string;
+  /** Immutable Asset-backed evidence; applications authorize retrieval. */
+  signedDocumentAssetId?: string;
+  signedDocumentSha256?: string;
+  auditTrailAssetId?: string;
+  auditTrailSha256?: string;
 }
 
 /** Pre-aggregated operator reconciliation row for {@link CommissionExpenseSummary}. */
