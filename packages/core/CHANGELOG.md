@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - normalize vite 8 rolldown/oxc defaults for consumers (vitest)
+
+  ### Features
+
+  - authorize first OIDC owner binding (users)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.39.17
 
 ### Patch Changes
