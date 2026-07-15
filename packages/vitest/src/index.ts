@@ -104,6 +104,16 @@ export interface SmrtVitestPluginOptions {
    * at a local source file while still using the same plugin API.
    */
   setupFile?: string;
+
+  /**
+   * Filter applied to the auto-generated workspace alias entries before they
+   * are injected into `resolve.alias`. Receives the raw string `find` and its
+   * `replacement`; return `false` to drop the entry — e.g. to force a package
+   * to resolve through its published exports map instead of workspace source.
+   *
+   * @default undefined — every generated entry is kept
+   */
+  aliasFilter?: (entry: { find: string; replacement: string }) => boolean;
 }
 
 function resolveDefaultSetupFile(): string {
@@ -124,6 +134,34 @@ type ViteAliasEntry = {
   find: string;
   replacement: string;
 };
+
+/**
+ * Workspace alias entry as injected into Vite. `find` is an anchored RegExp
+ * so an alias can only match its exact specifier: rolldown (vite 8) treats a
+ * plain-string `find` as a prefix match, so a bare package alias like
+ * `@org/pkg` → `src/index.ts` would mangle an unaliased subpath import
+ * (`@org/pkg/sub` → `src/index.ts/sub`). Known subpaths get their own
+ * entries; everything else falls through to the package exports map.
+ */
+export type WorkspaceViteAlias = {
+  find: RegExp;
+  replacement: string;
+};
+
+/**
+ * Options for {@link getWorkspaceViteAliases}.
+ */
+export interface WorkspaceViteAliasOptions {
+  /**
+   * Drop generated entries by returning `false`. Receives the raw string
+   * `find` (package name or package subpath) and its `replacement` path.
+   */
+  filter?: (entry: ViteAliasEntry) => boolean;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 function findWorkspaceRoot(startDir: string): string | null {
   let current = startDir;
@@ -223,7 +261,8 @@ function addAliasIfPresent(
 
 export function getWorkspaceViteAliases(
   root = process.cwd(),
-): ViteAliasEntry[] {
+  options: WorkspaceViteAliasOptions = {},
+): WorkspaceViteAlias[] {
   const packageRoots = readWorkspacePackageRoots(root);
   const aliases: ViteAliasEntry[] = [];
 
@@ -389,8 +428,8 @@ export function getWorkspaceViteAliases(
     if (packageName === '@happyvertical/smrt-vitest') {
       // Shared Svelte component-test harness (S11 #1416). Flat `src/*.ts` files,
       // so the generic `/svelte` → `src/svelte/index.ts` convention misses them;
-      // map the exact subpaths. The length-desc sort below makes these win over
-      // the bare-package root alias.
+      // map the exact subpaths (every emitted alias matches exactly, so the
+      // bare-package root alias can never shadow these).
       addAliasIfPresent(
         aliases,
         '@happyvertical/smrt-vitest/svelte',
@@ -507,7 +546,18 @@ export function getWorkspaceViteAliases(
     }
   }
 
-  return aliases.sort((left, right) => right.find.length - left.find.length);
+  const { filter } = options;
+  const kept = filter ? aliases.filter((entry) => filter(entry)) : aliases;
+
+  return kept
+    .sort((left, right) => right.find.length - left.find.length)
+    .map(({ find, replacement }) => ({
+      // Anchored exact match — see WorkspaceViteAlias. Without the anchors,
+      // rolldown prefix-matches string finds and mangles unaliased subpath
+      // imports (e.g. `@anytown/deploy/deploy/pipeline`, anytown.ai#707).
+      find: new RegExp(`^${escapeRegExp(find)}$`),
+      replacement,
+    }));
 }
 
 function normalizeAliasEntries(
@@ -896,6 +946,73 @@ async function generateLocalManifest(
 type RetryConfig = number | { count?: number; delay?: number };
 
 /**
+ * Build the `oxc` transform defaults injected into the consumer config.
+ *
+ * Vite 8 (rolldown) transforms TypeScript with oxc and ignores the old
+ * `esbuild.tsconfigRaw` escape hatch, which breaks SMRT projects in two ways
+ * (evidence: anytown.ai#707, willgriffin.dev#220):
+ *
+ * - `@smrt()` legacy decorators reach the bundle untransformed unless
+ *   `oxc.decorator.legacy` is enabled;
+ * - oxc elides imports that are only referenced in type positions, silently
+ *   dropping side-effect model imports (SMRT object registration) in test
+ *   files that sit outside the tsconfig `include`, unless
+ *   `oxc.typescript.onlyRemoveTypeImports` is enabled.
+ *
+ * Every field the consumer configured themselves is left alone — a default is
+ * only injected when the consumer has not set that field, so explicit
+ * consumer values always win (vite deep-merges the rest). `oxc: false`
+ * disables the oxc transform entirely and suppresses all injection. The keys
+ * are inert on esbuild-based vite ≤ 7.
+ */
+function resolveOxcDefaults(
+  userOxc: unknown,
+): Record<string, unknown> | undefined {
+  if (
+    userOxc !== undefined &&
+    (typeof userOxc !== 'object' || userOxc === null)
+  ) {
+    return undefined;
+  }
+
+  const user = (userOxc ?? {}) as {
+    decorator?: unknown;
+    tsconfig?: unknown;
+    typescript?: unknown;
+  };
+
+  const defaults: Record<string, unknown> = {};
+
+  if (user.decorator === undefined) {
+    defaults.decorator = {
+      legacy: true,
+      emitDecoratorMetadata: true,
+    };
+    // The tsconfig compiler-option mirror only makes sense alongside the
+    // decorator default — a consumer overriding `decorator` owns both.
+    if (user.tsconfig === undefined) {
+      defaults.tsconfig = {
+        compilerOptions: {
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true,
+        },
+      };
+    }
+  }
+
+  const typescriptConfigured =
+    user.typescript !== undefined &&
+    (typeof user.typescript !== 'object' ||
+      user.typescript === null ||
+      'onlyRemoveTypeImports' in user.typescript);
+  if (!typescriptConfigured) {
+    defaults.typescript = { onlyRemoveTypeImports: true };
+  }
+
+  return Object.keys(defaults).length > 0 ? defaults : undefined;
+}
+
+/**
  * Resolve the per-test `retry` injected into the vitest config.
  *
  * Precedence: `SMRT_VITEST_RETRY` (a digits-only, non-negative integer) wins;
@@ -972,11 +1089,14 @@ export function smrtVitestPlugin(
     root = process.cwd(),
     generateManifest = true,
     setupFile = resolveDefaultSetupFile(),
+    aliasFilter,
   } = options;
 
   let manifestsLoaded = false;
   const setupFileId = setupFile;
-  const workspaceAliases = getWorkspaceViteAliases(root);
+  const workspaceAliases = getWorkspaceViteAliases(root, {
+    filter: aliasFilter,
+  });
 
   const ensureSetupFiles = (value: string | string[] | undefined): string[] => {
     const setupFiles = Array.isArray(value) ? [...value] : value ? [value] : [];
@@ -1027,18 +1147,11 @@ export function smrtVitestPlugin(
       const alias = normalizeAliasEntries(resolveConfig?.alias);
 
       return {
-        oxc: {
-          decorator: {
-            legacy: true,
-            emitDecoratorMetadata: true,
-          },
-          tsconfig: {
-            compilerOptions: {
-              experimentalDecorators: true,
-              emitDecoratorMetadata: true,
-            },
-          },
-        },
+        // Vite 8 (rolldown/oxc) defaults — legacy @smrt() decorators and
+        // type-import elision (see resolveOxcDefaults). Fields the consumer
+        // configured are never injected; `undefined` is dropped by vite's
+        // config merge, so this key vanishes when there is nothing to add.
+        oxc: resolveOxcDefaults((userConfig as { oxc?: unknown }).oxc),
         resolve: {
           alias: [...workspaceAliases, ...alias],
         },
