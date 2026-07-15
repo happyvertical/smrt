@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.40.4
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - select model schemas for client collections (core)
+
+  ### Other Changes
+
+  - perf: index manifest object lookups (core)
+  - @happyvertical/smrt-config@0.40.4
+  - @happyvertical/smrt-types@0.40.4
+  - @happyvertical/smrt-scanner@0.40.4
+
 ## 0.40.3
 
 ### Patch Changes
