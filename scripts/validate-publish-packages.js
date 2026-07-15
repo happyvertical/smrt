@@ -313,6 +313,34 @@ for (const pkg of shardPackages) {
     }
   }
 
+  if (pkg.name === '@happyvertical/smrt-users') {
+    const oidcConsumerResult = spawnSync(
+      process.execPath,
+      [
+        join(repoRoot, 'scripts', 'verify-users-oidc-owner-authorization.mjs'),
+        '--package-dir',
+        pkg.dir,
+        '--tarball',
+        tarballPath,
+      ],
+      {
+        cwd: repoRoot,
+        stdio: 'inherit',
+        env: process.env,
+      },
+    );
+
+    if (oidcConsumerResult.error) {
+      fail(
+        `Failed to verify OIDC owner authorization for ${pkg.name}: ${oidcConsumerResult.error.message}`,
+      );
+    }
+
+    if (oidcConsumerResult.status !== 0) {
+      fail(`OIDC owner-authorization verification failed for ${pkg.name}`);
+    }
+  }
+
   const packageJson = JSON.parse(
     readFileSync(join(pkg.dir, 'package.json'), 'utf8'),
   );

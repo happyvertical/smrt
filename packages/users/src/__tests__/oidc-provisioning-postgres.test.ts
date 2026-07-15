@@ -3,6 +3,7 @@ import {
   backfillProfileEmailKeys,
   createProfileFromOidc,
   PROFILE_EMAIL_KEY_BACKFILL_NAME,
+  ProfileCollection,
 } from '@happyvertical/smrt-profiles';
 import {
   getTestDbConfig,
@@ -34,6 +35,8 @@ const POSTGRES_USER_MATRIX_IDS = OIDC_PROVISIONING_DECISION_MATRIX.filter(
 const EXECUTED_POSTGRES_USER_MATRIX_IDS = [
   'concurrent-winner-and-observer',
   'concurrent-email-competitors',
+  'owner-authorized-concurrent-callbacks',
+  'owner-authorizer-durable-arbiter-retry',
   'resolver-durable-arbiter-retry',
   'caller-owned-transaction',
   'root-transaction-resolver-rollback',
@@ -181,6 +184,138 @@ describePostgres('Postgres OIDC provisioning concurrency', () => {
     await expect(
       countRows(rootDb, 'oidc_profile_email_reservations'),
     ).resolves.toBe(1);
+  });
+
+  it.each([
+    getOidcProvisioningDecisionScenario(
+      'owner-authorized-concurrent-callbacks',
+    ),
+  ])('$id — $title (Users)', async (scenario) => {
+    const fixture = await createFixture();
+    await seedPersonType(fixture.rootDb);
+    const approved = await seedAuthorizedOwner(
+      fixture.rootDb,
+      'postgres-approved@example.com',
+    );
+    const firstDb = await getDatabase({
+      ...fixture.config,
+      dbid: `oidc-authorized-first-${Date.now()}`,
+    });
+    const secondDb = await getDatabase({
+      ...fixture.config,
+      dbid: `oidc-authorized-second-${Date.now()}`,
+    });
+    await Promise.all([
+      setSearchPath(firstDb, fixture.schemaName),
+      setSearchPath(secondDb, fixture.schemaName),
+    ]);
+    connections.push(firstDb, secondDb);
+    const firstUsers = await UserCollection.create({ db: firstDb });
+    const secondUsers = await UserCollection.create({ db: secondDb });
+    const synchronizeAuthorization = createBarrier(2);
+    let authorizerCalls = 0;
+    const authorizeProfileOwner = async ({
+      db,
+      users,
+    }: {
+      db: DatabaseInterface;
+      users: UserCollection;
+    }) => {
+      authorizerCalls += 1;
+      await synchronizeAuthorization();
+      const profiles = await ProfileCollection.create({ db });
+      const [profile, user] = await Promise.all([
+        profiles.get({ id: approved.profileId }),
+        users.get({ id: approved.userId }),
+      ]);
+      if (!profile || !user) throw new Error('Missing approved fixture.');
+      return { profile, user };
+    };
+    const claims = {
+      email: 'postgres-approved@example.com',
+      email_verified: true,
+      iss: 'https://issuer.example.com',
+      sub: 'postgres-approved-subject',
+    };
+
+    const [first, second] = await Promise.all([
+      firstUsers.getOrCreateFromOidc(claims, 'dex', {
+        authorizeProfileOwner,
+      }),
+      secondUsers.getOrCreateFromOidc(claims, 'dex', {
+        authorizeProfileOwner,
+      }),
+    ]);
+
+    expect(scenario.expectations.users?.ownerAuthorizerCalls).toBe(
+      'at_least_2',
+    );
+    expect(authorizerCalls).toBeGreaterThanOrEqual(2);
+    expect(first.created).toBe(false);
+    expect(second.profile.id).toBe(approved.profileId);
+    expect(second.user.id).toBe(approved.userId);
+    expect(second.oidcIdentity.id).toBe(first.oidcIdentity.id);
+    await expect(countRows(firstDb, 'profiles')).resolves.toBe(1);
+    await expect(countRows(firstDb, 'users')).resolves.toBe(1);
+    await expect(countRows(firstDb, 'oidc_identities')).resolves.toBe(1);
+  });
+
+  it.each([
+    getOidcProvisioningDecisionScenario(
+      'owner-authorizer-durable-arbiter-retry',
+    ),
+  ])('$id — $title (Users)', async (scenario) => {
+    const fixture = await createFixture();
+    await seedPersonType(fixture.rootDb);
+    const approved = await seedAuthorizedOwner(
+      fixture.rootDb,
+      'postgres-authorizer-retry@example.com',
+    );
+    const rootDb = await getDatabase({
+      ...fixture.config,
+      dbid: `oidc-authorizer-retry-${Date.now()}`,
+    });
+    await setSearchPath(rootDb, fixture.schemaName);
+    connections.push(rootDb);
+    let injectedConflicts = 0;
+    const retryingDb = withFirstIdentityArbiterConflict(rootDb, () => {
+      injectedConflicts += 1;
+    });
+    const users = await UserCollection.create({ db: retryingDb });
+    let authorizerCalls = 0;
+
+    const result = await users.getOrCreateFromOidc(
+      {
+        email: 'postgres-authorizer-retry@example.com',
+        email_verified: true,
+        iss: 'https://issuer.example.com',
+        sub: 'postgres-authorizer-retry-subject',
+      },
+      'dex',
+      {
+        authorizeProfileOwner: async ({ db, users: transactionUsers }) => {
+          authorizerCalls += 1;
+          const profiles = await ProfileCollection.create({ db });
+          const [profile, user] = await Promise.all([
+            profiles.get({ id: approved.profileId }),
+            transactionUsers.get({ id: approved.userId }),
+          ]);
+          if (!profile || !user) throw new Error('Missing approved fixture.');
+          return { profile, user };
+        },
+      },
+    );
+
+    expect(injectedConflicts).toBe(1);
+    expect(authorizerCalls).toBe(
+      scenario.expectations.users?.ownerAuthorizerCalls,
+    );
+    expect(result.created).toBe(false);
+    expect(result.profile.id).toBe(approved.profileId);
+    expect(result.user.id).toBe(approved.userId);
+    await expect(countRows(rootDb, 'profiles')).resolves.toBe(1);
+    await expect(countRows(rootDb, 'users')).resolves.toBe(1);
+    await expect(countRows(rootDb, 'oidc_identities')).resolves.toBe(1);
   });
 
   it.each([
@@ -796,6 +931,34 @@ async function seedPersonType(db: DatabaseInterface): Promise<void> {
      ON CONFLICT (slug, context, _meta_type) DO NOTHING`,
     id,
   );
+}
+
+async function seedAuthorizedOwner(
+  db: DatabaseInterface,
+  email: string,
+): Promise<{ profileId: string; userId: string }> {
+  const profileId = randomUUID();
+  const userId = randomUUID();
+  await db.query(
+    `INSERT INTO profiles
+      (id, slug, context, _meta_type, tenant_id, email, email_key, name)
+     VALUES (?, ?, '', '@happyvertical/smrt-profiles:Person', NULL, ?, ?, 'Approved Person')`,
+    profileId,
+    `profile-${profileId}`,
+    email,
+    email.trim().toLowerCase(),
+  );
+  await db.query(
+    `INSERT INTO users
+      (id, slug, context, profile_id, email, email_key, status)
+     VALUES (?, ?, '', ?, ?, ?, 'active')`,
+    userId,
+    `user-${userId}`,
+    profileId,
+    email,
+    email.trim().toLowerCase(),
+  );
+  return { profileId, userId };
 }
 
 async function seedExistingIdentity(
