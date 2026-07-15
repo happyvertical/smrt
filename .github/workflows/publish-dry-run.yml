@@ -15,7 +15,7 @@ permissions:
 jobs:
   prepare-publish:
     name: Prepare Publish Validation
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 30
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
@@ -135,7 +135,7 @@ jobs:
     name: Pack Validation (Shard ${{ matrix.shard-label }})
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 20
     strategy:
       fail-fast: false
