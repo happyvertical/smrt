@@ -21,6 +21,7 @@ import {
 import {
   type OidcClaims,
   type OidcIdentityResult,
+  type OidcProfileOwnerAuthorizer,
   type OidcProfileResolver,
   UserCollection,
 } from '../collections/UserCollection.js';
@@ -149,6 +150,11 @@ export interface OidcLoginServiceOptions extends SmrtClassOptions {
    * OIDC identity, User, or session creation.
    */
   resolveProfile?: OidcProfileResolver;
+  /**
+   * Explicitly authorize first binding to a pre-provisioned canonical Profile
+   * and its existing User owner after protocol claim validation.
+   */
+  authorizeProfileOwner?: OidcProfileOwnerAuthorizer;
 }
 
 export class OidcLoginError extends Error {
@@ -463,6 +469,7 @@ export class OidcLoginService {
   private readonly clockTolerance: number | string;
   private readonly fetchImpl: typeof fetch;
   private readonly metadataCacheTtlMs: number;
+  private readonly authorizeProfileOwner?: OidcProfileOwnerAuthorizer;
   private readonly resolveProfile?: OidcProfileResolver;
   private metadataFetchedAt = 0;
   private metadataPromise?: Promise<OidcProviderMetadata>;
@@ -477,6 +484,7 @@ export class OidcLoginService {
       metadataCacheTtlMs,
       provider,
       providerName,
+      authorizeProfileOwner,
       resolveProfile,
       ...classOptions
     } = options;
@@ -492,6 +500,7 @@ export class OidcLoginService {
     this.fetchImpl = ensureFetch(fetchOverride);
     this.metadataCacheTtlMs =
       metadataCacheTtlMs ?? DEFAULT_METADATA_CACHE_TTL_MS;
+    this.authorizeProfileOwner = authorizeProfileOwner;
     this.resolveProfile = resolveProfile;
     this.provider = {
       ...provider,
@@ -625,6 +634,7 @@ export class OidcLoginService {
     );
     const users = await UserCollection.create(this.classOptions);
     const result = await users.getOrCreateFromOidc(claims, this.providerName, {
+      authorizeProfileOwner: this.authorizeProfileOwner,
       resolveProfile: this.resolveProfile,
     });
 

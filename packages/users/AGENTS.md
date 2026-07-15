@@ -268,6 +268,19 @@ the package root).
   stable-link owner and canonical-Person checks still apply. The hook receives a
   separate frozen claims snapshot; internal retry and persistence state is not
   exposed for mutation.
+- **Owned first binding requires `authorizeProfileOwner`.** An invitation or
+  approval workflow may explicitly return both its pre-provisioned canonical
+  global `Person` and existing approved `User` from this transaction-bound
+  hook. `undefined` keeps the secure `profile_owned` default and `null`
+  rejects. SMRT treats only the selected IDs as input, reloads them in the
+  provisioning transaction, and requires `email_verified === true`, the unique
+  canonical global Person for the normalized claim email, exactly one owner,
+  that owner as the selected User, and the same normalized User email. The
+  hook runs before identity/User/session creation and may be retried, so use
+  only its supplied `db` and `users` handles and keep application authorization
+  idempotent. Never authorize from email matching alone. Existing exact
+  identities cannot be rebound; when `resolveProfile` is also present both
+  hooks must select the same Profile.
 - **OIDC first login is atomic.** The Profile, `OidcIdentity`, and User are one
   transaction. The database arbiters are `OidcIdentity.identityKey`,
   private `oidc_profile_email_reservations.email_key`, `User.emailKey`, and the
@@ -275,6 +288,7 @@ the package root).
   email locks in deterministic order so changed email claims also serialize.
   SQLite and DuckDB callbacks additionally serialize transactions per database
   URL because one adapter cannot safely overlap unrelated root transactions;
+  owner-authorized DuckDB callbacks use that same root-handle serialization;
   PostgreSQL deadlock and serialization errors use a bounded transaction retry.
   Newly provisioned Profiles use non-semantic per-profile slugs so equal IdP
   display names cannot trigger a natural-key upsert;

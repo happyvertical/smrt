@@ -143,6 +143,52 @@ describe('safe OIDC provisioning', () => {
     ).resolves.toBe(0);
   });
 
+  it('owner-authorizes a first binding and reuses the exact identity afterward', async () => {
+    await isolated.db.rollback();
+    db = isolated.baseDb;
+    await prepareOidcEmailKeyBackfills(db);
+    users = await UserCollection.create({ db });
+    const profileId = await seedProfile(db, {
+      email: ' Approved@Example.com ',
+    });
+    const userId = await seedUser(db, profileId, 'approved@example.com');
+    const oidcClaims = claims({
+      email: ' APPROVED@example.com ',
+      sub: 'approved-first-subject',
+    });
+    let authorizerCalls = 0;
+
+    const first = await users.getOrCreateFromOidc(oidcClaims, 'dex', {
+      authorizeProfileOwner: async (context) => {
+        authorizerCalls += 1;
+        expect(context.db).not.toBe(db);
+        expect(context.users).not.toBe(users);
+        expect(context.claims.email).toBe('approved@example.com');
+        expect(context.claims.email_verified).toBe(true);
+        expect(Object.isFrozen(context.claims)).toBe(true);
+        const profiles = await ProfileCollection.create({ db: context.db });
+        const [profile, user] = await Promise.all([
+          profiles.get({ id: profileId }),
+          context.users.get({ id: userId }),
+        ]);
+        if (!profile || !user) throw new Error('Missing approved fixture.');
+        return { profile, user };
+      },
+    });
+    const second = await users.getOrCreateFromOidc(oidcClaims, 'dex');
+
+    expect(authorizerCalls).toBe(1);
+    expect(first.created).toBe(false);
+    expect(first.profile.id).toBe(profileId);
+    expect(first.user.id).toBe(userId);
+    expect(second.profile.id).toBe(profileId);
+    expect(second.user.id).toBe(userId);
+    expect(second.oidcIdentity.id).toBe(first.oidcIdentity.id);
+    await expect(countRows(db, 'profiles')).resolves.toBe(1);
+    await expect(countRows(db, 'users')).resolves.toBe(1);
+    await expect(countRows(db, 'oidc_identities')).resolves.toBe(1);
+  });
+
   it('prevents the Profile-only helper from planting an identity on an owned Profile', async () => {
     const profileId = await seedProfile(db, {
       email: 'profile-helper-owned@example.com',
@@ -1273,6 +1319,8 @@ async function runUserMatrixScenario({
   let identityProfileId: string | undefined;
   let identityId: string | undefined;
   let emailProfileId: string | undefined;
+  let emailOwnerUserId: string | undefined;
+  let authorizationUserId: string | undefined;
   let resolverProfileId: string | undefined;
 
   if (scenario.identity === 'exact_missing_profile') {
@@ -1318,7 +1366,13 @@ async function runUserMatrixScenario({
       });
     }
     if (scenario.email === 'already_owned_global_person') {
-      await seedUser(db, identityProfileId, email);
+      emailOwnerUserId = await seedUser(
+        db,
+        identityProfileId,
+        scenario.id === 'owner-authorized-user-email-mismatch'
+          ? 'different-owner@example.com'
+          : email,
+      );
     }
     if (scenario.email === 'different_global_person') {
       emailProfileId = await seedProfile(db, { email });
@@ -1331,10 +1385,14 @@ async function runUserMatrixScenario({
       scenario.email === 'already_owned_global_person' ||
       scenario.email === 'tenant_scoped_collision' ||
       scenario.email === 'non_person_collision' ||
-      scenario.email === 'duplicate_normalized_profiles'
+      scenario.email === 'duplicate_normalized_profiles' ||
+      scenario.email === 'different_global_person'
     ) {
       emailProfileId = await seedProfile(db, {
-        email,
+        email:
+          scenario.email === 'different_global_person'
+            ? 'different-matrix@example.com'
+            : email,
         metaType:
           scenario.email === 'non_person_collision'
             ? ORGANIZATION_META_TYPE
@@ -1348,8 +1406,44 @@ async function runUserMatrixScenario({
         await seedProfile(db, { email: ' MATRIX@example.com ' });
       }
       if (scenario.email === 'already_owned_global_person') {
-        await seedUser(db, emailProfileId, email);
+        emailOwnerUserId = await seedUser(
+          db,
+          emailProfileId,
+          scenario.id === 'owner-authorized-user-email-mismatch'
+            ? 'different-owner@example.com'
+            : email,
+        );
       }
+    }
+  }
+
+  if (scenario.ownerAuthorization) {
+    const authorizedProfileId = emailProfileId ?? identityProfileId;
+    if (!authorizedProfileId) {
+      throw new Error(`Scenario ${scenario.id} has no authorized Profile.`);
+    }
+    if (scenario.ownerAuthorization === 'matching_owner' && !emailOwnerUserId) {
+      emailOwnerUserId = await seedUser(db, authorizedProfileId, email);
+    }
+    if (scenario.ownerAuthorization === 'multiple_owners') {
+      await db.query('DROP INDEX users_profile_id_idx');
+      emailOwnerUserId ??= await seedUser(db, authorizedProfileId, email);
+      await seedUser(db, authorizedProfileId, 'second-owner@example.com');
+    }
+    if (
+      scenario.ownerAuthorization === 'wrong_user' ||
+      scenario.ownerAuthorization === 'no_owner'
+    ) {
+      const decoyProfileId = await seedProfile(db, {
+        email: `decoy-${scenario.id}@example.com`,
+      });
+      authorizationUserId = await seedUser(
+        db,
+        decoyProfileId,
+        `decoy-${scenario.id}@example.com`,
+      );
+    } else {
+      authorizationUserId = emailOwnerUserId;
     }
   }
 
@@ -1379,6 +1473,7 @@ async function runUserMatrixScenario({
   const before = await provisioningRowCounts(db);
   const identityBindingsBefore = await userMatrixIdentityBindings(db, subject);
   let resolverCalls = 0;
+  let ownerAuthorizerCalls = 0;
   const resolveProfile =
     scenario.resolver === 'absent'
       ? undefined
@@ -1410,6 +1505,36 @@ async function runUserMatrixScenario({
             id: profileId,
           });
         };
+  const authorizeProfileOwner =
+    scenario.ownerAuthorization === undefined
+      ? undefined
+      : async ({
+          db: authorizerDb,
+          users: authorizerUsers,
+        }: {
+          db: DatabaseInterface;
+          users: UserCollection;
+        }) => {
+          ownerAuthorizerCalls += 1;
+          if (scenario.ownerAuthorization === 'null') return null;
+          const profileId = emailProfileId ?? identityProfileId;
+          if (!profileId || !authorizationUserId) {
+            throw new Error(
+              `Scenario ${scenario.id} has no owner authorization fixture.`,
+            );
+          }
+          const profiles = await ProfileCollection.create({ db: authorizerDb });
+          const [profile, user] = await Promise.all([
+            profiles.get({ id: profileId }),
+            authorizerUsers.get({ id: authorizationUserId }),
+          ]);
+          if (!profile || !user) {
+            throw new Error(
+              `Scenario ${scenario.id} could not hydrate its authorization fixture.`,
+            );
+          }
+          return { profile, user };
+        };
   const oidcClaims = claims({
     email: scenario.email === 'missing' ? undefined : email,
     email_verified:
@@ -1427,10 +1552,17 @@ async function runUserMatrixScenario({
   const errors: unknown[] = [];
   const invoke = (collection = users, claimsOverride = oidcClaims) =>
     collection.getOrCreateFromOidc(claimsOverride, 'dex', {
+      ...(scenario.ownerAuthorization && scenario.verification === 'unverified'
+        ? { allowUnverifiedEmail: true }
+        : {}),
+      ...(authorizeProfileOwner ? { authorizeProfileOwner } : {}),
       ...(resolveProfile ? { resolveProfile } : {}),
     });
 
-  if (scenario.execution === 'concurrent_winner_and_observer') {
+  if (
+    scenario.execution === 'concurrent_winner_and_observer' ||
+    scenario.execution === 'concurrent_authorized_callbacks'
+  ) {
     collectSettled(
       await Promise.allSettled([invoke(), invoke()]),
       values,
@@ -1467,12 +1599,22 @@ async function runUserMatrixScenario({
   expectMatrixOutcome(expected, values, errors);
   expectMatrixCreatedResult(expected, values);
   expectMatrixResolverCalls(resolverCalls, expected.resolverCalls);
-  expectMatrixRetryContract(scenario, expected, resolverCalls);
+  expectMatrixResolverCalls(
+    ownerAuthorizerCalls,
+    expected.ownerAuthorizerCalls,
+  );
+  expectMatrixRetryContract(
+    scenario,
+    expected,
+    resolverCalls,
+    ownerAuthorizerCalls,
+  );
   assertSelectedProfile({
     emailProfileId,
     expected,
     identityProfileId,
     resolverProfileId,
+    authorizedProfileId: emailProfileId ?? identityProfileId,
     values,
   });
   if (expected.selectedProfile === 'exact_identity_profile') {
@@ -1560,13 +1702,14 @@ function expectMatrixRetryContract(
   scenario: OidcProvisioningScenario,
   expected: OidcProvisioningSurfaceExpectation,
   resolverCalls: number,
+  ownerAuthorizerCalls: number,
 ): void {
   if (expected.retry === 'once_after_race') {
     expect([
       'concurrent_winner_and_observer',
       'durable_arbiter_retry',
     ]).toContain(scenario.execution);
-    expect(resolverCalls).toBeGreaterThanOrEqual(2);
+    expect(resolverCalls + ownerAuthorizerCalls).toBeGreaterThanOrEqual(2);
   } else if (scenario.execution === 'durable_arbiter_retry') {
     throw new Error(`${scenario.id} must declare its resolver retry contract.`);
   }
@@ -1592,6 +1735,7 @@ function expectMatrixPublicError(
 }
 
 function assertSelectedProfile(options: {
+  authorizedProfileId?: string;
   emailProfileId?: string;
   expected: OidcProvisioningSurfaceExpectation;
   identityProfileId?: string;
@@ -1606,13 +1750,15 @@ function assertSelectedProfile(options: {
     return;
   }
   const expectedId =
-    expected.selectedProfile === 'email_match'
-      ? options.emailProfileId
-      : expected.selectedProfile === 'exact_identity_profile'
-        ? options.identityProfileId
-        : expected.selectedProfile === 'resolver_profile'
-          ? options.resolverProfileId
-          : undefined;
+    expected.selectedProfile === 'authorized_profile'
+      ? options.authorizedProfileId
+      : expected.selectedProfile === 'email_match'
+        ? options.emailProfileId
+        : expected.selectedProfile === 'exact_identity_profile'
+          ? options.identityProfileId
+          : expected.selectedProfile === 'resolver_profile'
+            ? options.resolverProfileId
+            : undefined;
   if (expected.selectedProfile === 'new_profile') {
     expect(profileIds.every((id) => typeof id === 'string')).toBe(true);
     expect(profileIds).not.toContain(options.emailProfileId);

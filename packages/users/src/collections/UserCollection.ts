@@ -11,6 +11,7 @@ import {
   OidcIdentity,
   OidcIdentityCollection,
   type Profile,
+  type ProfileCollection,
 } from '@happyvertical/smrt-profiles';
 import {
   coordinateOidcProvisioning,
@@ -94,6 +95,34 @@ export type OidcProfileResolver = (
   context: OidcProfileResolverContext,
 ) => Profile | null | undefined | Promise<Profile | null | undefined>;
 
+/** Application authorization for binding a new OIDC identity to an owner. */
+export interface OidcProfileOwnerAuthorization {
+  /** Canonical global Person selected by the application. */
+  profile: Profile;
+  /** Existing User the application authorizes as that Profile's owner. */
+  user: User;
+}
+
+/** Transaction-bound context supplied to the owner authorization callback. */
+export type OidcProfileOwnerAuthorizerContext = OidcProfileResolverContext;
+
+/**
+ * Explicitly authorize first OIDC binding to a pre-provisioned Profile/User.
+ *
+ * Return `undefined` to preserve SMRT's secure default, `null` to reject the
+ * login, or both the canonical Profile and its existing owning User. SMRT
+ * reloads and verifies both records inside the provisioning transaction; the
+ * returned objects are never trusted as proof of ownership. The callback may
+ * be retried after a concurrent unique-key race and must be idempotent.
+ */
+export type OidcProfileOwnerAuthorizer = (
+  context: OidcProfileOwnerAuthorizerContext,
+) =>
+  | OidcProfileOwnerAuthorization
+  | null
+  | undefined
+  | Promise<OidcProfileOwnerAuthorization | null | undefined>;
+
 export type OidcProvisioningErrorCode =
   | 'ambiguous_identity'
   | 'concurrency_conflict'
@@ -136,6 +165,12 @@ export interface GetOrCreateFromOidcOptions {
    * use SMRT's secure default.
    */
   resolveProfile?: OidcProfileResolver;
+  /**
+   * Explicitly authorize a first issuer/subject binding to a pre-provisioned
+   * canonical Profile and its existing owner. A successful authorization
+   * requires `email_verified === true` and is revalidated atomically by SMRT.
+   */
+  authorizeProfileOwner?: OidcProfileOwnerAuthorizer;
 }
 
 /**
@@ -229,13 +264,13 @@ export class UserCollection extends SmrtCollection<User> {
    *
    * @param claims - Trusted OIDC token claims (sub, iss, email, name)
    * @param provider - Provider name (e.g., 'kanidm', 'keycloak', 'google')
-   * @param options - Login recording, unverified-email compatibility, and an
-   * application Profile resolver. The resolver runs inside the provisioning
-   * transaction before provisioning returns, may be retried, and must be
-   * idempotent. For a new identity, its returned Profile is still checked as
-   * the unique, global, unowned Person for the verified normalized email. For
-   * an exact existing identity, it may only confirm the already-linked Profile
-   * and cannot rebind it.
+   * @param options - Login recording, unverified-email compatibility, Profile
+   * resolution, and explicit owner authorization. Hooks run inside the
+   * provisioning transaction, may be retried, and must be idempotent. A
+   * resolver result must still be the unique, global, unowned Person. An owner
+   * authorization must select both the canonical Person and its existing sole
+   * approved User owner. Existing identities can only be confirmed, never
+   * rebound.
    * @returns User, Profile, OidcIdentity, and whether profile was created
    *
    * @example
@@ -360,21 +395,49 @@ export class UserCollection extends SmrtCollection<User> {
       identityCollection,
       claims,
     );
+    const createResolverContext = (): OidcProfileResolverContext => ({
+      // Never expose the internal snapshot used for retry locks and
+      // persistence. A frozen copy keeps an application callback from
+      // changing the authenticated identity across attempts.
+      claims: Object.freeze({ ...claims }),
+      db,
+      provider,
+      users: this,
+    });
     const resolvedProfile = options?.resolveProfile
-      ? await options.resolveProfile({
-          // Never expose the internal snapshot used for retry locks and
-          // persistence. A frozen copy keeps an application resolver from
-          // changing the authenticated identity across attempts.
-          claims: Object.freeze({ ...claims }),
-          db,
-          provider,
-          users: this,
-        })
+      ? await options.resolveProfile(createResolverContext())
       : undefined;
     if (resolvedProfile === null) {
       throw new OidcProvisioningError(
         'rejected',
         'OIDC provisioning was rejected by the application resolver.',
+      );
+    }
+    const ownerAuthorization = options?.authorizeProfileOwner
+      ? await options.authorizeProfileOwner(createResolverContext())
+      : undefined;
+    if (ownerAuthorization === null) {
+      throw new OidcProvisioningError(
+        'rejected',
+        'OIDC provisioning was rejected by the application owner authorizer.',
+      );
+    }
+    const validatedOwnerAuthorization = ownerAuthorization
+      ? await this.validateProfileOwnerAuthorization(
+          ownerAuthorization,
+          claims,
+          profileCollection,
+        )
+      : undefined;
+    if (
+      validatedOwnerAuthorization &&
+      resolvedProfile &&
+      requireId(resolvedProfile.id, 'Resolved Profile') !==
+        requireId(validatedOwnerAuthorization.profile.id, 'Authorized Profile')
+    ) {
+      throw new OidcProvisioningError(
+        'rejected',
+        'Application Profile resolution and owner authorization selected different Profiles.',
       );
     }
 
@@ -392,17 +455,33 @@ export class UserCollection extends SmrtCollection<User> {
           'An application resolver cannot rebind an existing OIDC identity.',
         );
       }
-      const owners = await this.findProfileOwners(profileId);
+      if (
+        validatedOwnerAuthorization &&
+        requireId(
+          validatedOwnerAuthorization.profile.id,
+          'Authorized Profile',
+        ) !== profileId
+      ) {
+        throw new OidcProvisioningError(
+          'rejected',
+          'An application owner authorizer cannot rebind an existing OIDC identity.',
+        );
+      }
+      const owners = validatedOwnerAuthorization
+        ? [validatedOwnerAuthorization.user]
+        : await this.findProfileOwners(profileId);
       if (owners.length > 1) {
         throw new OidcProvisioningError(
           'profile_owned',
           `Profile ${profileId} belongs to multiple Users.`,
         );
       }
-      const profile = await profileCollection.reserveCanonicalIdentityEmail(
-        profileId,
-        owners[0] ? undefined : claims.email,
-      );
+      const profile = validatedOwnerAuthorization
+        ? validatedOwnerAuthorization.profile
+        : await profileCollection.reserveCanonicalIdentityEmail(
+            profileId,
+            owners[0] ? undefined : claims.email,
+          );
 
       const user = await this.finishUserProvisioning(
         profile,
@@ -421,10 +500,11 @@ export class UserCollection extends SmrtCollection<User> {
       };
     }
 
-    let profile: Profile | null | undefined = resolvedProfile;
+    let profile: Profile | null | undefined =
+      validatedOwnerAuthorization?.profile ?? resolvedProfile;
     let created = false;
 
-    if (profile) {
+    if (profile && !validatedOwnerAuthorization) {
       if (claims.email_verified !== true) {
         throw new OidcProvisioningError(
           'rejected',
@@ -469,8 +549,29 @@ export class UserCollection extends SmrtCollection<User> {
     }
 
     const profileId = requireId(profile.id, 'OIDC Profile');
-    const owners = await this.findProfileOwners(profileId);
+    const owners = validatedOwnerAuthorization
+      ? [validatedOwnerAuthorization.user]
+      : await this.findProfileOwners(profileId);
     if (owners.length > 0) {
+      if (validatedOwnerAuthorization) {
+        const oidcIdentity = await insertOidcProvisioningIdentity<OidcIdentity>(
+          db,
+          {
+            email: claims.email,
+            issuer: claims.iss,
+            profileId,
+            provider,
+            subject: claims.sub,
+          },
+        );
+        const user = await this.finishUserProvisioning(
+          profile,
+          validatedOwnerAuthorization.user,
+          claims.email,
+          options,
+        );
+        return { user, profile, oidcIdentity, created: false };
+      }
       // A concurrent first login can commit the exact issuer+subject mapping
       // after this transaction's initial identity lookup but before its
       // profile ownership check. Re-read the durable identity arbiter before
@@ -527,7 +628,85 @@ export class UserCollection extends SmrtCollection<User> {
   }
 
   private async findProfileOwners(profileId: string): Promise<User[]> {
-    return this.list({ where: { profileId }, limit: 2 });
+    const db = this.requireProvisioningDatabase();
+    const lockClause = /^postgres(?:ql)?:/iu.test(db.url ?? '')
+      ? ' FOR UPDATE'
+      : '';
+    const result = await db.query(
+      `SELECT id
+       FROM users
+       WHERE profile_id = ?
+       ORDER BY created_at ASC, id ASC
+       LIMIT 2${lockClause}`,
+      profileId,
+    );
+    const owners = await Promise.all(
+      result.rows.map((row) =>
+        typeof row.id === 'string' ? this.get({ id: row.id }) : null,
+      ),
+    );
+    return owners.filter((owner): owner is User => owner !== null);
+  }
+
+  private async validateProfileOwnerAuthorization(
+    authorization: OidcProfileOwnerAuthorization,
+    claims: NormalizedOidcClaims,
+    profiles: ProfileCollection,
+  ): Promise<OidcProfileOwnerAuthorization> {
+    if (claims.email_verified !== true) {
+      throw new OidcProvisioningError(
+        'rejected',
+        'Owner-authorized OIDC binding requires email_verified to be exactly true.',
+      );
+    }
+    if (
+      !authorization ||
+      typeof authorization !== 'object' ||
+      !authorization.profile ||
+      !authorization.user
+    ) {
+      throw new OidcProvisioningError(
+        'rejected',
+        'Owner-authorized OIDC binding requires both a Profile and User.',
+      );
+    }
+
+    const profileId = requireId(authorization.profile.id, 'Authorized Profile');
+    const authorizedUserId = requireId(
+      authorization.user.id,
+      'Authorized User',
+    );
+    const profile = await profiles.reserveCanonicalIdentityEmail(
+      profileId,
+      claims.email,
+    );
+    const owners = await this.findProfileOwners(profileId);
+    if (owners.length !== 1) {
+      throw new OidcProvisioningError(
+        'profile_owned',
+        `Owner-authorized Profile ${profileId} must belong to exactly one User.`,
+      );
+    }
+    const owner = owners[0];
+    const ownerId = requireId(owner.id, 'Profile owner');
+    if (ownerId !== authorizedUserId) {
+      throw new OidcProvisioningError(
+        'profile_owned',
+        `Authorized User ${authorizedUserId} is not the owner of Profile ${profileId}.`,
+      );
+    }
+
+    const emailUsers = await this.findUsersByNormalizedEmail(claims.email);
+    if (
+      emailUsers.length !== 1 ||
+      requireId(emailUsers[0]?.id, 'Authorized email User') !== ownerId
+    ) {
+      throw new OidcProvisioningError(
+        'user_email_conflict',
+        'The authorized Profile owner does not have the verified OIDC email.',
+      );
+    }
+    return { profile, user: owner };
   }
 
   private async rebindOidcProvisioningResult(
