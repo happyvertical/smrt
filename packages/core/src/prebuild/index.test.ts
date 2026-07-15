@@ -57,6 +57,47 @@ function buildManifest(): SmartObjectManifest {
   };
 }
 
+function buildCollectionAndModelManifest(
+  collectionFirst: boolean,
+): SmartObjectManifest {
+  const entries = [
+    [
+      'AgreementExecutionCollection',
+      {
+        className: 'AgreementExecutionCollection',
+        collection: 'agreementExecutions',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'AgreementExecution',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+      },
+    ],
+    [
+      'AgreementExecution',
+      {
+        className: 'AgreementExecution',
+        collection: 'agreementExecutions',
+        extends: 'SmrtObject',
+        fields: {
+          status: { type: 'text', required: true },
+          amount: { type: 'decimal', required: true },
+        },
+        methods: {},
+        decoratorConfig: {},
+      },
+    ],
+  ] as const;
+
+  return {
+    version: '1.0.0',
+    timestamp: 1,
+    objects: Object.fromEntries(
+      collectionFirst ? entries : [...entries].reverse(),
+    ),
+  } as SmartObjectManifest;
+}
+
 let outDir: string;
 
 beforeEach(() => {
@@ -137,6 +178,47 @@ describe('generateDeclarations', () => {
     // Object imports re-export the generated object data types.
     expect(typesDecl).toContain(
       "export type ArticleData = import('./smrt-objects').ArticleData;",
+    );
+  });
+
+  it('types canonical collection endpoints from populated models regardless of manifest order', async () => {
+    const collectionFirstDir = join(outDir, 'collection-first');
+    const modelFirstDir = join(outDir, 'model-first');
+
+    await generateDeclarations({
+      manifest: buildCollectionAndModelManifest(true),
+      outDir: collectionFirstDir,
+    });
+    await generateDeclarations({
+      manifest: buildCollectionAndModelManifest(false),
+      outDir: modelFirstDir,
+    });
+
+    const collectionFirstClient = readFileSync(
+      join(collectionFirstDir, 'smrt-client.d.ts'),
+      'utf-8',
+    );
+    const modelFirstClient = readFileSync(
+      join(modelFirstDir, 'smrt-client.d.ts'),
+      'utf-8',
+    );
+    const objectTypes = readFileSync(
+      join(collectionFirstDir, 'smrt-objects.d.ts'),
+      'utf-8',
+    );
+
+    expect(collectionFirstClient).toBe(modelFirstClient);
+    expect(collectionFirstClient).toContain(
+      'agreementExecutions: CrudOperations<AgreementExecutionData>;',
+    );
+    expect(collectionFirstClient).toContain(
+      'agreementExecutionCollection: CrudOperations<AgreementExecutionData>;',
+    );
+    expect(collectionFirstClient).not.toContain(
+      'agreementExecutions: CrudOperations<AgreementExecutionCollectionData>;',
+    );
+    expect(objectTypes).toMatch(
+      /export interface AgreementExecutionData \{[\s\S]*status: string;[\s\S]*amount: number;[\s\S]*\}/,
     );
   });
 

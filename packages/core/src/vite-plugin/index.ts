@@ -18,6 +18,7 @@ import type { SmartObjectManifest } from '../scanner/types';
 import type { SchemaDefinition } from '../schema/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
+import { selectApiClientEntries } from './api-client-entries.js';
 import { importBuildAwareModule } from './import-build-aware.js';
 import {
   findCliApiCoherenceViolations,
@@ -1188,13 +1189,6 @@ export { setupRoutes as default };
   }
 }
 
-/**
- * Generate virtual client module
- */
-function lowerFirst(value: string): string {
-  return value ? value[0].toLowerCase() + value.slice(1) : value;
-}
-
 const GENERATED_CLIENT_CRUD_METHODS = new Set([
   'list',
   'get',
@@ -1208,119 +1202,11 @@ const GENERATED_CLIENT_BASE_METHODS = new Set([
   'search',
 ]);
 
-function findManifestObjectByName(
-  manifest: SmartObjectManifest,
-  name: string,
-): SmartObjectManifest['objects'][string] | undefined {
-  return Object.entries(manifest.objects).find(
-    ([manifestKey, candidate]) =>
-      manifestKey === name ||
-      candidate.qualifiedName === name ||
-      candidate.className === name,
-  )?.[1];
-}
-
-function resolveCollectionItemObject(
-  obj: SmartObjectManifest['objects'][string],
-  manifest: SmartObjectManifest,
-): SmartObjectManifest['objects'][string] | undefined {
-  const seen = new Set<string>();
-  let candidate: SmartObjectManifest['objects'][string] | undefined = obj;
-
-  while (candidate) {
-    if (candidate.extendsTypeArg) {
-      const itemObject = findManifestObjectByName(
-        manifest,
-        candidate.extendsTypeArg,
-      );
-      if (itemObject) return itemObject;
-    }
-
-    if (candidate.className.endsWith('Collection')) {
-      const conventionalItem = findManifestObjectByName(
-        manifest,
-        candidate.className.slice(0, -'Collection'.length),
-      );
-      if (conventionalItem) return conventionalItem;
-    }
-
-    const parentName = candidate.extendsQualified || candidate.extends;
-    if (!parentName || seen.has(parentName)) return undefined;
-    seen.add(parentName);
-    candidate = findManifestObjectByName(manifest, parentName);
-  }
-
-  return undefined;
-}
-
-function resolveApiClientDataInterfaceName(
-  obj: SmartObjectManifest['objects'][string],
-  manifest: SmartObjectManifest,
-): string {
-  if (!isCollectionManifestClass(manifest, obj)) {
-    return `${obj.className}Data`;
-  }
-
-  const itemObject = resolveCollectionItemObject(obj, manifest);
-
-  return `${itemObject?.className || obj.className}Data`;
-}
-
-function uniqueApiClientEntries(manifest: SmartObjectManifest): Array<{
-  objectName: string;
-  obj: SmartObjectManifest['objects'][string];
-  clientKey: string;
-}> {
-  const canonicalCollectionOwners = new Map<
-    string,
-    SmartObjectManifest['objects'][string]
-  >();
-  const objects = Object.entries(manifest.objects);
-
-  for (const [, obj] of objects) {
-    const current = canonicalCollectionOwners.get(obj.collection);
-    if (
-      !current ||
-      (isCollectionManifestClass(manifest, current) &&
-        !isCollectionManifestClass(manifest, obj))
-    ) {
-      canonicalCollectionOwners.set(obj.collection, obj);
-    }
-  }
-
-  // Secondary keys must never claim canonical REST collection keys, even when
-  // a collection class normalizes to the same spelling and is scanned first
-  // (for example Contents + Content -> "contents").
-  const reservedCanonicalKeys = new Set(canonicalCollectionOwners.keys());
-  const usedKeys = new Set<string>();
-
-  return objects.map(([objectName, obj]) => {
-    const isCanonicalOwner =
-      canonicalCollectionOwners.get(obj.collection) === obj;
-    let clientKey = isCanonicalOwner
-      ? obj.collection
-      : lowerFirst(obj.className);
-
-    const baseClientKey = clientKey;
-    let suffix = 2;
-    while (
-      usedKeys.has(clientKey) ||
-      (!isCanonicalOwner && reservedCanonicalKeys.has(clientKey))
-    ) {
-      clientKey = `${baseClientKey}${suffix}`;
-      suffix += 1;
-    }
-
-    usedKeys.add(clientKey);
-    return { objectName, obj, clientKey };
-  });
-}
-
 function generateClientModule(
   manifest: SmartObjectManifest,
   options: { kebabRoutes?: boolean } = {},
 ): string {
-  const objects = uniqueApiClientEntries(manifest);
+  const objects = selectApiClientEntries(manifest);
 
   const clientMethods = objects
     .map(({ obj, clientKey }) => {
@@ -1791,11 +1677,11 @@ ${fields}
     // type surface matches what generateClientModule actually emits at
     // runtime — otherwise consumers see methods in autocomplete that are
     // undefined at runtime.
-    const apiClientInterface = uniqueApiClientEntries(manifest)
-      .map(({ obj, clientKey }) => {
+    const apiClientInterface = selectApiClientEntries(manifest)
+      .map(({ obj, clientKey, dataInterfaceName }) => {
         const { methods = {} } = obj;
         const apiConfig = obj.decoratorConfig?.api;
-        const interfaceName = resolveApiClientDataInterfaceName(obj, manifest);
+        const interfaceName = dataInterfaceName;
         const exposedActions = resolveApiActionSet(obj);
         const customMethods = Object.entries(methods).filter(
           ([name, method]) =>
@@ -2173,6 +2059,16 @@ declare module '@happyvertical/smrt-virt-cli' {
  */
 function mapTypeScriptType(smrtType: string): string {
   const typeMap: Record<string, string> = {
+    text: 'string',
+    integer: 'number',
+    decimal: 'number',
+    datetime: 'string',
+    json: 'any',
+    foreignKey: 'string',
+    crossPackageRef: 'string',
+    oneToMany: 'any[]',
+    manyToMany: 'any[]',
+    meta: 'any',
     string: 'string',
     number: 'number',
     boolean: 'boolean',

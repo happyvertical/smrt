@@ -121,7 +121,7 @@ describe('generated client <-> generated server integration (#1794/#1796/#1797)'
     );
     writeFileSync(
       join(projectRoot, 'src', 'objects.ts'),
-      `import { SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
+      `import { field, SmrtCollection, SmrtObject } from '@happyvertical/smrt-core';
 
 @smrt({
   api: {
@@ -159,7 +159,10 @@ export class GenClientProductCollection extends SmrtCollection<GenClientProduct>
   },
 })
 export class GenClientProduct extends SmrtObject {
+  @field({ type: 'text', required: true })
   name: string = '';
+
+  @field({ type: 'integer', required: true })
   price: number = 0;
 
   async invalidCollectionScope(): Promise<GenClientProduct> {
@@ -256,7 +259,16 @@ export class GenClientEmail extends GenClientMessage {}
       'utf-8',
     );
     expect(declarationSource).toContain(
+      'genclientproducts: CrudOperations<GenClientProductData>;',
+    );
+    expect(declarationSource).not.toContain(
+      'genclientproducts: CrudOperations<GenClientProductCollectionData>;',
+    );
+    expect(declarationSource).toContain(
       'genClientProductCollection: Omit<CrudOperations<GenClientProductData>, "search"> & {',
+    );
+    expect(declarationSource).toMatch(
+      /export interface GenClientProductData \{[\s\S]*?name: string;[\s\S]*?price: number;[\s\S]*?\n {2}\}/,
     );
     expect(declarationSource).not.toContain('invalidItemScope(');
     expect(declarationSource).not.toContain('invalidCollectionScope(');
