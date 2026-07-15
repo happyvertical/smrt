@@ -94,15 +94,108 @@ export interface WebCollectionEntry {
   actions: string[];
 }
 
-/** Resolve a manifest object by qualified name or simple class name. */
-function findByName(
+function compareText(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function manifestObjectPackage(
+  manifestKey: string | undefined,
+  obj: SmartObjectDefinition,
+): string | undefined {
+  if (obj.packageName) return obj.packageName;
+  const qualifiedName = obj.qualifiedName || manifestKey;
+  const separator = qualifiedName?.lastIndexOf(':') ?? -1;
+  return separator > 0 ? qualifiedName?.slice(0, separator) : undefined;
+}
+
+interface ManifestObjectIndex {
+  byExactName: Map<string, SmartObjectDefinition>;
+  byPackageAndClass: Map<string, SmartObjectDefinition>;
+  bySimpleName: Map<string, SmartObjectDefinition>;
+}
+
+const manifestObjectIndexes = new WeakMap<
+  SmartObjectManifest['objects'],
+  ManifestObjectIndex
+>();
+
+function packageAndClassKey(packageName: string, className: string): string {
+  return `${packageName}\0${className}`;
+}
+
+function getManifestObjectIndex(
+  manifest: SmartObjectManifest,
+): ManifestObjectIndex {
+  const cached = manifestObjectIndexes.get(manifest.objects);
+  if (cached) return cached;
+
+  const entries = Object.entries(manifest.objects).sort(
+    ([leftKey, left], [rightKey, right]) =>
+      compareText(
+        left.qualifiedName || leftKey,
+        right.qualifiedName || rightKey,
+      ) || compareText(leftKey, rightKey),
+  );
+  const index: ManifestObjectIndex = {
+    byExactName: new Map(),
+    byPackageAndClass: new Map(),
+    bySimpleName: new Map(),
+  };
+
+  for (const [manifestKey, candidate] of entries) {
+    if (!index.byExactName.has(manifestKey)) {
+      index.byExactName.set(manifestKey, candidate);
+    }
+    if (
+      candidate.qualifiedName &&
+      !index.byExactName.has(candidate.qualifiedName)
+    ) {
+      index.byExactName.set(candidate.qualifiedName, candidate);
+    }
+    if (!index.bySimpleName.has(candidate.className)) {
+      index.bySimpleName.set(candidate.className, candidate);
+    }
+
+    const packageName = manifestObjectPackage(manifestKey, candidate);
+    if (packageName) {
+      const packageKey = packageAndClassKey(packageName, candidate.className);
+      if (!index.byPackageAndClass.has(packageKey)) {
+        index.byPackageAndClass.set(packageKey, candidate);
+      }
+    }
+  }
+
+  manifestObjectIndexes.set(manifest.objects, index);
+  return index;
+}
+
+/**
+ * Resolve a manifest object deterministically across aggregated packages.
+ *
+ * Qualified references win exactly. Simple references prefer the referencing
+ * object's package, then fall back to a stable qualified/key identity. This is
+ * important because aggregated manifests can contain duplicate class names and
+ * their object insertion order reflects package discovery order.
+ */
+export function findManifestObjectByName(
   manifest: SmartObjectManifest,
   name: string,
+  owner?: SmartObjectDefinition,
 ): SmartObjectDefinition | undefined {
-  return Object.values(manifest.objects).find(
-    (candidate) =>
-      candidate.qualifiedName === name || candidate.className === name,
-  );
+  const index = getManifestObjectIndex(manifest);
+  const exact = name.includes(':') ? index.byExactName.get(name) : undefined;
+  if (exact) return exact;
+
+  const ownerPackage = owner
+    ? manifestObjectPackage(undefined, owner)
+    : undefined;
+  const packageLocal = ownerPackage
+    ? index.byPackageAndClass.get(packageAndClassKey(ownerPackage, name))
+    : undefined;
+
+  return packageLocal || index.bySimpleName.get(name);
 }
 
 /**
@@ -117,7 +210,8 @@ function findByName(
  * untouched — the qualified `:` separator is preserved.
  *
  * Kept local to the relationship-edge path on purpose: extends-chain resolution
- * never sees a thunk, so `findByName` and the scanner stay unchanged.
+ * never sees a thunk, so `findManifestObjectByName` and the scanner stay
+ * unchanged.
  */
 function normalizeRelatedName(related: string): string {
   const thunk = related.match(/=>\s*([A-Za-z_$][\w$]*)/);
@@ -149,7 +243,7 @@ export function isCollectionManifestClass(
   const parentName = obj.extendsQualified || obj.extends;
   if (!parentName || seen.has(parentName)) return false;
   seen.add(parentName);
-  const parent = findByName(manifest, parentName);
+  const parent = findManifestObjectByName(manifest, parentName, obj);
   return parent ? isCollectionManifestClass(manifest, parent, seen) : false;
 }
 
@@ -162,12 +256,14 @@ function isStiChildModel(
   obj: SmartObjectDefinition,
 ): boolean {
   const seen = new Set<string>();
-  let parentName = obj.extendsQualified || obj.extends;
+  let child = obj;
+  let parentName = child.extendsQualified || child.extends;
   while (parentName && !seen.has(parentName)) {
     seen.add(parentName);
-    const parent = findByName(manifest, parentName);
+    const parent = findManifestObjectByName(manifest, parentName, child);
     if (!parent) return false;
     if (parent.collection === obj.collection) return true;
+    child = parent;
     parentName = parent.extendsQualified || parent.extends;
   }
   return false;
@@ -346,8 +442,13 @@ export function buildWebRelationships(
     if (!field.related) continue;
 
     // Normalize first: `@foreignKey(() => Scene)` thunks serialize as the raw
-    // "() => Scene" source, which findByName cannot match on its own.
-    const target = findByName(manifest, normalizeRelatedName(field.related));
+    // "() => Scene" source, which findManifestObjectByName cannot match on its
+    // own.
+    const target = findManifestObjectByName(
+      manifest,
+      normalizeRelatedName(field.related),
+      obj,
+    );
     if (!target) continue;
     if (!exposedCollections.has(target.collection)) continue;
 

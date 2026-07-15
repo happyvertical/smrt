@@ -216,6 +216,43 @@ describe('selectWebCollectionEntries', () => {
     expect(entries).toEqual([]);
   });
 
+  it('resolves duplicate simple parent names package-locally regardless of manifest order', () => {
+    const collectionParent = obj({
+      qualifiedName: '@a/pkg:Parent',
+      packageName: '@a/pkg',
+      className: 'Parent',
+      collection: 'collectionParents',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Item',
+    });
+    const modelParent = obj({
+      qualifiedName: '@z/pkg:Parent',
+      packageName: '@z/pkg',
+      className: 'Parent',
+      collection: 'modelParents',
+      extends: 'SmrtObject',
+    });
+    const localChild = obj({
+      qualifiedName: '@z/pkg:LocalChild',
+      packageName: '@z/pkg',
+      className: 'LocalChild',
+      collection: 'localChildren',
+      extends: 'Parent',
+    });
+
+    for (const objects of [
+      [collectionParent, modelParent, localChild],
+      [modelParent, collectionParent, localChild],
+    ]) {
+      expect(
+        selectWebCollectionEntries(manifest(...objects)).find(
+          ({ obj: candidate }) =>
+            candidate.qualifiedName === '@z/pkg:LocalChild',
+        )?.collection,
+      ).toBe('localChildren');
+    }
+  });
+
   it('folds STI children into the base model even when the child is scanned first', () => {
     // Child listed BEFORE the base to prove order-independence.
     const entries = selectWebCollectionEntries(
