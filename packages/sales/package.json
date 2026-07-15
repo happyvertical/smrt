@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-sales",
-  "version": "0.40.0",
+  "version": "0.40.1",
   "description": "Modular sales for the SMRT framework: CRM (Leads, Opportunities, Pipelines), referral intake with versioned attribution policies, neutral commissions with snapshots and payouts, and reusable Svelte surfaces",
   "type": "module",
   "main": "./dist/index.js",
