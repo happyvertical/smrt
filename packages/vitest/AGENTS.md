@@ -24,6 +24,30 @@ Without the plugin → "unregistered class" / "No field metadata found" errors.
 4. Registers all classes in ObjectRegistry
 5. Watch mode caveat: manifest only generated at startup — restart vitest after adding new classes/fields
 
+## Vite 8 (rolldown/oxc) normalization (#2017)
+
+The plugin's `config` hook normalizes three vite 8 behaviors so consumers
+don't carry per-repo workarounds (evidence: anytown.ai#707,
+willgriffin.dev#220):
+
+1. `esbuild.tsconfigRaw` is ignored on vite 8 → injects
+   `oxc.decorator = { legacy: true, emitDecoratorMetadata: true }` (+ the
+   `oxc.tsconfig.compilerOptions` mirror) so `@smrt()` legacy decorators
+   still transform.
+2. oxc elides type-position-only imports by default, silently dropping
+   side-effect model imports (SMRT object registration) in test files outside
+   the tsconfig `include` → injects
+   `oxc.typescript = { onlyRemoveTypeImports: true }`.
+3. Rolldown prefix-matches string alias `find`s, mangling unaliased subpath
+   imports (`@org/pkg/sub` → `src/index.ts/sub`) → workspace aliases are
+   anchored exact-match RegExps; unaliased subpaths fall through to the
+   exports map. `aliasFilter` drops entries entirely.
+
+Overrides: any `oxc` field the consumer sets is never injected
+(`resolveOxcDefaults`); `oxc: false` suppresses everything. Keys are inert on
+esbuild-based vite ≤ 7. Build-only vite configs that don't list the plugin
+still need their own `oxc.decorator` on vite 8.
+
 ## CI retry (flaky-test resilience)
 
 The plugin injects `test.retry` into every consuming package's config: **2 in CI
