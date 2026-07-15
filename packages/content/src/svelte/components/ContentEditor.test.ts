@@ -911,7 +911,8 @@ describe('ContentEditor component', () => {
     );
 
     const payload = JSON.parse(
-      (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body as string,
+      (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit | undefined)
+        ?.body as string,
     );
     expect(payload.name).toBe('source.pdf');
     expect(payload.fileKey).toBe('source.pdf');
