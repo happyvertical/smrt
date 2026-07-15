@@ -327,6 +327,70 @@ CREATE INDEX IF NOT EXISTS idx_smrt_changes_created_at
   ON _smrt_changes(created_at);
 `;
 
+/** PostgreSQL helper used to isolate best-effort feed appends (#2026). */
+export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME = '_smrt_append_change';
+
+/**
+ * PostgreSQL-only change-feed append function.
+ *
+ * A PL/pgSQL block with an EXCEPTION handler runs its body in an internal
+ * subtransaction. Returning SQLSTATE as data lets the caller log or retry a
+ * failed best-effort append without leaving its surrounding transaction in
+ * PostgreSQL's aborted (25P02) state. This statement contains dollar-quoted
+ * semicolons, so callers must execute it whole rather than adding it to
+ * {@link ALL_SYSTEM_TABLES}, whose portable DDL entries are semicolon-split.
+ */
+export const CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION = `
+CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(
+  p_table_name TEXT,
+  p_row_id TEXT,
+  p_operation TEXT,
+  p_tenant_id TEXT,
+  p_created_at TIMESTAMP
+)
+RETURNS TABLE(
+  allocated_seq BIGINT,
+  error_code TEXT,
+  error_message TEXT
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $smrt_change_feed$
+DECLARE
+  v_seq BIGINT;
+  v_error_code TEXT;
+  v_error_message TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO _smrt_changes (
+      seq,
+      table_name,
+      row_id,
+      operation,
+      tenant_id,
+      created_at
+    )
+    SELECT
+      COALESCE(MAX(changes.seq), 0) + 1,
+      p_table_name,
+      p_row_id,
+      p_operation,
+      p_tenant_id,
+      p_created_at
+    FROM _smrt_changes AS changes
+    RETURNING _smrt_changes.seq INTO v_seq;
+
+    RETURN QUERY SELECT v_seq, NULL::TEXT, NULL::TEXT;
+  EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+    GET STACKED DIAGNOSTICS
+      v_error_code = RETURNED_SQLSTATE,
+      v_error_message = MESSAGE_TEXT;
+    RETURN QUERY SELECT NULL::BIGINT, v_error_code, v_error_message;
+  END;
+END;
+$smrt_change_feed$;
+`;
+
 /**
  * Data backfill tracking
  *
@@ -364,4 +428,4 @@ export const ALL_SYSTEM_TABLES = [
 /**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.7.0';
+export const SMRT_SCHEMA_VERSION = '1.8.0';

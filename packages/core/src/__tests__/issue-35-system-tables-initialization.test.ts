@@ -359,6 +359,11 @@ describe('Issue #35: System Tables Initialization', () => {
       expect(
         txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toBe(true);
+      expect(
+        txQueries.some((sql) =>
+          sql.includes('CREATE OR REPLACE FUNCTION _smrt_append_change'),
+        ),
+      ).toBe(true);
       expect(tx.commit).toHaveBeenCalledOnce();
       expect(tx.rollback).not.toHaveBeenCalled();
       expect(db.query).not.toHaveBeenCalled();
@@ -462,6 +467,9 @@ describe('Issue #35: System Tables Initialization', () => {
       expect(
         txQueries.filter((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toHaveLength(0);
+      expect(
+        txQueries.some((sql) => sql.includes('CREATE OR REPLACE FUNCTION')),
+      ).toBe(false);
       expect(tx.execute).not.toHaveBeenCalled();
       expect(tx.commit).toHaveBeenCalledOnce();
       expect(tx.rollback).not.toHaveBeenCalled();

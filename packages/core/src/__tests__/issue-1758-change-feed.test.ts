@@ -571,21 +571,28 @@ describe('change feed spine (issue #1758)', () => {
   });
 
   describe('append allocation', () => {
-    it('retries SDK-wrapped Postgres unique violations', async () => {
-      const wrappedUniqueViolation = Object.assign(
-        new Error('Failed to execute raw query'),
-        {
-          code: 'DATABASE_ERROR',
-          context: {
-            originalError:
-              'duplicate key value violates unique constraint "_smrt_changes_pkey", code=23505, detail=Key (seq)=(1) already exists.',
-          },
-        },
-      );
+    it('retries a unique SQLSTATE returned by the Postgres append function', async () => {
       const query = vi
         .fn()
-        .mockRejectedValueOnce(wrappedUniqueViolation)
-        .mockResolvedValueOnce({ rows: [{ seq: 1 }] });
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              allocated_seq: null,
+              error_code: '23505',
+              error_message:
+                'duplicate key value violates unique constraint "_smrt_changes_pkey"',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              allocated_seq: 1,
+              error_code: null,
+              error_message: null,
+            },
+          ],
+        });
       const postgresDb = {
         url: 'postgresql://ci.invalid/smrt',
         query,
@@ -598,6 +605,34 @@ describe('change feed spine (issue #1758)', () => {
         }),
       ).resolves.toBe(1);
       expect(query).toHaveBeenCalledTimes(2);
+    });
+
+    it('turns a caught Postgres function SQLSTATE back into a safe append error', async () => {
+      const query = vi.fn().mockResolvedValue({
+        rows: [
+          {
+            allocated_seq: null,
+            error_code: '23514',
+            error_message: 'forced change-feed check failure',
+          },
+        ],
+      });
+      const postgresDb = {
+        url: 'postgresql://ci.invalid/smrt',
+        query,
+      } as unknown as DatabaseInterface;
+
+      await expect(
+        appendChange(postgresDb, {
+          table: 'products',
+          rowId: 'product-1',
+        }),
+      ).rejects.toMatchObject({
+        code: '23514',
+        message: 'forced change-feed check failure',
+      });
+      expect(query).toHaveBeenCalledOnce();
+      expect(query.mock.calls[0]?.[0]).toContain('_smrt_append_change');
     });
   });
 

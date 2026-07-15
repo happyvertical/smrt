@@ -26,7 +26,10 @@ import {
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
 import { estimateAiUsageCost } from './adapters/cost-rates.js';
-import { registerChangeFeedWriter } from './change-feed.js';
+import {
+  ensurePostgresChangeFeedAppendFunction,
+  registerChangeFeedWriter,
+} from './change-feed.js';
 import type {
   AIConfig,
   AiUsageConfig,
@@ -972,6 +975,8 @@ export class SmrtClass {
     for (const statement of allStatements) {
       await db.query(statement);
     }
+
+    await ensurePostgresChangeFeedAppendFunction(db, this._dbEngineHint);
 
     // Record current schema version
     // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)

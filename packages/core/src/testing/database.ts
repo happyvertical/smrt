@@ -18,6 +18,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
+import { ensurePostgresChangeFeedAppendFunction } from '../change-feed.js';
 import {
   type CollectionRegistrationLookup,
   isCollectionRegistration,
@@ -426,4 +427,8 @@ async function initializeSystemTables(db: DatabaseInterface): Promise<void> {
   for (const statement of allStatements) {
     await db.query(statement);
   }
+
+  // PostgreSQL keeps the best-effort append boundary in a function that must
+  // be executed whole rather than included in semicolon-split portable DDL.
+  await ensurePostgresChangeFeedAppendFunction(db);
 }
