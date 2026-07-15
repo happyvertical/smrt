@@ -223,7 +223,10 @@ export class ReferralAgreementExecutionService {
         candidate.version < agreement.version,
     );
     for (const prior of priors) {
-      prior.effectiveTo = agreement.effectiveFrom ?? at;
+      const supersededAt = agreement.effectiveFrom ?? at;
+      if (!prior.effectiveTo || prior.effectiveTo > supersededAt) {
+        prior.effectiveTo = supersededAt;
+      }
       prior.supersede();
       await prior.save();
     }

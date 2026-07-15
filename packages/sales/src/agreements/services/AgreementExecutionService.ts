@@ -208,10 +208,11 @@ export class AgreementExecutionService {
         'source_document',
       );
     } catch (error) {
-      execution.status = 'failed';
-      execution.lastError = summarizeError(error, false);
-      this.clearCreateLease(execution);
-      await execution.save();
+      await this.failOwnedCreateAttempt(
+        execution,
+        operationId,
+        summarizeError(error, false),
+      );
       throw error;
     }
     return await this.sendProviderRequest(
@@ -243,10 +244,11 @@ export class AgreementExecutionService {
       );
     } catch (error) {
       // No provider mutation occurred, so a later idempotent caller may retry.
-      execution.status = 'failed';
-      execution.lastError = summarizeError(error, false);
-      this.clearCreateLease(execution);
-      await execution.save();
+      await this.failOwnedCreateAttempt(
+        execution,
+        operationId,
+        summarizeError(error, false),
+      );
       throw error;
     }
     let request: SignatureRequest;
@@ -284,25 +286,41 @@ export class AgreementExecutionService {
       providerResponded = true;
       this.assertProviderRequest(request, input.tenantId);
       await this.assertProviderRequestAvailable(execution, request.id);
-      await this.bindProviderRequest(execution, request.id);
-      execution.status = request.status;
-      execution.expiresAt = request.expiresAt ?? null;
-      execution.lastError = '';
-      this.clearCreateLease(execution);
-      await execution.save();
+      const completed = await this.deps.executions.completeCreateAttempt({
+        tenantId: input.tenantId,
+        executionId: execution.id ?? '',
+        operationId,
+        provider: execution.provider,
+        providerRequestId: request.id,
+        status: request.status,
+        expiresAt: request.expiresAt ?? null,
+      });
+      if (completed) {
+        execution = completed;
+      } else {
+        const latest = await this.requireExecution(execution.id ?? '');
+        if (latest.providerRequestId !== request.id) {
+          throw new Error(
+            `AgreementExecution ${execution.id}: provider-create lease ownership changed before the provider result was persisted; reconcile the current attempt`,
+          );
+        }
+        execution = latest;
+      }
     } catch (error) {
       const mayHaveSucceeded =
         providerResponded || requestMayHaveSucceeded(error);
-      execution.status = 'failed';
-      execution.lastError = summarizeError(error, mayHaveSucceeded);
-      this.clearCreateLease(execution);
-      await execution.save();
+      const lastError = summarizeError(error, mayHaveSucceeded);
+      execution = await this.failOwnedCreateAttempt(
+        execution,
+        operationId,
+        lastError,
+      );
       await this.recordOperationAudit(
         execution,
         operationId,
         mayHaveSucceeded ? 'create.uncertain' : 'create.failed',
         'provider_operation',
-        { error: execution.lastError },
+        { error: lastError },
       );
       throw error;
     }
@@ -1106,9 +1124,19 @@ export class AgreementExecutionService {
     return new Date(from.getTime() + this.createLeaseDurationMs);
   }
 
-  private clearCreateLease(execution: AgreementExecution): void {
-    execution.createLeaseId = '';
-    execution.createLeaseExpiresAt = null;
+  private async failOwnedCreateAttempt(
+    execution: AgreementExecution,
+    operationId: string,
+    lastError: string,
+  ): Promise<AgreementExecution> {
+    return (
+      (await this.deps.executions.failCreateAttempt({
+        tenantId: execution.tenantId,
+        executionId: execution.id ?? '',
+        operationId,
+        lastError,
+      })) ?? (await this.requireExecution(execution.id ?? ''))
+    );
   }
 
   private async ensureAssetAssociation(

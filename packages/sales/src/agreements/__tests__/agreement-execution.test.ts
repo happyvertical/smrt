@@ -165,6 +165,55 @@ describe('AgreementExecutionService', () => {
     });
   });
 
+  it('does not let a stale provider failure overwrite a recovered create', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      let currentTime = new Date('2026-07-14T20:00:00.000Z');
+      let releaseProvider!: () => void;
+      let providerStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        providerStarted = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseProvider = resolve;
+      });
+      provider.capabilities.providerEnforcedIdempotency = true;
+      provider.createRequest.mockImplementationOnce(async () => {
+        providerStarted();
+        await release;
+        throw new SignatureProviderError('late provider timeout', {
+          retryable: true,
+          requestMayHaveSucceeded: true,
+        });
+      });
+      service = new AgreementExecutionService({
+        provider,
+        assets,
+        executions,
+        events,
+        executedAgreements,
+        now: () => currentTime,
+        createLeaseDurationMs: 1_000,
+      });
+
+      const stalePromise = service.createExecution(createInput());
+      await started;
+      currentTime = new Date('2026-07-14T20:00:02.000Z');
+      const recovered = await service.createExecution(createInput());
+      releaseProvider();
+      await expect(stalePromise).rejects.toThrow(/late provider timeout/);
+
+      await expect(
+        executions.get({ id: recovered.executionId }),
+      ).resolves.toMatchObject({
+        attemptCount: 2,
+        providerRequestId: 'request-1',
+        status: 'sent',
+        lastError: '',
+        createLeaseId: '',
+      });
+    });
+  });
+
   it('atomically reclaims an abandoned create for an idempotent provider', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
       let currentTime = new Date('2026-07-14T20:00:00.000Z');
@@ -206,6 +255,14 @@ describe('AgreementExecutionService', () => {
       releaseProvider();
       await expect(firstPromise).resolves.toMatchObject({
         providerRequestId: 'request-1',
+      });
+      await expect(
+        executions.get({ id: recovered.executionId }),
+      ).resolves.toMatchObject({
+        attemptCount: 2,
+        providerRequestId: 'request-1',
+        status: 'sent',
+        createLeaseId: '',
       });
     });
   });

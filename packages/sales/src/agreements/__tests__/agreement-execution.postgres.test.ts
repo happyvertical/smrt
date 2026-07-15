@@ -230,4 +230,75 @@ describePostgres('agreement execution evidence on PostgreSQL', () => {
       ).rejects.toThrow(/tenant mismatch/);
     });
   });
+
+  it('fences stale provider-create completion and failure writes', async () => {
+    const tenantId = randomUUID();
+    await withTenant({ tenantId }, async () => {
+      const execution = await executions.create({
+        tenantId,
+        provider: 'idempotent-provider',
+        idempotencyKey: `settlement-${randomUUID()}`,
+        sourceKind: 'referral_agreement',
+        sourceId: randomUUID(),
+        sourceVersion: 1,
+        status: 'prepared',
+        attemptCount: 2,
+        createLeaseId: 'current-operation',
+        createLeaseExpiresAt: new Date('2026-07-14T20:10:00Z'),
+        _insertOnly: true,
+      });
+
+      await expect(
+        executions.completeCreateAttempt({
+          tenantId,
+          executionId: execution.id as string,
+          operationId: 'stale-operation',
+          provider: 'idempotent-provider',
+          providerRequestId: 'stale-request',
+          status: 'sent',
+          expiresAt: null,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        executions.failCreateAttempt({
+          tenantId,
+          executionId: execution.id as string,
+          operationId: 'stale-operation',
+          lastError: 'stale failure',
+        }),
+      ).resolves.toBeNull();
+
+      const completed = await executions.completeCreateAttempt({
+        tenantId,
+        executionId: execution.id as string,
+        operationId: 'current-operation',
+        provider: 'idempotent-provider',
+        providerRequestId: 'current-request',
+        status: 'sent',
+        expiresAt: null,
+      });
+      expect(completed).toMatchObject({
+        attemptCount: 2,
+        providerRequestId: 'current-request',
+        status: 'sent',
+        lastError: '',
+        createLeaseId: '',
+      });
+      await expect(
+        executions.failCreateAttempt({
+          tenantId,
+          executionId: execution.id as string,
+          operationId: 'current-operation',
+          lastError: 'late failure',
+        }),
+      ).resolves.toBeNull();
+      await expect(executions.get({ id: execution.id })).resolves.toMatchObject(
+        {
+          providerRequestId: 'current-request',
+          status: 'sent',
+          lastError: '',
+        },
+      );
+    });
+  });
 });

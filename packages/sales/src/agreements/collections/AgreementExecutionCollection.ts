@@ -1,6 +1,7 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { requireTenantId } from '@happyvertical/smrt-tenancy';
 import { AgreementExecution } from '../models/AgreementExecution.js';
+import type { AgreementExecutionStatus } from '../types.js';
 
 export interface ClaimAgreementCreateAttemptInput {
   tenantId: string;
@@ -12,6 +13,23 @@ export interface ClaimAgreementCreateAttemptInput {
   operationId: string;
   leaseExpiresAt: Date;
   now: Date;
+}
+
+export interface CompleteAgreementCreateAttemptInput {
+  tenantId: string;
+  executionId: string;
+  operationId: string;
+  provider: string;
+  providerRequestId: string;
+  status: AgreementExecutionStatus;
+  expiresAt: Date | null;
+}
+
+export interface FailAgreementCreateAttemptInput {
+  tenantId: string;
+  executionId: string;
+  operationId: string;
+  lastError: string;
 }
 
 export class AgreementExecutionCollection extends SmrtCollection<AgreementExecution> {
@@ -81,6 +99,68 @@ export class AgreementExecutionCollection extends SmrtCollection<AgreementExecut
     return await this.get({ id: claimed.id });
   }
 
+  /**
+   * Persist a provider-create result only while the caller still owns its
+   * lease. This prevents a slow, expired attempt from overwriting a newer
+   * recovery attempt after returning from the provider.
+   */
+  async completeCreateAttempt(
+    input: CompleteAgreementCreateAttemptInput,
+  ): Promise<AgreementExecution | null> {
+    this.assertCreateAttemptTenant(input.tenantId);
+    const providerRequestKey = `${input.tenantId}:${input.provider}:${input.providerRequestId}`;
+    const result = await this._db.query(
+      `UPDATE ${this.tableName}
+          SET provider_request_id = ?,
+              provider_request_key = ?,
+              status = ?,
+              expires_at = ?,
+              last_error = '',
+              create_lease_id = '',
+              create_lease_expires_at = NULL
+        WHERE id = ?
+          AND tenant_id = ?
+          AND provider = ?
+          AND COALESCE(create_lease_id, '') = ?
+          AND (provider_request_id IS NULL OR provider_request_id = '')
+        RETURNING id`,
+      input.providerRequestId,
+      providerRequestKey,
+      input.status,
+      input.expiresAt?.toISOString() ?? null,
+      input.executionId,
+      input.tenantId,
+      input.provider,
+      input.operationId,
+    );
+    return await this.getReturnedExecution(result);
+  }
+
+  /** Record a create failure only while the caller still owns its lease. */
+  async failCreateAttempt(
+    input: FailAgreementCreateAttemptInput,
+  ): Promise<AgreementExecution | null> {
+    this.assertCreateAttemptTenant(input.tenantId);
+    const result = await this._db.query(
+      `UPDATE ${this.tableName}
+          SET status = ?,
+              last_error = ?,
+              create_lease_id = '',
+              create_lease_expires_at = NULL
+        WHERE id = ?
+          AND tenant_id = ?
+          AND COALESCE(create_lease_id, '') = ?
+          AND (provider_request_id IS NULL OR provider_request_id = '')
+        RETURNING id`,
+      'failed',
+      input.lastError,
+      input.executionId,
+      input.tenantId,
+      input.operationId,
+    );
+    return await this.getReturnedExecution(result);
+  }
+
   async findBySource(
     sourceKind: string,
     sourceId: string,
@@ -89,6 +169,20 @@ export class AgreementExecutionCollection extends SmrtCollection<AgreementExecut
       where: { sourceKind, sourceId },
       orderBy: 'source_version DESC',
     });
+  }
+
+  private assertCreateAttemptTenant(tenantId: string): void {
+    if (requireTenantId() !== tenantId) {
+      throw new Error('AgreementExecution create-lease tenant mismatch');
+    }
+  }
+
+  private async getReturnedExecution(result: {
+    rows?: unknown;
+  }): Promise<AgreementExecution | null> {
+    const returned = (result.rows as Array<{ id?: unknown }> | undefined)?.[0];
+    if (typeof returned?.id !== 'string') return null;
+    return await this.get({ id: returned.id });
   }
 }
 

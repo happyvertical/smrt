@@ -203,6 +203,68 @@ describe('ReferralAgreementExecutionService', () => {
     });
   });
 
+  it('does not extend a prior explicit end date when an amendment supersedes it', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      const v1 = await agreements.create({
+        referrerId,
+        programId,
+        version: 1,
+        status: 'draft',
+        commissionPlanKey: 'referral-standard',
+        effectiveFrom: new Date('2026-07-01T00:00:00Z'),
+        effectiveTo: new Date('2026-08-15T00:00:00Z'),
+      });
+      const sentV1 = await service.requestSignature(requestInput(v1.id ?? ''));
+      const executedV1 = await createExecuted(
+        sentV1.executionId,
+        v1.id ?? '',
+        1,
+        new Date('2026-07-01T00:00:00Z'),
+      );
+      await service.applyExecutedAgreement({
+        tenantId: TENANT,
+        agreementId: v1.id ?? '',
+        executedAgreementId: executedV1.id,
+      });
+
+      const v2 = await agreements.createAmendment(referrerId, programId, {
+        effectiveFrom: new Date('2026-09-01T00:00:00Z'),
+      });
+      const sentV2 = await service.requestSignature(requestInput(v2.id ?? ''));
+      const executedV2 = await createExecuted(
+        sentV2.executionId,
+        v2.id ?? '',
+        2,
+        new Date('2026-09-01T00:00:00Z'),
+        executedV1.id,
+      );
+      await service.applyExecutedAgreement({
+        tenantId: TENANT,
+        agreementId: v2.id ?? '',
+        executedAgreementId: executedV2.id,
+        at: new Date('2026-07-14T20:00:00Z'),
+      });
+      await service.supersedePriorIfEffective({
+        tenantId: TENANT,
+        agreementId: v2.id ?? '',
+        at: new Date('2026-09-01T00:00:00Z'),
+      });
+
+      const prior = await agreements.get({ id: v1.id });
+      expect(prior?.status).toBe('superseded');
+      expect(prior?.effectiveTo?.toISOString()).toBe(
+        '2026-08-15T00:00:00.000Z',
+      );
+      await expect(
+        agreements.activeFor(
+          referrerId,
+          programId,
+          new Date('2026-08-20T00:00:00Z'),
+        ),
+      ).resolves.toBeNull();
+    });
+  });
+
   it('binds a persisted execution fence after an uncertain provider create', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
       const agreement = await agreements.create({
