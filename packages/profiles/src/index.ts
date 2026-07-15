@@ -69,6 +69,7 @@ export {
   AmbiguousOidcIdentityError,
   OidcIdentityCollection,
 } from './collections/OidcIdentityCollection';
+export { OidcProfileEmailReservationCollection } from './collections/OidcProfileEmailReservationCollection';
 export { ProfileAssetCollection } from './collections/ProfileAssetCollection';
 // Export collections
 export {
@@ -102,6 +103,8 @@ export type { NostrIdentityOptions } from './models/NostrIdentity';
 export { NostrIdentity } from './models/NostrIdentity';
 export type { OidcIdentityOptions } from './models/OidcIdentity';
 export { OidcIdentity } from './models/OidcIdentity';
+export type { OidcProfileEmailReservationOptions } from './models/OidcProfileEmailReservation';
+export { OidcProfileEmailReservation } from './models/OidcProfileEmailReservation';
 // Export model option types
 export type { ProfileOptions } from './models/Profile';
 export { Profile } from './models/Profile';

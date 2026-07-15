@@ -14,6 +14,7 @@ export {
   AmbiguousOidcIdentityError,
   OidcIdentityCollection,
 } from './OidcIdentityCollection';
+export { OidcProfileEmailReservationCollection } from './OidcProfileEmailReservationCollection';
 export { ProfileAssetCollection } from './ProfileAssetCollection';
 export {
   CanonicalPersonProfileError,
