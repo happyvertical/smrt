@@ -81,7 +81,7 @@ export class ExecutedAgreementCollection extends SmrtCollection<ExecutedAgreemen
         (effectiveFrom?.toISOString() ?? null) ||
       (existing.effectiveTo?.toISOString() ?? null) !==
         (effectiveTo?.toISOString() ?? null) ||
-      existing.supersedesExecutedAgreementId !==
+      (existing.supersedesExecutedAgreementId ?? '') !==
         (options.supersedesExecutedAgreementId ?? '') ||
       existing.metadata !== (options.metadata ?? '{}')
     ) {

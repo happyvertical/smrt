@@ -299,6 +299,38 @@ describePostgres('agreement execution evidence on PostgreSQL', () => {
           lastError: '',
         },
       );
+
+      const signedAssetId = randomUUID();
+      await expect(
+        executions.bindEvidenceArtifact({
+          tenantId,
+          executionId: execution.id as string,
+          kind: 'signed_document',
+          assetId: signedAssetId,
+          sha256: 'a'.repeat(64),
+          sizeBytes: 123,
+          mediaType: 'application/pdf',
+          filename: 'signed.pdf',
+        }),
+      ).resolves.toMatchObject({ signedDocumentAssetId: signedAssetId });
+      await expect(
+        executions.bindEvidenceArtifact({
+          tenantId,
+          executionId: execution.id as string,
+          kind: 'signed_document',
+          assetId: randomUUID(),
+          sha256: 'b'.repeat(64),
+          sizeBytes: 456,
+          mediaType: 'application/pdf',
+          filename: 'loser.pdf',
+        }),
+      ).resolves.toBeNull();
+      await expect(executions.get({ id: execution.id })).resolves.toMatchObject(
+        {
+          signedDocumentAssetId: signedAssetId,
+          signedDocumentSha256: 'a'.repeat(64),
+        },
+      );
     });
   });
 });

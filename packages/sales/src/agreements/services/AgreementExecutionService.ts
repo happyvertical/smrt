@@ -8,7 +8,7 @@ import type {
   SignatureRequest,
   SignatureWebhookEvent,
 } from '@happyvertical/signatures';
-import type { AssetRuntimeLike } from '@happyvertical/smrt-assets';
+import type { Asset, AssetRuntimeLike } from '@happyvertical/smrt-assets';
 import { requireTenantId } from '@happyvertical/smrt-tenancy';
 import type { AgreementExecutionCollection } from '../collections/AgreementExecutionCollection.js';
 import type { AgreementExecutionEventCollection } from '../collections/AgreementExecutionEventCollection.js';
@@ -196,6 +196,9 @@ export class AgreementExecutionService {
       const raced = await this.deps.executions.findByIdempotencyKey(
         input.idempotencyKey,
       );
+      if (!raced || raced.sourceAssetId !== sourceAsset.id) {
+        await this.removeStoredAsset(sourceAsset);
+      }
       if (!raced) throw error;
       this.assertSameIntent(raced, input, requestIntentSha256);
       return await this.resumeOrReplayCreate(raced, input, sourceBytes);
@@ -743,48 +746,23 @@ export class AgreementExecutionService {
       );
     }
 
-    let signedMetadata: StoredArtifactMetadata | undefined;
-    if (!execution.signedDocumentAssetId) {
-      signedMetadata = await this.retrieveAndStoreArtifact(
-        execution,
-        'signed_document',
-      );
-      execution.signedDocumentAssetId = signedMetadata.assetId;
-      execution.signedDocumentSha256 = signedMetadata.sha256;
-      execution.signedDocumentSizeBytes = signedMetadata.sizeBytes;
-      execution.signedDocumentMediaType = signedMetadata.mediaType;
-      execution.signedDocumentFilename = signedMetadata.filename;
-      await execution.save();
-    }
-
-    let auditMetadata: StoredArtifactMetadata | undefined;
-    if (!execution.auditTrailAssetId) {
-      auditMetadata = await this.retrieveAndStoreArtifact(
-        execution,
-        'audit_trail',
-      );
-      execution.auditTrailAssetId = auditMetadata.assetId;
-      execution.auditTrailSha256 = auditMetadata.sha256;
-      execution.auditTrailSizeBytes = auditMetadata.sizeBytes;
-      execution.auditTrailMediaType = auditMetadata.mediaType;
-      execution.auditTrailFilename = auditMetadata.filename;
-      await execution.save();
-    }
-
-    const signed = signedMetadata ?? {
-      assetId: execution.signedDocumentAssetId,
-      sha256: execution.signedDocumentSha256,
-      sizeBytes: execution.signedDocumentSizeBytes,
-      filename: execution.signedDocumentFilename,
-      mediaType: execution.signedDocumentMediaType,
-    };
-    const audit = auditMetadata ?? {
-      assetId: execution.auditTrailAssetId,
-      sha256: execution.auditTrailSha256,
-      sizeBytes: execution.auditTrailSizeBytes,
-      filename: execution.auditTrailFilename,
-      mediaType: execution.auditTrailMediaType,
-    };
+    const signedResult = await this.ensureEvidenceArtifact(
+      execution,
+      'signed_document',
+    );
+    execution = signedResult.execution;
+    const auditResult = await this.ensureEvidenceArtifact(
+      execution,
+      'audit_trail',
+    );
+    // Reload after both compare-and-swap boundaries so every concurrent
+    // finalizer constructs immutable evidence from the same persisted row.
+    execution = await this.requireExecution(auditResult.execution.id ?? '');
+    const signed = this.requireStoredArtifactMetadata(
+      execution,
+      'signed_document',
+    );
+    const audit = this.requireStoredArtifactMetadata(execution, 'audit_trail');
     // The authenticated provider read is authoritative and complete; webhook
     // payloads may contain only the signer affected by that event.
     const signerEvidence = sanitizeSignerEvidence(request.signers);
@@ -825,10 +803,62 @@ export class AgreementExecutionService {
     return created.agreement;
   }
 
+  private async ensureEvidenceArtifact(
+    execution: AgreementExecution,
+    kind: 'signed_document' | 'audit_trail',
+  ): Promise<{
+    execution: AgreementExecution;
+    metadata: StoredArtifactMetadata;
+  }> {
+    const existing = this.getStoredArtifactMetadata(execution, kind);
+    if (existing) {
+      await this.ensureAssetAssociation(
+        'AgreementExecution',
+        execution.id ?? '',
+        existing.assetId,
+        kind,
+      );
+      return { execution, metadata: existing };
+    }
+
+    const stored = await this.retrieveAndStoreArtifact(execution, kind);
+    let bound: AgreementExecution | null;
+    try {
+      bound = await this.deps.executions.bindEvidenceArtifact({
+        tenantId: execution.tenantId,
+        executionId: execution.id ?? '',
+        kind,
+        ...stored.metadata,
+      });
+    } catch (error) {
+      const latest = await this.requireExecution(execution.id ?? '');
+      if (
+        this.getStoredArtifactMetadata(latest, kind)?.assetId !==
+        stored.asset.id
+      ) {
+        await this.removeStoredAsset(stored.asset);
+      }
+      throw error;
+    }
+
+    if (!bound) {
+      await this.removeStoredAsset(stored.asset);
+      bound = await this.requireExecution(execution.id ?? '');
+    }
+    const metadata = this.requireStoredArtifactMetadata(bound, kind);
+    await this.ensureAssetAssociation(
+      'AgreementExecution',
+      bound.id ?? '',
+      metadata.assetId,
+      kind,
+    );
+    return { execution: bound, metadata };
+  }
+
   private async retrieveAndStoreArtifact(
     execution: AgreementExecution,
     kind: 'signed_document' | 'audit_trail',
-  ): Promise<StoredArtifactMetadata> {
+  ): Promise<{ asset: Asset; metadata: StoredArtifactMetadata }> {
     const artifact = await this.deps.provider.downloadArtifact({
       tenantId: execution.tenantId,
       requestId: execution.providerRequestId,
@@ -866,19 +896,68 @@ export class AgreementExecutionService {
     );
     this.assertTenantValue(asset.tenantId, execution.tenantId, `${kind} asset`);
     if (!asset.id) throw new Error(`Stored ${kind} Asset has no id`);
-    await this.ensureAssetAssociation(
-      'AgreementExecution',
-      execution.id ?? '',
-      asset.id,
-      kind,
-    );
     return {
-      assetId: asset.id,
-      sha256: computed,
-      sizeBytes: bytes.byteLength,
-      filename: artifact.filename,
-      mediaType: artifact.mediaType,
+      asset,
+      metadata: {
+        assetId: asset.id,
+        sha256: computed,
+        sizeBytes: bytes.byteLength,
+        filename: artifact.filename,
+        mediaType: artifact.mediaType,
+      },
     };
+  }
+
+  private getStoredArtifactMetadata(
+    execution: AgreementExecution,
+    kind: 'signed_document' | 'audit_trail',
+  ): StoredArtifactMetadata | null {
+    const metadata =
+      kind === 'signed_document'
+        ? {
+            assetId: execution.signedDocumentAssetId,
+            sha256: execution.signedDocumentSha256,
+            sizeBytes: execution.signedDocumentSizeBytes,
+            mediaType: execution.signedDocumentMediaType,
+            filename: execution.signedDocumentFilename,
+          }
+        : {
+            assetId: execution.auditTrailAssetId,
+            sha256: execution.auditTrailSha256,
+            sizeBytes: execution.auditTrailSizeBytes,
+            mediaType: execution.auditTrailMediaType,
+            filename: execution.auditTrailFilename,
+          };
+    if (!metadata.assetId) return null;
+    if (
+      !metadata.sha256 ||
+      !Number.isSafeInteger(metadata.sizeBytes) ||
+      metadata.sizeBytes < 1 ||
+      !metadata.mediaType ||
+      !metadata.filename
+    ) {
+      throw new Error(
+        `AgreementExecution ${execution.id}: ${kind} evidence is incomplete`,
+      );
+    }
+    return metadata;
+  }
+
+  private requireStoredArtifactMetadata(
+    execution: AgreementExecution,
+    kind: 'signed_document' | 'audit_trail',
+  ): StoredArtifactMetadata {
+    const metadata = this.getStoredArtifactMetadata(execution, kind);
+    if (!metadata) {
+      throw new Error(
+        `AgreementExecution ${execution.id}: ${kind} evidence was not bound`,
+      );
+    }
+    return metadata;
+  }
+
+  private async removeStoredAsset(asset: Asset): Promise<void> {
+    await this.deps.assets.store.remove(asset);
   }
 
   private async ensureExecutedAgreementAssociations(
@@ -1204,17 +1283,21 @@ export class AgreementExecutionService {
     mayMutateProvider: boolean,
     providerMutationConfirmed = false,
   ): Promise<void> {
-    execution.lastError = summarizeError(error);
-    await execution.save();
+    // The operation may have crossed a collection-level CAS boundary. Reload
+    // before writing failure state so a stale service snapshot cannot erase a
+    // newly bound provider request or evidence artifact.
+    const current = await this.requireExecution(execution.id ?? '');
+    current.lastError = summarizeError(error);
+    await current.save();
     const uncertain =
       mayMutateProvider &&
       (providerMutationConfirmed || isPotentiallyUncertain(error));
     await this.recordOperationAudit(
-      execution,
+      current,
       operationId,
       `${operation}.${uncertain ? 'uncertain' : 'failed'}`,
       'provider_operation',
-      { error: execution.lastError },
+      { error: current.lastError },
     );
   }
 

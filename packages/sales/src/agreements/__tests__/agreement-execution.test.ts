@@ -123,6 +123,50 @@ describe('AgreementExecutionService', () => {
     });
   });
 
+  it('removes the unbound source asset from a concurrent insert loser', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      let storedCount = 0;
+      let bothStored!: () => void;
+      let releaseStores!: () => void;
+      const started = new Promise<void>((resolve) => {
+        bothStored = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseStores = resolve;
+      });
+      vi.mocked(assets.storeSourceAsset).mockImplementation(
+        async (name, _data, options) => {
+          storedCount += 1;
+          if (storedCount === 2) bothStored();
+          await release;
+          return {
+            id: randomUUID(),
+            tenantId: requireTenantId(),
+            name,
+            mimeType: options.mimeType,
+          } as Awaited<ReturnType<AssetRuntimeLike['storeSourceAsset']>>;
+        },
+      );
+
+      const firstPromise = service.createExecution(createInput());
+      const secondPromise = service.createExecution(createInput());
+      await started;
+      releaseStores();
+      const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+      expect(first.executionId).toBe(second.executionId);
+      expect(provider.createRequest).toHaveBeenCalledTimes(1);
+      expect(assets.storeSourceAsset).toHaveBeenCalledTimes(2);
+      expect(assets.store.remove).toHaveBeenCalledTimes(1);
+      await expect(
+        executions.get({ id: first.executionId }),
+      ).resolves.toMatchObject({
+        sourceAssetId: expect.any(String),
+        providerRequestId: 'request-1',
+      });
+    });
+  });
+
   it('refuses an abandoned create lease when provider idempotency is not atomic', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
       let currentTime = new Date('2026-07-14T20:00:00.000Z');
@@ -335,6 +379,60 @@ describe('AgreementExecutionService', () => {
       );
       event.payload = '{"tampered":true}';
       await expect(event.save()).rejects.toThrow(/immutable/);
+    });
+  });
+
+  it('fences evidence assets across concurrent completion paths', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      const created = await service.createExecution(createInput());
+      provider.event = completedEvent();
+      provider.request = request('completed');
+      const counts = { signed_document: 0, audit_trail: 0 };
+      const started = {
+        signed_document: Promise.withResolvers<void>(),
+        audit_trail: Promise.withResolvers<void>(),
+      };
+      const releases = {
+        signed_document: Promise.withResolvers<void>(),
+        audit_trail: Promise.withResolvers<void>(),
+      };
+      provider.downloadArtifact.mockImplementation(async (input) => {
+        counts[input.kind] += 1;
+        if (counts[input.kind] === 2) started[input.kind].resolve();
+        await releases[input.kind].promise;
+        return artifact(
+          input.kind,
+          input.kind === 'signed_document' ? SIGNED : AUDIT,
+        );
+      });
+
+      const webhookPromise = service.ingestWebhook({
+        tenantId: TENANT,
+        payload: '{"event":"completed-concurrently"}',
+        signature: 'valid',
+      });
+      const reconcilePromise = service.reconcile({
+        tenantId: TENANT,
+        executionId: created.executionId,
+      });
+      await started.signed_document.promise;
+      releases.signed_document.resolve();
+      await started.audit_trail.promise;
+      releases.audit_trail.resolve();
+      const [webhook] = await Promise.all([webhookPromise, reconcilePromise]);
+
+      const agreements = await executedAgreements.findByExecution(
+        created.executionId,
+      );
+      expect(webhook.executedAgreementId).toBe(agreements?.id);
+      expect(provider.downloadArtifact).toHaveBeenCalledTimes(4);
+      expect(assets.store.remove).toHaveBeenCalledTimes(2);
+      const execution = await executions.get({ id: created.executionId });
+      expect(execution).toMatchObject({
+        signedDocumentAssetId: agreements?.signedDocumentAssetId,
+        auditTrailAssetId: agreements?.auditTrailAssetId,
+        status: 'completed',
+      });
     });
   });
 
@@ -800,7 +898,9 @@ function createAssetRuntime(): AssetRuntimeLike {
     associations: {
       attach: vi.fn(async () => ({})),
     } as unknown as AssetRuntimeLike['associations'],
-    store: {} as AssetRuntimeLike['store'],
+    store: {
+      remove: vi.fn(async () => undefined),
+    } as unknown as AssetRuntimeLike['store'],
     storeSourceAsset: vi.fn(async (name, _data, options) => ({
       id: randomUUID(),
       tenantId: requireTenantId(),

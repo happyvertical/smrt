@@ -32,6 +32,19 @@ export interface FailAgreementCreateAttemptInput {
   lastError: string;
 }
 
+export type AgreementEvidenceArtifactKind = 'signed_document' | 'audit_trail';
+
+export interface BindAgreementEvidenceArtifactInput {
+  tenantId: string;
+  executionId: string;
+  kind: AgreementEvidenceArtifactKind;
+  assetId: string;
+  sha256: string;
+  sizeBytes: number;
+  mediaType: string;
+  filename: string;
+}
+
 export class AgreementExecutionCollection extends SmrtCollection<AgreementExecution> {
   static readonly _itemClass = AgreementExecution;
 
@@ -157,6 +170,54 @@ export class AgreementExecutionCollection extends SmrtCollection<AgreementExecut
       input.executionId,
       input.tenantId,
       input.operationId,
+    );
+    return await this.getReturnedExecution(result);
+  }
+
+  /**
+   * Bind one immutable evidence artifact with a tenant-fenced compare-and-swap.
+   * Concurrent finalizers can only publish one asset identity for each kind.
+   */
+  async bindEvidenceArtifact(
+    input: BindAgreementEvidenceArtifactInput,
+  ): Promise<AgreementExecution | null> {
+    this.assertCreateAttemptTenant(input.tenantId);
+    const columns =
+      input.kind === 'signed_document'
+        ? {
+            assetId: 'signed_document_asset_id',
+            sha256: 'signed_document_sha256',
+            sizeBytes: 'signed_document_size_bytes',
+            mediaType: 'signed_document_media_type',
+            filename: 'signed_document_filename',
+          }
+        : {
+            assetId: 'audit_trail_asset_id',
+            sha256: 'audit_trail_sha256',
+            sizeBytes: 'audit_trail_size_bytes',
+            mediaType: 'audit_trail_media_type',
+            filename: 'audit_trail_filename',
+          };
+    const result = await this._db.query(
+      `UPDATE ${this.tableName}
+          SET ${columns.assetId} = ?,
+              ${columns.sha256} = ?,
+              ${columns.sizeBytes} = ?,
+              ${columns.mediaType} = ?,
+              ${columns.filename} = ?
+        WHERE id = ?
+          AND tenant_id = ?
+          AND provider_request_id IS NOT NULL
+          AND provider_request_id <> ''
+          AND ${columns.assetId} IS NULL
+        RETURNING id`,
+      input.assetId,
+      input.sha256,
+      input.sizeBytes,
+      input.mediaType,
+      input.filename,
+      input.executionId,
+      input.tenantId,
     );
     return await this.getReturnedExecution(result);
   }
