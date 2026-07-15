@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.40.2
+
+### Patch Changes
+
+- ### Features
+
+  - add immutable agreement execution (#2012) (sales)
+
+  ### Bug Fixes
+
+  - fence agreement lifecycle writes (#2012) (sales)
+  - fence agreement evidence races (#2012) (sales)
+  - fence late agreement settlements (#2012) (sales)
+  - preserve terminal agreement outcomes (#2012) (sales)
+  - avoid agreement registry cycle (#2012) (sales)
+  - harden agreement create recovery (#2012) (sales)
+  - @happyvertical/smrt-config@0.40.2
+  - @happyvertical/smrt-types@0.40.2
+  - @happyvertical/smrt-scanner@0.40.2
+
 ## 0.40.1
 
 ### Patch Changes
