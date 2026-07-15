@@ -42,7 +42,10 @@ same idempotency key.
 `AgreementExecution` and `AgreementExecutionEvent` are private orchestration
 objects: they have no generated API, MCP, or CLI mutations. Operator and
 provider operations append start/success/failure-or-uncertain audit records;
-verified event evidence requires explicit occurrence and receipt timestamps.
+verified event evidence requires explicit occurrence and first-receipt
+timestamps. A replay keeps the original receipt timestamp rather than treating
+the later delivery time as different provider evidence. Terminal provider
+states never resurrect into a different terminal outcome.
 `ExecutedAgreement` exposes read-only list/get surfaces and freezes exact Asset
 ids, SHA-256 values, byte sizes, filenames, media types, signed signer evidence,
 acceptance/effective dates, and amendment provenance. Webhook signature headers

@@ -468,7 +468,7 @@ export class AgreementExecutionService {
       execution.lastReconciledAt = this.now();
       execution.lastError = '';
       await execution.save();
-      if (request.status === 'completed') {
+      if (execution.status === 'completed') {
         await this.finalizeExecution(execution);
       }
       await this.completeAuditedOperation(execution, operationId, 'reconcile', {
@@ -656,10 +656,7 @@ export class AgreementExecutionService {
     }
 
     let executedAgreement: ExecutedAgreement | null = null;
-    if (
-      providerEvent.status === 'completed' ||
-      execution.status === 'completed'
-    ) {
+    if (execution.status === 'completed') {
       const operationId = await this.beginAuditedOperation(
         execution,
         'finalize',
@@ -1439,7 +1436,7 @@ function canAdvanceStatus(
   current: AgreementExecution['status'],
   next: AgreementExecution['status'],
 ): boolean {
-  if (current === next || next === 'completed') return true;
+  if (current === next) return true;
   // `failed` is also used for local orchestration failures before a provider
   // request is adopted; an authoritative provider read may recover it.
   if (current === 'failed') return true;

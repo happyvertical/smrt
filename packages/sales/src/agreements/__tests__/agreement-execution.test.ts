@@ -212,15 +212,26 @@ describe('AgreementExecutionService', () => {
 
   it('ingests a verified completion once and retains immutable artifacts and audit evidence', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
+      let currentTime = new Date('2026-07-14T20:00:00.000Z');
+      service = new AgreementExecutionService({
+        provider,
+        assets,
+        executions,
+        events,
+        executedAgreements,
+        now: () => currentTime,
+      });
       const created = await service.createExecution(createInput());
       provider.event = completedEvent();
       provider.request = request('completed');
+      currentTime = new Date('2026-07-14T21:00:01.000Z');
 
       const first = await service.ingestWebhook({
         tenantId: TENANT,
         payload: '{"event":"completed"}',
         signature: 'valid',
       });
+      currentTime = new Date('2026-07-14T21:05:00.000Z');
       const replay = await service.ingestWebhook({
         tenantId: TENANT,
         payload: '{"event":"completed"}',
@@ -234,6 +245,11 @@ describe('AgreementExecutionService', () => {
       expect(
         await events.findProviderEventsByExecution(created.executionId),
       ).toHaveLength(1);
+      expect(
+        (
+          await events.findProviderEventsByExecution(created.executionId)
+        )[0]?.receivedAt.toISOString(),
+      ).toBe('2026-07-14T21:00:01.000Z');
       expect(
         (await events.findByExecution(created.executionId)).filter(
           (event) => event.eventType === 'operation.finalize.succeeded',
@@ -372,7 +388,12 @@ describe('AgreementExecutionService', () => {
           ...base,
           receivedAt: new Date('2026-07-14T21:00:02Z'),
         }),
-      ).rejects.toThrow(/collides with different verified evidence/);
+      ).resolves.toMatchObject({
+        created: false,
+        event: {
+          receivedAt: new Date('2026-07-14T21:00:01Z'),
+        },
+      });
     });
   });
 
@@ -619,6 +640,45 @@ describe('AgreementExecutionService', () => {
         }),
       ).rejects.toThrow(/terminal AgreementExecution/);
       expect(provider.extendExpiry).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('records late completion evidence without resurrecting a cancelled execution', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      const created = await service.createExecution(createInput());
+      provider.request = request('cancelled');
+      await service.cancel({
+        tenantId: TENANT,
+        executionId: created.executionId,
+        reason: 'Agreement replaced',
+      });
+
+      provider.event = completedEvent();
+      provider.request = request('completed');
+      const lateWebhook = await service.ingestWebhook({
+        tenantId: TENANT,
+        payload: '{"event":"completed-after-cancel"}',
+        signature: 'valid',
+      });
+      expect(lateWebhook.executedAgreementId).toBeUndefined();
+      expect((await executions.get({ id: created.executionId }))?.status).toBe(
+        'cancelled',
+      );
+      expect(
+        await executedAgreements.findByExecution(created.executionId),
+      ).toBeNull();
+
+      await service.reconcile({
+        tenantId: TENANT,
+        executionId: created.executionId,
+      });
+      expect((await executions.get({ id: created.executionId }))?.status).toBe(
+        'cancelled',
+      );
+      expect(
+        await executedAgreements.findByExecution(created.executionId),
+      ).toBeNull();
+      expect(provider.downloadArtifact).not.toHaveBeenCalled();
     });
   });
 

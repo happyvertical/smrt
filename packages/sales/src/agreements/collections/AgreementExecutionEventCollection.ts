@@ -29,7 +29,7 @@ export class AgreementExecutionEventCollection extends SmrtCollection<AgreementE
     }
     const existing = await this.findByDedupeKey(options.dedupeKey);
     if (existing) {
-      this.assertSameVerifiedEvent(existing, options, occurredAt, receivedAt);
+      this.assertSameVerifiedEvent(existing, options, occurredAt);
       return { event: existing, created: false };
     }
     const {
@@ -50,7 +50,7 @@ export class AgreementExecutionEventCollection extends SmrtCollection<AgreementE
     } catch (error) {
       const raced = await this.findByDedupeKey(options.dedupeKey);
       if (!raced) throw error;
-      this.assertSameVerifiedEvent(raced, options, occurredAt, receivedAt);
+      this.assertSameVerifiedEvent(raced, options, occurredAt);
       return { event: raced, created: false };
     }
   }
@@ -59,7 +59,6 @@ export class AgreementExecutionEventCollection extends SmrtCollection<AgreementE
     existing: AgreementExecutionEvent,
     options: VerifiedAgreementExecutionEventOptions,
     occurredAt: Date,
-    receivedAt: Date,
   ): void {
     if (
       existing.executionId !== options.executionId ||
@@ -71,7 +70,6 @@ export class AgreementExecutionEventCollection extends SmrtCollection<AgreementE
       existing.eventType !== (options.eventType ?? '') ||
       existing.status !== options.status ||
       existing.occurredAt.toISOString() !== occurredAt.toISOString() ||
-      existing.receivedAt.toISOString() !== receivedAt.toISOString() ||
       existing.payloadSha256 !== (options.payloadSha256 ?? '') ||
       existing.signerEvidence !== (options.signerEvidence ?? '[]') ||
       existing.payload !== (options.payload ?? '{}')
