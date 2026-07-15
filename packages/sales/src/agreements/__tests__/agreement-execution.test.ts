@@ -479,6 +479,34 @@ describe('AgreementExecutionService', () => {
     });
   });
 
+  it('advances an authoritative provider read without regressing a newer webhook timestamp', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      const created = await service.createExecution(createInput());
+      provider.event = webhookEvent(
+        'delivered',
+        'event-delivered-clock-ahead',
+        '2026-07-14T21:00:00Z',
+      );
+      await service.ingestWebhook({
+        tenantId: TENANT,
+        payload: '{"event":"delivered-clock-ahead"}',
+        signature: 'valid',
+      });
+
+      provider.request = request('viewed');
+      await service.reconcile({
+        tenantId: TENANT,
+        executionId: created.executionId,
+      });
+
+      const execution = await executions.get({ id: created.executionId });
+      expect(execution?.status).toBe('viewed');
+      expect(execution?.lastProviderEventAt?.toISOString()).toBe(
+        '2026-07-14T21:00:00.000Z',
+      );
+    });
+  });
+
   it('rejects a replay-key collision with different verified payload evidence', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
       await service.createExecution(createInput());
@@ -795,6 +823,64 @@ describe('AgreementExecutionService', () => {
         }),
       ).rejects.toThrow(/terminal AgreementExecution/);
       expect(provider.extendExpiry).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not let a stale webhook save reopen a concurrently cancelled execution', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      const created = await service.createExecution(createInput());
+      const compareAndSetLifecycle =
+        executions.compareAndSetLifecycle.bind(executions);
+      let staleWebhookReachedCas!: () => void;
+      let releaseStaleWebhook!: () => void;
+      const webhookAtCas = new Promise<void>((resolve) => {
+        staleWebhookReachedCas = resolve;
+      });
+      const staleWebhookRelease = new Promise<void>((resolve) => {
+        releaseStaleWebhook = resolve;
+      });
+      let delayed = false;
+      vi.spyOn(executions, 'compareAndSetLifecycle').mockImplementation(
+        async (input) => {
+          if (!delayed && input.status === 'delivered') {
+            delayed = true;
+            staleWebhookReachedCas();
+            await staleWebhookRelease;
+          }
+          return await compareAndSetLifecycle(input);
+        },
+      );
+
+      provider.event = webhookEvent(
+        'delivered',
+        'event-delivered-before-cancel',
+        '2026-07-14T20:01:00Z',
+      );
+      const staleWebhook = service.ingestWebhook({
+        tenantId: TENANT,
+        payload: '{"event":"delivered-before-cancel"}',
+        signature: 'valid',
+      });
+      await webhookAtCas;
+
+      provider.request = request('cancelled');
+      await service.cancel({
+        tenantId: TENANT,
+        executionId: created.executionId,
+        reason: 'Agreement replaced concurrently',
+      });
+      releaseStaleWebhook();
+      await expect(staleWebhook).resolves.toMatchObject({ replayed: false });
+
+      await expect(
+        executions.get({ id: created.executionId }),
+      ).resolves.toMatchObject({
+        status: 'cancelled',
+        cancellationReason: 'Agreement replaced concurrently',
+      });
+      expect(
+        await executedAgreements.findByExecution(created.executionId),
+      ).toBeNull();
     });
   });
 

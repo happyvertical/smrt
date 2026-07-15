@@ -61,6 +61,21 @@ export interface ExtendAgreementExecutionInput
   warnPrior?: boolean;
 }
 
+interface PersistAgreementLifecycleInput {
+  status: AgreementExecution['status'];
+  observedAt: Date;
+  enforceEventOrder?: boolean;
+  expiresAt?: Date;
+  cancellationReason?: string;
+  lastReconciledAt?: Date;
+  completedAt?: Date;
+}
+
+interface AuditedOperationStart {
+  execution: AgreementExecution;
+  operationId: string;
+}
+
 const TERMINAL_STATUSES = new Set([
   'completed',
   'declined',
@@ -410,7 +425,7 @@ export class AgreementExecutionService {
     input: AdoptAgreementProviderRequestInput,
   ): Promise<AgreementExecutionResult> {
     this.assertTenant(input.tenantId);
-    const execution = await this.requireExecution(input.executionId);
+    let execution = await this.requireExecution(input.executionId);
     if (
       execution.providerRequestId &&
       execution.providerRequestId !== input.providerRequestId
@@ -419,11 +434,13 @@ export class AgreementExecutionService {
         `AgreementExecution ${execution.id} is already bound to a different provider request`,
       );
     }
-    const operationId = await this.beginAuditedOperation(
+    const started = await this.beginAuditedOperation(
       execution,
       'adopt',
       'operator',
     );
+    execution = started.execution;
+    const { operationId } = started;
     try {
       const request = await this.deps.provider.getRequest({
         tenantId: input.tenantId,
@@ -442,11 +459,14 @@ export class AgreementExecutionService {
           `Provider request '${request.id}' belongs to a different agreement execution`,
         );
       }
-      await this.bindProviderRequest(execution, request.id);
-      this.applyProviderState(execution, request, this.now());
-      execution.lastReconciledAt = this.now();
-      execution.lastError = '';
-      await execution.save();
+      execution = await this.bindProviderRequest(execution, request.id);
+      const observedAt = this.now();
+      execution = await this.applyProviderState(
+        execution,
+        request,
+        observedAt,
+        { lastReconciledAt: observedAt },
+      );
       await this.completeAuditedOperation(execution, operationId, 'adopt', {
         providerRequestId: request.id,
       });
@@ -467,13 +487,15 @@ export class AgreementExecutionService {
     input: AgreementExecutionOperationInput,
   ): Promise<AgreementExecutionResult> {
     this.assertTenant(input.tenantId);
-    const execution = await this.requireExecution(input.executionId);
+    let execution = await this.requireExecution(input.executionId);
     this.requireProviderRequestId(execution);
-    const operationId = await this.beginAuditedOperation(
+    const started = await this.beginAuditedOperation(
       execution,
       'reconcile',
       'system',
     );
+    execution = started.execution;
+    const { operationId } = started;
     try {
       const request = await this.deps.provider.getRequest({
         tenantId: input.tenantId,
@@ -485,10 +507,13 @@ export class AgreementExecutionService {
         input.tenantId,
         execution.providerRequestId,
       );
-      this.applyProviderState(execution, request, this.now());
-      execution.lastReconciledAt = this.now();
-      execution.lastError = '';
-      await execution.save();
+      const observedAt = this.now();
+      execution = await this.applyProviderState(
+        execution,
+        request,
+        observedAt,
+        { lastReconciledAt: observedAt },
+      );
       if (execution.status === 'completed') {
         await this.finalizeExecution(execution);
       }
@@ -514,18 +539,21 @@ export class AgreementExecutionService {
     this.assertTenant(input.tenantId);
     if (!input.reason.trim())
       throw new Error('Cancellation reason is required');
-    const execution = await this.requireExecution(input.executionId);
+    let execution = await this.requireExecution(input.executionId);
     this.requireProviderRequestId(execution);
     if (execution.status === 'cancelled') return this.result(execution, true);
     this.assertNonTerminalOperation(execution, 'cancel');
-    const operationId = await this.beginAuditedOperation(
+    const started = await this.beginAuditedOperation(
       execution,
       'cancel',
       'operator',
       { reason: input.reason },
     );
+    execution = started.execution;
+    const { operationId } = started;
     let providerResponded = false;
     try {
+      this.assertNonTerminalOperation(execution, 'cancel');
       const request = await this.deps.provider.cancelRequest({
         tenantId: input.tenantId,
         requestId: execution.providerRequestId,
@@ -538,10 +566,12 @@ export class AgreementExecutionService {
         input.tenantId,
         execution.providerRequestId,
       );
-      this.applyProviderState(execution, request, this.now());
-      execution.cancellationReason = input.reason;
-      execution.lastError = '';
-      await execution.save();
+      execution = await this.applyProviderState(
+        execution,
+        request,
+        this.now(),
+        { cancellationReason: input.reason },
+      );
       await this.completeAuditedOperation(execution, operationId, 'cancel', {
         providerStatus: request.status,
       });
@@ -563,10 +593,10 @@ export class AgreementExecutionService {
     input: ExtendAgreementExecutionInput,
   ): Promise<AgreementExecutionResult> {
     this.assertTenant(input.tenantId);
-    const execution = await this.requireExecution(input.executionId);
+    let execution = await this.requireExecution(input.executionId);
     this.requireProviderRequestId(execution);
     this.assertNonTerminalOperation(execution, 'extend expiry for');
-    const operationId = await this.beginAuditedOperation(
+    const started = await this.beginAuditedOperation(
       execution,
       'extend_expiry',
       'operator',
@@ -576,8 +606,11 @@ export class AgreementExecutionService {
         ).toISOString(),
       },
     );
+    execution = started.execution;
+    const { operationId } = started;
     let providerResponded = false;
     try {
+      this.assertNonTerminalOperation(execution, 'extend expiry for');
       const request = await this.deps.provider.extendExpiry({
         tenantId: input.tenantId,
         requestId: execution.providerRequestId,
@@ -593,9 +626,7 @@ export class AgreementExecutionService {
         input.tenantId,
         execution.providerRequestId,
       );
-      this.applyProviderState(execution, request, this.now());
-      execution.lastError = '';
-      await execution.save();
+      execution = await this.applyProviderState(execution, request, this.now());
       await this.completeAuditedOperation(
         execution,
         operationId,
@@ -636,7 +667,7 @@ export class AgreementExecutionService {
       throw new Error('Verified webhook provider does not match the adapter');
     }
 
-    const execution = await this.deps.executions.findByProviderRequest(
+    let execution = await this.deps.executions.findByProviderRequest(
       providerEvent.provider,
       providerEvent.requestId,
     );
@@ -666,24 +697,25 @@ export class AgreementExecutionService {
       payload: input.payload,
     });
 
-    if (this.shouldApplyEvent(execution, providerEvent)) {
-      execution.status = providerEvent.status;
-      execution.lastProviderEventAt = providerEvent.createdAt;
-      if (providerEvent.status === 'completed') {
-        execution.completedAt = providerEvent.createdAt;
-      }
-      execution.lastError = '';
-      await execution.save();
-    }
+    execution = await this.persistLifecycleState(execution, {
+      status: providerEvent.status,
+      observedAt: providerEvent.createdAt,
+      completedAt:
+        providerEvent.status === 'completed'
+          ? providerEvent.createdAt
+          : undefined,
+    });
 
     let executedAgreement: ExecutedAgreement | null = null;
     if (execution.status === 'completed') {
-      const operationId = await this.beginAuditedOperation(
+      const started = await this.beginAuditedOperation(
         execution,
         'finalize',
         'system',
         { providerEventId: providerEvent.id },
       );
+      execution = started.execution;
+      const { operationId } = started;
       try {
         executedAgreement = await this.finalizeExecution(
           execution,
@@ -796,10 +828,6 @@ export class AgreementExecutionService {
       metadata: execution.metadata,
     });
     await this.ensureExecutedAgreementAssociations(created.agreement);
-    execution.status = 'completed';
-    execution.completedAt = acceptedAt;
-    execution.lastError = '';
-    await execution.save();
     return created.agreement;
   }
 
@@ -984,31 +1012,76 @@ export class AgreementExecutionService {
     );
   }
 
-  private shouldApplyEvent(
-    execution: AgreementExecution,
-    event: SignatureWebhookEvent,
-  ): boolean {
-    if (
-      execution.lastProviderEventAt &&
-      event.createdAt < execution.lastProviderEventAt
-    ) {
-      return false;
-    }
-    return canAdvanceStatus(execution.status, event.status);
-  }
-
-  private applyProviderState(
+  private async applyProviderState(
     execution: AgreementExecution,
     request: SignatureRequest,
     observedAt: Date,
-  ): void {
-    if (!canAdvanceStatus(execution.status, request.status)) return;
-    execution.status = request.status;
-    execution.expiresAt = request.expiresAt ?? execution.expiresAt;
-    execution.lastProviderEventAt = observedAt;
-    if (request.status === 'completed') {
-      execution.completedAt ??= observedAt;
+    options: {
+      cancellationReason?: string;
+      lastReconciledAt?: Date;
+    } = {},
+  ): Promise<AgreementExecution> {
+    return await this.persistLifecycleState(execution, {
+      status: request.status,
+      observedAt,
+      // Authenticated request reads are authoritative even when a provider's
+      // webhook clock is ahead of the local observation clock. The CAS still
+      // preserves the greatest persisted observation timestamp.
+      enforceEventOrder: false,
+      ...(request.expiresAt ? { expiresAt: request.expiresAt } : {}),
+      ...(options.cancellationReason !== undefined
+        ? { cancellationReason: options.cancellationReason }
+        : {}),
+      ...(options.lastReconciledAt
+        ? { lastReconciledAt: options.lastReconciledAt }
+        : {}),
+      ...(request.status === 'completed' ? { completedAt: observedAt } : {}),
+    });
+  }
+
+  private async persistLifecycleState(
+    execution: AgreementExecution,
+    input: PersistAgreementLifecycleInput,
+  ): Promise<AgreementExecution> {
+    const executionId = execution.id ?? '';
+    let current = await this.requireExecution(executionId);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      if (
+        input.enforceEventOrder !== false &&
+        current.lastProviderEventAt &&
+        input.observedAt < current.lastProviderEventAt
+      ) {
+        return current;
+      }
+      if (!canAdvanceStatus(current.status, input.status)) return current;
+      const persistedObservedAt =
+        input.enforceEventOrder === false &&
+        current.lastProviderEventAt &&
+        current.lastProviderEventAt > input.observedAt
+          ? current.lastProviderEventAt
+          : input.observedAt;
+
+      const updated = await this.deps.executions.compareAndSetLifecycle({
+        tenantId: current.tenantId,
+        executionId,
+        expectedStatus: current.status,
+        status: input.status,
+        expiresAt: input.expiresAt ?? current.expiresAt,
+        cancellationReason:
+          input.cancellationReason ?? current.cancellationReason,
+        lastProviderEventAt: persistedObservedAt,
+        lastReconciledAt: input.lastReconciledAt ?? current.lastReconciledAt,
+        completedAt:
+          input.status === 'completed'
+            ? (current.completedAt ?? input.completedAt ?? input.observedAt)
+            : current.completedAt,
+      });
+      if (updated) return updated;
+      current = await this.requireExecution(executionId);
     }
+    throw new Error(
+      `AgreementExecution ${executionId}: lifecycle state remained contended; retry the operation`,
+    );
   }
 
   private assertProviderRequest(
@@ -1148,20 +1221,25 @@ export class AgreementExecutionService {
   private async bindProviderRequest(
     execution: AgreementExecution,
     providerRequestId: string,
-  ): Promise<void> {
-    if (execution.providerRequestId === providerRequestId) return;
-    const priorRequestId = execution.providerRequestId;
-    const priorRequestKey = execution.providerRequestKey;
-    execution.providerRequestId = providerRequestId;
-    try {
-      // The derived unique providerRequestKey closes the race left by the
-      // application-level availability check.
-      await execution.save();
-    } catch (error) {
-      execution.providerRequestId = priorRequestId;
-      execution.providerRequestKey = priorRequestKey;
-      throw error;
+  ): Promise<AgreementExecution> {
+    if (execution.providerRequestId === providerRequestId) return execution;
+    // The derived unique providerRequestKey closes the race left by the
+    // application-level availability check without saving stale lifecycle
+    // fields from the service snapshot.
+    const bound = await this.deps.executions.bindProviderRequest({
+      tenantId: execution.tenantId,
+      executionId: execution.id ?? '',
+      provider: execution.provider,
+      providerRequestId,
+    });
+    if (!bound) {
+      const current = await this.requireExecution(execution.id ?? '');
+      if (current.providerRequestId === providerRequestId) return current;
+      throw new Error(
+        `AgreementExecution ${execution.id}: provider request binding changed concurrently`,
+      );
     }
+    return bound;
   }
 
   private canSafelyRetryCreate(execution: AgreementExecution): boolean {
@@ -1240,24 +1318,29 @@ export class AgreementExecutionService {
     operation: string,
     origin: 'operator' | 'system',
     metadata: Record<string, unknown> = {},
-  ): Promise<string> {
-    execution.attemptCount += 1;
-    await execution.save();
+  ): Promise<AuditedOperationStart> {
+    const current = await this.deps.executions.incrementAttemptCount(
+      execution.tenantId,
+      execution.id ?? '',
+    );
     const operationId = randomUUID();
     try {
       await this.recordOperationAudit(
-        execution,
+        current,
         operationId,
         `${operation}.started`,
         origin,
-        { attemptCount: execution.attemptCount, ...metadata },
+        { attemptCount: current.attemptCount, ...metadata },
       );
     } catch (error) {
-      execution.lastError = summarizeError(error, false);
-      await execution.save();
+      await this.deps.executions.updateLastError({
+        tenantId: current.tenantId,
+        executionId: current.id ?? '',
+        lastError: summarizeError(error, false),
+      });
       throw error;
     }
-    return operationId;
+    return { execution: current, operationId };
   }
 
   private async completeAuditedOperation(
@@ -1283,12 +1366,13 @@ export class AgreementExecutionService {
     mayMutateProvider: boolean,
     providerMutationConfirmed = false,
   ): Promise<void> {
-    // The operation may have crossed a collection-level CAS boundary. Reload
-    // before writing failure state so a stale service snapshot cannot erase a
-    // newly bound provider request or evidence artifact.
-    const current = await this.requireExecution(execution.id ?? '');
-    current.lastError = summarizeError(error);
-    await current.save();
+    // Write diagnostics as a partial update so failure handling cannot erase a
+    // concurrent lifecycle, provider-request, or evidence CAS winner.
+    const current = await this.deps.executions.updateLastError({
+      tenantId: execution.tenantId,
+      executionId: execution.id ?? '',
+      lastError: summarizeError(error),
+    });
     const uncertain =
       mayMutateProvider &&
       (providerMutationConfirmed || isPotentiallyUncertain(error));

@@ -333,4 +333,53 @@ describePostgres('agreement execution evidence on PostgreSQL', () => {
       );
     });
   });
+
+  it('allows only one lifecycle writer for the same persisted snapshot', async () => {
+    const tenantId = randomUUID();
+    await withTenant({ tenantId }, async () => {
+      const observedAt = new Date('2026-07-14T20:00:00Z');
+      const execution = await executions.create({
+        tenantId,
+        provider: 'boldsign',
+        idempotencyKey: `lifecycle-${randomUUID()}`,
+        sourceKind: 'referral_agreement',
+        sourceId: randomUUID(),
+        sourceVersion: 1,
+        providerRequestId: `request-${randomUUID()}`,
+        status: 'sent',
+        lastProviderEventAt: observedAt,
+        _insertOnly: true,
+      });
+      const common = {
+        tenantId,
+        executionId: execution.id as string,
+        expectedStatus: 'sent' as const,
+        expiresAt: null,
+        cancellationReason: '',
+        lastReconciledAt: null,
+        completedAt: null,
+      };
+
+      const writers = await Promise.all([
+        executions.compareAndSetLifecycle({
+          ...common,
+          status: 'delivered',
+          lastProviderEventAt: new Date('2026-07-14T20:01:00Z'),
+        }),
+        executions.compareAndSetLifecycle({
+          ...common,
+          status: 'cancelled',
+          cancellationReason: 'concurrent cancellation',
+          lastProviderEventAt: new Date('2026-07-14T20:02:00Z'),
+        }),
+      ]);
+
+      expect(writers.filter(Boolean)).toHaveLength(1);
+      const persisted = await executions.get({ id: execution.id });
+      expect(['delivered', 'cancelled']).toContain(persisted?.status);
+      expect(writers.find((candidate) => candidate)?.status).toBe(
+        persisted?.status,
+      );
+    });
+  });
 });

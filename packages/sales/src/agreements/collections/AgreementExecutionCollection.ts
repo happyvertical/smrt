@@ -32,6 +32,31 @@ export interface FailAgreementCreateAttemptInput {
   lastError: string;
 }
 
+export interface BindAgreementProviderRequestInput {
+  tenantId: string;
+  executionId: string;
+  provider: string;
+  providerRequestId: string;
+}
+
+export interface CompareAndSetAgreementLifecycleInput {
+  tenantId: string;
+  executionId: string;
+  expectedStatus: AgreementExecutionStatus;
+  status: AgreementExecutionStatus;
+  expiresAt: Date | null;
+  cancellationReason: string;
+  lastProviderEventAt: Date;
+  lastReconciledAt: Date | null;
+  completedAt: Date | null;
+}
+
+export interface UpdateAgreementExecutionErrorInput {
+  tenantId: string;
+  executionId: string;
+  lastError: string;
+}
+
 export type AgreementEvidenceArtifactKind = 'signed_document' | 'audit_trail';
 
 export interface BindAgreementEvidenceArtifactInput {
@@ -172,6 +197,115 @@ export class AgreementExecutionCollection extends SmrtCollection<AgreementExecut
       input.operationId,
     );
     return await this.getReturnedExecution(result);
+  }
+
+  /** Bind an adopted provider request without saving a stale object snapshot. */
+  async bindProviderRequest(
+    input: BindAgreementProviderRequestInput,
+  ): Promise<AgreementExecution | null> {
+    this.assertCreateAttemptTenant(input.tenantId);
+    const providerRequestKey = `${input.tenantId}:${input.provider}:${input.providerRequestId}`;
+    const result = await this._db.query(
+      `UPDATE ${this.tableName}
+          SET provider_request_id = ?,
+              provider_request_key = ?
+        WHERE id = ?
+          AND tenant_id = ?
+          AND provider = ?
+          AND (provider_request_id IS NULL OR provider_request_id = '' OR provider_request_id = ?)
+        RETURNING id`,
+      input.providerRequestId,
+      providerRequestKey,
+      input.executionId,
+      input.tenantId,
+      input.provider,
+      input.providerRequestId,
+    );
+    return await this.getReturnedExecution(result);
+  }
+
+  /**
+   * Apply provider lifecycle state only while status still matches the
+   * caller's snapshot and the candidate observation is not older than the
+   * persisted provider event. Service retries re-read the winner before
+   * deciding whether the candidate state remains monotonic.
+   */
+  async compareAndSetLifecycle(
+    input: CompareAndSetAgreementLifecycleInput,
+  ): Promise<AgreementExecution | null> {
+    this.assertCreateAttemptTenant(input.tenantId);
+    const result = await this._db.query(
+      `UPDATE ${this.tableName}
+          SET status = ?,
+              expires_at = ?,
+              cancellation_reason = ?,
+              last_provider_event_at = ?,
+              last_reconciled_at = ?,
+              completed_at = ?,
+              last_error = ''
+        WHERE id = ?
+          AND tenant_id = ?
+          AND status = ?
+          AND (last_provider_event_at IS NULL OR last_provider_event_at <= ?)
+        RETURNING id`,
+      input.status,
+      input.expiresAt?.toISOString() ?? null,
+      input.cancellationReason,
+      input.lastProviderEventAt.toISOString(),
+      input.lastReconciledAt?.toISOString() ?? null,
+      input.completedAt?.toISOString() ?? null,
+      input.executionId,
+      input.tenantId,
+      input.expectedStatus,
+      input.lastProviderEventAt.toISOString(),
+    );
+    return await this.getReturnedExecution(result);
+  }
+
+  /** Increment audit attempts without writing any lifecycle columns. */
+  async incrementAttemptCount(
+    tenantId: string,
+    executionId: string,
+  ): Promise<AgreementExecution> {
+    this.assertCreateAttemptTenant(tenantId);
+    const result = await this._db.query(
+      `UPDATE ${this.tableName}
+          SET attempt_count = attempt_count + 1
+        WHERE id = ?
+          AND tenant_id = ?
+        RETURNING id`,
+      executionId,
+      tenantId,
+    );
+    const execution = await this.getReturnedExecution(result);
+    if (!execution) {
+      throw new Error(`AgreementExecution '${executionId}' was not found`);
+    }
+    return execution;
+  }
+
+  /** Update failure diagnostics without writing a stale lifecycle snapshot. */
+  async updateLastError(
+    input: UpdateAgreementExecutionErrorInput,
+  ): Promise<AgreementExecution> {
+    this.assertCreateAttemptTenant(input.tenantId);
+    const result = await this._db.query(
+      `UPDATE ${this.tableName}
+          SET last_error = ?
+        WHERE id = ?
+          AND tenant_id = ?
+        RETURNING id`,
+      input.lastError,
+      input.executionId,
+      input.tenantId,
+    );
+    const execution = await this.getReturnedExecution(result);
+    if (!execution) {
+      throw new Error(
+        `AgreementExecution '${input.executionId}' was not found`,
+      );
+    }
+    return execution;
   }
 
   /**
