@@ -110,6 +110,67 @@ function manifestObjectPackage(
   return separator > 0 ? qualifiedName?.slice(0, separator) : undefined;
 }
 
+interface ManifestObjectIndex {
+  byExactName: Map<string, SmartObjectDefinition>;
+  byPackageAndClass: Map<string, SmartObjectDefinition>;
+  bySimpleName: Map<string, SmartObjectDefinition>;
+}
+
+const manifestObjectIndexes = new WeakMap<
+  SmartObjectManifest['objects'],
+  ManifestObjectIndex
+>();
+
+function packageAndClassKey(packageName: string, className: string): string {
+  return `${packageName}\0${className}`;
+}
+
+function getManifestObjectIndex(
+  manifest: SmartObjectManifest,
+): ManifestObjectIndex {
+  const cached = manifestObjectIndexes.get(manifest.objects);
+  if (cached) return cached;
+
+  const entries = Object.entries(manifest.objects).sort(
+    ([leftKey, left], [rightKey, right]) =>
+      compareText(
+        left.qualifiedName || leftKey,
+        right.qualifiedName || rightKey,
+      ) || compareText(leftKey, rightKey),
+  );
+  const index: ManifestObjectIndex = {
+    byExactName: new Map(),
+    byPackageAndClass: new Map(),
+    bySimpleName: new Map(),
+  };
+
+  for (const [manifestKey, candidate] of entries) {
+    if (!index.byExactName.has(manifestKey)) {
+      index.byExactName.set(manifestKey, candidate);
+    }
+    if (
+      candidate.qualifiedName &&
+      !index.byExactName.has(candidate.qualifiedName)
+    ) {
+      index.byExactName.set(candidate.qualifiedName, candidate);
+    }
+    if (!index.bySimpleName.has(candidate.className)) {
+      index.bySimpleName.set(candidate.className, candidate);
+    }
+
+    const packageName = manifestObjectPackage(manifestKey, candidate);
+    if (packageName) {
+      const packageKey = packageAndClassKey(packageName, candidate.className);
+      if (!index.byPackageAndClass.has(packageKey)) {
+        index.byPackageAndClass.set(packageKey, candidate);
+      }
+    }
+  }
+
+  manifestObjectIndexes.set(manifest.objects, index);
+  return index;
+}
+
 /**
  * Resolve a manifest object deterministically across aggregated packages.
  *
@@ -123,36 +184,18 @@ export function findManifestObjectByName(
   name: string,
   owner?: SmartObjectDefinition,
 ): SmartObjectDefinition | undefined {
-  const entries = Object.entries(manifest.objects).sort(
-    ([leftKey, left], [rightKey, right]) =>
-      compareText(
-        left.qualifiedName || leftKey,
-        right.qualifiedName || rightKey,
-      ) || compareText(leftKey, rightKey),
-  );
+  const index = getManifestObjectIndex(manifest);
+  const exact = name.includes(':') ? index.byExactName.get(name) : undefined;
+  if (exact) return exact;
 
-  const exact = name.includes(':')
-    ? entries.find(
-        ([manifestKey, candidate]) =>
-          manifestKey === name || candidate.qualifiedName === name,
-      )
-    : undefined;
-  if (exact) return exact[1];
-
-  const candidates = entries.filter(
-    ([, candidate]) => candidate.className === name,
-  );
   const ownerPackage = owner
     ? manifestObjectPackage(undefined, owner)
     : undefined;
   const packageLocal = ownerPackage
-    ? candidates.find(
-        ([manifestKey, candidate]) =>
-          manifestObjectPackage(manifestKey, candidate) === ownerPackage,
-      )
+    ? index.byPackageAndClass.get(packageAndClassKey(ownerPackage, name))
     : undefined;
 
-  return packageLocal?.[1] || candidates[0]?.[1];
+  return packageLocal || index.bySimpleName.get(name);
 }
 
 /**
@@ -167,7 +210,8 @@ export function findManifestObjectByName(
  * untouched — the qualified `:` separator is preserved.
  *
  * Kept local to the relationship-edge path on purpose: extends-chain resolution
- * never sees a thunk, so `findByName` and the scanner stay unchanged.
+ * never sees a thunk, so `findManifestObjectByName` and the scanner stay
+ * unchanged.
  */
 function normalizeRelatedName(related: string): string {
   const thunk = related.match(/=>\s*([A-Za-z_$][\w$]*)/);
@@ -398,7 +442,8 @@ export function buildWebRelationships(
     if (!field.related) continue;
 
     // Normalize first: `@foreignKey(() => Scene)` thunks serialize as the raw
-    // "() => Scene" source, which findByName cannot match on its own.
+    // "() => Scene" source, which findManifestObjectByName cannot match on its
+    // own.
     const target = findManifestObjectByName(
       manifest,
       normalizeRelatedName(field.related),
