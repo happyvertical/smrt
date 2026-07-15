@@ -81,15 +81,17 @@ describe('smrtVitestPlugin config', () => {
     const config = plugin.config?.(userConfig as any);
 
     expect(config).toMatchObject({
-      resolve: {
-        alias: expect.arrayContaining([
-          expect.objectContaining({ find: '@happyvertical/smrt-core' }),
-        ]),
-      },
       test: {
         setupFiles: ['existing-root-setup', defaultSetupFile],
       },
     });
+    expect(
+      (config as any).resolve.alias.some(
+        (entry: { find: RegExp }) =>
+          entry.find instanceof RegExp &&
+          entry.find.test('@happyvertical/smrt-core'),
+      ),
+    ).toBe(true);
 
     expect(userConfig).toMatchObject({
       test: {
@@ -180,15 +182,17 @@ describe('smrtVitestPlugin config', () => {
     const config = plugin.config?.(userConfig as any);
 
     expect(config).toMatchObject({
-      resolve: {
-        alias: expect.arrayContaining([
-          expect.objectContaining({ find: '@happyvertical/smrt-core' }),
-        ]),
-      },
       test: {
         setupFiles: [defaultSetupFile],
       },
     });
+    expect(
+      (config as any).resolve.alias.some(
+        (entry: { find: RegExp }) =>
+          entry.find instanceof RegExp &&
+          entry.find.test('@happyvertical/smrt-core'),
+      ),
+    ).toBe(true);
 
     expect(userConfig).toMatchObject({
       test: {
@@ -201,6 +205,88 @@ describe('smrtVitestPlugin config', () => {
         ],
       },
     });
+  });
+
+  it('injects the vite 8 oxc defaults when the consumer sets none (#2017)', () => {
+    const config = smrtVitestPlugin().config?.({ test: {} } as any);
+
+    expect((config as any).oxc).toEqual({
+      decorator: { legacy: true, emitDecoratorMetadata: true },
+      tsconfig: {
+        compilerOptions: {
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true,
+        },
+      },
+      typescript: { onlyRemoveTypeImports: true },
+    });
+  });
+
+  it('never overrides consumer-configured oxc fields (#2017)', () => {
+    // Explicit decorator config: the decorator default (and its tsconfig
+    // mirror) is suppressed; the typescript default still applies.
+    const decoratorOwned = smrtVitestPlugin().config?.({
+      oxc: { decorator: { legacy: false } },
+      test: {},
+    } as any);
+    expect((decoratorOwned as any).oxc).toEqual({
+      typescript: { onlyRemoveTypeImports: true },
+    });
+
+    // Explicit onlyRemoveTypeImports: the typescript default is suppressed.
+    const typescriptOwned = smrtVitestPlugin().config?.({
+      oxc: { typescript: { onlyRemoveTypeImports: false } },
+      test: {},
+    } as any);
+    expect((typescriptOwned as any).oxc).toEqual({
+      decorator: { legacy: true, emitDecoratorMetadata: true },
+      tsconfig: {
+        compilerOptions: {
+          experimentalDecorators: true,
+          emitDecoratorMetadata: true,
+        },
+      },
+    });
+
+    // Other typescript options without the flag still receive the default
+    // (vite deep-merges, so the consumer's fields survive).
+    const typescriptPartial = smrtVitestPlugin().config?.({
+      oxc: { typescript: { allowNamespaces: true } },
+      test: {},
+    } as any);
+    expect((typescriptPartial as any).oxc).toMatchObject({
+      typescript: { onlyRemoveTypeImports: true },
+    });
+
+    // `oxc: false` disables the transform entirely — nothing is injected
+    // (undefined is dropped by vite's config merge).
+    const disabled = smrtVitestPlugin().config?.({
+      oxc: false,
+      test: {},
+    } as any);
+    expect((disabled as any).oxc).toBeUndefined();
+  });
+
+  it('drops workspace aliases rejected by aliasFilter (#2017)', () => {
+    const config = smrtVitestPlugin({
+      aliasFilter: (entry) => entry.find !== '@happyvertical/smrt-core',
+    }).config?.({ test: {} } as any);
+
+    const alias = (config as any).resolve.alias as Array<{ find: RegExp }>;
+    expect(
+      alias.some(
+        (entry) =>
+          entry.find instanceof RegExp &&
+          entry.find.test('@happyvertical/smrt-core'),
+      ),
+    ).toBe(false);
+    expect(
+      alias.some(
+        (entry) =>
+          entry.find instanceof RegExp &&
+          entry.find.test('@happyvertical/smrt-core/testing'),
+      ),
+    ).toBe(true);
   });
 
   it('registers classes from the local manifest during configResolved', async () => {

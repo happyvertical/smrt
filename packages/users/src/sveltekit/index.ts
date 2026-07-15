@@ -27,7 +27,10 @@ import '../__smrt-register__.js';
 
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
-import type { OidcProfileResolver } from '../collections/UserCollection.js';
+import type {
+  OidcProfileOwnerAuthorizer,
+  OidcProfileResolver,
+} from '../collections/UserCollection.js';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
 import {
   decodeOidcTransaction,
@@ -54,6 +57,9 @@ import {
 
 export type {
   NormalizedOidcClaims,
+  OidcProfileOwnerAuthorization,
+  OidcProfileOwnerAuthorizer,
+  OidcProfileOwnerAuthorizerContext,
   OidcProfileResolver,
   OidcProfileResolverContext,
 } from '../collections/UserCollection.js';
@@ -208,6 +214,12 @@ export interface OidcSvelteKitOptions
    * transaction and may be retried after a concurrent unique-key race.
    */
   resolveProfile?: OidcProfileResolver;
+  /**
+   * Explicitly authorize a first issuer/subject binding to a pre-provisioned
+   * canonical Profile and its existing owner. SMRT revalidates both records
+   * in the provisioning transaction before identity or session creation.
+   */
+  authorizeProfileOwner?: OidcProfileOwnerAuthorizer;
   /** Redirect target after successful callback. */
   successRedirect?: OidcStringResolver<string>;
   /** Redirect target after failed callback. If omitted, failures return 401. */
