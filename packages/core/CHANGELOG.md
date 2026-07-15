@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.40.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - harden change-feed initialization (core)
+  - isolate PostgreSQL change-feed failures (core)
+  - @happyvertical/smrt-config@0.40.5
+  - @happyvertical/smrt-types@0.40.5
+  - @happyvertical/smrt-scanner@0.40.5
+
 ## 0.40.4
 
 ### Patch Changes
