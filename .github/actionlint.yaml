@@ -1,6 +1,6 @@
 self-hosted-runner:
   labels:
-    - arc-happyvertical
+    - ci-linux-x64
     - arc-happyvertical-node
 
 config-variables: null

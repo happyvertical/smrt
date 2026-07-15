@@ -44,7 +44,7 @@ permissions:
 jobs:
   prepare-release:
     name: Prepare Release
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 20
     outputs:
       previous-version: ${{ steps.prepare.outputs.previous_version }}
@@ -222,7 +222,7 @@ jobs:
     name: Release Pack Validation (Shard ${{ matrix.shard-label }})
     needs: prepare-release
     if: needs.prepare-release.outputs.should-publish == 'true'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -285,7 +285,7 @@ jobs:
     if: |
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 45
     concurrency:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
@@ -436,7 +436,7 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
-    runs-on: ${{ vars.CI_NODE_RUNNER_ENABLED == 'true' && 'arc-happyvertical-node' || 'arc-happyvertical' }}
+    runs-on: ci-linux-x64
     timeout-minutes: 15
     permissions:
       contents: read
