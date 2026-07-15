@@ -1,24 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ChatStreamEvent, ChatStreamSession } from './chat-stream.js';
-import type {
-  ChatClientMessage,
-  ChatClientStreamFrame,
-  SmrtChatSession,
-} from './client.js';
+import type { ChatClientMessage } from './client.js';
 import { SmrtChatBackend } from './client.js';
 
-/**
- * Compile-time contract locks (enforced by `pnpm typecheck`): the client must
- * stay a strict consumer of the wire contract `chat-stream.ts` owns.
- */
-// Every frame the server can emit parses as a client frame…
-const _frameCompat = (event: ChatStreamEvent): ChatClientStreamFrame => event;
-void _frameCompat;
-// …and the client's session binding is a valid wire session.
-const _sessionCompat = (
-  session: Required<SmrtChatSession>,
-): ChatStreamSession => session;
-void _sessionCompat;
+// Compile-time contract locks against chat-stream.ts live in
+// client.contract.ts — a non-test module, because this file is excluded from
+// the typecheck program and Vitest transpiles without typechecking.
 
 let counter = 0;
 const msg = (
@@ -221,6 +207,41 @@ describe('SmrtChatBackend', () => {
     expect(capturedSignal?.aborted).toBe(true);
     expect(onError).not.toHaveBeenCalled();
     expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it('cancels the underlying stream once the turn settles', async () => {
+    // The server may keep the connection open after the turn (heartbeats,
+    // late frames); a settled client must release it, not wait for GC.
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode('data: {"type":"done"}\n\n'),
+        );
+        // stream deliberately left open
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+    );
+    await new Promise<void>((resolve, reject) => {
+      new SmrtChatBackend({
+        endpoint: '/api/chat',
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }).send([msg('user', 'hi')], {
+        onToken: () => undefined,
+        onDone: () => resolve(),
+        onError: reject,
+      });
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(cancelled).toBe(true);
   });
 
   it('passes the credentials mode and bearer token through to fetch', async () => {

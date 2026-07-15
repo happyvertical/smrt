@@ -31,8 +31,9 @@
  * `@happyvertical/animation`'s chat contract (`ChatBackend`, `ChatMessage`,
  * `ChatStreamHandlers`, `ChatSendHandle`), so an instance drops straight into
  * `createHappyChat({ backend })` without this package depending on the widget
- * library. `client.test.ts` pins the other seam: every `ChatStreamEvent` the
- * server can emit is assignable to `ChatClientStreamFrame`.
+ * library. `client.contract.ts` pins the other seam under `pnpm typecheck`:
+ * every `ChatStreamEvent` the server can emit is assignable to
+ * `ChatClientStreamFrame`.
  */
 
 /** A rendered conversation message (the widget-side shape; all fields set). */
@@ -251,12 +252,21 @@ export class SmrtChatBackend implements ChatClientBackend {
             handlers.onError(
               new Error(event.error ?? '[smrt-chat] chat stream error'),
             );
+            // The turn is settled but the server may keep sending (heartbeats,
+            // late frames) — release the connection instead of leaving the
+            // stream open until GC.
+            reader.cancel().catch(() => {
+              /* stream already closed — nothing to release */
+            });
             return;
           } else if (event.type === 'done') {
             const raw = event.message?.content ?? assembled;
             const { clean, emotion } = extractEmotion(raw);
             if (emotion) handlers.onEmotion?.(emotion);
             handlers.onDone(finalizeMessage(event.message, clean));
+            reader.cancel().catch(() => {
+              /* stream already closed — nothing to release */
+            });
             return;
           }
         }
