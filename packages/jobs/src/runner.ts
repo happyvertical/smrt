@@ -582,12 +582,14 @@ export class TaskRunner extends EventEmitter {
       let instance: SmrtObject;
 
       if (job.objectId) {
-        // Load existing object
-        instance = new ObjectClass({ db: this.db, ...agentConfig });
+        // initialize() performs the canonical hydration when the persisted ID
+        // is supplied to the constructor.
+        instance = new ObjectClass({
+          db: this.db,
+          id: job.objectId,
+          ...agentConfig,
+        });
         await instance.initialize();
-        await (
-          instance as SmrtObject & { loadFromId(id: string): Promise<void> }
-        ).loadFromId(job.objectId);
       } else {
         // Create new instance for static-like methods
         instance = new ObjectClass({ db: this.db, ...agentConfig });
