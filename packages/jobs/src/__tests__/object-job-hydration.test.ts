@@ -89,7 +89,12 @@ describe('TaskRunner object-bound job hydration (#2038)', () => {
       method: 'process',
       args: {
         suffix: 'ran',
-        _agentConfig: { agentMarker: 'resolved-config' },
+        _agentConfig: {
+          agentMarker: 'resolved-config',
+          db: ':memory:',
+          id: otherId,
+          _skipLoad: true,
+        },
       },
       maxAttempts: 1,
     });

@@ -25,7 +25,8 @@ Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), 
 3. Claim sets `status='running'`, `workerId=<incarnation key>`, heartbeat/start timestamps, and increments `attempts`
 4. Resolves class via `ObjectRegistry.getClass(objectType)`. Object-bound jobs
    pass `objectId` to the constructor and let `initialize()` perform the single
-   canonical hydration; jobs without `objectId` construct a static-like instance
+   canonical hydration. Runner-owned `db`, `id`, and hydration options cannot be
+   overridden by agent config; jobs without `objectId` construct a static-like instance
 5. **Internal args**: `_agentConfig` and `_scheduleId` stripped from args before calling method
 6. Calls the requested method on the initialized instance
 7. Terminal/retry writes are **conditional** (`WHERE worker_id=? AND status='running'`) so a recovered row is never stomped

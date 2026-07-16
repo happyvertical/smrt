@@ -582,12 +582,20 @@ export class TaskRunner extends EventEmitter {
       let instance: SmrtObject;
 
       if (job.objectId) {
+        // Agent configuration belongs to the registered class, but it must not
+        // override the runner-controlled persistence target or disable the
+        // canonical hydration.
+        const objectAgentConfig = { ...agentConfig };
+        delete objectAgentConfig.db;
+        delete objectAgentConfig.id;
+        delete objectAgentConfig._skipLoad;
+
         // initialize() performs the canonical hydration when the persisted ID
         // is supplied to the constructor.
         instance = new ObjectClass({
           db: this.db,
           id: job.objectId,
-          ...agentConfig,
+          ...objectAgentConfig,
         });
         await instance.initialize();
       } else {
