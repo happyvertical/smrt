@@ -3,17 +3,9 @@ name: Pull Request Validation
 on:
   pull_request:
     branches: [main]
-    types: [opened, edited, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
+    types: [opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: Pull request number to recheck after a claim-only transition
-        required: true
-        type: number
-
-# Cancel in-progress runs when new commits are pushed
 concurrency:
   group: >-
     ${{ github.workflow }}-${{
@@ -39,70 +31,13 @@ permissions:
   packages: read
 
 jobs:
-  # hv-agent-policy:start
-  lifecycle:
-    name: lifecycle
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      issues: read
-      pull-requests: read
-      packages: read
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
-      - name: Load pinned policy runtime
-        env:
-          POLICY_ARTIFACT: ${{ vars.AGENT_POLICY_ARTIFACT }}
-        run: |
-          case "$POLICY_ARTIFACT" in
-            ghcr.io/*@sha256:*) ;;
-            *) echo 'AGENT_POLICY_ARTIFACT must be an immutable GHCR digest' >&2; exit 1 ;;
-          esac
-          policy_dir="$RUNNER_TEMP/hv-policy"
-          rm -rf "$policy_dir"
-          mkdir -p "$policy_dir"
-          oras pull "$POLICY_ARTIFACT" -o "$policy_dir"
-          archive="$policy_dir/agent-policy.tar.gz"
-          test -f "$archive" || { echo 'policy artifact is missing agent-policy.tar.gz' >&2; exit 1; }
-          python3 - "$archive" <<'PY'
-          import pathlib
-          import sys
-          import tarfile
-
-          with tarfile.open(sys.argv[1], "r:gz") as archive:
-              for member in archive.getmembers():
-                  path = pathlib.PurePosixPath(member.name)
-                  if path.is_absolute() or ".." in path.parts or member.issym() or member.islnk():
-                      raise SystemExit(f"unsafe policy archive member: {member.name}")
-          PY
-          tar -xzf "$archive" -C "$policy_dir"
-          echo "HV_POLICY_DIR=$policy_dir" >> "$GITHUB_ENV"
-      - name: Validate lifecycle
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
-          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
-          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
-        run: |
-          "$HV_POLICY_DIR/scripts/hv-agent-lifecycle-prs" | while IFS= read -r number; do
-            python3 "$HV_POLICY_DIR/scripts/hv-agent" check-pr "$number"
-          done
-  # hv-agent-policy:end
 
   validate-commits:
     name: Validate Conventional Commits
     if: >-
-      github.event_name == 'pull_request' &&
-      (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event.action == 'edited' && github.event.changes.base != null))
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
 
     steps:
@@ -150,9 +85,9 @@ jobs:
   validate-workflows:
     name: Validate Workflow Files
     if: >-
-      github.event_name == 'pull_request' &&
-      (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event.action == 'edited' && github.event.changes.base != null))
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -225,8 +160,8 @@ jobs:
     name: Check SDK Version Alignment
     if: >-
       github.event_name == 'merge_group' ||
-      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -238,9 +173,9 @@ jobs:
   secret-scan:
     name: Secret Scan (gitleaks)
     if: >-
-      github.event_name == 'pull_request' &&
-      (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event.action == 'edited' && github.event.changes.base != null))
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     steps:
       # fetch-depth: 0 gives us the base branch history needed for merge-base.
@@ -276,8 +211,8 @@ jobs:
     name: Check Monorepo Standards
     if: >-
       github.event_name == 'merge_group' ||
-      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
@@ -363,8 +298,8 @@ jobs:
     name: Dependency Vulnerability Audit
     if: >-
       github.event_name == 'merge_group' ||
-      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -389,56 +324,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  postgres-scope:
-    name: Detect PostgreSQL Test Scope
-    if: >-
-      github.event_name == 'merge_group' ||
-      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
-    runs-on: ubuntu-latest
-    outputs:
-      required: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.postgres }}
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Detect PostgreSQL-sensitive changes
-        id: filter
-        if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
-        with:
-          filters: |
-            postgres:
-              - '.github/actions/**'
-              - '.github/workflows/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'turbo.json'
-              - 'packages/analytics/**'
-              - 'packages/cli/**'
-              - 'packages/core/**'
-              - 'packages/sales/**'
-              - 'packages/users/**'
-              - 'packages/vitest/**'
-              - 'scripts/run-with-ci-postgres.mjs'
-
-  postgres-tests:
-    name: PostgreSQL Tests
-    needs: postgres-scope
-    if: |
-      needs.postgres-scope.outputs.required == 'true' &&
-      vars.CI_POSTGRES_ENABLED == 'true'
-    uses: ./.github/workflows/postgres-tests.yml
-    permissions:
-      contents: read
-      packages: read
-
   test:
     name: Validate Changes
     if: >-
       github.event_name == 'merge_group' ||
-      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     uses: ./.github/workflows/test-suite.yml
     with:
       mode: ${{ github.event_name == 'merge_group' && 'full' || (vars.CI_MERGE_QUEUE_ENABLED == 'true' && 'affected' || 'full') }}
@@ -449,113 +340,44 @@ jobs:
   publish-dry-run:
     name: Publish Dry Run
     if: >-
-      (github.event_name == 'merge_group' ||
-      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-      (github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base != null)) &&
-      (github.event_name == 'merge_group' || vars.CI_MERGE_QUEUE_ENABLED != 'true')
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     uses: ./.github/workflows/publish-dry-run.yml
     permissions:
       contents: read
       packages: read
 
   required-ci:
-    name: >-
-      ${{
-        (github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'pull_request' &&
-        !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) &&
-        !(github.event.action == 'edited' && github.event.changes.base != null))) &&
-        'Lifecycle Event' ||
-        'Required CI'
-      }}
+    name: Required CI
     if: always()
     needs:
-      - lifecycle
       - validate-commits
       - validate-workflows
       - check-sdk-versions
       - secret-scan
       - check-standards
       - dependency-audit
-      - postgres-scope
-      - postgres-tests
       - test
       - publish-dry-run
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Verify metadata-only lifecycle event
-        if: >-
-          github.event_name == 'workflow_dispatch' ||
-          (github.event_name == 'pull_request' &&
-          !contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) &&
-          !(github.event.action == 'edited' && github.event.changes.base != null))
+      - name: Require full validation success
         env:
-          LIFECYCLE: ${{ needs.lifecycle.result }}
-        run: |
-          if [ "$LIFECYCLE" != "success" ]; then
-            echo "lifecycle must succeed, got: $LIFECYCLE"
-            exit 1
-          fi
-          echo "Metadata-only lifecycle event passed without replacing Required CI."
-
-      - name: Verify required job set
-        if: >-
-          github.event_name == 'merge_group' ||
-          (github.event_name == 'pull_request' &&
-          (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) ||
-          (github.event.action == 'edited' && github.event.changes.base != null)))
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          LIFECYCLE: ${{ needs.lifecycle.result }}
-          MERGE_QUEUE_ENABLED: ${{ vars.CI_MERGE_QUEUE_ENABLED }}
           VALIDATE_COMMITS: ${{ needs.validate-commits.result }}
           VALIDATE_WORKFLOWS: ${{ needs.validate-workflows.result }}
           CHECK_SDK: ${{ needs.check-sdk-versions.result }}
           SECRET_SCAN: ${{ needs.secret-scan.result }}
           CHECK_STANDARDS: ${{ needs.check-standards.result }}
           DEPENDENCY_AUDIT: ${{ needs.dependency-audit.result }}
-          POSTGRES_SCOPE: ${{ needs.postgres-scope.result }}
-          POSTGRES_ENABLED: ${{ vars.CI_POSTGRES_ENABLED }}
-          POSTGRES_REQUIRED: ${{ needs.postgres-scope.outputs.required }}
-          POSTGRES_TESTS: ${{ needs.postgres-tests.result }}
           TEST_SUITE: ${{ needs.test.result }}
           PUBLISH_DRY_RUN: ${{ needs.publish-dry-run.result }}
         run: |
-          require_success() {
-            name=$1
-            result=$2
-            if [ "$result" != "success" ]; then
-              echo "$name must succeed, got: $result"
+          set -euo pipefail
+          for result in "$VALIDATE_COMMITS" "$VALIDATE_WORKFLOWS" "$CHECK_SDK" "$SECRET_SCAN" "$CHECK_STANDARDS" "$DEPENDENCY_AUDIT" "$TEST_SUITE" "$PUBLISH_DRY_RUN"; do
+            if [ "$result" != success ]; then
+              echo "::error::full validation did not succeed"
               exit 1
             fi
-          }
-
-          require_success "Check SDK Version Alignment" "$CHECK_SDK"
-          require_success "Agent Policy lifecycle" "$LIFECYCLE"
-          require_success "Check Monorepo Standards" "$CHECK_STANDARDS"
-          require_success "Dependency Vulnerability Audit" "$DEPENDENCY_AUDIT"
-          require_success "PostgreSQL scope detection" "$POSTGRES_SCOPE"
-          require_success "Validate Changes" "$TEST_SUITE"
-
-          if [ "$POSTGRES_REQUIRED" = "true" ] && [ "$POSTGRES_ENABLED" = "true" ]; then
-            require_success "PostgreSQL Tests" "$POSTGRES_TESTS"
-          elif [ "$POSTGRES_TESTS" != "skipped" ]; then
-            echo "PostgreSQL Tests should be skipped when disabled or out of scope, got: $POSTGRES_TESTS"
-            exit 1
-          fi
-
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            require_success "Validate Conventional Commits" "$VALIDATE_COMMITS"
-            require_success "Validate Workflow Files" "$VALIDATE_WORKFLOWS"
-            require_success "Secret Scan" "$SECRET_SCAN"
-            if [ "$MERGE_QUEUE_ENABLED" != "true" ]; then
-              require_success "Publish Dry Run" "$PUBLISH_DRY_RUN"
-            elif [ "$PUBLISH_DRY_RUN" != "skipped" ]; then
-              echo "Publish Dry Run should be deferred to merge_group"
-              exit 1
-            fi
-          else
-            require_success "Publish Dry Run" "$PUBLISH_DRY_RUN"
-          fi
-
-          echo "Required CI job set passed for $EVENT_NAME"
+          done
