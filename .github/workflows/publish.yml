@@ -221,7 +221,6 @@ jobs:
           path: publish-release-workspace.tar
 
   validate-release-shards:
-    name: Release Pack Validation (Shard ${{ matrix.shard-label }})
     needs: prepare-release
     if: needs.prepare-release.outputs.should-publish == 'true'
     runs-on: ci-linux-x64

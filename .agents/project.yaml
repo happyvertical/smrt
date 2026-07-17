@@ -15,7 +15,8 @@
     "dispatch": {
       "claude": "dispatch: claude",
       "codex": "dispatch: codex",
-      "hermes": "dispatch: hermes"
+      "hermes": "dispatch: hermes",
+      "zcode": "dispatch: zcode"
     }
   },
   "memory": {
@@ -36,12 +37,13 @@
       ".agents/skills"
     ]
   },
-  "runtime": {
-    "agent_policy_workflow": ".github/workflows/on-pull-request.yml"
-  },
   "github": {
     "required_status_checks": [
       "Required CI"
     ]
+  },
+  "runtime": {
+    "agent_validation_workflow": ".github/workflows/on-pull-request.yml",
+    "agent_lifecycle_stage": "compatibility"
   }
 }

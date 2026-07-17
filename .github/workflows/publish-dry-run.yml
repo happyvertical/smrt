@@ -132,7 +132,6 @@ jobs:
           path: publish-dry-run-workspace.tar
 
   validate-publish-shards:
-    name: Pack Validation (Shard ${{ matrix.shard-label }})
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
     runs-on: ci-linux-x64
