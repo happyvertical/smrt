@@ -27,13 +27,19 @@ export {
 export { ReferralCollection } from './collections/ReferralCollection.js';
 export {
   type CreateReferralLinkInput,
+  DEFAULT_REFERRAL_CLICK_EVIDENCE_MAX_BYTES,
   generateReferralCode,
   MAX_CODE_GENERATION_ATTEMPTS,
+  MAX_REFERRAL_CLICK_IDEMPOTENCY_KEY_BYTES,
   REFERRAL_CODE_ALPHABET,
   REFERRAL_CODE_LENGTH,
   type RecordClickInput,
   type RecordClickRefusal,
   type RecordClickResult,
+  ReferralClickReplayConflictError,
+  type ReferralClickReplayMismatchField,
+  ReferralClickValidationError,
+  type ReferralClickValidationReason,
   ReferralLinkCollection,
 } from './collections/ReferralLinkCollection.js';
 export { ReferralProgramCollection } from './collections/ReferralProgramCollection.js';
