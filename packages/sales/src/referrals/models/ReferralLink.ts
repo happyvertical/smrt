@@ -36,8 +36,9 @@ export function assertHttpTargetUrl(targetUrl: string): void {
  * Codes are minted by `ReferralLinkCollection.createWithUniqueCode()` —
  * crypto-random, 10 lowercase-alphanumeric characters, collision-checked
  * with a capped retry loop. Click traffic lands through
- * `ReferralLinkCollection.recordClick()`, which increments {@link clickCount}
- * and writes an immutable `ReferralTouch` evidence row; disabled links
+ * `ReferralLinkCollection.recordClick()`, which atomically increments
+ * {@link clickCount} and writes one immutable, replay-keyed `ReferralTouch`
+ * evidence row after enforcing the final UTF-8 evidence bound; disabled links
  * refuse clicks.
  */
 @TenantScoped({ mode: 'optional' })

@@ -9,6 +9,54 @@ sidebar_label: "Sales"
 `@happyvertical/smrt-sales` exposes CRM, referrals, commissions, Svelte views,
 and a provider-neutral agreement execution module.
 
+## Atomic referral clicks
+
+Use the public `ReferralLinkCollection.recordClick()` boundary for link-click
+intake. Do not create `ReferralTouch` rows or update `referral_links` directly.
+The method resolves the visible tenant-owned link, claims a private replay
+fence, creates the immutable touch, and increments `clickCount` in one database
+transaction:
+
+```ts
+const result = await links.recordClick({
+  code,
+  idempotencyKey: requestId, // reuse this exact value for every retry
+  evidence: { userAgentHash, referrer },
+  maxEvidenceBytes: 4096, // optional; 4096 is the default
+});
+```
+
+On the first successful call, `result.replayed` is `false`. An exact retry
+returns the same touch with `replayed: true` and does not increment the counter
+again. The returned link is freshly loaded, so its counter may also include
+other independently keyed clicks. Later edits to mutable link fields such as
+`targetUrl` do not invalidate an exact replay: replay comparison uses the
+immutable operation/touch snapshot, the returned link reflects its current
+state, and the returned touch retains the original persisted evidence.
+Reusing the key with another code/link,
+tenant, attribution subject, explicitly supplied occurrence time, or caller
+evidence throws `ReferralClickReplayConflictError`; its `mismatches` field
+names the conflicting intent fields. Replay keys are exact, non-empty strings
+of well-formed Unicode and at most 256 UTF-8 bytes. They are globally fenced
+while the associated link, touch, and operation remain tenant-filtered; a
+foreign-tenant collision reveals no foreign payload. `maxEvidenceBytes` is a
+creation-time guard: an already-committed exact replay remains successful if a
+later invocation supplies a different limit.
+
+For source compatibility, callers may omit `idempotencyKey`. Sales then
+generates a one-shot UUID and returns it as `result.idempotencyKey`, but a later
+independent call cannot be recognized as its replay. Retry-capable transports
+should always supply their own stable key.
+
+Sales canonicalizes JSON evidence and then overwrites the package-owned
+`code`, `linkId`, and `targetUrl` fields. It measures the UTF-8 bytes of that
+exact final JSON string and rejects an over-limit call with
+`ReferralClickValidationError` (`reason: 'evidence_too_large'`, with
+`actualBytes` and `maxBytes`) before any touch, counter, or replay fence commits.
+Character counts and caller-only JSON sizes are not equivalent, especially for
+multibyte URLs or evidence. Schema migration must include the private
+`referral_click_operations` table before using this contract.
+
 ## Agreement execution
 
 Use `@happyvertical/smrt-sales/agreements` with an injected

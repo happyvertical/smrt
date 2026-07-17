@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ReferralCollection } from '../collections/ReferralCollection.js';
 // Side-effect import: fire every model's decorators so ObjectRegistry
 // carries the full @smrt() config (api/mcp/cli/conflictColumns) for all
-// nine classes, not just the ones this file references.
+// public classes and the private click-operation fence.
 import '../index.js';
 
 describe('Referrals schema and generation surfaces', () => {
@@ -53,6 +53,13 @@ describe('Referrals schema and generation surfaces', () => {
       if (!link) throw new Error('expected ReferralLink schema');
       expect(link.tableName).toBe('referral_links');
       expect(link.columns.click_count.type).toBe('INTEGER');
+
+      const clickOperation = ObjectRegistry.getSchema('ReferralClickOperation');
+      if (!clickOperation)
+        throw new Error('expected ReferralClickOperation schema');
+      expect(clickOperation.tableName).toBe('referral_click_operations');
+      expect(clickOperation.columns.link_id.type).toBe('UUID');
+      expect(clickOperation.columns.touch_id.type).toBe('UUID');
 
       const snapshot = ObjectRegistry.getSchema('ReferralTermSnapshot');
       if (!snapshot) throw new Error('expected ReferralTermSnapshot schema');
@@ -107,6 +114,14 @@ describe('Referrals schema and generation surfaces', () => {
         }
         expect(api.include).not.toContain('create');
       }
+    });
+
+    it('keeps the click replay fence completely private', () => {
+      expect(ObjectRegistry.getConfig('ReferralClickOperation')).toMatchObject({
+        api: false,
+        mcp: false,
+        cli: false,
+      });
     });
 
     it('never exposes delete on any referrals model', () => {

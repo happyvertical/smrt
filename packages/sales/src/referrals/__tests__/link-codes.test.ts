@@ -11,8 +11,10 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  DEFAULT_REFERRAL_CLICK_EVIDENCE_MAX_BYTES,
   generateReferralCode,
   MAX_CODE_GENERATION_ATTEMPTS,
+  type ReferralClickReplayConflictError,
   ReferralLinkCollection,
 } from '../collections/ReferralLinkCollection.js';
 import { ReferralProgramCollection } from '../collections/ReferralProgramCollection.js';
@@ -127,6 +129,10 @@ describe('ReferralLink codes', () => {
       evidence: { userAgentHash: 'ua-1' },
     });
     expect(first.refused).toBeUndefined();
+    expect(first.replayed).toBe(false);
+    expect(first.idempotencyKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
     expect(first.link?.clickCount).toBe(1);
     expect(first.touch?.kind).toBe('click');
     expect(first.touch?.referrerId).toBe(referrerId);
@@ -161,6 +167,150 @@ describe('ReferralLink codes', () => {
     expect(identified.touch?.subjectKind).toBe('lead');
     expect(identified.touch?.subjectId).toBe('lead-123');
     expect(await touches.findBySubject('lead', 'lead-123')).toHaveLength(1);
+  });
+
+  it('returns one touch and increment for an exact keyed replay and conflicts on changed intent', async () => {
+    const link = await links.createWithUniqueCode({
+      referrerId,
+      programId,
+      targetUrl: 'https://example.test/replay',
+    });
+    const other = await links.createWithUniqueCode({ referrerId, programId });
+    const occurredAt = new Date('2026-07-17T12:34:56.000Z');
+    const idempotencyKey = 'edge-request-2055';
+    const first = await links.recordClick({
+      code: link.code,
+      idempotencyKey,
+      occurredAt,
+      subjectKind: 'lead',
+      subjectId: 'lead-2055',
+      evidence: { nested: { b: 2, a: 1 }, source: 'edge' },
+    });
+    expect(first.touch?.occurredAt.toISOString()).toBe(
+      occurredAt.toISOString(),
+    );
+    if (!first.link) throw new Error('Expected committed referral link');
+    first.link.targetUrl = 'https://example.test/replay-edited';
+    await first.link.save();
+    const replay = await links.recordClick({
+      code: link.code.toUpperCase(),
+      idempotencyKey,
+      occurredAt,
+      subjectKind: 'lead',
+      subjectId: 'lead-2055',
+      evidence: { source: 'edge', nested: { a: 1, b: 2 } },
+      // A committed exact replay remains successful even if a later caller
+      // supplies a lower creation-time evidence ceiling.
+      maxEvidenceBytes: 1,
+    });
+
+    expect(first.replayed).toBe(false);
+    expect(replay.replayed).toBe(true);
+    expect(replay.touch?.id).toBe(first.touch?.id);
+    expect(replay.link?.clickCount).toBe(1);
+    expect(replay.link?.targetUrl).toBe('https://example.test/replay-edited');
+    expect(replay.touch?.getEvidence().targetUrl).toBe(
+      'https://example.test/replay',
+    );
+    expect(await touches.findByReferrer(referrerId)).toHaveLength(1);
+
+    await expect(
+      links.recordClick({
+        code: link.code,
+        idempotencyKey,
+        occurredAt,
+        subjectKind: 'lead',
+        subjectId: 'lead-2055',
+        evidence: { source: 'changed' },
+      }),
+    ).rejects.toMatchObject<Partial<ReferralClickReplayConflictError>>({
+      code: 'REFERRAL_CLICK_REPLAY_CONFLICT',
+      mismatches: expect.arrayContaining(['evidence']),
+    });
+    await expect(
+      links.recordClick({ code: other.code, idempotencyKey }),
+    ).rejects.toMatchObject<Partial<ReferralClickReplayConflictError>>({
+      code: 'REFERRAL_CLICK_REPLAY_CONFLICT',
+      mismatches: expect.arrayContaining(['code']),
+    });
+    expect((await links.get({ id: link.id }))?.clickCount).toBe(1);
+    expect((await links.get({ id: other.id }))?.clickCount).toBe(0);
+  });
+
+  it('rejects malformed Unicode replay keys instead of aliasing their UTF-8 hashes', async () => {
+    const link = await links.createWithUniqueCode({ referrerId, programId });
+    for (const idempotencyKey of ['\ud800', '\ud801', '\udc00']) {
+      await expect(
+        links.recordClick({ code: link.code, idempotencyKey }),
+      ).rejects.toMatchObject({
+        code: 'REFERRAL_CLICK_VALIDATION_ERROR',
+        reason: 'invalid_idempotency_key',
+      });
+    }
+
+    const valid = await links.recordClick({
+      code: link.code,
+      idempotencyKey: '�',
+    });
+    expect(valid.replayed).toBe(false);
+    expect(valid.link?.clickCount).toBe(1);
+  });
+
+  it('bounds the exact final UTF-8 evidence envelope, including Sales-owned multibyte fields', async () => {
+    const link = await links.createWithUniqueCode({
+      referrerId,
+      programId,
+      targetUrl: 'https://example.test/café/☕',
+    });
+    const note = 'ééé';
+    const exactEvidence = JSON.stringify({
+      code: link.code,
+      linkId: link.id,
+      note,
+      targetUrl: link.targetUrl,
+    });
+    const exactBytes = Buffer.byteLength(exactEvidence, 'utf8');
+
+    const exact = await links.recordClick({
+      code: link.code,
+      idempotencyKey: 'utf8-exact-boundary',
+      evidence: { note },
+      maxEvidenceBytes: exactBytes,
+    });
+    expect(exact.touch?.evidence).toBe(exactEvidence);
+    expect(Buffer.byteLength(exact.touch?.evidence ?? '', 'utf8')).toBe(
+      exactBytes,
+    );
+
+    await expect(
+      links.recordClick({
+        code: link.code,
+        idempotencyKey: 'utf8-over-boundary',
+        evidence: { note: `${note}é` },
+        maxEvidenceBytes: exactBytes,
+      }),
+    ).rejects.toMatchObject({
+      code: 'REFERRAL_CLICK_VALIDATION_ERROR',
+      reason: 'evidence_too_large',
+      details: {
+        maxBytes: exactBytes,
+        actualBytes: exactBytes + 2,
+      },
+    });
+
+    const callerOnlyBytes = Buffer.byteLength(JSON.stringify({ note }), 'utf8');
+    await expect(
+      links.recordClick({
+        code: link.code,
+        idempotencyKey: 'caller-only-is-not-the-envelope',
+        evidence: { note },
+        maxEvidenceBytes: callerOnlyBytes,
+      }),
+    ).rejects.toMatchObject({ reason: 'evidence_too_large' });
+    expect(callerOnlyBytes).toBeLessThan(exactBytes);
+    expect(DEFAULT_REFERRAL_CLICK_EVIDENCE_MAX_BYTES).toBe(4096);
+    expect((await links.get({ id: link.id }))?.clickCount).toBe(1);
+    expect(await touches.findByReferrer(referrerId)).toHaveLength(1);
   });
 
   it('rejects taking over an existing code on any write path (codex P1)', async () => {
