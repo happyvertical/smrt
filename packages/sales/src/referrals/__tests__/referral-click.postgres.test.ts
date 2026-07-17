@@ -106,6 +106,9 @@ describePostgres('ReferralLinkCollection.recordClick on PostgreSQL', () => {
         evidence: { source: 'postgres', nested: { b: 2, a: 1 } },
       }),
     );
+    if (!first.link) throw new Error('Expected committed referral link');
+    first.link.targetUrl = 'https://example.test/edited-after-click';
+    await first.link.save();
     const replay = await withTenant({ tenantId }, () =>
       links.recordClick({
         code: link.code.toUpperCase(),
@@ -121,6 +124,12 @@ describePostgres('ReferralLinkCollection.recordClick on PostgreSQL', () => {
     expect(replay.replayed).toBe(true);
     expect(replay.touch?.id).toBe(first.touch?.id);
     expect(replay.link?.clickCount).toBe(1);
+    expect(replay.link?.targetUrl).toBe(
+      'https://example.test/edited-after-click',
+    );
+    expect(replay.touch?.getEvidence().targetUrl).toBe(
+      'https://example.test/referral',
+    );
     expect((first.link as unknown as { db: DatabaseInterface }).db).toBe(db);
     expect((first.touch as unknown as { db: DatabaseInterface }).db).toBe(db);
     expect((replay.link as unknown as { db: DatabaseInterface }).db).toBe(db);

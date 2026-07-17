@@ -189,6 +189,9 @@ describe('ReferralLink codes', () => {
     expect(first.touch?.occurredAt.toISOString()).toBe(
       occurredAt.toISOString(),
     );
+    if (!first.link) throw new Error('Expected committed referral link');
+    first.link.targetUrl = 'https://example.test/replay-edited';
+    await first.link.save();
     const replay = await links.recordClick({
       code: link.code.toUpperCase(),
       idempotencyKey,
@@ -205,6 +208,10 @@ describe('ReferralLink codes', () => {
     expect(replay.replayed).toBe(true);
     expect(replay.touch?.id).toBe(first.touch?.id);
     expect(replay.link?.clickCount).toBe(1);
+    expect(replay.link?.targetUrl).toBe('https://example.test/replay-edited');
+    expect(replay.touch?.getEvidence().targetUrl).toBe(
+      'https://example.test/replay',
+    );
     expect(await touches.findByReferrer(referrerId)).toHaveLength(1);
 
     await expect(

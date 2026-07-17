@@ -29,7 +29,11 @@ const result = await links.recordClick({
 On the first successful call, `result.replayed` is `false`. An exact retry
 returns the same touch with `replayed: true` and does not increment the counter
 again. The returned link is freshly loaded, so its counter may also include
-other independently keyed clicks. Reusing the key with another code/link,
+other independently keyed clicks. Later edits to mutable link fields such as
+`targetUrl` do not invalidate an exact replay: replay comparison uses the
+immutable operation/touch snapshot, the returned link reflects its current
+state, and the returned touch retains the original persisted evidence.
+Reusing the key with another code/link,
 tenant, attribution subject, explicitly supplied occurrence time, or caller
 evidence throws `ReferralClickReplayConflictError`; its `mismatches` field
 names the conflicting intent fields. Replay keys are exact, non-empty strings

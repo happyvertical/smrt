@@ -484,14 +484,7 @@ export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
       );
     }
 
-    const intent = buildClickIntent(link, request);
-    const mismatches = collectReplayMismatches(
-      operation,
-      link,
-      touch,
-      request,
-      intent,
-    );
+    const mismatches = collectReplayMismatches(operation, link, touch, request);
     if (mismatches.length > 0) {
       throw new ReferralClickReplayConflictError(
         request.idempotencyKey,
@@ -634,21 +627,16 @@ function collectReplayMismatches(
   link: ReferralLink,
   touch: ReferralTouch,
   request: CanonicalClickRequest,
-  intent: ClickIntent,
 ): ReferralClickReplayMismatchField[] {
   const mismatches = new Set<ReferralClickReplayMismatchField>();
-  if (request.normalizedCode !== link.code || touch.code !== link.code)
-    mismatches.add('code');
+  if (request.normalizedCode !== touch.code) mismatches.add('code');
   if (
     operation.linkId !== link.id ||
     touch.linkId !== link.id ||
     operation.touchId !== touch.id
   )
     mismatches.add('linkId');
-  if (operation.tenantId !== link.tenantId || touch.tenantId !== link.tenantId)
-    mismatches.add('tenantId');
-  if (touch.referrerId !== link.referrerId) mismatches.add('referrerId');
-  if (touch.programId !== link.programId) mismatches.add('programId');
+  if (operation.tenantId !== touch.tenantId) mismatches.add('tenantId');
   if (touch.subjectKind !== request.subjectKind) mismatches.add('subjectKind');
   if (touch.subjectId !== request.subjectId) mismatches.add('subjectId');
   if (
@@ -658,16 +646,48 @@ function collectReplayMismatches(
     mismatches.add('occurredAt');
   if (operation.callerEvidenceHash !== request.callerEvidenceHash)
     mismatches.add('evidence');
-  if (touch.evidence !== intent.finalEvidence) {
-    const persisted = touch.getEvidence();
-    if (persisted.targetUrl !== link.targetUrl) mismatches.add('targetUrl');
-    if (persisted.code !== link.code) mismatches.add('code');
-    if (persisted.linkId !== link.id) mismatches.add('linkId');
-    if (mismatches.size === 0) mismatches.add('evidence');
-  }
-  if (operation.intentHash !== intent.intentHash && mismatches.size === 0)
+  const persisted = touch.getEvidence();
+  if (persisted.code !== touch.code) mismatches.add('code');
+  if (persisted.linkId !== touch.linkId) mismatches.add('linkId');
+  if (
+    operation.intentHash !==
+      hashPersistedClickIntent(operation, touch, persisted.targetUrl) &&
+    mismatches.size === 0
+  )
     mismatches.add('intent');
   return [...mismatches];
+}
+
+/**
+ * Rebuild the original intent exclusively from immutable operation/touch
+ * state. Mutable ReferralLink fields must not turn an exact committed retry
+ * into a conflict after the link is edited.
+ */
+function hashPersistedClickIntent(
+  operation: {
+    callerEvidenceHash: string;
+    requestedOccurredAt: string;
+  },
+  touch: ReferralTouch,
+  targetUrl: unknown,
+): string {
+  return hashText(
+    stableJson({
+      tenantId: touch.tenantId,
+      linkId: touch.linkId,
+      code: touch.code,
+      targetUrl,
+      referrerId: touch.referrerId,
+      programId: touch.programId,
+      subjectKind: touch.subjectKind,
+      subjectId: touch.subjectId,
+      requestedOccurredAt: normalizePersistedInstant(
+        operation.requestedOccurredAt,
+      ),
+      callerEvidenceHash: operation.callerEvidenceHash,
+      finalEvidence: touch.evidence,
+    }),
+  );
 }
 
 function assertEvidenceBound(evidence: string, maxBytes: number): void {
