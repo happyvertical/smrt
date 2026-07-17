@@ -2,7 +2,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
-import { requireTenantId } from '@happyvertical/smrt-tenancy';
+import {
+  requireTenantId,
+  TenantContextError,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustmentCollection.js';
 import { CommissionAdjustmentOperationCollection } from '../collections/CommissionAdjustmentOperationCollection.js';
@@ -255,12 +258,23 @@ export class CommissionAdjustmentService {
       currency,
       reason,
       createdByProfileId: input.createdByProfileId.toLowerCase(),
-      metadata: this.canonicalMetadata(input.metadata ?? {}),
+      metadata: this.canonicalMetadata(
+        input.metadata === undefined ? {} : input.metadata,
+      ),
     };
   }
 
   private assertTenant(tenantId: string): void {
-    const activeTenantId = requireTenantId();
+    let activeTenantId: string;
+    try {
+      activeTenantId = requireTenantId();
+    } catch (error) {
+      if (!(error instanceof TenantContextError)) throw error;
+      throw new CommissionAdjustmentValidationError(
+        'tenant_context_mismatch',
+        'Commission adjustment creation requires an active tenant context',
+      );
+    }
     if (
       activeTenantId !== activeTenantId.toLowerCase() ||
       activeTenantId !== tenantId
@@ -364,6 +378,9 @@ export class CommissionAdjustmentService {
 
   private canonicalMetadata(metadata: Record<string, unknown>): string {
     try {
+      if (!isPlainJsonObject(metadata)) {
+        throw new TypeError('metadata must be a plain JSON object');
+      }
       return stableJson(metadata);
     } catch (error) {
       throw new CommissionAdjustmentValidationError(
@@ -426,6 +443,14 @@ function canonicalizePersistedJson(value: string): string {
 
 function stableJson(value: unknown): string {
   return JSON.stringify(sortJsonValue(value, new Set<object>()));
+}
+
+function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function sortJsonValue(value: unknown, ancestors: Set<object>): unknown {

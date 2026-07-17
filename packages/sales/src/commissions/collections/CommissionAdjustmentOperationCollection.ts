@@ -22,7 +22,18 @@ export class CommissionAdjustmentOperationCollection extends SmrtCollection<Comm
   async findByOperationId(
     operationId: string,
   ): Promise<CommissionAdjustmentOperation | null> {
-    return await this.get({ id: operationId });
+    const tenantId = requireTenantId();
+    const [operation] = await this.query(
+      `SELECT
+         id, slug, context, created_at, updated_at, tenant_id,
+         CAST(adjustment_id AS TEXT) AS adjustment_id
+       FROM ${this.tableName}
+       WHERE id = ? AND tenant_id = ?
+       LIMIT 1`,
+      [operationId, tenantId],
+      { allowRawOnTenantScoped: true },
+    );
+    return operation ?? null;
   }
 
   /**

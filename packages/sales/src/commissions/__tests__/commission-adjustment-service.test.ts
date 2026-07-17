@@ -345,6 +345,96 @@ describe('CommissionAdjustmentService', () => {
     });
   });
 
+  it('normalizes a missing tenant context to the public validation error', async () => {
+    await expect(service.createAdjustment(intent())).rejects.toMatchObject<
+      Partial<CommissionAdjustmentValidationError>
+    >({
+      code: 'COMMISSION_ADJUSTMENT_VALIDATION_ERROR',
+      reason: 'tenant_context_mismatch',
+    });
+  });
+
+  it.each([
+    ['null', null],
+    ['array', []],
+    ['string', 'metadata'],
+    ['number', 42],
+    ['custom prototype', Object.create({ inherited: true })],
+  ])('rejects %s metadata before persistence', async (_label, metadata) => {
+    await expect(
+      withTenant({ tenantId }, () =>
+        service.createAdjustment(
+          intent({
+            metadata: metadata as unknown as Record<string, unknown>,
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject<Partial<CommissionAdjustmentValidationError>>({
+      reason: 'invalid_metadata',
+    });
+    expect(
+      await withTenant({ tenantId }, () => adjustments.list()),
+    ).toHaveLength(0);
+  });
+
+  it('returns an exact persisted replay on DuckDB native UUID columns', async () => {
+    const duckDb = await getTestDatabase({ type: 'duckdb', url: ':memory:' });
+    const duckTenantId = randomUUID();
+    try {
+      const duckEarners = await EarnerCollection.create({ db: duckDb });
+      const duckCommissions = await CommissionCollection.create({ db: duckDb });
+      const duckService = await CommissionAdjustmentService.create({
+        db: duckDb,
+      });
+      const { duckEarnerId, duckCommissionId } = await withTenant(
+        { tenantId: duckTenantId },
+        async () => {
+          const duckEarner = await duckEarners.create({
+            profileId: randomUUID(),
+            displayName: 'DuckDB adjustment earner',
+            status: 'active',
+          });
+          const duckCommission = await duckCommissions.create({
+            earnerId: duckEarner.id as string,
+            amountCents: 2_000,
+            currency: 'USD',
+            status: 'payable',
+            dedupeKey: `duckdb-adjustment-parent-${randomUUID()}`,
+          });
+          return {
+            duckEarnerId: duckEarner.id as string,
+            duckCommissionId: duckCommission.id as string,
+          };
+        },
+      );
+      const input: CreateCommissionAdjustmentInput = {
+        operationId: randomUUID(),
+        tenantId: duckTenantId,
+        commissionId: duckCommissionId,
+        earnerId: duckEarnerId,
+        adjustmentKind: 'correction',
+        amountCents: -100,
+        currency: 'USD',
+        reason: 'DuckDB persisted replay',
+        createdByProfileId: randomUUID(),
+        metadata: { source: 'duckdb' },
+      };
+
+      const first = await withTenant({ tenantId: duckTenantId }, () =>
+        duckService.createAdjustment(input),
+      );
+      const replay = await withTenant({ tenantId: duckTenantId }, () =>
+        duckService.createAdjustment(input),
+      );
+
+      expect(first.created).toBe(true);
+      expect(replay.created).toBe(false);
+      expect(replay.adjustment.id).toBe(first.adjustment.id);
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
   it('rolls back the operation fence when adjustment persistence fails', async () => {
     const input = intent();
     await db.query(`CREATE TRIGGER fail_commission_adjustment_insert
