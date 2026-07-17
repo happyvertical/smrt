@@ -23,6 +23,8 @@ interface ProbeResult {
 
 @smrt()
 class ObjectJobHydrationProbe extends SmrtObject {
+  static invocationIds: string[] = [];
+
   @field({ type: 'text', required: true })
   label: string = '';
 
@@ -38,6 +40,7 @@ class ObjectJobHydrationProbe extends SmrtObject {
 
   @backgroundEligible()
   async process(args: { suffix: string }): Promise<ProbeResult> {
+    ObjectJobHydrationProbe.invocationIds.push(this.id ?? 'missing-id');
     this.processedMarker = `${this.label}:${args.suffix}:${this.agentMarker}`;
     await this.save();
 
@@ -57,6 +60,7 @@ function canonicalProbeType(): string {
 }
 
 afterEach(() => {
+  ObjectJobHydrationProbe.invocationIds.length = 0;
   ObjectRegistry.clearCollectionCache?.();
 });
 
@@ -138,5 +142,54 @@ describe('TaskRunner object-bound job hydration (#2038)', () => {
       'target-row:ran:resolved-config',
     );
     expect(hydratedOther.processedMarker).toBe('');
+  });
+
+  it('fails a stale object-bound job before invoking its method', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+
+    const target = await new ObjectJobHydrationProbe({
+      db,
+      label: 'deleted-row',
+    }).initialize();
+    await target.save();
+
+    const targetId = target.id;
+    if (!targetId) {
+      throw new Error('persisted probe must have an ID');
+    }
+    await target.delete();
+
+    const jobs = await SmrtJobCollection.create({ db });
+    const job = await jobs.create({
+      objectType: canonicalProbeType(),
+      objectId: targetId,
+      method: 'process',
+      args: { suffix: 'must-not-run' },
+      maxAttempts: 1,
+    });
+    await job.save();
+
+    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    await runner.initialize(db);
+
+    const failure = new Promise<Error>((resolve, reject) => {
+      runner.once('job:failed', (_failedJob, error) => resolve(error));
+      runner.once('job:completed', () =>
+        reject(new Error('stale object-bound job unexpectedly completed')),
+      );
+      runner.once('runner:error', reject);
+    });
+
+    await runner.start();
+    try {
+      const error = await failure;
+      expect(error.message).toBe(
+        `Object-bound job target not found: ${canonicalProbeType()}#${targetId}`,
+      );
+    } finally {
+      await runner.stop();
+    }
+
+    expect(ObjectJobHydrationProbe.invocationIds).toEqual([]);
   });
 });

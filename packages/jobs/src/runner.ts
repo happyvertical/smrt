@@ -598,6 +598,12 @@ export class TaskRunner extends EventEmitter {
           ...objectAgentConfig,
         });
         await instance.initialize();
+
+        if (!instance.isPersisted) {
+          throw new Error(
+            `Object-bound job target not found: ${job.objectType}#${job.objectId}`,
+          );
+        }
       } else {
         // Create new instance for static-like methods
         instance = new ObjectClass({ db: this.db, ...agentConfig });
