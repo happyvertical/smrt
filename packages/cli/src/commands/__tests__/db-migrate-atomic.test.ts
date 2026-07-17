@@ -20,6 +20,7 @@ const {
   const migrationApplyAllOptions: Array<{
     atomic?: boolean;
     force?: boolean;
+    forceMigrations?: readonly string[];
     postgresSafe?: boolean;
     reconcile?: boolean;
   }> = [];
@@ -52,6 +53,7 @@ const {
       options: {
         atomic?: boolean;
         force?: boolean;
+        forceMigrations?: readonly string[];
         onProgress?: (result: any) => void;
         postgresSafe?: boolean;
         reconcile?: boolean;
@@ -60,6 +62,7 @@ const {
       migrationApplyAllOptions.push({
         atomic: options.atomic,
         force: options.force,
+        forceMigrations: options.forceMigrations,
         postgresSafe: options.postgresSafe,
         reconcile: options.reconcile,
       });
@@ -277,6 +280,7 @@ describe('db:migrate atomic schema execution', () => {
       {
         atomic: true,
         force: false,
+        forceMigrations: undefined,
         postgresSafe: false,
         reconcile: true,
       },
@@ -291,6 +295,24 @@ describe('db:migrate atomic schema execution', () => {
       'add_column_contents_second_column: synthetic failure',
     );
     expect(stderr).toContain('successful steps shown above');
+  }, 15_000);
+
+  it('passes an exact force target into the atomic migration batch', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {
+      'force-migration': 'add_column_contents_first_column',
+    });
+
+    expect(migrationApplyAllOptions[0]).toMatchObject({
+      atomic: true,
+      force: false,
+      forceMigrations: ['add_column_contents_first_column'],
+      postgresSafe: false,
+      reconcile: true,
+    });
   }, 15_000);
 
   it('warns when postgres-safe index operations are folded into the atomic batch', async () => {

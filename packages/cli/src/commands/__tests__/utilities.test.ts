@@ -110,6 +110,21 @@ describe('utilities', () => {
     );
   });
 
+  it('exposes exact generated-migration force without weakening the global default', () => {
+    const migrateOptions = utilityCommands['db:migrate'].options;
+
+    expect(migrateOptions?.force).toMatchObject({
+      type: 'boolean',
+      default: false,
+    });
+    expect(migrateOptions?.['force-migration']).toMatchObject({
+      type: 'string',
+    });
+    expect(migrateOptions?.['force-migration'].description).toContain(
+      'exact ID',
+    );
+  });
+
   it('doctor reports missing consumer registrations for projects with external SMRT dependencies', async () => {
     const projectDir = await mkdtemp(
       resolve(process.cwd(), '.tmp-smrt-doctor-'),

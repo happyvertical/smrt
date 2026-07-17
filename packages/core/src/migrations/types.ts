@@ -133,6 +133,12 @@ export interface ApplyMigrationsOptions {
   /** Force application even if checksums don't match */
   force?: boolean;
   /**
+   * Force only the migration definitions whose exact IDs appear in this list.
+   * Other definitions retain the checksum, failed, and running guards even
+   * when the batch also enables reconciliation.
+   */
+  forceMigrations?: readonly string[];
+  /**
    * Reconcile migration history with live schema drift.
    *
    * When true, the tracker may re-run a migration if the caller has already
