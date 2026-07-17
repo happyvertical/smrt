@@ -295,7 +295,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-core:
-    name: Test Core (${{ matrix.shard }})
     needs: build
     if: inputs.mode == 'full'
     runs-on: ci-linux-x64
@@ -385,7 +384,6 @@ jobs:
           NODE_ENV: test
 
   test-packages:
-    name: Test Packages (${{ matrix.shard }})
     needs: build
     if: inputs.mode == 'full'
     runs-on: ci-linux-x64
