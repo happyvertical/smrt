@@ -582,12 +582,28 @@ export class TaskRunner extends EventEmitter {
       let instance: SmrtObject;
 
       if (job.objectId) {
-        // Load existing object
-        instance = new ObjectClass({ db: this.db, ...agentConfig });
+        // Agent configuration belongs to the registered class, but it must not
+        // override the runner-controlled persistence target or disable the
+        // canonical hydration.
+        const objectAgentConfig = { ...agentConfig };
+        delete objectAgentConfig.db;
+        delete objectAgentConfig.id;
+        delete objectAgentConfig._skipLoad;
+
+        // initialize() performs the canonical hydration when the persisted ID
+        // is supplied to the constructor.
+        instance = new ObjectClass({
+          db: this.db,
+          id: job.objectId,
+          ...objectAgentConfig,
+        });
         await instance.initialize();
-        await (
-          instance as SmrtObject & { loadFromId(id: string): Promise<void> }
-        ).loadFromId(job.objectId);
+
+        if (!instance.isPersisted) {
+          throw new Error(
+            `Object-bound job target not found: ${job.objectType}#${job.objectId}`,
+          );
+        }
       } else {
         // Create new instance for static-like methods
         instance = new ObjectClass({ db: this.db, ...agentConfig });
