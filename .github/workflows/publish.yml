@@ -205,7 +205,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: publish-release-version-patch
-          retention-days: 1
+          # Keep the exact recovery patch long enough to reconcile an npm
+          # publish that succeeds before a later Git ref update fails.
+          retention-days: 30
           if-no-files-found: error
           path: release-version.patch
 
@@ -303,6 +305,9 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
+          # push-release-refs supplies the release App credential explicitly.
+          # Persisting checkout auth can send duplicate Authorization headers.
+          persist-credentials: false
           token: ${{ steps.generate_token.outputs.token }}
 
       - name: Download release version patch
@@ -388,6 +393,12 @@ jobs:
             git add "${release_files[@]}"
           fi
           git commit -m "chore(release): v$RELEASE_VERSION [skip ci]"
+          git tag -f "v$RELEASE_VERSION"
+
+          # Exercise the same authenticated atomic push before npm publication
+          # makes the release irreversible. This catches credential and remote
+          # ref failures without updating either main or the release tag.
+          RELEASE_PUSH_DRY_RUN=true node scripts/push-release-refs.mjs
 
           if [ "$PUBLISH_MODE" = "artifacts" ]; then
             node scripts/publish-validated-artifacts.mjs publish-pack-output
@@ -406,7 +417,6 @@ jobs:
             exit 1
           fi
 
-          git tag -f "v$RELEASE_VERSION"
           # Skip developer hooks in CI. Release builds can generate source
           # artifacts, and those hooks should not block the automation push
           # after the equivalent safety checks have already run above.
