@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.8
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: migrate agent workflows to the generation-3 split layout (#2053) (policy)
+  - @happyvertical/smrt-config@0.40.8
+  - @happyvertical/smrt-types@0.40.8
+  - @happyvertical/smrt-scanner@0.40.8
+
 ## 0.40.7
 
 ### Patch Changes
