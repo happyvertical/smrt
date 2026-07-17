@@ -96,6 +96,12 @@ export class CommissionAdjustment extends SmrtObject {
 
   constructor(options: CommissionAdjustmentOptions = {}) {
     super(options);
+    if ('operationId' in (options as unknown as Record<string, unknown>)) {
+      throw new Error(
+        'CommissionAdjustment has no public operationId field; use ' +
+          'CommissionAdjustmentService.createAdjustment()',
+      );
+    }
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.commissionId !== undefined)
       this.commissionId = options.commissionId;
