@@ -191,6 +191,7 @@ interface DbMigrateOptions {
   'dry-run'?: boolean;
   'postgres-safe'?: boolean;
   force?: boolean;
+  'force-migration'?: string;
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
@@ -1065,6 +1066,11 @@ export default testManifest;
           'Force re-apply even if already applied (skip checksum validation)',
         default: false,
       },
+      'force-migration': {
+        type: 'string',
+        description:
+          'Force only the generated migration with this exact ID; all other migration guards remain enabled',
+      },
       'repair-data': {
         type: 'boolean',
         description:
@@ -1534,6 +1540,9 @@ export default testManifest;
               atomic: true,
               postgresSafe: false,
               force: options.force ?? false,
+              forceMigrations: options['force-migration']
+                ? [options['force-migration']]
+                : undefined,
               // The diff was computed from the live schema moments earlier, so
               // missing columns/indexes must be repaired even if a previous
               // synthetic migration record says "completed".

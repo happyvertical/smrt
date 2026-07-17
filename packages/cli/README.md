@@ -26,6 +26,7 @@ pnpm add -D @happyvertical/smrt-cli
 |---------|------------|
 | `smrt db:status` | Show pending schema changes and classify failed migration history |
 | `smrt db:migrate` | Apply pending migrations |
+| `smrt db:migrate --force-migration <exact-id>` | Force one generated migration while preserving guards for every other migration in the batch |
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:diff` | Show schema differences without generating migration files |
 | `smrt db:rollback` | Rollback last migration |
@@ -34,6 +35,13 @@ pnpm add -D @happyvertical/smrt-cli
 File-backed SQL/TypeScript migration generation is not supported. SMRT schema
 migrations are manifest-driven; model schema with SMRT objects and apply changes
 with `smrt db:migrate`.
+
+Use `--force-migration <exact-id>` for a known checksum, failed, or interrupted
+migration that is safe to retry. The selector is an exact generated migration
+ID, and unrelated checksum, failed, and running records remain fail-closed even
+when the atomic batch reconciles live schema drift. Global `--force` remains
+available for backward compatibility but intentionally overrides guards for the
+whole pending batch.
 
 ### Code Generation
 

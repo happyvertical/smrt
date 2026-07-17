@@ -160,6 +160,67 @@ describe('MigrationTracker', () => {
       expect(result.error).toContain('checksum mismatch');
     });
 
+    it('should force only migration IDs explicitly selected by the caller', async () => {
+      const selectedV1: MigrationDefinition = {
+        id: '0001_selected',
+        description: 'Selected migration',
+        version: '1.0.0',
+        up: ['CREATE TABLE selected (id TEXT PRIMARY KEY);'],
+        down: ['DROP TABLE selected;'],
+      };
+      const guardedV1: MigrationDefinition = {
+        id: '0002_guarded',
+        description: 'Guarded migration',
+        version: '1.0.0',
+        up: ['CREATE TABLE guarded (id TEXT PRIMARY KEY);'],
+        down: ['DROP TABLE guarded;'],
+      };
+
+      await tracker.apply(selectedV1);
+      await tracker.apply(guardedV1);
+
+      const selectedResult = await tracker.apply(
+        {
+          ...selectedV1,
+          up: ['CREATE TABLE IF NOT EXISTS selected (id TEXT);'],
+        },
+        { forceMigrations: ['0001_selected'] },
+      );
+      const guardedResult = await tracker.apply(
+        { ...guardedV1, up: ['CREATE TABLE IF NOT EXISTS guarded (id TEXT);'] },
+        { forceMigrations: ['0001_selected'] },
+      );
+
+      expect(selectedResult.success).toBe(true);
+      expect(selectedResult.applied).toBe(true);
+      expect(guardedResult.success).toBe(false);
+      expect(guardedResult.error).toContain('checksum mismatch');
+    });
+
+    it('should not reconcile an unrelated failed migration during scoped force', async () => {
+      const failed: MigrationDefinition = {
+        id: '0001_failed_guarded',
+        description: 'Guarded failed migration',
+        version: '1.0.0',
+        up: ['INVALID SQL'],
+        down: [],
+      };
+
+      const first = await tracker.apply(failed);
+      expect(first.success).toBe(false);
+
+      const retry = await tracker.apply(
+        { ...failed, up: ['CREATE TABLE guarded_retry (id TEXT);'] },
+        {
+          reconcile: true,
+          forceMigrations: ['0002_selected'],
+        },
+      );
+
+      expect(retry.success).toBe(false);
+      expect(retry.error).toContain('previously failed');
+    });
+
     it('should still block checksum mismatches during reconcile', async () => {
       const migration1: MigrationDefinition = {
         id: '0001_create_users',
@@ -471,6 +532,31 @@ describe('MigrationTracker', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('currently running or was interrupted');
       expect(result.error).toContain('--force');
+    });
+
+    it('should block an unrelated running migration during scoped force', async () => {
+      await db.query(
+        `INSERT INTO _smrt_schema_migrations (id, name, version, checksum, status, attempts, is_reversible, batch)
+         VALUES ('scoped-stuck-id', '0001_scoped_stuck', '1.0.0', 'abc123', 'running', 1, 0, 1)`,
+      );
+
+      const result = await tracker.apply(
+        {
+          id: '0001_scoped_stuck',
+          description: 'Scoped stuck migration',
+          version: '1.0.0',
+          up: ['SELECT 1;'],
+          down: [],
+        },
+        {
+          reconcile: true,
+          forceMigrations: ['0002_selected'],
+        },
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('currently running or was interrupted');
+      expect(result.error).toContain('--force-migration 0001_scoped_stuck');
     });
 
     it('should allow re-applying rolled back migration without --force', async () => {

@@ -324,6 +324,10 @@ export class MigrationTracker {
     await this.initialize();
     const startTime = Date.now();
     const checksum = computeChecksum(definition.up);
+    const force = Boolean(
+      options.force || options.forceMigrations?.includes(definition.id),
+    );
+    const hasScopedForce = Boolean(options.forceMigrations?.length);
 
     // Check if migration record already exists
     const existing = await this.getMigration(definition.id);
@@ -332,7 +336,7 @@ export class MigrationTracker {
       // Handle based on existing status
       switch (existing.status) {
         case 'completed':
-          if (!options.force && existing.checksum !== checksum) {
+          if (!force && existing.checksum !== checksum) {
             return {
               success: false,
               applied: false,
@@ -340,11 +344,11 @@ export class MigrationTracker {
               name: definition.id,
               checksum,
               execution_time_ms: 0,
-              error: `Migration ${definition.id} checksum mismatch. Was already applied with different checksum. Use --force to override.`,
+              error: `Migration ${definition.id} checksum mismatch. Was already applied with different checksum. Use --force-migration ${definition.id} to override only this migration, or --force to override the whole batch.`,
             };
           }
 
-          if (!options.force && !options.reconcile) {
+          if (!force && !options.reconcile) {
             // Already applied, skip
             return {
               success: true,
@@ -358,7 +362,7 @@ export class MigrationTracker {
           break;
 
         case 'failed':
-          if (!options.force && !options.reconcile) {
+          if (!force && (!options.reconcile || hasScopedForce)) {
             return {
               success: false,
               applied: false,
@@ -366,14 +370,14 @@ export class MigrationTracker {
               name: definition.id,
               checksum,
               execution_time_ms: 0,
-              error: `Migration ${definition.id} previously failed: ${existing.error_message || 'Unknown error'}. Use --force to retry.`,
+              error: `Migration ${definition.id} previously failed: ${existing.error_message || 'Unknown error'}. Use --force-migration ${definition.id} to retry only this migration, or --force to retry the whole batch.`,
             };
           }
           // Will retry below
           break;
 
         case 'running':
-          if (!options.force) {
+          if (!force) {
             return {
               success: false,
               applied: false,
@@ -381,7 +385,7 @@ export class MigrationTracker {
               name: definition.id,
               checksum,
               execution_time_ms: 0,
-              error: `Migration ${definition.id} is currently running or was interrupted. Use --force to retry if the previous run crashed.`,
+              error: `Migration ${definition.id} is currently running or was interrupted. If the previous run crashed, use --force-migration ${definition.id} to retry only this migration, or --force to retry the whole batch.`,
             };
           }
           // Will retry below
