@@ -3,6 +3,15 @@
  * @packageDocumentation
  */
 
+export {
+  CommissionAdjustmentReplayConflictError,
+  type CommissionAdjustmentReplayMismatchField,
+  CommissionAdjustmentService,
+  CommissionAdjustmentValidationError,
+  type CommissionAdjustmentValidationReason,
+  type CreateCommissionAdjustmentInput,
+  type CreateCommissionAdjustmentResult,
+} from './CommissionAdjustmentService.js';
 export { CommissionBalanceService } from './CommissionBalanceService.js';
 export {
   type CommissionCalculationInput,
