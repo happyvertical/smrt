@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.40.9
+
+### Patch Changes
+
+- ### Features
+
+  - add idempotent commission adjustments (sales)
+
+  ### Bug Fixes
+
+  - harden adjustment replay validation (sales)
+  - @happyvertical/smrt-config@0.40.9
+  - @happyvertical/smrt-types@0.40.9
+  - @happyvertical/smrt-scanner@0.40.9
+
 ## 0.40.8
 
 ### Patch Changes
