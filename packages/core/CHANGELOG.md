@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.40.7
+
+### Patch Changes
+
+- ### Features
+
+  - browser SSE client for the streaming chat route (/client subpath) (chat)
+
+  ### Bug Fixes
+
+  - recover release state and preflight ref push (#2041) (ci)
+  - scope forced schema migrations (#2043) (cli)
+  - reject missing object job targets (jobs)
+  - protect object hydration options (jobs)
+  - hydrate object-bound jobs by id (jobs)
+  - enforce client contract locks + release the stream on settled turns (chat)
+  - support prepared non-Debian runners (ci)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.80.2 (deps)
+  - ci: use shared Linux runner pool
+  - @happyvertical/smrt-config@0.40.7
+  - @happyvertical/smrt-types@0.40.7
+  - @happyvertical/smrt-scanner@0.40.7
+
 ## 0.40.6
 
 ### Patch Changes
