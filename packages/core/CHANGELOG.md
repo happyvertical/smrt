@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.40.6
+
+### Patch Changes
+
+- ### Features
+
+  - browser SSE client for the streaming chat route (/client subpath) (chat)
+
+  ### Bug Fixes
+
+  - enforce client contract locks + release the stream on settled turns (chat)
+  - support prepared non-Debian runners (ci)
+
+  ### Other Changes
+
+  - ci: use shared Linux runner pool
+  - @happyvertical/smrt-config@0.40.6
+  - @happyvertical/smrt-types@0.40.6
+  - @happyvertical/smrt-scanner@0.40.6
+
 ## 0.40.5
 
 ### Patch Changes

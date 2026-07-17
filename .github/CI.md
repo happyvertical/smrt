@@ -111,17 +111,20 @@ retains a 45-minute recovery window for sequential registry writes. Registry
 reads prefer fresh metadata, and post-publish verification retries six times
 with bounded exponential backoff so temporary npm propagation or stale negative
 cache entries do not strand the release before its Git refs are written. After
-publication, it supplies the release App credential directly to Git instead of
-relying on checkout's path-conditional credential include (ARC workspaces may
-resolve through a symlink). The release commit and tag are pushed atomically, so
-GitHub cannot record only one of the two refs.
+creating the release commit and tag locally, it resets inherited Git
+authentication, supplies the release App credential directly, and dry-runs the
+exact atomic ref push before publication. The publisher checkout does not
+persist its own credential, preventing duplicate `Authorization` headers when
+ARC workspaces resolve through different paths. After publication, the release
+commit and tag are pushed atomically, so GitHub cannot record only one ref.
 
 If an interrupted run publishes only part of a lockstep version, a later main
 commit must not fill in the remaining packages under that same version: the
 artifacts would come from different source trees. Keep the npm collision guard,
 apply the interrupted run's exact generated version patch to reserve that
 version in Git, and let the next merge publish the complete package set at a new
-version.
+version. The version patch is retained for 30 days so this recovery remains
+available after the short-lived build and package artifacts expire.
 
 Documentation installs as an isolated workspace under `docs/`. Its pnpm build
 policy explicitly allows the `core-js` and `sharp` install scripts required by
