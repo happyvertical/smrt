@@ -285,7 +285,10 @@ for (const pkg of shardPackages) {
     fail(`Packed export verification failed for ${pkg.name}`);
   }
 
-  if (pkg.name === '@happyvertical/smrt-profiles') {
+  if (
+    pkg.name === '@happyvertical/smrt-profiles' ||
+    pkg.name === '@happyvertical/smrt-sales'
+  ) {
     const registerImportResult = spawnSync(
       process.execPath,
       [

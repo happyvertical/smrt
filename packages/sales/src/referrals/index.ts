@@ -24,6 +24,8 @@ export {
   type ReferralAgreementAmendmentChanges,
   ReferralAgreementCollection,
 } from './collections/ReferralAgreementCollection.js';
+// Required by generated consumer registration for the private operation model.
+export { ReferralClickOperationCollection } from './collections/ReferralClickOperationCollection.js';
 export { ReferralCollection } from './collections/ReferralCollection.js';
 export {
   type CreateReferralLinkInput,
@@ -57,6 +59,9 @@ export {
 } from './models/AttributionPolicy.js';
 export { Referral } from './models/Referral.js';
 export { ReferralAgreement } from './models/ReferralAgreement.js';
+// Runtime-loader export only; the decorator keeps this operation model off the
+// generated API, MCP, and CLI application surfaces.
+export { ReferralClickOperation } from './models/ReferralClickOperation.js';
 export { assertHttpTargetUrl, ReferralLink } from './models/ReferralLink.js';
 export { ReferralProgram } from './models/ReferralProgram.js';
 export { ReferralTermSnapshot } from './models/ReferralTermSnapshot.js';
