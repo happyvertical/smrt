@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.40.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - replay clicks from immutable snapshots (sales)
+  - override vulnerable adm-zip version (deps)
+  - make referral click recording atomic (sales)
+  - @happyvertical/smrt-config@0.40.10
+  - @happyvertical/smrt-types@0.40.10
+  - @happyvertical/smrt-scanner@0.40.10
+
 ## 0.40.9
 
 ### Patch Changes

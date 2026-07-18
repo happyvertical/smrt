@@ -1,5 +1,14 @@
 # @happyvertical/smrt-ledgers
 
+## 0.40.10
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.10
+  - @happyvertical/smrt-prompts@0.40.10
+  - @happyvertical/smrt-tenancy@0.40.10
+
 ## 0.40.9
 
 ### Patch Changes
