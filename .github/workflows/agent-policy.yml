@@ -16,6 +16,7 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
+  statuses: read
   packages: read
 
 jobs:
@@ -58,6 +59,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
           MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
