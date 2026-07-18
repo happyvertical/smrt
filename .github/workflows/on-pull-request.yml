@@ -76,6 +76,7 @@ jobs:
           # injection hardening guidelines.
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
+          BASE_REF="${BASE_REF#refs/heads/}"
           git fetch origin "$BASE_REF" --depth=200
           FROM_SHA=$(git merge-base "origin/$BASE_REF" HEAD)
           echo "Linting commits from $FROM_SHA to HEAD"
@@ -201,6 +202,7 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
+          BASE_REF="${BASE_REF#refs/heads/}"
           git fetch origin "$BASE_REF" --depth=200
           FROM_SHA=$(git merge-base "origin/$BASE_REF" HEAD)
           echo "Scanning commits $FROM_SHA..HEAD for secrets"
