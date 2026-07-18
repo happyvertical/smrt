@@ -4,6 +4,8 @@
  */
 
 export { CommissionAdjustmentCollection } from './CommissionAdjustmentCollection.js';
+// Required by generated consumer registration for the private operation model.
+export { CommissionAdjustmentOperationCollection } from './CommissionAdjustmentOperationCollection.js';
 export { CommissionCollection } from './CommissionCollection.js';
 export { CommissionPayoutCollection } from './CommissionPayoutCollection.js';
 export {

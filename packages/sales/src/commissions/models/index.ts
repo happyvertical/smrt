@@ -5,6 +5,9 @@
 
 export { Commission } from './Commission.js';
 export { CommissionAdjustment } from './CommissionAdjustment.js';
+// Runtime-loader export only; the decorator keeps this operation fence off
+// the generated API, MCP, and CLI application surfaces.
+export { CommissionAdjustmentOperation } from './CommissionAdjustmentOperation.js';
 export { CommissionPayout } from './CommissionPayout.js';
 export {
   CommissionPlan,

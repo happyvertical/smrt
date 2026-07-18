@@ -99,11 +99,11 @@ fixed shared database name or remove the wrapper from their package script.
 
 Each package is packed once. Pack shards verify that exact tarball and emit a
 schema-versioned manifest containing package name, version, filename, and
-SHA-256. Profiles validation additionally installs that exact tarball into an
-isolated consumer, runs the built CLI to generate `.smrt/register.js`, and
-imports the generated file so every manifest-advertised root import is proven
-against the publish artifact. The summary verifies complete package membership
-and uniform versions.
+SHA-256. Profiles and Sales validation additionally install each exact tarball
+into an isolated consumer, run the built CLI to generate `.smrt/register.js`,
+and import the generated file so every manifest-advertised root import is
+proven against the publish artifact. The summary verifies complete package
+membership and uniform versions.
 The release job publishes those tarballs sequentially and safely skips versions
 already present on npm during a retry. The final publisher consumes only those
 prebuilt artifacts, so it skips a redundant workspace dependency install and
