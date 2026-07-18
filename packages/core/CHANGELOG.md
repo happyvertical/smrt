@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.14
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: switch lifecycle workflow to diagnostic (#2065)
+  - @happyvertical/smrt-config@0.40.14
+  - @happyvertical/smrt-types@0.40.14
+  - @happyvertical/smrt-scanner@0.40.14
+
 ## 0.40.13
 
 ### Patch Changes
