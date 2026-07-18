@@ -11,8 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   GET as getContentChat,
   POST as postContentChat,
-} from '$routes/api/v1/contents/[id]/chat/+server';
-import { POST as postContentChatThread } from '$routes/api/v1/contents/[id]/chat/threads/[threadId]/+server';
+} from '$lib/../routes/api/v1/contents/[id]/chat/+server';
+import { POST as postContentChatThread } from '$lib/../routes/api/v1/contents/[id]/chat/threads/[threadId]/+server';
 import {
   contentChatSessionIsAuthorized,
   contentChatSessionMatchesContent,

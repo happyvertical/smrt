@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   POST as createContent,
   GET as getList,
-} from '$routes/api/v1/contents/+server';
+} from '$lib/../routes/api/v1/contents/+server';
 import {
   DELETE as deleteContent,
   GET as getSingle,
   PUT as updateContent,
-} from '$routes/api/v1/contents/[id]/+server';
+} from '$lib/../routes/api/v1/contents/[id]/+server';
 import { Contents } from './contents';
 
 let currentContents: Contents | undefined;
