@@ -191,7 +191,7 @@ interface DbMigrateOptions {
   'dry-run'?: boolean;
   'postgres-safe'?: boolean;
   force?: boolean;
-  'force-migration'?: string;
+  'force-migration'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
@@ -200,6 +200,99 @@ interface DbMigrateOptions {
 
 interface DoctorOptions {
   fix?: boolean;
+}
+
+export interface ForceMigrationSelection {
+  force: boolean;
+  forceMigrations?: readonly string[];
+}
+
+/**
+ * Normalize exact migration selectors from the public single/repeated CLI
+ * forms. List and wildcard syntax are deliberately rejected: every selected
+ * migration must be named by its own exact flag.
+ */
+export function resolveForceMigrationSelection(
+  force: boolean | undefined,
+  value: unknown,
+): ForceMigrationSelection {
+  const globalForce = Boolean(force);
+
+  if (value === undefined) {
+    return { force: globalForce };
+  }
+
+  const rawValues = Array.isArray(value) ? value : [value];
+  const forceMigrations: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawValue of rawValues) {
+    if (typeof rawValue !== 'string') {
+      throw new Error(
+        '--force-migration requires an exact generated migration ID',
+      );
+    }
+
+    const migrationId = rawValue.trim();
+    if (migrationId.length === 0) {
+      throw new Error('--force-migration cannot be empty');
+    }
+    if (migrationId.includes(',')) {
+      throw new Error(
+        'Comma-separated --force-migration lists are not supported; repeat the flag for each exact ID',
+      );
+    }
+    if (/\s/u.test(migrationId)) {
+      throw new Error(
+        `Invalid --force-migration ID "${migrationId}": exact IDs cannot contain whitespace`,
+      );
+    }
+    if (/[*?[\]{}]/u.test(migrationId)) {
+      throw new Error(
+        `Invalid --force-migration ID "${migrationId}": wildcard selectors are not supported`,
+      );
+    }
+    if (migrationId.startsWith('-')) {
+      throw new Error(
+        `Invalid --force-migration ID "${migrationId}": expected an exact generated migration ID`,
+      );
+    }
+
+    if (!seen.has(migrationId)) {
+      seen.add(migrationId);
+      forceMigrations.push(migrationId);
+    }
+  }
+
+  if (forceMigrations.length === 0) {
+    throw new Error('--force-migration requires at least one exact ID');
+  }
+  if (globalForce) {
+    throw new Error(
+      'Do not combine --force with --force-migration; choose global forcing or exact migration IDs',
+    );
+  }
+
+  return { force: false, forceMigrations };
+}
+
+export function assertForceMigrationTargetsExist(
+  forceMigrations: readonly string[] | undefined,
+  generatedMigrationIds: Iterable<string>,
+): void {
+  if (!forceMigrations?.length) {
+    return;
+  }
+
+  const generated = new Set(generatedMigrationIds);
+  const unknown = forceMigrations.filter(
+    (migrationId) => !generated.has(migrationId),
+  );
+  if (unknown.length > 0) {
+    throw new Error(
+      `--force-migration target${unknown.length === 1 ? '' : 's'} not found in the current generated migration batch: ${unknown.join(', ')}`,
+    );
+  }
 }
 
 /**
@@ -1069,7 +1162,8 @@ export default testManifest;
       'force-migration': {
         type: 'string',
         description:
-          'Force only the generated migration with this exact ID; all other migration guards remain enabled',
+          'Force one generated migration by exact ID; repeat for multiple IDs while all other guards remain enabled',
+        multiple: true,
       },
       'repair-data': {
         type: 'boolean',
@@ -1101,6 +1195,11 @@ export default testManifest;
       let db: DatabaseInterface | undefined;
 
       try {
+        const forceSelection = resolveForceMigrationSelection(
+          options.force,
+          options['force-migration'],
+        );
+
         // 1. Load CLI config
         const { getPackageConfig } = await import('@happyvertical/smrt-config');
         const { DEFAULT_CLI_CONFIG } = await import('../config.js');
@@ -1317,6 +1416,16 @@ export default testManifest;
         );
         migrations.push(...partitionedChanges.migrations);
         manualInterventions.push(...partitionedChanges.manualInterventions);
+
+        assertForceMigrationTargetsExist(forceSelection.forceMigrations, [
+          ...diff.added_tables.map(
+            (schema) => `create_table_${schema.tableName}`,
+          ),
+          ...migrations.flatMap((migration) => {
+            const migrationName = getSyntheticMigrationNameForAction(migration);
+            return migrationName ? [migrationName] : [];
+          }),
+        ]);
 
         console.log();
 
@@ -1539,10 +1648,8 @@ export default testManifest;
             const results = await tracker.applyAll(migrationDefs, {
               atomic: true,
               postgresSafe: false,
-              force: options.force ?? false,
-              forceMigrations: options['force-migration']
-                ? [options['force-migration']]
-                : undefined,
+              force: forceSelection.force,
+              forceMigrations: forceSelection.forceMigrations,
               // The diff was computed from the live schema moments earlier, so
               // missing columns/indexes must be repaired even if a previous
               // synthetic migration record says "completed".

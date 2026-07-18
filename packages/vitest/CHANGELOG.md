@@ -1,5 +1,12 @@
 # @happyvertical/smrt-vitest
 
+## 0.40.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.11
+
 ## 0.40.10
 
 ### Patch Changes

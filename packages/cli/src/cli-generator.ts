@@ -169,8 +169,91 @@ interface CliMethodDefinition {
   }>;
 }
 
-// Re-export Command as CLICommand for backward compatibility
-export type CLICommand = Command;
+export interface CLIOptionConfig extends OptionConfig {
+  /** Collect every occurrence of this string option in argv order. */
+  multiple?: boolean;
+}
+
+// Preserve the shared Command contract while allowing SMRT commands to opt a
+// string option into repeatable parsing. @happyvertical/utils currently keeps
+// only the final occurrence, so the local wrapper below restores the complete
+// argv selection for explicitly repeatable options.
+export interface CLICommand extends Omit<Command, 'options'> {
+  options?: Record<string, CLIOptionConfig>;
+}
+
+function collectRepeatableOptionValues(
+  argv: string[],
+  optionName: string,
+): string[] {
+  const flag = `--${optionName}`;
+  const inlinePrefix = `${flag}=`;
+  const values: string[] = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+
+    if (token === '--') {
+      break;
+    }
+
+    if (token.startsWith(inlinePrefix)) {
+      values.push(token.slice(inlinePrefix.length));
+      continue;
+    }
+
+    if (token !== flag) {
+      continue;
+    }
+
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith('-')) {
+      throw new Error(`Option ${flag} requires a value`);
+    }
+
+    values.push(value);
+    index += 1;
+  }
+
+  return values;
+}
+
+/**
+ * Parse one command while preserving every occurrence of options marked
+ * `multiple`. Non-repeatable options retain the shared SDK parser behavior.
+ */
+export function parseCliCommandArgs(
+  argv: string[],
+  commands: CLICommand[],
+  builtInCommands: Record<string, CLICommand> = {},
+): ParsedArgs {
+  const parsed = parseCliArgs(argv, commands, builtInCommands);
+  const command = parsed.command
+    ? (builtInCommands[parsed.command] ??
+      commands.find(
+        (candidate) =>
+          candidate.name === parsed.command ||
+          candidate.aliases?.includes(parsed.command as string),
+      ))
+    : undefined;
+
+  if (!command?.options) {
+    return parsed;
+  }
+
+  for (const [name, option] of Object.entries(command.options)) {
+    if (!option.multiple) {
+      continue;
+    }
+
+    const values = collectRepeatableOptionValues(argv, name);
+    if (values.length > 0) {
+      parsed.options[name] = values;
+    }
+  }
+
+  return parsed;
+}
 
 // Re-export ParsedArgs from utils
 export type { ParsedArgs } from '@happyvertical/utils';
@@ -453,7 +536,7 @@ export class CLIGenerator {
       const processedArgv = this.preprocessObjectCommands(argv, commands);
 
       // Parse args first without built-in commands to avoid loading them unnecessarily
-      const parsed = parseCliArgs(processedArgv, commands, {});
+      const parsed = parseCliCommandArgs(processedArgv, commands, {});
       await this.executeCommand(parsed, commands, processedArgv);
     };
   }
@@ -1182,7 +1265,7 @@ export class CLIGenerator {
 
       // Re-parse options for built-in command since they weren't in initial parse
       // The initial parseCliArgs only has object commands, not built-in commands
-      const reParsed = parseCliArgs(processedArgv, [builtInCommand], {});
+      const reParsed = parseCliCommandArgs(processedArgv, [builtInCommand], {});
 
       try {
         await builtInCommand.handler(reParsed.args, reParsed.options);

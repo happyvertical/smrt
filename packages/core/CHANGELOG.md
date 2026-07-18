@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.11
+
+### Patch Changes
+
+- ### Features
+
+  - force multiple exact migrations atomically (cli)
+  - @happyvertical/smrt-config@0.40.11
+  - @happyvertical/smrt-types@0.40.11
+  - @happyvertical/smrt-scanner@0.40.11
+
 ## 0.40.10
 
 ### Patch Changes

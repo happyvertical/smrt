@@ -2,7 +2,13 @@ import { spawnSync } from 'node:child_process';
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { resolveVitestEntrypoint, utilityCommands } from '../utilities.js';
+import { parseCliCommandArgs } from '../../cli-generator.js';
+import {
+  assertForceMigrationTargetsExist,
+  resolveForceMigrationSelection,
+  resolveVitestEntrypoint,
+  utilityCommands,
+} from '../utilities.js';
 
 vi.mock('node:child_process', () => ({
   spawnSync: vi.fn(() => ({
@@ -119,10 +125,101 @@ describe('utilities', () => {
     });
     expect(migrateOptions?.['force-migration']).toMatchObject({
       type: 'string',
+      multiple: true,
     });
     expect(migrateOptions?.['force-migration'].description).toContain(
-      'exact ID',
+      'repeat for multiple IDs',
     );
+  });
+
+  it('parses repeated exact migration flags in argv order', () => {
+    const migrate = utilityCommands['db:migrate'];
+    const parsed = parseCliCommandArgs(
+      [
+        'db:migrate',
+        '--force-migration',
+        'create_table_commissions',
+        '--force-migration=create_table_referral_links',
+      ],
+      [migrate],
+    );
+
+    expect(parsed.options['force-migration']).toEqual([
+      'create_table_commissions',
+      'create_table_referral_links',
+    ]);
+  });
+
+  it('preserves the existing single exact migration flag', () => {
+    const migrate = utilityCommands['db:migrate'];
+    const parsed = parseCliCommandArgs(
+      ['db:migrate', '--force-migration', 'create_table_commissions'],
+      [migrate],
+    );
+
+    expect(parsed.options['force-migration']).toEqual([
+      'create_table_commissions',
+    ]);
+    expect(
+      resolveForceMigrationSelection(false, parsed.options['force-migration']),
+    ).toEqual({
+      force: false,
+      forceMigrations: ['create_table_commissions'],
+    });
+  });
+
+  it('normalizes duplicate exact IDs and rejects ambiguous or broad selectors', () => {
+    expect(
+      resolveForceMigrationSelection(false, [
+        ' create_table_commissions ',
+        'create_table_referral_links',
+        'create_table_commissions',
+      ]),
+    ).toEqual({
+      force: false,
+      forceMigrations: [
+        'create_table_commissions',
+        'create_table_referral_links',
+      ],
+    });
+
+    expect(() => resolveForceMigrationSelection(false, '')).toThrow(
+      /cannot be empty/,
+    );
+    expect(() => resolveForceMigrationSelection(false, 'first,second')).toThrow(
+      /Comma-separated/,
+    );
+    expect(() => resolveForceMigrationSelection(false, '*')).toThrow(
+      /wildcard/,
+    );
+    expect(() => resolveForceMigrationSelection(true, ['first'])).toThrow(
+      /Do not combine --force/,
+    );
+  });
+
+  it('requires every exact selector to exist in the current generated batch', () => {
+    expect(() =>
+      assertForceMigrationTargetsExist(
+        ['create_table_commissions', 'create_table_missing'],
+        ['create_table_commissions', 'create_table_referral_links'],
+      ),
+    ).toThrow(/create_table_missing/);
+
+    expect(() =>
+      assertForceMigrationTargetsExist(
+        ['create_table_commissions', 'create_table_referral_links'],
+        ['create_table_commissions', 'create_table_referral_links'],
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a repeated migration flag without a value', () => {
+    expect(() =>
+      parseCliCommandArgs(
+        ['db:migrate', '--force-migration', '--verbose'],
+        [utilityCommands['db:migrate']],
+      ),
+    ).toThrow(/requires a value/);
   });
 
   it('doctor reports missing consumer registrations for projects with external SMRT dependencies', async () => {

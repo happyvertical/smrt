@@ -315,6 +315,47 @@ describe('db:migrate atomic schema execution', () => {
     });
   }, 15_000);
 
+  it('passes multiple exact force targets into one atomic migration batch', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {
+      'force-migration': [
+        'add_column_contents_first_column',
+        'add_column_contents_second_column',
+      ],
+    });
+
+    expect(migrationApplyAllOptions).toHaveLength(1);
+    expect(migrationApplyAllOptions[0]).toMatchObject({
+      atomic: true,
+      force: false,
+      forceMigrations: [
+        'add_column_contents_first_column',
+        'add_column_contents_second_column',
+      ],
+      postgresSafe: false,
+      reconcile: true,
+    });
+  }, 15_000);
+
+  it('rejects an exact force target outside the current generated batch', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {
+      'force-migration': ['add_column_contents_missing_column'],
+    });
+
+    expect(migrationApplyAllOptions).toEqual([]);
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy.mock.calls.flat().join('\n')).toContain(
+      'add_column_contents_missing_column',
+    );
+  }, 15_000);
+
   it('warns when postgres-safe index operations are folded into the atomic batch', async () => {
     compareMock.mockResolvedValue({
       added_tables: [],
