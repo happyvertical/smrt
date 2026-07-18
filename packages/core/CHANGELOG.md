@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - migrate generation 5 lifecycle (#2062)
+  - @happyvertical/smrt-config@0.40.13
+  - @happyvertical/smrt-types@0.40.13
+  - @happyvertical/smrt-scanner@0.40.13
+
 ## 0.40.12
 
 ### Patch Changes
