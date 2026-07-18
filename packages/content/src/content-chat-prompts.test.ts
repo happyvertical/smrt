@@ -9,6 +9,11 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  GET as getContentChat,
+  POST as postContentChat,
+} from '$routes/api/v1/contents/[id]/chat/+server';
+import { POST as postContentChatThread } from '$routes/api/v1/contents/[id]/chat/threads/[threadId]/+server';
+import {
   contentChatSessionIsAuthorized,
   contentChatSessionMatchesContent,
   createContentEditorChatThread,
@@ -21,11 +26,6 @@ import {
   contentEditorSessionPrompt,
 } from './content-chat-prompts';
 import { Contents } from './contents';
-import {
-  GET as getContentChat,
-  POST as postContentChat,
-} from './routes/api/v1/contents/[id]/chat/+server';
-import { POST as postContentChatThread } from './routes/api/v1/contents/[id]/chat/threads/[threadId]/+server';
 
 let currentContents: Contents | undefined;
 const getAIMock = vi.fn();

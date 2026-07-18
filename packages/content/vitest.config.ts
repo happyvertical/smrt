@@ -15,6 +15,12 @@ export default defineConfig({
         find: '$lib',
         replacement: resolve(__dirname, 'src/lib'),
       },
+      {
+        // Keep route tests on a filesystem alias; Svelte's Vite transform
+        // rewrites relative route imports to root-absolute `/src/...` IDs.
+        find: '$routes',
+        replacement: resolve(__dirname, 'src/routes'),
+      },
       ...viteWorkspaceAliases,
     ],
     conditions: ['browser'],

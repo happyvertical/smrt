@@ -2,16 +2,16 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { syncSchema } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Contents } from './contents';
 import {
   POST as createContent,
   GET as getList,
-} from './routes/api/v1/contents/+server';
+} from '$routes/api/v1/contents/+server';
 import {
   DELETE as deleteContent,
   GET as getSingle,
   PUT as updateContent,
-} from './routes/api/v1/contents/[id]/+server';
+} from '$routes/api/v1/contents/[id]/+server';
+import { Contents } from './contents';
 
 let currentContents: Contents | undefined;
 
