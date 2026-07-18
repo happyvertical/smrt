@@ -59,8 +59,8 @@ export {
 } from './models/AttributionPolicy.js';
 export { Referral } from './models/Referral.js';
 export { ReferralAgreement } from './models/ReferralAgreement.js';
-// Runtime-loader export only; the decorator keeps this operation fence off
-// the generated API, MCP, and CLI application surfaces.
+// Runtime-loader export only; the decorator keeps this operation model off the
+// generated API, MCP, and CLI application surfaces.
 export { ReferralClickOperation } from './models/ReferralClickOperation.js';
 export { assertHttpTargetUrl, ReferralLink } from './models/ReferralLink.js';
 export { ReferralProgram } from './models/ReferralProgram.js';
