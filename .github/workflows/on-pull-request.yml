@@ -74,7 +74,7 @@ jobs:
           # Reading it into an env var keeps the shell substitution
           # out of the ${{ ... }} layer to satisfy the workflow-
           # injection hardening guidelines.
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
           git fetch origin "$BASE_REF" --depth=200
           FROM_SHA=$(git merge-base "origin/$BASE_REF" HEAD)
@@ -199,7 +199,7 @@ jobs:
       # secret out of the workflow logs. Allowlist: .gitleaks.toml.
       - name: Scan PR commits for secrets
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
           git fetch origin "$BASE_REF" --depth=200
           FROM_SHA=$(git merge-base "origin/$BASE_REF" HEAD)
