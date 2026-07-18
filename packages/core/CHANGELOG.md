@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.40.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - export manifest operation classes (sales)
+
+  ### Other Changes
+
+  - docs: clarify private operation exports (sales)
+  - @happyvertical/smrt-config@0.40.12
+  - @happyvertical/smrt-types@0.40.12
+  - @happyvertical/smrt-scanner@0.40.12
+
 ## 0.40.11
 
 ### Patch Changes
