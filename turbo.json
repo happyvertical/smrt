@@ -29,6 +29,7 @@
         "!src/lib/types/smrt-generated/**",
         "scripts/generate-manifest.js",
         "scripts/generate-smrt-types.js",
+        "AGENTS.md",
         "package.json",
         "tsconfig*.json"
       ],

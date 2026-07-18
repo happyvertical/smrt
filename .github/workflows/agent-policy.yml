@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Pull request number to recheck after a claim-only transition
+        description: Pull request to recheck after released_at or another claim-only transition
         required: true
         type: number
 
@@ -19,27 +19,57 @@ permissions:
   statuses: read
   packages: read
 
+concurrency:
+  group: >-
+    agent-policy-diagnostic-${{
+      github.event.merge_group.head_sha ||
+      github.event.pull_request.number ||
+      inputs.pr_number ||
+      github.ref
+    }}
+  cancel-in-progress: true
+
 jobs:
   lifecycle:
-    name: lifecycle
+    name: lifecycle / diagnostic
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
       - name: Load pinned policy runtime
         env:
           POLICY_ARTIFACT: ${{ vars.AGENT_POLICY_ARTIFACT }}
+          POLICY_PUBLISHER_IDENTITY: ${{ vars.AGENT_POLICY_PUBLISHER_IDENTITY }}
         run: |
           case "$POLICY_ARTIFACT" in
-            ghcr.io/*@sha256:*) ;;
-            *) echo 'AGENT_POLICY_ARTIFACT must be an immutable GHCR digest' >&2; exit 1 ;;
+            ghcr.io/happyvertical/agent-policy@sha256:*) ;;
+            *) echo 'AGENT_POLICY_ARTIFACT must pin the trusted HappyVertical policy image by digest' >&2; exit 1 ;;
           esac
+          expected_publisher_identity_sha256=86a917ce537a9e923ce02103068c76eb72629247ab584f7d368ac238a0209857
+          publisher_identity_sha256=$(python3 -c 'import hashlib, os; print(hashlib.sha256(os.environ["POLICY_PUBLISHER_IDENTITY"].encode()).hexdigest())')
+          test "$publisher_identity_sha256" = "$expected_publisher_identity_sha256" || {
+            echo 'AGENT_POLICY_PUBLISHER_IDENTITY must match the exact protected-main publisher identity' >&2
+            exit 1
+          }
+          publisher_workflow="${POLICY_PUBLISHER_IDENTITY%@refs/heads/main}"
+          test "$publisher_workflow" != "$POLICY_PUBLISHER_IDENTITY" || {
+            echo 'AGENT_POLICY_PUBLISHER_IDENTITY must name the protected-main publisher workflow' >&2
+            exit 1
+          }
+          publisher_workflow_regexp=$(printf '%s' "$publisher_workflow" | sed 's/[][\.*^()+?{}|$]/\\&/g')
+          cosign verify "$POLICY_ARTIFACT" \
+            --certificate-identity-regexp "^${publisher_workflow_regexp}@refs/(heads/main|tags/agent-policy-v[0-9]+\.[0-9]+\.[0-9]+)$" \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+          policy_download_dir="$RUNNER_TEMP/hv-policy-download"
           policy_dir="$RUNNER_TEMP/hv-policy"
-          rm -rf "$policy_dir"
-          mkdir -p "$policy_dir"
-          oras pull "$POLICY_ARTIFACT" -o "$policy_dir"
-          archive="$policy_dir/agent-policy.tar.gz"
+          rm -rf "$policy_download_dir" "$policy_dir"
+          mkdir -p "$policy_download_dir" "$policy_dir"
+          oras pull "$POLICY_ARTIFACT" -o "$policy_download_dir"
+          archive="$policy_download_dir/agent-policy.tar.gz"
           test -f "$archive" || { echo 'policy artifact is missing agent-policy.tar.gz' >&2; exit 1; }
           python3 - "$archive" <<'PY'
           import pathlib
@@ -53,17 +83,27 @@ jobs:
                       raise SystemExit(f"unsafe policy archive member: {member.name}")
           PY
           tar -xzf "$archive" -C "$policy_dir"
+          identity=$(python3 "$policy_dir/scripts/verify-policy-artifact" "$policy_dir")
+          echo "Loaded $identity from $POLICY_ARTIFACT"
           echo "HV_POLICY_DIR=$policy_dir" >> "$GITHUB_ENV"
+          echo "HV_POLICY_IDENTITY=$identity" >> "$GITHUB_ENV"
       - name: Validate lifecycle
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          POLICY_ARTIFACT: ${{ vars.AGENT_POLICY_ARTIFACT }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
           MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
         run: |
-          "$HV_POLICY_DIR/scripts/hv-agent-lifecycle-prs" | while IFS= read -r number; do
-            python3 "$HV_POLICY_DIR/scripts/hv-agent" check-pr "$number"
-          done
+          set -euo pipefail
+          numbers_file="$RUNNER_TEMP/hv-agent-lifecycle-prs"
+          "$HV_POLICY_DIR/scripts/hv-agent-lifecycle-prs" > "$numbers_file"
+          while IFS= read -r number; do
+            if ! python3 "$HV_POLICY_DIR/scripts/hv-agent" check-pr "$number"; then
+              echo "ERROR $HV_POLICY_IDENTITY from $POLICY_ARTIFACT rejected PR #$number; correct canonical claim/PR state, then rerun the organization-required workflow execution; a repository-local lifecycle-only dispatch is not protected merge authority and draft toggles are invalid" >&2
+              exit 1
+            fi
+          done < "$numbers_file"
