@@ -37,7 +37,7 @@ await resolver.hasPermission(user.id, tenant.id, 'articles.create');
 
 ### Manifest-derived permission catalog
 
-SMRT objects now contribute permissions automatically based on their public
+s-m-r-t objects now contribute permissions automatically based on their public
 surface area.
 
 ```typescript
@@ -151,7 +151,7 @@ export default defineConfig({
 ```
 
 Custom permissions merge with manifest-derived permissions by slug. If the same
-slug is registered with conflicting metadata, SMRT throws so the mismatch is
+slug is registered with conflicting metadata, s-m-r-t throws so the mismatch is
 visible early.
 
 ### Runtime permission registration
@@ -185,7 +185,7 @@ try {
 
 ### Postgres RLS enforcement
 
-For Postgres, SMRT can generate and apply row-level security policies directly
+For Postgres, s-m-r-t can generate and apply row-level security policies directly
 from the permission catalog.
 
 ```typescript
@@ -310,7 +310,7 @@ await destroySessionCookie(event, { db });                   // logout
 
 ### OIDC login with Kanidm or Dex
 
-Kanidm and Dex both work through the generic SMRT OIDC flow. Configure one or
+Kanidm and Dex both work through the generic s-m-r-t OIDC flow. Configure one or
 more providers under `packages.users.auth.oidc.providers`, then add login and
 callback route handlers.
 
@@ -371,8 +371,8 @@ JWKS-signed ID token, falling back to the OIDC UserInfo endpoint when the ID
 token omits required profile claims like `email`. Temporary transaction cookies
 are HMAC-signed with the provider `clientSecret` when present; public clients
 can pass `transactionCookieSecret` to the route helpers. On success it creates
-or reuses a SMRT `Profile`, links an `OidcIdentity`, creates or reuses a `User`,
-records `lastLoginAt`, and sets the standard SMRT session cookie.
+or reuses a s-m-r-t `Profile`, links an `OidcIdentity`, creates or reuses a `User`,
+records `lastLoginAt`, and sets the standard s-m-r-t session cookie.
 
 The typed [OIDC provisioning decision matrix](../profiles/src/testing/oidcProvisioningDecisionMatrix.ts)
 is the canonical behavior contract shared with Profiles. Its executable rows
@@ -432,7 +432,7 @@ global `Person` for a verified email; resolver reuse is rejected unless
 `null` still rejects login, a supplied Profile must be the already-linked
 Profile and cannot rebind it, and stable-link owner/canonical-Person checks
 still apply. The resolver receives a separate frozen claims snapshot; retry
-locks, identity lookups, and persistence retain SMRT's immutable internal
+locks, identity lookups, and persistence retain s-m-r-t's immutable internal
 snapshot.
 
 An invitation or approval workflow that pre-provisions both the canonical
@@ -471,7 +471,7 @@ The authorizer runs after protocol validation and inside the provisioning
 transaction. It receives frozen normalized claims, the transaction-bound `db`,
 and a `UserCollection` bound to that same transaction. Return both selected
 objects only after application authorization; `undefined` uses the fail-closed
-default and `null` rejects. SMRT reloads and verifies the selected IDs rather
+default and `null` rejects. s-m-r-t reloads and verifies the selected IDs rather
 than trusting the returned objects: `email_verified` must be exactly `true`,
 the Profile must be the unique canonical global `Person` for the claim email,
 exactly one User must own it, and that User must have the same normalized email.
@@ -482,7 +482,7 @@ writes must use only the supplied handles and be idempotent. Supplying both
 the same Profile.
 
 When userinfo supplies a missing email, its `email_verified` value travels with
-that email as one source-bound pair. SMRT never borrows a verification flag
+that email as one source-bound pair. s-m-r-t never borrows a verification flag
 from the ID token for a userinfo address, or from userinfo for an ID-token
 address.
 
@@ -508,9 +508,9 @@ email claims on independent database handles. SQLite and DuckDB also acquire a
 database-URL transaction lock because one adapter cannot safely overlap
 unrelated root transactions; PostgreSQL deadlock and serialization failures use
 a bounded transaction retry. Owner-authorized binding uses the same contract:
-pass the DuckDB root handle and let SMRT serialize the callback transaction.
+pass the DuckDB root handle and let s-m-r-t serialize the callback transaction.
 New OIDC Profiles use non-semantic unique slugs,
-so equal IdP display names cannot overwrite one another through SMRT's
+so equal IdP display names cannot overwrite one another through s-m-r-t's
 natural-key upsert.
 Existing installations must run `smrt db:status`, `smrt db:migrate`, then
 `smrt db:status` before deploying this users version; legacy identities reserve
@@ -555,7 +555,7 @@ when initialization or recovery is needed. OIDC `iss` and `sub` are preserved as
 case-sensitive identifiers (trim is used only to reject blank claims), so
 whitespace-distinct subjects never reuse one another.
 
-With `postgresRls: true`, SMRT opens a request-scoped Postgres transaction,
+With `postgresRls: true`, s-m-r-t opens a request-scoped Postgres transaction,
 loads the session, resolves permissions, and sets session variables used by the
 generated RLS helpers:
 

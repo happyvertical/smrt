@@ -1,6 +1,6 @@
 # @happyvertical/smrt-dev-mcp
 
-Development MCP server for the SMRT framework providing code generation,
+Development MCP server for the s-m-r-t framework providing code generation,
 project introspection, deterministic ecosystem knowledge, and portable review
 or architecture prompt bundles.
 
@@ -64,7 +64,7 @@ Codex, Claude, or any other model provider directly. They return deterministic
 findings plus a reusable prompt bundle that can be sent to the local model plan
 or provider of your choice.
 
-Downstream SMRT packages/apps can publish their own scoped
+Downstream s-m-r-t packages/apps can publish their own scoped
 `smrt-knowledge.json` artifact. Discovery prefers local
 `.smrt/smrt-knowledge.json`, then `dist/smrt-knowledge.json`, then source
 manifest artifacts before falling back to raw manifest/doc scanning. The runtime
@@ -102,7 +102,7 @@ smrt knowledge:architecture-context "tenant-aware publishing workflow" --format 
 The package ships harness-agnostic agent skills under `agent-skills/`.
 
 Downstream agents should fetch the review procedure before starting a formal
-SMRT review:
+s-m-r-t review:
 
 ```json
 {
@@ -126,7 +126,7 @@ The server exposes these MCP tools:
 
 ### `generate-smrt-class`
 
-Generate a complete SMRT class with `@smrt()` decorator, fields, and imports.
+Generate a complete s-m-r-t class with `@smrt()` decorator, fields, and imports.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -148,7 +148,7 @@ Supported property types: `text`, `integer`, `decimal`, `boolean`, `datetime`, `
 
 ### `introspect-project`
 
-Scan a project directory for SMRT objects and return a manifest-equivalent
+Scan a project directory for s-m-r-t objects and return a manifest-equivalent
 class/field/relationship report. Discovery prefers `.smrt/manifest.json`, then
 `dist/manifest.json`, then `src/manifest/manifest.json`; when no artifact is
 available it falls back to `@happyvertical/smrt-scanner`.
@@ -179,7 +179,7 @@ and suggested follow-up issue titles; it does not modify files.
 ### `reflect-knowledge`
 
 Return package coverage, SDK package coverage, relationship-v2 counts, and
-freshness status from the deterministic SMRT + HappyVertical SDK knowledge
+freshness status from the deterministic s-m-r-t + HappyVertical SDK knowledge
 index.
 
 | Parameter | Type | Required | Description |
@@ -222,7 +222,7 @@ Alias over the deterministic checker that emphasizes downstream
 
 ### `build-review-context`
 
-Select relevant SMRT and HappyVertical SDK package expertise for changed files,
+Select relevant s-m-r-t and HappyVertical SDK package expertise for changed files,
 then return a model-ready prompt bundle.
 
 | Parameter | Type | Required | Description |
@@ -251,7 +251,7 @@ Return deterministic review findings, a prompt bundle, or both.
 
 ### `build-architecture-context`
 
-Select relevant SMRT and SDK package expertise for an idea or documentation,
+Select relevant s-m-r-t and SDK package expertise for an idea or documentation,
 then return a model-ready architecture prompt bundle.
 
 | Parameter | Type | Required | Description |

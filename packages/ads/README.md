@@ -1,6 +1,6 @@
 # @happyvertical/smrt-ads
 
-Advertising delivery and tracking models for the SMRT framework. Supports priority-based ad group delivery with a tier waterfall, IAB ad formats, weighted A/B variation testing, and immutable event tracking.
+Advertising delivery and tracking models for the s-m-r-t framework. Supports priority-based ad group delivery with a tier waterfall, IAB ad formats, weighted A/B variation testing, and immutable event tracking.
 
 ## Installation
 
@@ -20,7 +20,7 @@ import {
 } from '@happyvertical/smrt-ads';
 
 // Define delivery tiers (lower priority number = served first)
-const tiers = new AdDeliveryTierCollection(db);
+const tiers = await AdDeliveryTierCollection.create({ db });
 const sponsorship = await tiers.create({
   name: 'Sponsorship',
   priority: 1,
@@ -34,7 +34,7 @@ const standard = await tiers.create({
 });
 
 // Create an ad group with targeting and budget
-const groups = new AdGroupCollection(db);
+const groups = await AdGroupCollection.create({ db });
 const group = await groups.create({
   name: 'Holiday Campaign',
   tierId: sponsorship.id,
@@ -51,7 +51,7 @@ await group.save();
 
 // Add variations with weights for A/B testing
 // weight=2 is selected 2x more often than weight=1
-const variations = new AdVariationCollection(db);
+const variations = await AdVariationCollection.create({ db });
 const varA = await variations.create({
   groupId: group.id,
   name: 'Version A - Blue CTA',
@@ -60,7 +60,7 @@ const varA = await variations.create({
 });
 
 // Track an immutable event (create-only, no update/delete)
-const events = new AdEventCollection(db);
+const events = await AdEventCollection.create({ db });
 await events.create({
   variationId: varA.id,
   zoneId: 'zone-uuid',
@@ -110,3 +110,8 @@ Within a tier, variations are selected by relative weight. A variation with `wei
 - `@happyvertical/smrt-core` -- ORM and code generation
 - `@happyvertical/smrt-tenancy` -- multi-tenant scoping (optional on AdGroup, AdVariation, AdEvent)
 - Peer: `@happyvertical/smrt-assets`, `@happyvertical/smrt-commerce`, `@happyvertical/smrt-properties`, `@happyvertical/smrt-tags`
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

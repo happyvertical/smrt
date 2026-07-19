@@ -1,8 +1,5 @@
 # @happyvertical/smrt-core
 
-<p align="center">
-  <img src="./smrt-homer.png" alt="SMRT Logo" width="400"/>
-</p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 

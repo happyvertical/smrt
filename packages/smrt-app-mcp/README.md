@@ -1,6 +1,6 @@
 # @happyvertical/smrt-app-mcp
 
-App-runtime MCP server scaffolding for SMRT apps. Provides:
+App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
 
 - **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, workflowAssertions? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
 - **SvelteKit adapters** (`./sveltekit`) — `mountMcpToolsRoute` / `mountMcpCallRoute` for `/api/mcp/{tools,call}/+server.ts`.

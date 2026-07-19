@@ -1,6 +1,6 @@
 # @happyvertical/smrt-tenancy
 
-Multi-tenancy for SMRT with AsyncLocalStorage context propagation, automatic query filtering, and tenant ID population.
+Multi-tenancy for s-m-r-t with AsyncLocalStorage context propagation, automatic query filtering, and tenant ID population.
 
 ## Installation
 

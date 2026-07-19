@@ -1,6 +1,6 @@
 # @happyvertical/smrt-svelte
 
-Svelte 5 component library for the SMRT framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
+Svelte 5 component library for the s-m-r-t framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
 
 ## Installation
 
@@ -151,7 +151,7 @@ scaffold adopts AdminShell as its default chrome exactly this way; copy its
 | `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, etc.) |
 | `@happyvertical/smrt-svelte/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
 | `@happyvertical/smrt-svelte/ui` | UI primitives (Button, Card, Badge, Pagination) |
-| `@happyvertical/smrt-ui/themes` | Canonical ThemeProvider, Material/Glass/Studio/SMRT presets, CSS generation |
+| `@happyvertical/smrt-ui/themes` | Canonical ThemeProvider, Material/Glass/Studio/s-m-r-t presets, CSS generation |
 | `@happyvertical/smrt-ui/forms` | Provider-free foundational form controls and the agent interaction registry |
 | `@happyvertical/smrt-ui/data` | DataTable, CollectionList/ContentList, CollectionToolbar |
 | `@happyvertical/smrt-svelte/registry` | ModuleUIRegistry for agent admin panels |

@@ -1,6 +1,6 @@
 # @happyvertical/smrt-images
 
-Image asset management with AI-powered categorization, editing, and metadata extraction for the SMRT framework. Extends `Asset` from smrt-assets via cross-package STI -- stored in the same `assets` table with a distinct `_meta_type`.
+Image asset management with AI-powered categorization, editing, and metadata extraction for the s-m-r-t framework. Extends `Asset` from smrt-assets via cross-package STI -- stored in the same `assets` table with a distinct `_meta_type`.
 
 ## Installation
 
@@ -18,7 +18,7 @@ import {
 } from '@happyvertical/smrt-images';
 
 // Create and query images
-const images = new ImageCollection(db);
+const images = await ImageCollection.create({ db });
 const image = await images.create({
   name: 'hero.jpg',
   url: 'https://cdn.example.com/hero.jpg',
@@ -90,3 +90,8 @@ const variations = await editor.generateVariation(image, 'winter theme', { count
 - `@happyvertical/smrt-tenancy` -- multi-tenant scoping
 - `@happyvertical/ai` -- AI categorization and image generation
 - `@happyvertical/images` -- resize, crop, convert, thumbnail operations
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

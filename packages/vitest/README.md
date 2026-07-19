@@ -1,6 +1,6 @@
 # @happyvertical/smrt-vitest
 
-Vitest plugin for SMRT projects -- **required** for all SMRT tests. Auto-generates manifests, loads cross-package class metadata, and provides transaction-isolated test database utilities.
+Vitest plugin for s-m-r-t projects -- **required** for all s-m-r-t tests. Auto-generates manifests, loads cross-package class metadata, and provides transaction-isolated test database utilities.
 
 ## Installation
 
@@ -12,7 +12,7 @@ pnpm add -D @happyvertical/smrt-vitest
 
 ### Required Plugin Setup
 
-Every SMRT project must include `smrtVitestPlugin()` in vitest.config.ts:
+Every s-m-r-t project must include `smrtVitestPlugin()` in vitest.config.ts:
 
 ```typescript
 import { defineConfig } from 'vitest/config';
@@ -41,7 +41,7 @@ Without this plugin, tests fail with `"No field metadata found"` or `"unregister
 ### Vite 8 (rolldown/oxc) Normalization
 
 Vite 8 replaced esbuild with rolldown/oxc, which changed three behaviors that
-break SMRT projects. The plugin normalizes all three so consuming apps don't
+break s-m-r-t projects. The plugin normalizes all three so consuming apps don't
 need per-repo workarounds (evidence: anytown.ai#707, willgriffin.dev#220):
 
 1. **`esbuild.tsconfigRaw` is ignored** — legacy `@smrt()` decorators reach
@@ -51,7 +51,7 @@ need per-repo workarounds (evidence: anytown.ai#707, willgriffin.dev#220):
 2. **oxc elides type-position side-effect imports by default** — test files
    usually sit outside the tsconfig `include`, so a repo-wide
    `verbatimModuleSyntax` never reaches them and side-effect model imports
-   (SMRT object registration) are silently dropped. The plugin injects
+   (s-m-r-t object registration) are silently dropped. The plugin injects
    `oxc.typescript = { onlyRemoveTypeImports: true }`.
 3. **Rolldown prefix-matches string alias `find`s** — a bare workspace alias
    like `@org/pkg` → `src/index.ts` mangles unaliased subpath imports

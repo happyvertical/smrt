@@ -1,6 +1,6 @@
 # @happyvertical/smrt-properties
 
-Digital property and hierarchical zone management for the SMRT framework. Properties represent websites, apps, or publications. Zones form an arbitrarily nested tree within each property for content and ad placement.
+Digital property and hierarchical zone management for the s-m-r-t framework. Properties represent websites, apps, or publications. Zones form an arbitrarily nested tree within each property for content and ad placement.
 
 ## Installation
 

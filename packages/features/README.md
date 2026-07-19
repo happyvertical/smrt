@@ -1,6 +1,6 @@
 # @happyvertical/smrt-features
 
-Code-first feature flags for SMRT applications, with global, app-level, and tenant-hierarchy resolution.
+Code-first feature flags for s-m-r-t applications, with global, app-level, and tenant-hierarchy resolution.
 
 ## Installation
 
@@ -56,5 +56,5 @@ The first match wins.
 ## Documentation
 
 - See [`AGENTS.md`](./AGENTS.md) for package-internal patterns
-- See [`docs/standards.md`](../../docs/standards.md) for monorepo conventions
-- See [`docs/architecture/`](../../docs/architecture/) for cross-package architecture
+- See [`docs/content/standards.md`](../../docs/content/standards.md) for monorepo conventions
+- See [`docs/content/architecture/`](../../docs/content/architecture/) for cross-package architecture

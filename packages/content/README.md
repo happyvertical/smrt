@@ -129,7 +129,7 @@ await article.save();
 Governance stays opt-in. Plain `Content` records behave like legacy `smrt-content`
 unless an assignment matches their `type` and optional exact `variant`.
 
-Persisted governance definitions are modeled as first-class SMRT objects:
+Persisted governance definitions are modeled as first-class s-m-r-t objects:
 
 - `ContentGovernancePolicy`
 - `ContentGovernanceProfile`
@@ -375,7 +375,7 @@ Content contributions are held separately from editorial `Content` and `Asset`
 records until they are promoted. That keeps plain `smrt-content` generic, while
 supporting community intake and moderation workflows when an app opts in.
 
-The contribution holding layer adds these first-class SMRT objects:
+The contribution holding layer adds these first-class s-m-r-t objects:
 
 - `ContentContributionType`
 - `ContentContributor`
@@ -626,7 +626,7 @@ The `@smrt()` decorator generates REST API, MCP tools, and CLI commands.
 | GET | `/api/v1/contents/governance` | Governance definitions |
 | GET | `/api/v1/contents/governance/resolve?type=...` | Resolve governance |
 
-All SMRT models (`ContentGovernancePolicy`, `ContentContribution`, etc.)
+All s-m-r-t models (`ContentGovernancePolicy`, `ContentContribution`, etc.)
 also get standard CRUD + custom collection-level endpoints.
 
 ## Dependencies

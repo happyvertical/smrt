@@ -1,6 +1,6 @@
 # @happyvertical/smrt-analytics
 
-Analytics integration models for the SMRT framework. Manages analytics properties (GA4, Plausible, Matomo), data streams, server-side event tracking with retry support, and AI-powered report generation with scheduling.
+Analytics integration models for the s-m-r-t framework. Manages analytics properties (GA4, Plausible, Matomo), data streams, server-side event tracking with retry support, and AI-powered report generation with scheduling.
 
 ## Installation
 
@@ -20,7 +20,7 @@ import {
 } from '@happyvertical/smrt-analytics';
 
 // Create a GA4 property
-const properties = new AnalyticsPropertyCollection(db);
+const properties = await AnalyticsPropertyCollection.create({ db });
 const property = await properties.create({
   name: 'main-site',
   displayName: 'Main Site Analytics',
@@ -32,7 +32,7 @@ const property = await properties.create({
 });
 
 // Add a web data stream
-const streams = new AnalyticsDataStreamCollection(db);
+const streams = await AnalyticsDataStreamCollection.create({ db });
 await streams.create({
   propertyId: property.id,
   displayName: 'Web Traffic',
@@ -43,7 +43,7 @@ await streams.create({
 });
 
 // Track a server-side event with retry support
-const events = new AnalyticsEventCollection(db);
+const events = await AnalyticsEventCollection.create({ db });
 const event = await events.create({
   propertyId: property.id,
   eventName: 'purchase',
@@ -55,7 +55,7 @@ const event = await events.create({
 // Retry logic: event.shouldRetry(3) checks retryCount < maxRetries
 
 // Create a scheduled report with dimensions and metrics
-const reports = new AnalyticsReportCollection(db);
+const reports = await AnalyticsReportCollection.create({ db });
 const report = await reports.create({
   propertyId: property.id,
   name: 'Weekly Traffic Report',
@@ -129,3 +129,8 @@ Re-exported from `./types` for SDK compatibility: `AnalyticsInterface`, `Analyti
 
 - `@happyvertical/smrt-core` -- ORM and code generation
 - Peer: `svelte` (optional, for Svelte components via `@happyvertical/smrt-analytics/svelte`)
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

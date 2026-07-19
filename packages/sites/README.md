@@ -1,6 +1,6 @@
 # @happyvertical/smrt-sites
 
-Site lifecycle management for multi-tenant SMRT networks. Manages deployable websites with provisioning status, tier classification, portal configuration, and agent bindings with priority ordering.
+Site lifecycle management for multi-tenant s-m-r-t networks. Manages deployable websites with provisioning status, tier classification, portal configuration, and agent bindings with priority ordering.
 
 ## Installation
 

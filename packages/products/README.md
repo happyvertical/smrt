@@ -99,7 +99,7 @@ await products.addAsset(product.id!, hero, 'gallery', 1);
 | `createClient` | Auto-generated TypeScript API client |
 | `setupRoutes` | Auto-generated Express routes |
 | `createMCPServer` | Auto-generated MCP server |
-| `manifest` | SMRT object metadata |
+| `manifest` | s-m-r-t object metadata |
 
 Owned asset helpers are available on both `Product` and `ProductCollection` via
 `getAssets()`, `addAsset()`, and `removeAsset()`. Common relationships include

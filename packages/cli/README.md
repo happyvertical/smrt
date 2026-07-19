@@ -1,6 +1,6 @@
 # @happyvertical/smrt-cli
 
-Developer CLI for the SMRT framework. Provides introspection, code generation, database management, and auto-generated CRUD commands for SMRT objects.
+Developer CLI for the s-m-r-t framework. Provides introspection, code generation, database management, and auto-generated CRUD commands for s-m-r-t objects.
 
 ## Installation
 
@@ -14,9 +14,9 @@ pnpm add -D @happyvertical/smrt-cli
 
 | Command | Description |
 |---------|------------|
-| `smrt introspect` | Discover SMRT objects in project and node_modules |
+| `smrt introspect` | Discover s-m-r-t objects in project and node_modules |
 | `smrt introspect --verbose` | Include detailed field information |
-| `smrt objects` | List all registered SMRT objects |
+| `smrt objects` | List all registered s-m-r-t objects |
 | `smrt schema <object>` | Show detailed schema for an object |
 | `smrt status` | Show system status (database, AI, registry) |
 
@@ -32,8 +32,8 @@ pnpm add -D @happyvertical/smrt-cli
 | `smrt db:rollback` | Rollback last migration |
 | `smrt db:history` | Show migration history with active-vs-superseded failure classification |
 
-File-backed SQL/TypeScript migration generation is not supported. SMRT schema
-migrations are manifest-driven; model schema with SMRT objects and apply changes
+File-backed SQL/TypeScript migration generation is not supported. s-m-r-t schema
+migrations are manifest-driven; model schema with s-m-r-t objects and apply changes
 with `smrt db:migrate`.
 
 Use `--force-migration <exact-id>` for a known checksum, failed, or interrupted
@@ -68,7 +68,7 @@ batch.
 |---------|------------|
 | `smrt docs:agents` | Generate `.agents/smrt-framework.md` for consumer projects |
 | `smrt docs:claude` | Deprecated compatibility alias for `.claude/smrt-framework.md` |
-| `smrt dev:knowledge-index --format markdown\|json` | Print the deterministic SMRT + SDK knowledge index |
+| `smrt dev:knowledge-index --format markdown\|json` | Print the deterministic s-m-r-t + SDK knowledge index |
 | `smrt dev:knowledge-check --format markdown\|json` | Check agent knowledge freshness |
 | `smrt dev:knowledge-diff --format markdown\|json` | Show changed files and affected package experts |
 | `smrt knowledge:review-context --scope project\|local\|package\|sdk --package <name> --format markdown\|json` | Build a model-ready domain review prompt bundle |
@@ -80,7 +80,7 @@ batch.
 |---------|------------|
 | `smrt config:export` | Export agent config for SSG |
 | `smrt export` | Export data in various formats |
-| `smrt init` | Initialize a new SMRT project |
+| `smrt init` | Initialize a new s-m-r-t project |
 
 ### Dispatch
 
@@ -118,7 +118,7 @@ batch.
 
 ### Auto-Generated Object Commands
 
-For each registered SMRT object, the CLI generates:
+For each registered s-m-r-t object, the CLI generates:
 
 | Pattern | Description |
 |---------|------------|
@@ -129,7 +129,7 @@ For each registered SMRT object, the CLI generates:
 | `<object>:delete <id>` | Delete object |
 | `<object>:<method> <id>` | Custom methods exposed via `cli: { include: [...] }` |
 
-Custom methods on SMRT objects are auto-discovered from manifests. Method parameters become CLI options (camelCase to kebab-case).
+Custom methods on s-m-r-t objects are auto-discovered from manifests. Method parameters become CLI options (camelCase to kebab-case).
 
 ## Usage
 
@@ -201,7 +201,7 @@ export default {
 
 ### Entry Point Discovery
 
-The CLI loads SMRT objects from your project entry point:
+The CLI loads s-m-r-t objects from your project entry point:
 1. Explicit `entryPoint` in config
 2. `package.json` exports `['.'].import` or `['.']`
 3. `package.json` `main` field
@@ -209,7 +209,7 @@ The CLI loads SMRT objects from your project entry point:
 
 ### Manifest Discovery
 
-The CLI auto-discovers SMRT manifests from:
+The CLI auto-discovers s-m-r-t manifests from:
 - **Project root**: `dist/manifest.json`, `dist/static-manifest.js`, `.smrt/manifest.json`, and other standard locations
 - **Installed packages**: scans `node_modules/@happyvertical/smrt-*` for manifest files
 

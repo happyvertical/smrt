@@ -1,7 +1,7 @@
 # @happyvertical/smrt-ui
 
-The domain-agnostic Svelte 5 component foundation for SMRT. Components use the
-shared `--smrt-*` design tokens, render without a SMRT Provider, and can be used
+The domain-agnostic Svelte 5 component foundation for s-m-r-t. Components use the
+shared `--smrt-*` design tokens, render without a s-m-r-t Provider, and can be used
 by any package or application without pulling domain dependencies into the UI
 layer.
 
@@ -105,7 +105,7 @@ separate so the UI can show a proposal before it changes user state.
 ## Themes
 
 `@happyvertical/smrt-ui/themes` is the canonical theme API and includes the
-Material, Glass, Studio, and SMRT presets. The old `/theme` path forwards to the
+Material, Glass, Studio, and s-m-r-t presets. The old `/theme` path forwards to the
 same provider and context for compatibility.
 
 ```svelte
