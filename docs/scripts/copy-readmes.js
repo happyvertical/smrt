@@ -1,77 +1,107 @@
 #!/usr/bin/env node
-/**
- * Script to copy package READMEs to docs/content directory
- * This maintains a single source of truth for documentation.
- */
 
-import { copyFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(scriptDir, '../..');
+const outputDir = join(scriptDir, '../content/packages');
 
-// Paths
-const repoRoot = join(__dirname, '../..');
-const docsRoot = join(__dirname, '..');
-const contentDir = join(docsRoot, 'content');
-const packagesDir = join(repoRoot, 'packages');
-
-// SMRT package names to copy
-const packages = [
-  'types',
-  'core',
-  'agents',
-  'assets',
-  'content',
-  'events',
-  'gnode',
-  'places',
-  'products',
-  'profiles',
-  'tags',
-];
-
-async function copyPackageReadmes() {
-  try {
-    // Ensure content directory exists
-    if (!existsSync(contentDir)) {
-      await mkdir(contentDir, { recursive: true });
-    }
-
-    console.log('Copying package READMEs to docs/content...');
-
-    // Copy index.md from backup if it exists, otherwise from main docs
-    const indexSource = existsSync(join(docsRoot, 'docs.backup/index.md'))
-      ? join(docsRoot, 'docs.backup/index.md')
-      : join(docsRoot, 'content/index.md');
-
-    if (existsSync(indexSource)) {
-      await copyFile(indexSource, join(contentDir, 'index.md'));
-      console.log('✓ Copied index.md');
-    }
-
-    // Copy each package README
-    for (const pkg of packages) {
-      const sourcePath = join(packagesDir, pkg, 'README.md');
-      const destPath = join(contentDir, `${pkg}.md`);
-
-      if (!existsSync(sourcePath)) {
-        console.warn(`⚠ Warning: ${sourcePath} does not exist, skipping`);
-        continue;
-      }
-
-      await copyFile(sourcePath, destPath);
-      console.log(`✓ Copied ${pkg}.md`);
-    }
-
-    console.log('\nAll package READMEs copied successfully!');
-  } catch (error) {
-    console.error('Error copying READMEs:', error);
-    process.exit(1);
-  }
+async function workspacePatterns() {
+  const workspace = await readFile(join(repoRoot, 'pnpm-workspace.yaml'), 'utf8');
+  const section = workspace.match(/^packages:\s*\n((?:\s+-\s+.*\n)+)/m)?.[1] ?? '';
+  return [...section.matchAll(/^\s+-\s+['"]?([^'"\n]+)['"]?\s*$/gm)].map(
+    (match) => match[1],
+  );
 }
 
-// Run the script
-copyPackageReadmes();
+async function expandWorkspacePattern(pattern) {
+  if (!pattern.includes('*')) return [join(repoRoot, pattern)];
+  const [parent, suffix = ''] = pattern.split('*', 2);
+  const entries = await readdir(join(repoRoot, parent), { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(repoRoot, parent, entry.name, suffix));
+}
+
+async function discoverPackages() {
+  const packages = [];
+  for (const pattern of await workspacePatterns()) {
+    for (const directory of await expandWorkspacePattern(pattern)) {
+      try {
+        await readFile(join(directory, 'package.json'), 'utf8');
+        const workspacePath = relative(join(repoRoot, 'packages'), directory).replaceAll(
+          '\\',
+          '/',
+        );
+        packages.push({ directory, outputName: workspacePath.replaceAll('/', '-') });
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    }
+  }
+  return packages.sort((a, b) => a.outputName.localeCompare(b.outputName));
+}
+
+async function rewriteLocalLinks(markdown, source) {
+  const replacements = [];
+  const pattern = /(!?\[[^\]]*\]\()([^)]+)(\))/g;
+  for (const match of markdown.matchAll(pattern)) {
+    const rawTarget = match[2].trim().replace(/^<|>$/g, '');
+    if (!rawTarget || /^(?:https?:|mailto:|tel:|data:)/i.test(rawTarget)) continue;
+    if (rawTarget.startsWith('#')) continue;
+
+    const pathEnd = rawTarget.search(/[?#]/);
+    const pathname = pathEnd === -1 ? rawTarget : rawTarget.slice(0, pathEnd);
+    const suffix = pathEnd === -1 ? '' : rawTarget.slice(pathEnd);
+    if (!pathname) continue;
+
+    const resolved = resolve(dirname(source), decodeURIComponent(pathname));
+    const repoPath = relative(repoRoot, resolved).replaceAll('\\', '/');
+    const targetStat = await stat(resolved);
+    let target;
+    if (match[1].startsWith('!')) {
+      target = `https://raw.githubusercontent.com/happyvertical/smrt/main/${repoPath}${suffix}`;
+    } else if (targetStat.isDirectory()) {
+      target = `https://github.com/happyvertical/smrt/tree/main/${repoPath}${suffix}`;
+    } else {
+      target = `https://github.com/happyvertical/smrt/blob/main/${repoPath}${suffix}`;
+    }
+    replacements.push({
+      start: match.index + match[1].length,
+      end: match.index + match[0].length - 1,
+      target,
+    });
+  }
+
+  let result = markdown;
+  for (const replacement of replacements.reverse()) {
+    result = `${result.slice(0, replacement.start)}${replacement.target}${result.slice(replacement.end)}`;
+  }
+  return result;
+}
+
+async function copyPackageReadmes() {
+  const packages = await discoverPackages();
+  await rm(outputDir, { recursive: true, force: true });
+  await mkdir(outputDir, { recursive: true });
+
+  for (const pkg of packages) {
+    const source = join(pkg.directory, 'README.md');
+    const destination = join(outputDir, `${pkg.outputName}.md`);
+    const markdown = await readFile(source, 'utf8');
+    await writeFile(destination, await rewriteLocalLinks(markdown, source));
+  }
+
+  await writeFile(
+    join(outputDir, '.generated'),
+    'Generated by docs/scripts/copy-readmes.js. Do not edit.\n',
+  );
+  console.log(`Copied ${packages.length} package READMEs to docs/content/packages.`);
+}
+
+copyPackageReadmes().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

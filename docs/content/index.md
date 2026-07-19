@@ -1,54 +1,40 @@
 ---
 id: index
-title: "SMRT Framework"
-sidebar_label: "Introduction"
+title: SMRT Framework
+sidebar_label: Introduction
 sidebar_position: 1
 slug: /
 ---
 
 # SMRT Framework
 
-**SMRT** is a TypeScript framework for building vertical AI agents with built-in code generation, database persistence, and AI-powered operations.
+SMRT is a TypeScript framework for defining domain behavior once and using the resulting model graph for persistence, REST, CLI, MCP, AI operations, web clients, and mobile contracts.
 
-## Core Philosophy
+## Requirements
 
-- **Define Once**: Use the `@smrt()` decorator to define business logic once
-- **Generate Everything**: Automatically create REST APIs, AI tools (MCP), and CLI commands
-- **AI-First**: Built-in intelligent operations with `do()`, `is()`, and `describe()` methods
-- **Type-Safe**: Full TypeScript support with automatic type inference
-- **Database Agnostic**: Works with SQLite, Postgres, and DuckDB
+- Node.js 24.18 or newer
+- pnpm 11.13 or newer
+- An explicitly prepared application schema
 
-## Quick Start
+## Start here
 
-### Installation
+Install the core package:
 
 ```bash
-npm install @happyvertical/smrt-core @happyvertical/smrt-types
+pnpm add @happyvertical/smrt-core
 ```
 
-### Create Your First SMRT Object
+Then follow the repository's validated [quick start](https://github.com/happyvertical/smrt#quick-start). The root README is the canonical onboarding path; package pages in this site are copied from each package's README during `predev` and `prebuild`.
 
-```typescript
-import { SmrtObject } from '@happyvertical/smrt-core';
+## Core principles
 
-// No decorator needed - it's optional
-class Task extends SmrtObject {
-  title = '';
-  priority = 0;
-  completed = false;
-}
-```
+- Decorated domain classes are the source for generated interfaces.
+- Runtime verifies application schema; migrations and tooling prepare it.
+- Tenant isolation and package boundaries are explicit framework contracts.
+- Package `AGENTS.md` files hold detailed architecture; READMEs are user-facing entry points.
 
-That's it! You now have:
-- ✅ REST API endpoints: `POST /tasks`, `GET /tasks`, `GET /tasks/:id`, `PUT /tasks/:id`, `DELETE /tasks/:id`
-- ✅ CLI commands: `task create`, `task list`, `task update`, `task delete`
-- ✅ MCP tools for AI agents to create, read, update, and list tasks
-- ✅ Database schema with automatic migrations
-- ✅ Type-safe operations throughout
+## Next steps
 
-## What's Next?
-
-- Explore the [Core Framework](/core) documentation
-- Learn about [SMRT Packages](/) for domain-specific functionality
-- Read the [API Reference](/api/core) for detailed technical documentation
-
+- Browse **Packages** in the sidebar for install and API guidance.
+- Read the [core architecture](./architecture/core-architecture.md).
+- Read the [package standards](./standards.md) before contributing.
