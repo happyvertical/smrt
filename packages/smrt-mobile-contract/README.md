@@ -1,6 +1,6 @@
 # @happyvertical/smrt-mobile-contract
 
-Codegen for the SMRT mobile foundation: projects a SMRT `manifest.json`
+Codegen for the s-m-r-t mobile foundation: projects a s-m-r-t `manifest.json`
 through a mobile allowlist into typed Kotlin (`@Serializable` DTOs for the
 KMP module) and Swift (plain structs) — plus the generated framework
 contract files checked into

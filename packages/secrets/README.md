@@ -1,6 +1,6 @@
 # @happyvertical/smrt-secrets
 
-Per-tenant secret management with envelope encryption for the SMRT framework. Uses a three-layer encryption chain: Application Master Key (AMK) wraps per-tenant Data Encryption Keys (TDEK), which encrypt individual secret values.
+Per-tenant secret management with envelope encryption for the s-m-r-t framework. Uses a three-layer encryption chain: Application Master Key (AMK) wraps per-tenant Data Encryption Keys (TDEK), which encrypt individual secret values.
 
 ## Installation
 
@@ -79,7 +79,7 @@ TenantKey statuses: `active` (current encryption key), `rotating` (transitional)
 
 `diagnoseTenantSecretKeyDrift(tenantId)` reports tenant secret/key drift without
 returning secret values. It checks active `secrets` rows, lower-level
-`tenant_encryption_keys` rows used by `@happyvertical/secrets`, and SMRT-visible
+`tenant_encryption_keys` rows used by `@happyvertical/secrets`, and s-m-r-t-visible
 `tenant_keys` rows so operators can distinguish missing secrets from stale or
 unusable key material.
 

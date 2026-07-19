@@ -1,7 +1,7 @@
 # @happyvertical/smrt-marketing
 
 Cross-channel Campaign models, immutable performance snapshots, computed
-budget pacing, and reusable Svelte marketing surfaces for SMRT.
+budget pacing, and reusable Svelte marketing surfaces for s-m-r-t.
 
 ```bash
 pnpm add @happyvertical/smrt-marketing

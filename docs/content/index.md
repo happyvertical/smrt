@@ -1,14 +1,14 @@
 ---
 id: index
-title: SMRT Framework
+title: s-m-r-t Framework
 sidebar_label: Introduction
 sidebar_position: 1
 slug: /
 ---
 
-# SMRT Framework
+# s-m-r-t Framework
 
-SMRT is a TypeScript framework for defining domain behavior once and using the resulting model graph for persistence, REST, CLI, MCP, AI operations, web clients, and mobile contracts.
+s-m-r-t is a TypeScript framework for defining domain behavior once and using the resulting model graph for persistence, REST, CLI, MCP, AI operations, web clients, and mobile contracts.
 
 ## Requirements
 

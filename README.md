@@ -1,8 +1,37 @@
-# SMRT Framework
+# s-m-r-t framework
 
-**A TypeScript framework for building vertical AI systems from domain classes.**
+**Define business objects once. Use them through persistence, REST, CLI, MCP,
+agents, web clients, and native apps.**
 
-Define business logic with `@smrt()` and use the same model metadata for persistence, REST APIs, CLI commands, MCP tools, AI operations, web clients, and mobile contracts. SMRT contains 61 top-level platform packages published primarily under `@happyvertical/smrt-*`, plus a private playground test-host workspace.
+s-m-r-t is a TypeScript framework for building operational software and vertical
+AI agents around the same typed domain model. Decorated classes become
+manifest-described objects with portable persistence, generated interfaces,
+tenant-aware relationships, AI operations, and reusable domain packages.
+
+It is designed for systems where the difficult part is keeping data,
+permissions, tools, background work, user interfaces, and automation aligned as
+the domain grows—not merely implementing one endpoint or agent prompt. The
+repository contains 61 top-level platform packages published primarily under
+`@happyvertical/smrt-*`, plus a private playground test-host workspace.
+
+## Define once, expose deliberately
+
+```mermaid
+flowchart LR
+  A["TypeScript classes with @smrt()"] --> B["Manifest and schema metadata"]
+  B --> C["SQLite, PostgreSQL, or DuckDB"]
+  B --> D["REST and typed clients"]
+  B --> E["CLI, MCP, and WebMCP tools"]
+  B --> F["Web and mobile collections"]
+  C --> G["Agents, jobs, and domain services"]
+  D --> G
+  E --> G
+  F --> G
+```
+
+Generation is allowlist-driven. A model does not become publicly writable just
+because it exists: each `@smrt()` declaration controls its REST, CLI, MCP, AI,
+cache, tenancy, and lifecycle surface.
 
 ## Requirements
 
@@ -113,6 +142,19 @@ For framework invariants and production setup, read [the repository guide](./AGE
 - **Reusable vertical packages:** identity, content, commerce, sales, support, projects, media, analytics, and more.
 - **Cross-platform clients:** Svelte 5 UI, browser data runtime, Kotlin Multiplatform foundations, Android Compose, and SwiftUI.
 
+## Choose your path
+
+| Goal | Start here |
+| --- | --- |
+| Learn the object and collection model | [`smrt-core`](./packages/core/README.md) |
+| Start a SvelteKit application | [`smrt-template-sveltekit`](./packages/template-sveltekit/README.md) |
+| Build agents and personas | [`smrt-agents`](./packages/agents/README.md), [`smrt-personas`](./packages/personas/README.md) |
+| Add tenant-aware identity and authorization | [`smrt-tenancy`](./packages/tenancy/README.md), [`smrt-users`](./packages/users/README.md) |
+| Build live or offline browser data | [`smrt-web`](./packages/smrt-web/README.md), [`smrt-svelte`](./packages/smrt-svelte/README.md) |
+| Expose an application CLI or MCP server | [`smrt-app-cli`](./packages/app-cli/README.md), [`smrt-app-mcp`](./packages/smrt-app-mcp/README.md) |
+| Use an existing business domain | Browse the linked package catalog below |
+| Extend or review the framework | [`AGENTS.md`](./AGENTS.md), [`smrt-dev-mcp`](./packages/smrt-dev-mcp/README.md) |
+
 ## Package catalog
 
 Status legend:
@@ -210,6 +252,15 @@ Status legend:
 | [`smrt-template-site-static-json`](./packages/template-site-static-json/README.md) | Stable | Static JSON community-site template. |
 | [`smrt-gnode`](./packages/gnode/README.md) | Experimental | Federation library; currently incomplete. |
 
+## SDK dependencies
+
+s-m-r-t composes infrastructure from the
+[HappyVertical SDK](https://github.com/happyvertical/sdk), including database,
+AI, filesystem, logging, messaging, and provider-neutral service adapters. Use
+the framework packages for domain objects and generated application surfaces;
+use the SDK directly when implementing infrastructure adapters or lower-level
+services.
+
 ## Development
 
 ```bash
@@ -245,8 +296,8 @@ The documentation build discovers package READMEs from workspace `package.json` 
 
 ## Related projects
 
-- [HappyVertical SDK](https://github.com/happyvertical/sdk) — infrastructure packages used by SMRT.
-- [Praeco](https://github.com/happyvertical/praeco) — a production application built on SMRT.
+- [HappyVertical SDK](https://github.com/happyvertical/sdk) — infrastructure packages used by s-m-r-t.
+- [Praeco](https://github.com/happyvertical/praeco) — a production application built on s-m-r-t.
 
 ## License
 

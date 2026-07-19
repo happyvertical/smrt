@@ -42,6 +42,33 @@ function readmeLocalLinks(path) {
   return links;
 }
 
+export function markdownProse(markdown) {
+  let fenced = false;
+  let fence = '';
+  return markdown
+    .split('\n')
+    .map((line) => {
+      const marker = /^\s*(`{3,}|~{3,})/.exec(line);
+      if (marker) {
+        if (!fenced) {
+          fenced = true;
+          fence = marker[1][0];
+        } else if (marker[1][0] === fence) {
+          fenced = false;
+          fence = '';
+        }
+        return '';
+      }
+      if (fenced) return '';
+      return line.replace(/`+[^`]*`+/g, '');
+    })
+    .join('\n');
+}
+
+export function hasObsoleteBrandName(markdown) {
+  return /\bSMRT\b/.test(markdownProse(markdown));
+}
+
 export function hasApplicationManifestRegistration(sourceText, fileName = 'manifest-registration.ts') {
   const source = ts.createSourceFile(
     fileName,
@@ -181,6 +208,16 @@ export async function checkReadmes(root = ROOT) {
   }
 
   const readmes = [readmePath, ...packages.map((pkg) => join(pkg.directory, 'README.md'))];
+  const brandedMarkdown = [
+    ...readmes,
+    join(root, 'docs/README.md'),
+    join(root, 'docs/content/index.md'),
+  ].filter(existsSync);
+  for (const readme of brandedMarkdown) {
+    if (hasObsoleteBrandName(readFileSync(readme, 'utf8'))) {
+      fail(`${relative(root, readme)} uses obsolete SMRT prose; write s-m-r-t`);
+    }
+  }
   for (const readme of readmes) {
     for (const target of readmeLocalLinks(readme)) {
       if (!existsSync(resolve(dirname(readme), target))) {
@@ -221,7 +258,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   checkReadmes()
     .then((count) => {
       console.log(
-        `README validation passed: ${count} workspace packages, complete catalog, local links, branding, and quick start.`,
+        `README validation passed: ${count} workspace packages, complete catalog, local links, s-m-r-t branding, and quick start.`,
       );
     })
     .catch((error) => {

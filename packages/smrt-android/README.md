@@ -1,6 +1,6 @@
 # @happyvertical/smrt-android
 
-Android Compose foundation for SMRT mobile apps (ADR 0001 Phase 5, issue
+Android Compose foundation for s-m-r-t mobile apps (ADR 0001 Phase 5, issue
 #1742): the `MobileTheme` design system, the bottom-tab `MobileShellScaffold`
 bound to smrt-mobile's `MobileShellState`, and the native adapters
 implementing smrt-mobile's platform seams — ML Kit barcode, speech

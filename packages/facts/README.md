@@ -1,6 +1,6 @@
 # @happyvertical/smrt-facts
 
-Knowledge base with semantic deduplication, provenance tracking, and confidence scoring for the SMRT framework. Facts evolve through parent-child chains, are linked to sources and subjects, and undergo 3-zone reconciliation to prevent duplicates.
+Knowledge base with semantic deduplication, provenance tracking, and confidence scoring for the s-m-r-t framework. Facts evolve through parent-child chains, are linked to sources and subjects, and undergo 3-zone reconciliation to prevent duplicates.
 
 ## Installation
 
@@ -21,7 +21,7 @@ import {
 } from '@happyvertical/smrt-facts';
 
 // Create a fact with provenance
-const facts = new FactCollection(db);
+const facts = await FactCollection.create({ db });
 const fact = await facts.create({
   textRefined: 'The Eiffel Tower is 330 meters tall',
   type: 'measurement',
@@ -30,7 +30,7 @@ const fact = await facts.create({
 });
 
 // Attach a source with credibility score
-const sources = new FactSourceCollection(db);
+const sources = await FactSourceCollection.create({ db });
 await sources.create({
   factId: fact.id,
   sourceUrl: 'https://example.com/eiffel-tower',
@@ -116,3 +116,8 @@ const briefing = await facts.getEntityBriefing('Place', placeId);
 - `@happyvertical/smrt-core` -- ORM, code generation, and semantic search
 - `@happyvertical/smrt-tenancy` -- optional multi-tenant scoping with `findWithGlobals()`
 - `@happyvertical/ai` -- AI disambiguation in reconciliation
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

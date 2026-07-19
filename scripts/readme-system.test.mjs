@@ -10,7 +10,9 @@ import {
   rewriteLocalLinks,
 } from '../docs/scripts/copy-readmes.js';
 import {
+  hasObsoleteBrandName,
   hasApplicationManifestRegistration,
+  markdownProse,
   validateQuickstart,
 } from './check-readmes.mjs';
 import { discoverWorkspaces, validateWorkspaceList } from './workspaces.mjs';
@@ -29,6 +31,17 @@ async function packageFixture(root, name = 'example') {
   await writeFile(join(directory, 'package.json'), `{"name":"${name}"}\n`);
   return directory;
 }
+
+test('public README prose uses the s-m-r-t brand name', () => {
+  assert.equal(hasObsoleteBrandName('# SMRT framework'), true);
+  assert.equal(hasObsoleteBrandName('# s-m-r-t framework'), false);
+  assert.equal(
+    hasObsoleteBrandName('Use `SMRT_TABLE_NAME` and `SMRT_SECRET_MASTER_KEY`.'),
+    false,
+  );
+  assert.equal(hasObsoleteBrandName('```ts\nconst SMRT_TOKEN = true;\n```'), false);
+  assert.equal(markdownProse('Before `SMRT` after'), 'Before  after');
+});
 
 test('quick start receives semantic TypeScript validation against core exports', async () => {
   const readme = await readFile(join(repoRoot, 'README.md'), 'utf8');

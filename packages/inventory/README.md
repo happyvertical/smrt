@@ -1,6 +1,6 @@
 # @happyvertical/smrt-inventory
 
-Multi-location stock tracking for the SMRT framework. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, and any other vertical that counts discrete units across locations.
+Multi-location stock tracking for the s-m-r-t framework. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, and any other vertical that counts discrete units across locations.
 
 ## Installation
 

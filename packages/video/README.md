@@ -1,6 +1,6 @@
 # @happyvertical/smrt-video
 
-Video production pipeline for AI-powered video generation in the SMRT ecosystem. Models characters, performers, scenes, shots, sequences, compositions, and ComfyUI workflow templates.
+Video production pipeline for AI-powered video generation in the s-m-r-t ecosystem. Models characters, performers, scenes, shots, sequences, compositions, and ComfyUI workflow templates.
 
 ## Installation
 

@@ -1,6 +1,6 @@
 # @happyvertical/smrt-features
 
-Code-first feature flags for SMRT applications, with global, app-level, and tenant-hierarchy resolution.
+Code-first feature flags for s-m-r-t applications, with global, app-level, and tenant-hierarchy resolution.
 
 ## Installation
 

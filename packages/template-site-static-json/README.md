@@ -111,5 +111,5 @@ pnpm build
 
 ## Related
 
-- [SMRT Framework](https://github.com/happyvertical/smrt)
+- [s-m-r-t Framework](https://github.com/happyvertical/smrt)
 - [SvelteKit](https://kit.svelte.dev/)

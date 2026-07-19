@@ -1,6 +1,6 @@
 # @happyvertical/smrt-types
 
-Shared TypeScript type definitions for the SMRT framework. Prevents circular dependencies by centralizing types that multiple packages need.
+Shared TypeScript type definitions for the s-m-r-t framework. Prevents circular dependencies by centralizing types that multiple packages need.
 
 ## Installation
 

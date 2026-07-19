@@ -1,6 +1,6 @@
 # @happyvertical/smrt-manufacturing
 
-Bills of materials, cost rollup, and production-order operations for the SMRT framework. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, food production, custom hardware, and any other vertical that builds finished goods from a recipe.
+Bills of materials, cost rollup, and production-order operations for the s-m-r-t framework. Strictly industry-neutral — the same primitives serve apparel, furniture, automotive, CPG, electronics, food production, custom hardware, and any other vertical that builds finished goods from a recipe.
 
 ## Installation
 

@@ -12,7 +12,7 @@ pnpm add @happyvertical/smrt-gnode
 
 ## Intent
 
-Gnodes are federated local knowledge bases. This package will provide the federation protocols needed for P2P discovery and cross-gnode communication. No SMRT models are present -- this is a library-stage package.
+Gnodes are federated local knowledge bases. This package will provide the federation protocols needed for P2P discovery and cross-gnode communication. No s-m-r-t models are present -- this is a library-stage package.
 
 ## Exports
 

@@ -1,6 +1,6 @@
 # @happyvertical/smrt-scanner
 
-High-performance TypeScript AST scanner using [OXC](https://oxc-project.github.io/) for SMRT manifest generation. Extracts class, field, method, and decorator metadata from source files without executing them.
+High-performance TypeScript AST scanner using [OXC](https://oxc-project.github.io/) for s-m-r-t manifest generation. Extracts class, field, method, and decorator metadata from source files without executing them.
 
 ## Installation
 
@@ -58,7 +58,7 @@ smrt-scan src/**/*.ts
 |--------|------------|
 | `OxcScanner` | Scans TypeScript files for `@smrt()` decorated classes |
 | `InheritanceResolver` | Resolves class inheritance chains across files |
-| `ManifestAdapter` | Converts raw scan results to SMRT manifest format |
+| `ManifestAdapter` | Converts raw scan results to s-m-r-t manifest format |
 
 ### Functions
 
@@ -66,7 +66,7 @@ smrt-scan src/**/*.ts
 |--------|------------|
 | `parseFile` | Parse a single TypeScript file and extract metadata |
 | `parseSource` | Parse a TypeScript source string |
-| `extractSmrtImports` | Extract SMRT-related imports from a file |
+| `extractSmrtImports` | Extract s-m-r-t-related imports from a file |
 
 ### Key Types
 

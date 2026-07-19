@@ -1,6 +1,6 @@
 # @happyvertical/smrt-prompts
 
-Typed prompt definitions, tenant-aware prompt overrides, and runtime prompt resolution for SMRT applications.
+Typed prompt definitions, tenant-aware prompt overrides, and runtime prompt resolution for s-m-r-t applications.
 
 ## Installation
 

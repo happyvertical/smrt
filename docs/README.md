@@ -1,4 +1,4 @@
-# SMRT documentation site
+# s-m-r-t documentation site
 
 The Docusaurus site combines authored guides in [`content`](./content/) with every workspace package README, including nested workspaces.
 

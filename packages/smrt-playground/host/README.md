@@ -1,4 +1,4 @@
-# SMRT Playground test host
+# s-m-r-t Playground test host
 
 Private SvelteKit application used by the `@happyvertical/smrt-playground` Playwright suite. It is a workspace fixture, not a published package or application template.
 
