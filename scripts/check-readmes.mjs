@@ -162,10 +162,30 @@ if (!quickstartMatch) {
     }
   }
 
-  const coreIndex = readFileSync(join(PACKAGES, 'core/src/index.ts'), 'utf8');
-  for (const exportPath of ["export * from './class'", "export * from './collection'", "export * from './registry'"]) {
-    if (!coreIndex.includes(exportPath)) {
-      fail(`quick start depends on missing core export: ${exportPath}`);
+  const coreIndexPath = join(PACKAGES, 'core/src/index.ts');
+  const coreIndex = readFileSync(coreIndexPath, 'utf8');
+  const coreSource = ts.createSourceFile(
+    coreIndexPath,
+    coreIndex,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const runtimeStarExports = new Set(
+    coreSource.statements
+      .filter(
+        (statement) =>
+          ts.isExportDeclaration(statement) &&
+          !statement.isTypeOnly &&
+          !statement.exportClause &&
+          statement.moduleSpecifier &&
+          ts.isStringLiteral(statement.moduleSpecifier),
+      )
+      .map((statement) => statement.moduleSpecifier.text.replace(/(?:\/index)?(?:\.js)?$/, '')),
+  );
+  for (const exportPath of ['./class', './collection', './registry']) {
+    if (!runtimeStarExports.has(exportPath)) {
+      fail(`quick start depends on missing runtime core export: ${exportPath}`);
     }
   }
 }

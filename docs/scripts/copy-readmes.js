@@ -57,9 +57,40 @@ async function rewriteLocalLinks(markdown, source) {
     const suffix = pathEnd === -1 ? '' : rawTarget.slice(pathEnd);
     if (!pathname) continue;
 
-    const resolved = resolve(dirname(source), decodeURIComponent(pathname));
+    const sourcePath = relative(repoRoot, source).replaceAll('\\', '/');
+    let decodedPathname;
+    try {
+      decodedPathname = decodeURIComponent(pathname);
+    } catch (error) {
+      throw new Error(
+        `Malformed URL encoding in ${sourcePath} link "${rawTarget}": ${error.message}`,
+        { cause: error },
+      );
+    }
+
+    const resolved = resolve(dirname(source), decodedPathname);
     const repoPath = relative(repoRoot, resolved).replaceAll('\\', '/');
-    const targetStat = await stat(resolved);
+    if (repoPath === '..' || repoPath.startsWith('../')) {
+      throw new Error(
+        `Local link in ${sourcePath} resolves outside the repository: "${rawTarget}"`,
+      );
+    }
+
+    let targetStat;
+    try {
+      targetStat = await stat(resolved);
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        throw new Error(
+          `Missing local target in ${sourcePath} link "${rawTarget}" (resolved to ${repoPath})`,
+          { cause: error },
+        );
+      }
+      throw new Error(
+        `Unable to inspect local target in ${sourcePath} link "${rawTarget}": ${error.message}`,
+        { cause: error },
+      );
+    }
     let target;
     if (match[1].startsWith('!')) {
       target = `https://raw.githubusercontent.com/happyvertical/smrt/main/${repoPath}${suffix}`;
