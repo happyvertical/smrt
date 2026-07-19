@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.15
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: revamp README system (#2068) (readme)
+  - @happyvertical/smrt-config@0.40.15
+  - @happyvertical/smrt-types@0.40.15
+  - @happyvertical/smrt-scanner@0.40.15
+
 ## 0.40.14
 
 ### Patch Changes
