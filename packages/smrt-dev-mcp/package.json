@@ -54,13 +54,13 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.25.2"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.3",
     "typescript": "5.9.3",
     "vite": "8.1.4",
-    "vite-plugin-dts": "^4.5.4",
+    "vite-plugin-dts": "^5.0.3",
     "vitest": "4.1.10"
   },
   "author": "HappyVertical"
