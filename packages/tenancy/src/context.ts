@@ -96,8 +96,25 @@ const SYSTEM_CONTEXT_MARKER = Symbol.for('smrt:system-context');
 // Storage type includes the marker for system context
 type ContextStoreValue = TenantContextData | typeof SYSTEM_CONTEXT_MARKER;
 
-// AsyncLocalStorage instance for tenant context
-const tenantStorage = new AsyncLocalStorage<ContextStoreValue>();
+// globalThis key for the shared AsyncLocalStorage. Vite/vitest/SvelteKit
+// server pipelines can evaluate this module more than once from a single copy
+// on disk (separate SSR/node module graphs, CJS/ESM interop); a module-local
+// storage would make context entered through one instance invisible to guards
+// reading from another (e.g. smrt-profiles' isSystemContext() check missing an
+// app's withSystemContext()). Symbol.for() resolves to the same symbol in
+// every instance, so all of them share the one storage below.
+const TENANT_STORAGE_KEY = Symbol.for('smrt:tenant-context-storage');
+
+// AsyncLocalStorage instance for tenant context, shared across module instances
+function resolveTenantStorage(): AsyncLocalStorage<ContextStoreValue> {
+  const root = globalThis as typeof globalThis & {
+    [TENANT_STORAGE_KEY]?: AsyncLocalStorage<ContextStoreValue>;
+  };
+  root[TENANT_STORAGE_KEY] ??= new AsyncLocalStorage<ContextStoreValue>();
+  return root[TENANT_STORAGE_KEY];
+}
+
+const tenantStorage = resolveTenantStorage();
 
 /**
  * Get the current tenant context for this async execution scope.
