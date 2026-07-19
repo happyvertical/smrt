@@ -1,54 +1,88 @@
 #!/usr/bin/env node
 
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { discoverWorkspaces } from '../../scripts/workspaces.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, '../..');
 const outputDir = join(scriptDir, '../content/packages');
 
-async function workspacePatterns() {
-  const workspace = await readFile(join(repoRoot, 'pnpm-workspace.yaml'), 'utf8');
-  const section = workspace.match(/^packages:\s*\n((?:\s+-\s+.*\n)+)/m)?.[1] ?? '';
-  return [...section.matchAll(/^\s+-\s+['"]?([^'"\n]+)['"]?\s*$/gm)].map(
-    (match) => match[1],
-  );
-}
+export function markdownDestinations(markdown) {
+  const destinations = [];
+  for (let index = 0; index < markdown.length; index += 1) {
+    const image = markdown[index] === '!';
+    const labelStart = image ? index + 1 : index;
+    if (markdown[labelStart] !== '[' || (labelStart > 0 && markdown[labelStart - 1] === '\\')) continue;
 
-async function expandWorkspacePattern(pattern) {
-  if (!pattern.includes('*')) return [join(repoRoot, pattern)];
-  const [parent, suffix = ''] = pattern.split('*', 2);
-  const entries = await readdir(join(repoRoot, parent), { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(repoRoot, parent, entry.name, suffix));
-}
+    let cursor = labelStart + 1;
+    for (; cursor < markdown.length; cursor += 1) {
+      if (markdown[cursor] === '\\') cursor += 1;
+      else if (markdown[cursor] === ']') break;
+    }
+    if (markdown[cursor] !== ']' || markdown[cursor + 1] !== '(') continue;
+    cursor += 2;
+    while (/\s/.test(markdown[cursor] ?? '')) cursor += 1;
 
-async function discoverPackages() {
-  const packages = [];
-  for (const pattern of await workspacePatterns()) {
-    for (const directory of await expandWorkspacePattern(pattern)) {
-      try {
-        await readFile(join(directory, 'package.json'), 'utf8');
-        const workspacePath = relative(join(repoRoot, 'packages'), directory).replaceAll(
-          '\\',
-          '/',
-        );
-        packages.push({ directory, outputName: workspacePath.replaceAll('/', '-') });
-      } catch (error) {
-        if (error?.code !== 'ENOENT') throw error;
+    let start = cursor;
+    let end;
+    if (markdown[cursor] === '<') {
+      start = ++cursor;
+      for (; cursor < markdown.length; cursor += 1) {
+        if (markdown[cursor] === '\\') cursor += 1;
+        else if (markdown[cursor] === '>') {
+          end = cursor;
+          break;
+        }
+      }
+    } else {
+      let depth = 0;
+      for (; cursor < markdown.length; cursor += 1) {
+        const character = markdown[cursor];
+        if (character === '\\') cursor += 1;
+        else if (character === '(') depth += 1;
+        else if (character === ')' && depth > 0) depth -= 1;
+        else if (character === ')' || (/\s/.test(character) && depth === 0)) {
+          end = cursor;
+          break;
+        }
       }
     }
+    if (end === undefined || end === start) continue;
+    destinations.push({ start, end, target: markdown.slice(start, end), image });
+    index = cursor;
   }
-  return packages.sort((a, b) => a.outputName.localeCompare(b.outputName));
+  return destinations;
 }
 
-async function rewriteLocalLinks(markdown, source) {
+function encodeRepositoryPath(pathname) {
+  return pathname
+    .split('/')
+    .map((segment) =>
+      encodeURIComponent(segment).replace(
+        /[!'()*]/g,
+        (byte) => `%${byte.charCodeAt(0).toString(16).toUpperCase()}`,
+      ),
+    )
+    .join('/');
+}
+
+function isInside(root, candidate) {
+  const path = relative(root, candidate);
+  return path !== '..' && !path.startsWith('../') && !path.startsWith('..\\');
+}
+
+export async function rewriteLocalLinks(markdown, source, root = repoRoot) {
+  const canonicalRoot = await realpath(root);
+  const canonicalSource = await realpath(source);
+  if (!isInside(canonicalRoot, canonicalSource)) {
+    throw new Error(`README source resolves outside the repository: ${source}`);
+  }
   const replacements = [];
-  const pattern = /(!?\[[^\]]*\]\()([^)]+)(\))/g;
-  for (const match of markdown.matchAll(pattern)) {
-    const rawTarget = match[2].trim().replace(/^<|>$/g, '');
+  for (const destination of markdownDestinations(markdown)) {
+    const rawTarget = destination.target;
     if (!rawTarget || /^(?:https?:|mailto:|tel:|data:)/i.test(rawTarget)) continue;
     if (rawTarget.startsWith('#')) continue;
 
@@ -57,10 +91,10 @@ async function rewriteLocalLinks(markdown, source) {
     const suffix = pathEnd === -1 ? '' : rawTarget.slice(pathEnd);
     if (!pathname) continue;
 
-    const sourcePath = relative(repoRoot, source).replaceAll('\\', '/');
+    const sourcePath = relative(canonicalRoot, canonicalSource).replaceAll('\\', '/');
     let decodedPathname;
     try {
-      decodedPathname = decodeURIComponent(pathname);
+      decodedPathname = decodeURIComponent(pathname.replace(/\\([\\()`])/g, '$1'));
     } catch (error) {
       throw new Error(
         `Malformed URL encoding in ${sourcePath} link "${rawTarget}": ${error.message}`,
@@ -68,17 +102,23 @@ async function rewriteLocalLinks(markdown, source) {
       );
     }
 
-    const resolved = resolve(dirname(source), decodedPathname);
-    const repoPath = relative(repoRoot, resolved).replaceAll('\\', '/');
-    if (repoPath === '..' || repoPath.startsWith('../')) {
-      throw new Error(
-        `Local link in ${sourcePath} resolves outside the repository: "${rawTarget}"`,
-      );
+    const resolved = resolve(dirname(canonicalSource), decodedPathname);
+    let canonicalTarget;
+    try {
+      canonicalTarget = await realpath(resolved);
+    } catch (error) {
+      throw new Error(`Local link in ${sourcePath} does not exist: "${rawTarget}"`, {
+        cause: error,
+      });
+    }
+    const repoPath = relative(canonicalRoot, canonicalTarget).replaceAll('\\', '/');
+    if (!isInside(canonicalRoot, canonicalTarget)) {
+      throw new Error(`Local link in ${sourcePath} resolves outside the repository: "${rawTarget}"`);
     }
 
     let targetStat;
     try {
-      targetStat = await stat(resolved);
+      targetStat = await stat(canonicalTarget);
     } catch (error) {
       if (error?.code === 'ENOENT') {
         throw new Error(
@@ -91,19 +131,14 @@ async function rewriteLocalLinks(markdown, source) {
         { cause: error },
       );
     }
-    let target;
-    if (match[1].startsWith('!')) {
-      target = `https://raw.githubusercontent.com/happyvertical/smrt/main/${repoPath}${suffix}`;
-    } else if (targetStat.isDirectory()) {
-      target = `https://github.com/happyvertical/smrt/tree/main/${repoPath}${suffix}`;
-    } else {
-      target = `https://github.com/happyvertical/smrt/blob/main/${repoPath}${suffix}`;
-    }
-    replacements.push({
-      start: match.index + match[1].length,
-      end: match.index + match[0].length - 1,
-      target,
-    });
+
+    const encodedPath = encodeRepositoryPath(repoPath);
+    const base = destination.image
+      ? 'https://raw.githubusercontent.com/happyvertical/smrt/main/'
+      : targetStat.isDirectory()
+        ? 'https://github.com/happyvertical/smrt/tree/main/'
+        : 'https://github.com/happyvertical/smrt/blob/main/';
+    replacements.push({ ...destination, target: `${base}${encodedPath}${suffix}` });
   }
 
   let result = markdown;
@@ -113,26 +148,121 @@ async function rewriteLocalLinks(markdown, source) {
   return result;
 }
 
-async function copyPackageReadmes() {
-  const packages = await discoverPackages();
-  await rm(outputDir, { recursive: true, force: true });
-  await mkdir(outputDir, { recursive: true });
-
+export async function discoverPackages(root = repoRoot, options = {}) {
+  const workspaces = await discoverWorkspaces(root, options);
+  const packages = workspaces.map((workspace) => {
+    const workspacePath = relative(root, workspace.path).replaceAll('\\', '/');
+    const packagePath = workspacePath.startsWith('packages/')
+      ? workspacePath.slice('packages/'.length)
+      : workspacePath;
+    return {
+      directory: workspace.path,
+      outputName: packagePath.replaceAll('/', '-'),
+    };
+  });
+  const names = new Set();
   for (const pkg of packages) {
-    const source = join(pkg.directory, 'README.md');
-    const destination = join(outputDir, `${pkg.outputName}.md`);
-    const markdown = await readFile(source, 'utf8');
-    await writeFile(destination, await rewriteLocalLinks(markdown, source));
+    if (names.has(pkg.outputName)) throw new Error(`Duplicate generated README name: ${pkg.outputName}`);
+    names.add(pkg.outputName);
   }
-
-  await writeFile(
-    join(outputDir, '.generated'),
-    'Generated by docs/scripts/copy-readmes.js. Do not edit.\n',
-  );
-  console.log(`Copied ${packages.length} package READMEs to docs/content/packages.`);
+  return packages.sort((a, b) => a.outputName.localeCompare(b.outputName));
 }
 
-copyPackageReadmes().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+export async function replaceGeneratedDirectory(staging, destination, options = {}) {
+  const renamePath = options.rename ?? rename;
+  const removePath = options.rm ?? rm;
+  const backup = options.backup ?? `${destination}.old-${randomUUID()}`;
+  let hadOutput = false;
+  try {
+    await renamePath(destination, backup);
+    hadOutput = true;
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+
+  try {
+    await renamePath(staging, destination);
+  } catch (installationError) {
+    if (hadOutput) {
+      try {
+        await renamePath(backup, destination);
+      } catch (rollbackError) {
+        // Keep the installation error as the rejection even when restoring the
+        // old directory also fails. The secondary error remains inspectable.
+        try {
+          Object.defineProperty(installationError, 'rollbackError', {
+            configurable: true,
+            value: rollbackError,
+          });
+        } catch {
+          // Frozen/non-object thrown values still have to remain the rejection.
+        }
+      }
+    }
+    throw installationError;
+  }
+  if (hadOutput) await removePath(backup, { recursive: true, force: true });
+}
+
+export async function copyPackageReadmes(options = {}) {
+  const root = await realpath(options.repoRoot ?? repoRoot);
+  const requestedDestination = resolve(options.outputDir ?? outputDir);
+  const destinationParent = await realpath(dirname(requestedDestination));
+  if (!isInside(root, destinationParent)) {
+    throw new Error(
+      `Generated README destination resolves outside the repository: ${requestedDestination}`,
+    );
+  }
+  const destinationRoot = join(destinationParent, basename(requestedDestination));
+  const packages = await discoverPackages(root, options);
+
+  // Read and validate every source before touching the currently generated docs.
+  const generated = [];
+  for (const pkg of packages) {
+    const source = join(pkg.directory, 'README.md');
+    let markdown;
+    try {
+      const canonicalSource = await realpath(source);
+      if (!isInside(root, canonicalSource)) {
+        throw new Error('README symlink resolves outside the repository');
+      }
+      markdown = await readFile(canonicalSource, 'utf8');
+      generated.push({
+        name: `${pkg.outputName}.md`,
+        markdown: await rewriteLocalLinks(markdown, canonicalSource, root),
+      });
+    } catch (error) {
+      throw new Error(`Unable to read workspace README ${relative(root, source)}: ${error.message}`, {
+        cause: error,
+      });
+    }
+  }
+
+  const staging = `${destinationRoot}.tmp-${randomUUID()}`;
+  const backup = `${destinationRoot}.old-${randomUUID()}`;
+  await mkdir(staging, { recursive: true });
+  try {
+    for (const file of generated) await writeFile(join(staging, file.name), file.markdown);
+    await writeFile(join(staging, '.generated'), 'Generated by docs/scripts/copy-readmes.js. Do not edit.\n');
+
+    await replaceGeneratedDirectory(staging, destinationRoot, { backup });
+  } catch (error) {
+    try {
+      await rm(staging, { recursive: true, force: true });
+    } catch {
+      // Cleanup is best-effort and must not hide validation/installation errors.
+    }
+    throw error;
+  }
+
+  return packages.length;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  copyPackageReadmes()
+    .then((count) => console.log(`Copied ${count} package READMEs to docs/content/packages.`))
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    });
+}
