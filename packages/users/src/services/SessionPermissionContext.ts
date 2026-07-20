@@ -110,8 +110,27 @@ declare global {
     | undefined;
 }
 
-const requestPermissionContextStorage =
-  new AsyncLocalStorage<SessionPermissionRuntimeContext>();
+// globalThis key for the shared AsyncLocalStorage. Bundler pipelines can
+// evaluate this module more than once from a single copy on disk; a
+// module-local storage would strand context entered through one instance
+// (the `globalThis.__smrtGetRequestPermissionContext` getter below only helps
+// readers reach the FIRST instance's storage — a second instance running
+// `.run()` would still be invisible). Symbol.for() resolves identically in
+// every instance, so all of them share the one storage.
+const PERMISSION_STORAGE_KEY = Symbol.for(
+  'smrt:session-permission-context-storage',
+);
+
+function resolvePermissionContextStorage(): AsyncLocalStorage<SessionPermissionRuntimeContext> {
+  const root = globalThis as typeof globalThis & {
+    [PERMISSION_STORAGE_KEY]?: AsyncLocalStorage<SessionPermissionRuntimeContext>;
+  };
+  root[PERMISSION_STORAGE_KEY] ??=
+    new AsyncLocalStorage<SessionPermissionRuntimeContext>();
+  return root[PERMISSION_STORAGE_KEY];
+}
+
+const requestPermissionContextStorage = resolvePermissionContextStorage();
 
 export function getCurrentSessionPermissionContext():
   | SessionPermissionRuntimeContext

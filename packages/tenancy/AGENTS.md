@@ -18,6 +18,8 @@ await withSystemContext(async () => { /* bypasses all tenant checks */ });
 
 **Critical distinction**: `withSystemContext()` sets a SYSTEM_CONTEXT_MARKER sentinel — different from "no context" (undefined). Interceptor can distinguish intentional bypass from missing context.
 
+**Duplication-safe storage**: the underlying `AsyncLocalStorage` is a `Symbol.for`-keyed singleton on `globalThis`, so context survives Vite/vitest/SvelteKit pipelines that evaluate the module more than once — context entered through one module instance is visible to guards in another (#2077).
+
 ## Interceptor System
 
 Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, runs first):
