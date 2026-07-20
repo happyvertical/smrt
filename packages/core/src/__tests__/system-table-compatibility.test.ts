@@ -2,11 +2,13 @@ import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object';
 import {
+  assertPostgresSystemTimestampsCurrent,
   ensureDispatchSubscriptionsSystemTableCompatibility,
   ensureJobEventsSystemTableCompatibility,
   ensureJobsSystemTableCompatibility,
+  migratePostgresSystemTimestamps,
 } from '../system/compatibility';
-import { SMRT_SCHEMA_VERSION } from '../system/schema';
+import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from '../system/schema';
 
 class LegacySystemTableProbe extends SmrtObject {
   value: string = '';
@@ -522,5 +524,65 @@ describe('system table compatibility', () => {
         query,
       } as any),
     ).rejects.toThrow('permission denied for schema public');
+  });
+
+  it('materializes PostgreSQL system Date columns as TIMESTAMPTZ', () => {
+    const postgresDDL = getSystemTableDDL('postgres').join('\n');
+    const sqliteDDL = getSystemTableDDL('sqlite').join('\n');
+
+    expect(postgresDDL).toContain('created_at TIMESTAMPTZ');
+    expect(postgresDDL).not.toMatch(/\bTIMESTAMP\b/);
+    expect(sqliteDDL).toContain('created_at TIMESTAMP');
+  });
+
+  it('migrates legacy PostgreSQL system timestamps atomically under the bootstrap lock', async () => {
+    const query = vi.fn(async () => ({ rows: [] }));
+
+    await migratePostgresSystemTimestamps(
+      { url: 'postgresql://localhost/test', query } as any,
+      { legacyTimezone: 'UTC' },
+      'postgres',
+    );
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const migration = String(query.mock.calls[0]?.[0]);
+    expect(migration).toContain('pg_advisory_xact_lock');
+    expect(migration).toContain("current_setting('TimeZone')");
+    expect(migration).toContain("table_name LIKE '\\_smrt\\_%'");
+    expect(migration).toContain(
+      'ALTER TABLE %I ALTER COLUMN %I TYPE TIMESTAMPTZ',
+    );
+    expect(migration).toContain(
+      'DROP FUNCTION IF EXISTS _smrt_append_change(text,text,text,text,timestamp without time zone)',
+    );
+    expect(migration).toContain('p_created_at TIMESTAMPTZ');
+  });
+
+  it('refuses to stamp a partial PostgreSQL system schema with legacy timestamps', async () => {
+    const query = vi.fn(async () => ({
+      rows: [
+        { table_name: '_smrt_jobs', column_name: 'run_at' },
+        { table_name: '_smrt_dispatch', column_name: 'created_at' },
+      ],
+    }));
+
+    await expect(
+      assertPostgresSystemTimestampsCurrent(
+        { url: 'postgresql://localhost/test', query } as any,
+        'postgres',
+      ),
+    ).rejects.toThrow('_smrt_jobs.run_at, _smrt_dispatch.created_at');
+  });
+
+  it('requires explicit UTC provenance confirmation before issuing migration SQL', async () => {
+    const query = vi.fn(async () => ({ rows: [] }));
+    await expect(
+      migratePostgresSystemTimestamps(
+        { url: 'postgresql://localhost/test', query } as any,
+        { legacyTimezone: 'local' } as any,
+        'postgres',
+      ),
+    ).rejects.toThrow('explicit UTC provenance confirmation');
+    expect(query).not.toHaveBeenCalled();
   });
 });

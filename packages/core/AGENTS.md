@@ -42,6 +42,11 @@ composes with `where`, `orderBy`, `limit`, and `offset`; `beforeList`
 interceptors still run. It is for column-backed fields only and cannot combine
 with `include`/relationship eager loading.
 
+`list()` and `query()` hydrate model instances serially in result order because
+an `initialize()` hook may query through the same transaction-bound PostgreSQL
+client. Keep this serialization invariant; use `select` when callers need plain
+rows without model hydration.
+
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`, `is null`, `is not null`. Arrays auto-detect `IN`. Dot notation for JSON paths: `metadata.userId`.
 
 STI child collections auto-filter by `_meta_type`.

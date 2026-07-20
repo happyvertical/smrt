@@ -31,6 +31,14 @@ import { join } from 'node:path';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import {
+  findCreateTableBodyRange,
+  getSQLDefinitionComparisonKey,
+  getSQLDefinitionIdentifier,
+  isSQLTableConstraintDefinition,
+  materializeManifestDDLForEngine,
+  tokenizeSQLDDLBody,
+} from './ddl/materialize-manifest.js';
 import { quoteIdentifier } from './sql-identifiers.js';
 import { renderIndexTarget } from './utils.js';
 
@@ -134,102 +142,64 @@ const DEFAULT_MINIMAL_SKIP_PATTERNS: RegExp[] = [
   /_relationship_type/,
 ];
 
-const CONSTRAINT_KEYWORDS = new Set([
-  'CONSTRAINT',
-  'PRIMARY',
-  'UNIQUE',
-  'FOREIGN',
-  'CHECK',
-]);
+function parseDefinitionsFromDDL(ddl: string): {
+  columns: Map<string, string>;
+  tableElements: string[];
+} {
+  const columns = new Map<string, string>();
+  const tableElements: string[] = [];
+  const bodyRange = findCreateTableBodyRange(ddl);
+  if (!bodyRange) return { columns, tableElements };
+  const [bodyStart, bodyEnd] = bodyRange;
 
-function isTableConstraintSegment(segment: string): boolean {
-  const firstTokenMatch = segment.match(
-    /^"?([a-zA-Z_][a-zA-Z0-9_]*)"?(?=\s|\()/,
-  );
-  if (!firstTokenMatch) {
-    return false;
-  }
+  const segments = tokenizeSQLDDLBody(ddl.slice(bodyStart + 1, bodyEnd));
 
-  return CONSTRAINT_KEYWORDS.has(firstTokenMatch[1].toUpperCase());
-}
-
-function tokenizeDDLBody(body: string): string[] {
-  const segments: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-
-  for (let index = 0; index < body.length; index += 1) {
-    const char = body[index];
-    const prev = index > 0 ? body[index - 1] : '';
-
-    if (char === "'" && prev !== '\\' && !inDoubleQuote) {
-      inSingleQuote = !inSingleQuote;
-    } else if (char === '"' && prev !== '\\' && !inSingleQuote) {
-      inDoubleQuote = !inDoubleQuote;
-    } else if (!inSingleQuote && !inDoubleQuote) {
-      if (char === '(') parenDepth += 1;
-      if (char === ')') parenDepth -= 1;
-    }
-
-    if (char === ',' && parenDepth === 0 && !inSingleQuote && !inDoubleQuote) {
-      const trimmed = current.trim();
-      if (trimmed) segments.push(trimmed);
-      current = '';
+  for (const segment of segments) {
+    const identifier = getSQLDefinitionIdentifier(segment);
+    if (!identifier) continue;
+    if (isSQLTableConstraintDefinition(segment)) {
+      tableElements.push(segment);
       continue;
     }
 
-    current += char;
+    columns.set(identifier.name, segment);
   }
 
-  const trimmed = current.trim();
-  if (trimmed) {
-    segments.push(trimmed);
-  }
-
-  return segments;
-}
-
-function parseColumnsFromDDL(ddl: string): Map<string, string> {
-  const columns = new Map<string, string>();
-  const bodyMatch = ddl.match(/\(([\s\S]*)\)\s*;?\s*$/);
-  if (!bodyMatch) return columns;
-
-  const segments = tokenizeDDLBody(bodyMatch[1]);
-
-  for (const segment of segments) {
-    const colMatch = segment.match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+/);
-    if (!colMatch) continue;
-
-    if (isTableConstraintSegment(segment)) continue;
-
-    columns.set(colMatch[1], segment);
-  }
-
-  return columns;
+  return { columns, tableElements };
 }
 
 function mergeDDL(existingDDL: string, newDDL: string): string {
-  const existingCols = parseColumnsFromDDL(existingDDL);
-  const newCols = parseColumnsFromDDL(newDDL);
+  const existingDefinitions = parseDefinitionsFromDDL(existingDDL);
+  const newDefinitions = parseDefinitionsFromDDL(newDDL);
 
   const missingCols: string[] = [];
-  for (const [name, def] of newCols) {
-    if (!existingCols.has(name)) {
+  for (const [name, def] of newDefinitions.columns) {
+    if (!existingDefinitions.columns.has(name)) {
       missingCols.push(def);
     }
   }
 
-  if (missingCols.length === 0) return existingDDL;
+  const existingTableElements = new Set(
+    existingDefinitions.tableElements.map(getSQLDefinitionComparisonKey),
+  );
+  const missingTableElements = newDefinitions.tableElements.filter(
+    (definition) =>
+      !existingTableElements.has(getSQLDefinitionComparisonKey(definition)),
+  );
 
-  const bodyMatch = existingDDL.match(/^([\s\S]*?\()([\s\S]*)(\)\s*;?\s*)$/);
-  if (!bodyMatch) return existingDDL;
+  if (missingCols.length === 0 && missingTableElements.length === 0) {
+    return existingDDL;
+  }
 
-  const [, prefix, body, suffix] = bodyMatch;
-  const segments = tokenizeDDLBody(body);
+  const bodyRange = findCreateTableBodyRange(existingDDL);
+  if (!bodyRange) return existingDDL;
+  const [bodyStart, bodyEnd] = bodyRange;
+  const prefix = existingDDL.slice(0, bodyStart + 1);
+  const body = existingDDL.slice(bodyStart + 1, bodyEnd);
+  const suffix = existingDDL.slice(bodyEnd);
+  const segments = tokenizeSQLDDLBody(body);
   const firstConstraintIndex = segments.findIndex((segment) =>
-    isTableConstraintSegment(segment),
+    isSQLTableConstraintDefinition(segment),
   );
   const insertionIndex =
     firstConstraintIndex === -1 ? segments.length : firstConstraintIndex;
@@ -237,6 +207,7 @@ function mergeDDL(existingDDL: string, newDDL: string): string {
     ...segments.slice(0, insertionIndex),
     ...missingCols,
     ...segments.slice(insertionIndex),
+    ...missingTableElements,
   ];
 
   return `${prefix}\n${mergedSegments.map((segment) => `  ${segment}`).join(',\n')}\n${suffix}`;
@@ -401,10 +372,14 @@ export class SchemaAggregator {
         const className: string = object.className || _key;
         const tableName: string = schema.tableName;
         const existing = tables.get(tableName);
+        const executableDDL = materializeManifestDDLForEngine(
+          schema.ddl,
+          engine,
+        );
 
         if (existing) {
           // STI table — merge columns from every subtype into the shared DDL.
-          existing.ddl = mergeDDL(existing.ddl, schema.ddl);
+          existing.ddl = mergeDDL(existing.ddl, executableDDL);
           existing.sources.push(`${manifest.packageName || '?'}:${className}`);
           if (schema.columns) {
             existing.columns = {
@@ -429,7 +404,7 @@ export class SchemaAggregator {
 
           tables.set(tableName, {
             tableName,
-            ddl: schema.ddl,
+            ddl: executableDDL,
             indexes,
             sources: [`${manifest.packageName || '?'}:${className}`],
             columns: schema.columns,

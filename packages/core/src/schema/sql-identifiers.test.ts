@@ -240,6 +240,7 @@ describe('DDL strategy identifier safety (CREATE TABLE / INDEX)', () => {
     );
     expect(sql).toContain('DEFAULT uuid_generate_v4()');
     expect(sql).toContain('DEFAULT current_timestamp');
+    expect(sql).toContain('"ts" TIMESTAMPTZ');
   });
 
   it('escapes the JSON path literal in a jsonPath index expression', () => {

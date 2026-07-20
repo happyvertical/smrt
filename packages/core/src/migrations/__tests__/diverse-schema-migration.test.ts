@@ -28,7 +28,7 @@
  *      text→json upgrade uses a value-safe `to_jsonb` cast, never `::json`.
  *
  * Part 1 uses a faithful Postgres-introspection fake (real `information_schema`
- * `data_type` strings: `json`, `text`, `timestamp without time zone`,
+ * `data_type` strings: `json`, `text`, `timestamp with time zone`,
  * `USER-DEFINED`, …) because the phantom upgrade is engine-specific — SQLite
  * folds JSON→TEXT so it can never reproduce there. Part 2 uses a real
  * in-memory SQLite database to prove additive changes apply on a populated
@@ -157,7 +157,7 @@ describe('diverse-schema migration fixture (#1335)', () => {
       // exercise every equivalence the differ must honor:
       //   - status: manifest JSON  vs DB text      (the #1335 canary)
       //   - metadata: manifest TEXT vs DB json      (native-json column)
-      //   - created_at/updated_at: TIMESTAMP vs 'timestamp without time zone'
+      //   - created_at/updated_at: TIMESTAMP vs 'timestamp with time zone'
       const db = makePostgresFake([
         {
           name: 'nodes',
@@ -165,8 +165,8 @@ describe('diverse-schema migration fixture (#1335)', () => {
             { name: 'id', type: 'text', notNull: true },
             { name: 'slug', type: 'text', notNull: true },
             { name: 'context', type: 'text' },
-            { name: 'created_at', type: 'timestamp without time zone' },
-            { name: 'updated_at', type: 'timestamp without time zone' },
+            { name: 'created_at', type: 'timestamp with time zone' },
+            { name: 'updated_at', type: 'timestamp with time zone' },
             { name: 'owner_slug', type: 'text' },
             { name: 'external_ref', type: 'text' },
             { name: 'status', type: 'text' }, // text vs manifest JSON
@@ -181,8 +181,8 @@ describe('diverse-schema migration fixture (#1335)', () => {
             { name: 'id', type: 'text', notNull: true },
             { name: 'slug', type: 'text', notNull: true },
             { name: 'context', type: 'text' },
-            { name: 'created_at', type: 'timestamp without time zone' },
-            { name: 'updated_at', type: 'timestamp without time zone' },
+            { name: 'created_at', type: 'timestamp with time zone' },
+            { name: 'updated_at', type: 'timestamp with time zone' },
             { name: 'node_id', type: 'text' },
             { name: 'weight', type: 'double precision' },
           ],
@@ -263,8 +263,8 @@ describe('diverse-schema migration fixture (#1335)', () => {
             { name: 'id', type: 'text', notNull: true },
             { name: 'slug', type: 'text', notNull: true },
             { name: 'context', type: 'text' },
-            { name: 'created_at', type: 'timestamp without time zone' },
-            { name: 'updated_at', type: 'timestamp without time zone' },
+            { name: 'created_at', type: 'timestamp with time zone' },
+            { name: 'updated_at', type: 'timestamp with time zone' },
             { name: 'external_ref', type: 'text' },
             { name: 'status', type: 'text' },
             { name: 'metadata', type: 'json' },
@@ -277,8 +277,8 @@ describe('diverse-schema migration fixture (#1335)', () => {
             { name: 'id', type: 'text', notNull: true },
             { name: 'slug', type: 'text', notNull: true },
             { name: 'context', type: 'text' },
-            { name: 'created_at', type: 'timestamp without time zone' },
-            { name: 'updated_at', type: 'timestamp without time zone' },
+            { name: 'created_at', type: 'timestamp with time zone' },
+            { name: 'updated_at', type: 'timestamp with time zone' },
             { name: 'node_id', type: 'text' },
           ],
         },
@@ -516,8 +516,8 @@ describe('diverse-schema migration fixture (#1335)', () => {
               { name: 'id', type: 'text' },
               { name: 'slug', type: 'text', notNull: true },
               { name: 'context', type: 'text' },
-              { name: 'created_at', type: 'timestamp without time zone' },
-              { name: 'updated_at', type: 'timestamp without time zone' },
+              { name: 'created_at', type: 'timestamp with time zone' },
+              { name: 'updated_at', type: 'timestamp with time zone' },
               { name: 'status', type: 'text' },
               { name: 'external_ref', type: 'text' },
               { name: 'metadata', type: 'json' },
@@ -530,8 +530,8 @@ describe('diverse-schema migration fixture (#1335)', () => {
               { name: 'id', type: 'text' },
               { name: 'slug', type: 'text', notNull: true },
               { name: 'context', type: 'text' },
-              { name: 'created_at', type: 'timestamp without time zone' },
-              { name: 'updated_at', type: 'timestamp without time zone' },
+              { name: 'created_at', type: 'timestamp with time zone' },
+              { name: 'updated_at', type: 'timestamp with time zone' },
               { name: 'node_id', type: 'text' },
               // weight missing → one add_column on edges (DEFAULT-bearing)
             ],

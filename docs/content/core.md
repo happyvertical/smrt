@@ -55,7 +55,7 @@ class Document extends SmrtObject {
   rating: number = 4.5;         // → DECIMAL (has decimal)
   isPublished: boolean = false; // → BOOLEAN column
   tags: string[] = [];          // → JSON column
-  publishedAt: Date = new Date(); // → DATETIME column
+  publishedAt: Date = new Date(); // → engine-specific timestamp column
 
   // Use field decorators only when needed for:
   // 1. Relationships
@@ -98,7 +98,7 @@ name: string = '';           // → TEXT
 count: number = 0;           // → INTEGER (no decimal point)
 price: number = 0.0;         // → DECIMAL (has decimal point)
 active: boolean = true;      // → BOOLEAN
-created: Date = new Date();  // → DATETIME
+created: Date = new Date();  // → engine-specific timestamp
 tags: string[] = [];         // → JSON
 ```
 
@@ -111,6 +111,37 @@ tags: string[] = [];         // → JSON
 - `quantity: number = 0` → INTEGER column (no decimal point)
 - `price: number = 0.0` → DECIMAL column (has decimal point)
 - `rating: number = 4.5` → DECIMAL column (has decimal point)
+
+#### Date and PostgreSQL timezone semantics
+
+SMRT persists JavaScript `Date` values as instants. PostgreSQL schemas therefore
+use `TIMESTAMPTZ` for manifest-backed models and framework system tables;
+SQLite and JSON retain their existing adapter-specific representations. Create,
+strict insert, upsert/update, save, and hydration all round-trip the same epoch
+regardless of the Node or PostgreSQL session timezone. Executable registry DDL
+must name its target engine, for example
+`ObjectRegistry.getSchemaDDL('Event', 'postgres')` or
+`ObjectRegistry.getAllSchemas('postgres')`. The one-argument registry forms are
+retained for compatibility with code that inspects cached manifests; their
+engine-neutral `ddl` must not be executed on PostgreSQL.
+
+Schemas created before SMRT adopted `TIMESTAMPTZ` may contain PostgreSQL
+`TIMESTAMP` columns. By default SMRT reports these as manual drift and does not
+reinterpret them. After auditing DB defaults, triggers, raw SQL, and every
+historical writer, an operator may opt into the UTC conversion with
+`migrateSmrtSchemas({ ..., postgresTimestampMigration: { legacyTimezone:
+'UTC' } })`. That migration uses `column AT TIME ZONE 'UTC'` because the SQL
+adapter wrote UTC ISO strings and the old column discarded only their offset,
+and it also fails unless the PostgreSQL migration session is UTC. If any writer
+used local wall time, use a provenance-aware application migration with that
+source timezone instead.
+Legacy framework system tables are never converted automatically: after the
+same historical-writer audit, an operator may explicitly call
+`migratePostgresSystemTimestamps(db, { legacyTimezone: 'UTC' })`. Databases with
+any non-UTC system-table writer require an application-owned, provenance-aware
+migration instead. Type upgrades do not receive an automatic down migration;
+rollback is a restore from the pre-migration backup or a reviewed forward-fix
+after confirming the original writer's timezone contract.
 
 ### Create and Manage Collections
 

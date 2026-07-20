@@ -47,7 +47,7 @@ export class DuckDBStrategy extends BaseDDLStrategy {
 
     for (const index of indexes) {
       // Skip UNIQUE indexes - they're inline constraints
-      if (index.unique) {
+      if (index.unique && !index.where && !index.jsonPath) {
         continue;
       }
 
@@ -55,11 +55,12 @@ export class DuckDBStrategy extends BaseDDLStrategy {
       if (!target) {
         continue;
       }
-      let sql = `CREATE INDEX IF NOT EXISTS "${index.name}" ON "${tableName}" (${target})`;
+      const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
+      let sql = `CREATE ${indexType} IF NOT EXISTS "${index.name}" ON "${tableName}" (${target})`;
 
-      if (index.where) {
-        sql += ` WHERE ${index.where}`;
-      }
+      // DuckDB (and the JSON adapter backed by it) rejects partial indexes.
+      // Match the migration differ's documented compatibility behavior by
+      // degrading the declaration to a full index while preserving UNIQUE.
 
       sql += ';';
       statements.push(sql);

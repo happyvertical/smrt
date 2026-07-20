@@ -1,5 +1,9 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { detectEngine } from '../schema/ddl/index.js';
+import {
+  CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
+} from './schema.js';
 
 type DatabaseWithConfig = DatabaseInterface & {
   config?: {
@@ -75,7 +79,7 @@ function getDatabaseUrl(db: DatabaseInterface): string {
   return db.url || dbWithConfig.config?.url || '';
 }
 
-function getDatabaseEngine(
+export function getDatabaseEngine(
   db: DatabaseInterface,
   typeHint?: string,
 ): ReturnType<typeof detectEngine> {
@@ -84,6 +88,107 @@ function getDatabaseEngine(
     getDatabaseUrl(db),
     typeHint || dbWithConfig.type || dbWithConfig.config?.type,
   );
+}
+
+/**
+ * Upgrade framework-owned PostgreSQL timestamp columns to instant-safe storage.
+ *
+ * Legacy SMRT and system writers serialized instants as UTC wall times. The
+ * conversion is intentionally fail-closed unless the migration session is UTC:
+ * operators must first confirm that historical database-default/raw writers
+ * also used UTC. A deployment with non-UTC legacy writers needs an explicit,
+ * provenance-aware data migration rather than a guessed offset.
+ */
+export interface PostgresSystemTimestampMigrationConfirmation {
+  /**
+   * Explicitly confirmed timezone used by every historical writer of legacy
+   * timezone-naive system timestamps. Only UTC is supported by this helper.
+   */
+  legacyTimezone: 'UTC';
+}
+
+/**
+ * Fail closed when framework-owned PostgreSQL tables still contain legacy
+ * timezone-naive timestamps. Call this before recording the current system
+ * schema version so a partial installation cannot be stamped as upgraded.
+ */
+export async function assertPostgresSystemTimestampsCurrent(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  if (getDatabaseEngine(db, typeHint) !== 'postgres') return;
+
+  const rows = getQueryRows(
+    await db.query(`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name LIKE '\\_smrt\\_%' ESCAPE '\\'
+        AND data_type = 'timestamp without time zone'
+      ORDER BY table_name, ordinal_position
+    `),
+  );
+  if (rows.length === 0) return;
+
+  const columns = rows
+    .map((row) => `${String(row.table_name)}.${String(row.column_name)}`)
+    .join(', ');
+  throw new Error(
+    `Legacy SMRT system timestamps remain (${columns}); run the explicit audited migratePostgresSystemTimestamps() migration before bootstrap`,
+  );
+}
+
+export async function migratePostgresSystemTimestamps(
+  db: DatabaseInterface,
+  confirmation: PostgresSystemTimestampMigrationConfirmation,
+  typeHint?: string,
+): Promise<void> {
+  if (getDatabaseEngine(db, typeHint) !== 'postgres') return;
+  if (confirmation.legacyTimezone !== 'UTC') {
+    throw new Error(
+      'Legacy SMRT system timestamp migration requires an explicit UTC provenance confirmation',
+    );
+  }
+
+  // One server-side statement makes the catalog change atomic and holds the
+  // same transaction-scoped lock used by system bootstrap. Any failing column
+  // rolls back every preceding ALTER in the block.
+  await db.query(`
+    DO $smrt_migrate_system_timestamps$
+    DECLARE
+      target RECORD;
+    BEGIN
+      PERFORM pg_advisory_xact_lock(
+        hashtext('smrt'),
+        hashtext('system-tables')
+      );
+      IF upper(current_setting('TimeZone')) NOT IN ('UTC', 'ETC/UTC', 'GMT') THEN
+        RAISE EXCEPTION 'Refusing to reinterpret legacy SMRT timestamps outside a UTC PostgreSQL session; confirm historical writers used UTC and SET TIME ZONE UTC';
+      END IF;
+      FOR target IN
+        SELECT table_name, column_name
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name LIKE '\\_smrt\\_%' ESCAPE '\\'
+          AND data_type = 'timestamp without time zone'
+        ORDER BY table_name, ordinal_position
+      LOOP
+        EXECUTE format(
+          'ALTER TABLE %I ALTER COLUMN %I TYPE TIMESTAMPTZ USING %I AT TIME ZONE ''UTC''',
+          target.table_name,
+          target.column_name,
+          target.column_name
+        );
+      END LOOP;
+      IF to_regclass('_smrt_changes') IS NOT NULL THEN
+        DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
+        EXECUTE $smrt_change_feed_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
+$smrt_change_feed_ddl$;
+      END IF;
+    END;
+    $smrt_migrate_system_timestamps$;
+  `);
 }
 
 function isDuplicateColumnError(error: unknown): boolean {

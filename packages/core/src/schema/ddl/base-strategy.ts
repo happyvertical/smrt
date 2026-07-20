@@ -107,9 +107,11 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       parts.push('NOT NULL');
     }
 
-    // UNIQUE (for single-column unique, not composite)
-    // Skip if engine requires inline unique - those are handled separately
-    if (columnDef.unique && !this.requiresInlineUnique()) {
+    // Column-level UNIQUE is already inline and must be preserved for every
+    // engine. Some published manifests express single-column uniqueness only
+    // on the column definition (without a duplicate IndexDefinition), so
+    // suppressing it for DuckDB/JSON would silently weaken the schema.
+    if (columnDef.unique && !columnDef.primaryKey) {
       parts.push('UNIQUE');
     }
 
@@ -149,7 +151,15 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
         continue;
       }
 
-      if (index.unique && index.columns.length > 0) {
+      // Partial and expression-backed unique indexes are not valid generic
+      // ON CONFLICT(column, ...) targets and cannot be represented as an
+      // inline column UNIQUE constraint without changing their semantics.
+      if (
+        index.unique &&
+        !index.where &&
+        !index.jsonPath &&
+        index.columns.length > 0
+      ) {
         const columns = index.columns.map((c) => quoteIdentifier(c)).join(', ');
         constraints.push(`UNIQUE(${columns})`);
       }

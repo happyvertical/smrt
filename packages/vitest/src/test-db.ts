@@ -42,6 +42,10 @@ import { join } from 'node:path';
 // `createIsolatedTestDbFromManifest({ includeObjects: [...] })` were still
 // misclassified as table-bearing and lost their FK/junction columns.
 import { isSmrtCollectionExtendsName } from '@happyvertical/smrt-core';
+import {
+  materializeManifestDDLForEngine,
+  tokenizeSQLDDLBody,
+} from '@happyvertical/smrt-core/schema/utils';
 import { getDatabaseFromSqliteSchemaTemplate } from './sqlite-schema-template.js';
 import type {
   DatabaseInterfaceWithTransaction,
@@ -652,39 +656,23 @@ function extractForeignKeyDependencies(ddl: string): string[] {
  * Splits on top-level commas (not inside parentheses or quotes) so it works
  * for both multi-line and single-line DDL strings.
  */
-function tokenizeDDLBody(body: string): string[] {
-  const segments: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-  let inSingleQuote = false;
-  let inDoubleQuote = false;
-  let prevChar = '';
-
-  for (const ch of body) {
-    if (ch === "'" && !inDoubleQuote && prevChar !== '\\') {
-      inSingleQuote = !inSingleQuote;
-    } else if (ch === '"' && !inSingleQuote && prevChar !== '\\') {
-      inDoubleQuote = !inDoubleQuote;
-    } else if (!inSingleQuote && !inDoubleQuote) {
-      if (ch === '(') parenDepth += 1;
-      else if (ch === ')' && parenDepth > 0) parenDepth -= 1;
-    }
-
-    if (ch === ',' && parenDepth === 0 && !inSingleQuote && !inDoubleQuote) {
-      const trimmed = current.trim();
-      if (trimmed) segments.push(trimmed);
-      current = '';
-    } else {
-      current += ch;
-    }
-
-    prevChar = ch;
-  }
-
-  const last = current.trim();
-  if (last) segments.push(last);
-
-  return segments;
+/**
+ * Materialize abstract manifest timestamp columns for the selected adapter.
+ *
+ * Manifests intentionally cache engine-neutral CREATE TABLE text. PostgreSQL
+ * interprets a bare `TIMESTAMP` as timezone-naive storage, while SMRT Date
+ * fields represent instants and therefore require `TIMESTAMPTZ`. Transform
+ * only the leading type token of column definitions so string literals,
+ * identifiers, table constraints, and explicitly qualified timestamp types
+ * remain untouched.
+ *
+ * @internal
+ */
+export function materializeManifestDDLForAdapter(
+  ddl: string,
+  adapter: TestDbAdapter,
+): string {
+  return materializeManifestDDLForEngine(ddl, adapter);
 }
 
 /** Keywords that indicate a table-level constraint, not a column definition */
@@ -710,7 +698,7 @@ function parseColumnsFromDDL(ddl: string): Map<string, string> {
   );
   if (!bodyMatch) return columns;
 
-  const segments = tokenizeDDLBody(bodyMatch[1]);
+  const segments = tokenizeSQLDDLBody(bodyMatch[1]);
 
   for (const segment of segments) {
     // Extract first identifier and check if it's a constraint keyword
@@ -1243,6 +1231,7 @@ export async function createIsolatedTestDbFromManifest(
   options: ManifestTestDbOptions = {},
 ): Promise<IsolatedTestDbResult> {
   const { manifestPath, includeObjects, prefix = 'smrt-manifest' } = options;
+  const adapter = getTestAdapter();
 
   // 1. Load manifest
   const manifest = loadManifest(manifestPath);
@@ -1279,7 +1268,10 @@ export async function createIsolatedTestDbFromManifest(
 
   // Generate CREATE TABLE statements first
   const createTableDDL = sortedTableNames
-    .map((name) => tableMap.get(name)?.ddl)
+    .map((name) => {
+      const ddl = tableMap.get(name)?.ddl;
+      return ddl ? materializeManifestDDLForAdapter(ddl, adapter) : ddl;
+    })
     .filter(Boolean)
     .join('\n\n');
 

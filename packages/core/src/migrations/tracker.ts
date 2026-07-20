@@ -22,7 +22,11 @@ import type {
   MigrationStatus,
   SchemaMigrationRecord,
 } from '../schema/types.js';
-import { CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE } from '../system/schema.js';
+import { assertPostgresSystemTimestampsCurrent } from '../system/compatibility.js';
+import {
+  CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
+  getSystemTableDDLForEngine,
+} from '../system/schema.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
 import type {
   ApplyMigrationsOptions,
@@ -171,13 +175,19 @@ export class MigrationTracker {
 
   private async runInitializeDdl(): Promise<void> {
     // Parse and execute each statement in the DDL
-    const statements = CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE.split(';')
+    const statements = getSystemTableDDLForEngine(
+      CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
+      this.dbEngine,
+    )
+      .split(';')
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
     for (const statement of statements) {
       await this.db.query(statement);
     }
+
+    await assertPostgresSystemTimestampsCurrent(this.db, this.engineHint);
   }
 
   /**

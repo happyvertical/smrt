@@ -26,7 +26,10 @@ export class PostgresStrategy extends BaseDDLStrategy {
       case 'JSON':
         return 'JSONB'; // PostgreSQL JSONB is more efficient
       case 'TIMESTAMP':
-        return 'TIMESTAMP'; // Could use TIMESTAMPTZ for timezone-aware
+        // JavaScript Date represents an instant. Preserve that contract in
+        // PostgreSQL instead of discarding the ISO offset in a timezone-naive
+        // TIMESTAMP column and reinterpreting the wall time at hydration.
+        return 'TIMESTAMPTZ';
       case 'REAL':
         return 'DOUBLE PRECISION'; // PostgreSQL convention
       case 'UUID':

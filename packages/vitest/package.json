@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-vitest",
-  "version": "0.40.15",
+  "version": "0.40.17",
   "description": "Vitest plugin for automatic cross-package manifest loading in SMRT tests",
   "type": "module",
   "main": "dist/index.js",
@@ -40,6 +40,7 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "test": "vitest run",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/issue-2069-postgres-manifest.optional.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

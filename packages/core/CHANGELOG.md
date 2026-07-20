@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.40.17
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - serialize collection hydration (#2082) (core)
+  - @happyvertical/smrt-config@0.40.17
+  - @happyvertical/smrt-types@0.40.17
+  - @happyvertical/smrt-scanner@0.40.17
+
+## 0.40.16
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve PostgreSQL date instants (#2081) (core)
+  - @happyvertical/smrt-config@0.40.16
+  - @happyvertical/smrt-types@0.40.16
+  - @happyvertical/smrt-scanner@0.40.16
+
 ## 0.40.15
 
 ### Patch Changes

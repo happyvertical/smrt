@@ -75,6 +75,13 @@ export interface DiffOptions {
    * flavored SQL on a connection whose caller meant Postgres or DuckDB.
    */
   engineHint?: string;
+  /**
+   * Explicit confirmation that every historical writer of legacy PostgreSQL
+   * Date columns used UTC wall times. Without this acknowledgement,
+   * TIMESTAMP/TEXT/JSON to TIMESTAMPTZ drift is reported as manual rather
+   * than reinterpreted automatically.
+   */
+  postgresTimestampMigration?: { legacyTimezone: 'UTC' };
 }
 
 /**
@@ -845,7 +852,10 @@ export class SchemaComparer {
    * Normalize SQL types for comparison
    */
   private normalizeType(type: string): string {
-    const upper = type.toUpperCase().trim();
+    const upper = type
+      .toUpperCase()
+      .trim()
+      .replace(/\(\s*\d+\s*\)/g, '');
 
     // Integer types
     if (/^(INTEGER|INT|BIGINT|SMALLINT|TINYINT)$/i.test(upper)) {
@@ -877,8 +887,19 @@ export class SchemaComparer {
       return 'BOOLEAN';
     }
 
-    // Date/time types
-    if (/^(DATETIME|TIMESTAMP|DATE|TIME)/i.test(upper)) {
+    // PostgreSQL distinguishes instants from timezone-naive wall times. Keep
+    // those in separate comparison buckets so legacy TIMESTAMP columns are
+    // migrated to the TIMESTAMPTZ representation used for JavaScript Date.
+    if (/^(TIMESTAMPTZ|TIMESTAMP\s+WITH\s+TIME\s+ZONE)$/i.test(upper)) {
+      return 'TIMESTAMPTZ';
+    }
+
+    // Date/time types without timezone semantics
+    if (
+      /^(DATETIME|TIMESTAMP(?:\s+WITHOUT\s+TIME\s+ZONE)?|DATE|TIME)$/i.test(
+        upper,
+      )
+    ) {
       return 'TIMESTAMP';
     }
 
@@ -902,6 +923,9 @@ export class SchemaComparer {
    * - TEXT→JSON: The column stores JSON data serialized as text (arrays, objects)
    * - TEXT/JSON→TIMESTAMP: Legacy system columns stored timestamp strings
    *   before newer manifests normalized the column type.
+   * - PostgreSQL TIMESTAMP→TIMESTAMPTZ: Legacy SMRT Date values were written
+   *   as UTC ISO wall times, so interpreting the naive value as UTC preserves
+   *   the originally supplied instant.
    * - INTEGER→REAL: Safe widening of integer to floating point
    * - TEXT/REAL→INTEGER on PostgreSQL: explicit data-checked repairs for
    *   legacy integer columns that were previously stored as text/real.
@@ -916,6 +940,15 @@ export class SchemaComparer {
   ): boolean {
     const manifest = this.normalizeType(manifestType);
     const db = this.normalizeType(dbType);
+
+    if (
+      this.engine === 'postgres' &&
+      manifest === 'TIMESTAMP' &&
+      ['TIMESTAMP', 'TEXT', 'JSON'].includes(db) &&
+      this.ddlStrategy.mapType('TIMESTAMP') === 'TIMESTAMPTZ'
+    ) {
+      return this.options.postgresTimestampMigration?.legacyTimezone === 'UTC';
+    }
 
     // TEXT → JSON is safe: SMRT serializes arrays/objects as JSON text
     // When the manifest says JSON, the data is already valid JSON in TEXT column
@@ -952,7 +985,11 @@ export class SchemaComparer {
 
     // TEXT/JSON → TIMESTAMP is a legacy-drift repair. Invalid values fail
     // explicitly during migration rather than being silently coerced.
-    if (manifest === 'TIMESTAMP' && (db === 'TEXT' || db === 'JSON')) {
+    if (
+      manifest === 'TIMESTAMP' &&
+      (db === 'TEXT' || db === 'JSON') &&
+      this.engine !== 'postgres'
+    ) {
       return true;
     }
 
@@ -1016,7 +1053,11 @@ export class SchemaComparer {
                 colName,
                 dbNormalized,
               )
-            : null;
+            : manifestNormalized === 'TIMESTAMP' &&
+                ['TIMESTAMP', 'TEXT', 'JSON'].includes(dbNormalized) &&
+                this.normalizeType(targetType) === 'TIMESTAMPTZ'
+              ? this.generatePostgresTimestampPreflightSQL(tableName, colName)
+              : null;
         const clauses: string[] = [];
 
         if (colDef.defaultValue !== undefined) {
@@ -1058,7 +1099,17 @@ export class SchemaComparer {
           manifestNormalized === 'TIMESTAMP' &&
           (dbNormalized === 'TEXT' || dbNormalized === 'JSON')
         ) {
-          typeClause += ` USING NULLIF(NULLIF(trim(both '"' from ${quotedCol}::text), ''), 'null')::timestamp`;
+          typeClause += ` USING NULLIF(NULLIF(trim(both '"' from ${quotedCol}::text), ''), 'null')::timestamptz`;
+        } else if (
+          manifestNormalized === 'TIMESTAMP' &&
+          dbNormalized === 'TIMESTAMP' &&
+          this.normalizeType(targetType) === 'TIMESTAMPTZ'
+        ) {
+          // SMRT's PostgreSQL adapter serialized Date values to UTC ISO strings.
+          // A legacy TIMESTAMP column discarded the trailing offset but kept
+          // that UTC wall time. Reattach UTC explicitly so migration is
+          // deterministic regardless of the database/session timezone.
+          typeClause += ` USING ${quotedCol} AT TIME ZONE 'UTC'`;
         }
 
         clauses.push(typeClause);
@@ -1125,6 +1176,21 @@ export class SchemaComparer {
     const message = `Cannot convert ${tableName}.${colName} to INTEGER: found non-integer values`;
 
     return `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
+  }
+
+  /**
+   * Require a UTC migration session before reattaching the offset discarded by
+   * legacy PostgreSQL TIMESTAMP columns. This is a guardrail, not provenance:
+   * operators must also confirm historical default/raw writers used UTC.
+   */
+  private generatePostgresTimestampPreflightSQL(
+    tableName: string,
+    colName: string,
+  ): string {
+    const message =
+      `Cannot convert ${tableName}.${colName} to TIMESTAMPTZ outside a UTC ` +
+      'PostgreSQL session; confirm historical writers used UTC and SET TIME ZONE UTC';
+    return `DO $$ BEGIN IF upper(current_setting('TimeZone')) NOT IN ('UTC', 'ETC/UTC', 'GMT') THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
   }
 
   private quoteLiteral(value: string): string {

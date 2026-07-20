@@ -6,6 +6,8 @@
 
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
+import { getDDLStrategy } from '../schema/ddl/index.js';
+import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
@@ -178,15 +180,33 @@ export function getSchema(name: string): SchemaDefinition | undefined {
  * Get SQL DDL statement for a registered class
  *
  * @param name - Name of the registered class
- * @returns SQL DDL statement or undefined if not found
+ * Cached manifest DDL contains abstract types and is not safe to execute on
+ * PostgreSQL. New executable paths must pass a target engine. Omitting it is
+ * retained for backward compatibility with consumers that only inspect the
+ * legacy engine-neutral manifest string.
+ *
+ * @param engine - Database engine that will execute the DDL
+ * @returns Engine-specific SQL DDL, or the legacy cached DDL when omitted
  * @example
  * ```typescript
- * const ddl = ObjectRegistry.getSchemaDDL('Product');
+ * const ddl = ObjectRegistry.getSchemaDDL('Product', 'postgres');
  * await db.query(ddl);
  * ```
  */
-export function getSchemaDDL(name: string): string | undefined {
-  return getSchema(name)?.ddl;
+export function getSchemaDDL(
+  name: string,
+  engine?: DatabaseEngine,
+): string | undefined {
+  const schema = getSchema(name);
+  if (!schema) return undefined;
+  if (engine && Object.keys(schema.columns).length === 0) {
+    throw new Error(
+      `Cannot materialize schema '${name}' for ${engine}: the manifest has no structured columns`,
+    );
+  }
+  return engine
+    ? getDDLStrategy(engine).generateCreateTable(schema)
+    : schema.ddl;
 }
 
 /**
@@ -220,6 +240,45 @@ export function getTableName(name: string): string | undefined {
   return getSchema(name)?.tableName;
 }
 
+function withConflictIndex(
+  tableName: string,
+  columns: Record<string, ColumnDefinition>,
+  indexes: IndexDefinition[],
+  conflictColumns: string[],
+): IndexDefinition[] {
+  if (
+    conflictColumns.length === 0 ||
+    !conflictColumns.every((column) => columns[column])
+  ) {
+    return indexes;
+  }
+
+  const hasConflictIndex = indexes.some(
+    (index) =>
+      index.unique === true &&
+      !index.where &&
+      !index.jsonPath &&
+      index.columns.length === conflictColumns.length &&
+      index.columns.every((column) => conflictColumns.includes(column)),
+  );
+  if (hasConflictIndex) return indexes;
+
+  const nameColumns =
+    conflictColumns.length > 2 ? conflictColumns.slice(0, 2) : conflictColumns;
+  const preferredName = `${tableName}_${nameColumns.join('_')}_idx`;
+  const name = indexes.some((index) => index.name === preferredName)
+    ? `${preferredName}_unique`
+    : preferredName;
+  return [
+    ...indexes,
+    {
+      name,
+      columns: conflictColumns,
+      unique: true,
+    },
+  ];
+}
+
 /**
  * Get all pre-generated schemas for explicit adapter bootstrap paths.
  *
@@ -231,14 +290,13 @@ export function getTableName(name: string): string | undefined {
  * @returns Record of table names to schema definitions
  * @example
  * ```typescript
- * const schemas = ObjectRegistry.getAllSchemas();
+ * const schemas = ObjectRegistry.getAllSchemas('json');
  * const db = await getDatabase({ type: 'json', url: './data', schemas });
  * ```
  */
-export function getAllSchemas(): Record<
-  string,
-  { tableName: string; ddl: string; indexes?: string[] }
-> {
+export function getAllSchemas(
+  engine?: DatabaseEngine,
+): Record<string, { tableName: string; ddl: string; indexes?: string[] }> {
   // Step 1: Collect all schemas grouped by tableName
   // For STI, multiple classes may share the same table
   const tableSchemas: Record<
@@ -246,9 +304,10 @@ export function getAllSchemas(): Record<
     {
       tableName: string;
       columns: Record<string, ColumnDefinition>;
-      indexes: Array<{ name: string; columns: string[]; unique?: boolean }>;
+      indexes: IndexDefinition[];
       ddl: string;
       isSTI: boolean;
+      conflictColumns: string[];
     }
   > = {};
 
@@ -359,6 +418,11 @@ export function getAllSchemas(): Record<
           indexes: [],
           ddl: registered.schema.ddl || '',
           isSTI,
+          conflictColumns: ObjectRegistry.getConflictColumns(
+            isSTI
+              ? ObjectRegistry.getSTIBase(lookupKey) || lookupKey
+              : lookupKey,
+          ),
         };
       } else {
         // Additional class sharing this table (STI scenario)
@@ -400,14 +464,45 @@ export function getAllSchemas(): Record<
   > = {};
 
   for (const [tableName, tableSchema] of Object.entries(tableSchemas)) {
+    const engineIndexes = engine
+      ? withConflictIndex(
+          tableName,
+          tableSchema.columns,
+          tableSchema.indexes,
+          tableSchema.conflictColumns,
+        )
+      : tableSchema.indexes;
+    const mergedSchema: SchemaDefinition = {
+      tableName,
+      ddl: tableSchema.ddl,
+      columns: tableSchema.columns,
+      indexes: engineIndexes,
+      triggers: [],
+      foreignKeys: [],
+      version: '',
+      dependencies: [],
+    };
+
     // Generate DDL from merged columns (or use original DDL if columns are empty)
     let ddl: string;
     if (Object.keys(tableSchema.columns).length === 0 && tableSchema.ddl) {
-      // No columns merged - use original DDL to avoid generating invalid SQL
+      if (engine) {
+        throw new Error(
+          `Cannot materialize schema '${tableName}' for ${engine}: the manifest has no structured columns`,
+        );
+      }
+      // Preserve legacy inspection of cached engine-neutral DDL. Executable
+      // target-engine paths fail above rather than returning unsafe SQL.
       ddl = tableSchema.ddl;
     } else if (Object.keys(tableSchema.columns).length === 0) {
       // Skip schemas with no columns and no original DDL
       continue;
+    } else if (engine) {
+      // Target-engine materialization must route the complete structured
+      // schema through its strategy. In particular, DuckDB/JSON require
+      // UNIQUE constraints inline for ON CONFLICT, and every strategy owns
+      // CHECK/default/index-expression rendering.
+      ddl = getDDLStrategy(engine).generateCreateTable(mergedSchema);
     } else {
       ddl = generateDDLFromColumns(
         tableName,
@@ -418,16 +513,18 @@ export function getAllSchemas(): Record<
 
     // Convert index definitions to SQL strings for SDK compatibility
     let indexSQL: string[] | undefined;
-    if (tableSchema.indexes.length > 0) {
-      indexSQL = tableSchema.indexes.map((idx) => {
-        const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
-        const columnList = idx.columns
-          .map((col) => quoteIdentifier(col))
-          .join(', ');
-        return `CREATE ${indexType} IF NOT EXISTS ${quoteIdentifier(
-          idx.name,
-        )} ON ${quoteIdentifier(tableName)} (${columnList});`;
-      });
+    if (engineIndexes.length > 0) {
+      indexSQL = engine
+        ? getDDLStrategy(engine).generateIndexes(mergedSchema)
+        : engineIndexes.map((idx) => {
+            const indexType = idx.unique ? 'UNIQUE INDEX' : 'INDEX';
+            const columnList = idx.columns
+              .map((col) => quoteIdentifier(col))
+              .join(', ');
+            return `CREATE ${indexType} IF NOT EXISTS ${quoteIdentifier(
+              idx.name,
+            )} ON ${quoteIdentifier(tableName)} (${columnList});`;
+          });
     }
 
     schemas[tableName] = {
@@ -461,6 +558,7 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       columns: Record<string, ColumnDefinition>;
       indexes: IndexDefinition[];
       isSTI: boolean;
+      conflictColumns: string[];
     }
   > = {};
 
@@ -558,6 +656,11 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
           columns: { ...baseColumns, ...columnsToUse },
           indexes: [],
           isSTI,
+          conflictColumns: ObjectRegistry.getConflictColumns(
+            isSTI
+              ? ObjectRegistry.getSTIBase(lookupKey) || lookupKey
+              : lookupKey,
+          ),
         };
       } else {
         // Additional class sharing this table (STI scenario) - merge columns
@@ -602,7 +705,12 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       tableName,
       ddl,
       columns: tableSchema.columns,
-      indexes: tableSchema.indexes, // Keep as IndexDefinition[]
+      indexes: withConflictIndex(
+        tableName,
+        tableSchema.columns,
+        tableSchema.indexes,
+        tableSchema.conflictColumns,
+      ),
       triggers: [],
       foreignKeys: [],
       version: '',
@@ -627,6 +735,7 @@ export function generateDDLFromColumns(
   tableName: string,
   columns: Record<string, ColumnDefinition>,
   isSTI = false,
+  engine?: DatabaseEngine,
 ): string {
   let sql = `CREATE TABLE IF NOT EXISTS ${quoteIdentifier(tableName)} (\n`;
 
@@ -635,7 +744,11 @@ export function generateDDLFromColumns(
     const parts: string[] = [];
 
     // Column name and type
-    parts.push(`  ${quoteIdentifier(columnName)} ${columnDef.type}`);
+    const strategy = engine ? getDDLStrategy(engine) : undefined;
+    const columnType = strategy
+      ? strategy.mapType(columnDef.type)
+      : columnDef.type;
+    parts.push(`  ${quoteIdentifier(columnName)} ${columnType}`);
 
     // Primary key
     if (columnDef.primaryKey) {
@@ -654,10 +767,9 @@ export function generateDDLFromColumns(
 
     // Default value
     if (columnDef.defaultValue !== undefined) {
-      const defaultSQL = formatDefaultValue(
-        columnDef.defaultValue,
-        columnDef.type,
-      );
+      const defaultSQL = strategy
+        ? strategy.formatDefaultValue(columnDef.defaultValue, columnDef.type)
+        : formatDefaultValue(columnDef.defaultValue, columnDef.type);
       parts.push(`DEFAULT ${defaultSQL}`);
     }
 
