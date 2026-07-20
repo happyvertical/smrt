@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.18
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - share context storage across duplicated module instances (#2078) (tenancy)
+  - @happyvertical/smrt-config@0.40.18
+  - @happyvertical/smrt-types@0.40.18
+  - @happyvertical/smrt-scanner@0.40.18
+
 ## 0.40.17
 
 ### Patch Changes
