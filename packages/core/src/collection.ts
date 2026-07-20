@@ -1568,9 +1568,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // STI: Hydrate instances polymorphically based on _meta_type
     // Reuse tableStrategy and isSTI from earlier in the function
-    const instances = await Promise.all(
-      rows.map((item) => this.hydrateResultRow(item, fields, isSTI)),
-    );
+    const instances = await this.hydrateResultRows(rows, fields, isSTI);
 
     // Eager load specified relationships
     if (interceptedOptions.include && interceptedOptions.include.length > 0) {
@@ -2704,9 +2702,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const isSTI = tableStrategy === 'sti';
 
-    const instances = await Promise.all(
-      result.rows.map((row) => this.hydrateResultRow(row, fields, isSTI)),
-    );
+    const instances = await this.hydrateResultRows(result.rows, fields, isSTI);
 
     // Execute afterQuery interceptors
     return await GlobalInterceptors.executeAfterQuery(
@@ -2760,6 +2756,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     return instance;
+  }
+
+  /**
+   * Hydrate rows in result order.
+   *
+   * A model's initialize() hook may query through the collection database.
+   * PostgreSQL transaction adapters bind every query to one pg client, which
+   * cannot execute overlapping client.query() calls once pg 9 removes its
+   * deprecated per-client queue. Serial hydration therefore protects every
+   * model hook without relying on driver queuing and preserves row order.
+   */
+  private async hydrateResultRows(
+    rows: Record<string, unknown>[],
+    fields: Record<string, CollectionFieldDefinition>,
+    isSTI: boolean,
+  ): Promise<ModelType[]> {
+    const instances: ModelType[] = [];
+    for (const row of rows) {
+      instances.push(await this.hydrateResultRow(row, fields, isSTI));
+    }
+    return instances;
   }
 
   /**
