@@ -10,7 +10,10 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // Import the function we're testing
-import { createIsolatedTestDbFromManifest } from '../test-db.js';
+import {
+  createIsolatedTestDbFromManifest,
+  materializeManifestDDLForAdapter,
+} from '../test-db.js';
 
 // Test fixtures directory
 const testDir = join(tmpdir(), `smrt-vitest-test-${Date.now()}`);
@@ -26,6 +29,35 @@ describe('createIsolatedTestDbFromManifest', () => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true, force: true });
     }
+  });
+
+  it('materializes bare manifest timestamps as PostgreSQL instants only', () => {
+    const ddl = `CREATE TABLE IF NOT EXISTS "events" (
+      "id" UUID PRIMARY KEY,
+      "occurred_at" TIMESTAMP(3) NOT NULL,
+      "legacy_wall_time" TIMESTAMP WITHOUT TIME ZONE,
+      "explicit_instant" TIMESTAMP (6) WITH TIME ZONE,
+      "explicit_wall_time" TIMESTAMP (6) WITHOUT TIME ZONE,
+      "label" TEXT DEFAULT 'TIMESTAMP',
+      "payload" TEXT DEFAULT $tag$a,b(c)$tag$,
+      FOREIGN KEY ("id") REFERENCES "parents"("id")
+    );`;
+
+    const postgres = materializeManifestDDLForAdapter(ddl, 'postgres');
+    expect(postgres).toContain('"occurred_at" TIMESTAMPTZ(3) NOT NULL');
+    expect(postgres).toContain(
+      '"legacy_wall_time" TIMESTAMP WITHOUT TIME ZONE',
+    );
+    expect(postgres).toContain(
+      '"explicit_instant" TIMESTAMP (6) WITH TIME ZONE',
+    );
+    expect(postgres).toContain(
+      '"explicit_wall_time" TIMESTAMP (6) WITHOUT TIME ZONE',
+    );
+    expect(postgres).toContain('"label" TEXT DEFAULT \'TIMESTAMP\'');
+    expect(postgres).toContain('"payload" TEXT DEFAULT $tag$a,b(c)$tag$');
+    expect(postgres).toContain('FOREIGN KEY ("id") REFERENCES "parents"("id")');
+    expect(materializeManifestDDLForAdapter(ddl, 'sqlite')).toBe(ddl);
   });
 
   describe('manifest loading', () => {

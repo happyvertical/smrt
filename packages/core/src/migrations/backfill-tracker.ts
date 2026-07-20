@@ -13,7 +13,14 @@
  * to call `initialize()` explicitly.
  */
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { CREATE_SMRT_BACKFILLS_TABLE } from '../system/schema.js';
+import {
+  assertPostgresSystemTimestampsCurrent,
+  getDatabaseEngine,
+} from '../system/compatibility.js';
+import {
+  CREATE_SMRT_BACKFILLS_TABLE,
+  getSystemTableDDLForEngine,
+} from '../system/schema.js';
 
 export interface BackfillTrackerOptions {
   db: DatabaseInterface;
@@ -87,6 +94,15 @@ export class BackfillTracker {
     deleteSharedInitialization(databaseTargetIdentity(db));
   }
 
+  private async createTable(): Promise<void> {
+    const ddl = getSystemTableDDLForEngine(
+      CREATE_SMRT_BACKFILLS_TABLE,
+      getDatabaseEngine(this.db),
+    );
+    await this.db.query(ddl);
+    await assertPostgresSystemTimestampsCurrent(this.db);
+  }
+
   /**
    * Create the `_smrt_backfills` table if it doesn't already exist.
    * Safe to call repeatedly and concurrently.
@@ -114,8 +130,7 @@ export class BackfillTracker {
     }
 
     if (isRootDatabase(this.db)) {
-      const initialization = this.db
-        .query(CREATE_SMRT_BACKFILLS_TABLE)
+      const initialization = this.createTable()
         .then(() => undefined)
         .catch((error) => {
           if (getSharedInitialization(target) === initialization) {
@@ -128,8 +143,7 @@ export class BackfillTracker {
     }
 
     if (!this.initializePromise) {
-      this.initializePromise = this.db
-        .query(CREATE_SMRT_BACKFILLS_TABLE)
+      this.initializePromise = this.createTable()
         .then(() => undefined)
         .catch((error) => {
           this.initializePromise = null;

@@ -73,6 +73,11 @@ export interface MigrateSmrtSchemasOptions {
    * compile time rather than silently falling back to `'sqlite'` at runtime.
    */
   engineHint?: DatabaseEngine;
+  /**
+   * Confirm that historical PostgreSQL Date writers used UTC wall times before
+   * reinterpreting legacy TIMESTAMP/TEXT/JSON columns as TIMESTAMPTZ.
+   */
+  postgresTimestampMigration?: { legacyTimezone: 'UTC' };
 }
 
 export interface MigrateSmrtSchemasResult {
@@ -135,7 +140,10 @@ export interface PendingSchemaStatementsResult {
  */
 export async function getPendingSchemaStatements(
   db: DatabaseInterface,
-  options: { engineHint?: DatabaseEngine } = {},
+  options: {
+    engineHint?: DatabaseEngine;
+    postgresTimestampMigration?: { legacyTimezone: 'UTC' };
+  } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
   // Forward engineHint into the diff itself so the SchemaComparer's
@@ -145,6 +153,7 @@ export async function getPendingSchemaStatements(
   // `db.url` is empty or ambiguous.
   const diff = await generateSchemaDiff(db, schemas, {
     engineHint: options.engineHint,
+    postgresTimestampMigration: options.postgresTimestampMigration,
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   const unactionableChanges = collectUnactionableChanges(diff);
@@ -198,6 +207,7 @@ export async function migrateSmrtSchemas(
 ): Promise<MigrateSmrtSchemasResult> {
   const pending = await getPendingSchemaStatements(options.db, {
     engineHint: options.engineHint,
+    postgresTimestampMigration: options.postgresTimestampMigration,
   });
   if (!pending.hasChanges || pending.statements.length === 0) {
     return {

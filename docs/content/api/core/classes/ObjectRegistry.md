@@ -230,6 +230,40 @@ const schemaDoc = allMetadata.map(meta => ({
 
 ***
 
+### getAllSchemas()
+
+> `static` **getAllSchemas**(`engine?`): `Record`\<`string`, \{ `ddl`: `string`; `indexes?`: `string`[]; `tableName`: `string`; \}\>
+
+Get all pre-generated schemas for explicit adapter bootstrap paths.
+
+#### Parameters
+
+##### engine?
+
+`DatabaseEngine`
+
+Pass the target engine before executing the returned DDL. Omitting the engine
+is retained for backward-compatible inspection of cached engine-neutral
+manifests and is not safe for PostgreSQL execution.
+
+#### Returns
+
+`Record`\<`string`, \{ `ddl`: `string`; `indexes?`: `string`[]; `tableName`: `string`; \}\>
+
+***
+
+### getAllSchemasAsDefinitions()
+
+> `static` **getAllSchemasAsDefinitions**(): `Record`\<`string`, `SchemaDefinition`\>
+
+Get all registered schemas as structured definitions.
+
+#### Returns
+
+`Record`\<`string`, `SchemaDefinition`\>
+
+***
+
 ### getClass()
 
 > `static` **getClass**(`name`): `RegisteredClass` \| `undefined`
@@ -756,11 +790,14 @@ console.log(schema.ddl);       // 'CREATE TABLE...'
 
 ### getSchemaDDL()
 
-> `static` **getSchemaDDL**(`name`): `string` \| `undefined`
+> `static` **getSchemaDDL**(`name`, `engine?`): `string` \| `undefined`
 
 Defined in: [packages/core/src/registry.ts:1229](https://github.com/happyvertical/smrt/blob/eace045cd33fc2d690bf2fd9ce922942574eb242/packages/core/src/registry.ts#L1229)
 
-Get SQL DDL statement for a registered class
+Get SQL DDL statement for a registered class. Pass a target engine before
+executing the result. Omitting the engine is retained for backward-compatible
+inspection of cached engine-neutral manifest DDL and is not safe for
+PostgreSQL execution.
 
 #### Parameters
 
@@ -769,6 +806,12 @@ Get SQL DDL statement for a registered class
 `string`
 
 Name of the registered class
+
+##### engine?
+
+`DatabaseEngine`
+
+Database engine that will execute the DDL
 
 #### Returns
 
@@ -779,7 +822,7 @@ SQL DDL statement or undefined if not found
 #### Example
 
 ```typescript
-const ddl = ObjectRegistry.getSchemaDDL('Product');
+const ddl = ObjectRegistry.getSchemaDDL('Product', 'postgres');
 await db.query(ddl);
 ```
 

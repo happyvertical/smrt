@@ -1072,6 +1072,153 @@ describe('ObjectRegistry', () => {
       );
     });
 
+    it('should materialize bulk schemas for each adapter engine', () => {
+      class EngineAwareSchemaObject extends SmrtObject {
+        occurredAt: Date = new Date(0);
+      }
+
+      ObjectRegistry.register(EngineAwareSchemaObject, {
+        tableName: 'engine_aware_schema_objects',
+      });
+
+      const registration = ObjectRegistry.getClass('EngineAwareSchemaObject');
+      if (!registration) throw new Error('missing test registration');
+      registration.schema.columns.occurred_at = {
+        type: 'TIMESTAMP',
+        check: 'occurred_at IS NOT NULL',
+      };
+      registration.schema.columns.external_key = {
+        type: 'TEXT',
+        unique: true,
+      };
+      registration.schema.indexes.push({
+        name: 'uq_engine_aware_occurred_at',
+        columns: ['occurred_at'],
+        unique: true,
+      });
+
+      const sqlite =
+        ObjectRegistry.getAllSchemas('sqlite').engine_aware_schema_objects;
+      const duckdb =
+        ObjectRegistry.getAllSchemas('duckdb').engine_aware_schema_objects;
+      const json =
+        ObjectRegistry.getAllSchemas('json').engine_aware_schema_objects;
+      const postgres =
+        ObjectRegistry.getAllSchemas('postgres').engine_aware_schema_objects;
+
+      expect(sqlite.ddl).toContain('"created_at" DATETIME');
+      expect(sqlite.ddl).toContain('"id" TEXT PRIMARY KEY');
+      expect(duckdb.ddl).toContain('"created_at" TIMESTAMP');
+      expect(duckdb.ddl).toContain('"id" UUID PRIMARY KEY');
+      expect(duckdb.ddl).toContain('CHECK (occurred_at IS NOT NULL)');
+      expect(duckdb.ddl).toContain('"external_key" TEXT UNIQUE');
+      expect(duckdb.ddl).toContain('UNIQUE("occurred_at")');
+      expect(duckdb.ddl).toContain('UNIQUE("slug", "context")');
+      expect(duckdb.indexes).not.toContain(
+        expect.stringContaining('uq_engine_aware_occurred_at'),
+      );
+      expect(json.ddl).toContain('"created_at" TIMESTAMP');
+      expect(json.ddl).toContain('"id" TEXT PRIMARY KEY');
+      expect(json.ddl).toContain('CHECK (occurred_at IS NOT NULL)');
+      expect(json.ddl).toContain('"external_key" TEXT UNIQUE');
+      expect(json.ddl).toContain('UNIQUE("occurred_at")');
+      expect(json.ddl).toContain('UNIQUE("slug", "context")');
+      expect(json.indexes).not.toContain(
+        expect.stringContaining('uq_engine_aware_occurred_at'),
+      );
+      expect(postgres.indexes).toContainEqual(
+        expect.stringContaining(
+          'UNIQUE INDEX IF NOT EXISTS "engine_aware_schema_objects_slug_context_idx"',
+        ),
+      );
+
+      expect(
+        ObjectRegistry.getSchemaDDL('EngineAwareSchemaObject', 'duckdb'),
+      ).toContain('"external_key" TEXT UNIQUE');
+      expect(
+        ObjectRegistry.getSchemaDDL('EngineAwareSchemaObject', 'json'),
+      ).toContain('"external_key" TEXT UNIQUE');
+    });
+
+    it('preserves explicit conflict columns without adding fallback uniqueness', () => {
+      class CustomConflictSchemaObject extends SmrtObject {
+        tenantId: string = '';
+        campaignKey: string = '';
+      }
+
+      ObjectRegistry.register(CustomConflictSchemaObject, {
+        tableName: 'custom_conflict_schema_objects',
+        conflictColumns: ['tenant_id', 'campaign_key'],
+      });
+      const registration = ObjectRegistry.getClass(
+        'CustomConflictSchemaObject',
+      );
+      if (!registration) throw new Error('missing test registration');
+      registration.schema.columns.tenant_id = { type: 'TEXT', notNull: true };
+      registration.schema.columns.campaign_key = {
+        type: 'TEXT',
+        notNull: true,
+      };
+      registration.schema.columns.active = {
+        type: 'BOOLEAN',
+        defaultValue: true,
+      };
+      registration.schema.indexes.push({
+        name: 'uq_custom_conflict_active',
+        columns: ['tenant_id', 'campaign_key'],
+        unique: true,
+        where: 'active = TRUE',
+      });
+
+      const duckdb =
+        ObjectRegistry.getAllSchemas('duckdb').custom_conflict_schema_objects;
+      expect(duckdb.ddl).toContain('UNIQUE("tenant_id", "campaign_key")');
+      expect(duckdb.ddl).not.toContain('UNIQUE("slug", "context")');
+      expect(
+        duckdb.ddl.match(/UNIQUE\("tenant_id", "campaign_key"\)/g),
+      ).toHaveLength(1);
+      expect(duckdb.indexes).toContainEqual(
+        expect.stringContaining(
+          'CREATE UNIQUE INDEX IF NOT EXISTS "uq_custom_conflict_active"',
+        ),
+      );
+      expect(duckdb.indexes).not.toContainEqual(
+        expect.stringContaining(' WHERE active = TRUE'),
+      );
+
+      const definition =
+        ObjectRegistry.getAllSchemasAsDefinitions()
+          .custom_conflict_schema_objects;
+      expect(definition.indexes).toContainEqual(
+        expect.objectContaining({
+          unique: true,
+          columns: ['tenant_id', 'campaign_key'],
+        }),
+      );
+      expect(definition.indexes).not.toContainEqual(
+        expect.objectContaining({
+          unique: true,
+          columns: ['slug', 'context'],
+        }),
+      );
+      expect(definition.indexes).toContainEqual(
+        expect.objectContaining({
+          unique: true,
+          columns: ['tenant_id', 'campaign_key'],
+          where: 'active = TRUE',
+        }),
+      );
+      expect(
+        definition.indexes.filter(
+          (index) =>
+            index.unique &&
+            !index.where &&
+            !index.jsonPath &&
+            index.columns.join(',') === 'tenant_id,campaign_key',
+        ),
+      ).toHaveLength(1);
+    });
+
     it('should inject tenant metadata from external decorator config', () => {
       class ExternalTenantScopedSecret extends SmrtObject {
         name: string = '';

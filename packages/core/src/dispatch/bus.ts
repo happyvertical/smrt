@@ -28,12 +28,15 @@ import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import {
+  assertPostgresSystemTimestampsCurrent,
   ensureDispatchSubscriptionsSystemTableCompatibility,
   ensureDispatchSystemTableCompatibility,
+  getDatabaseEngine,
 } from '../system/compatibility.js';
 import {
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_DISPATCH_TABLE,
+  getSystemTableDDLForEngine,
 } from '../system/schema.js';
 import { DispatchCollection } from './collections/Dispatches.js';
 import { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
@@ -161,34 +164,41 @@ export class DispatchBus {
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
+    const engine = getDatabaseEngine(this.db);
 
     // Create dispatch tables if they don't exist
     const dispatchExists = await DispatchCollection.tableExists(this.db);
     if (!dispatchExists) {
       // Split the DDL into separate statements and execute each
-      const statements = CREATE_SMRT_DISPATCH_TABLE.split(';').filter((s) =>
-        s.trim(),
-      );
+      const statements = getSystemTableDDLForEngine(
+        CREATE_SMRT_DISPATCH_TABLE,
+        engine,
+      )
+        .split(';')
+        .filter((s) => s.trim());
       for (const stmt of statements) {
         await this.db.query(stmt);
       }
-    } else {
-      await ensureDispatchSystemTableCompatibility(this.db);
     }
+    await assertPostgresSystemTimestampsCurrent(this.db);
+    await ensureDispatchSystemTableCompatibility(this.db);
 
     const subsExists = await DispatchSubscriptionCollection.tableExists(
       this.db,
     );
     if (!subsExists) {
-      const statements = CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE.split(
-        ';',
-      ).filter((s) => s.trim());
+      const statements = getSystemTableDDLForEngine(
+        CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
+        engine,
+      )
+        .split(';')
+        .filter((s) => s.trim());
       for (const stmt of statements) {
         await this.db.query(stmt);
       }
-    } else {
-      await ensureDispatchSubscriptionsSystemTableCompatibility(this.db);
     }
+    await assertPostgresSystemTimestampsCurrent(this.db);
+    await ensureDispatchSubscriptionsSystemTableCompatibility(this.db);
 
     this.initialized = true;
   }

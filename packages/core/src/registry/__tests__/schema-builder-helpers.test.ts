@@ -173,6 +173,17 @@ describe('schema-builder: generateDDLFromColumns', () => {
     const ddl = generateDDLFromColumns('contents', columns, true);
     expect(ddl).toContain('UNIQUE(slug, context, _meta_type)');
   });
+
+  it('materializes Date and UUID columns for PostgreSQL bootstrap DDL', () => {
+    const columns: Record<string, ColumnDefinition> = {
+      id: { type: 'UUID', primaryKey: true },
+      occurred_at: { type: 'TIMESTAMP' },
+    };
+    const ddl = generateDDLFromColumns('events', columns, false, 'postgres');
+
+    expect(ddl).toContain('"id" uuid PRIMARY KEY');
+    expect(ddl).toContain('"occurred_at" TIMESTAMPTZ');
+  });
 });
 
 describe('schema-builder: fieldsToColumns', () => {

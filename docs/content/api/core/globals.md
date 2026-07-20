@@ -50,6 +50,7 @@
 - [NoteOptions](interfaces/NoteOptions.md)
 - [NumericFieldOptions](interfaces/NumericFieldOptions.md)
 - [OpenAPIConfig](interfaces/OpenAPIConfig.md)
+- [PostgresSystemTimestampMigrationConfirmation](interfaces/PostgresSystemTimestampMigrationConfirmation.md)
 - [PubSubConfig](interfaces/PubSubConfig.md)
 - [RecallAllOptions](interfaces/RecallAllOptions.md)
 - [RecallOptions](interfaces/RecallOptions.md)
@@ -93,6 +94,7 @@
 
 ## Functions
 
+- [assertPostgresSystemTimestampsCurrent](functions/assertPostgresSystemTimestampsCurrent.md)
 - [boolean](functions/boolean.md)
 - [config](functions/config.md)
 - [convertTypeToJsonSchema](functions/convertTypeToJsonSchema.md)
@@ -115,6 +117,7 @@
 - [loadLocalTestManifestSync](functions/loadLocalTestManifestSync.md)
 - [manyToMany](functions/manyToMany.md)
 - [meta](functions/meta.md)
+- [migratePostgresSystemTimestamps](functions/migratePostgresSystemTimestamps.md)
 - [oneToMany](functions/oneToMany.md)
 - [setupSwaggerUI](functions/setupSwaggerUI.md)
 - [shouldIncludeMethod](functions/shouldIncludeMethod.md)

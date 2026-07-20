@@ -711,6 +711,7 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 
     const pgComparer = new SchemaComparer(mockPostgresDb as any, {
       ignoreTypeMismatches: false,
+      postgresTimestampMigration: { legacyTimezone: 'UTC' },
     });
 
     const manifest: Record<string, SchemaDefinition> = {
@@ -733,10 +734,211 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('TYPE TIMESTAMP');
+    expect(typeUpgrades[0].sql).toContain('TYPE TIMESTAMPTZ');
     expect(typeUpgrades[0].sql).toContain(
-      `USING NULLIF(NULLIF(trim(both '"' from "created_at"::text), ''), 'null')::timestamp`,
+      `USING NULLIF(NULLIF(trim(both '"' from "created_at"::text), ''), 'null')::timestamptz`,
     );
+  });
+
+  it('migrates legacy PostgreSQL TIMESTAMP wall times as UTC instants', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'settlements' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'uuid', notnull: true },
+          settled_at: {
+            type: 'timestamp without time zone',
+            notnull: false,
+          },
+        },
+        indexes: [],
+      }),
+    };
+
+    const manifest: Record<string, SchemaDefinition> = {
+      settlements: {
+        tableName: 'settlements',
+        ddl: '',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          settled_at: { type: 'TIMESTAMP' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+      postgresTimestampMigration: { legacyTimezone: 'UTC' },
+    }).compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'type_upgrade',
+        table: 'settlements',
+        name: 'settled_at',
+        mismatch: {
+          expected: 'TIMESTAMP',
+          actual: 'timestamp without time zone',
+        },
+        sql:
+          `ALTER TABLE "settlements" ALTER COLUMN "settled_at" ` +
+          `TYPE TIMESTAMPTZ USING "settled_at" AT TIME ZONE 'UTC'`,
+        sqlStatements: [
+          expect.stringContaining("current_setting('TimeZone')"),
+          `ALTER TABLE "settlements" ALTER COLUMN "settled_at" ` +
+            `TYPE TIMESTAMPTZ USING "settled_at" AT TIME ZONE 'UTC'`,
+        ],
+      }),
+    ]);
+  });
+
+  it('guards legacy PostgreSQL text timestamps with the UTC preflight', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'settlements' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'uuid', notnull: true },
+          settled_at: { type: 'text', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+    const manifest: Record<string, SchemaDefinition> = {
+      settlements: {
+        tableName: 'settlements',
+        ddl: '',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          settled_at: { type: 'TIMESTAMP' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+      postgresTimestampMigration: { legacyTimezone: 'UTC' },
+    }).compare(manifest);
+    const change = diff.changes.find(
+      (candidate) => candidate.name === 'settled_at',
+    );
+
+    expect(change).toEqual(
+      expect.objectContaining({
+        type: 'type_upgrade',
+        sqlStatements: [
+          expect.stringContaining("current_setting('TimeZone')"),
+          expect.stringContaining('::timestamptz'),
+        ],
+      }),
+    );
+  });
+
+  it('reports legacy PostgreSQL timestamps as manual drift without UTC provenance confirmation', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'settlements' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'uuid', notnull: true },
+          settled_at: {
+            type: 'timestamp without time zone',
+            notnull: false,
+          },
+        },
+        indexes: [],
+      }),
+    };
+    const manifest: Record<string, SchemaDefinition> = {
+      settlements: {
+        tableName: 'settlements',
+        ddl: '',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          settled_at: { type: 'TIMESTAMP' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(manifest);
+    expect(diff.changes).toContainEqual(
+      expect.objectContaining({
+        type: 'type_mismatch',
+        name: 'settled_at',
+      }),
+    );
+    expect(getSQLFromDiff(diff)).toEqual([]);
+  });
+
+  it.each([
+    ['sqlite', 'DATETIME(6)', 'TIMESTAMP'],
+    ['duckdb', 'TIMESTAMP(6)', 'TIMESTAMP'],
+    ['json', 'TIMESTAMP(6) WITHOUT TIME ZONE', 'TIMESTAMP'],
+    ['postgres', 'TIMESTAMP(6) WITH TIME ZONE', 'TIMESTAMPTZ'],
+  ] as const)('normalizes precision-qualified %s date type %s', (engine, input, expected) => {
+    const db =
+      engine === 'json'
+        ? { url: '', exportTable: () => undefined }
+        : { url: engine === 'postgres' ? 'postgresql://test' : ':memory:' };
+    const comparer = new SchemaComparer(db as any, { engineHint: engine });
+    const normalized = (
+      comparer as unknown as { normalizeType: (type: string) => string }
+    ).normalizeType(input);
+    expect(normalized).toBe(expected);
+  });
+
+  it('accepts PostgreSQL TIMESTAMPTZ as the current Date representation', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'settlements' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'uuid', notnull: true },
+          settled_at: { type: 'timestamp with time zone', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const manifest: Record<string, SchemaDefinition> = {
+      settlements: {
+        tableName: 'settlements',
+        ddl: '',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          settled_at: { type: 'TIMESTAMP' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(manifest);
+
+    expect(diff.has_changes).toBe(false);
   });
 
   it('should generate PostgreSQL guarded USING clause for legacy TEXT→INTEGER drift', async () => {

@@ -6,6 +6,7 @@
  */
 
 import { getDDLStrategy } from '../schema/ddl/index.js';
+import { materializeManifestDDLForEngine } from '../schema/ddl/materialize-manifest.js';
 import type {
   MigrationDefinition,
   SchemaChange,
@@ -60,6 +61,7 @@ export class MigrationGenerator {
   private format: 'sql' | 'typescript';
   private includeDown: boolean;
   private packageName?: string;
+  private materializeStructuredSchema: boolean;
 
   constructor(
     options: {
@@ -67,12 +69,21 @@ export class MigrationGenerator {
       format?: 'sql' | 'typescript';
       includeDown?: boolean;
       packageName?: string;
+      /**
+       * Ignore cached manifest DDL and materialize structured columns for the
+       * selected engine. Framework-owned executable paths should enable this;
+       * the default preserves the published custom-DDL contract while still
+       * materializing bare PostgreSQL TIMESTAMP columns as TIMESTAMPTZ.
+       */
+      materializeStructuredSchema?: boolean;
     } = {},
   ) {
     this.engine = options.engine || 'sqlite';
     this.format = options.format || 'sql';
     this.includeDown = options.includeDown ?? true;
     this.packageName = options.packageName;
+    this.materializeStructuredSchema =
+      options.materializeStructuredSchema ?? false;
   }
 
   /**
@@ -267,20 +278,27 @@ ${downStatementsStr}
    * Generate CREATE TABLE SQL from schema definition
    */
   private generateCreateTable(schema: SchemaDefinition): string {
-    // If DDL is already provided, use it
-    if (schema.ddl) {
-      return schema.ddl;
+    if (Object.keys(schema.columns).length === 0 && schema.ddl?.trim()) {
+      // Structured materialization cannot preserve constraints or vendor SQL
+      // when an older/custom manifest exposes only executable DDL. Retain the
+      // only valid representation even when materialization was requested.
+      return materializeManifestDDLForEngine(schema.ddl, this.engine);
     }
 
-    // No pre-generated DDL: delegate to the engine's DDL strategy, exactly as
-    // the migration orchestrator does (orchestrate.ts). Building the statement
-    // inline here previously emitted the *abstract* column type verbatim
-    // (JSON/REAL/UUID) instead of the per-engine type (JSONB/DOUBLE
-    // PRECISION/native uuid), so the very next `compare()` flagged spurious
-    // type drift. The strategy also escapes identifiers/defaults safely. (Like
-    // the orchestrator's CREATE TABLE path, foreign-key constraints are not
-    // emitted here — SMRT manages relationships via cross-package refs and
-    // avoids circular DDL FKs, see #1333.)
+    if (!this.materializeStructuredSchema && schema.ddl?.trim()) {
+      // Preserve the documented custom-DDL contract by default, including
+      // table-level constraints that structured ColumnDefinition cannot
+      // represent. Engine-aware framework callers explicitly opt into the
+      // structured materialization path below.
+      return materializeManifestDDLForEngine(schema.ddl, this.engine);
+    }
+
+    // The manifest's pre-generated `ddl` is deliberately engine-neutral and
+    // may contain abstract TIMESTAMP/JSON/UUID types. Always materialize the
+    // structured columns through the selected engine strategy; executing the
+    // cached string on PostgreSQL would otherwise bypass TIMESTAMPTZ and lose
+    // JavaScript Date offsets (#2069). This matches the migration orchestrator
+    // and also prevents JSON/REAL/UUID drift after a create.
     return getDDLStrategy(this.engine).generateCreateTable(schema);
   }
 

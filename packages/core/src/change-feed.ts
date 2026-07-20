@@ -356,17 +356,44 @@ async function postgresChangeFeedAppendFunctionExists(
   return Boolean(rows[0]?.function_name);
 }
 
-async function postgresChangeFeedSchemaExists(
+async function getPostgresChangeFeedSchemaState(
   db: DatabaseInterface,
-): Promise<boolean> {
+): Promise<{
+  tableExists: boolean;
+  functionExists: boolean;
+  createdAtType: string | null;
+}> {
   const rows = getQueryRows(
     await db.query(
       `SELECT
          to_regclass('${CHANGE_FEED_TABLE}') AS table_name,
-         to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name`,
+         to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') AS function_name,
+         (
+           SELECT data_type
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = '${CHANGE_FEED_TABLE}'
+             AND column_name = 'created_at'
+         ) AS created_at_type`,
     ),
   );
-  return Boolean(rows[0]?.table_name && rows[0]?.function_name);
+  return {
+    tableExists: Boolean(rows[0]?.table_name),
+    functionExists: Boolean(rows[0]?.function_name),
+    createdAtType: rows[0]?.created_at_type
+      ? String(rows[0].created_at_type)
+      : null,
+  };
+}
+
+function assertPostgresChangeFeedTimestampCurrent(
+  state: Awaited<ReturnType<typeof getPostgresChangeFeedSchemaState>>,
+): void {
+  if (state.createdAtType === 'timestamp without time zone') {
+    throw new Error(
+      'Legacy _smrt_changes.created_at requires an explicit audited migratePostgresSystemTimestamps() call before change-feed initialization',
+    );
+  }
 }
 
 /**
@@ -390,6 +417,10 @@ export async function ensurePostgresChangeFeedAppendFunction(
 ): Promise<void> {
   if (getEngine(db, options.typeHint) !== 'postgres') return;
 
+  assertPostgresChangeFeedTimestampCurrent(
+    await getPostgresChangeFeedSchemaState(db),
+  );
+
   if (options.replaceExisting === false) {
     if (await postgresChangeFeedAppendFunctionExists(db)) return;
     await db.query(ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
@@ -404,7 +435,13 @@ export async function ensureChangeFeedTable(
 ): Promise<void> {
   if (ensuredHandles.has(db)) return;
   if (getEngine(db) === 'postgres') {
-    if (await postgresChangeFeedSchemaExists(db)) {
+    const state = await getPostgresChangeFeedSchemaState(db);
+    assertPostgresChangeFeedTimestampCurrent(state);
+    if (
+      state.tableExists &&
+      state.functionExists &&
+      state.createdAtType === 'timestamp with time zone'
+    ) {
       ensuredHandles.add(db);
       return;
     }

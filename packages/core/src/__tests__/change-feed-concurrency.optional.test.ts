@@ -31,6 +31,7 @@ import {
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { smrt } from '../registry';
+import { SMRT_SCHEMA_VERSION } from '../system/schema';
 import { getTestDatabase } from '../testing/database';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
@@ -232,7 +233,7 @@ describe.skipIf(!pgUrl)(
       const installed = rowsOf(
         await writerA.query(
           `SELECT to_regprocedure(
-            '_smrt_append_change(text,text,text,text,timestamp without time zone)'
+            '_smrt_append_change(text,text,text,text,timestamp with time zone)'
           ) AS function_name`,
         ),
       );
@@ -245,7 +246,7 @@ describe.skipIf(!pgUrl)(
       }
 
       await writerA.query(
-        "DELETE FROM _smrt_migrations WHERE version = '1.8.0'",
+        `DELETE FROM _smrt_migrations WHERE version = '${SMRT_SCHEMA_VERSION}'`,
       );
       await writerA.query('DROP FUNCTION IF EXISTS _smrt_append_change');
       await writerA.query('DROP TABLE IF EXISTS _smrt_changes');
