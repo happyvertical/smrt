@@ -268,6 +268,34 @@ describe('ReferralLinkCollection.recordClick inside a caller transaction', () =>
     expect((await links.get({ id: link.id }))?.clickCount).toBe(0);
   });
 
+  it('participates when the collection is bound to a beginTransaction() handle', async () => {
+    if (typeof db.beginTransaction !== 'function') {
+      throw new Error('Test database must expose beginTransaction()');
+    }
+    const link = await links.createWithUniqueCode({ referrerId, programId });
+
+    const handle = await db.beginTransaction();
+    try {
+      // Handles are recognized by their own lifecycle surface
+      // (commit/rollback/isActive), independent of the transaction()
+      // fingerprint — the bound collection must join, not nest or refuse.
+      const bound = await txLinks(handle);
+      const result = await bound.recordClick({
+        code: link.code,
+        idempotencyKey: 'tx-handle-bound',
+      });
+      expect(result.refused).toBeUndefined();
+      expect(result.link?.clickCount).toBe(1);
+      await handle.rollback();
+    } catch (error) {
+      if (handle.isActive()) await handle.rollback();
+      throw error;
+    }
+
+    expect((await links.get({ id: link.id }))?.clickCount).toBe(0);
+    expect(await touches.findByReferrer(referrerId)).toHaveLength(0);
+  });
+
   it('an active beginTransaction() handle participates and persists on commit', async () => {
     if (typeof db.beginTransaction !== 'function') {
       throw new Error('Test database must expose beginTransaction()');
@@ -290,6 +318,28 @@ describe('ReferralLinkCollection.recordClick inside a caller transaction', () =>
 
     expect((await links.get({ id: link.id }))?.clickCount).toBe(1);
     expect(await touches.findByReferrer(referrerId)).toHaveLength(1);
+  });
+
+  it('keeps self-transacting for a minimal pool adapter without beginTransaction', async () => {
+    // A conforming-but-minimal pool adapter over the real database:
+    // transaction() without beginTransaction/acquireSession. Its close()
+    // marks it pool-level, so recordClick must keep the atomic
+    // self-transacting default rather than silently running the click's
+    // writes untransacted.
+    const minimalPool = { ...db, close: async () => {} } as TransactionDatabase;
+    delete (minimalPool as { beginTransaction?: unknown }).beginTransaction;
+    delete (minimalPool as { acquireSession?: unknown }).acquireSession;
+    expect(typeof minimalPool.transaction).toBe('function');
+
+    const link = await links.createWithUniqueCode({ referrerId, programId });
+    const bound = await ReferralLinkCollection.create({ db: minimalPool });
+    const result = await bound.recordClick({
+      code: link.code,
+      idempotencyKey: 'minimal-pool-selftransact',
+    });
+    expect(result.refused).toBeUndefined();
+    expect(result.link?.clickCount).toBe(1);
+    expect((await links.get({ id: link.id }))?.clickCount).toBe(1);
   });
 
   it('still self-transacts and rehydrates on the pool database when unwrapped', async () => {

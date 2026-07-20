@@ -211,24 +211,46 @@ interface TransactionCapableDatabase extends DatabaseInterface {
   transaction?<T>(fn: (tx: DatabaseInterface) => Promise<T>): Promise<T>;
   /** Present on `beginTransaction()` handles; absent on `transaction()` views. */
   isActive?: unknown;
+  commit?: unknown;
+  rollback?: unknown;
 }
 
 /**
- * Whether `db` is a transaction-scoped view rather than a pool-level
- * adapter. Every `@happyvertical/sql` pool-level adapter (postgres, sqlite,
- * sqlite-native, duckdb) exposes `beginTransaction` (postgres additionally
- * `acquireSession`); the views passed to `transaction()` callbacks and the
- * handles returned by `beginTransaction()` expose neither — they only
- * re-expose the pool's `transaction` function, which is exactly the nested
- * call this detection exists to avoid. Switch to an explicit adapter marker
+ * Whether the given database has the lifecycle surface of a
+ * `beginTransaction()` handle (`TransactionHandle`).
+ */
+function isTransactionHandle(db: TransactionCapableDatabase): boolean {
+  return (
+    typeof db.commit === 'function' &&
+    typeof db.rollback === 'function' &&
+    typeof db.isActive === 'function'
+  );
+}
+
+/**
+ * Whether `db` is a transaction-scoped database rather than a pool-level
+ * adapter. `beginTransaction()` handles are recognized positively by their
+ * own lifecycle surface (`commit`/`rollback`/`isActive`). The views passed
+ * to `transaction()` callbacks carry no positive marker in
+ * `@happyvertical/sql` yet (happyvertical/sdk#1108), so they are
+ * fingerprinted by shape: every pool-level adapter (postgres, sqlite,
+ * sqlite-native, duckdb) exposes `beginTransaction` — postgres additionally
+ * `acquireSession` and `close` — while the views re-expose only the pool's
+ * `transaction` function (exactly the nested call this detection exists to
+ * avoid) and none of those pool members. Requiring every pool member
+ * absent keeps an adapter that pairs `transaction()` with any pool
+ * lifecycle surface on the self-transacting default instead of silently
+ * dropping the click's atomicity. Switch to an explicit adapter marker
  * once happyvertical/sdk#1108 ships one.
  */
 function isTransactionScopedDatabase(db: DatabaseInterface): boolean {
   const capable = db as TransactionCapableDatabase;
+  if (isTransactionHandle(capable)) return true;
   return (
     typeof capable.transaction === 'function' &&
     typeof capable.beginTransaction !== 'function' &&
-    typeof capable.acquireSession !== 'function'
+    typeof capable.acquireSession !== 'function' &&
+    typeof capable.close !== 'function'
   );
 }
 
@@ -250,22 +272,23 @@ function assertParticipatableTransaction(tx: DatabaseInterface): void {
       'Referral click transaction must be an open transaction database — the callback argument of db.transaction() or an active beginTransaction() handle',
     );
   }
+  if (isTransactionHandle(candidate)) {
+    if ((candidate.isActive as () => boolean)() !== true) {
+      throw new ReferralClickValidationError(
+        'invalid_transaction',
+        'Referral click transaction has already been committed or rolled back',
+      );
+    }
+    return;
+  }
   if (
     typeof candidate.beginTransaction === 'function' ||
-    typeof candidate.acquireSession === 'function'
+    typeof candidate.acquireSession === 'function' ||
+    typeof candidate.close === 'function'
   ) {
     throw new ReferralClickValidationError(
       'invalid_transaction',
       'Referral click transaction received a pool-level database; pass the transaction-scoped database your db.transaction() callback received so the click joins your transaction instead of running untransacted',
-    );
-  }
-  if (
-    typeof candidate.isActive === 'function' &&
-    candidate.isActive() !== true
-  ) {
-    throw new ReferralClickValidationError(
-      'invalid_transaction',
-      'Referral click transaction has already been committed or rolled back',
     );
   }
 }
@@ -439,11 +462,13 @@ export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
 
   /**
    * Bind the click's working collections to one transaction database. The
-   * transaction is the same initialized database on a pinned connection —
-   * skip system-table bootstrap and runtime service setup for these
-   * short-lived bindings (mirrors `CommissionPayoutService.txOptions`;
-   * bootstrap DDL inside the click transaction would lengthen it and can
-   * deadlock under concurrent clicks).
+   * transaction is the same initialized database on a pinned connection, so
+   * the lightweight-binding flags are requested (mirrors
+   * `CommissionPayoutService.txOptions`). Note `SmrtCollection.create()`
+   * currently forwards only whitelisted options — the two internal flags
+   * are dropped there today, and it is the same-URL system-table cache that
+   * keeps bootstrap DDL out of the transaction in practice; the flags make
+   * the intent explicit and take effect when core forwards them.
    */
   private static async createClickCollections(
     txDb: DatabaseInterface,
