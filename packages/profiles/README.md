@@ -155,12 +155,12 @@ lookup behavior and is not suitable for identity linking. Only the explicit
 deploy-time backfill scans the Profile table and records readiness; guarded
 runtime identity lookups use the indexed key and validate returned candidates.
 `createProfileFromOidc()` requires a transaction-capable database. Pass the
-root database, which must expose `beginTransaction`, and SMRT owns the
+root database, which must expose `beginTransaction`, and s-m-r-t owns the
 transaction; an already transaction-bound handle is supported through a
 savepoint. Paths that perform canonical email lookup or reservation require
 `_smrt_backfills` to exist first. Provisioning never attempts tracker DDL on
 a caller-owned transaction; for those paths, if the table is absent, pass the
-root database so SMRT can initialize it outside the transaction. Exact
+root database so s-m-r-t can initialize it outside the transaction. Exact
 issuer/subject reuse skips the email-key readiness-marker lookup, but root
 coordination still initializes the shared tracker table. Caller-owned exact
 reuse does not consult the tracker and therefore does not require that table.

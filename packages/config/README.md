@@ -1,6 +1,6 @@
 # @happyvertical/smrt-config
 
-Centralized configuration management for the SMRT framework. Uses [cosmiconfig](https://github.com/cosmiconfig/cosmiconfig) to load `smrt.config.{js,ts,json}` files, with secret sanitization and SSG-safe export.
+Centralized configuration management for the s-m-r-t framework. Uses [cosmiconfig](https://github.com/cosmiconfig/cosmiconfig) to load `smrt.config.{js,ts,json}` files, with secret sanitization and SSG-safe export.
 
 ## Installation
 

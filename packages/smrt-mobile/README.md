@@ -1,6 +1,6 @@
 # @happyvertical/smrt-mobile
 
-Kotlin Multiplatform shared mobile foundation for SMRT apps: offline pack
+Kotlin Multiplatform shared mobile foundation for s-m-r-t apps: offline pack
 model + integrity, pack i18n resolution, durable evidence uploads, shared
 presenter state, app-shell state, and platform adapter contracts. Android
 consumes the module directly; iOS consumes the exported `SmrtMobile`
@@ -31,7 +31,7 @@ Codegen companion: [`@happyvertical/smrt-mobile-contract`](../smrt-mobile-contra
    iOS-target compilation. Gradle wrapper checked in.
 5. **Server contract** — `/api/mobile` (server-brokered PKCE, session
    bootstrap, multipart upload with `clientCaptureId`/`Idempotency-Key`
-   dedup) is part of the foundation: SMRT ships reusable handlers in
+   dedup) is part of the foundation: s-m-r-t ships reusable handlers in
    `smrt-users` (issue #1748); app-owned bootstrap data is nested under the
    contract's `extras` field.
 6. **Toolchain** — Kotlin 2.4.0 / AGP 9.2.1 / Gradle 9.6.1 / compileSdk 36 /
@@ -56,7 +56,7 @@ logic tests run without one. iOS targets require a macOS host with Xcode.
 ## Consuming (v0, local filesystem)
 
 Distribution is deferred (decision 2). Android/KMP consumers use a Gradle
-composite build. Resolve the SMRT checkout from a Gradle property first, an
+composite build. Resolve the s-m-r-t checkout from a Gradle property first, an
 environment variable second, and a sibling checkout as the local default:
 
 ```kotlin

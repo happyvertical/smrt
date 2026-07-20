@@ -1,6 +1,6 @@
 # @happyvertical/smrt-chat
 
-Chat rooms, DMs, threads, and agent conversations for the SMRT framework. Supports public, private, DM, and agent-type rooms with threaded messages, reactions, and agent sessions with tool whitelisting.
+Chat rooms, DMs, threads, and agent conversations for the s-m-r-t framework. Supports public, private, DM, and agent-type rooms with threaded messages, reactions, and agent sessions with tool whitelisting.
 
 ## Installation
 
@@ -40,7 +40,7 @@ plays returned TTS audio. If the gateway requires a bearer token, set
 import { ChatService } from '@happyvertical/smrt-chat';
 
 const chat = await ChatService.create({
-  persistence: { type: 'sql', url: 'chat.db' },
+  db: { type: 'sqlite', url: 'chat.db' },
 });
 
 // `actorProfileId` is the authenticated principal the route injects. Every
@@ -131,8 +131,8 @@ if (session.isActive()) {
 ### Voice gateway turns
 
 `smrt-chat` can expose a gateway-facing turn target for browser voice input.
-The browser receives only a short-lived SMRT voice session binding; the
-gateway-to-SMRT service bearer token stays server-side.
+The browser receives only a short-lived s-m-r-t voice session binding; the
+gateway-to-s-m-r-t service bearer token stays server-side.
 
 ```typescript
 import {
@@ -189,7 +189,7 @@ The gateway sends the transcribed text turn:
 }
 ```
 
-SMRT validates `metadata.voiceSessionId` against its server-side binding, then
+s-m-r-t validates `metadata.voiceSessionId` against its server-side binding, then
 checks any supplied tenant/profile/persona/session/thread ids against that
 binding instead of trusting the gateway metadata. A valid turn is persisted as a
 normal user chat message, routed through `runPersonaConversationTurn()`, and the
@@ -281,3 +281,8 @@ the voice helpers.
 - `@happyvertical/smrt-tenancy` -- multi-tenant scoping
 - `@happyvertical/smrt-types` -- shared type definitions
 - Peer (optional): `@happyvertical/smrt-agents`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-svelte`
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

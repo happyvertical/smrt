@@ -3,7 +3,7 @@ import type { Config } from '@docusaurus/types';
 import { themes as prismThemes } from 'prism-react-renderer';
 
 const config: Config = {
-  title: 'SMRT Framework',
+  title: 's-m-r-t framework',
   tagline: 'TypeScript framework for building vertical AI agents',
   favicon: 'img/favicon.ico',
 
@@ -185,7 +185,7 @@ const config: Config = {
     image: 'img/smrt-social-card.jpg',
 
     navbar: {
-      title: 'SMRT Framework',
+      title: 's-m-r-t framework',
       items: [
         {
           type: 'docSidebar',

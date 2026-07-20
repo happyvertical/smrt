@@ -1,6 +1,6 @@
 # @happyvertical/smrt-jobs
 
-Background job execution for SMRT objects. Provides persistent queue storage, retry strategies, cron-based scheduling, and a fluent `JobBuilder` API via the `withBackgroundJobs()` mixin.
+Background job execution for s-m-r-t objects. Provides persistent queue storage, retry strategies, cron-based scheduling, and a fluent `JobBuilder` API via the `withBackgroundJobs()` mixin.
 
 ## Installation
 

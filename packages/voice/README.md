@@ -1,6 +1,6 @@
 # @happyvertical/smrt-voice
 
-Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem. Manages voice profiles, cloning samples, and TTS output with word-level timing for lip-sync.
+Voice profile management for AI-powered voice synthesis and cloning in the s-m-r-t ecosystem. Manages voice profiles, cloning samples, and TTS output with word-level timing for lip-sync.
 
 ## Installation
 

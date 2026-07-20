@@ -1,6 +1,6 @@
 # @happyvertical/smrt-commerce
 
-Commerce models for the SMRT framework. Covers customers, vendors, contracts (5 STI types), invoices with ledger integration, payments, and fulfillment tracking.
+Commerce models for the s-m-r-t framework. Covers customers, vendors, contracts (5 STI types), invoices with ledger integration, payments, and fulfillment tracking.
 
 ## Installation
 
@@ -20,7 +20,7 @@ import {
 } from '@happyvertical/smrt-commerce';
 
 // Create a customer linked to a profile
-const customers = new CustomerCollection(db);
+const customers = await CustomerCollection.create({ db });
 const customer = await customers.create({
   profileId: 'profile-uuid',
   creditLimit: 10000.00,
@@ -29,7 +29,7 @@ const customer = await customers.create({
 await customer.save();
 
 // Create an order (STI contract type)
-const contracts = new ContractCollection(db);
+const contracts = await ContractCollection.create({ db });
 const order = await contracts.create({
   _meta_type: 'Order',
   customerId: customer.id,
@@ -41,7 +41,7 @@ const order = await contracts.create({
 await order.save();
 
 // Create an invoice for the order
-const invoices = new InvoiceCollection(db);
+const invoices = await InvoiceCollection.create({ db });
 const invoiceNumber = await invoices.generateInvoiceNumber();
 const invoice = await invoices.create({
   customerId: customer.id,
@@ -61,7 +61,7 @@ await invoice.recognizeRevenue({
 });
 
 // Record a payment
-const payments = new PaymentCollection(db);
+const payments = await PaymentCollection.create({ db });
 const payment = await payments.create({
   contractId: order.id,
   customerId: customer.id,
@@ -144,3 +144,8 @@ Customer and Vendor link to `@happyvertical/smrt-profiles` via plain `profileId`
 - `@happyvertical/smrt-tenancy` -- multi-tenant scoping
 - `@happyvertical/smrt-types` -- shared type definitions
 - Peer: `@happyvertical/smrt-ledgers`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-svelte`
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

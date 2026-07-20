@@ -1,6 +1,6 @@
 # @happyvertical/smrt-playground
 
-Shared playground discovery, runtime helpers, and host components for SMRT UI packages.
+Shared playground discovery, runtime helpers, and host components for s-m-r-t UI packages.
 
 ## Purpose
 
@@ -10,7 +10,7 @@ This package is about previews, not app routing.
 
 ## Surface Model
 
-SMRT UI packages can expose three different surfaces:
+s-m-r-t UI packages can expose three different surfaces:
 
 - `./svelte` for reusable components
 - `./playground` for preview metadata

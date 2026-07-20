@@ -1,6 +1,6 @@
 # @happyvertical/smrt-projects
 
-Provider-agnostic project management models for the SMRT framework. Manages repositories, issues, pull requests, and project boards with sync support for external providers (GitHub, GitLab, etc.).
+Provider-agnostic project management models for the s-m-r-t framework. Manages repositories, issues, pull requests, and project boards with sync support for external providers (GitHub, GitLab, etc.).
 
 ## Installation
 
@@ -19,7 +19,7 @@ import {
 } from '@happyvertical/smrt-projects';
 
 // Track a repository (token resolved from env var at runtime)
-const repos = new RepositoryCollection(db);
+const repos = await RepositoryCollection.create({ db });
 const repo = await repos.create({
   owner: 'org',
   name: 'my-app',
@@ -95,3 +95,8 @@ await issue.rollback();
 - `@happyvertical/repos` -- repository provider SDK
 - `@happyvertical/projects` -- project board provider SDK
 - Peer: `@happyvertical/smrt-svelte`
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

@@ -1,219 +1,304 @@
-# SMRT Framework
+# s-m-r-t framework
 
-<p align="center">
-  <img src="./smrt-homer.png" alt="SMRT Framework" width="400" />
-</p>
+**Define business objects once. Use them through persistence, REST, CLI, MCP,
+agents, web clients, and native apps.**
 
-**A TypeScript framework for building vertical AI agents with automatic code generation, database persistence, and AI-powered operations.**
+s-m-r-t is a TypeScript framework for building operational software and vertical
+AI agents around the same typed domain model. Decorated classes become
+manifest-described objects with portable persistence, generated interfaces,
+tenant-aware relationships, AI operations, and reusable domain packages.
 
-Define business logic as TypeScript classes with `@smrt()` -- get REST APIs, CLI tools, MCP servers, and AI operations (`is()`/`do()`) automatically.
+It is designed for systems where the difficult part is keeping data,
+permissions, tools, background work, user interfaces, and automation aligned as
+the domain grows—not merely implementing one endpoint or agent prompt. The
+repository contains 61 top-level platform packages published primarily under
+`@happyvertical/smrt-*`, plus a private playground test-host workspace.
 
-## Quick Start
+## Define once, expose deliberately
 
-```bash
-pnpm add @happyvertical/smrt-core
+```mermaid
+flowchart LR
+  A["TypeScript classes with @smrt()"] --> B["Manifest and schema metadata"]
+  B --> C["SQLite, PostgreSQL, or DuckDB"]
+  B --> D["REST and typed clients"]
+  B --> E["CLI, MCP, and WebMCP tools"]
+  B --> F["Web and mobile collections"]
+  C --> G["Agents, jobs, and domain services"]
+  D --> G
+  E --> G
+  F --> G
 ```
 
+Generation is allowlist-driven. A model does not become publicly writable just
+because it exists: each `@smrt()` declaration controls its REST, CLI, MCP, AI,
+cache, tenancy, and lifecycle surface.
+
+## Requirements
+
+- Node.js 24.18 or newer
+- pnpm 11.13 or newer
+- A supported database adapter (SQLite is convenient for local development; PostgreSQL and DuckDB are supported where documented)
+
+## Quick start
+
+```bash
+pnpm init
+pnpm pkg set type=module
+pnpm add @happyvertical/smrt-config @happyvertical/smrt-core
+pnpm add --save-dev @happyvertical/smrt-cli @types/node vite typescript
+mkdir -p src
+```
+
+Save this as `src/product.ts`:
+
+<!-- quickstart:start -->
 ```typescript
-import { SmrtObject, SmrtCollection, smrt, foreignKey } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
 
-@smrt({
-  api: true,   // Auto-generate REST API
-  mcp: true,   // Auto-generate MCP tools for AI
-  cli: true    // Auto-generate CLI commands
-})
-class Product extends SmrtObject {
+ObjectRegistry.registerPackageManifest(
+  new URL('../.smrt/manifest.json', import.meta.url),
+);
+
+@smrt({ api: true, cli: true, mcp: true })
+export class Product extends SmrtObject {
   name: string = '';
-  description: string = '';
-  price: number = 0.0;      // DECIMAL (has decimal point)
-  quantity: number = 0;      // INTEGER (no decimal point)
-  active: boolean = true;
-  tags: string[] = [];
-  launchedAt: Date = new Date();
-  categoryId = foreignKey(Category);
-
-  async analyze() {
-    return await this.do('Analyze this product and suggest improvements');
-  }
-
-  async isQuality() {
-    return await this.is('Product has high quality description and competitive pricing');
-  }
+  price: number = 0.0; // decimal schema field
+  quantity: number = 0; // integer schema field
 }
 
-class ProductCollection extends SmrtCollection<Product> {
+export class ProductCollection extends SmrtCollection<Product> {
   static readonly _itemClass = Product;
 }
 
-const products = await ProductCollection.create({
-  persistence: { type: 'sql', url: 'products.db' },
-  ai: { provider: 'openai', apiKey: process.env.OPENAI_API_KEY }
+const database = {
+  type: 'sqlite' as const,
+  url: process.env.DATABASE_URL ?? 'products.db',
+};
+const products = await ProductCollection.create({ db: database, persistence: database });
+const product = await products.create({
+  name: 'Field Recorder',
+  price: 299.99,
+  quantity: 4,
 });
-
-const product = await products.create({ name: 'Smart Widget', price: 29.99, quantity: 100 });
 await product.save();
+```
+<!-- quickstart:end -->
 
-const isValid = await product.isQuality();
-const analysis = await product.analyze();
+Configure the supported build-time scanner in `vite.config.ts`:
+
+```typescript
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } },
+  plugins: [smrtPlugin({ include: ['src/**/*.ts'] })],
+});
 ```
 
-## Features
+Configure the CLI database in `smrt.config.ts` (the `db:*` commands read
+`packages.cli.database`; they do not read `DATABASE_*` directly):
 
-- **AI-First Design**: Built-in `do()` and `is()` methods for intelligent operations
-- **Automatic ORM**: Database schema generation from TypeScript classes
-- **Code Generation**: Auto-generate CLIs, REST APIs, and MCP servers from `@smrt()` classes
-- **Single Table Inheritance**: Multi-level STI with `_meta_data` JSONB for child fields
-- **Type-Safe**: Full TypeScript support across all interfaces
-- **0 vs 0.0 Heuristic**: `number = 0` becomes INTEGER, `number = 0.0` becomes DECIMAL
+```typescript
+import { defineConfig } from '@happyvertical/smrt-config';
 
-## Packages
+export default defineConfig({
+  packages: {
+    cli: {
+      database: {
+        type: 'sqlite',
+        url: process.env.DATABASE_URL ?? 'products.db',
+      },
+    },
+  },
+});
+```
 
-All packages are published under `@happyvertical/smrt-*`. 40 packages total.
+Generate the manifest, apply its schema to the fresh SQLite database, and only
+then run the example. The example explicitly registers that generated
+application manifest before creating the collection:
 
-### Foundation
+```bash
+DATABASE_URL=products.db pnpm vite build --ssr src/product.ts
+DATABASE_URL=products.db pnpm smrt db:migrate
+DATABASE_URL=products.db node dist/product.js
+```
 
-| Package | Description |
-|---------|-------------|
-| `smrt-core` | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI, object context memory (`remember`/`recall`) + semantic search |
-| `smrt-config` | cosmiconfig loader, secret sanitization, SSG export |
-| `smrt-cli` | Developer CLI: `smrt db:*`, `smrt docs:agents`, `smrt dev:knowledge-*`, introspection, code generation |
-| `smrt-types` | Shared TypeScript types/enums (zero runtime code except enums) |
-| `smrt-vitest` | Vitest plugin: auto-manifest generation, cross-package class loading, DB isolation |
-| `smrt-scanner` | OXC-based AST scanner for class/field metadata extraction |
-| `smrt-tenancy` | Multi-tenancy: AsyncLocalStorage context, auto-filtering interceptors, adapters |
+Running the built `dist/product.js` entry preserves the manifest-registration call
+in the executable output, where its `../.smrt/manifest.json` URL resolves to the
+manifest generated by the scanner. `@smrt()` makes the class discoverable to
+that build-time scanner. Enabling `api`, `cli`, and `mcp` declares generated
+surfaces. `smrt db:migrate` is the supported manifest-driven setup and migration
+path; runtime initialization verifies application schema rather than creating it
+implicitly.
 
-### Agents & Runtime
+For framework invariants and production setup, read [the repository guide](./AGENTS.md) and [the core package documentation](./packages/core/README.md).
 
-| Package | Description |
-|---------|-------------|
-| `smrt-agents` | Agent lifecycle, DispatchBus inter-agent messaging, interests-based discovery, scheduling |
-| `smrt-jobs` | Background execution: TaskRunner, ScheduleRunner, fluent JobBuilder, `withBackgroundJobs()` |
-| `smrt-users` | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks; manifest-derived per-operation permissions + Postgres RLS |
-| `smrt-profiles` | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships, audit logging |
+## Platform capabilities
 
-### Content & Media
+- **Domain-first ORM:** typed objects, collections, relationships, tenancy, STI, migrations, and portable database adapters.
+- **Generated interfaces:** REST, CLI, MCP, manifests, web collection definitions, and mobile contracts from one model graph.
+- **AI runtime:** object-level `is()`/`do()`, prompts, agents, personas, learning memory, jobs, and observability signals.
+- **Reusable vertical packages:** identity, content, commerce, sales, support, projects, media, analytics, and more.
+- **Cross-platform clients:** Svelte 5 UI, browser data runtime, Kotlin Multiplatform foundations, Android Compose, and SwiftUI.
 
-| Package | Description |
-|---------|-------------|
-| `smrt-content` | STI content types (Article/Document/Mirror), thumbnails, asset associations |
-| `smrt-messages` | Multi-channel messaging: Email/Slack/Twitter as STI hierarchy, credential encryption |
-| `smrt-chat` | Chat rooms (public/private/DM/agent), threads, agent sessions with tool whitelisting |
-| `smrt-assets` | Provider-agnostic asset management, versioning, polymorphic associations |
-| `smrt-images` | Image ops: AI categorization, editing, cross-package STI extending Asset |
-| `smrt-video` | Video production: Character/Performer/Scene, ComfyUI workflows, frame-based durations |
-| `smrt-voice` | TTS voice profiles, cloning from samples, word timings for lip-sync |
+## Choose your path
 
-### Business
+| Goal | Start here |
+| --- | --- |
+| Learn the object and collection model | [`smrt-core`](./packages/core/README.md) |
+| Start a SvelteKit application | [`smrt-template-sveltekit`](./packages/template-sveltekit/README.md) |
+| Build agents and personas | [`smrt-agents`](./packages/agents/README.md), [`smrt-personas`](./packages/personas/README.md) |
+| Add tenant-aware identity and authorization | [`smrt-tenancy`](./packages/tenancy/README.md), [`smrt-users`](./packages/users/README.md) |
+| Build live or offline browser data | [`smrt-web`](./packages/smrt-web/README.md), [`smrt-svelte`](./packages/smrt-svelte/README.md) |
+| Expose an application CLI or MCP server | [`smrt-app-cli`](./packages/app-cli/README.md), [`smrt-app-mcp`](./packages/smrt-app-mcp/README.md) |
+| Use an existing business domain | Browse the linked package catalog below |
+| Extend or review the framework | [`AGENTS.md`](./AGENTS.md), [`smrt-dev-mcp`](./packages/smrt-dev-mcp/README.md) |
 
-| Package | Description |
-|---------|-------------|
-| `smrt-commerce` | Customer/Vendor, Contract (5 STI types), Invoice with ledger integration, Fulfillment |
-| `smrt-products` | Product catalog -- reference template for triple-consumption (npm/federation/standalone) |
-| `smrt-ads` | Ad delivery: priority waterfall, weighted A/B variations, immutable event tracking |
-| `smrt-affiliates` | Revenue sharing: multi-type partners, multi-tier commissions, payout processing |
-| `smrt-ledgers` | Double-entry accounting, balance enforcement (EPSILON=0.01), journal lifecycle |
-| `smrt-analytics` | GA4/Plausible: properties, data streams, server-side events, AI-powered reports |
-| `smrt-reports` | Materialized aggregate read models with decorators, rebuild/incremental refresh, schedules, and tenant fan-out |
-| `smrt-subscriptions` | Tenant subscription plans, feature grants, usage thresholds, and entitlement resolution |
+## Package catalog
 
-### Domain
+Status legend:
 
-| Package | Description |
-|---------|-------------|
-| `smrt-events` | Infinite-nesting event hierarchy, series, participant roles/placements |
-| `smrt-places` | Hierarchical places, geocoding via `lookupOrCreate()`, Haversine proximity search |
-| `smrt-facts` | Knowledge base: semantic dedup, evolution chains, confidence scoring |
-| `smrt-sites` | Site lifecycle management, agent bindings with priority ordering |
-| `smrt-properties` | Digital properties with hierarchical zones for content/ad placement |
-| `smrt-tags` | Hierarchical tagging: context-scoped slugs, multi-language aliases |
-| `smrt-social` | Social media OAuth (YouTube/Threads/X/Bluesky), post scheduling |
-| `smrt-secrets` | Envelope encryption (AMK/TDEK/secret), key rotation, audit logging |
-| `smrt-projects` | Provider-agnostic project management (Issues, PRs, Repositories) |
+- **Stable** — established public package contract.
+- **Preview** — public and usable, with an actively evolving contract.
+- **Experimental** — incomplete or exploratory; evaluate before production use.
+- **Internal** — repository tooling or platform package, not a general npm API.
+- **Deprecated** — compatibility only; follow its migration guide.
 
-### Tooling
+### Foundation and tooling
 
-| Package | Description |
-|---------|-------------|
-| `smrt-svelte` | Svelte 5: components, browser AI (STT/TTS/LLM) with warm cache, theme system |
-| `smrt-dev-mcp` | Dev MCP server: code generation, project introspection, knowledge reflection, review/architecture context, and bundled agent skills |
-| `smrt-gnode` | Federation library (stubs only, not implemented) |
-| `smrt-template-sveltekit` | Base SvelteKit scaffold with SMRT integration |
-| `smrt-template-site-static-json` | Community news site scaffold with Praeco/Caelus |
+| Package | Status | Purpose |
+| --- | --- | --- |
+| [`smrt-core`](./packages/core/README.md) | Stable | ORM, decorators, registries, code generation, AI operations, and runtime services. |
+| [`smrt-types`](./packages/types/README.md) | Stable | Shared framework types and enums. |
+| [`smrt-config`](./packages/config/README.md) | Stable | Configuration loading, validation, redaction, and static export. |
+| [`smrt-scanner`](./packages/scanner/README.md) | Stable | OXC-based TypeScript metadata scanner. |
+| [`smrt-tenancy`](./packages/tenancy/README.md) | Stable | Tenant context, interceptors, and isolation adapters. |
+| [`smrt-vitest`](./packages/vitest/README.md) | Stable | Manifest-aware Vitest integration and database isolation. |
+| [`smrt-cli`](./packages/cli/README.md) | Stable | Developer CLI, schema commands, generation, and knowledge tooling. |
+| [`smrt-app-cli`](./packages/app-cli/README.md) | Preview | Reusable branded application CLI and stdio MCP bridge. |
+| [`smrt-dev-mcp`](./packages/smrt-dev-mcp/README.md) | Stable | Development MCP server and repository knowledge tools. |
+| [`smrt-app-mcp`](./packages/smrt-app-mcp/README.md) | Preview | App-runtime MCP server and transport adapters. |
+| [`smrt-bundle-gate`](./packages/bundle-gate/README.md) | Internal | Consumer bundle reachability and size regression gate. |
 
-### SDK Dependencies (`@happyvertical/*`)
+### Agents, identity, and operations
 
-External dependencies from the [HappyVertical SDK](https://github.com/happyvertical/sdk):
+| Package | Status | Purpose |
+| --- | --- | --- |
+| [`smrt-agents`](./packages/agents/README.md) | Stable | Agent lifecycle, discovery, dispatch, and scheduling. |
+| [`smrt-jobs`](./packages/jobs/README.md) | Stable | Durable background jobs, task runners, and schedules. |
+| [`smrt-users`](./packages/users/README.md) | Stable | Users, tenants, sessions, RBAC, permissions, and RLS. |
+| [`smrt-profiles`](./packages/profiles/README.md) | Stable | Identity profiles, authentication bindings, and relationships. |
+| [`smrt-personas`](./packages/personas/README.md) | Preview | Context-scoped agent personas and governed learning loop. |
+| [`smrt-prompts`](./packages/prompts/README.md) | Stable | Typed prompt registry and tenant-aware overrides. |
+| [`smrt-projects`](./packages/projects/README.md) | Preview | Provider-neutral projects, repositories, issues, and delivery work. |
+| [`smrt-support`](./packages/support/README.md) | Preview | Support Case intake, lifecycle, routing, targets, and service time. |
 
-- `@happyvertical/ai` -- Multi-provider AI client
-- `@happyvertical/sql` -- Database operations (SQLite, Postgres, DuckDB)
-- `@happyvertical/files` -- File system operations
-- `@happyvertical/utils` -- Shared utility functions
-- `@happyvertical/logger` -- Logging infrastructure
+### Content and media
+
+| Package | Status | Purpose |
+| --- | --- | --- |
+| [`smrt-content`](./packages/content/README.md) | Stable | Versioned content, documents, mirrors, thumbnails, and citations. |
+| [`smrt-assets`](./packages/assets/README.md) | Stable | Provider-neutral asset identity, versions, metadata, and lineage. |
+| [`smrt-assets-local`](./packages/assets-local/README.md) | Preview | Local image metadata and deterministic variant processing. |
+| [`smrt-assets-ergot`](./packages/assets-ergot/README.md) | Preview | Ergot processing, search, workflow, and synchronization adapter. |
+| [`smrt-images`](./packages/images/README.md) | Stable | Image categorization, editing, search, and asset extensions. |
+| [`smrt-video`](./packages/video/README.md) | Stable | Video production models, scenes, performers, and workflows. |
+| [`smrt-voice`](./packages/voice/README.md) | Stable | Voice profiles, synthesis, cloning, and word timing. |
+| [`smrt-messages`](./packages/messages/README.md) | Stable | Provider-neutral multi-channel messages and credentials. |
+| [`smrt-chat`](./packages/chat/README.md) | Stable | Rooms, DMs, threads, sessions, and agent conversations. |
+| [`smrt-social`](./packages/social/README.md) | Stable | Social account OAuth, publishing, and scheduling. |
+
+### Business and domain
+
+| Package | Status | Purpose |
+| --- | --- | --- |
+| [`smrt-commerce`](./packages/commerce/README.md) | Stable | Customers, vendors, contracts, invoices, and fulfillment. |
+| [`smrt-products`](./packages/products/README.md) | Stable | Product catalog and triple-consumption package template. |
+| [`smrt-sales`](./packages/sales/README.md) | Preview | Agreements, CRM, referrals, commissions, and sales surfaces. |
+| [`smrt-affiliates`](./packages/affiliates/README.md) | Deprecated | Compatibility shim over the `smrt-sales` commissions core. |
+| [`smrt-subscriptions`](./packages/subscriptions/README.md) | Preview | Plans, entitlements, usage, pricing, and spending policies. |
+| [`smrt-ledgers`](./packages/ledgers/README.md) | Stable | Double-entry accounting and journal lifecycle. |
+| [`smrt-ads`](./packages/ads/README.md) | Stable | Ad selection, variation testing, and immutable delivery events. |
+| [`smrt-analytics`](./packages/analytics/README.md) | Stable | Analytics properties, streams, events, and reports. |
+| [`smrt-reports`](./packages/reports/README.md) | Preview | Materialized aggregate definitions and refresh orchestration. |
+| [`smrt-marketing`](./packages/marketing/README.md) | Preview | Campaign coordination, budgets, evidence, and Svelte surfaces. |
+| [`smrt-inventory`](./packages/inventory/README.md) | Preview | SKUs, stock locations, levels, movements, and mutation service. |
+| [`smrt-manufacturing`](./packages/manufacturing/README.md) | Preview | Bills of materials, cost rollups, and production orders. |
+| [`smrt-events`](./packages/events/README.md) | Stable | Nested events, series, participants, and placements. |
+| [`smrt-places`](./packages/places/README.md) | Stable | Place hierarchies, geocoding, and proximity queries. |
+| [`smrt-facts`](./packages/facts/README.md) | Stable | Knowledge facts, provenance, confidence, and evolution. |
+| [`smrt-sites`](./packages/sites/README.md) | Stable | Site lifecycle and agent bindings. |
+| [`smrt-properties`](./packages/properties/README.md) | Stable | Digital properties and hierarchical content/ad zones. |
+| [`smrt-tags`](./packages/tags/README.md) | Stable | Context-scoped hierarchical tags and aliases. |
+| [`smrt-secrets`](./packages/secrets/README.md) | Stable | Tenant envelope encryption, rotation, and audit. |
+| [`smrt-features`](./packages/features/README.md) | Preview | Code-first feature flags and tenant overrides. |
+| [`smrt-languages`](./packages/languages/README.md) | Preview | Language strings, overrides, and translation jobs. |
+
+### Web, mobile, and templates
+
+| Package | Status | Purpose |
+| --- | --- | --- |
+| [`smrt-ui`](./packages/smrt-ui/README.md) | Stable | Domain-neutral Svelte primitives, themes, i18n, and module UI registry. |
+| [`smrt-svelte`](./packages/smrt-svelte/README.md) | Stable | Shared Svelte 5 framework components and application shells. |
+| [`smrt-web`](./packages/smrt-web/README.md) | Preview | Reactive browser collections, offline outbox, persistence, and live invalidation. |
+| [`smrt-playground`](./packages/smrt-playground/README.md) | Preview | Package playground discovery, runtime, and host components. |
+| [`smrt-playground-host`](./packages/smrt-playground/host/README.md) | Internal | Private SvelteKit end-to-end test host for the playground runtime. |
+| [`smrt-mobile-contract`](./packages/smrt-mobile-contract/README.md) | Preview | Manifest-to-Kotlin/Swift contract generation. |
+| [`smrt-mobile`](./packages/smrt-mobile/README.md) | Preview | Kotlin Multiplatform offline, sync, auth, and platform seams. |
+| [`smrt-android`](./packages/smrt-android/README.md) | Internal | Android Compose foundation and native adapters. |
+| [`smrt-ios`](./packages/smrt-ios/README.md) | Internal | SwiftUI foundation and native adapters. |
+| [`smrt-template-sveltekit`](./packages/template-sveltekit/README.md) | Stable | Minimal SvelteKit application template. |
+| [`smrt-template-site-static-json`](./packages/template-site-static-json/README.md) | Stable | Static JSON community-site template. |
+| [`smrt-gnode`](./packages/gnode/README.md) | Experimental | Federation library; currently incomplete. |
+
+## SDK dependencies
+
+s-m-r-t composes infrastructure from the
+[HappyVertical SDK](https://github.com/happyvertical/sdk), including database,
+AI, filesystem, logging, messaging, and provider-neutral service adapters. Use
+the framework packages for domain objects and generated application surfaces;
+use the SDK directly when implementing infrastructure adapters or lower-level
+services.
 
 ## Development
 
 ```bash
-pnpm install && npm run build   # Setup (~8s first build, ~80ms cached via turborepo)
-npm run dev                     # Watch mode
-npm test                        # Vitest (smrtVitestPlugin() required in config)
-npm run typecheck               # TypeScript checking
-npm run lint                    # Biome
-npm run format                  # Biome
+pnpm install
+pnpm build
+pnpm test
+pnpm typecheck
+pnpm lint
+pnpm check:readmes
+pnpm knowledge:check --strict --format markdown
 ```
 
-### Local SDK Development
+Start with a package-scoped command (`pnpm --filter <package> ...`) before running relevant repository-wide validation. Do not create changesets manually; release automation generates them after merge.
+
+Local SDK development helpers:
 
 ```bash
-./setup-local-dev.sh            # Link local SDK packages for development
-./restore-published-deps.sh     # Restore published SDK packages from registry
+./setup-local-dev.sh
+./restore-published-deps.sh
 ```
 
-Requires: `git clone git@github.com:happyvertical/sdk.git ../sdk` (or set `SDK_PATH`).
-
-### Git Hooks
-
-Uses [Lefthook](https://lefthook.dev/) for local deterministic checks:
-
-- pre-commit formats staged JS/TS/Svelte files, rejects known forbidden artifacts, validates staged workflow YAML, and runs `pnpm knowledge:check --changed --strict --format markdown`.
-- pre-push runs full knowledge freshness, full Biome CI formatting, and workflow validation.
-- model-assisted knowledge audits are local/manual: use `smrt-dev-mcp` prompt bundles or bundled skills with Codex, Claude, or another model, then re-run `pnpm knowledge:check --strict --format markdown`.
-- commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/) format:
-
-```
-<type>(<scope>): <subject>
-```
-
-Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-
-## Requirements
-
-- Node.js 24+
-- pnpm 9.0+
-- TypeScript 5.7+
+The first command links a sibling HappyVertical SDK checkout; the second restores registry dependencies.
 
 ## Documentation
 
-- [UI Surfaces](./docs/ui-surfaces.md) -- when to use `./svelte`, `./playground`, and optional `./routes`
-- [Architecture Guide](./AGENTS.md) -- Development guide and patterns
-- [Core Framework Docs](./packages/core/AGENTS.md) -- Detailed framework documentation
-- [API Reference](./packages/core/README.md) -- Complete API reference
+- [Repository architecture and agent guidance](./AGENTS.md)
+- [Core framework API and examples](./packages/core/README.md)
+- [Package standards](./docs/content/standards.md)
+- [UI surface conventions](./docs/ui-surfaces.md)
+- [Documentation site](./docs/README.md)
 
-## UI Surface Conventions
+The documentation build discovers package READMEs from workspace `package.json` files. `pnpm check:readmes` prevents missing package docs, stale catalog entries, broken local README links, obsolete branding, and unsupported quick-start drift.
 
-SMRT packages can expose UI at three levels:
+## Related projects
 
-- `./svelte` for reusable components
-- `./playground` for preview metadata consumed by `smrt playground`
-- package-local page shells under `src/svelte/routes` and `src/routes` when needed for package dev
-
-For this release, the public UI package standard is `./svelte` plus `./playground`. We are not standardizing a public `./routes` export until downstream apps demonstrate a clear need for reusable package-owned page contracts.
-
-## Related Projects
-
-- [HappyVertical SDK](https://github.com/happyvertical/sdk) -- Infrastructure packages
-- [create-gnode](https://github.com/happyvertical/create-gnode) -- Generate local knowledge bases
-- [praeco](https://github.com/happyvertical/praeco) -- Local news agent
+- [HappyVertical SDK](https://github.com/happyvertical/sdk) — infrastructure packages used by s-m-r-t.
+- [Praeco](https://github.com/happyvertical/praeco) — a production application built on s-m-r-t.
 
 ## License
 
-MIT -- see [LICENSE](./LICENSE) file for details.
+MIT — see [LICENSE](./LICENSE).

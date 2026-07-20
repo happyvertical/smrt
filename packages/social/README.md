@@ -1,6 +1,6 @@
 # @happyvertical/smrt-social
 
-Social media account management for multi-platform publishing in the SMRT ecosystem. Manages OAuth connections, post scheduling, and analytics tracking across YouTube, Threads, X (Twitter), and Bluesky.
+Social media account management for multi-platform publishing in the s-m-r-t ecosystem. Manages OAuth connections, post scheduling, and analytics tracking across YouTube, Threads, X (Twitter), and Bluesky.
 
 ## Installation
 

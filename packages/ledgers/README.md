@@ -1,6 +1,6 @@
 # @happyvertical/smrt-ledgers
 
-Double-entry accounting ledger for the SMRT framework. Hierarchical chart of accounts, journal lifecycle with immutability after posting, and balance enforcement with epsilon tolerance.
+Double-entry accounting ledger for the s-m-r-t framework. Hierarchical chart of accounts, journal lifecycle with immutability after posting, and balance enforcement with epsilon tolerance.
 
 ## Installation
 
@@ -18,7 +18,7 @@ import {
 } from '@happyvertical/smrt-ledgers';
 
 // Set up chart of accounts
-const accounts = new AccountCollection(db);
+const accounts = await AccountCollection.create({ db });
 const cash = await accounts.create({
   number: '1000',
   name: 'Cash',
@@ -40,7 +40,7 @@ const checking = await cash.createChild({
 });
 
 // Create a balanced journal with entries
-const journals = new JournalCollection(db);
+const journals = await JournalCollection.create({ db });
 const journal = await journals.createWithEntries({
   description: 'Cash sale',
   sourceModule: 'manual',
@@ -57,7 +57,7 @@ await journal.post();
 const cashBalance = await cash.getBalance();
 
 // Get trial balance across all active accounts
-const entries = new JournalEntryCollection(db);
+const entries = await JournalEntryCollection.create({ db });
 const trialBalance = await entries.getTrialBalance();
 
 // Void a journal (cannot edit after posting, only void)
@@ -122,3 +122,8 @@ Each JournalEntry must have either a debit or a credit (not both, not zero). Amo
 
 - `@happyvertical/smrt-core` -- ORM and code generation
 - `@happyvertical/smrt-tenancy` -- multi-tenant scoping
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

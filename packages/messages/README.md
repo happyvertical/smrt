@@ -21,7 +21,7 @@ import {
 } from '@happyvertical/smrt-messages';
 
 // Create an email account with encrypted credentials
-const accounts = new EmailAccountCollection(db);
+const accounts = await EmailAccountCollection.create({ db });
 const account = await accounts.create({
   name: 'Support',
   providerType: 'smtp',
@@ -33,7 +33,7 @@ await account.setCredentials({
 });
 
 // Send an email through the send lifecycle
-const emails = new EmailCollection(db);
+const emails = await EmailCollection.create({ db });
 const email = await emails.create({
   accountId: account.id,
   subject: 'Welcome',
@@ -49,7 +49,7 @@ if (!result.success) {
 }
 
 // Query messages across all channels via base collection
-const messages = new MessageCollection(db);
+const messages = await MessageCollection.create({ db });
 const recent = await messages.list({ orderBy: 'createdAt DESC', limit: 20 });
 ```
 
@@ -153,3 +153,8 @@ Account credentials are stored via `credentialSecretId` pointing to smrt-secrets
 - `@happyvertical/smrt-types` -- shared type definitions
 - `@happyvertical/email` -- SMTP/IMAP email client
 - Peer: `@happyvertical/smrt-svelte` (optional)
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.

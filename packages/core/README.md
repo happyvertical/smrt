@@ -1,27 +1,48 @@
 # @happyvertical/smrt-core
 
-ORM, code generation, AI integration, and the DispatchBus. Everything else in the SMRT framework builds on this.
+ORM, code generation, AI integration, and the DispatchBus. Everything else in the s-m-r-t framework builds on this.
+
+Use `smrt-core` when you are defining domain objects, querying collections,
+generating interfaces, or extending the framework runtime. If you want a full
+application scaffold with users and tenancy already wired, start with
+[`smrt-template-sveltekit`](../template-sveltekit/README.md).
 
 ## Installation
 
 ```bash
 pnpm add @happyvertical/smrt-core
+pnpm add -D @happyvertical/smrt-cli @happyvertical/smrt-vitest
 ```
+
+Requires Node.js 24.18.0 or newer. s-m-r-t projects use the Vite plugin to generate
+manifests and the CLI to apply schema migrations before runtime.
 
 ## Usage
 
 ### Define a class with `@smrt()`
 
 ```typescript
-import { smrt, SmrtObject, SmrtCollection, foreignKey } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  smrt,
+  SmrtCollection,
+  SmrtObject,
+} from '@happyvertical/smrt-core';
+
+@smrt()
+class Category extends SmrtObject {
+  name = '';
+}
 
 @smrt({ api: true, cli: true, mcp: true })
 class Product extends SmrtObject {
-  name: string = '';
+  name = '';
   price: number = 0.0;          // DECIMAL (has decimal point)
   quantity: number = 0;          // INTEGER (no decimal point)
-  isPublished: boolean = false;
-  categoryId = foreignKey(Category);
+  isPublished = false;
+
+  @foreignKey(Category)
+  categoryId = '';
 }
 
 class ProductCollection extends SmrtCollection<Product> {
@@ -36,7 +57,6 @@ const products = await ProductCollection.create({ db: 'products.db' });
 
 // Create
 const product = await products.create({ name: 'Widget', price: 9.99 });
-await product.save();
 
 // Query
 const results = await products.list({
@@ -45,7 +65,45 @@ const results = await products.list({
   limit: 20,
 });
 
-// AI operations
+```
+
+### Generate metadata and migrate
+
+Configure Vite 8's Oxc decorator transform and point `smrtPlugin()` at the
+directory containing your objects:
+
+```typescript
+// vite.config.ts
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  oxc: {
+    decorator: { legacy: true, emitDecoratorMetadata: true },
+  },
+  plugins: [
+    smrtPlugin({
+      include: ['src/objects/**/*.ts'],
+      exclude: ['**/*.test.ts'],
+    }),
+  ],
+});
+```
+
+```bash
+pnpm vite build
+pnpm smrt db:migrate
+```
+
+Runtime verifies application tables but does not create them. Rebuild the
+manifest and rerun the migration after changing persisted object fields.
+
+### AI operations
+
+With an AI provider configured, every object can use the inherited `is()` and
+`do()` operations:
+
+```typescript
 const isExpensive = await product.is('costs more than the average product');
 const description = await product.do('Write a short marketing description');
 ```
@@ -71,7 +129,7 @@ class Resume extends SmrtObject {}
 const latest = await resumes.list({ cache: false });
 ```
 
-Because SMRT owns every mutation path (`save()`, `delete()`,
+Because s-m-r-t owns every mutation path (`save()`, `delete()`,
 `collection.create()`, `getOrUpsert()`, junction attach/detach), any write
 automatically invalidates the affected table's cached entries in-process —
 including STI siblings sharing the table. Cached values are raw rows:
@@ -95,7 +153,7 @@ broadcast only from processes that have already performed such a read —
 typical for homogeneous replicas running the same routes, but a
 write-only process never learns about a call-site opt-in.
 
-Writes that bypass SMRT (raw SQL, external processes without
+Writes that bypass s-m-r-t (raw SQL, external processes without
 `crossProcess`) are only bounded by the TTL — pick one that matches how
 stale the data may be.
 
@@ -121,6 +179,17 @@ If you want to avoid on-demand manifest discovery in a long-lived process, call
 file has run.
 
 ## API
+
+### Entry points
+
+| Import | Purpose |
+| --- | --- |
+| `@happyvertical/smrt-core` | Objects, collections, decorators, registry, configuration |
+| `@happyvertical/smrt-core/vite-plugin` | Manifest, route, client, and knowledge generation |
+| `@happyvertical/smrt-core/consumer-plugin` | Consume manifests from installed s-m-r-t packages |
+| `@happyvertical/smrt-core/generators` | REST, OpenAPI, CLI, and MCP generator APIs |
+| `@happyvertical/smrt-core/manifest` | Runtime manifest loading and inspection |
+| `@happyvertical/smrt-core/testing` | Database and registry test helpers |
 
 ### Core Classes
 
@@ -171,7 +240,7 @@ file has run.
 
 ### Context Memory
 
-Every `SmrtObject`/`SmrtCollection` can persist learned knowledge via `remember()` / `recall()` / `recallAll()` / `forget()` (system table `_smrt_contexts`) — confidence-scored and versioned, with opt-in hierarchical scope fallback (`recall({ includeAncestors: true })`) and a stored `expiresAt` the caller filters on (`recall()` does not auto-drop expired entries). Pairs with semantic search (above) for retrieval. Full guide: `docs/content/core.md` → "Context Memory System".
+Every `SmrtObject`/`SmrtCollection` can persist learned knowledge via `remember()` / `recall()` / `recallAll()` / `forget()` (system table `_smrt_contexts`) — confidence-scored and versioned, with opt-in hierarchical scope fallback (`recall({ includeAncestors: true })`) and a stored `expiresAt` the caller filters on (`recall()` does not auto-drop expired entries). Pairs with semantic search (above) for retrieval; contributor-level behavior and invariants live in [`AGENTS.md`](./AGENTS.md).
 
 ### Signals (Observability)
 
@@ -236,7 +305,7 @@ Every `SmrtObject`/`SmrtCollection` can persist learned knowledge via `remember(
 
 | Export | Description |
 |--------|------------|
-| `config` | Global SMRT configuration function |
+| `config` | Global s-m-r-t configuration function |
 | `resolveDatabase` | Resolves DB config to a DatabaseInterface |
 | `smrtPlugin` | Vite plugin for auto-service generation |
 | `generateSvelteKitRoutes` | SvelteKit route generator |
@@ -267,3 +336,8 @@ Generators produce OpenAPI REST endpoints, Commander CLI commands, and MCP serve
 - `@happyvertical/files` -- Filesystem adapter
 - `@happyvertical/logger` -- Structured logging
 - `@happyvertical/smrt-types` -- Shared type definitions
+
+## Contributor guide
+
+See [`AGENTS.md`](./AGENTS.md) for package architecture, invariants, validation,
+and contributor guidance.
