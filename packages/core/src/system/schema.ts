@@ -5,6 +5,8 @@
  * All system tables are created in the same database as user data.
  */
 
+import type { DatabaseEngine } from '../schema/ddl/types.js';
+
 /**
  * Context memory storage
  * Stores remembered context (learned strategies, patterns, selectors) for reuse
@@ -327,11 +329,18 @@ CREATE INDEX IF NOT EXISTS idx_smrt_changes_created_at
   ON _smrt_changes(created_at);
 `;
 
+/** PostgreSQL materialization of the portable change-feed table DDL. */
+export const CREATE_POSTGRES_SMRT_CHANGES_TABLE =
+  CREATE_SMRT_CHANGES_TABLE.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ');
+
 /** PostgreSQL helper used to isolate best-effort feed appends (#2026). */
 export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME = '_smrt_append_change';
 
+/** Legacy helper identity used before PostgreSQL Date values became instants. */
+export const LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(text,text,text,text,timestamp without time zone)`;
+
 /** Exact PostgreSQL identity used for catalog lookup of the append helper. */
-export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(text,text,text,text,timestamp without time zone)`;
+export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(text,text,text,text,timestamp with time zone)`;
 
 /**
  * PostgreSQL-only change-feed append function.
@@ -349,7 +358,7 @@ CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME}(
   p_row_id TEXT,
   p_operation TEXT,
   p_tenant_id TEXT,
-  p_created_at TIMESTAMP
+  p_created_at TIMESTAMPTZ
 )
 RETURNS TABLE(
   allocated_seq BIGINT,
@@ -408,6 +417,7 @@ BEGIN
     hashtext('smrt'),
     hashtext('system-tables')
   );
+  DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
   EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
 $smrt_change_feed_ddl$;
@@ -429,6 +439,7 @@ BEGIN
     hashtext('smrt'),
     hashtext('system-tables')
   );
+  DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
   IF to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') IS NULL THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
@@ -438,15 +449,16 @@ END;
 $smrt_ensure_change_feed$;
 `;
 
-const POSTGRES_CHANGE_FEED_SCHEMA_DDL = CREATE_SMRT_CHANGES_TABLE.split(';')
-  .map((statement) => statement.trim())
-  .filter((statement) => statement.length > 0)
-  .map(
-    (statement) => `EXECUTE $smrt_change_feed_schema_ddl$
+const POSTGRES_CHANGE_FEED_SCHEMA_DDL =
+  CREATE_POSTGRES_SMRT_CHANGES_TABLE.split(';')
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0)
+    .map(
+      (statement) => `EXECUTE $smrt_change_feed_schema_ddl$
 ${statement}
 $smrt_change_feed_schema_ddl$;`,
-  )
-  .join('\n');
+    )
+    .join('\n');
 
 /**
  * Install the complete PostgreSQL change-feed schema under the bootstrap lock.
@@ -463,6 +475,7 @@ BEGIN
     hashtext('system-tables')
   );
 ${POSTGRES_CHANGE_FEED_SCHEMA_DDL}
+  DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
   IF to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') IS NULL THEN
     EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
@@ -507,6 +520,28 @@ export const ALL_SYSTEM_TABLES = [
 ];
 
 /**
+ * Materialize the portable system-table schema for a target engine.
+ *
+ * PostgreSQL must use TIMESTAMPTZ because every system Date is an instant.
+ * Other engines keep the established portable TIMESTAMP declarations.
+ */
+export function getSystemTableDDL(engine: DatabaseEngine): string[] {
+  return ALL_SYSTEM_TABLES.map((ddl) =>
+    getSystemTableDDLForEngine(ddl, engine),
+  );
+}
+
+/** Materialize one portable system-table statement for a target engine. */
+export function getSystemTableDDLForEngine(
+  ddl: string,
+  engine: DatabaseEngine,
+): string {
+  return engine === 'postgres'
+    ? ddl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ')
+    : ddl;
+}
+
+/**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.8.0';
+export const SMRT_SCHEMA_VERSION = '1.9.0';

@@ -147,6 +147,7 @@ import type {
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
+import type { DatabaseEngine } from './schema/ddl/types.js';
 import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { classnameToTablename, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
@@ -2011,8 +2012,11 @@ export class ObjectRegistry {
   /**
    * Get SQL DDL statement for a registered class
    */
-  static getSchemaDDL(name: string): string | undefined {
-    return _getSchemaDDL(name);
+  static getSchemaDDL(
+    name: string,
+    engine?: DatabaseEngine,
+  ): string | undefined {
+    return _getSchemaDDL(name, engine);
   }
 
   /**
@@ -2025,11 +2029,10 @@ export class ObjectRegistry {
   /**
    * Get all pre-generated schemas for passing to database adapters
    */
-  static getAllSchemas(): Record<
-    string,
-    { tableName: string; ddl: string; indexes?: string[] }
-  > {
-    return _getAllSchemas();
+  static getAllSchemas(
+    engine?: DatabaseEngine,
+  ): Record<string, { tableName: string; ddl: string; indexes?: string[] }> {
+    return _getAllSchemas(engine);
   }
 
   /**

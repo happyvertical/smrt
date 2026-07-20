@@ -202,7 +202,41 @@ describe('MigrationGenerator', () => {
     });
   });
 
-  describe('generateCreateTable without pre-generated ddl', () => {
+  describe('engine-aware generateCreateTable', () => {
+    it('preserves custom DDL when no structured columns exist', () => {
+      const customDDL =
+        'CREATE TABLE metrics (id TEXT PRIMARY KEY, CHECK (length(id) > 0));';
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [
+          {
+            tableName: 'metrics',
+            ddl: customDDL,
+            columns: {},
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [],
+            version: '1.0.0',
+          },
+        ],
+        dropped_tables: [],
+        changes: [],
+      };
+
+      const migration = new MigrationGenerator({
+        engine: 'postgres',
+        format: 'sql',
+        includeDown: true,
+        materializeStructuredSchema: true,
+      }).generateFromDiff(diff, {
+        name: '0001_custom',
+        description: 'Add custom table',
+      });
+
+      expect(migration.up).toContain(customDDL);
+    });
+
     it('delegates to the engine DDL strategy for per-engine column types (Postgres)', () => {
       // #1378: when a schema has no `ddl`, the generator must delegate to the
       // engine strategy (like the orchestrator) instead of emitting the
@@ -279,6 +313,107 @@ describe('MigrationGenerator', () => {
       // SQLite maps JSON → TEXT.
       expect(up).toContain('"payload" TEXT');
       expect(up).not.toContain('JSONB');
+    });
+
+    it('makes cached manifest DDL instant-safe for PostgreSQL by default (#2069)', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [
+          {
+            tableName: 'events',
+            ddl: `-- cached manifest schema
+            CREATE TABLE "events(v2)" /* (owner note) */ (
+              path TEXT DEFAULT 'C:\\',
+              /* instant column */ occurred_at /* UTC type */ TIMESTAMP,
+              -- updated instant
+              updated_at TIMESTAMP,
+              explicit_instant TIMESTAMP(6) -- instant qualifier
+                WITH TIME ZONE,
+              explicit_wall_time TIMESTAMP(/* precision */ 6) /* wall qualifier */ WITHOUT TIME ZONE,
+              label TEXT DEFAULT 'TIMESTAMP',
+              payload TEXT DEFAULT $tag$a,b(c)$tag$,
+              LIKE timestamp INCLUDING ALL,
+              CONSTRAINT timestamp CHECK (occurred_at IS NOT NULL)
+            );`,
+            columns: {
+              id: { type: 'UUID', primaryKey: true },
+              occurred_at: { type: 'TIMESTAMP' },
+              updated_at: { type: 'TIMESTAMP' },
+            },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [],
+            version: '1.0.0',
+          },
+        ],
+        dropped_tables: [],
+        changes: [],
+      };
+
+      const up = new MigrationGenerator({ engine: 'postgres' })
+        .generateFromDiff(diff, { name: '0001_events' })
+        .up.join('\n');
+
+      expect(up).toContain('-- cached manifest schema');
+      expect(up).toContain('CREATE TABLE "events(v2)" /* (owner note) */');
+      expect(up).toContain(
+        '/* instant column */ occurred_at /* UTC type */ TIMESTAMPTZ',
+      );
+      expect(up).toContain(
+        '-- updated instant\n              updated_at TIMESTAMPTZ',
+      );
+      expect(up).not.toMatch(/occurred_at\s+TIMESTAMP\b/);
+      expect(up).toContain(
+        'explicit_instant TIMESTAMP(6) -- instant qualifier\n                WITH TIME ZONE',
+      );
+      expect(up).toContain(
+        'explicit_wall_time TIMESTAMP(/* precision */ 6) /* wall qualifier */ WITHOUT TIME ZONE',
+      );
+      expect(up).toContain("label TEXT DEFAULT 'TIMESTAMP'");
+      expect(up).toContain("path TEXT DEFAULT 'C:\\'");
+      expect(up).toContain('payload TEXT DEFAULT $tag$a,b(c)$tag$');
+      expect(up).toContain('LIKE timestamp INCLUDING ALL');
+      expect(up).not.toContain('LIKE TIMESTAMPTZ');
+      expect(up).toContain(
+        'CONSTRAINT timestamp CHECK (occurred_at IS NOT NULL)',
+      );
+      expect(up).not.toContain('CONSTRAINT TIMESTAMPTZ');
+    });
+
+    it('materializes PostgreSQL CREATE TABLE header variants (#2069)', () => {
+      const variants = [
+        'CREATE UNLOGGED TABLE events (occurred_at TIMESTAMP);',
+        'CREATE TEMP TABLE events (occurred_at TIMESTAMP);',
+        'CREATE LOCAL TEMPORARY TABLE events (occurred_at TIMESTAMP);',
+        'CREATE /* deployment hint */ TABLE events (occurred_at TIMESTAMP);',
+      ];
+
+      for (const ddl of variants) {
+        const diff: SchemaDiff = {
+          has_changes: true,
+          added_tables: [
+            {
+              tableName: 'events',
+              ddl,
+              columns: { occurred_at: { type: 'TIMESTAMP' } },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              dependencies: [],
+              version: '1.0.0',
+            },
+          ],
+          dropped_tables: [],
+          changes: [],
+        };
+
+        const up = new MigrationGenerator({ engine: 'postgres' })
+          .generateFromDiff(diff, { name: '0001_events' })
+          .up.join('\n');
+        expect(up).toContain('occurred_at TIMESTAMPTZ');
+        expect(up).not.toContain('occurred_at TIMESTAMP)');
+      }
     });
   });
 

@@ -43,10 +43,11 @@ import { createFilesystemAdapter } from './filesystem-loader.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {
+  assertPostgresSystemTimestampsCurrent,
   ensureLegacySystemTableCompatibility,
   tableExists,
 } from './system/compatibility.js';
-import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
+import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
 const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
   "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
@@ -956,9 +957,10 @@ export class SmrtClass {
 
     // Create all system tables
     // Split multi-statement SQL into individual statements to avoid race conditions
-    // Each ALL_SYSTEM_TABLES entry contains CREATE TABLE + CREATE INDEX statements
+    // Each entry contains CREATE TABLE + CREATE INDEX statements.
+    const engine = detectEngine(getDatabaseUrl(db), this._dbEngineHint);
     const allStatements: string[] = [];
-    for (const multiStatementSQL of ALL_SYSTEM_TABLES) {
+    for (const multiStatementSQL of getSystemTableDDL(engine)) {
       // Split on semicolon, filter out empty statements
       const statements = multiStatementSQL
         .split(';')
@@ -979,6 +981,11 @@ export class SmrtClass {
     await ensurePostgresChangeFeedAppendFunction(db, {
       typeHint: this._dbEngineHint,
     });
+
+    // Never stamp the current version while a partial legacy installation
+    // still has timezone-naive framework timestamps. The explicit migration
+    // requires operator confirmation of historical UTC provenance.
+    await assertPostgresSystemTimestampsCurrent(db, this._dbEngineHint);
 
     // Record current schema version
     // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)

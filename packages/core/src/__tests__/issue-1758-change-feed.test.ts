@@ -578,6 +578,7 @@ describe('change feed spine (issue #1758)', () => {
           return {
             rows: [
               {
+                created_at_type: 'timestamp with time zone',
                 function_name: '_smrt_append_change',
                 table_name: '_smrt_changes',
               },
@@ -628,6 +629,36 @@ describe('change feed spine (issue #1758)', () => {
       expect(install?.indexOf('pg_advisory_xact_lock')).toBeLessThan(
         install?.indexOf('CREATE TABLE IF NOT EXISTS _smrt_changes') ?? -1,
       );
+    });
+
+    it('requires explicit provenance migration for a legacy Postgres change feed', async () => {
+      const query = vi.fn(async (sql: string) => {
+        if (sql.includes('to_regclass')) {
+          return {
+            rows: [
+              {
+                created_at_type: 'timestamp without time zone',
+                function_name: null,
+                table_name: '_smrt_changes',
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      });
+      const rawDb = {
+        url: 'postgresql://localhost/smrt-legacy',
+        query,
+      } as unknown as DatabaseInterface;
+
+      await expect(ensureChangeFeedTable(rawDb)).rejects.toThrow(
+        'migratePostgresSystemTimestamps',
+      );
+      expect(
+        query.mock.calls.some(([sql]) =>
+          String(sql).includes('ALTER COLUMN created_at TYPE TIMESTAMPTZ'),
+        ),
+      ).toBe(false);
     });
 
     it('retries a unique SQLSTATE returned by the Postgres append function', async () => {

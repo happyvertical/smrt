@@ -45,6 +45,7 @@ describe('SchemaAggregator STI merge', () => {
   "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
   "_meta_type" TEXT NOT NULL DEFAULT '',
   "_meta_data" JSON,
+  "payload" TEXT DEFAULT $$a,b(c)$$,
   "title" TEXT NOT NULL DEFAULT '',
   "body" TEXT NOT NULL DEFAULT '',
   "tenant_id" UUID
@@ -65,6 +66,7 @@ describe('SchemaAggregator STI merge', () => {
                 },
                 _meta_type: { type: 'TEXT', notNull: true, defaultValue: '' },
                 _meta_data: { type: 'JSON' },
+                payload: { type: 'TEXT' },
                 title: { type: 'TEXT', notNull: true, defaultValue: '' },
                 body: { type: 'TEXT', notNull: true, defaultValue: '' },
                 tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
@@ -148,10 +150,17 @@ describe('SchemaAggregator STI merge', () => {
     ]);
     expect(contents?.ddl).toContain('"meeting_id" TEXT');
     expect(contents?.ddl).toContain('"url" TEXT NOT NULL DEFAULT \'\'');
+    expect(contents?.ddl).toContain('"created_at" TIMESTAMPTZ');
+    expect(contents?.ddl).toContain('"updated_at" TIMESTAMPTZ');
+    expect(contents?.ddl).toContain('"payload" TEXT DEFAULT $$a,b(c)$$');
+    expect(contents?.ddl).not.toMatch(
+      /"(?:created_at|updated_at)"\s+TIMESTAMP\b/,
+    );
     expect(contents?.indexes).toContain(
       'CREATE INDEX IF NOT EXISTS "contents_meeting_id_idx" ON "contents" ("meeting_id");',
     );
     expect(result.sql).toContain('"meeting_id" TEXT');
+    expect(result.sql).toContain('"created_at" TIMESTAMPTZ');
   });
 
   it('inserts merged STI columns before trailing table constraints', () => {
@@ -221,5 +230,104 @@ describe('SchemaAggregator STI merge', () => {
     expect(contents).toBeDefined();
     expect(contents?.ddl).toContain('"meeting_id" TEXT');
     expect(contents?.ddl).toMatch(/"meeting_id" TEXT,\n\s+UNIQUE\("slug"\)/);
+  });
+
+  it('merges STI columns when quoted table names and comments contain parentheses', () => {
+    const tempDir = mkdtempSync(
+      join(tmpdir(), 'schema-aggregator-sti-quoted-parens-'),
+    );
+    tempDirs.push(tempDir);
+
+    const baseManifestPath = writeManifest(tempDir, 'base.manifest.json', {
+      packageName: '@happyvertical/base',
+      version: '1.0.0',
+      objects: {
+        '@happyvertical/base:Event': {
+          className: 'Event',
+          schema: {
+            tableName: 'events(v2)',
+            ddl: `CREATE TABLE IF NOT EXISTS "events(v2)" (
+  /* base column (required) */
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "label" TEXT,
+  NOT NULL created_at NO INHERIT,
+  CHECK (label <> 'a  b'),
+  CONSTRAINT repeated_check CHECK (id <> '')
+);`,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              created_at: {
+                type: 'TIMESTAMP',
+                notNull: true,
+                defaultValue: 'current_timestamp',
+              },
+              label: { type: 'TEXT' },
+            },
+            indexes: [],
+          },
+        },
+      },
+    });
+
+    const childManifestPath = writeManifest(tempDir, 'child.manifest.json', {
+      packageName: '@happyvertical/child',
+      version: '1.0.0',
+      objects: {
+        '@happyvertical/child:ScheduledEvent': {
+          className: 'ScheduledEvent',
+          schema: {
+            tableName: 'events(v2)',
+            ddl: `CREATE TABLE IF NOT EXISTS "events(v2)" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "label" TEXT,
+  /* child column (optional) */
+  "starts_at" TIMESTAMP,
+  NOT NULL created_at NO INHERIT,
+  NOT NULL starts_at,
+  CHECK (label <> 'a  b'),
+  CHECK (label <> 'a b'),
+  constraint repeated_check check(id<>'')
+);`,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              created_at: {
+                type: 'TIMESTAMP',
+                notNull: true,
+                defaultValue: 'current_timestamp',
+              },
+              label: { type: 'TEXT' },
+              starts_at: { type: 'TIMESTAMP' },
+            },
+            indexes: [],
+          },
+        },
+      },
+    });
+
+    const result = new SchemaAggregator().aggregate({
+      packages: ['@happyvertical/base', '@happyvertical/child'],
+      localPaths: {
+        '@happyvertical/base': baseManifestPath,
+        '@happyvertical/child': childManifestPath,
+      },
+    });
+
+    const events = result.tables.get('events(v2)');
+    expect(events?.ddl).toContain('CREATE TABLE IF NOT EXISTS "events(v2)" (');
+    expect(events?.ddl).toContain('/* base column (required) */');
+    expect(events?.ddl).toContain('/* child column (optional) */');
+    expect(events?.ddl).toContain('"starts_at" TIMESTAMPTZ');
+    expect(events?.ddl).toContain('NOT NULL created_at NO INHERIT');
+    expect(events?.ddl).toContain('NOT NULL starts_at');
+    expect(events?.ddl).toContain("CHECK (label <> 'a  b')");
+    expect(events?.ddl).toContain("CHECK (label <> 'a b')");
+    expect(events?.ddl?.match(/NOT NULL created_at NO INHERIT/g)).toHaveLength(
+      1,
+    );
+    expect(events?.ddl?.match(/repeated_check/gi)).toHaveLength(1);
+    expect(events?.ddl).not.toContain('CREATE TABLE IF NOT EXISTS "events\n');
+    expect(result.sql).toContain('"starts_at" TIMESTAMPTZ');
   });
 });

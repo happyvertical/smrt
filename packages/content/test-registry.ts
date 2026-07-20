@@ -13,7 +13,10 @@ async function main() {
   console.log('Fields in registry:');
   console.log(Array.from(registered.fields.keys()));
   
-  const ddl = ObjectRegistry.getSchemaDDL('@happyvertical/smrt-content:Content');
+  const ddl = ObjectRegistry.getSchemaDDL(
+    '@happyvertical/smrt-content:Content',
+    'sqlite',
+  );
   console.log('\nSchema DDL:');
   console.log(ddl);
 }

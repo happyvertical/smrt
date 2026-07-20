@@ -26,9 +26,10 @@ import {
   resolveRelatedRegistration,
 } from '../registry/collection-resolution.js';
 import { ObjectRegistry } from '../registry.js';
+import { detectEngine } from '../schema/ddl/index.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
-import { ALL_SYSTEM_TABLES } from '../system/schema.js';
+import { getSystemTableDDL } from '../system/schema.js';
 
 type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
@@ -412,9 +413,18 @@ export async function getTestDatabase(
 async function initializeSystemTables(db: DatabaseInterface): Promise<void> {
   await ensureLegacySystemTableCompatibility(db);
 
+  const configuredDb = db as DatabaseInterface & {
+    config?: { type?: string; url?: string };
+    type?: string;
+  };
+  const engine = detectEngine(
+    db.url || configuredDb.config?.url || '',
+    configuredDb.type || configuredDb.config?.type,
+  );
+
   // Split multi-statement SQL into individual statements
   const allStatements: string[] = [];
-  for (const multiStatementSQL of ALL_SYSTEM_TABLES) {
+  for (const multiStatementSQL of getSystemTableDDL(engine)) {
     const statements = multiStatementSQL
       .split(';')
       .map((s) => s.trim())
