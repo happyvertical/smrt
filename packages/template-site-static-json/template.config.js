@@ -23,13 +23,13 @@ export default {
   // the scaffolder injects the entries below at generation time, so this file is
   // the single source of truth for dependency versions.
   dependencies: {
-    '@happyvertical/smrt-core': '^0.40.19',
-    '@happyvertical/smrt-config': '^0.40.19',
-    '@happyvertical/smrt-ui': '^0.40.19',
-    '@happyvertical/smrt-content': '^0.40.19',
-    '@happyvertical/smrt-events': '^0.40.19',
-    '@happyvertical/smrt-places': '^0.40.19',
-    '@happyvertical/smrt-profiles': '^0.40.19',
+    '@happyvertical/smrt-core': '^0.40.20',
+    '@happyvertical/smrt-config': '^0.40.20',
+    '@happyvertical/smrt-ui': '^0.40.20',
+    '@happyvertical/smrt-content': '^0.40.20',
+    '@happyvertical/smrt-events': '^0.40.20',
+    '@happyvertical/smrt-places': '^0.40.20',
+    '@happyvertical/smrt-profiles': '^0.40.20',
     '@happyvertical/caelus': '^0.1.385',
   },
 

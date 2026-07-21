@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.20
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - let recordClick participate in a caller transaction (#2084) (sales)
+  - @happyvertical/smrt-config@0.40.20
+  - @happyvertical/smrt-types@0.40.20
+  - @happyvertical/smrt-scanner@0.40.20
+
 ## 0.40.19
 
 ### Patch Changes
