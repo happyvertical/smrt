@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.19
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: patch brace-expansion and js-yaml DoS advisories (#2085) (deps)
+  - @happyvertical/smrt-config@0.40.19
+  - @happyvertical/smrt-types@0.40.19
+  - @happyvertical/smrt-scanner@0.40.19
+
 ## 0.40.18
 
 ### Patch Changes
