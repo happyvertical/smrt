@@ -7,7 +7,10 @@
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  type SmrtClassOptions,
+  SmrtCollection,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { assertHttpTargetUrl, ReferralLink } from '../models/ReferralLink.js';
 import type { ReferralTouch } from '../models/ReferralTouch.js';
@@ -75,6 +78,12 @@ export type RecordClickRefusal = 'unknown_code' | 'link_disabled';
  * and `touch` are both set and `refused` is absent. On refusal `touch` is
  * `null`, `refused` names the reason, and `link` carries the (disabled) link
  * for `'link_disabled'` / `null` for `'unknown_code'`.
+ *
+ * When the click self-transacted (pool-bound collection, no
+ * {@link RecordClickInput.transaction}), models are re-read on the
+ * collection's database after commit. When the click participated in a
+ * caller transaction, models are bound to that transaction — current while
+ * it is open; carry ids across the commit boundary for long-lived use.
  */
 export interface RecordClickResult {
   link: ReferralLink | null;
@@ -119,6 +128,26 @@ export interface RecordClickInput {
    */
   subjectKind?: string;
   subjectId?: string;
+  /**
+   * Caller-owned open transaction this click should participate in: the
+   * database view your `db.transaction(async (tx) => …)` callback received,
+   * or a still-active `beginTransaction()` handle. When provided, every
+   * read and write of this click runs on it and Sales opens NO transaction
+   * of its own — atomicity, rollback, and locking belong to the caller's
+   * transaction, and the click sees the caller's uncommitted rows (a link
+   * created earlier in the same transaction resolves normally).
+   *
+   * Passing a pool-level database here is refused with a typed
+   * `'invalid_transaction'` {@link ReferralClickValidationError} — running
+   * the click's writes outside a transaction would abandon the atomicity
+   * guarantee, silently.
+   *
+   * Result models are bound to this transaction: they are current while it
+   * is open, but hold its connection afterwards — carry ids across the
+   * commit boundary and re-fetch on a pool-bound collection for long-lived
+   * use.
+   */
+  transaction?: DatabaseInterface;
 }
 
 export type ReferralClickReplayMismatchField =
@@ -159,6 +188,7 @@ export type ReferralClickValidationReason =
   | 'invalid_max_evidence_bytes'
   | 'evidence_too_large'
   | 'transaction_unavailable'
+  | 'invalid_transaction'
   | 'operation_link_missing'
   | 'operation_touch_missing'
   | 'link_update_conflict';
@@ -179,6 +209,88 @@ export class ReferralClickValidationError extends Error {
 
 interface TransactionCapableDatabase extends DatabaseInterface {
   transaction?<T>(fn: (tx: DatabaseInterface) => Promise<T>): Promise<T>;
+  /** Present on `beginTransaction()` handles; absent on `transaction()` views. */
+  isActive?: unknown;
+  commit?: unknown;
+  rollback?: unknown;
+}
+
+/**
+ * Whether the given database has the lifecycle surface of a
+ * `beginTransaction()` handle (`TransactionHandle`).
+ */
+function isTransactionHandle(db: TransactionCapableDatabase): boolean {
+  return (
+    typeof db.commit === 'function' &&
+    typeof db.rollback === 'function' &&
+    typeof db.isActive === 'function'
+  );
+}
+
+/**
+ * Whether `db` is a transaction-scoped database rather than a pool-level
+ * adapter. `beginTransaction()` handles are recognized positively by their
+ * own lifecycle surface (`commit`/`rollback`/`isActive`). The views passed
+ * to `transaction()` callbacks carry no positive marker in
+ * `@happyvertical/sql` yet (happyvertical/sdk#1108), so they are
+ * fingerprinted by shape: every pool-level adapter (postgres, sqlite,
+ * sqlite-native, duckdb) exposes `beginTransaction` — postgres additionally
+ * `acquireSession` and `close` — while the views re-expose only the pool's
+ * `transaction` function (exactly the nested call this detection exists to
+ * avoid) and none of those pool members. Requiring every pool member
+ * absent keeps an adapter that pairs `transaction()` with any pool
+ * lifecycle surface on the self-transacting default instead of silently
+ * dropping the click's atomicity. Switch to an explicit adapter marker
+ * once happyvertical/sdk#1108 ships one.
+ */
+function isTransactionScopedDatabase(db: DatabaseInterface): boolean {
+  const capable = db as TransactionCapableDatabase;
+  if (isTransactionHandle(capable)) return true;
+  return (
+    typeof capable.transaction === 'function' &&
+    typeof capable.beginTransaction !== 'function' &&
+    typeof capable.acquireSession !== 'function' &&
+    typeof capable.close !== 'function'
+  );
+}
+
+/**
+ * Validate a caller-supplied {@link RecordClickInput.transaction}. Refuses
+ * pool-level databases (the click's writes would run without a transaction)
+ * and already-ended `beginTransaction()` handles (the writes would run on a
+ * released connection).
+ */
+function assertParticipatableTransaction(tx: DatabaseInterface): void {
+  const candidate = tx as TransactionCapableDatabase | null;
+  if (
+    candidate === null ||
+    typeof candidate !== 'object' ||
+    typeof candidate.query !== 'function'
+  ) {
+    throw new ReferralClickValidationError(
+      'invalid_transaction',
+      'Referral click transaction must be an open transaction database — the callback argument of db.transaction() or an active beginTransaction() handle',
+    );
+  }
+  if (isTransactionHandle(candidate)) {
+    if ((candidate.isActive as () => boolean)() !== true) {
+      throw new ReferralClickValidationError(
+        'invalid_transaction',
+        'Referral click transaction has already been committed or rolled back',
+      );
+    }
+    return;
+  }
+  if (
+    typeof candidate.beginTransaction === 'function' ||
+    typeof candidate.acquireSession === 'function' ||
+    typeof candidate.close === 'function'
+  ) {
+    throw new ReferralClickValidationError(
+      'invalid_transaction',
+      'Referral click transaction received a pool-level database; pass the transaction-scoped database your db.transaction() callback received so the click joins your transaction instead of running untransacted',
+    );
+  }
 }
 
 interface RecordClickCollections {
@@ -281,6 +393,23 @@ export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
    * returns the original touch without another increment; changed immutable
    * intent raises {@link ReferralClickReplayConflictError}.
    *
+   * Transactions: by default (collection bound to a pool-level database)
+   * the click opens and commits its own transaction, and the returned
+   * models are re-read on the collection's database after commit. To record
+   * a click inside YOUR transaction — required whenever your transaction
+   * holds locks the click needs (above all the `referral_links` row it
+   * increments) or created the link it resolves — either pass the
+   * transaction database as {@link RecordClickInput.transaction} or call
+   * `recordClick` on a collection bound to it
+   * (`ReferralLinkCollection.create({ db: tx, _reuseInitializedDb: true,
+   * _deferRuntimeInitialization: true })`). Both participate in the caller
+   * transaction instead of nesting (a nested adapter `transaction()` takes
+   * an independent pooled connection: it deadlocks undetectably on locks
+   * your transaction holds and cannot see your uncommitted rows —
+   * happyvertical/sdk#1108) and return models bound to it: commit/rollback
+   * and durability belong to you, and refusals/replays reflect your
+   * transaction's view.
+   *
    * Evidence is canonicalized, Sales-owned `code`/`linkId`/`targetUrl` fields
    * are applied, and the UTF-8 bytes of that exact persisted JSON are checked
    * before any write. The default bound is
@@ -294,7 +423,27 @@ export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
    */
   async recordClick(input: RecordClickInput): Promise<RecordClickResult> {
     const request = canonicalizeClickRequest(input);
+
+    if (input.transaction !== undefined) {
+      assertParticipatableTransaction(input.transaction);
+      return await this.recordClickInTransaction(
+        await ReferralLinkCollection.createClickCollections(input.transaction),
+        request,
+      );
+    }
+
     const db = this.db as TransactionCapableDatabase;
+    if (isTransactionScopedDatabase(db)) {
+      // The collection itself is bound to a caller's open transaction —
+      // participate rather than nest (see the method doc; the nested
+      // adapter transaction would hang on caller-held locks and miss
+      // caller-created rows).
+      return await this.recordClickInTransaction(
+        await ReferralLinkCollection.createClickCollections(db),
+        request,
+      );
+    }
+
     if (typeof db.transaction !== 'function') {
       throw new ReferralClickValidationError(
         'transaction_unavailable',
@@ -303,14 +452,37 @@ export class ReferralLinkCollection extends SmrtCollection<ReferralLink> {
     }
 
     const transactionResult = await db.transaction(async (tx) => {
-      const deps: RecordClickCollections = {
-        links: await ReferralLinkCollection.create({ db: tx }),
-        touches: await ReferralTouchCollection.create({ db: tx }),
-        operations: await ReferralClickOperationCollection.create({ db: tx }),
-      };
-      return await this.recordClickInTransaction(deps, request);
+      return await this.recordClickInTransaction(
+        await ReferralLinkCollection.createClickCollections(tx),
+        request,
+      );
     });
     return await this.rehydrateRecordClickResult(transactionResult);
+  }
+
+  /**
+   * Bind the click's working collections to one transaction database. The
+   * transaction is the same initialized database on a pinned connection, so
+   * the lightweight-binding flags are requested (mirrors
+   * `CommissionPayoutService.txOptions`). Note `SmrtCollection.create()`
+   * currently forwards only whitelisted options — the two internal flags
+   * are dropped there today, and it is the same-URL system-table cache that
+   * keeps bootstrap DDL out of the transaction in practice; the flags make
+   * the intent explicit and take effect when core forwards them.
+   */
+  private static async createClickCollections(
+    txDb: DatabaseInterface,
+  ): Promise<RecordClickCollections> {
+    const options: SmrtClassOptions = {
+      db: txDb,
+      _reuseInitializedDb: true,
+      _deferRuntimeInitialization: true,
+    };
+    return {
+      links: await ReferralLinkCollection.create(options),
+      touches: await ReferralTouchCollection.create(options),
+      operations: await ReferralClickOperationCollection.create(options),
+    };
   }
 
   /** Rebind public result models to the caller's database after commit. */

@@ -57,6 +57,40 @@ Character counts and caller-only JSON sizes are not equivalent, especially for
 multibyte URLs or evidence. Schema migration must include the private
 `referral_click_operations` table before using this contract.
 
+### Recording clicks inside your own transaction
+
+By default `recordClick()` opens and commits its own transaction. Never call
+that default form while your own open transaction holds locks the click needs
+(above all the `referral_links` row it increments) or created the link it
+resolves: a nested adapter transaction runs on an independent pooled
+connection, so it deadlocks undetectably on your locks and cannot see your
+uncommitted rows. To compose, participate in your transaction instead:
+
+```ts
+await db.transaction(async (tx) => {
+  await tx.query(
+    `SELECT id FROM ${links.tableName} WHERE id = $1 FOR UPDATE`,
+    linkId,
+  );
+  const result = await links.recordClick({
+    code,
+    idempotencyKey: requestId,
+    transaction: tx, // participate — no nested transaction is opened
+  });
+  // ... other writes that must commit atomically with the click
+});
+```
+
+Equivalently, a collection bound to the transaction participates without the
+input field: `await ReferralLinkCollection.create({ db: tx,
+_reuseInitializedDb: true, _deferRuntimeInitialization: true })`. In both
+forms atomicity, rollback, and locking belong to your transaction, and the
+returned models are bound to it — they are current while it is open, so carry
+ids across the commit boundary and re-fetch on a pool-bound collection for
+long-lived use. Passing a pool-level database as `transaction` is refused with
+`ReferralClickValidationError` (`reason: 'invalid_transaction'`) because it
+would run the click's writes without any transaction.
+
 ## Agreement execution
 
 Use `@happyvertical/smrt-sales/agreements` with an injected

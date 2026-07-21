@@ -382,4 +382,118 @@ describePostgres('ReferralLinkCollection.recordClick on PostgreSQL', () => {
         ?.clickCount,
     ).toBe(1);
   });
+
+  // Issue #2083: recordClick inside a caller's transaction. A nested
+  // adapter transaction takes a NEW pooled connection, so before the
+  // participation doors existed these scenarios hung on caller-held row
+  // locks (undetectable by PostgreSQL's deadlock detector) or refused
+  // caller-created uncommitted links as unknown_code. The 30s vitest
+  // timeout bounds a regression back into the hang.
+
+  it('records inside a caller transaction that holds the link row lock (no hang), via input.transaction', async () => {
+    const tenantId = randomUUID();
+    const link = await createLink(tenantId);
+
+    const inTx = await withTenant({ tenantId }, () =>
+      db.transaction(async (tx) => {
+        // The production shape from happyvertical/happyvertical.com:
+        // serialize against concurrent disable/pause by locking the link
+        // row FIRST, then record the click in the same transaction.
+        await tx.query(
+          `SELECT id FROM ${links.tableName} WHERE id = $1 FOR UPDATE`,
+          link.id,
+        );
+        return await links.recordClick({
+          code: link.code,
+          idempotencyKey: `pg-locked-${tenantId}`,
+          evidence: { holding: 'FOR UPDATE on referral_links' },
+          transaction: tx,
+        });
+      }),
+    );
+
+    expect(inTx.refused).toBeUndefined();
+    expect(inTx.replayed).toBe(false);
+    expect(inTx.link?.clickCount).toBe(1);
+    expect(
+      (await withTenant({ tenantId }, () => links.get({ id: link.id })))
+        ?.clickCount,
+    ).toBe(1);
+    await withTenant({ tenantId }, async () => {
+      expect(await touches.findByReferrer(link.referrerId)).toHaveLength(1);
+    });
+  });
+
+  it('sees a link the caller transaction created but has not committed', async () => {
+    const tenantId = randomUUID();
+    // Referrer/program can pre-exist; the LINK is created inside the
+    // caller transaction and must be resolvable by the participating click.
+    const seeded = await createLink(tenantId);
+
+    const clicked = await withTenant({ tenantId }, () =>
+      db.transaction(async (tx) => {
+        const txBoundLinks = await ReferralLinkCollection.create({
+          db: tx,
+          _reuseInitializedDb: true,
+          _deferRuntimeInitialization: true,
+        });
+        const uncommitted = await txBoundLinks.createWithUniqueCode({
+          referrerId: seeded.referrerId,
+          programId: seeded.programId,
+          targetUrl: 'https://example.test/uncommitted',
+        });
+        return await links.recordClick({
+          code: uncommitted.code,
+          idempotencyKey: `pg-uncommitted-${tenantId}`,
+          transaction: tx,
+        });
+      }),
+    );
+
+    expect(clicked.refused).toBeUndefined();
+    expect(clicked.link?.clickCount).toBe(1);
+    expect(clicked.touch?.getEvidence().targetUrl).toBe(
+      'https://example.test/uncommitted',
+    );
+  });
+
+  it('participates when the collection itself is bound to the caller transaction, and rolls back with it', async () => {
+    const tenantId = randomUUID();
+    const link = await createLink(tenantId);
+
+    await expect(
+      withTenant({ tenantId }, () =>
+        db.transaction(async (tx) => {
+          await tx.query(
+            `SELECT id FROM ${links.tableName} WHERE id = $1 FOR UPDATE`,
+            link.id,
+          );
+          const bound = await ReferralLinkCollection.create({
+            db: tx,
+            _reuseInitializedDb: true,
+            _deferRuntimeInitialization: true,
+          });
+          const result = await bound.recordClick({
+            code: link.code,
+            idempotencyKey: `pg-bound-rollback-${tenantId}`,
+          });
+          expect(result.refused).toBeUndefined();
+          expect(result.link?.clickCount).toBe(1);
+          throw new Error('caller aborts after the click');
+        }),
+      ),
+    ).rejects.toThrow('caller aborts after the click');
+
+    // Counter, touch, and the replay fence all rolled back with the caller.
+    expect(
+      (await withTenant({ tenantId }, () => links.get({ id: link.id })))
+        ?.clickCount,
+    ).toBe(0);
+    await withTenant({ tenantId }, async () => {
+      expect(await touches.findByReferrer(link.referrerId)).toHaveLength(0);
+    });
+    expect(
+      await db.list('referral_click_operations', { tenant_id: tenantId }),
+    ).toHaveLength(0);
+  });
 });
