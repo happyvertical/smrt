@@ -182,6 +182,30 @@ describe('ShellState', () => {
     }
   });
 
+  it('re-opening the active focus tool collapses the right panel', () => {
+    const shell = createShellState();
+    shell.registerFocusTool({ id: 'chat', label: 'Chat' });
+
+    shell.openFocusTool('chat');
+    expect(shell.panels.right).toBe('expanded');
+    expect(shell.activeFocusToolId).toBe('chat');
+
+    // Second click on the active tool closes the dock.
+    shell.openFocusTool('chat');
+    expect(shell.panels.right).toBe('collapsed');
+    expect(shell.activeFocusToolId).toBe('chat');
+
+    // Third click re-opens it.
+    shell.openFocusTool('chat');
+    expect(shell.panels.right).toBe('expanded');
+
+    // Switching tools never collapses.
+    shell.registerFocusTool({ id: 'files', label: 'Files' });
+    shell.openFocusTool('files');
+    expect(shell.panels.right).toBe('expanded');
+    expect(shell.activeFocusToolId).toBe('files');
+  });
+
   it('does not leak panel state reads into consumer effects', () => {
     const shell = createShellState();
     const harness = mountMutationEffect(shell, (state) => {

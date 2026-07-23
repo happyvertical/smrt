@@ -183,6 +183,13 @@ export class ShellState {
   openFocusTool(id: string): void {
     untrack(() => {
       if (!this.focusTools.some((tool) => tool.id === id)) return;
+      // Re-clicking the active tool collapses the panel (rail-dock
+      // convention, e.g. VS Code's activity bar) — without this there is no
+      // pointer affordance to close the dock, which traps mobile users.
+      if (this.activeFocusToolId === id && this.panels.right === 'expanded') {
+        this.collapsePanel('right');
+        return;
+      }
       this.activeFocusToolId = id;
       this.settings = mergeShellSettingsDelta(this.settings, {
         activeFocusToolId: id,
