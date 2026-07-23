@@ -6,6 +6,7 @@ import { parseCliCommandArgs } from '../../cli-generator.js';
 import {
   assertForceMigrationTargetsExist,
   resolveForceMigrationSelection,
+  resolvePostgresTimestampMigration,
   resolveVitestEntrypoint,
   utilityCommands,
 } from '../utilities.js';
@@ -130,6 +131,39 @@ describe('utilities', () => {
     expect(migrateOptions?.['force-migration'].description).toContain(
       'repeat for multiple IDs',
     );
+  });
+
+  it('requires an exact UTC confirmation before enabling PostgreSQL timestamp conversion', () => {
+    const migrateOptions = utilityCommands['db:migrate'].options;
+
+    expect(
+      migrateOptions?.['postgres-timestamp-legacy-timezone'],
+    ).toMatchObject({
+      type: 'string',
+    });
+    expect(
+      migrateOptions?.['postgres-timestamp-legacy-timezone'].description,
+    ).toContain('Exact value required: UTC');
+    expect(resolvePostgresTimestampMigration(undefined)).toBeUndefined();
+    expect(resolvePostgresTimestampMigration('UTC')).toEqual({
+      legacyTimezone: 'UTC',
+    });
+    expect(() => resolvePostgresTimestampMigration('America/Edmonton')).toThrow(
+      /exactly UTC/,
+    );
+    expect(() => resolvePostgresTimestampMigration('UTC ')).toThrow(
+      /exactly UTC/,
+    );
+  });
+
+  it('parses the PostgreSQL timestamp confirmation without a default opt-in', () => {
+    const migrate = utilityCommands['db:migrate'];
+    const parsed = parseCliCommandArgs(
+      ['db:migrate', '--postgres-timestamp-legacy-timezone', 'UTC'],
+      [migrate],
+    );
+
+    expect(parsed.options['postgres-timestamp-legacy-timezone']).toBe('UTC');
   });
 
   it('parses repeated exact migration flags in argv order', () => {

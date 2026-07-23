@@ -55,6 +55,26 @@ reconciles live schema drift. Global `--force` remains available by itself for
 backward compatibility but intentionally overrides guards for the whole pending
 batch.
 
+### Audited PostgreSQL timestamp conversion
+
+`timestamp without time zone` values do not carry enough information for SMRT
+to infer their original instant. After auditing every historical writer,
+database default, trigger, and raw SQL path, an operator may confirm that the
+legacy values are UTC wall times and include the exact opt-in:
+
+```bash
+smrt db:migrate --postgres-timestamp-legacy-timezone UTC
+```
+
+The option has no default and rejects every value other than `UTC`. On
+PostgreSQL, it allows the manifest-owned timestamp columns to be converted to
+`timestamptz` with `USING column AT TIME ZONE 'UTC'`, preserving the proven UTC
+instants. It is not safe for a database with any local-time writer; use an
+application-owned, provenance-aware migration in that case. Rehearse against a
+restored clone and keep a verified backup because type upgrades have no
+automatic down migration. `--dry-run` previews the same conversion without
+writing it.
+
 ### Code Generation
 
 | Command | Description |
