@@ -144,7 +144,31 @@ type Statement =
   | ExportDefaultDeclaration
   | ImportDeclaration
   | TSTypeAliasDeclaration
-  | TSEnumDeclaration;
+  | TSEnumDeclaration
+  | VariableDeclaration;
+
+interface VariableDeclaration extends BaseNode {
+  type: 'VariableDeclaration';
+  kind: 'const' | 'let' | 'var';
+  declarations: VariableDeclarator[];
+}
+
+interface VariableDeclarator extends BaseNode {
+  type: 'VariableDeclarator';
+  id: Identifier | Pattern;
+  init: Expression | null;
+}
+
+/**
+ * `expr as const` / `expr satisfies T`. OXC emits these wrappers around the
+ * initializer, so a `const CFG = {...} as const` would otherwise never be seen
+ * as an `ObjectExpression`. Not part of the {@link Expression} union — the
+ * union is a hand-maintained subset — so it is unwrapped via {@link unwrapTypeAssertion}.
+ */
+interface TSTypeAssertionExpression extends BaseNode {
+  type: 'TSAsExpression' | 'TSSatisfiesExpression' | 'TSNonNullExpression';
+  expression: Expression;
+}
 
 interface ClassDeclaration extends BaseNode {
   type: 'ClassDeclaration';
@@ -529,17 +553,23 @@ export function parseFile(filePath: string): FileScanResult {
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
       smrtImports = extractSmrtImports(program.body);
+      const ctx: DecoratorConfigContext = {
+        constants: extractModuleObjectConstants(program.body, sourceText),
+        unresolved: [],
+      };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
           filePath,
           sourceText,
           importAliases,
+          ctx,
         );
         if (extracted) {
           classes.push(extracted);
         }
       }
+      reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
     }
   } catch (error) {
     errors.push({
@@ -629,17 +659,23 @@ export function parseSource(
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
       smrtImports = extractSmrtImports(program.body);
+      const ctx: DecoratorConfigContext = {
+        constants: extractModuleObjectConstants(program.body, sourceText),
+        unresolved: [],
+      };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
           filename,
           sourceText,
           importAliases,
+          ctx,
         );
         if (extracted) {
           classes.push(extracted);
         }
       }
+      reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
     }
   } catch (error) {
     errors.push({
@@ -876,6 +912,154 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
 }
 
 /**
+ * Unwrap `as const` / `satisfies T` / `!` wrappers to reach the underlying
+ * expression. `const CFG = { api: false } as const` is the idiomatic way to
+ * declare a shared surface policy, so the wrapper must be transparent here or
+ * the object literal is never found.
+ */
+function unwrapTypeAssertion(node: Expression | null): Expression | null {
+  let current = node;
+  // Bounded: assertions can legally nest (`x as unknown as T`), but not deeply.
+  for (let depth = 0; current && depth < 8; depth++) {
+    const type = (current as unknown as TSTypeAssertionExpression).type;
+    if (
+      type === 'TSAsExpression' ||
+      type === 'TSSatisfiesExpression' ||
+      type === 'TSNonNullExpression'
+    ) {
+      current = (current as unknown as TSTypeAssertionExpression).expression;
+      continue;
+    }
+    return current;
+  }
+  return current;
+}
+
+/**
+ * A spread inside an `@smrt()` config that could not be resolved statically.
+ *
+ * Recorded rather than silently dropped: an unresolvable spread may carry
+ * `api`/`mcp`/`cli` keys, and because an absent surface key means *default
+ * open* (full CRUD), dropping it silently turns a deliberate lockdown into a
+ * public surface. See issue #2100.
+ */
+interface UnresolvedSpread {
+  /** Source text of the spread, e.g. `...IMPORTED_SURFACE`. */
+  expression: string;
+  /** Byte offset of the spread node, for line/column resolution. */
+  start?: number;
+}
+
+/**
+ * Context threaded through decorator-config extraction so object spreads can be
+ * resolved against module-scope constants, and unresolvable ones reported.
+ */
+interface DecoratorConfigContext {
+  /** Module-scope `const NAME = {...}` object literals, by identifier name. */
+  constants: Map<string, Record<string, unknown>>;
+  /** Collector for spreads that could not be statically resolved. */
+  unresolved: UnresolvedSpread[];
+}
+
+/**
+ * Collect module-scope `const NAME = { ... }` object literals so that
+ * `@smrt({ ...NAME })` can be resolved at scan time.
+ *
+ * Declaration order is honoured: a constant may spread an earlier constant, and
+ * each is extracted against the map built so far. Only `const` is considered —
+ * `let`/`var` could be reassigned between declaration and decorator evaluation,
+ * so treating them as static would be unsound.
+ *
+ * Imported constants are intentionally NOT resolved (that would require
+ * cross-file resolution); they surface as unresolved spreads and are reported
+ * as scan errors instead of being silently dropped.
+ *
+ * @param body - Top-level statement array from the OXC-parsed `Program` node.
+ * @param sourceText - Full source text, used for nested value reconstruction.
+ * @returns Map of constant name to its extracted object literal.
+ */
+export function extractModuleObjectConstants(
+  body: Statement[],
+  sourceText: string,
+): Map<string, Record<string, unknown>> {
+  const constants = new Map<string, Record<string, unknown>>();
+
+  for (const node of body) {
+    // Both `const X = {}` and `export const X = {}`.
+    const decl =
+      node.type === 'VariableDeclaration'
+        ? node
+        : node.type === 'ExportNamedDeclaration' &&
+            node.declaration?.type === 'VariableDeclaration'
+          ? (node.declaration as VariableDeclaration)
+          : null;
+
+    if (decl?.kind !== 'const') continue;
+
+    for (const declarator of decl.declarations) {
+      if (declarator.id?.type !== 'Identifier') continue;
+      const name = declarator.id.name;
+      if (!name || !isSafeObjectKey(name)) continue;
+
+      const init = unwrapTypeAssertion(declarator.init);
+      if (init?.type !== 'ObjectExpression') continue;
+
+      // Extract against the constants seen so far, so `const B = { ...A }`
+      // resolves. Unresolvable spreads inside a constant are dropped here
+      // rather than reported: the constant may never be used by a decorator,
+      // and any decorator that does spread it reports at the use site.
+      constants.set(
+        name,
+        extractObjectLiteral(init, sourceText, {
+          constants,
+          unresolved: [],
+        }),
+      );
+    }
+  }
+
+  return constants;
+}
+
+/**
+ * Turn unresolvable `@smrt()` config spreads into `severity: 'error'` scan
+ * diagnostics.
+ *
+ * Deliberately fail-loud rather than fail-quiet. A dropped spread may have
+ * carried `api`/`mcp`/`cli`, and an absent surface key means *default open* —
+ * so silently discarding one converts a deliberate lockdown into a published
+ * CRUD surface with no signal anywhere. Erroring matches the precedent in
+ * `verify-completeness.ts`, where scan errors short-circuit so a broken source
+ * can never masquerade as a complete manifest.
+ *
+ * @see https://github.com/happyvertical/smrt/issues/2100
+ */
+function reportUnresolvedSpreads(
+  unresolved: UnresolvedSpread[],
+  filePath: string,
+  sourceText: string,
+  errors: ScanError[],
+): void {
+  for (const spread of unresolved) {
+    const loc =
+      spread.start === undefined
+        ? undefined
+        : getLineColumn(sourceText, spread.start);
+    errors.push({
+      message:
+        `Cannot statically resolve \`${spread.expression}\` in a @smrt() config. ` +
+        `Only module-scope \`const\` object literals in the same file can be spread. ` +
+        `Inline the keys, or move the constant into this file — an unresolved spread ` +
+        `would drop api/mcp/cli from the manifest, and an absent surface defaults to open.`,
+      filePath,
+      line: loc?.line,
+      column: loc?.column,
+      severity: 'error',
+    });
+  }
+}
+
+/**
  * Extract class definition from an AST node
  */
 function extractClassFromNode(
@@ -883,6 +1067,7 @@ function extractClassFromNode(
   filePath: string,
   sourceText: string,
   importAliases: Map<string, string>,
+  ctx?: DecoratorConfigContext,
 ): RawClassDefinition | null {
   // Handle export declarations
   if (node.type === 'ExportNamedDeclaration' && node.declaration) {
@@ -891,6 +1076,7 @@ function extractClassFromNode(
       filePath,
       sourceText,
       importAliases,
+      ctx,
     );
   }
   if (node.type === 'ExportDefaultDeclaration' && node.declaration) {
@@ -899,12 +1085,19 @@ function extractClassFromNode(
       filePath,
       sourceText,
       importAliases,
+      ctx,
     );
   }
 
   // Handle class declaration
   if (node.type === 'ClassDeclaration') {
-    return extractClassDeclaration(node, filePath, sourceText, importAliases);
+    return extractClassDeclaration(
+      node,
+      filePath,
+      sourceText,
+      importAliases,
+      ctx,
+    );
   }
 
   return null;
@@ -918,6 +1111,7 @@ function extractClassDeclaration(
   filePath: string,
   sourceText: string,
   importAliases: Map<string, string>,
+  ctx?: DecoratorConfigContext,
 ): RawClassDefinition {
   const className = node.id?.name || 'AnonymousClass';
 
@@ -930,20 +1124,27 @@ function extractClassDeclaration(
   );
   const hasSmartDecorator = !!smrtDecorator;
   const smrtConfig = smrtDecorator
-    ? extractDecoratorConfig(smrtDecorator, sourceText)
+    ? extractDecoratorConfig(smrtDecorator, sourceText, ctx)
     : null;
   const decoratorConfig =
     tenantScopedDecorator || reportDecorator
       ? {
           ...(smrtConfig ?? {}),
           ...(reportDecorator
-            ? { report: extractDecoratorConfig(reportDecorator, sourceText) }
+            ? {
+                report: extractDecoratorConfig(
+                  reportDecorator,
+                  sourceText,
+                  ctx,
+                ),
+              }
             : {}),
           ...(tenantScopedDecorator
             ? {
                 tenantScoped: extractDecoratorConfig(
                   tenantScopedDecorator,
                   sourceText,
+                  ctx,
                 ),
               }
             : {}),
@@ -1020,13 +1221,14 @@ function isNamedDecorator(decorator: Decorator, name: string): boolean {
 function extractDecoratorConfig(
   decorator: Decorator,
   sourceText: string,
+  ctx?: DecoratorConfigContext,
 ): RawDecoratorConfig | null {
   const expr = decorator.expression;
 
   if (expr.type === 'CallExpression' && expr.arguments.length > 0) {
     const arg = expr.arguments[0];
     if (arg.type === 'ObjectExpression') {
-      return extractObjectLiteral(arg, sourceText) as RawDecoratorConfig;
+      return extractObjectLiteral(arg, sourceText, ctx) as RawDecoratorConfig;
     }
   }
 
@@ -1040,17 +1242,49 @@ function extractDecoratorConfig(
 function extractObjectLiteral(
   node: ObjectExpression,
   sourceText: string,
+  ctx?: DecoratorConfigContext,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
+  // Iterate in source order so spread/property precedence matches runtime
+  // semantics: `{ api: true, ...CFG }` takes `api` from CFG, while
+  // `{ ...CFG, api: true }` overrides it.
   for (const prop of node.properties) {
+    if (prop.type === 'SpreadElement') {
+      // A spread that reaches the manifest as "absent" is indistinguishable
+      // from a surface the author never declared — and absent means default
+      // *open*. Resolve it, or record it for a scan error. Never drop it
+      // silently. See issue #2100.
+      const argument = unwrapTypeAssertion(prop.argument);
+      const resolved =
+        argument?.type === 'Identifier'
+          ? ctx?.constants.get(argument.name)
+          : argument?.type === 'ObjectExpression'
+            ? extractObjectLiteral(argument, sourceText, ctx)
+            : undefined;
+
+      if (resolved) {
+        for (const [key, value] of Object.entries(resolved)) {
+          if (isSafeObjectKey(key)) {
+            result[key] = value;
+          }
+        }
+      } else if (ctx) {
+        ctx.unresolved.push({
+          expression: sliceSource(prop, sourceText) ?? '...<unknown>',
+          start: prop.start,
+        });
+      }
+      continue;
+    }
+
     if (prop.type === 'Property' && !prop.computed) {
       const key = getPropertyKey(prop.key);
       // Skip prototype-pollution keys (__proto__/constructor/prototype) so a
       // decorator-config property of that name cannot mutate the metadata
       // object's prototype.
       if (key && isSafeObjectKey(key)) {
-        result[key] = extractValue(prop.value, sourceText);
+        result[key] = extractValue(prop.value, sourceText, ctx);
       }
     }
   }
@@ -1074,7 +1308,11 @@ function getPropertyKey(node: Expression): string | null {
 /**
  * Extract value from expression
  */
-function extractValue(node: Expression | Pattern, sourceText: string): unknown {
+function extractValue(
+  node: Expression | Pattern,
+  sourceText: string,
+  ctx?: DecoratorConfigContext,
+): unknown {
   switch (node.type) {
     case 'Literal':
       return node.value;
@@ -1087,7 +1325,23 @@ function extractValue(node: Expression | Pattern, sourceText: string): unknown {
       if (node.name === 'false') return false;
       return node.name; // Return as string for class references
 
-    case 'ArrayExpression':
+    case 'ArrayExpression': {
+      // Array spreads (e.g. `include: [...BASE_ACTIONS, 'archive']`) are not
+      // resolved, but must not vanish silently: a dropped element changes an
+      // include/exclude allowlist. Record for a scan error instead.
+      for (const el of node.elements) {
+        if (
+          el &&
+          typeof el === 'object' &&
+          el.type === 'SpreadElement' &&
+          ctx
+        ) {
+          ctx.unresolved.push({
+            expression: sliceSource(el, sourceText) ?? '...<unknown>',
+            start: el.start,
+          });
+        }
+      }
       return node.elements
         .filter(
           (el: Expression | SpreadElement | null): el is Expression =>
@@ -1096,10 +1350,11 @@ function extractValue(node: Expression | Pattern, sourceText: string): unknown {
             'type' in el &&
             el.type !== 'SpreadElement',
         )
-        .map((el: Expression) => extractValue(el, sourceText));
+        .map((el: Expression) => extractValue(el, sourceText, ctx));
+    }
 
     case 'ObjectExpression':
-      return extractObjectLiteral(node, sourceText);
+      return extractObjectLiteral(node, sourceText, ctx);
 
     case 'UnaryExpression':
       if (node.operator === '-' && node.argument?.type === 'Literal') {
