@@ -387,7 +387,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
         {#if focusRail}
           {@render focusRail()}
         {:else if shell.focusTools.length > 0}
-          <nav class="smrt-admin-shell__focus-rail" aria-label="Focus tools">
+          <nav class="smrt-admin-shell__focus-rail" aria-label={t(M['ui.admin_shell.focus_tools'])}>
             {#each shell.focusTools as tool (tool.id)}
               <!-- raw-primitive-allow: shell chrome toggle, not a content button -->
               <button

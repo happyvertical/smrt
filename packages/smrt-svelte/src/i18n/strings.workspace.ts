@@ -38,6 +38,7 @@ export const M = defineMessages({
 
   // components/workspace/admin-shell/*
   'ui.admin_shell.no_focus_tools': 'No focus tools',
+  'ui.admin_shell.focus_tools': 'Focus tools',
   'ui.admin_shell.no_app_panel': 'No app panel',
   'ui.admin_shell.no_system_panel': 'No system panel',
   'ui.admin_shell.shell_shortcuts': 'Shell shortcuts',
