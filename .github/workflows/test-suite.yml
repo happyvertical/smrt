@@ -290,11 +290,25 @@ jobs:
       # through its package exports, which need a build — without this the
       # config fails to load, vitest emits no coverage, and the gate reports
       # "no coverage produced" as if the package were below its floor (#2103).
-      # setup-environment restores the build job's per-SHA Turbo cache, so this
-      # is a cache hit rather than a cold rebuild.
+      #
+      # In affected mode the `build` job is skipped (`build.if: mode == full`),
+      # so a full `pnpm run build` here would be a cold whole-workspace build.
+      # The gate only measures TOUCHED packages, so building `[BASE_SHA]...`
+      # (changed packages plus their dependency closure) is sufficient and much
+      # smaller — for a one-package change it selects ~22 of ~60 packages.
+      # Fall back to a full build when no PR base is available (full mode,
+      # merge_group), where the seeded Turbo cache makes it cheap anyway.
       - name: Build packages
-        run: pnpm run build
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            echo "Building affected closure from $BASE_SHA"
+            pnpm turbo run build --filter="[$BASE_SHA]..."
+          else
+            echo "No PR base available; building full workspace"
+            pnpm run build
+          fi
         env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Sweep S6 (#1411): per-tier line-coverage floors (T1 80 / T2 70 / T3 50)
