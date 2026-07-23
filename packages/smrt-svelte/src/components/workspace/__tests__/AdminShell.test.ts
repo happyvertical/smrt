@@ -283,6 +283,43 @@ describe('AdminShell', () => {
     }
   });
 
+  it('renders a default focus rail from registered tools when no focusRail snippet is given', async () => {
+    const state = createShellState();
+    state.registerFocusTool({ id: 'chat', label: 'Chat' });
+    state.registerFocusTool({ id: 'files', label: 'Files' });
+    const component = mount(AdminShell, {
+      target: container,
+      props: { state, children: textSnippet('main work') },
+    });
+
+    try {
+      const buttons = container.querySelectorAll(
+        '.smrt-admin-shell__focus-tool',
+      );
+      expect(buttons.length).toBe(2);
+      expect(buttons[0].getAttribute('aria-label')).toBe('Chat');
+
+      // Clicking a tool opens the panel; clicking the active one closes it.
+      (buttons[0] as HTMLButtonElement).click();
+      const { tick } = await import('svelte');
+      await tick();
+      expect(
+        container
+          .querySelector('.smrt-admin-shell__edge--right')
+          ?.getAttribute('data-state'),
+      ).toBe('expanded');
+      (buttons[0] as HTMLButtonElement).click();
+      await tick();
+      expect(
+        container
+          .querySelector('.smrt-admin-shell__edge--right')
+          ?.getAttribute('data-state'),
+      ).toBe('collapsed');
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('reserves corner tracks only for mounted corner snippets', () => {
     const component = mount(AdminShell, {
       target: container,

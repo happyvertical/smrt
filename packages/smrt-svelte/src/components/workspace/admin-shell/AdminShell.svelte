@@ -386,6 +386,35 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       <div class="smrt-admin-shell__rail">
         {#if focusRail}
           {@render focusRail()}
+        {:else if shell.focusTools.length > 0}
+          <nav class="smrt-admin-shell__focus-rail" aria-label="Focus tools">
+            {#each shell.focusTools as tool (tool.id)}
+              <!-- raw-primitive-allow: shell chrome toggle, not a content button -->
+              <button
+                type="button"
+                class="smrt-admin-shell__focus-tool"
+                class:active={shell.activeFocusToolId ===
+                  tool.id && edgeExpanded('right')}
+                aria-pressed={shell.activeFocusToolId ===
+                  tool.id && edgeExpanded('right')}
+                aria-label={tool.label}
+                title={tool.label}
+                onclick={() => shell.openFocusTool(tool.id)}
+              >
+                {#if tool.icon}
+                  <tool.icon />
+                {:else}
+                  <span aria-hidden="true">{tool.label.charAt(0)}</span>
+                {/if}
+                {#if tool.badge != null}
+                  <span class="smrt-admin-shell__focus-tool-badge">
+                    {tool.badge}
+                  </span>
+                {/if}
+              </button>
+            {/each}
+          </nav>
+          {@render edgeToggle('right')}
         {:else}
           {@render edgeToggle('right')}
         {/if}
@@ -613,6 +642,49 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     block-size: 100%;
     overflow: auto;
     padding: var(--smrt-spacing-3);
+  }
+
+  .smrt-admin-shell__focus-rail {
+    display: grid;
+    /* Center tracks, not just items: buttons may be wider than the
+       collapsed strip's content box (see ToolsDock). */
+    justify-content: center;
+    justify-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+
+  .smrt-admin-shell__focus-tool {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border: 1px solid transparent;
+    border-radius: var(--smrt-radius-md, 8px);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .smrt-admin-shell__focus-tool:hover,
+  .smrt-admin-shell__focus-tool.active {
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-surface-container-high);
+  }
+
+  .smrt-admin-shell__focus-tool-badge {
+    position: absolute;
+    inset-block-start: -0.25rem;
+    inset-inline-end: -0.25rem;
+    min-width: 1rem;
+    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    line-height: 1rem;
+    text-align: center;
   }
 
   .smrt-admin-shell__edge--left[data-state='expanded']

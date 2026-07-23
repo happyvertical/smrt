@@ -5,11 +5,27 @@ import { M } from './i18n.js';
 
 let {
   resolution = null,
+  periodEnd = null,
+  periodDisposition = 'unknown',
 }: {
   resolution?: EntitlementResolution | null;
+  /** ISO date string (or null) for the current billing period end. */
+  periodEnd?: string | null;
+  /** How to describe `periodEnd`: renews / ends / perpetual / unknown. */
+  periodDisposition?: 'perpetual' | 'renews' | 'ends' | 'unknown';
 } = $props();
 
 const { t } = useI18n();
+
+const periodLabel = $derived(
+  periodDisposition === 'perpetual'
+    ? t(M['subscriptions.summary.no_expiration'])
+    : periodDisposition === 'renews' && periodEnd
+      ? `${t(M['subscriptions.summary.renews'])} ${new Date(periodEnd).toLocaleDateString()}`
+      : periodDisposition === 'ends' && periodEnd
+        ? `${t(M['subscriptions.summary.ends'])} ${new Date(periodEnd).toLocaleDateString()}`
+        : null,
+);
 </script>
 
 <section class="smrt-subscription-summary">
@@ -30,6 +46,12 @@ const { t } = useI18n();
       <dt>Thresholds</dt>
       <dd>{resolution?.thresholds.length ?? 0}</dd>
     </div>
+    {#if periodLabel}
+      <div>
+        <dt>{t(M['subscriptions.summary.period'])}</dt>
+        <dd>{periodLabel}</dd>
+      </div>
+    {/if}
   </dl>
 </section>
 

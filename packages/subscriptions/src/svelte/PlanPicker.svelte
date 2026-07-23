@@ -1,14 +1,35 @@
 <script lang="ts">
-import type { SubscriptionPlan } from '../models/SubscriptionPlan.js';
+/**
+ * Serializable plan shape accepted by PlanPicker. `SubscriptionPlan` model
+ * instances satisfy it structurally, but it can also be plain data returned
+ * from a SvelteKit `load` — models lose their methods across serialization,
+ * so components must not *require* them. Either `featureKeys` (array) or
+ * `getFeatureKeys()` (method) provides the feature count.
+ */
+export interface PlanPickerPlan {
+  id?: string;
+  planKey: string;
+  name: string;
+  description?: string | null;
+  priceAmount: number;
+  currency: string;
+  billingInterval: string;
+  featureKeys?: string[];
+  getFeatureKeys?: () => string[];
+}
+
+function featureCount(plan: PlanPickerPlan): number {
+  return plan.featureKeys?.length ?? plan.getFeatureKeys?.().length ?? 0;
+}
 
 let {
   plans = [],
   selectedPlanKey = null,
   onSelect,
 }: {
-  plans?: SubscriptionPlan[];
+  plans?: PlanPickerPlan[];
   selectedPlanKey?: string | null;
-  onSelect?: (plan: SubscriptionPlan) => void;
+  onSelect?: (plan: PlanPickerPlan) => void;
 } = $props();
 </script>
 
@@ -34,7 +55,7 @@ let {
         <span class="smrt-plan-picker__description">{plan.description}</span>
       {/if}
       <span class="smrt-plan-picker__features">
-        {plan.getFeatureKeys().length} features
+        {featureCount(plan)} features
       </span>
     </button>
   {/each}
