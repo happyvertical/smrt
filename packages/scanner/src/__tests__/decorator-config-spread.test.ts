@@ -195,6 +195,55 @@ describe('@smrt() config spread resolution (#2100)', () => {
 
       expect(errors).toHaveLength(1);
     });
+
+    // Without this, the silent-drop failure mode returns one level removed:
+    // the constant resolves to a PARTIAL object, the decorator spread of it
+    // succeeds, and nothing anywhere records that keys went missing.
+    it('reports when a spread constant was itself built from an unresolvable spread', () => {
+      const { errors } = configOf(`
+        import { IMPORTED } from './shared.js';
+
+        const CFG = { ...IMPORTED, mcp: false };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors.length).toBeGreaterThanOrEqual(1);
+      expect(errors[0].message).toContain('IMPORTED');
+    });
+
+    it('propagates taint transitively through a chain of constants', () => {
+      const { errors } = configOf(`
+        import { IMPORTED } from './shared.js';
+
+        const BASE = { ...IMPORTED };
+        const MIDDLE = { ...BASE, cli: false };
+        const FINAL = { ...MIDDLE };
+
+        @smrt({ ...FINAL })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors.length).toBeGreaterThanOrEqual(1);
+      expect(errors[0].message).toContain('IMPORTED');
+    });
+
+    it('stays quiet when a tainted constant is never used by a decorator', () => {
+      // The constant may exist for unrelated runtime purposes; only a decorator
+      // that actually depends on it has a manifest correctness problem.
+      const { config, errors } = configOf(`
+        import { IMPORTED } from './shared.js';
+
+        const UNUSED = { ...IMPORTED };
+
+        @smrt({ api: false, cli: false, mcp: false })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(0);
+      expect(config).toMatchObject({ api: false, cli: false, mcp: false });
+    });
   });
 
   it('does not let a spread carry prototype-pollution keys', () => {

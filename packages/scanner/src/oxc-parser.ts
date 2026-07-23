@@ -951,12 +951,27 @@ interface UnresolvedSpread {
 }
 
 /**
+ * A module-scope `const` object literal available for spread resolution.
+ *
+ * `unresolved` carries any spread inside the constant's OWN initializer that
+ * could not be resolved (e.g. `const CFG = { ...IMPORTED }`). Such a constant
+ * is "tainted": `value` is only a partial view of what it holds at runtime.
+ * Resolving a decorator spread against it silently would reintroduce the
+ * silent-drop failure mode one level removed, so the taint is replayed into the
+ * use site's diagnostics instead.
+ */
+interface ModuleConstant {
+  value: Record<string, unknown>;
+  unresolved: UnresolvedSpread[];
+}
+
+/**
  * Context threaded through decorator-config extraction so object spreads can be
  * resolved against module-scope constants, and unresolvable ones reported.
  */
 interface DecoratorConfigContext {
   /** Module-scope `const NAME = {...}` object literals, by identifier name. */
-  constants: Map<string, Record<string, unknown>>;
+  constants: Map<string, ModuleConstant>;
   /** Collector for spreads that could not be statically resolved. */
   unresolved: UnresolvedSpread[];
 }
@@ -974,15 +989,22 @@ interface DecoratorConfigContext {
  * cross-file resolution); they surface as unresolved spreads and are reported
  * as scan errors instead of being silently dropped.
  *
+ * A constant whose own initializer contains an unresolvable spread is recorded
+ * as TAINTED rather than dropped: its extracted value is only partial, so any
+ * decorator that spreads it replays the taint into its own diagnostics. Without
+ * that, `const CFG = { ...IMPORTED }` followed by `@smrt({ ...CFG })` would
+ * resolve cleanly against a partial object and report nothing — the exact
+ * silent-drop failure mode this guard exists to prevent, one level removed.
+ *
  * @param body - Top-level statement array from the OXC-parsed `Program` node.
  * @param sourceText - Full source text, used for nested value reconstruction.
- * @returns Map of constant name to its extracted object literal.
+ * @returns Map of constant name to its extracted value plus any taint.
  */
 export function extractModuleObjectConstants(
   body: Statement[],
   sourceText: string,
-): Map<string, Record<string, unknown>> {
-  const constants = new Map<string, Record<string, unknown>>();
+): Map<string, ModuleConstant> {
+  const constants = new Map<string, ModuleConstant>();
 
   for (const node of body) {
     // Both `const X = {}` and `export const X = {}`.
@@ -1005,16 +1027,17 @@ export function extractModuleObjectConstants(
       if (init?.type !== 'ObjectExpression') continue;
 
       // Extract against the constants seen so far, so `const B = { ...A }`
-      // resolves. Unresolvable spreads inside a constant are dropped here
-      // rather than reported: the constant may never be used by a decorator,
-      // and any decorator that does spread it reports at the use site.
-      constants.set(
-        name,
-        extractObjectLiteral(init, sourceText, {
-          constants,
-          unresolved: [],
-        }),
-      );
+      // resolves — and capture this constant's OWN unresolvable spreads as
+      // taint rather than discarding them. Nothing is reported here: an unused
+      // constant is not a manifest problem. The taint only becomes an error
+      // when a decorator actually spreads it, and it propagates transitively
+      // because spreading a tainted constant re-collects its taint below.
+      const unresolved: UnresolvedSpread[] = [];
+      const value = extractObjectLiteral(init, sourceText, {
+        constants,
+        unresolved,
+      });
+      constants.set(name, { value, unresolved });
     }
   }
 
@@ -1256,18 +1279,27 @@ function extractObjectLiteral(
       // *open*. Resolve it, or record it for a scan error. Never drop it
       // silently. See issue #2100.
       const argument = unwrapTypeAssertion(prop.argument);
-      const resolved =
+      const constant =
         argument?.type === 'Identifier'
           ? ctx?.constants.get(argument.name)
-          : argument?.type === 'ObjectExpression'
-            ? extractObjectLiteral(argument, sourceText, ctx)
-            : undefined;
+          : undefined;
+      const resolved =
+        constant?.value ??
+        (argument?.type === 'ObjectExpression'
+          ? extractObjectLiteral(argument, sourceText, ctx)
+          : undefined);
 
       if (resolved) {
         for (const [key, value] of Object.entries(resolved)) {
           if (isSafeObjectKey(key)) {
             result[key] = value;
           }
+        }
+        // A tainted constant resolved to a PARTIAL object — replay the spreads
+        // its own initializer could not resolve, or the drop would go unnoticed
+        // here even though this site depends on the missing keys.
+        if (constant?.unresolved.length && ctx) {
+          ctx.unresolved.push(...constant.unresolved);
         }
       } else if (ctx) {
         ctx.unresolved.push({

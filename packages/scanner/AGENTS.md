@@ -76,3 +76,8 @@ executes the source.
   silently dropped. Silence would be unsafe: a dropped spread can remove
   `api`/`mcp`/`cli`, and an ABSENT surface key means default-open full CRUD, so
   a quiet drop turns a deliberate lockdown into a published surface.
+  A constant whose own initializer holds an unresolvable spread
+  (`const CFG = { ...IMPORTED }`) is tracked as **tainted**: it still resolves,
+  but its taint replays into the diagnostics of every decorator that spreads
+  it, transitively through constant chains. Without that the silent drop simply
+  moves one level up. An unused tainted constant reports nothing.
