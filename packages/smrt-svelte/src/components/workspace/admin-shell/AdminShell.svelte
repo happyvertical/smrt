@@ -157,6 +157,23 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
 
+  // Top/bottom edges reserve grid tracks for corner snippets. When a corner
+  // isn't mounted its track must collapse, otherwise the band is squeezed
+  // between phantom tracks sized by the collapsed panel widths.
+  function edgeColumns(left: unknown, right: unknown): string {
+    const l = 'var(--smrt-admin-shell-left-collapsed)';
+    const r = 'var(--smrt-admin-shell-right-collapsed)';
+    if (left && right) return `${l} minmax(0, 1fr) ${r}`;
+    if (left) return `${l} minmax(0, 1fr)`;
+    if (right) return `minmax(0, 1fr) ${r}`;
+    return 'minmax(0, 1fr)';
+  }
+
+  const topEdgeColumns = $derived(edgeColumns(topLeftCorner, topRightCorner));
+  const bottomEdgeColumns = $derived(
+    edgeColumns(bottomLeftCorner, bottomRightCorner),
+  );
+
   function panelState(edge: PanelEdge) {
     return shell.panels[edge];
   }
@@ -273,13 +290,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--top"
       data-state={panelState('top')}
       data-presentation={shell.config.panels.top.presentation}
+      style:--edge-columns={topEdgeColumns}
     >
       {#if topLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-left">
           {@render topLeftCorner()}
         </div>
       {/if}
-      <div class="smrt-admin-shell__band smrt-admin-shell__band--top">
+      <div
+        class="smrt-admin-shell__band smrt-admin-shell__band--top"
+        style:--band-column={topLeftCorner ? 2 : 1}
+      >
         {#if appBar}
           {@render appBar()}
         {:else}
@@ -385,13 +406,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--bottom"
       data-state={panelState('bottom')}
       data-presentation={shell.config.panels.bottom.presentation}
+      style:--edge-columns={bottomEdgeColumns}
     >
       {#if bottomLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-left">
           {@render bottomLeftCorner()}
         </div>
       {/if}
-      <div class="smrt-admin-shell__band smrt-admin-shell__band--bottom">
+      <div
+        class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
+        style:--band-column={bottomLeftCorner ? 2 : 1}
+      >
         {#if systemBar}
           {@render systemBar()}
         {:else}
@@ -499,9 +524,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-column: 1 / -1;
     grid-row: 1;
     display: grid;
-    grid-template-columns:
+    grid-template-columns: var(
+      --edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
-      var(--smrt-admin-shell-right-collapsed);
+        var(--smrt-admin-shell-right-collapsed)
+    );
     border-block-end: 1px solid var(--smrt-color-outline-variant);
     z-index: 30;
   }
@@ -531,9 +558,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-column: 1 / -1;
     grid-row: 3;
     display: grid;
-    grid-template-columns:
+    grid-template-columns: var(
+      --edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
-      var(--smrt-admin-shell-right-collapsed);
+        var(--smrt-admin-shell-right-collapsed)
+    );
     border-block-start: 1px solid var(--smrt-color-outline-variant);
     z-index: 30;
   }
@@ -558,7 +587,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__band--top,
   .smrt-admin-shell__band--bottom {
-    grid-column: 2;
+    grid-column: var(--band-column, 2);
   }
 
   .smrt-admin-shell__brand {

@@ -257,4 +257,55 @@ describe('AdminShell', () => {
       unmount(component);
     }
   });
+
+  it('collapses corner tracks when no corner snippets are mounted', () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Ops',
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      const topEdge = container.querySelector(
+        '.smrt-admin-shell__edge--top',
+      ) as HTMLElement;
+      const band = container.querySelector(
+        '.smrt-admin-shell__band--top',
+      ) as HTMLElement;
+      expect(topEdge.style.getPropertyValue('--edge-columns').trim()).toBe(
+        'minmax(0, 1fr)',
+      );
+      expect(band.style.getPropertyValue('--band-column').trim()).toBe('1');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('reserves corner tracks only for mounted corner snippets', () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Ops',
+        topLeftCorner: textSnippet('corner'),
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      const topEdge = container.querySelector(
+        '.smrt-admin-shell__edge--top',
+      ) as HTMLElement;
+      const band = container.querySelector(
+        '.smrt-admin-shell__band--top',
+      ) as HTMLElement;
+      const columns = topEdge.style.getPropertyValue('--edge-columns');
+      expect(columns).toContain('--smrt-admin-shell-left-collapsed');
+      expect(columns).not.toContain('--smrt-admin-shell-right-collapsed');
+      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+    } finally {
+      unmount(component);
+    }
+  });
 });

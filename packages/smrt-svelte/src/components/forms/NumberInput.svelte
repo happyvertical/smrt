@@ -237,6 +237,8 @@ function handleInput(e: Event) {
   .smrt-number {
     display: flex;
     flex-direction: column;
+    width: 100%;
+    min-width: 0;
     gap: var(--smrt-spacing-1, 4px);
   }
 
