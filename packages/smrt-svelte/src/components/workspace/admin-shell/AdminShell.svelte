@@ -414,7 +414,6 @@ function buildLayoutStyle(shell: ModuleShellState): string {
               </button>
             {/each}
           </nav>
-          {@render edgeToggle('right')}
         {:else}
           {@render edgeToggle('right')}
         {/if}
