@@ -636,6 +636,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   .smrt-admin-shell__rail {
+    box-sizing: border-box;
     min-width: 0;
     min-height: 0;
     block-size: 100%;
@@ -719,6 +720,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   .smrt-admin-shell__panel {
+    box-sizing: border-box;
     min-width: 0;
     min-height: 0;
     block-size: 100%;
