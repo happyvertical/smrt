@@ -221,23 +221,51 @@ $effect(() => {
   }
 });
 
-// Sync props to state
-$effect(() => {
-  config.preset = preset;
-});
+// Sync props to state — but only on actual prop changes. config is seeded
+// from the initial props above and onMount applies persisted preferences, so
+// re-asserting the initial prop values here would clobber the persisted
+// choice ($effect order vs onMount is not a safe thing to rely on).
+let prevPreset = untrack(() => preset);
+let prevColorScheme = untrack(() => colorScheme);
+let prevPrimaryColor = untrack(() => primaryColor);
+let prevBorderRadius = untrack(() => borderRadius);
 
 $effect(() => {
-  config.colorScheme = colorScheme;
-});
-
-$effect(() => {
-  if (primaryColor !== undefined) {
-    config.primaryColor = primaryColor;
+  if (preset !== prevPreset) {
+    prevPreset = preset;
+    untrack(() => {
+      config.preset = preset;
+    });
   }
 });
 
 $effect(() => {
-  config.borderRadius = borderRadius;
+  if (colorScheme !== prevColorScheme) {
+    prevColorScheme = colorScheme;
+    untrack(() => {
+      config.colorScheme = colorScheme;
+    });
+  }
+});
+
+$effect(() => {
+  if (primaryColor !== prevPrimaryColor) {
+    prevPrimaryColor = primaryColor;
+    untrack(() => {
+      if (primaryColor !== undefined) {
+        config.primaryColor = primaryColor;
+      }
+    });
+  }
+});
+
+$effect(() => {
+  if (borderRadius !== prevBorderRadius) {
+    prevBorderRadius = borderRadius;
+    untrack(() => {
+      config.borderRadius = borderRadius;
+    });
+  }
 });
 
 // Sync overrides prop to state
