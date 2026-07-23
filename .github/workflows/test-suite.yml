@@ -284,6 +284,19 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build first so workspace `dist/` output exists before vitest loads each
+      # touched package's config. Packages whose vitest.config.ts pulls the SMRT
+      # plugin from source (`../vitest/src`) resolve `@happyvertical/smrt-core`
+      # through its package exports, which need a build — without this the
+      # config fails to load, vitest emits no coverage, and the gate reports
+      # "no coverage produced" as if the package were below its floor (#2103).
+      # setup-environment restores the build job's per-SHA Turbo cache, so this
+      # is a cache hit rather than a cold rebuild.
+      - name: Build packages
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Sweep S6 (#1411): per-tier line-coverage floors (T1 80 / T2 70 / T3 50)
       # on the packages this PR touches. Blocks regressions below the floor
       # without forcing repo-wide uplift (that uplift is Wave 3). Floors + tier
