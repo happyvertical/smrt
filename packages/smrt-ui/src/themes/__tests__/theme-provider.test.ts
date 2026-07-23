@@ -86,4 +86,17 @@ describe('ThemeProvider persistence', () => {
       );
     });
   });
+
+  it('paints the surface by default and opts out via paintSurface=false', async () => {
+    mockSystemDark(false);
+
+    const { container, rerender } = render(ThemeProvider, {
+      props: { children: child() },
+    });
+    const root = container.querySelector('.smrt-theme-root');
+    expect(root).not.toHaveClass('no-paint');
+
+    await rerender({ paintSurface: false, children: child() });
+    expect(root).toHaveClass('no-paint');
+  });
 });

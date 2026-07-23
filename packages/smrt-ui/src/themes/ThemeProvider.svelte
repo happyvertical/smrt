@@ -24,6 +24,12 @@ interface Props {
   borderRadius?: ThemeConfig['borderRadius'];
   /** Custom CSS variable overrides */
   overrides?: Record<string, string>;
+  /**
+   * Paint the theme's background/color/font onto the wrapper. Set false when
+   * the host app owns its surface palette and only wants the CSS variables +
+   * scheme context — avoids specificity-fighting `.smrt-theme-root`.
+   */
+  paintSurface?: boolean;
   /** Persist preferences to localStorage */
   persist?: boolean;
   /** Storage key for persistence */
@@ -38,6 +44,7 @@ let {
   primaryColor,
   borderRadius = defaultThemeConfig.borderRadius,
   overrides = {},
+  paintSurface = true,
   persist = defaultThemeConfig.persist,
   storageKey = defaultThemeConfig.storageKey,
   children,
@@ -285,6 +292,7 @@ $effect(() => {
 <div
   class="smrt-theme-root"
   class:dark={isDark}
+  class:no-paint={!paintSurface}
   class:smrt-theme-glass={config.preset === 'glass'}
   style={styleString}
   data-theme={config.preset}
@@ -301,6 +309,12 @@ $effect(() => {
     color: var(--smrt-color-on-background);
     background-color: var(--smrt-color-background);
     font-family: var(--smrt-font-family);
+  }
+
+  .smrt-theme-root.no-paint {
+    color: inherit;
+    background-color: transparent;
+    font-family: inherit;
   }
 
   /* Glass theme specific base styles */
