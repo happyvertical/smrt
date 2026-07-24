@@ -40,6 +40,7 @@
     "check:no-smrt-peers": "node scripts/check-no-smrt-peers.mjs",
     "check:package-dag": "node scripts/check-package-dag.mjs",
     "check:mcp-config": "node scripts/check-mcp-config.mjs",
+    "check:agents-chain": "node scripts/check-agents-chain.mjs",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "changeset": "changeset",
     "changeset:auto": "npx tsx scripts/auto-changeset.ts",

@@ -224,6 +224,16 @@ pre-push:
         Use a dependency / devDependency / @crossPackageRef indirection.
         Run: pnpm check:no-smrt-peers
 
+    agents-chain:
+      # Codex instruction-chain budget (#2106): root + package AGENTS.md must
+      # stay under 32 KB or the org `hv-agent audit` fails `lifecycle` on every
+      # agent PR in the repo, not just PRs touching that package.
+      run: node scripts/check-agents-chain.mjs
+      fail_text: |
+        ❌ An AGENTS.md instruction chain exceeds 32 KB.
+        Trim redundancy in the package file (or the root file, which is taxed
+        once per package). Run: pnpm check:agents-chain
+
     deps-acyclic:
       # DAG guardrail (#1582): the smrt package graph (deps + peers) must stay
       # acyclic. Node-only; `pnpm deps:check` is the deeper source-import variant.

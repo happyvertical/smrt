@@ -77,8 +77,8 @@ the Vite plugin consumes deterministic `dist/` artifacts.
 
 ## Generated knowledge
 
-- Root and package `AGENTS.md` files are canonical expert documentation.
-- `CLAUDE.md` is only an `@AGENTS.md` adapter.
+- Root and package `AGENTS.md` files are canonical expert documentation;
+  `CLAUDE.md` is only an `@AGENTS.md` adapter.
 - `smrt docs:agents` generates downstream `.agents/smrt-framework.md` snapshots.
 - `smrt dev:knowledge-index` prints the deterministic SMRT + SDK knowledge graph.
 - `smrt dev:knowledge-check` validates docs, manifests, package files, and
@@ -104,6 +104,5 @@ the Vite plugin consumes deterministic `dist/` artifacts.
 
 ## Pull requests
 
-Keep changes package-focused, use conventional commits, run knowledge freshness,
-and make the PR ready when implementation stops. Agents never merge without an
-explicit session instruction.
+Keep changes package-focused, use conventional commits, and run knowledge
+freshness before pushing; the kernel above governs readiness and merging.

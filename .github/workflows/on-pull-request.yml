@@ -242,6 +242,13 @@ jobs:
       - name: Check smrt package graph is acyclic
         run: node scripts/check-package-dag.mjs
 
+      # Codex instruction-chain budget (#2106). The org-wide `hv-agent audit`
+      # caps root+package AGENTS.md at 32 KB; a breach fails `lifecycle` on
+      # EVERY agent PR in the repo, so catch it on the PR that grew the doc.
+      # Node-only, no node_modules.
+      - name: Check AGENTS.md instruction chains
+        run: node scripts/check-agents-chain.mjs
+
       # Fails if any --smrt-* token consumed by smrt-svelte components is never
       # emitted by a theme-delivery path (issue #1431). Node-only, no deps.
       - name: Check smrt-svelte design tokens
