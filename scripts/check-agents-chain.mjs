@@ -30,7 +30,7 @@ const IGNORES = new Set([
   'build', 'coverage', 'dist', 'node_modules', 'venv',
 ]);
 
-/** Every AGENTS.md in the repo, as paths relative to ROOT. */
+/** Every AGENTS.md in the repo, as absolute paths. */
 function findAgentsFiles(dir = ROOT, found = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
