@@ -99,27 +99,3 @@ importing each other. The outbox (#1762) is the first live consumer:
 `durableStoreNamespace(config.namespace)` is its IndexedDB dbName + leader-lock
 root, and it registers its queue as an `outbox` `DurableResource` so `wipe()`
 empties it.
-
-### Shared durable-store foundation (#1755)
-
-`durable-store.ts` is the ONE SMRT-layer namespacing + wipe registry both the
-future outbox (#1762) and persistence (#1764) slices build on — pure
-bookkeeping, ZERO `@tanstack/*` imports.
-
-- `durableStoreNamespace(key)` — deterministic
-  `smrt-web:${apiBase}:${tenantId ?? '-'}:${identityId ?? '-'}:${manifestHash}`,
-  so a logout, tenant switch, or schema change each land on a different
-  namespace (`manifestHash` source is #1764's call; this layer is source-agnostic).
-- `registerDurableResource(namespace, resource)` → unregister; `wipeDurableStore(namespace)`
-  clears every registered `DurableResource` under a namespace (best-effort — a
-  rejected `clear()` doesn't abort the sweep) then drops it; a safe no-op on an
-  unknown/empty namespace.
-
-Rationale: the persistence slice's storage (SQLite-WASM/OPFS) and the outbox's
-IndexedDB queue are **separate storage engines**, so the shared foundation lives
-one level up — each slice keys its own storage primitive under a shared
-namespace, and `wipe()` clears both through the registry without the two modules
-importing each other. The outbox (#1762) is the first live consumer:
-`durableStoreNamespace(config.namespace)` is its IndexedDB dbName + leader-lock
-root, and it registers its queue as an `outbox` `DurableResource` so `wipe()`
-empties it.
