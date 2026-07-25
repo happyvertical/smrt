@@ -3,8 +3,9 @@
 ORM, code generation, AI integration, and the DispatchBus. Everything else builds on this.
 
 Key surfaces are `SmrtObject`, `SmrtCollection`, `ObjectRegistry`,
-`DispatchBus`, `GlobalInterceptors`, and `LearningMemory`; the sections below
-document their invariants and source locations.
+`DispatchBus`, `GlobalInterceptors`, and `LearningMemory`; this file documents
+their invariants and source locations, and the module docs below cover the
+per-subsystem semantics.
 
 ## Modules
 

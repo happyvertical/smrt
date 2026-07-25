@@ -9,7 +9,7 @@ invariants, and the traps that apply before editing anything live in
 `sse-client.ts` is the client half of live cache invalidation — ONE app-wide
 subscriber that turns the #1763 server's coarse change signals into collection
 refetches, so a dashboard reflects another session's writes without a manual
-refresh. It is a capability built on the seam above (`onAttach` registers the
+refresh. It is a capability built on the seam ([capability-seam.md](capability-seam.md) — `onAttach` registers the
 external trigger, `teardown` unregisters); it never touches the engine —
 `ctx.invalidate()` is the refetch primitive.
 
