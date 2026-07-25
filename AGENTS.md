@@ -47,6 +47,7 @@ pnpm typecheck
 pnpm lint
 pnpm format
 pnpm smrt dev:knowledge-check
+pnpm audit:policy
 ```
 
 Use the narrowest package command first, then the relevant root checks. The
@@ -101,6 +102,14 @@ the Vite plugin consumes deterministic `dist/` artifacts.
 - Avoid complex inline intersected generics in Svelte `$props()`; use named
   interfaces to prevent recursive type evaluation.
 - JSON fields are stored as strings and should expose guarded get/set helpers.
+- A `pnpm-workspace.yaml` override that pins an exact version stops protecting
+  the tree once the advisory range grows to include that pin — write the
+  selector against the advisory's range (`fast-uri@>=3.0.0 <=3.1.3`), not the
+  range that happened to be vulnerable when it was added, and re-point the
+  target when the audit flags it. Never silence an advisory with
+  `auditConfig.ignoreGhsas` alone: each entry needs a record in
+  `audit-policy.json` with exploitability and a recheck date, enforced by
+  `pnpm audit:policy` (#2028).
 
 ## Pull requests
 

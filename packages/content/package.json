@@ -74,7 +74,7 @@
     "@happyvertical/spider": "catalog:",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "fast-xml-parser": "^5.9.3",
+    "fast-xml-parser": "^5.10.1",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
