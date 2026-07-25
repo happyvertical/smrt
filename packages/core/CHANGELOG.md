@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.22
+
+### Patch Changes
+
+- ### Features
+
+  - gate PostgreSQL timestamp conversion (#2096) (cli)
+  - @happyvertical/smrt-config@0.40.22
+  - @happyvertical/smrt-types@0.40.22
+  - @happyvertical/smrt-scanner@0.40.22
+
 ## 0.40.21
 
 ### Patch Changes
