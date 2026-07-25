@@ -40,14 +40,43 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.0.6
-      - name: Load pinned policy runtime
+      - name: Select source-owned policy channel
+        shell: bash
         env:
-          POLICY_ARTIFACT: ${{ vars.AGENT_POLICY_ARTIFACT }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          source_repository=$(gh api repos/happyvertical/.github --jq '.id')
+          test "$source_repository" = 1129270614 || {
+            echo "trusted policy source repository id is $source_repository, expected 1129270614" >&2
+            exit 1
+          }
+          channel_state="$RUNNER_TEMP/hv-agent-policy-channels.json"
+          gh api 'repos/happyvertical/.github/contents/.github/agent-policy-channels.json?ref=main' \
+            --jq '.content' | base64 --decode > "$channel_state"
+          protected_selector="$RUNNER_TEMP/hv-agent-policy-channel-select"
+          gh api 'repos/happyvertical/.github/contents/scripts/hv-agent-policy-channel-select?ref=main' \
+            --jq '.content' | base64 --decode > "$protected_selector"
+          chmod +x "$protected_selector"
+          selected_lock="$RUNNER_TEMP/hv-agent-policy-selected-lock.json"
+          target_repository_id=$(gh api "repos/$TARGET_REPOSITORY" --jq '.node_id')
+          channel=$(python3 "$protected_selector" \
+            "$channel_state" "$selected_lock" "$target_repository_id")
+          artifact=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact"])' "$selected_lock")
+          {
+            echo "HV_POLICY_ARTIFACT=$artifact"
+            echo "HV_POLICY_CHANNEL=$channel"
+            echo "HV_POLICY_LOCK=$selected_lock"
+          } >> "$GITHUB_ENV"
+      - name: Load selected policy runtime
+        env:
+          POLICY_ARTIFACT: ${{ env.HV_POLICY_ARTIFACT }}
           POLICY_PUBLISHER_IDENTITY: ${{ vars.AGENT_POLICY_PUBLISHER_IDENTITY }}
         run: |
           case "$POLICY_ARTIFACT" in
             ghcr.io/happyvertical/agent-policy@sha256:*) ;;
-            *) echo 'AGENT_POLICY_ARTIFACT must pin the trusted HappyVertical policy image by digest' >&2; exit 1 ;;
+            *) echo 'source-owned policy channel must select the trusted HappyVertical policy image by digest' >&2; exit 1 ;;
           esac
           expected_publisher_identity_sha256=86a917ce537a9e923ce02103068c76eb72629247ab584f7d368ac238a0209857
           publisher_identity_sha256=$(python3 -c 'import hashlib, os; print(hashlib.sha256(os.environ["POLICY_PUBLISHER_IDENTITY"].encode()).hexdigest())')
@@ -84,14 +113,33 @@ jobs:
           PY
           tar -xzf "$archive" -C "$policy_dir"
           identity=$(python3 "$policy_dir/scripts/verify-policy-artifact" "$policy_dir")
-          echo "Loaded $identity from $POLICY_ARTIFACT"
+          python3 - "$HV_POLICY_LOCK" "$policy_dir/policy-artifact.json" "$POLICY_ARTIFACT" <<'PY'
+          import json
+          import sys
+
+          lock = json.load(open(sys.argv[1], encoding="utf-8"))
+          manifest = json.load(open(sys.argv[2], encoding="utf-8"))
+          expected = {
+              "artifact": sys.argv[3],
+              "generation": manifest.get("generation"),
+              "policy_revision": manifest.get("policy_revision"),
+              "source_commit": manifest.get("source_commit"),
+              "source_tree_sha256": manifest.get("source_tree_sha256"),
+          }
+          for field, value in expected.items():
+              if lock.get(field) != value:
+                  raise SystemExit(
+                      f"selected policy lock {field} does not match signed artifact manifest"
+                  )
+          PY
+          echo "Loaded $identity from $HV_POLICY_CHANNEL channel $POLICY_ARTIFACT"
           echo "HV_POLICY_DIR=$policy_dir" >> "$GITHUB_ENV"
           echo "HV_POLICY_IDENTITY=$identity" >> "$GITHUB_ENV"
       - name: Validate lifecycle
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          POLICY_ARTIFACT: ${{ vars.AGENT_POLICY_ARTIFACT }}
+          POLICY_ARTIFACT: ${{ env.HV_POLICY_ARTIFACT }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_ACTION: ${{ github.event.action }}
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
@@ -99,6 +147,10 @@ jobs:
           MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
         run: |
           set -euo pipefail
+          if test "$EVENT_NAME" = workflow_dispatch && test "${PR_NUMBER:-0}" = 0; then
+            python3 "$HV_POLICY_DIR/scripts/hv-agent" audit .
+            exit
+          fi
           numbers_file="$RUNNER_TEMP/hv-agent-lifecycle-prs"
           "$HV_POLICY_DIR/scripts/hv-agent-lifecycle-prs" > "$numbers_file"
           while IFS= read -r number; do

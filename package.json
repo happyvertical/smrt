@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.40.20",
+  "version": "0.40.21",
   "files": [
     "AGENTS.md",
     "CLAUDE.md"
@@ -27,6 +27,8 @@
     "validate-build": "node scripts/validate-build.js",
     "check:standards": "node scripts/check-standards.mjs && node scripts/check-readmes.mjs",
     "check:readmes": "node scripts/check-readmes.mjs",
+    "audit:policy": "node scripts/check-audit-policy.mjs",
+    "audit:policy:drift": "node scripts/check-audit-policy.mjs --audit",
     "check:svelte-tokens": "node scripts/check-svelte-tokens.mjs",
     "check:color-literals": "node scripts/check-color-literals.mjs",
     "check:z-index": "node scripts/check-z-index.mjs",
