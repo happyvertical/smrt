@@ -44,6 +44,7 @@ import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
 import { exportCommand } from './export.js';
+import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 import {
   runRuntimeCheckSafely,
   runtimeCheckCommand,
@@ -190,6 +191,7 @@ interface DbValidateOptions {
 interface DbMigrateOptions {
   'dry-run'?: boolean;
   'postgres-safe'?: boolean;
+  'postgres-timestamp-legacy-timezone'?: string;
   force?: boolean;
   'force-migration'?: string | readonly string[];
   'repair-data'?: boolean;
@@ -206,6 +208,13 @@ export interface ForceMigrationSelection {
   force: boolean;
   forceMigrations?: readonly string[];
 }
+
+/**
+ * Require the explicit provenance confirmation before the schema comparer may
+ * reinterpret legacy PostgreSQL timestamp-without-time-zone values as UTC
+ * instants. Omitting the option intentionally leaves the type drift manual.
+ */
+export { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 
 /**
  * Normalize exact migration selectors from the public single/repeated CLI
@@ -1153,6 +1162,11 @@ export default testManifest;
           'Use PostgreSQL-safe operations (CONCURRENTLY for indexes, lock_timeout)',
         default: false,
       },
+      'postgres-timestamp-legacy-timezone': {
+        type: 'string',
+        description:
+          'Confirm that legacy PostgreSQL timestamp-without-time-zone values are UTC wall times before converting them to timestamptz. Exact value required: UTC; omitted by default.',
+      },
       force: {
         type: 'boolean',
         description:
@@ -1198,6 +1212,9 @@ export default testManifest;
         const forceSelection = resolveForceMigrationSelection(
           options.force,
           options['force-migration'],
+        );
+        const postgresTimestampMigration = resolvePostgresTimestampMigration(
+          options['postgres-timestamp-legacy-timezone'],
         );
 
         // 1. Load CLI config
@@ -1378,6 +1395,7 @@ export default testManifest;
         // --drop-indexes for safety.
         const comparer = new SchemaComparer(db, {
           includeDroppedIndexes: Boolean(options['drop-indexes']),
+          postgresTimestampMigration,
         });
         const diff = await comparer.compare(manifestSchemas);
 

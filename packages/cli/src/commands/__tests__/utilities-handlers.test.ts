@@ -40,6 +40,7 @@ const h = vi.hoisted(() => {
     trackerApplyAll: vi.fn(async () => []),
     ensureSchema: vi.fn(async () => {}),
     generateSchema: vi.fn(async () => 'CREATE TABLE t ()'),
+    schemaComparerOptions: vi.fn(),
     schemaCompare: vi.fn(async () => ({ added_tables: [], changes: [] })),
     manifestGenerate: vi.fn(async () => ({
       objects: { '@app:Article': {} },
@@ -66,6 +67,7 @@ const {
   trackerApplyAll,
   ensureSchema,
   generateSchema,
+  schemaComparerOptions,
   schemaCompare,
   manifestGenerate,
   discoverBaseClasses,
@@ -87,6 +89,10 @@ function migratableDb(overrides: Record<string, unknown> = {}) {
 vi.mock('@happyvertical/smrt-core', () => ({
   ObjectRegistry: h.registry,
   SchemaComparer: class {
+    constructor(_db: unknown, options?: unknown) {
+      h.schemaComparerOptions(options);
+    }
+
     compare = (...a: unknown[]) => h.schemaCompare(...a);
   },
   generateDDLForEngine: vi.fn(() => ({
@@ -437,6 +443,29 @@ describe('utility command handlers', () => {
 
     await utilityCommands['db:migrate'].handler([], { verbose: true });
     expect(logged()).toContain('Database schema is up to date');
+  });
+
+  it('db:migrate forwards only the exact UTC timestamp confirmation to the schema comparer', async () => {
+    configureMigrate();
+
+    await utilityCommands['db:migrate'].handler([], {
+      'postgres-timestamp-legacy-timezone': 'UTC',
+    });
+
+    expect(schemaComparerOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        postgresTimestampMigration: { legacyTimezone: 'UTC' },
+      }),
+    );
+  });
+
+  it('db:migrate rejects non-UTC timestamp conversion provenance', async () => {
+    await utilityCommands['db:migrate'].handler([], {
+      'postgres-timestamp-legacy-timezone': 'America/Edmonton',
+    });
+
+    expect(errored()).toContain('must be exactly UTC');
+    expect(process.exitCode).toBe(1);
   });
 
   it('db:migrate previews changes in --dry-run mode', async () => {

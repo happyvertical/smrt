@@ -9,6 +9,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
+import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 
 const UNSUPPORTED_GENERATE_MESSAGE =
   'File-backed SMRT migrations are not supported. SMRT schema migrations are manifest-driven; update @smrt object definitions and run smrt db:migrate.';
@@ -25,6 +26,7 @@ interface DbDiffOptions {
   json?: boolean;
   verbose?: boolean;
   'drop-indexes'?: boolean;
+  'postgres-timestamp-legacy-timezone'?: string;
 }
 
 export const dbDiffCommand: CLICommand = {
@@ -77,11 +79,19 @@ export const dbDiffCommand: CLICommand = {
         'Include orphan-index drops in the diff (indexes in DB but not in the manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default for safety.',
       default: false,
     },
+    'postgres-timestamp-legacy-timezone': {
+      type: 'string',
+      description:
+        'Confirm that legacy PostgreSQL timestamp-without-time-zone values are UTC wall times before previewing their conversion to timestamptz. Exact value required: UTC; omitted by default.',
+    },
   },
   handler: async (_args: string[], options: DbDiffOptions) => {
     let db: DatabaseInterface | undefined;
 
     try {
+      const postgresTimestampMigration = resolvePostgresTimestampMigration(
+        options['postgres-timestamp-legacy-timezone'],
+      );
       const unsupportedFileOptions = (
         ['generate', 'name', 'format', 'with-down', 'output'] as const
       ).filter(
@@ -180,6 +190,7 @@ export const dbDiffCommand: CLICommand = {
         includeDroppedTables: false,
         includeDroppedColumns: false,
         includeDroppedIndexes: Boolean(options['drop-indexes']),
+        postgresTimestampMigration,
       });
 
       const diff = await comparer.compare(schemaDefinitions);
