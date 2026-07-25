@@ -115,6 +115,15 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     exitSpy.mockRestore();
   });
 
+  it('refuses an unproven PostgreSQL timestamp timezone before opening the database', async () => {
+    await dbDiffCommand.handler([], {
+      'postgres-timestamp-legacy-timezone': 'America/Edmonton',
+    });
+
+    expect(process.exitCode).toBe(1);
+    expect(errorOutput()).toContain('must be exactly UTC');
+  });
+
   it('exits when no manifests are discovered', async () => {
     autoDiscoverAndLoadMock.mockResolvedValue({
       discovered: [],

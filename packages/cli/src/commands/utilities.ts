@@ -44,6 +44,7 @@ import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
 import { exportCommand } from './export.js';
+import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 import {
   runRuntimeCheckSafely,
   runtimeCheckCommand,
@@ -213,21 +214,7 @@ export interface ForceMigrationSelection {
  * reinterpret legacy PostgreSQL timestamp-without-time-zone values as UTC
  * instants. Omitting the option intentionally leaves the type drift manual.
  */
-export function resolvePostgresTimestampMigration(
-  legacyTimezone: string | undefined,
-): { legacyTimezone: 'UTC' } | undefined {
-  if (legacyTimezone === undefined) {
-    return undefined;
-  }
-
-  if (legacyTimezone !== 'UTC') {
-    throw new Error(
-      '--postgres-timestamp-legacy-timezone must be exactly UTC; refusing to infer the offset of legacy PostgreSQL timestamps',
-    );
-  }
-
-  return { legacyTimezone: 'UTC' };
-}
+export { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 
 /**
  * Normalize exact migration selectors from the public single/repeated CLI

@@ -166,6 +166,19 @@ describe('utilities', () => {
     expect(parsed.options['postgres-timestamp-legacy-timezone']).toBe('UTC');
   });
 
+  it('offers the same exact PostgreSQL timestamp confirmation to db:diff', () => {
+    const diff = utilityCommands['db:diff'];
+    const parsed = parseCliCommandArgs(
+      ['db:diff', '--postgres-timestamp-legacy-timezone', 'UTC'],
+      [diff],
+    );
+
+    expect(diff.options?.['postgres-timestamp-legacy-timezone']).toMatchObject({
+      type: 'string',
+    });
+    expect(parsed.options['postgres-timestamp-legacy-timezone']).toBe('UTC');
+  });
+
   it('parses repeated exact migration flags in argv order', () => {
     const migrate = utilityCommands['db:migrate'];
     const parsed = parseCliCommandArgs(

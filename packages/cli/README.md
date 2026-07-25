@@ -72,8 +72,9 @@ PostgreSQL, it allows the manifest-owned timestamp columns to be converted to
 instants. It is not safe for a database with any local-time writer; use an
 application-owned, provenance-aware migration in that case. Rehearse against a
 restored clone and keep a verified backup because type upgrades have no
-automatic down migration. `--dry-run` previews the same conversion without
-writing it.
+automatic down migration. `smrt db:diff --postgres-timestamp-legacy-timezone
+UTC` and `smrt db:migrate --dry-run --postgres-timestamp-legacy-timezone UTC`
+both preview the same conversion without writing it.
 
 ### Code Generation
 
