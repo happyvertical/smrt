@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.21
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - clear all high/critical advisories and make suppressions expire (#2110) (deps)
+  - @happyvertical/smrt-config@0.40.21
+  - @happyvertical/smrt-types@0.40.21
+  - @happyvertical/smrt-scanner@0.40.21
+
 ## 0.40.20
 
 ### Patch Changes
