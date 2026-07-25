@@ -333,6 +333,15 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # #2028: every suppression in auditConfig.ignoreGhsas must carry a record
+      # in audit-policy.json with an exploitability assessment and a recheck
+      # date, and no record may be past that date. Runs even when the audit
+      # above fails, so an expired acceptance is reported in the same pass.
+      # Node-only, no deps.
+      - name: Check dependency-advisory policy
+        if: success() || failure()
+        run: node scripts/check-audit-policy.mjs
+
   test:
     name: Validate Changes
     if: >-
