@@ -30,6 +30,7 @@ export type {
   DomainKnowledgeConfig,
   DomainKnowledgeFreshnessResult,
   DomainKnowledgeManifest,
+  DomainKnowledgeModuleDoc,
   DomainKnowledgeObject,
   DomainKnowledgeSurface,
   DomainKnowledgeSurfaceKind,

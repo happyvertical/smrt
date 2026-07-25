@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  buildArchitectureContext,
   buildKnowledgeIndex,
   buildReviewContext,
   checkKnowledgeFreshness,
@@ -423,6 +424,67 @@ describe('SMRT knowledge index', () => {
     );
   });
 
+  it('embeds every linked module doc when nothing narrows the request (#2108)', async () => {
+    await writeModuleDocs(rootDir);
+
+    const result = await buildArchitectureContext({
+      rootDir,
+      package: '@happyvertical/smrt-demo',
+    });
+    const markdown = result.promptBundle.contextMarkdown;
+
+    // A package selector is not a module selector — the moved prose is not
+    // regenerable, so a bare package request must not silently drop any of it.
+    expect(markdown).toContain('agents/payouts.md, agents/crm.md');
+    expect(markdown).toContain('claimForPayout never double-owns');
+    expect(markdown).toContain('Leads and pipelines');
+    expect(markdown).not.toContain('Module docs not loaded');
+  });
+
+  it('narrows embedded module docs to the changed module, listing the rest', async () => {
+    await writeModuleDocs(rootDir);
+
+    const result = await buildReviewContext({
+      rootDir,
+      changedFiles: ['packages/demo/src/payouts/claim.ts'],
+    });
+    const markdown = result.promptBundle.contextMarkdown;
+
+    expect(markdown).toContain('claimForPayout never double-owns');
+    expect(markdown).not.toContain('Leads and pipelines');
+    expect(markdown).toContain(
+      'Module docs not loaded for this request (read on demand): packages/demo/agents/crm.md',
+    );
+  });
+
+  it('falls open to every module doc when hints match no module', async () => {
+    await writeModuleDocs(rootDir);
+
+    const result = await buildReviewContext({
+      rootDir,
+      changedFiles: ['packages/demo/src/unrelated.ts'],
+      focus: 'nothing here names a module',
+    });
+    const markdown = result.promptBundle.contextMarkdown;
+
+    expect(markdown).toContain('claimForPayout never double-owns');
+    expect(markdown).toContain('Leads and pipelines');
+  });
+
+  it('flags a changed module doc as an authored-expertise change', async () => {
+    await writeModuleDocs(rootDir);
+
+    const result = await smrtReview({
+      rootDir,
+      changedFiles: ['packages/demo/agents/payouts.md'],
+      mode: 'findings',
+    });
+
+    expect(result.deterministicFindings.map((issue) => issue.code)).toContain(
+      'agent-expertise-review',
+    );
+  });
+
   it('returns deterministic review findings for relationship and MCP surfaces', async () => {
     const result = await smrtReview({
       rootDir,
@@ -496,3 +558,36 @@ describe('SMRT knowledge index', () => {
     );
   });
 });
+
+/**
+ * Split the demo package's AGENTS.md by module the way #2108 splits an
+ * oversized real one: sibling `agents/<module>.md` files linked from a Modules
+ * table, never nested AGENTS.md files.
+ */
+async function writeModuleDocs(rootDir: string): Promise<void> {
+  const pkgDir = join(rootDir, 'packages', 'demo');
+  await mkdir(join(pkgDir, 'agents'), { recursive: true });
+  await writeFile(
+    join(pkgDir, 'agents', 'payouts.md'),
+    '# demo/payouts\n\n`claimForPayout never double-owns` a row.\n',
+  );
+  await writeFile(
+    join(pkgDir, 'agents', 'crm.md'),
+    '# demo/crm\n\nLeads and pipelines.\n',
+  );
+  await writeFile(
+    join(pkgDir, 'AGENTS.md'),
+    [
+      '# Demo',
+      '',
+      'Package-specific expert guidance.',
+      '',
+      '## Modules',
+      '',
+      '| Module | Module doc |',
+      '|---|---|',
+      '| payouts | [agents/payouts.md](agents/payouts.md) |',
+      '| crm | [agents/crm.md](agents/crm.md) |',
+    ].join('\n'),
+  );
+}

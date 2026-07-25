@@ -2724,6 +2724,9 @@ function sanitizeKnowledgeArtifact(
 
   if (!options.includeDocs) {
     delete sanitized.agentDoc;
+    // Linked module docs (#2108) are the same authored prose as agentDoc, just
+    // split across siblings — they must drop with it, not leak past the flag.
+    delete sanitized.moduleDocs;
   }
 
   if (!options.includePrompts) {

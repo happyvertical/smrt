@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import type {
   DomainKnowledgeConfig,
   DomainKnowledgeManifest,
+  DomainKnowledgeModuleDoc,
   DomainKnowledgeObject,
   DomainKnowledgeSurface,
 } from '@happyvertical/smrt-types';
@@ -64,6 +65,62 @@ const RELATIONSHIP_FIELD_TYPES = new Set([
 
 const STANDARD_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
 
+/**
+ * Markdown inline links whose target is a `.md` file — `[label](agents/x.md)`,
+ * tolerating an `#anchor` and a `"title"`. This is how a package registers a
+ * sibling module doc (#2108): the link in `AGENTS.md` IS the registration, so
+ * there is no separate index to drift out of sync.
+ */
+const MARKDOWN_MD_LINK =
+  /\[[^\]]*\]\(\s*([^)\s#]+\.md)(?:#[^)\s]*)?(?:\s+"[^"]*")?\s*\)/g;
+
+/** `sourceHashes` key prefix for a linked module doc, e.g. `moduleDoc:agents/crm.md`. */
+export const MODULE_DOC_HASH_PREFIX = 'moduleDoc:';
+
+/**
+ * Module doc paths linked from a package's `AGENTS.md`, relative to the package
+ * root and in document order.
+ *
+ * Instruction chains are additive (see `scripts/check-agents-chain.mjs`), so an
+ * oversized package doc is split into `packages/<pkg>/agents/<module>.md` siblings
+ * instead of nested `AGENTS.md` files. Only links resolving to an existing file
+ * INSIDE the package are accepted — a cross-package reference such as
+ * `packages/affiliates/MIGRATION.md` belongs to that package's own chain and is
+ * ignored here.
+ */
+export function resolveAgentModuleDocPaths(
+  rootDir: string,
+  agentDoc: string | undefined,
+): string[] {
+  if (!agentDoc) return [];
+  const root = resolve(rootDir);
+  const paths: string[] = [];
+  for (const match of agentDoc.matchAll(MARKDOWN_MD_LINK)) {
+    const target = match[1];
+    if (target.includes('://')) continue;
+    const absolute = resolve(root, target);
+    if (absolute !== root && !absolute.startsWith(root + sep)) continue;
+    const relativePath = relative(root, absolute).split(sep).join('/');
+    if (relativePath === 'AGENTS.md' || relativePath === 'CLAUDE.md') continue;
+    if (paths.includes(relativePath)) continue;
+    if (!existsSync(absolute) || !statSync(absolute).isFile()) continue;
+    paths.push(relativePath);
+  }
+  return paths;
+}
+
+/** {@link resolveAgentModuleDocPaths}, with each doc's contents read. */
+export function readAgentModuleDocs(
+  rootDir: string,
+  agentDoc: string | undefined,
+): DomainKnowledgeModuleDoc[] {
+  return resolveAgentModuleDocPaths(rootDir, agentDoc).map((path) => ({
+    path,
+    module: basename(path, '.md'),
+    content: readFileSync(join(rootDir, path), 'utf8'),
+  }));
+}
+
 export function buildDomainKnowledgeManifest(
   options: BuildDomainKnowledgeOptions,
 ): DomainKnowledgeManifest {
@@ -72,10 +129,14 @@ export function buildDomainKnowledgeManifest(
   const packageName = options.manifest.packageName ?? packageJson.name;
   const packageVersion = options.manifest.packageVersion ?? packageJson.version;
   const agentDocPath = existingPath(rootDir, 'AGENTS.md');
-  const agentDoc =
-    options.config?.includeDocs === false || !agentDocPath
-      ? undefined
-      : readFileSync(agentDocPath, 'utf8');
+  const agentDocContent = agentDocPath
+    ? readFileSync(agentDocPath, 'utf8')
+    : undefined;
+  const includeDocs = options.config?.includeDocs !== false;
+  const agentDoc = includeDocs ? agentDocContent : undefined;
+  // Module doc PATHS are always resolved so their hashes gate freshness even
+  // when doc bodies are excluded from the artifact — same stance as `agents`.
+  const moduleDocPaths = resolveAgentModuleDocPaths(rootDir, agentDocContent);
   const allDependencies = {
     ...record(packageJson.dependencies),
     ...record(packageJson.devDependencies),
@@ -101,6 +162,12 @@ export function buildDomainKnowledgeManifest(
       manifest: { content: manifestJson },
       packageJson: fileHashSource(existingPath(rootDir, 'package.json')),
       agents: fileHashSource(agentDocPath),
+      ...Object.fromEntries(
+        moduleDocPaths.map((path) => [
+          `${MODULE_DOC_HASH_PREFIX}${path}`,
+          fileHashSource(join(rootDir, path)),
+        ]),
+      ),
     }),
     exports: exportKeys(packageJson.exports),
     dependencies: allDependencies,
@@ -119,6 +186,10 @@ export function buildDomainKnowledgeManifest(
       options.config?.includePrompts === false ? [] : readPrompts(rootDir),
     relationshipsV2: summarizeRelationships(objects, manifestObjects),
     agentDoc,
+    moduleDocs:
+      includeDocs && moduleDocPaths.length > 0
+        ? readAgentModuleDocs(rootDir, agentDocContent)
+        : undefined,
   };
 }
 

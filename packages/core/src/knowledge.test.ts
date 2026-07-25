@@ -2,7 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildDomainKnowledgeManifest } from './knowledge.js';
+import {
+  buildDomainKnowledgeManifest,
+  resolveAgentModuleDocPaths,
+} from './knowledge.js';
 import type { SmartObjectManifest } from './scanner/types.js';
 
 describe('buildDomainKnowledgeManifest', () => {
@@ -111,7 +114,130 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(artifact.sourceHashes).toHaveProperty('agents');
     expect(artifact.sourceHashes).toHaveProperty('manifest');
   });
+
+  it('omits moduleDocs when AGENTS.md links no sibling docs', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+
+    expect(artifact.moduleDocs).toBeUndefined();
+    expect(
+      Object.keys(artifact.sourceHashes).filter((key) =>
+        key.startsWith('moduleDoc:'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('loads and hashes the module docs AGENTS.md links (#2108)', () => {
+    writeModuleDocs(rootDir);
+    const artifact = buildFixtureArtifact(rootDir);
+
+    expect(artifact.moduleDocs).toEqual([
+      expect.objectContaining({
+        path: 'agents/payouts.md',
+        module: 'payouts',
+        content: expect.stringContaining('claimForPayout never double-owns'),
+      }),
+      expect.objectContaining({ path: 'agents/crm.md', module: 'crm' }),
+    ]);
+    expect(artifact.sourceHashes).toHaveProperty('moduleDoc:agents/payouts.md');
+    expect(artifact.sourceHashes).toHaveProperty('moduleDoc:agents/crm.md');
+  });
+
+  it('still hashes module docs when doc bodies are excluded', () => {
+    writeModuleDocs(rootDir);
+    const artifact = buildDomainKnowledgeManifest({
+      manifest: fixtureManifest(),
+      rootDir,
+      config: { includeDocs: false },
+    });
+
+    expect(artifact.agentDoc).toBeUndefined();
+    expect(artifact.moduleDocs).toBeUndefined();
+    expect(artifact.sourceHashes).toHaveProperty('moduleDoc:agents/payouts.md');
+  });
 });
+
+describe('resolveAgentModuleDocPaths', () => {
+  let rootDir: string;
+
+  beforeEach(() => {
+    rootDir = mkdtempSync(join(tmpdir(), 'smrt-module-docs-'));
+    mkdirSync(join(rootDir, 'agents'), { recursive: true });
+    writeFileSync(join(rootDir, 'agents', 'payouts.md'), '# payouts\n');
+    writeFileSync(join(rootDir, 'AGENTS.md'), '# pkg\n');
+    writeFileSync(join(rootDir, 'CLAUDE.md'), '@AGENTS.md');
+  });
+
+  afterEach(() => {
+    rmSync(rootDir, { recursive: true, force: true });
+  });
+
+  it('accepts a link to an existing file inside the package, once', () => {
+    expect(
+      resolveAgentModuleDocPaths(
+        rootDir,
+        '[a](agents/payouts.md) and again [b](agents/payouts.md)',
+      ),
+    ).toEqual(['agents/payouts.md']);
+  });
+
+  it('tolerates an anchor and a link title', () => {
+    expect(
+      resolveAgentModuleDocPaths(
+        rootDir,
+        '[a](agents/payouts.md#claims) [b](agents/payouts.md "Payouts")',
+      ),
+    ).toEqual(['agents/payouts.md']);
+  });
+
+  it('ignores non-links, missing files, and remote targets', () => {
+    expect(
+      resolveAgentModuleDocPaths(
+        rootDir,
+        'see `agents/payouts.md`, [gone](agents/missing.md), [x](https://e.dev/a.md)',
+      ),
+    ).toEqual([]);
+  });
+
+  it('ignores links that escape the package or point back at the chain', () => {
+    // A cross-package doc belongs to that package's own instruction chain, and
+    // re-including AGENTS.md/CLAUDE.md would double-count the chain itself.
+    expect(
+      resolveAgentModuleDocPaths(
+        rootDir,
+        '[o](../other/AGENTS.md) [s](AGENTS.md) [c](CLAUDE.md)',
+      ),
+    ).toEqual([]);
+  });
+
+  it('returns nothing without an agent doc', () => {
+    expect(resolveAgentModuleDocPaths(rootDir, undefined)).toEqual([]);
+  });
+});
+
+function writeModuleDocs(rootDir: string): void {
+  mkdirSync(join(rootDir, 'agents'), { recursive: true });
+  writeFileSync(
+    join(rootDir, 'agents', 'payouts.md'),
+    '# payouts\n\n`claimForPayout never double-owns` a row.\n',
+  );
+  writeFileSync(
+    join(rootDir, 'agents', 'crm.md'),
+    '# crm\n\nLeads and pipelines.\n',
+  );
+  writeFileSync(
+    join(rootDir, 'AGENTS.md'),
+    [
+      '# Orders',
+      '',
+      'Review payment and tenant boundaries.',
+      '',
+      '| Module | Module doc |',
+      '|---|---|',
+      '| payouts | [agents/payouts.md](agents/payouts.md) |',
+      '| crm | [agents/crm.md](agents/crm.md) |',
+    ].join('\n'),
+  );
+}
 
 function buildFixtureArtifact(rootDir: string) {
   return buildDomainKnowledgeManifest({

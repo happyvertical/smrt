@@ -2,6 +2,20 @@
 
 Top-of-stack Svelte 5 integration layer for SMRT: the app `Provider`, auth / AI hooks, browser AI (STT/TTS/LLM), forms, server-side i18n, and the domain-aware composites (module, workspace). The domain-agnostic UI primitives, i18n client, theme system, and module UI registry now live in `@happyvertical/smrt-ui` (#1582) — import those from there (e.g. `@happyvertical/smrt-ui/ui`, `@happyvertical/smrt-ui/i18n`). The agent-admin shells (`AgentAdminPanel` / `AgentAdminTabs` / `AgentSettingsShell`) moved to `@happyvertical/smrt-agents` (#1589) so this package no longer depends on `smrt-agents` — import them from `@happyvertical/smrt-agents/svelte/admin` (side-effect-free) or `@happyvertical/smrt-agents/svelte`.
 
+## Modules
+
+Per-module semantics live in sibling module docs — read the one for the
+subpath you are editing. This file keeps what holds in every module.
+
+| Module | Scope | Module doc |
+|---|---|---|
+| `src/components/` | what stayed here after the smrt-ui split, the L3 gap primitives, and the import-convention table for picking a barrel | [agents/components.md](agents/components.md) |
+| `src/i18n/` (`./i18n` + `./i18n/server`) | `defineMessages` / `useI18n` / `<Trans>` / `buildI18nSnapshot`, the template-vs-render split, and hardcoded-string enforcement | [agents/i18n.md](agents/i18n.md) |
+| `src/themes/` + `src/theme/` | which theme system is canonical and the full `--smrt-*` design-token vocabulary with its alias rules | [agents/themes.md](agents/themes.md) |
+| `src/test-support/` + `__tests__/` | the golden-test harness and pattern for Svelte component tests | [agents/testing.md](agents/testing.md) |
+| `src/components/settings/` (`./settings`) | `SettingsCatalog`, `paginateSettingsCatalog`, and the summary-vs-detail scalability contract | [agents/settings.md](agents/settings.md) |
+| `src/components/workspace/` (`./workspace` + `./web`) | the AdminShell family and its principles, the legacy ToolsDock surface, the `./web` activity-feed and `updateAvailable` adapters, and server-side dock gates | [agents/workspace.md](agents/workspace.md) |
+
 ## The UI split — primitive-adoption contract (#1589)
 
 SMRT's shared UI primitives are split by concern: **`smrt-ui` owns the
@@ -68,135 +82,12 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
 - **Adapters**: STT (browser-speech, whisper-cpp, whisper-wasm), TTS (browser-synthesis), LLM (webllm, transformers-llm)
 - Cache API: `getCachedSTT()`, `getCachedTTS()`, `getCachedLLM()`, `getCacheStats()`, `clearAllCaches()`
 
-## Components
-
-The domain-agnostic primitives (`ui`, `layout`, `feedback`, `nav`, `display`,
-`calendar`, `chat`, `permissions`, **`roles`/`memberships`**, `theme`) and the
-i18n client / module registry moved to `@happyvertical/smrt-ui` — import them
-from there (`@happyvertical/smrt-ui/{ui,layout,feedback,…}`). This package keeps
-the top-of-stack, domain-aware pieces:
-
-| Category | Components |
-|----------|------------|
-| AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
-| Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
-| Module | `ModulePanel` |
-| Settings (`/settings`) | `SettingsCatalog`, `paginateSettingsCatalog` |
-| Workspace (`/workspace`) | `AdminShell`, `ShellState`, `TenantNav`, focus tools, settings, activities, and system/app panels |
-| Legacy workspace (`/workspace/legacy`) | First-generation `ToolsDock` compatibility surface during AdminShell migration |
-
-### Gap primitives & S10 consolidation (L3 #1422)
-
-L3 added the generic primitives domain packages were re-rolling, so S10 (#1415)
-has a consolidation target: `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`
-(menu-button), and `Tree` (flat-DOM ARIA tree, generalizes `NavTree`) under
-`./ui`; plus `MessageBubble`, `ReactionPicker`, `TypingIndicator` under the
-`./chat` subpath. Each ships with design tokens, keyboard + ARIA a11y, JSDoc'd
-props, a golden test, and a playground page (`playground/.../primitives`).
-
-**Adoption-only for S10** — these already meet the library bar; S10 should
-migrate domain re-rolls *onto* them rather than build new primitives:
-
-- **`FileUpload`** (`./forms`) — the canonical upload input; replace ad-hoc
-  drop zones.
-- **`Modal` + forms** (`./feedback` + `./forms`) — compose for dialogs; no
-  bespoke modal shells.
-- **`ConfirmDialog`** (`./feedback`) — the standard confirm/destructive-action
-  flow.
-- **`Card`** (`./ui`) — the standard surface/container; retire local card CSS.
-
-### Import convention (S10 #1415)
-
-Domain packages **consume** these primitives; they do not re-roll them. The
-duplication of Modal/Form/Button/Avatar across packages is the root cause of
-inconsistent a11y, tokens, and states downstream — fix it by importing from the
-library. Which barrel for what:
-
-| Need | Import from |
-|------|-------------|
-| Buttons, cards, badges, avatars, chips, skeletons, tooltips, dropdowns, trees, pagination | `@happyvertical/smrt-svelte/ui` (or the package root) |
-| Provider-free base inputs — `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` | `@happyvertical/smrt-ui/forms` (also re-exported from `@happyvertical/smrt-svelte/forms`) |
-| Provider-free `Form` (plain `<form>` wrapper) | `@happyvertical/smrt-ui/forms` **only** — `@happyvertical/smrt-svelte/forms` exports the *rich* Provider-backed `Form` under that name, so import the plain one straight from smrt-ui |
-| Provider-backed inputs — `TextInput`, `NumberInput`, `MoneyInput`, date/measurement/address inputs, `CheckboxInput`, file upload, the rich `Form` | `@happyvertical/smrt-svelte/forms` |
-| `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` | `@happyvertical/smrt-svelte/feedback` |
-| `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-svelte/layout` |
-| Chat message bubble, reaction picker, typing indicator | `@happyvertical/smrt-svelte/chat` |
-| Admin shell, tenant navigation, focus tools, settings, and activities | `@happyvertical/smrt-svelte/workspace` |
-| First-generation ToolsDock during AdminShell migration | `@happyvertical/smrt-svelte/workspace/legacy` |
-| Server-paged settings search, selection, and list/detail layout | `@happyvertical/smrt-svelte/settings` |
-
-The package root re-exports `./ui`, `./forms`, etc., so `from
-'@happyvertical/smrt-svelte'` also works; prefer the specific subpath in domain
-code for tree-shaking and clarity.
-
-**Consolidating an existing re-roll** — two patterns:
-
-1. **Direct use** (preferred for new code and when the local API already matches):
-   delete the local component, import the library primitive at each call site.
-2. **Thin adapter** (when a package has an established, differing prop vocabulary
-   or a `ModuleUIRegistry` registration to preserve): keep the local file but
-   reduce it to a wrapper that maps the package's props onto the library
-   component — no duplicated markup/styles/logic. Example:
-   `chat/.../shared/Avatar.svelte` maps `avatarUrl`→`src` and `onlineStatus`'s
-   `dnd`→the library's `busy`, delegating everything else.
-
-**Missing a primitive or prop?** Add it upstream in `smrt-svelte`, don't re-roll
-downstream (e.g. the library `Avatar` gained an image-error→initials fallback
-while consolidating chat's avatar).
-
-## i18n (`./i18n` + `./i18n/server`, Sweep S13 #1418)
-
-Routes user-facing strings through `@happyvertical/smrt-languages`. The server
-pre-resolves a per-locale dictionary of **templates**; the client reads it
-synchronously and interpolates `{var}` placeholders with its own dependency-free
-`renderTemplate` (`src/i18n/render.ts`, parity-tested against languages — the
-client never bundles the heavy languages package). No async in render. The
-languages root is imported only by the Node-only `/i18n/server` subpath. See
-`docs/content/architecture/i18n.md`.
-
-- **`defineMessages({ key: englishDefault })`** — register a package's English
-  code defaults (key namespace `<package>.<component>.<descriptor>`; smrt-svelte
-  primitives use `ui.`). Returns a typed key map. Client-safe (no languages
-  root import). smrt-svelte's own catalog is `src/i18n/strings.ts`.
-- **`useI18n()` → `{ locale, t }`** and **`<Trans key vars />`** — equal
-  first-class APIs (`t` for attributes like `placeholder`/`aria-label`, `<Trans>`
-  for element bodies). Resolution order: snapshot template → registered default
-  → the key itself (never blank). Both work outside a `<Provider>` (fall back to
-  registered defaults) so primitives stay usable in isolation/tests.
-- **`<Provider i18n={snapshot}>`** puts the store on context; the prop is
-  seeded synchronously (SSR-safe) and a locale switch (reassigning `i18n`)
-  re-renders every `t` / `<Trans>`.
-- **`buildI18nSnapshot({ locale, tenantId, db })`** (`./i18n/server`, Node-only)
-  — a consumer's load function calls it for the request locale and passes the
-  result to `<Provider>`. It seeds the languages registry from `defineMessages`
-  defaults, then resolves each key through the override/tenant/locale chain.
-- Enforcement: `scripts/check-hardcoded-strings.mjs` (`pnpm
-  check:hardcoded-strings`) flags hardcoded prose in `.svelte` markup —
-  report-only until a package's extraction completes, then add it to the
-  script's `STRICT_PACKAGES`. Phase 1 extracted `DataTable` as the pilot.
-
 ## Permission Action
 
 ```svelte
 <div use:permission={{ slug: 'articles.delete', permissions: userPermissions }}>Delete</div>
 <div use:permission={{ slug: 'articles.delete', permissions: userPermissions, hideOnly: true }}>Delete</div>
 ```
-
-## Themes
-
-Two theme systems: `src/theme/` (simple ThemeProvider with design tokens) and `src/themes/` (full preset system with material/glass/studio, CSS generation, runtime switching). **`src/themes/` is canonical** — it is the only path that delivers the complete preset-aware `--smrt-*` token surface (colors + typography + spacing + radius + elevation + motion) across material/glass/studio. `src/theme/` is the simpler/legacy provider; it emits the same CSS variable vocabulary from its single built-in scale for backward compatibility, but it does not support preset switching or preset-specific values.
-
-### Design-token vocabulary (issue #1431)
-
-Components consume a Material-3 vocabulary. To keep one vocabulary that always resolves, the canonical names are emitted **plus** additive aliases — never rename canonical tokens:
-
-- **Radius**: canonical `none|sm|md|lg|xl|2xl|3xl|full`; aliases `extra-small|small|medium|large|extra-large`.
-- **Spacing**: canonical numeric scale `0…24`; aliases `xs|sm|md|lg|xl|2xl|3xl` mapped onto numeric values.
-- **Motion**: canonical `instant|fast|normal|slow|slower`; aliases `short1…long4` (M3 ms scale).
-- **Typography**: per-variant `-size|-line-height|-weight|-tracking|-font-family` **plus** a `-font` CSS-shorthand alias (`weight size/line-height family`).
-- **Helpers**: `--smrt-font-family-mono`, named `--smrt-typography-weight-{normal,medium,semibold,bold}`, and `--smrt-z-index-{dropdown…tooltip}` (incl. `dialog`).
-
-Single source of truth: `src/themes/shared.ts` (alias maps) → emitted by `src/themes/css-generator.ts` (JS `ThemeProvider`), mirrored into the static preset CSS (`src/themes/styles/*.css`) and the simple provider (`src/theme/tokens.ts`). `scripts/check-svelte-tokens.mjs` (CI + `pnpm check:svelte-tokens`) fails on any consumed-but-unemitted `--smrt-*` token; `src/themes/__tests__/token-aliases.test.ts` pins the emitted set. Don't introduce new `--smrt-*` names in components without emitting them from a delivery path.
 
 ## Key Files
 
@@ -208,30 +99,6 @@ Single source of truth: `src/themes/shared.ts` (alias maps) → emitted by `src/
 - `src/browser-ai/` -- STT/TTS/LLM adapters, capability detection (bundled, not external)
 - `src/registry/` -- ModuleUIRegistry for cross-package component discovery
 
-## Component testing (golden tests)
-
-Component test harness (sweep L4, #1423): `@testing-library/svelte` + `@testing-library/jest-dom` + `@testing-library/user-event` + `axe-core`, wired through `src/test-support/setup.ts` (jest-dom matchers, Testing Library auto-cleanup, a jsdom `<dialog>` `showModal`/`close` polyfill). The smrt-vitest plugin appends its own setup to `setupFiles` — it merges, so don't remove the entry.
-
-**Golden test pattern** — render → assert role/name/state → drive with `user-event` → prove axe-clean. `src/components/ui/__tests__/Button.test.ts` is the reference:
-
-```ts
-import { render, screen } from '@testing-library/svelte';
-import userEvent from '@testing-library/user-event';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
-
-render(Component, { props: { /* … */ } });
-const el = screen.getByRole('button', { name: 'Save' });
-await userEvent.click(el);
-expect(el).toHaveAttribute('aria-busy', 'true');
-const { container } = render(Component, { props });
-await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has no paint)
-```
-
-- **Snippet props** (`children`, cell/header renderers): build with `createRawSnippet(() => ({ render: () => '<span>…</span>' }))`.
-- **Hook-dependent components** (anything calling `useAppState`/`useSTT`/`useAuth` — they throw outside `<Provider>`): `vi.mock` the hook module with stub defaults. See `src/components/forms/__tests__/Form.test.ts`.
-- **Form-input a11y** (programmatic labels, `aria-describedby`, axe-clean for `Input`/`TextInput`/etc.) is L1's deliverable (#1420) on top of this harness — bare primitives like `Input` get behavior tests here, labelled axe coverage there.
-- Existing reference suites: Button, Input, Modal, DataTable, Form. The pattern is what sweep S11 (#1416) rolls out repo-wide.
-
 ## Dependencies
 
 - `@happyvertical/smrt-types` (shared types) — includes the identity data contracts (`User`, `Role`, `Membership`, `Tenant`) the role/membership components type against, so no dependency on `smrt-users` / `smrt-profiles` is needed
@@ -239,127 +106,3 @@ await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has n
 - `@happyvertical/smrt-languages` is a hard `dependency` (not an optional peer): the Node-only `/i18n/server` subpath imports its resolver. The browser bundle still excludes it — the client `/i18n` layer never imports the languages root, so it tree-shakes out.
 - `@happyvertical/logger` (SDK) is a `dependency` — the console logger used for voice/AI error reporting in the form components. Consume it **only** through `src/internal/logger.ts`, never `createLogger()` at module scope: `createLogger()` reads `HAVE_LOGGER_LEVEL` from `process.env`, so a top-level call throws `ReferenceError: process is not defined` in the browser and kills client-side hydration under `vite dev` (prod builds tree-shake/define it away, so this only bites in dev). The `internal/logger` wrapper constructs the logger lazily and falls back to a bare `ConsoleLogger` when `process.env` is absent, keeping this browser-reachable module (imported by `Provider` + the form primitives) safe.
 - Peer (all optional): `svelte` >=5.18.2, plus the browser-AI engines (`@huggingface/transformers`, `@mlc-ai/web-llm`, `@remotion/whisper-web`, `@xenova/transformers`) and `chrono-node`.
-
-## Scalable settings catalog (`./settings`)
-
-`SettingsCatalog` is the shared search/browse/select/edit shell for large
-code-first or database-backed settings registries. Its interface accepts a
-server-produced `SettingsCatalogPage`: callers keep transport, authorization,
-and domain-specific editor forms, while the module owns compact result rows,
-GET search, query-preserving selection links, bounded pagination, result counts,
-empty states, and responsive list/detail layout.
-
-`paginateSettingsCatalog()` is the optional server helper for definitions that
-already live in memory (prompt and language registries). It searches before
-paging, clamps pages, caps rendered slices at 100 rows, and selects only one
-detail item. Database-backed callers should query their own page and construct
-the same `SettingsCatalogPage` interface directly rather than loading every row.
-
-The summary-row type and selected-detail type may differ: list pages can remain
-cheap while only the selected definition is fully resolved. This is the
-scalability contract; do not resolve every settings editor before passing data
-to the catalog.
-
-## AdminShell workspace surface
-
-The `./workspace` subpath (`src/components/workspace/`) is the canonical
-AdminShell family for SMRT admin web apps. It exports the four-edge shell
-contract (`AdminShell`, `ShellState`, settings, hotkeys, focus tools,
-activities, tenant nav, app/system panels) from `workspace/admin-shell/`.
-
-The first-generation workspace family (`WorkspaceShell`, `RoleShell`,
-`NavTree`, `Breadcrumbs`, `ToolsDock`) remains in source as migration reference
-only. Do not re-export it from the public `./workspace` barrel just to preserve
-compatibility. Applications that still need ToolsDock during migration may use
-the explicit `@happyvertical/smrt-svelte/workspace/legacy` subpath; keep legacy
-additions isolated there so the canonical workspace surface remains AdminShell.
-
-**Principles**:
-- SvelteKit-agnostic core — no `$app/state` or `$app/navigation` imports
-- SSR-safe public shell import/render path; browser listeners and localStorage
-  activate after mount
-- No token bridges — consume `var(--smrt-color-*)` directly
-- App-owned configuration for hidden edges, push/overlay presentation, and
-  exclusivity groups
-- User-owned preferences persist as sparse `ShellSettingsDelta` values
-- Focus tools may register imperatively through `ShellState` or declaratively
-  through Svelte helpers
-- Shell activities are client-side records; server jobs, polling, WebSockets,
-  and `smrt-web` SSE can feed them through app adapters
-
-See `src/components/workspace/MIGRATION.md` for the old-to-new concept map.
-
-### Live activity feed adapter (`./web`, #1779)
-
-`activityFeed({ collection, map, shell })` (from `@happyvertical/smrt-svelte/web`)
-bridges a `@happyvertical/smrt-web` live collection into a `ShellState` activity
-registry: it subscribes the collection through `liveCollection`, reactively maps
-each row → `ShellActivity` via the app-supplied editorial `map`, and drives
-`upsertActivity` / `updateActivity` / `removeActivity` as rows appear, change,
-and vanish (a row mapping to `null` is excluded / retracted). Returns a disposer
-that removes exactly the activities it created. Must be called during component
-init (installs a `$effect`); the subscription tears down on unmount.
-
-It lives behind the opt-in `./web` entry — which pulls the TanStack client-data
-engine — and is **never** imported under `components/workspace/`, so the
-AdminShell core (`./workspace`) stays transport-agnostic and TanStack-free (epic
-#1766). The pure diff core is `ActivityFeedReconciler` (engine-free, unit-tested
-against a real `ShellState`). Demo: `playground/.../admin-shell-activity-feed`.
-
-### `updateAvailable` binding (`./web`, #1764)
-
-`useUpdateAvailable({ state, updated? })` (from `@happyvertical/smrt-svelte/web`)
-is the Svelte 5 reactive wrapper over smrt-web's framework-free `UpdateState`
-(from `createUpdateState()`). It surfaces `updateAvailable` / `bundle` /
-`contract` reactively (`$state`/`$derived`) for a toast or reload prompt, and
-wires SvelteKit's native `updated` store as the **bundle** signal. The
-**contract** signal (a manifest-hash change across loads, or a live `_events`
-manifest-frame mismatch latched by smrt-web on reconnect) is surfaced as-is.
-
-`updated` is passed IN as a reactive accessor (`() => updated.current` on modern
-`$app/state`, or a `$derived` over the legacy `$updated` store) rather than
-imported here — `$app/*` only resolves inside a SvelteKit app, so a library that
-imported it could not build/test standalone; the other `./web` adapters take
-runtime input the same way. Must be called during component init (installs
-`$effect`s that subscribe to the primitive and watch `updated`); both tear down
-on unmount. Construct ONE `createUpdateState()` per app (it owns the durable
-last-seen-hash bookkeeping) and pass its `manifestHash` from
-`@happyvertical/smrt-virt-web`. Browser-safe, engine-free (no `@tanstack/*`
-type). NOTE: `.svelte.ts` runes tests may not run under the local Darwin/vite8
-toolchain (CI is the gate) — the binding is covered by typecheck + svelte-check +
-a light unit test.
-
-### Dock availability gates (server-side)
-
-`ToolDef.gates?: string[]` declares the gates a tool must pass to be visible.
-Convention: `<prefix>:<identifier>` (e.g. `permission:articles.publish`,
-`feature:video-tools`, `myapp:show-jobs`). `composeDockAvailability` from
-`@happyvertical/smrt-svelte/workspace/server` evaluates them — register one
-evaluator per prefix, throws on unknown prefixes (loud-fail beats silent-leak),
-AND semantics across a tool's gates. Node-safe, no Svelte imports.
-
-The framework does NOT ship built-in evaluators — every prefix the dock sees
-must have a caller-supplied evaluator in the map (otherwise composition
-throws). `permission:` and `feature:` are recommended conventions for
-ecosystem cohesion (consumers typically wire `PermissionResolver` from
-smrt-users and `FeatureResolver` from smrt-features as those evaluators), but
-they're not reserved — apps may pick any namespace. App-specific gates
-should use a dedicated namespace (e.g. `myapp:`) to avoid colliding with
-future built-ins.
-
-Recommended pattern: in the consumer's `+server.ts` endpoint that backs
-`fetchAvailability`, wrap `PermissionResolver` (smrt-users) and `FeatureResolver`
-(smrt-features) as evaluators and pass them in. Tools without `gates` stay
-unconditionally visible (back-compat). Anytown's hand-coded
-`apps/dashboard/src/lib/server/content-tool-dock.ts` is a candidate for
-migration in a follow-up.
-
-Legacy ToolsDock treats availability fetch failures as degraded presentation
-state: it preserves the current context's last successful tool IDs, labels,
-and badges. Before the first success, or after a context change, it falls back
-to registered-tool metadata so contextual values do not cross boundaries.
-Consumers can read `dock.availabilityError` to surface the current context's
-failure; a context change or later successful refresh clears the signal, and
-success applies the new snapshot.
-Availability is never an authorization boundary—server operations must still
-enforce permissions.

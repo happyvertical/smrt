@@ -16,7 +16,8 @@
     "bin",
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "exports": {
     ".": {

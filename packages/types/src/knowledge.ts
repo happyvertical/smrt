@@ -69,6 +69,23 @@ export interface DomainKnowledgeObject {
   risks: string[];
 }
 
+/**
+ * A sibling module doc linked from a package's `AGENTS.md` (#2108).
+ *
+ * Oversized package docs are split by module into `packages/<pkg>/agents/<module>.md`
+ * rather than nested `AGENTS.md` files, because instruction chains are additive.
+ * The link in `AGENTS.md` is the registration: the knowledge tooling resolves it
+ * so the moved prose — which is curated and not regenerable from the manifest —
+ * stays reachable from agent context.
+ */
+export interface DomainKnowledgeModuleDoc {
+  /** Path relative to the package root, e.g. `agents/commissions.md`. */
+  path: string;
+  /** Module name derived from the file's basename, e.g. `commissions`. */
+  module: string;
+  content: string;
+}
+
 /** The package-level domain-knowledge artifact (`smrt-knowledge.json`) — the agent/developer contract. */
 export interface DomainKnowledgeManifest {
   schemaVersion: 1;
@@ -100,6 +117,8 @@ export interface DomainKnowledgeManifest {
     uuidColumns: number;
   };
   agentDoc?: string;
+  /** Sibling module docs linked from `AGENTS.md`; omitted when the package links none. */
+  moduleDocs?: DomainKnowledgeModuleDoc[];
 }
 
 /** Result of a domain-knowledge freshness check (stale references, error/warning counts). */

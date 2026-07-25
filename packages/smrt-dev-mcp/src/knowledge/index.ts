@@ -8,7 +8,14 @@ import {
   realpathSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
+import {
+  MODULE_DOC_HASH_PREFIX,
+  readAgentModuleDocs,
+} from '@happyvertical/smrt-core/knowledge';
+import type {
+  DomainKnowledgeManifest,
+  DomainKnowledgeModuleDoc,
+} from '@happyvertical/smrt-types';
 
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'error' | 'warning';
@@ -47,6 +54,8 @@ export interface KnowledgeMcpTool {
   operation: string;
 }
 
+export type KnowledgeModuleDoc = DomainKnowledgeModuleDoc;
+
 export interface KnowledgePackage {
   name: string;
   version: string;
@@ -65,6 +74,13 @@ export interface KnowledgePackage {
   hasClaudeShim: boolean;
   docSource: 'AGENTS.md' | 'CLAUDE.md' | null;
   agentDoc?: string;
+  /**
+   * Sibling module docs linked from the package's `AGENTS.md` (#2108). Oversized
+   * package docs are split by module into `agents/<module>.md` rather than nested
+   * `AGENTS.md` files (chains are additive), so this prose is only reachable
+   * through the links — and it is curated, not regenerable from the manifest.
+   */
+  moduleDocs: KnowledgeModuleDoc[];
   hasDomainKnowledge: boolean;
   domainKnowledgePath?: string;
   domainKnowledge?: DomainKnowledgeManifest;
@@ -163,6 +179,15 @@ interface BuildKnowledgeIndexOptions {
 interface CheckKnowledgeFreshnessOptions extends BuildKnowledgeIndexOptions {
   changed?: boolean;
   strict?: boolean;
+}
+
+/**
+ * Signals used to narrow which module docs a prompt bundle embeds (#2108).
+ * Absent or non-matching hints mean "embed everything" — see `selectModuleDocs`.
+ */
+interface ModuleDocHints {
+  changedFiles?: string[];
+  text?: string;
 }
 
 interface ContextSelectorOptions {
@@ -447,6 +472,21 @@ function checkDomainKnowledgeArtifact(
       kind: 'json',
       label: 'manifest',
     },
+    // Module docs linked from AGENTS.md are authored sources too (#2108), so an
+    // edit to one must mark the artifact stale exactly like an AGENTS.md edit.
+    ...Object.keys(hashes)
+      .filter((key) => key.startsWith(MODULE_DOC_HASH_PREFIX))
+      .sort()
+      .map((key) => {
+        const docPath = key.slice(MODULE_DOC_HASH_PREFIX.length);
+        const filePath = join(pkg.directory, docPath);
+        return {
+          key,
+          filePath: existsSync(filePath) ? filePath : undefined,
+          kind: 'raw' as const,
+          label: docPath,
+        };
+      }),
   ];
 
   for (const check of checks) {
@@ -562,6 +602,10 @@ export async function buildReviewContext(
       sdkPackages: selectedSdkPackages,
       sourceFiles: changedFiles,
       extraContext: options.focus,
+      moduleDocHints: {
+        changedFiles,
+        text: [options.focus, options.documentation].filter(Boolean).join('\n'),
+      },
     }),
   };
 }
@@ -617,6 +661,10 @@ export async function buildArchitectureContext(
       sdkPackages: selectedSdkPackages,
       sourceFiles: [],
       extraContext: text,
+      // `--package @happyvertical/smrt-sales` alone must NOT narrow: the package
+      // selector is not a module selector, so a bare package request still gets
+      // every module doc. Only idea/focus text narrows.
+      moduleDocHints: { text },
     }),
   };
 }
@@ -674,6 +722,11 @@ export function renderKnowledgeIndexMarkdown(
     lines.push(
       `- docs: ${pkg.docSource ?? '(none)'}${pkg.hasClaudeShim ? ' + CLAUDE.md shim' : ''}`,
     );
+    if (pkg.moduleDocs.length > 0) {
+      lines.push(
+        `- module docs: ${pkg.moduleDocs.map((doc) => doc.path).join(', ')}`,
+      );
+    }
     if (pkg.relationshipFeatures.length > 0) {
       lines.push(`- relationships-v2: ${pkg.relationshipFeatures.join(', ')}`);
     }
@@ -882,6 +935,13 @@ function readKnowledgePackage(
       ? domainKnowledge?.content.agentDoc ||
         (hasAgentsMd ? agentsContent : fallbackClaudeDoc || undefined)
       : undefined,
+    // Prefer the built artifact, but fall back to resolving the links straight
+    // from AGENTS.md so a package without a generated smrt-knowledge.json still
+    // surfaces its module docs.
+    moduleDocs: includeDocs
+      ? (domainKnowledge?.content.moduleDocs ??
+        readAgentModuleDocs(directory, agentsContent || undefined))
+      : [],
     hasDomainKnowledge: Boolean(domainKnowledge),
     domainKnowledgePath: domainKnowledge?.path
       ? relative(rootDir, domainKnowledge.path)
@@ -1359,7 +1419,13 @@ function isPackageManifestFile(pkg: KnowledgePackage, file: string): boolean {
 }
 
 function isPackageAgentDocFile(pkg: KnowledgePackage, file: string): boolean {
-  return file === `${pkg.relativeDirectory}/AGENTS.md`;
+  return (
+    file === `${pkg.relativeDirectory}/AGENTS.md` ||
+    // A linked module doc carries the same authored expertise (#2108).
+    pkg.moduleDocs.some(
+      (doc) => file === `${pkg.relativeDirectory}/${doc.path}`,
+    )
+  );
 }
 
 function isPublicEntrypointFile(pkg: KnowledgePackage, file: string): boolean {
@@ -1687,7 +1753,10 @@ function buildPromptBundle(options: {
   sdkPackages: KnowledgePackage[];
   sourceFiles: string[];
   extraContext?: string;
+  moduleDocHints?: ModuleDocHints;
 }): KnowledgePromptBundle {
+  const render = (pkg: KnowledgePackage) =>
+    renderPackageContext(pkg, options.moduleDocHints);
   const contextMarkdown = [
     `# ${options.title}`,
     '',
@@ -1703,11 +1772,11 @@ function buildPromptBundle(options: {
     '',
     '## Selected SMRT Packages',
     '',
-    ...options.packages.map(renderPackageContext),
+    ...options.packages.map(render),
     '',
     '## Selected SDK Packages',
     '',
-    ...options.sdkPackages.map(renderPackageContext),
+    ...options.sdkPackages.map(render),
     '',
     options.extraContext ? `## Extra Context\n\n${options.extraContext}\n` : '',
   ];
@@ -1723,7 +1792,60 @@ function buildPromptBundle(options: {
   };
 }
 
-function renderPackageContext(pkg: KnowledgePackage): string {
+/**
+ * Which of a package's module docs to embed for this request (#2108).
+ *
+ * The moved prose is unregenerable, so the DEFAULT is to embed everything —
+ * dropping a doc must never be the silent outcome. Hints only NARROW: when the
+ * changed files or the focus/idea text point at specific modules, the rest are
+ * still listed by path so an agent can open them on demand. If hints exist but
+ * match nothing, fall open and embed all.
+ */
+function selectModuleDocs(
+  pkg: KnowledgePackage,
+  hints: ModuleDocHints | undefined,
+): { embedded: KnowledgeModuleDoc[]; scoped: boolean } {
+  const all = pkg.moduleDocs;
+  if (all.length === 0) return { embedded: [], scoped: false };
+
+  const packageFiles = (hints?.changedFiles ?? []).filter(
+    (file) =>
+      file === pkg.relativeDirectory ||
+      file.startsWith(`${pkg.relativeDirectory}/`),
+  );
+  const text = hints?.text ?? '';
+  if (packageFiles.length === 0 && text.trim() === '') {
+    return { embedded: all, scoped: false };
+  }
+
+  const matched = all.filter((doc) => {
+    // A doc is relevant when its module name appears as a path segment of a
+    // changed file (`src/commissions/...` -> `agents/commissions.md`), when the
+    // doc itself changed, or when the request text names the module.
+    const segment = new RegExp(`(^|[/.])${escapeRegExp(doc.module)}([/.]|$)`);
+    return (
+      packageFiles.some(
+        (file) =>
+          segment.test(file.slice(pkg.relativeDirectory.length + 1)) ||
+          file === `${pkg.relativeDirectory}/${doc.path}`,
+      ) || includesToken(text, doc.module)
+    );
+  });
+
+  return matched.length > 0
+    ? { embedded: matched, scoped: true }
+    : { embedded: all, scoped: false };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function renderPackageContext(
+  pkg: KnowledgePackage,
+  hints?: ModuleDocHints,
+): string {
+  const { embedded, scoped } = selectModuleDocs(pkg, hints);
   const lines = [
     `### ${pkg.name}`,
     '',
@@ -1731,7 +1853,7 @@ function renderPackageContext(pkg: KnowledgePackage): string {
     `- kind: ${pkg.kind}`,
     `- directory: ${pkg.relativeDirectory}`,
     `- domain knowledge: ${pkg.domainKnowledgePath ?? '(manifest fallback)'}`,
-    `- docs: ${pkg.docSource ?? '(none)'}`,
+    `- docs: ${[pkg.docSource ?? '(none)', ...pkg.moduleDocs.map((doc) => doc.path)].join(', ')}`,
     `- relationship features: ${pkg.relationshipFeatures.join(', ') || '(none)'}`,
     `- SDK deps: ${pkg.sdkDependencies.join(', ') || '(none)'}`,
     `- exports: ${pkg.exportKeys.join(', ') || '(none)'}`,
@@ -1751,6 +1873,21 @@ function renderPackageContext(pkg: KnowledgePackage): string {
   }
   if (pkg.agentDoc) {
     lines.push('', pkg.agentDoc.trim());
+  }
+  for (const doc of embedded) {
+    lines.push('', `#### ${pkg.relativeDirectory}/${doc.path}`, '');
+    lines.push(doc.content.trim());
+  }
+  if (scoped) {
+    const omitted = pkg.moduleDocs.filter((doc) => !embedded.includes(doc));
+    if (omitted.length > 0) {
+      lines.push(
+        '',
+        `> Module docs not loaded for this request (read on demand): ${omitted
+          .map((doc) => `${pkg.relativeDirectory}/${doc.path}`)
+          .join(', ')}`,
+      );
+    }
   }
   lines.push('');
   return lines.join('\n');
