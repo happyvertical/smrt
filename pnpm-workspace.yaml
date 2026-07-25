@@ -30,11 +30,21 @@ overrides:
   '@happyvertical/sql': ^0.80.2
   '@happyvertical/utils': ^0.80.2
   '@grpc/grpc-js@>=1.14.0 <1.14.4': 1.14.4
+  # minimatch 9 is the last consumer of brace-expansion 2.x, which has no
+  # patched 2.x line for GHSA-mh99-v99m-4gvg (first patch is 5.0.8). Its
+  # remaining consumers here (@crawlee/core, glob@10, @vue/language-core) use
+  # only named exports, all of which minimatch 10 still provides.
+  'minimatch@>=9.0.0 <10.0.0': 10.2.5
   'minimatch@>=10.0.0 <10.2.3': 10.2.5
   'undici@>=7.0.0 <7.28.0': 7.28.0
   'nodemailer@<9.0.1': 9.0.3
-  'tar@>=7.0.0 <7.5.16': 7.5.19
-  'protobufjs@>=7.0.0 <7.6.1': 7.6.4
+  'tar@>=7.0.0 <7.5.21': 7.5.22
+  # protobufjs 6.x reaches the graph through the optional, deprecated
+  # @xenova/transformers peer (onnx-proto -> protobufjs 6) and carries a
+  # critical RCE advisory with no 6.x backport. onnx-proto only consumes the
+  # `protobufjs/minimal` runtime entry, which 7.x still ships unchanged, so the
+  # whole tree is unified on the patched 7.x line.
+  'protobufjs@<7.6.5': 7.6.5
   'picomatch@>=2.0.0 <2.3.2': 2.3.2
   'picomatch@>=4.0.0 <4.0.5': 4.0.5
   'esbuild@>=0.17.0 <0.28.1': 0.28.1
@@ -42,7 +52,7 @@ overrides:
   'form-data@>=4.0.0 <4.0.6': 4.0.6
   'devalue@>=5.6.3 <5.8.1': 5.8.1
   'vitest@>=4.0.0 <4.1.0': 4.1.10
-  'linkify-it@<5.0.1': 5.0.2
+  'linkify-it@<=5.0.1': 5.0.2
   'shell-quote@>=1.1.0 <1.8.5': 1.9.0
   'hono@>=4.0.0 <4.12.25': 4.12.27
   '@hono/node-server@>=1.0.0 <1.19.10': 1.19.14
@@ -51,23 +61,35 @@ overrides:
   '@sveltejs/kit@>=2.0.0 <2.57.1': 2.69.1
   'lodash@>=4.0.0 <4.18.0': 4.18.1
   'path-to-regexp@>=8.0.0 <8.4.0': 8.4.2
-  'fast-uri@>=3.0.0 <3.1.2': 3.1.3
+  'fast-uri@>=3.0.0 <=3.1.3': 3.1.4
   'fast-xml-builder@>=1.0.0 <1.1.7': 1.2.1
   'js-yaml@>=4.0.0 <4.2.0': 4.3.0
   'svelte@>=5.0.0 <5.54.0': 5.56.4
-  'brace-expansion@>=2.0.0 <2.1.2': 2.1.2
-  'brace-expansion@>=5.0.0 <5.0.7': 5.0.7
+  'brace-expansion@<=5.0.7': 5.0.8
   'js-yaml@>=3.0.0 <3.15.0': 3.15.0
   'axios@>=1.15.2 <1.18.0': 1.18.0
+  'postcss@<=8.5.17': 8.5.18
+  # The advisory names 14.1.2 as the first patched version, but that tag was
+  # never published, so the selector cannot resolve to it. 14.3.0 is the current
+  # 14.x release carrying the fix.
+  'markdown-it@<14.1.2': 14.3.0
+  'body-parser@<2.3.0': 2.3.0
+  # sharp <0.35.0 inherits four libvips CVEs. Its consumers here declare older
+  # ranges (@gutenye/ocr-node ^0.33.3, @huggingface/transformers ^0.34.5,
+  # @xenova/transformers ^0.32.0); 0.35.x keeps the decode/resize/metadata API
+  # these use, so a single unified pin is preferred over shipping three
+  # vulnerable copies.
+  'sharp@<0.35.0': 0.35.3
 
 auditConfig:
-  ignoreGhsas:
-    - GHSA-xq3m-2v4x-88gg
-    - GHSA-66ff-xgx4-vchm
-    - GHSA-75px-5xx7-5xc7
-    - GHSA-jvwf-75h9-cwgg
-    - GHSA-685m-2w69-288q
-    - GHSA-wcpc-wj8m-hjx6
+  # Every entry here suppresses an advisory for the WHOLE tree, including future
+  # paths, so each one must carry a matching record in audit-policy.json with an
+  # exploitability assessment and a recheck date. `pnpm audit:policy` enforces
+  # that and fails once a record passes its recheck date.
+  #
+  # The six protobufjs GHSAs previously baselined here (1 critical, 5 high) are
+  # gone: they were all driven by protobufjs 6.11.4, now unified onto 7.6.5.
+  ignoreGhsas: []
 
 minimumReleaseAgeExclude:
   - '@happyvertical/ai@0.80.0 || 0.80.2'

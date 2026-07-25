@@ -16,6 +16,8 @@
       "claude": "dispatch: claude",
       "codex": "dispatch: codex",
       "hermes": "dispatch: hermes",
+      "jcode": "dispatch: jcode",
+      "kimi": "dispatch: kimi",
       "zcode": "dispatch: zcode"
     }
   },
