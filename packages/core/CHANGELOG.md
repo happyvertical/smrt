@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.28
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve @smrt() config spreads instead of dropping them (#2102) (scanner)
+  - @happyvertical/smrt-config@0.40.28
+  - @happyvertical/smrt-types@0.40.28
+  - @happyvertical/smrt-scanner@0.40.28
+
 ## 0.40.27
 
 ### Patch Changes
