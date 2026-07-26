@@ -1,5 +1,11 @@
 # @happyvertical/smrt-affiliates
 
+## 0.40.29
+
+### Patch Changes
+
+- @happyvertical/smrt-sales@0.40.29
+
 ## 0.40.28
 
 ### Patch Changes

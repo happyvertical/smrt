@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.29
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: use hosted runners for public workflows (#2122)
+  - @happyvertical/smrt-config@0.40.29
+  - @happyvertical/smrt-types@0.40.29
+  - @happyvertical/smrt-scanner@0.40.29
+
 ## 0.40.28
 
 ### Patch Changes
