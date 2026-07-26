@@ -113,6 +113,7 @@ function handleChange(e: Event) {
 <style>
   .smrt-checkbox-field {
     display: inline-flex;
+    min-width: 0;
     align-items: center;
     gap: var(--smrt-spacing-2, 8px);
     cursor: pointer;

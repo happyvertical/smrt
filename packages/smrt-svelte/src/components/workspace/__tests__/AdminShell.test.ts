@@ -257,4 +257,122 @@ describe('AdminShell', () => {
       unmount(component);
     }
   });
+
+  it('collapses corner tracks when no corner snippets are mounted', () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Ops',
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      const topEdge = container.querySelector(
+        '.smrt-admin-shell__edge--top',
+      ) as HTMLElement;
+      const band = container.querySelector(
+        '.smrt-admin-shell__band--top',
+      ) as HTMLElement;
+      expect(topEdge.style.getPropertyValue('--edge-columns').trim()).toBe(
+        '0px minmax(0, 1fr) 0px',
+      );
+      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders a default focus rail from registered tools when no focusRail snippet is given', async () => {
+    const state = createShellState();
+    state.registerFocusTool({ id: 'chat', label: 'Chat' });
+    state.registerFocusTool({ id: 'files', label: 'Files' });
+    const component = mount(AdminShell, {
+      target: container,
+      props: { state, children: textSnippet('main work') },
+    });
+
+    try {
+      const buttons = container.querySelectorAll(
+        '.smrt-admin-shell__focus-tool',
+      );
+      expect(buttons.length).toBe(2);
+      expect(buttons[0].getAttribute('aria-label')).toBe('Chat');
+
+      // Clicking a tool opens the panel; clicking the active one closes it.
+      (buttons[0] as HTMLButtonElement).click();
+      const { tick } = await import('svelte');
+      await tick();
+      expect(
+        container
+          .querySelector('.smrt-admin-shell__edge--right')
+          ?.getAttribute('data-state'),
+      ).toBe('expanded');
+      (buttons[0] as HTMLButtonElement).click();
+      await tick();
+      expect(
+        container
+          .querySelector('.smrt-admin-shell__edge--right')
+          ?.getAttribute('data-state'),
+      ).toBe('collapsed');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('reserves corner tracks only for mounted corner snippets', () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Ops',
+        topLeftCorner: textSnippet('corner'),
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      const topEdge = container.querySelector(
+        '.smrt-admin-shell__edge--top',
+      ) as HTMLElement;
+      const band = container.querySelector(
+        '.smrt-admin-shell__band--top',
+      ) as HTMLElement;
+      const columns = topEdge.style.getPropertyValue('--edge-columns');
+      expect(columns).toContain('--smrt-admin-shell-left-collapsed');
+      expect(columns).not.toContain('--smrt-admin-shell-right-collapsed');
+      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps a right-only corner in the explicit third grid track', () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Ops',
+        topRightCorner: textSnippet('right corner'),
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      const topEdge = container.querySelector(
+        '.smrt-admin-shell__edge--top',
+      ) as HTMLElement;
+      const band = container.querySelector(
+        '.smrt-admin-shell__band--top',
+      ) as HTMLElement;
+      const columns = topEdge.style.getPropertyValue('--edge-columns').trim();
+      expect(columns).toBe(
+        '0px minmax(0, 1fr) var(--smrt-admin-shell-right-collapsed)',
+      );
+      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+      expect(
+        container.querySelector('.smrt-admin-shell__corner--top-right'),
+      ).not.toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
 });

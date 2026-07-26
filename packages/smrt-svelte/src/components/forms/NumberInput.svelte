@@ -237,6 +237,8 @@ function handleInput(e: Event) {
   .smrt-number {
     display: flex;
     flex-direction: column;
+    width: 100%;
+    min-width: 0;
     gap: var(--smrt-spacing-1, 4px);
   }
 
@@ -258,6 +260,9 @@ function handleInput(e: Event) {
 
   .smrt-input {
     flex: 1;
+    box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     font-size: var(--smrt-typography-body-large-size, 1rem);
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);

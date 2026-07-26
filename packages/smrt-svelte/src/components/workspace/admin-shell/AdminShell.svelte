@@ -157,6 +157,20 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   const layoutStyle = $derived(buildLayoutStyle(shell));
 
+  // Top/bottom edges reserve grid tracks for corner snippets. When a corner
+  // isn't mounted its track must collapse, otherwise the band is squeezed
+  // between phantom tracks sized by the collapsed panel widths.
+  function edgeColumns(left: unknown, right: unknown): string {
+    const l = 'var(--smrt-admin-shell-left-collapsed)';
+    const r = 'var(--smrt-admin-shell-right-collapsed)';
+    return `${left ? l : '0px'} minmax(0, 1fr) ${right ? r : '0px'}`;
+  }
+
+  const topEdgeColumns = $derived(edgeColumns(topLeftCorner, topRightCorner));
+  const bottomEdgeColumns = $derived(
+    edgeColumns(bottomLeftCorner, bottomRightCorner),
+  );
+
   function panelState(edge: PanelEdge) {
     return shell.panels[edge];
   }
@@ -273,13 +287,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--top"
       data-state={panelState('top')}
       data-presentation={shell.config.panels.top.presentation}
+      style:--edge-columns={topEdgeColumns}
     >
       {#if topLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--top-left">
           {@render topLeftCorner()}
         </div>
       {/if}
-      <div class="smrt-admin-shell__band smrt-admin-shell__band--top">
+      <div
+        class="smrt-admin-shell__band smrt-admin-shell__band--top"
+        style:--band-column={2}
+      >
         {#if appBar}
           {@render appBar()}
         {:else}
@@ -365,6 +383,34 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       <div class="smrt-admin-shell__rail">
         {#if focusRail}
           {@render focusRail()}
+        {:else if shell.focusTools.length > 0}
+          <nav class="smrt-admin-shell__focus-rail" aria-label={t(M['ui.admin_shell.focus_tools'])}>
+            {#each shell.focusTools as tool (tool.id)}
+              <!-- raw-primitive-allow: shell chrome toggle, not a content button -->
+              <button
+                type="button"
+                class="smrt-admin-shell__focus-tool"
+                class:active={shell.activeFocusToolId ===
+                  tool.id && edgeExpanded('right')}
+                aria-pressed={shell.activeFocusToolId ===
+                  tool.id && edgeExpanded('right')}
+                aria-label={tool.label}
+                title={tool.label}
+                onclick={() => shell.toggleFocusTool(tool.id)}
+              >
+                {#if tool.icon}
+                  <tool.icon />
+                {:else}
+                  <span aria-hidden="true">{tool.label.charAt(0)}</span>
+                {/if}
+                {#if tool.badge != null}
+                  <span class="smrt-admin-shell__focus-tool-badge">
+                    {tool.badge}
+                  </span>
+                {/if}
+              </button>
+            {/each}
+          </nav>
         {:else}
           {@render edgeToggle('right')}
         {/if}
@@ -385,13 +431,17 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       class="smrt-admin-shell__edge smrt-admin-shell__edge--bottom"
       data-state={panelState('bottom')}
       data-presentation={shell.config.panels.bottom.presentation}
+      style:--edge-columns={bottomEdgeColumns}
     >
       {#if bottomLeftCorner}
         <div class="smrt-admin-shell__corner smrt-admin-shell__corner--bottom-left">
           {@render bottomLeftCorner()}
         </div>
       {/if}
-      <div class="smrt-admin-shell__band smrt-admin-shell__band--bottom">
+      <div
+        class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
+        style:--band-column={2}
+      >
         {#if systemBar}
           {@render systemBar()}
         {:else}
@@ -499,9 +549,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-column: 1 / -1;
     grid-row: 1;
     display: grid;
-    grid-template-columns:
+    grid-template-columns: var(
+      --edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
-      var(--smrt-admin-shell-right-collapsed);
+        var(--smrt-admin-shell-right-collapsed)
+    );
     border-block-end: 1px solid var(--smrt-color-outline-variant);
     z-index: 30;
   }
@@ -531,9 +583,11 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     grid-column: 1 / -1;
     grid-row: 3;
     display: grid;
-    grid-template-columns:
+    grid-template-columns: var(
+      --edge-columns,
       var(--smrt-admin-shell-left-collapsed) minmax(0, 1fr)
-      var(--smrt-admin-shell-right-collapsed);
+        var(--smrt-admin-shell-right-collapsed)
+    );
     border-block-start: 1px solid var(--smrt-color-outline-variant);
     z-index: 30;
   }
@@ -558,7 +612,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
 
   .smrt-admin-shell__band--top,
   .smrt-admin-shell__band--bottom {
-    grid-column: 2;
+    grid-column: var(--band-column, 2);
   }
 
   .smrt-admin-shell__brand {
@@ -579,11 +633,55 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   .smrt-admin-shell__rail {
+    box-sizing: border-box;
     min-width: 0;
     min-height: 0;
     block-size: 100%;
     overflow: auto;
     padding: var(--smrt-spacing-3);
+  }
+
+  .smrt-admin-shell__focus-rail {
+    display: grid;
+    /* Center tracks, not just items: buttons may be wider than the
+       collapsed strip's content box (see ToolsDock). */
+    justify-content: center;
+    justify-items: center;
+    gap: var(--smrt-spacing-2, 0.5rem);
+  }
+
+  .smrt-admin-shell__focus-tool {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 2.35rem;
+    height: 2.35rem;
+    border: 1px solid transparent;
+    border-radius: var(--smrt-radius-md, 8px);
+    background: transparent;
+    color: var(--smrt-color-on-surface-variant);
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .smrt-admin-shell__focus-tool:hover,
+  .smrt-admin-shell__focus-tool.active {
+    color: var(--smrt-color-primary);
+    border-color: var(--smrt-color-primary);
+    background: var(--smrt-color-surface-container-high);
+  }
+
+  .smrt-admin-shell__focus-tool-badge {
+    position: absolute;
+    inset-block-start: -0.25rem;
+    inset-inline-end: -0.25rem;
+    min-width: 1rem;
+    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-error);
+    color: var(--smrt-color-on-error);
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    line-height: 1rem;
+    text-align: center;
   }
 
   .smrt-admin-shell__edge--left[data-state='expanded']
@@ -619,6 +717,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   }
 
   .smrt-admin-shell__panel {
+    box-sizing: border-box;
     min-width: 0;
     min-height: 0;
     block-size: 100%;

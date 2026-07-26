@@ -69,6 +69,8 @@ export { smrtTheme } from './smrt/index.js';
 export { studioTheme } from './studio/index.js';
 // Main components
 export { default as ThemeProvider } from './ThemeProvider.svelte';
+// Pre-paint bootstrap script
+export { type ThemeScriptOptions, themeScript } from './theme-script.js';
 // Types
 export type {
   BorderRadius,

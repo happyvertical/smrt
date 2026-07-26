@@ -182,6 +182,32 @@ describe('ShellState', () => {
     }
   });
 
+  it('keeps imperative open idempotent and toggles only through toggleFocusTool', () => {
+    const shell = createShellState();
+    shell.registerFocusTool({ id: 'chat', label: 'Chat' });
+
+    shell.openFocusTool('chat');
+    expect(shell.panels.right).toBe('expanded');
+    expect(shell.activeFocusToolId).toBe('chat');
+
+    // Imperative callers can safely ensure that a tool is open.
+    shell.openFocusTool('chat');
+    expect(shell.panels.right).toBe('expanded');
+    expect(shell.activeFocusToolId).toBe('chat');
+
+    // Rail clicks use the explicit toggle operation.
+    shell.toggleFocusTool('chat');
+    expect(shell.panels.right).toBe('collapsed');
+    shell.toggleFocusTool('chat');
+    expect(shell.panels.right).toBe('expanded');
+
+    // Switching tools never collapses.
+    shell.registerFocusTool({ id: 'files', label: 'Files' });
+    shell.openFocusTool('files');
+    expect(shell.panels.right).toBe('expanded');
+    expect(shell.activeFocusToolId).toBe('files');
+  });
+
   it('does not leak panel state reads into consumer effects', () => {
     const shell = createShellState();
     const harness = mountMutationEffect(shell, (state) => {

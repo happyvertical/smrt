@@ -192,6 +192,17 @@ export class ShellState {
     });
   }
 
+  toggleFocusTool(id: string): void {
+    untrack(() => {
+      if (!this.focusTools.some((tool) => tool.id === id)) return;
+      if (this.activeFocusToolId === id && this.panels.right === 'expanded') {
+        this.collapsePanel('right');
+        return;
+      }
+      this.openFocusTool(id);
+    });
+  }
+
   upsertActivity(activity: ShellActivity): void {
     const nextActivity = snapshotActivity(activity);
     untrack(() => {

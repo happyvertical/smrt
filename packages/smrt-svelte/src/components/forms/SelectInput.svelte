@@ -150,7 +150,7 @@ function handleChange(e: Event) {
     display: flex;
     flex-direction: column;
     width: 100%;
-    min-width: 240px;
+    min-width: 0;
   }
 
   .container {

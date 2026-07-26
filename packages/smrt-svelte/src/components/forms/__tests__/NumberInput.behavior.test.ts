@@ -22,6 +22,7 @@ vi.mock('../../../hooks/useAppState.svelte.js', () => ({
 }));
 
 import NumberInput from '../NumberInput.svelte';
+import numberInputSource from '../NumberInput.svelte?raw';
 
 describe('NumberInput — typing & parsing', () => {
   it('fires onchange with the parsed number as the user types', async () => {
@@ -129,6 +130,19 @@ describe('NumberInput — range validation', () => {
 });
 
 describe('NumberInput — attributes', () => {
+  it('allows its native input to shrink inside a narrow form track', () => {
+    const { container } = render(NumberInput, {
+      props: { name: 'amount', label: 'Amount' },
+    });
+    container.style.width = '80px';
+    const input = screen.getByLabelText('Amount');
+
+    expect(input).toHaveClass('smrt-input');
+    expect(numberInputSource).toMatch(
+      /\.smrt-input\s*\{[^}]*box-sizing:\s*border-box;[^}]*min-width:\s*0;[^}]*width:\s*100%;/,
+    );
+  });
+
   it('forwards min, max, and step onto the input', () => {
     render(NumberInput, {
       props: { name: 'age', label: 'Age', min: 1, max: 100, step: 5 },

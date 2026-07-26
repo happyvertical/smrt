@@ -81,6 +81,8 @@ export interface ShellFocusTool {
   description?: string;
   order?: number;
   badge?: number | string | null;
+  /** Optional icon component rendered by the default focus rail. */
+  icon?: Component | null;
   component?: Component | null;
   render?: Snippet<[{ tool: ShellFocusTool }]>;
   scopeId?: string;

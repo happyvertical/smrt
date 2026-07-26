@@ -3,7 +3,7 @@ import type { Snippet } from 'svelte';
 import { onMount, untrack } from 'svelte';
 import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { generateThemeVariables } from './css-generator.js';
-import { getTheme } from './registry.js';
+import { getTheme, isValidPreset } from './registry.js';
 import type {
   ColorScheme,
   Theme,
@@ -24,6 +24,12 @@ interface Props {
   borderRadius?: ThemeConfig['borderRadius'];
   /** Custom CSS variable overrides */
   overrides?: Record<string, string>;
+  /**
+   * Paint the theme's background/color/font onto the wrapper. Set false when
+   * the host app owns its surface palette and only wants the CSS variables +
+   * scheme context — avoids specificity-fighting `.smrt-theme-root`.
+   */
+  paintSurface?: boolean;
   /** Persist preferences to localStorage */
   persist?: boolean;
   /** Storage key for persistence */
@@ -38,6 +44,7 @@ let {
   primaryColor,
   borderRadius = defaultThemeConfig.borderRadius,
   overrides = {},
+  paintSurface = true,
   persist = defaultThemeConfig.persist,
   storageKey = defaultThemeConfig.storageKey,
   children,
@@ -101,7 +108,15 @@ const cssVariables = $derived.by(() => {
 // Convert to style string
 const styleString = $derived.by(() => {
   return Object.entries(cssVariables)
-    .map(([key, value]) => `${key}: ${value}`)
+    .map(([key, value]) => {
+      const isExplicitOverride =
+        Object.hasOwn(config.overrides ?? {}, key) ||
+        (key === '--smrt-color-primary' && config.primaryColor);
+      const bootstrapKey = key.replace(/^--smrt-/, '--smrt-bootstrap-');
+      return `${key}: ${
+        isExplicitOverride ? value : `var(${bootstrapKey}, ${value})`
+      }`;
+    })
     .join('; ');
 });
 
@@ -158,10 +173,32 @@ function loadPersistedConfig(): void {
   try {
     const stored = localStorage.getItem(config.storageKey!);
     if (stored) {
-      const data = JSON.parse(stored);
-      if (data.preset) config.preset = data.preset;
-      if (data.colorScheme) config.colorScheme = data.colorScheme;
-      if (data.borderRadius) config.borderRadius = data.borderRadius;
+      const data = JSON.parse(stored) as unknown;
+      if (!data || typeof data !== 'object') return;
+      const persisted = data as Record<string, unknown>;
+      if (
+        typeof persisted.preset === 'string' &&
+        isValidPreset(persisted.preset)
+      ) {
+        config.preset = persisted.preset;
+      }
+      if (
+        persisted.colorScheme === 'light' ||
+        persisted.colorScheme === 'dark' ||
+        persisted.colorScheme === 'system'
+      ) {
+        config.colorScheme = persisted.colorScheme;
+      }
+      if (
+        persisted.borderRadius === 'none' ||
+        persisted.borderRadius === 'sm' ||
+        persisted.borderRadius === 'md' ||
+        persisted.borderRadius === 'lg' ||
+        persisted.borderRadius === 'xl' ||
+        persisted.borderRadius === 'full'
+      ) {
+        config.borderRadius = persisted.borderRadius;
+      }
     }
   } catch {
     // Ignore storage errors (e.g., corrupted data, JSON parse errors)
@@ -221,23 +258,66 @@ $effect(() => {
   }
 });
 
-// Sync props to state
+// The pre-paint aliases only bridge SSR to the hydrated provider. Remove them
+// after the provider has applied the persisted config so later runtime theme
+// changes use the component's reactive variables normally.
 $effect(() => {
-  config.preset = preset;
+  if (typeof document !== 'undefined' && mounted) {
+    const html = document.documentElement;
+    for (const property of Array.from(html.style)) {
+      if (property.startsWith('--smrt-bootstrap-')) {
+        html.style.removeProperty(property);
+      }
+    }
+    html.removeAttribute('data-smrt-theme-bootstrap');
+  }
 });
 
-$effect(() => {
-  config.colorScheme = colorScheme;
-});
+// Sync props to state — but only on actual prop changes. config is seeded
+// from the initial props above and onMount applies persisted preferences, so
+// re-asserting the initial prop values here would clobber the persisted
+// choice ($effect order vs onMount is not a safe thing to rely on).
+let prevPreset = untrack(() => preset);
+let prevColorScheme = untrack(() => colorScheme);
+let prevPrimaryColor = untrack(() => primaryColor);
+let prevBorderRadius = untrack(() => borderRadius);
 
 $effect(() => {
-  if (primaryColor !== undefined) {
-    config.primaryColor = primaryColor;
+  if (preset !== prevPreset) {
+    prevPreset = preset;
+    untrack(() => {
+      config.preset = preset;
+    });
   }
 });
 
 $effect(() => {
-  config.borderRadius = borderRadius;
+  if (colorScheme !== prevColorScheme) {
+    prevColorScheme = colorScheme;
+    untrack(() => {
+      config.colorScheme = colorScheme;
+    });
+  }
+});
+
+$effect(() => {
+  if (primaryColor !== prevPrimaryColor) {
+    prevPrimaryColor = primaryColor;
+    untrack(() => {
+      if (primaryColor !== undefined) {
+        config.primaryColor = primaryColor;
+      }
+    });
+  }
+});
+
+$effect(() => {
+  if (borderRadius !== prevBorderRadius) {
+    prevBorderRadius = borderRadius;
+    untrack(() => {
+      config.borderRadius = borderRadius;
+    });
+  }
 });
 
 // Sync overrides prop to state
@@ -257,6 +337,7 @@ $effect(() => {
 <div
   class="smrt-theme-root"
   class:dark={isDark}
+  class:no-paint={!paintSurface}
   class:smrt-theme-glass={config.preset === 'glass'}
   style={styleString}
   data-theme={config.preset}
@@ -273,6 +354,12 @@ $effect(() => {
     color: var(--smrt-color-on-background);
     background-color: var(--smrt-color-background);
     font-family: var(--smrt-font-family);
+  }
+
+  .smrt-theme-root.no-paint {
+    color: inherit;
+    background-color: transparent;
+    font-family: inherit;
   }
 
   /* Glass theme specific base styles */

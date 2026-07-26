@@ -1,19 +1,66 @@
 <script lang="ts">
-import type { SubscriptionPlan } from '../models/SubscriptionPlan.js';
+/**
+ * Serializable plan shape accepted by PlanPicker. `SubscriptionPlan` model
+ * instances satisfy it structurally, but it can also be plain data returned
+ * from a SvelteKit `load` — models lose their methods across serialization,
+ * so components must not *require* them. `featureKeys` is accepted as an
+ * explicit view-model field; `features` supports the framework's normal
+ * serialized model shape; and model instances can still use getFeatureKeys().
+ */
+type SerializedFeatureGrant =
+  | string
+  | { featureKey?: string; enabled?: boolean };
+
+export interface PlanPickerPlan {
+  id?: string;
+  planKey: string;
+  name: string;
+  description?: string | null;
+  priceAmount: number;
+  currency: string;
+  billingInterval: string;
+  featureKeys?: string[];
+  features?: string | SerializedFeatureGrant[];
+  getFeatureKeys?: () => string[];
+}
+
+function featureCount(plan: PlanPickerPlan): number {
+  if (plan.featureKeys) return plan.featureKeys.length;
+  if (plan.getFeatureKeys) return plan.getFeatureKeys().length;
+
+  try {
+    const features =
+      typeof plan.features === 'string'
+        ? (JSON.parse(plan.features) as unknown)
+        : plan.features;
+    if (!Array.isArray(features)) return 0;
+    return features.filter(
+      (feature) =>
+        typeof feature === 'string' ||
+        (feature !== null &&
+          typeof feature === 'object' &&
+          'featureKey' in feature &&
+          typeof feature.featureKey === 'string' &&
+          feature.enabled !== false),
+    ).length;
+  } catch {
+    return 0;
+  }
+}
 
 let {
   plans = [],
   selectedPlanKey = null,
   onSelect,
 }: {
-  plans?: SubscriptionPlan[];
+  plans?: PlanPickerPlan[];
   selectedPlanKey?: string | null;
-  onSelect?: (plan: SubscriptionPlan) => void;
+  onSelect?: (plan: PlanPickerPlan) => void;
 } = $props();
 </script>
 
 <div class="smrt-plan-picker">
-  {#each plans as plan (plan.id)}
+  {#each plans as plan (plan.planKey)}
     <!-- raw-primitive-allow: pressable selection card (aria-pressed toggle with multi-line plan summary), not a standard action button -->
     <button
       aria-pressed={plan.planKey === selectedPlanKey}
@@ -34,7 +81,7 @@ let {
         <span class="smrt-plan-picker__description">{plan.description}</span>
       {/if}
       <span class="smrt-plan-picker__features">
-        {plan.getFeatureKeys().length} features
+        {featureCount(plan)} features
       </span>
     </button>
   {/each}

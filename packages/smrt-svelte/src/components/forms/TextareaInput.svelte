@@ -290,6 +290,7 @@ function handleInput(e: Event) {
     display: flex;
     flex-direction: column;
     width: 100%;
+    min-width: 0;
   }
 
   .container {
