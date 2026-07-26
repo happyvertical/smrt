@@ -284,6 +284,34 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build first so workspace `dist/` output exists before vitest loads each
+      # touched package's config. Packages whose vitest.config.ts pulls the SMRT
+      # plugin from source (`../vitest/src`) resolve `@happyvertical/smrt-core`
+      # through its package exports, which need a build — without this the
+      # config fails to load, vitest emits no coverage, and the gate reports
+      # "no coverage produced" as if the package were below its floor (#2103).
+      #
+      # This MUST be a full build — a dependency-graph filter cannot work here.
+      # The packages that need `dist/` are pulled in by each package's
+      # vitest.config.ts via a RELATIVE path (`../vitest/src`), not by a
+      # package.json dependency, so Turbo's graph cannot see the relationship.
+      # packages/scanner is the clearest case: it declares no workspace
+      # dependencies at all, yet its vitest config transitively needs a built
+      # @happyvertical/smrt-core. `--filter="[$BASE_SHA]..."` therefore selects
+      # only scanner itself ("Running build in 2 packages"), core is never
+      # built, and the gate still reports "no coverage produced" — verified on
+      # PR #2102. Measured turbo selections from that base:
+      #   [sha]     -> 2 packages      ...[sha] -> 53 packages
+      #   [sha]...  -> 2 packages      scanner... -> 1 package
+      # setup-environment restores the build job's per-SHA Turbo cache, so in
+      # full mode this is a cache hit. In affected mode the `build` job is
+      # skipped (`build.if: mode == full`), so this can be a cold build; that
+      # cost is accepted because correctness of the gate comes first.
+      - name: Build packages
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Sweep S6 (#1411): per-tier line-coverage floors (T1 80 / T2 70 / T3 50)
       # on the packages this PR touches. Blocks regressions below the floor
       # without forcing repo-wide uplift (that uplift is Wave 3). Floors + tier
