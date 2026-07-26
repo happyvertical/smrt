@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.40.26
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - serialize affected validation (#2120) (ci)
+  - build before measuring coverage in the Coverage Gate job (#2104) (ci)
+  - @happyvertical/smrt-config@0.40.26
+  - @happyvertical/smrt-types@0.40.26
+  - @happyvertical/smrt-scanner@0.40.26
+
 ## 0.40.25
 
 ### Patch Changes
