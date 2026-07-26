@@ -137,6 +137,37 @@ function sqlShapeFingerprint(action: {
   return createHash('sha256').update(normalized).digest('hex').slice(0, 8);
 }
 
+/**
+ * Keep type-upgrade tracker identities tied to the specific conversion, not
+ * merely the table and column. A column may legitimately undergo multiple
+ * upgrades over its lifetime; reusing the old bare id would make
+ * MigrationTracker compare different SQL checksums against applied history.
+ *
+ * Include the differ's source/target types as well as the normalized SQL
+ * shape. The type data keeps fallback identities meaningful when SQL is not
+ * available, while the SQL fingerprint distinguishes conversions with the
+ * same endpoints but different semantics (for example a UTC interpretation).
+ */
+function typeUpgradeFingerprint(action: {
+  sql?: string;
+  sqlStatements?: string[];
+  column?: { type: string };
+  mismatch?: { expected: string; actual: string };
+}): string {
+  const source = action.mismatch?.actual ?? '';
+  const target = action.mismatch?.expected ?? action.column?.type ?? '';
+  const conversion = sqlShapeFingerprint(action);
+
+  if (!source && !target && !conversion) {
+    return '';
+  }
+
+  return createHash('sha256')
+    .update(`source:${source};target:${target};conversion:${conversion}`)
+    .digest('hex')
+    .slice(0, 8);
+}
+
 export function classifyTypeUpgradeSql(sql?: string): TypeUpgradeExecutionKind {
   const trimmed = sql?.trim();
 
@@ -186,10 +217,15 @@ export function getSyntheticMigrationNameForAction(
         : `drop_index_${action.indexName}`;
     }
 
-    case 'type_upgrade':
-      return action.column
-        ? `type_upgrade_${action.tableName}_${action.column.name}`
-        : null;
+    case 'type_upgrade': {
+      if (!action.column) return null;
+      // Issue #2111: conversions for the same column must never reuse an
+      // applied tracker id with different SQL/checksum.
+      const fingerprint = typeUpgradeFingerprint(action);
+      return fingerprint
+        ? `type_upgrade_${action.tableName}_${action.column.name}_${fingerprint}`
+        : `type_upgrade_${action.tableName}_${action.column.name}`;
+    }
 
     default:
       return null;
@@ -227,8 +263,13 @@ export function getSyntheticMigrationNameForChange(
         : `drop_index_${change.name}`;
     }
 
-    case 'type_upgrade':
-      return change.name ? `type_upgrade_${change.table}_${change.name}` : null;
+    case 'type_upgrade': {
+      if (!change.name) return null;
+      const fingerprint = typeUpgradeFingerprint(change);
+      return fingerprint
+        ? `type_upgrade_${change.table}_${change.name}_${fingerprint}`
+        : `type_upgrade_${change.table}_${change.name}`;
+    }
 
     default:
       return null;

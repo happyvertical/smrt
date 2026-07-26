@@ -131,15 +131,17 @@ describe('getSyntheticMigrationNameForAction', () => {
     ).toBeNull();
   });
 
-  it('names a type_upgrade action and returns null without a column', () => {
+  it('fingerprints a type_upgrade action and returns null without a column', () => {
     expect(
       getSyntheticMigrationNameForAction({
         type: 'type_upgrade',
         tableName: 'widgets',
         className: 'Widget',
         column: { name: 'status', type: 'TEXT' },
+        mismatch: { actual: 'INTEGER', expected: 'TEXT' },
+        sql: 'ALTER TABLE widgets ALTER COLUMN status TYPE TEXT',
       } as any),
-    ).toBe('type_upgrade_widgets_status');
+    ).toMatch(/^type_upgrade_widgets_status_[0-9a-f]{8}$/);
     expect(
       getSyntheticMigrationNameForAction({
         type: 'type_upgrade',
@@ -224,14 +226,44 @@ describe('getSyntheticMigrationNameForChange', () => {
     ).toBeNull();
   });
 
-  it('names a type_upgrade change and returns null for unknown types', () => {
+  it('fingerprints type upgrades by source, target, and conversion SQL', () => {
+    const originalConversion = {
+      type: 'type_upgrade' as const,
+      table: 'ad_events',
+      name: 'created_at',
+      column: { type: 'TIMESTAMP' },
+      mismatch: { actual: 'TEXT', expected: 'TIMESTAMP' },
+      sql: 'ALTER TABLE ad_events ALTER COLUMN created_at TYPE TIMESTAMP USING created_at::timestamp',
+    };
+    const utcConversion = {
+      ...originalConversion,
+      column: { type: 'TIMESTAMPTZ' },
+      mismatch: { actual: 'TIMESTAMP', expected: 'TIMESTAMPTZ' },
+      sql: "ALTER TABLE ad_events ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'",
+    };
+
+    const originalId = getSyntheticMigrationNameForChange(originalConversion);
+    const utcId = getSyntheticMigrationNameForChange(utcConversion);
+
+    expect(originalId).toMatch(
+      /^type_upgrade_ad_events_created_at_[0-9a-f]{8}$/,
+    );
+    expect(utcId).toMatch(/^type_upgrade_ad_events_created_at_[0-9a-f]{8}$/);
+    expect(utcId).not.toBe(originalId);
+    expect(utcId).not.toBe('type_upgrade_ad_events_created_at');
     expect(
-      getSyntheticMigrationNameForChange({
+      getSyntheticMigrationNameForAction({
         type: 'type_upgrade',
-        table: 'widgets',
-        name: 'status',
-      } as any),
-    ).toBe('type_upgrade_widgets_status');
+        tableName: utcConversion.table,
+        className: 'AdEvent',
+        column: { name: utcConversion.name, ...utcConversion.column },
+        mismatch: { column: utcConversion.name, ...utcConversion.mismatch },
+        sql: utcConversion.sql,
+      }),
+    ).toBe(utcId);
+  });
+
+  it('returns null for unknown types', () => {
     expect(
       getSyntheticMigrationNameForChange({
         type: 'drop_table',
