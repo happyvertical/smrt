@@ -67,7 +67,7 @@
     "@happyvertical/smrt-ui": "workspace:*"
   },
   "peerDependencies": {
-    "svelte": "^5.56.4"
+    "svelte": "^5.56.8"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -77,11 +77,11 @@
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "24.13.2",
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
+    "@types/node": "24.13.3",
     "fast-glob": "^3.3.3",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.1",
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.7.3",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

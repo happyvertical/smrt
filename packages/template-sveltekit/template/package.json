@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.4",
+  "packageManager": "pnpm@11.11.0",
   "engines": {
     "node": ">=24.18.0",
-    "pnpm": "10.34.4"
+    "pnpm": "11.11.0"
   },
   "scripts": {
     "dev": "vite dev",
@@ -18,13 +18,13 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-auto": "^7.0.1",
-    "@sveltejs/kit": "^2.69.2",
+    "@sveltejs/kit": "2.70.1",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@types/node": "^24.13.3",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.2",
-    "typescript": "^6.0.3",
-    "vite": "^8.1.4",
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.7.3",
+    "typescript": "6.0.3",
+    "vite": "8.1.5",
     "@happyvertical/smrt-cli": "^0.40.24"
   },
   "dependencies": {
