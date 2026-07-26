@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.25
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - version type-upgrade migration identities (#2112) (cli)
+  - @happyvertical/smrt-config@0.40.25
+  - @happyvertical/smrt-types@0.40.25
+  - @happyvertical/smrt-scanner@0.40.25
+
 ## 0.40.24
 
 ### Patch Changes
