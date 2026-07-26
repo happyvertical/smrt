@@ -23,7 +23,7 @@
       "presentVersions": ["0.90.0"],
       "firstPatchedVersion": "0.91.1",
       "reachability": "prod",
-      "introducedVia": "@happyvertical/ai@0.80.2 -> @anthropic-ai/sdk",
+      "introducedVia": "@happyvertical/ai@0.84.0 -> @anthropic-ai/sdk",
       "exploitability": "Affects BetaLocalFilesystemMemoryTool, which creates memory files with Node default modes (0o666/0o777). Verified unused: no SMRT package references BetaLocalFilesystemMemoryTool or any local-filesystem memory tool, so the vulnerable code path is not constructed. Impact would require a consumer to instantiate that beta tool directly.",
       "decision": "Not overridable here without pinning a dependency owned by @happyvertical/ai. Overriding a 0.x SDK minor underneath a package that compiled against 0.90 risks a runtime API mismatch for every AI-using SMRT package.",
       "remediation": "Upstream: release @happyvertical/ai with @anthropic-ai/sdk >=0.91.1, then raise the catalog pin here.",
