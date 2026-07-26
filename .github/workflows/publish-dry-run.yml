@@ -15,7 +15,7 @@ permissions:
 jobs:
   prepare-publish:
     name: Prepare Publish Validation
-    runs-on: ci-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
@@ -134,7 +134,7 @@ jobs:
   validate-publish-shards:
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
-    runs-on: ci-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
