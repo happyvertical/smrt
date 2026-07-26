@@ -2,11 +2,18 @@ name: Publish Dry Run
 
 on:
   workflow_call:
+    inputs:
+      checkout_ref:
+        description: 'Trusted caller-selected revision to validate'
+        required: false
+        type: string
+        default: ''
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   PUBLISH_PACK_SHARD_COUNT: '2'
+  CHECKOUT_REF: ${{ inputs.checkout_ref || github.sha }}
 
 permissions:
   contents: read
@@ -15,7 +22,7 @@ permissions:
 jobs:
   prepare-publish:
     name: Prepare Publish Validation
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
     timeout-minutes: 30
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
@@ -24,6 +31,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
 
       - name: Setup Environment
@@ -134,7 +142,7 @@ jobs:
   validate-publish-shards:
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -150,6 +158,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           # Preparation already produced the versioned workspace artifact.
           # Pack shards only need workflow actions and scripts from this ref;
           # fetching full history here can exhaust the 20-minute ARC timeout.
@@ -197,13 +206,15 @@ jobs:
       - prepare-publish
       - validate-publish-shards
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical
     timeout-minutes: 5
 
     steps:
       - name: Checkout repository
         if: needs.prepare-publish.outputs.should-validate == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
 
       - name: Download verified package artifacts
         if: needs.prepare-publish.outputs.should-validate == 'true'
