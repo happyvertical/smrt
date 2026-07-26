@@ -9,7 +9,7 @@ permissions:
 jobs:
   smoke:
     name: Node Runner Shadow Validation
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical-node
     timeout-minutes: 10
     steps:
       - name: Checkout repository

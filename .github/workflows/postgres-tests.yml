@@ -17,7 +17,7 @@ jobs:
   postgres:
     name: Registered PostgreSQL Suites
     if: github.event_name == 'workflow_dispatch' || vars.CI_POSTGRES_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: arc-happyvertical-node
     timeout-minutes: 30
     steps:
       - name: Checkout repository
