@@ -3,9 +3,14 @@
  * Serializable plan shape accepted by PlanPicker. `SubscriptionPlan` model
  * instances satisfy it structurally, but it can also be plain data returned
  * from a SvelteKit `load` — models lose their methods across serialization,
- * so components must not *require* them. Either `featureKeys` (array) or
- * `getFeatureKeys()` (method) provides the feature count.
+ * so components must not *require* them. `featureKeys` is accepted as an
+ * explicit view-model field; `features` supports the framework's normal
+ * serialized model shape; and model instances can still use getFeatureKeys().
  */
+type SerializedFeatureGrant =
+  | string
+  | { featureKey?: string; enabled?: boolean };
+
 export interface PlanPickerPlan {
   id?: string;
   planKey: string;
@@ -15,11 +20,32 @@ export interface PlanPickerPlan {
   currency: string;
   billingInterval: string;
   featureKeys?: string[];
+  features?: string | SerializedFeatureGrant[];
   getFeatureKeys?: () => string[];
 }
 
 function featureCount(plan: PlanPickerPlan): number {
-  return plan.featureKeys?.length ?? plan.getFeatureKeys?.().length ?? 0;
+  if (plan.featureKeys) return plan.featureKeys.length;
+  if (plan.getFeatureKeys) return plan.getFeatureKeys().length;
+
+  try {
+    const features =
+      typeof plan.features === 'string'
+        ? (JSON.parse(plan.features) as unknown)
+        : plan.features;
+    if (!Array.isArray(features)) return 0;
+    return features.filter(
+      (feature) =>
+        typeof feature === 'string' ||
+        (feature !== null &&
+          typeof feature === 'object' &&
+          'featureKey' in feature &&
+          typeof feature.featureKey === 'string' &&
+          feature.enabled !== false),
+    ).length;
+  } catch {
+    return 0;
+  }
 }
 
 let {
@@ -34,7 +60,7 @@ let {
 </script>
 
 <div class="smrt-plan-picker">
-  {#each plans as plan (plan.id)}
+  {#each plans as plan (plan.planKey)}
     <!-- raw-primitive-allow: pressable selection card (aria-pressed toggle with multi-line plan summary), not a standard action button -->
     <button
       aria-pressed={plan.planKey === selectedPlanKey}

@@ -163,10 +163,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   function edgeColumns(left: unknown, right: unknown): string {
     const l = 'var(--smrt-admin-shell-left-collapsed)';
     const r = 'var(--smrt-admin-shell-right-collapsed)';
-    if (left && right) return `${l} minmax(0, 1fr) ${r}`;
-    if (left) return `${l} minmax(0, 1fr)`;
-    if (right) return `minmax(0, 1fr) ${r}`;
-    return 'minmax(0, 1fr)';
+    return `${left ? l : '0px'} minmax(0, 1fr) ${right ? r : '0px'}`;
   }
 
   const topEdgeColumns = $derived(edgeColumns(topLeftCorner, topRightCorner));
@@ -299,7 +296,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--top"
-        style:--band-column={topLeftCorner ? 2 : 1}
+        style:--band-column={2}
       >
         {#if appBar}
           {@render appBar()}
@@ -399,7 +396,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
                   tool.id && edgeExpanded('right')}
                 aria-label={tool.label}
                 title={tool.label}
-                onclick={() => shell.openFocusTool(tool.id)}
+                onclick={() => shell.toggleFocusTool(tool.id)}
               >
                 {#if tool.icon}
                   <tool.icon />
@@ -443,7 +440,7 @@ function buildLayoutStyle(shell: ModuleShellState): string {
       {/if}
       <div
         class="smrt-admin-shell__band smrt-admin-shell__band--bottom"
-        style:--band-column={bottomLeftCorner ? 2 : 1}
+        style:--band-column={2}
       >
         {#if systemBar}
           {@render systemBar()}

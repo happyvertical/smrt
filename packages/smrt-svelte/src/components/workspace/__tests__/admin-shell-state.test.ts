@@ -182,7 +182,7 @@ describe('ShellState', () => {
     }
   });
 
-  it('re-opening the active focus tool collapses the right panel', () => {
+  it('keeps imperative open idempotent and toggles only through toggleFocusTool', () => {
     const shell = createShellState();
     shell.registerFocusTool({ id: 'chat', label: 'Chat' });
 
@@ -190,13 +190,15 @@ describe('ShellState', () => {
     expect(shell.panels.right).toBe('expanded');
     expect(shell.activeFocusToolId).toBe('chat');
 
-    // Second click on the active tool closes the dock.
+    // Imperative callers can safely ensure that a tool is open.
     shell.openFocusTool('chat');
-    expect(shell.panels.right).toBe('collapsed');
+    expect(shell.panels.right).toBe('expanded');
     expect(shell.activeFocusToolId).toBe('chat');
 
-    // Third click re-opens it.
-    shell.openFocusTool('chat');
+    // Rail clicks use the explicit toggle operation.
+    shell.toggleFocusTool('chat');
+    expect(shell.panels.right).toBe('collapsed');
+    shell.toggleFocusTool('chat');
     expect(shell.panels.right).toBe('expanded');
 
     // Switching tools never collapses.

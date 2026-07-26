@@ -33,8 +33,22 @@ vi.mock('../../../hooks/useSTT.svelte.js', () => ({
 }));
 
 import DateTimeInput from '../DateTimeInput.svelte';
+import dateTimeInputSource from '../DateTimeInput.svelte?raw';
 
 describe('DateTimeInput — behavior', () => {
+  it('allows its native input to shrink inside a narrow form track', () => {
+    const { container } = render(DateTimeInput, {
+      props: { name: 'when', label: 'When' },
+    });
+    container.style.width = '80px';
+    const input = screen.getByLabelText('When');
+
+    expect(input).toHaveClass('smrt-input');
+    expect(dateTimeInputSource).toMatch(
+      /\.smrt-input\s*\{[^}]*box-sizing:\s*border-box;[^}]*min-width:\s*0;[^}]*width:\s*100%;/,
+    );
+  });
+
   it('renders a datetime-local input when includeTime is true (default)', () => {
     render(DateTimeInput, { props: { name: 'when', label: 'When' } });
     expect(screen.getByLabelText('When')).toHaveAttribute(

@@ -99,4 +99,52 @@ describe('ThemeProvider persistence', () => {
     await rerender({ paintSurface: false, children: child() });
     expect(root).toHaveClass('no-paint');
   });
+
+  it('ignores invalid persisted theme values instead of breaking hydration', async () => {
+    localStorage.setItem(
+      'smrt-theme',
+      JSON.stringify({
+        preset: 'not-a-theme',
+        colorScheme: 'sepia',
+        borderRadius: 'enormous',
+      }),
+    );
+    mockSystemDark(false);
+
+    render(ThemeProvider, {
+      props: {
+        preset: 'material',
+        colorScheme: 'system',
+        children: child(),
+      },
+    });
+
+    await waitFor(() => {
+      expect(document.documentElement.getAttribute('data-theme')).toBe(
+        'material',
+      );
+      expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+        'light',
+      );
+    });
+  });
+
+  it('emits bootstrap-aware SSR variable fallbacks', () => {
+    mockSystemDark(false);
+    const { container } = render(ThemeProvider, {
+      props: { children: child() },
+    });
+    const style =
+      container.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
+    const bootstrapBackground = [
+      '--smrt',
+      'bootstrap',
+      'color',
+      'background',
+    ].join('-');
+
+    expect(style).toContain(
+      `--smrt-color-background: var(${bootstrapBackground},`,
+    );
+  });
 });

@@ -3,7 +3,7 @@ import type { Snippet } from 'svelte';
 import { onMount, untrack } from 'svelte';
 import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { generateThemeVariables } from './css-generator.js';
-import { getTheme } from './registry.js';
+import { getTheme, isValidPreset } from './registry.js';
 import type {
   ColorScheme,
   Theme,
@@ -108,7 +108,15 @@ const cssVariables = $derived.by(() => {
 // Convert to style string
 const styleString = $derived.by(() => {
   return Object.entries(cssVariables)
-    .map(([key, value]) => `${key}: ${value}`)
+    .map(([key, value]) => {
+      const isExplicitOverride =
+        Object.hasOwn(config.overrides ?? {}, key) ||
+        (key === '--smrt-color-primary' && config.primaryColor);
+      const bootstrapKey = key.replace(/^--smrt-/, '--smrt-bootstrap-');
+      return `${key}: ${
+        isExplicitOverride ? value : `var(${bootstrapKey}, ${value})`
+      }`;
+    })
     .join('; ');
 });
 
@@ -165,10 +173,32 @@ function loadPersistedConfig(): void {
   try {
     const stored = localStorage.getItem(config.storageKey!);
     if (stored) {
-      const data = JSON.parse(stored);
-      if (data.preset) config.preset = data.preset;
-      if (data.colorScheme) config.colorScheme = data.colorScheme;
-      if (data.borderRadius) config.borderRadius = data.borderRadius;
+      const data = JSON.parse(stored) as unknown;
+      if (!data || typeof data !== 'object') return;
+      const persisted = data as Record<string, unknown>;
+      if (
+        typeof persisted.preset === 'string' &&
+        isValidPreset(persisted.preset)
+      ) {
+        config.preset = persisted.preset;
+      }
+      if (
+        persisted.colorScheme === 'light' ||
+        persisted.colorScheme === 'dark' ||
+        persisted.colorScheme === 'system'
+      ) {
+        config.colorScheme = persisted.colorScheme;
+      }
+      if (
+        persisted.borderRadius === 'none' ||
+        persisted.borderRadius === 'sm' ||
+        persisted.borderRadius === 'md' ||
+        persisted.borderRadius === 'lg' ||
+        persisted.borderRadius === 'xl' ||
+        persisted.borderRadius === 'full'
+      ) {
+        config.borderRadius = persisted.borderRadius;
+      }
     }
   } catch {
     // Ignore storage errors (e.g., corrupted data, JSON parse errors)
@@ -225,6 +255,21 @@ $effect(() => {
 
     // Color scheme for browser UI
     html.style.colorScheme = resolvedScheme;
+  }
+});
+
+// The pre-paint aliases only bridge SSR to the hydrated provider. Remove them
+// after the provider has applied the persisted config so later runtime theme
+// changes use the component's reactive variables normally.
+$effect(() => {
+  if (typeof document !== 'undefined' && mounted) {
+    const html = document.documentElement;
+    for (const property of Array.from(html.style)) {
+      if (property.startsWith('--smrt-bootstrap-')) {
+        html.style.removeProperty(property);
+      }
+    }
+    html.removeAttribute('data-smrt-theme-bootstrap');
   }
 });
 

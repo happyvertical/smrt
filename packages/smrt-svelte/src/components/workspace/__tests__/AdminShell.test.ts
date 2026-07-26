@@ -275,9 +275,9 @@ describe('AdminShell', () => {
         '.smrt-admin-shell__band--top',
       ) as HTMLElement;
       expect(topEdge.style.getPropertyValue('--edge-columns').trim()).toBe(
-        'minmax(0, 1fr)',
+        '0px minmax(0, 1fr) 0px',
       );
-      expect(band.style.getPropertyValue('--band-column').trim()).toBe('1');
+      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
     } finally {
       unmount(component);
     }
@@ -341,6 +341,36 @@ describe('AdminShell', () => {
       expect(columns).toContain('--smrt-admin-shell-left-collapsed');
       expect(columns).not.toContain('--smrt-admin-shell-right-collapsed');
       expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps a right-only corner in the explicit third grid track', () => {
+    const component = mount(AdminShell, {
+      target: container,
+      props: {
+        title: 'Ops',
+        topRightCorner: textSnippet('right corner'),
+        children: textSnippet('main work'),
+      },
+    });
+
+    try {
+      const topEdge = container.querySelector(
+        '.smrt-admin-shell__edge--top',
+      ) as HTMLElement;
+      const band = container.querySelector(
+        '.smrt-admin-shell__band--top',
+      ) as HTMLElement;
+      const columns = topEdge.style.getPropertyValue('--edge-columns').trim();
+      expect(columns).toBe(
+        '0px minmax(0, 1fr) var(--smrt-admin-shell-right-collapsed)',
+      );
+      expect(band.style.getPropertyValue('--band-column').trim()).toBe('2');
+      expect(
+        container.querySelector('.smrt-admin-shell__corner--top-right'),
+      ).not.toBeNull();
     } finally {
       unmount(component);
     }

@@ -19,31 +19,77 @@
  * </svelte:head>
  * ```
  */
+
+import { generateThemeVariables } from './css-generator.js';
+import { getTheme, getThemeOptions } from './registry.js';
 import type { ColorScheme, ThemePreset } from './types.js';
 import { defaultThemeConfig } from './types.js';
 
 export interface ThemeScriptOptions {
   /** Preset to stamp as `data-theme` when nothing is persisted. */
   preset?: ThemePreset;
+  /** Read persisted preferences. Must match ThemeProvider's `persist` prop. */
+  persist?: boolean;
   /** localStorage key — must match ThemeProvider's `storageKey`. */
   storageKey?: string;
   /** Fallback scheme when storage holds no value. Default: 'system'. */
   defaultColorScheme?: ColorScheme;
 }
 
+function inlineJSON(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+function bootstrapVariableName(variable: string): string {
+  return variable.replace(/^--smrt-/, '--smrt-bootstrap-');
+}
+
 /**
  * Returns the JS body (no `<script>` tags) of a pre-paint bootstrap that
  * mirrors ThemeProvider's persistence: reads the stored config, resolves
  * 'system' via matchMedia, then stamps `data-theme`, `data-color-scheme`,
- * the `dark` class, and `color-scheme` style on <html>.
+ * the `dark` class, and `color-scheme` style on <html>. It also sets temporary
+ * bootstrap variables consumed by ThemeProvider's SSR inline fallbacks, so the
+ * persisted preset/scheme wins before hydration rather than only changing
+ * attributes around an already-painted default wrapper.
  */
 export function themeScript(options: ThemeScriptOptions = {}): string {
-  const preset = options.preset ?? defaultThemeConfig.preset;
+  const presetNames = getThemeOptions().map(({ value }) => value);
+  const requestedPreset = options.preset ?? defaultThemeConfig.preset;
+  const preset = presetNames.includes(requestedPreset)
+    ? requestedPreset
+    : defaultThemeConfig.preset;
+  const persist = options.persist ?? defaultThemeConfig.persist;
   const storageKey = options.storageKey ?? defaultThemeConfig.storageKey;
-  const fallback = options.defaultColorScheme ?? 'system';
+  const requestedFallback =
+    options.defaultColorScheme ?? defaultThemeConfig.colorScheme;
+  const fallback: ColorScheme = ['light', 'dark', 'system'].includes(
+    requestedFallback,
+  )
+    ? requestedFallback
+    : defaultThemeConfig.colorScheme;
+
+  const variableNames = Array.from(
+    new Set(
+      presetNames.flatMap((name) => [
+        ...Object.keys(generateThemeVariables(getTheme(name), false)),
+        ...Object.keys(generateThemeVariables(getTheme(name), true)),
+      ]),
+    ),
+  );
+  const bootstrapNames = variableNames.map(bootstrapVariableName);
+  const variableRows = presetNames.flatMap((name) =>
+    [false, true].map((dark) => {
+      const variables = generateThemeVariables(getTheme(name), dark);
+      return variableNames.map((variable) => variables[variable] ?? '');
+    }),
+  );
 
   // Keep this dependency-free and ES5-ish: it runs inline in every browser
   // before any framework code. Must stay in sync with
   // ThemeProvider.svelte's loadPersistedConfig()/resolvedScheme.
-  return `(function(){try{var scheme=${JSON.stringify(fallback)};var preset=${JSON.stringify(preset)};var raw=localStorage.getItem(${JSON.stringify(storageKey)});if(raw){try{var data=JSON.parse(raw);if(data.colorScheme)scheme=data.colorScheme;if(data.preset)preset=data.preset;}catch(_){scheme=raw;}}if(scheme==='system'){scheme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}var el=document.documentElement;el.setAttribute('data-theme',preset);el.setAttribute('data-color-scheme',scheme);el.classList.toggle('dark',scheme==='dark');el.style.colorScheme=scheme;}catch(_){}})();`;
+  return `(function(){try{var presets=${inlineJSON(presetNames)};var names=${inlineJSON(bootstrapNames)};var rows=${inlineJSON(variableRows)};var scheme=${inlineJSON(fallback)};var preset=${inlineJSON(preset)};${persist ? `try{var raw=localStorage.getItem(${inlineJSON(storageKey)});if(raw){var data=JSON.parse(raw);if(data&&typeof data==='object'){if(data.colorScheme==='light'||data.colorScheme==='dark'||data.colorScheme==='system')scheme=data.colorScheme;if(typeof data.preset==='string'&&presets.indexOf(data.preset)!==-1)preset=data.preset;}}}catch(_){}` : ''}if(scheme==='system'){scheme=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}var el=document.documentElement;el.setAttribute('data-theme',preset);el.setAttribute('data-color-scheme',scheme);el.setAttribute('data-smrt-theme-bootstrap','');el.classList.toggle('dark',scheme==='dark');el.style.colorScheme=scheme;var row=rows[presets.indexOf(preset)*2+(scheme==='dark'?1:0)];for(var i=0;i<names.length;i++){if(row[i])el.style.setProperty(names[i],row[i]);}}catch(_){}})();`;
 }

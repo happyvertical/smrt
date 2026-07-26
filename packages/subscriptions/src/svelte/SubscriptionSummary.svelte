@@ -2,28 +2,46 @@
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { EntitlementResolution } from '../types.js';
 import { M } from './i18n.js';
+import { formatPeriodDate } from './subscription-summary.js';
 
 let {
   resolution = null,
   periodEnd = null,
   periodDisposition = 'unknown',
+  periodDateLocale,
+  periodTimeZone = 'UTC',
 }: {
   resolution?: EntitlementResolution | null;
   /** ISO date string (or null) for the current billing period end. */
   periodEnd?: string | null;
   /** How to describe `periodEnd`: renews / ends / perpetual / unknown. */
   periodDisposition?: 'perpetual' | 'renews' | 'ends' | 'unknown';
+  /** Stable locale override for the billing date. Defaults to the i18n locale. */
+  periodDateLocale?: string;
+  /** Billing timezone used by both SSR and hydration. Defaults to UTC. */
+  periodTimeZone?: string;
 } = $props();
 
-const { t } = useI18n();
+const i18n = useI18n();
+const { t } = i18n;
+
+const formattedPeriodEnd = $derived(
+  periodEnd
+    ? formatPeriodDate(
+        periodEnd,
+        periodDateLocale ?? i18n.locale,
+        periodTimeZone,
+      )
+    : null,
+);
 
 const periodLabel = $derived(
   periodDisposition === 'perpetual'
     ? t(M['subscriptions.summary.no_expiration'])
-    : periodDisposition === 'renews' && periodEnd
-      ? `${t(M['subscriptions.summary.renews'])} ${new Date(periodEnd).toLocaleDateString()}`
-      : periodDisposition === 'ends' && periodEnd
-        ? `${t(M['subscriptions.summary.ends'])} ${new Date(periodEnd).toLocaleDateString()}`
+    : periodDisposition === 'renews' && formattedPeriodEnd
+      ? `${t(M['subscriptions.summary.renews'])} ${formattedPeriodEnd}`
+      : periodDisposition === 'ends' && formattedPeriodEnd
+        ? `${t(M['subscriptions.summary.ends'])} ${formattedPeriodEnd}`
         : null,
 );
 </script>

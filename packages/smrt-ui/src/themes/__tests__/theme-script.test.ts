@@ -4,6 +4,9 @@
  * hand-duplicating it in app.html.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTheme, registerTheme } from '../create-theme.js';
+import { generateThemeVariables } from '../css-generator.js';
+import { studioTheme } from '../studio/index.js';
 import { themeScript } from '../theme-script.js';
 
 function mockSystemDark(matches: boolean) {
@@ -20,10 +23,17 @@ function run(script: string) {
 
 describe('themeScript', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-color-scheme');
+    document.documentElement.removeAttribute('data-smrt-theme-bootstrap');
     document.documentElement.classList.remove('dark');
+    for (const property of Array.from(document.documentElement.style)) {
+      if (property.startsWith('--smrt-bootstrap-')) {
+        document.documentElement.style.removeProperty(property);
+      }
+    }
   });
 
   it('resolves system preference when nothing is stored', () => {
@@ -50,6 +60,13 @@ describe('themeScript', () => {
       'light',
     );
     expect(document.documentElement.classList.contains('dark')).toBe(false);
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--smrt-bootstrap-color-background',
+      ),
+    ).toBe(
+      generateThemeVariables(studioTheme, false)['--smrt-color-background'],
+    );
   });
 
   it('uses the custom storageKey', () => {
@@ -61,12 +78,107 @@ describe('themeScript', () => {
     );
   });
 
-  it('tolerates a raw (non-JSON) stored scheme', () => {
+  it('does not read stored preferences when persistence is disabled', () => {
     mockSystemDark(false);
-    localStorage.setItem('smrt-theme', 'dark');
+    localStorage.setItem(
+      'smrt-theme',
+      JSON.stringify({ preset: 'studio', colorScheme: 'dark' }),
+    );
+    run(
+      themeScript({
+        persist: false,
+        preset: 'material',
+        defaultColorScheme: 'light',
+      }),
+    );
+    expect(document.documentElement.getAttribute('data-theme')).toBe(
+      'material',
+    );
+    expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+      'light',
+    );
+  });
+
+  it('ignores a raw (non-JSON) stored value like ThemeProvider', () => {
+    mockSystemDark(true);
+    localStorage.setItem('smrt-theme', 'light');
     run(themeScript());
     expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
       'dark',
     );
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
+  it('ignores invalid persisted enum values', () => {
+    mockSystemDark(false);
+    localStorage.setItem(
+      'smrt-theme',
+      JSON.stringify({
+        preset: 'not-a-theme',
+        colorScheme: 'sepia',
+      }),
+    );
+    run(themeScript({ preset: 'material', defaultColorScheme: 'light' }));
+    expect(document.documentElement.getAttribute('data-theme')).toBe(
+      'material',
+    );
+    expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+      'light',
+    );
+  });
+
+  it('bootstraps a registered custom theme from persistence', () => {
+    const brandTheme = createTheme({
+      id: 'bootstrap-test-brand',
+      name: 'Bootstrap Test Brand',
+      light: { primary: '#336699', background: '#fefefe' },
+      dark: { primary: '#99ccff', background: '#101820' },
+    });
+    registerTheme(brandTheme);
+    mockSystemDark(false);
+    localStorage.setItem(
+      'smrt-theme',
+      JSON.stringify({
+        preset: 'bootstrap-test-brand',
+        colorScheme: 'dark',
+      }),
+    );
+
+    run(themeScript());
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe(
+      'bootstrap-test-brand',
+    );
+    expect(
+      document.documentElement.style.getPropertyValue(
+        '--smrt-bootstrap-color-background',
+      ),
+    ).toBe(generateThemeVariables(brandTheme, true)['--smrt-color-background']);
+  });
+
+  it('still applies the fallback when localStorage access throws', () => {
+    mockSystemDark(true);
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError');
+    });
+
+    run(themeScript({ preset: 'studio' }));
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe('studio');
+    expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+      'dark',
+    );
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
+  });
+
+  it('escapes executable inline-script terminators and separators', () => {
+    const script = themeScript({
+      storageKey: '</script><script>alert(1)</script>\u2028\u2029',
+    });
+
+    expect(script.toLowerCase()).not.toContain('</script');
+    expect(script).not.toContain('\u2028');
+    expect(script).not.toContain('\u2029');
+    expect(script).toContain('\\u003c/script>');
   });
 });
