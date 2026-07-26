@@ -57,7 +57,7 @@ batch.
 
 ### Audited PostgreSQL timestamp conversion
 
-`timestamp without time zone` values do not carry enough information for SMRT
+`timestamp without time zone` values do not carry enough information for s-m-r-t
 to infer their original instant. After auditing every historical writer,
 database default, trigger, and raw SQL path, an operator may confirm that the
 legacy values are UTC wall times and include the exact opt-in:
@@ -155,7 +155,7 @@ Custom methods on s-m-r-t objects are auto-discovered from manifests. Method par
 ## Usage
 
 ```bash
-# Discover what SMRT objects are available
+# Discover what s-m-r-t objects are available
 smrt introspect
 
 # Generate an MCP server
