@@ -44,7 +44,7 @@ permissions:
 jobs:
   prepare-release:
     name: Prepare Release
-    runs-on: ci-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
       previous-version: ${{ steps.prepare.outputs.previous_version }}
@@ -223,7 +223,7 @@ jobs:
   validate-release-shards:
     needs: prepare-release
     if: needs.prepare-release.outputs.should-publish == 'true'
-    runs-on: ci-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -286,7 +286,7 @@ jobs:
     if: |
       needs.prepare-release.outputs.should-publish == 'true' &&
       needs.validate-release-shards.result == 'success'
-    runs-on: ci-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     concurrency:
       group: release-publish-${{ github.repository }}-${{ github.ref }}
@@ -445,7 +445,7 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
-    runs-on: ci-linux-x64
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
