@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.40.27
+
+### Patch Changes
+
+- ### Features
+
+  - theme hardening, SSR-safe subscription components, AdminShell rail fixes (#2097) (ui)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.84.0 (#2094) (deps)
+  - @happyvertical/smrt-config@0.40.27
+  - @happyvertical/smrt-types@0.40.27
+  - @happyvertical/smrt-scanner@0.40.27
+
 ## 0.40.26
 
 ### Patch Changes
