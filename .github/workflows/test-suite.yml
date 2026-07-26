@@ -185,12 +185,17 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Some SvelteKit package tasks generate tracked routes and restore the
+      # original tree during cleanup. Running typecheck and test together lets
+      # one task remove those routes while the other is importing them.
       - name: Run affected dependency closures
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
-        run: pnpm turbo run typecheck test --filter="...[$BASE_SHA]" --concurrency=2
+        run: |
+          pnpm turbo run typecheck --filter="...[$BASE_SHA]" --concurrency=2
+          pnpm turbo run test --filter="...[$BASE_SHA]" --concurrency=2
 
   affected-knowledge:
     name: Affected Knowledge Freshness
