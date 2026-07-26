@@ -71,6 +71,7 @@ vi.mock('@happyvertical/smrt-core/migrations', () => ({
   MigrationTracker: MigrationTrackerMock,
 }));
 
+import { getSyntheticMigrationNameForChange } from '../db-migrate-actions.js';
 import {
   checkTenantIdUuidPreconditions,
   dbStatusCommand,
@@ -452,19 +453,20 @@ describe('db:status', () => {
     });
   });
 
-  it('keeps failed migrations actionable when the live diff still requires them', async () => {
+  it('keeps legacy failed type upgrades actionable when the live diff still requires them', async () => {
+    const typeUpgrade = {
+      type: 'type_upgrade' as const,
+      table: '_smrt_agent_schedules',
+      name: 'agent_config',
+      sql: 'ALTER TABLE _smrt_agent_schedules ALTER COLUMN agent_config TYPE JSONB USING agent_config::jsonb',
+    };
+    const typeUpgradeName = getSyntheticMigrationNameForChange(typeUpgrade);
+    if (!typeUpgradeName) throw new Error('expected type-upgrade migration id');
     compareMock.mockResolvedValue({
       added_tables: [],
       dropped_tables: [],
       has_changes: true,
-      changes: [
-        {
-          type: 'type_upgrade',
-          table: '_smrt_agent_schedules',
-          name: 'agent_config',
-          sql: 'ALTER TABLE _smrt_agent_schedules ALTER COLUMN agent_config TYPE JSONB USING agent_config::jsonb',
-        },
-      ],
+      changes: [typeUpgrade],
     });
     getHistoryMock.mockResolvedValue([
       {
@@ -520,6 +522,14 @@ describe('db:status', () => {
   });
 
   it('classifies failed additive migrations against current live drift', async () => {
+    const typeUpgrade = {
+      type: 'type_upgrade' as const,
+      table: 'contents',
+      name: 'status',
+      sql: 'ALTER TABLE contents ALTER COLUMN status TYPE JSONB USING status::jsonb',
+    };
+    const typeUpgradeName = getSyntheticMigrationNameForChange(typeUpgrade);
+    if (!typeUpgradeName) throw new Error('expected type-upgrade migration id');
     compareMock.mockResolvedValue({
       added_tables: [],
       dropped_tables: [],
@@ -531,12 +541,7 @@ describe('db:status', () => {
           name: 'script_text',
           column: { type: 'TEXT' },
         },
-        {
-          type: 'type_upgrade',
-          table: 'contents',
-          name: 'status',
-          sql: 'ALTER TABLE contents ALTER COLUMN status TYPE JSONB USING status::jsonb',
-        },
+        typeUpgrade,
       ],
     });
     getHistoryMock.mockResolvedValue([
@@ -549,7 +554,7 @@ describe('db:status', () => {
         error_message: 'index already exists',
       },
       {
-        name: 'type_upgrade_contents_status',
+        name: typeUpgradeName,
         error_message: 'cannot cast',
       },
     ]);
@@ -571,7 +576,7 @@ describe('db:status', () => {
           errorMessage: 'column missing',
         },
         {
-          name: 'type_upgrade_contents_status',
+          name: typeUpgradeName,
           classification: 'unresolved',
           recommendation:
             'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',

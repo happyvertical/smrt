@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getSyntheticMigrationNameForChange,
   getUnresolvedGeneratedMigrationNames,
   partitionSchemaChanges,
   shouldApplySchemaMigrations,
@@ -283,6 +284,14 @@ describe('shouldApplySchemaMigrations', () => {
 
 describe('failed migration classification', () => {
   it('tracks current unresolved generated repairs separately from superseded failures', () => {
+    const typeUpgrade = {
+      type: 'type_upgrade' as const,
+      table: 'contents',
+      name: 'status',
+      sql: 'ALTER TABLE contents ALTER COLUMN status TYPE JSONB USING status::jsonb',
+    };
+    const typeUpgradeName = getSyntheticMigrationNameForChange(typeUpgrade);
+    if (!typeUpgradeName) throw new Error('expected type-upgrade migration id');
     const unresolvedNames = getUnresolvedGeneratedMigrationNames([
       {
         type: 'add_column',
@@ -290,12 +299,7 @@ describe('failed migration classification', () => {
         name: 'script_text',
         column: { type: 'TEXT' },
       },
-      {
-        type: 'type_upgrade',
-        table: 'contents',
-        name: 'status',
-        sql: 'ALTER TABLE contents ALTER COLUMN status TYPE JSONB USING status::jsonb',
-      },
+      typeUpgrade,
     ]);
 
     expect(
@@ -310,7 +314,7 @@ describe('failed migration classification', () => {
             error_message: 'index already exists',
           },
           {
-            name: 'type_upgrade_contents_status',
+            name: typeUpgradeName,
             error_message: 'cannot cast',
           },
         ],
@@ -326,7 +330,7 @@ describe('failed migration classification', () => {
           errorMessage: 'column missing',
         },
         {
-          name: 'type_upgrade_contents_status',
+          name: typeUpgradeName,
           classification: 'unresolved',
           recommendation:
             'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',

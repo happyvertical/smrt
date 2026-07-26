@@ -5,7 +5,7 @@ import type {
 } from '@happyvertical/smrt-core/migrations';
 import {
   classifyTypeUpgradeSql,
-  getSyntheticMigrationNameForChange,
+  getSyntheticMigrationNamesForChange,
 } from './db-migrate-actions.js';
 
 export type FailedMigrationResolution =
@@ -21,16 +21,14 @@ export interface FailedMigrationAssessment {
   errorMessage: string | null;
 }
 
-function getActionableGeneratedMigrationName(
-  change: SchemaChange,
-): string | null {
+function getActionableGeneratedMigrationNames(change: SchemaChange): string[] {
   if (change.type === 'type_upgrade' && change.name) {
     if (classifyTypeUpgradeSql(change.sql) === 'noop') {
-      return null;
+      return [];
     }
   }
 
-  return getSyntheticMigrationNameForChange(change);
+  return getSyntheticMigrationNamesForChange(change);
 }
 
 export function getActionableFailedMigrationNames(
@@ -39,8 +37,7 @@ export function getActionableFailedMigrationNames(
   const names = new Set<string>();
 
   for (const change of diff.changes) {
-    const name = getActionableGeneratedMigrationName(change);
-    if (name) {
+    for (const name of getActionableGeneratedMigrationNames(change)) {
       names.add(name);
     }
   }

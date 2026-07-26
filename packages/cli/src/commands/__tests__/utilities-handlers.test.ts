@@ -895,6 +895,18 @@ describe('utility command handlers', () => {
 
     await utilityCommands['db:migrate'].handler([], { verbose: true });
     expect(trackerApplyAll).toHaveBeenCalled();
+    const definitions = trackerApplyAll.mock.calls[0]?.[0] as Array<{
+      id: string;
+    }>;
+    expect(definitions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringMatching(
+            /^type_upgrade_contents_count_[0-9a-f]{8}$/,
+          ),
+        }),
+      ]),
+    );
     expect(logged()).toContain('Successfully applied');
   });
 
