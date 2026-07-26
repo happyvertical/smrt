@@ -158,4 +158,7 @@ emitDecoratorMetadata: true`.
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)
 - **Table verification cache**: `isTableVerified(dbUrl, tableName)` avoids redundant `tableExists()` calls
 - **Manifest required**: build-time AST scanning creates manifest. Without vitest plugin → "No field metadata"
+- **ManifestBuilder fails on scanner errors**: every production manifest path
+  must abort before adapting partial scan results. A syntax error or unresolved
+  `@smrt()` config spread cannot be allowed to emit a default-open manifest.
 - **Vite plugin loads scanner from `dist/` first**: `src/vite-plugin/import-build-aware.ts` prefers `dist/` when it exists on disk; it only falls back to `src/` on fresh clones. So if you edit `src/scanner/*.ts` or `src/schema/generator.ts` and want those edits reflected in consumer manifest generation, you must rebuild (`pnpm build` or have `pnpm dev` / `pnpm build:watch` running in core). This is intentional — sniffing `.ts` vs `.js` via `import.meta.url` was non-deterministic under tsx and broke 12–13 publishes (#1139).

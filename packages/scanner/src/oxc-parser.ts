@@ -144,7 +144,36 @@ type Statement =
   | ExportDefaultDeclaration
   | ImportDeclaration
   | TSTypeAliasDeclaration
-  | TSEnumDeclaration;
+  | TSEnumDeclaration
+  | VariableDeclaration;
+
+interface VariableDeclaration extends BaseNode {
+  type: 'VariableDeclaration';
+  kind: 'const' | 'let' | 'var';
+  declarations: VariableDeclarator[];
+}
+
+interface VariableDeclarator extends BaseNode {
+  type: 'VariableDeclarator';
+  id: Identifier | Pattern;
+  init: Expression | null;
+}
+
+/**
+ * `expr as const` / `expr satisfies T`. OXC emits these wrappers around the
+ * initializer, so a `const CFG = {...} as const` would otherwise never be seen
+ * as an `ObjectExpression`. Not part of the {@link Expression} union — the
+ * union is a hand-maintained subset — so it is unwrapped via {@link unwrapTypeAssertion}.
+ */
+interface TSTypeAssertionExpression extends BaseNode {
+  type:
+    | 'TSAsExpression'
+    | 'TSSatisfiesExpression'
+    | 'TSNonNullExpression'
+    | 'TSTypeAssertion'
+    | 'ParenthesizedExpression';
+  expression: Expression;
+}
 
 interface ClassDeclaration extends BaseNode {
   type: 'ClassDeclaration';
@@ -529,17 +558,23 @@ export function parseFile(filePath: string): FileScanResult {
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
       smrtImports = extractSmrtImports(program.body);
+      const ctx: DecoratorConfigContext = {
+        constants: extractModuleObjectConstants(program.body, sourceText),
+        unresolved: [],
+      };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
           filePath,
           sourceText,
           importAliases,
+          ctx,
         );
         if (extracted) {
           classes.push(extracted);
         }
       }
+      reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
     }
   } catch (error) {
     errors.push({
@@ -629,17 +664,23 @@ export function parseSource(
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
       smrtImports = extractSmrtImports(program.body);
+      const ctx: DecoratorConfigContext = {
+        constants: extractModuleObjectConstants(program.body, sourceText),
+        unresolved: [],
+      };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
           filename,
           sourceText,
           importAliases,
+          ctx,
         );
         if (extracted) {
           classes.push(extracted);
         }
       }
+      reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
     }
   } catch (error) {
     errors.push({
@@ -876,6 +917,584 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
 }
 
 /**
+ * Unwrap `as const` / `satisfies T` / `!` wrappers to reach the underlying
+ * expression. `const CFG = { api: false } as const` is the idiomatic way to
+ * declare a shared surface policy, so the wrapper must be transparent here or
+ * the object literal is never found.
+ */
+function unwrapTypeAssertion(node: Expression | null): Expression | null {
+  let current = node;
+  // Bounded: assertions can legally nest (`x as unknown as T`), but not deeply.
+  for (let depth = 0; current && depth < 8; depth++) {
+    const type = (current as unknown as TSTypeAssertionExpression).type;
+    if (
+      type === 'TSAsExpression' ||
+      type === 'TSSatisfiesExpression' ||
+      type === 'TSNonNullExpression' ||
+      type === 'TSTypeAssertion' ||
+      type === 'ParenthesizedExpression'
+    ) {
+      current = (current as unknown as TSTypeAssertionExpression).expression;
+      continue;
+    }
+    return current;
+  }
+  return current;
+}
+
+/**
+ * A spread inside an `@smrt()` config that could not be resolved statically.
+ *
+ * Recorded rather than silently dropped: an unresolvable spread may carry
+ * `api`/`mcp`/`cli` keys, and because an absent surface key means *default
+ * open* (full CRUD), dropping it silently turns a deliberate lockdown into a
+ * public surface. See issue #2100.
+ */
+interface UnresolvedSpread {
+  /** Source text of the spread, e.g. `...IMPORTED_SURFACE`. */
+  expression: string;
+  /** Byte offset of the spread node, for line/column resolution. */
+  start?: number;
+}
+
+/**
+ * A module-scope `const` object literal available for spread resolution.
+ *
+ * `unresolved` carries any spread inside the constant's OWN initializer that
+ * could not be resolved (e.g. `const CFG = { ...IMPORTED }`). Such a constant
+ * is "tainted": `value` is only a partial view of what it holds at runtime.
+ * Resolving a decorator spread against it silently would reintroduce the
+ * silent-drop failure mode one level removed, so the taint is replayed into the
+ * use site's diagnostics instead.
+ */
+interface ModuleConstant {
+  value: Record<string, unknown>;
+  unresolved: UnresolvedSpread[];
+  unsafeReferences: UnresolvedSpread[];
+  dependencies: Array<{
+    name: string;
+    start?: number;
+  }>;
+}
+
+/**
+ * Context threaded through decorator-config extraction so object spreads can be
+ * resolved against module-scope constants, and unresolvable ones reported.
+ */
+interface DecoratorConfigContext {
+  /** Module-scope `const NAME = {...}` object literals, by identifier name. */
+  constants: Map<string, ModuleConstant>;
+  /** Collector for spreads that could not be statically resolved. */
+  unresolved: UnresolvedSpread[];
+  /** Constant spreads recorded while another module constant is extracted. */
+  dependencies?: ModuleConstant['dependencies'];
+  /** Require values to be statically literal for security-sensitive @smrt config. */
+  requireLiteralValues?: boolean;
+}
+
+/**
+ * Collect module-scope `const NAME = { ... }` object literals so that
+ * `@smrt({ ...NAME })` can be resolved at scan time.
+ *
+ * Declaration order is honoured: a constant may spread an earlier constant, and
+ * each is extracted against the map built so far. Only `const` is considered —
+ * `let`/`var` could be reassigned between declaration and decorator evaluation,
+ * so treating them as static would be unsound.
+ *
+ * Imported constants are intentionally NOT resolved (that would require
+ * cross-file resolution); they surface as unresolved spreads and are reported
+ * as scan errors instead of being silently dropped.
+ *
+ * A constant whose own initializer contains an unresolvable spread is recorded
+ * as TAINTED rather than dropped: its extracted value is only partial, so any
+ * decorator that spreads it replays the taint into its own diagnostics. Without
+ * that, `const CFG = { ...IMPORTED }` followed by `@smrt({ ...CFG })` would
+ * resolve cleanly against a partial object and report nothing — the exact
+ * silent-drop failure mode this guard exists to prevent, one level removed.
+ *
+ * @param body - Top-level statement array from the OXC-parsed `Program` node.
+ * @param sourceText - Full source text, used for nested value reconstruction.
+ * @returns Map of constant name to its extracted value plus any taint.
+ */
+export function extractModuleObjectConstants(
+  body: Statement[],
+  sourceText: string,
+): Map<string, ModuleConstant> {
+  const constants = new Map<string, ModuleConstant>();
+
+  for (const node of body) {
+    // Both `const X = {}` and `export const X = {}`.
+    const decl =
+      node.type === 'VariableDeclaration'
+        ? node
+        : node.type === 'ExportNamedDeclaration' &&
+            node.declaration?.type === 'VariableDeclaration'
+          ? (node.declaration as VariableDeclaration)
+          : null;
+
+    if (decl?.kind !== 'const') continue;
+
+    for (const declarator of decl.declarations) {
+      if (declarator.id?.type !== 'Identifier') continue;
+      const name = declarator.id.name;
+      if (!name || !isSafeObjectKey(name)) continue;
+
+      const init = unwrapTypeAssertion(declarator.init);
+      if (init?.type !== 'ObjectExpression') continue;
+
+      // Extract against the constants seen so far, so `const B = { ...A }`
+      // resolves — and capture this constant's OWN unresolvable spreads as
+      // taint rather than discarding them. Nothing is reported here: an unused
+      // constant is not a manifest problem. The taint only becomes an error
+      // when a decorator actually spreads it, and it propagates transitively
+      // because spreading a tainted constant re-collects its taint below.
+      const unresolved: UnresolvedSpread[] = [];
+      const dependencies: ModuleConstant['dependencies'] = [];
+      const value = extractObjectLiteral(init, sourceText, {
+        constants,
+        unresolved,
+        dependencies,
+        requireLiteralValues: true,
+      });
+      constants.set(name, {
+        value,
+        unresolved,
+        unsafeReferences: [],
+        dependencies,
+      });
+    }
+  }
+
+  taintUnsafeModuleConstantReferences(body, constants, sourceText);
+  propagateModuleConstantTaint(constants);
+  return constants;
+}
+
+/**
+ * Conservatively taint shared config objects that escape their declaration or
+ * a spread expression.
+ *
+ * `const` prevents rebinding, not mutation: `const CFG = { api: true };
+ * CFG.api = false` is legal JavaScript. Snapshotting only the initializer would
+ * therefore make the manifest say open while the runtime decorator sees
+ * closed. A reference used as the direct argument of a spread is safe; any
+ * other reference (property access, aliasing, function argument, assignment)
+ * may mutate or escape the object, so decorators that later spread it fail
+ * loudly instead of trusting a stale snapshot.
+ */
+function taintUnsafeModuleConstantReferences(
+  body: Statement[],
+  constants: Map<string, ModuleConstant>,
+  sourceText: string,
+): void {
+  if (constants.size === 0) return;
+
+  const tainted = new Set<string>();
+
+  const visit = (
+    value: unknown,
+    ancestors: Array<Record<string, unknown>>,
+    shadowed: ReadonlySet<string>,
+  ): void => {
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, ancestors, shadowed);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+
+    const node = value as Record<string, unknown>;
+    if (typeof node.type !== 'string') {
+      for (const child of Object.values(node))
+        visit(child, ancestors, shadowed);
+      return;
+    }
+
+    if (
+      node.type === 'Identifier' &&
+      typeof node.name === 'string' &&
+      constants.has(node.name) &&
+      !shadowed.has(node.name) &&
+      !isTypeOnlyReference(node, ancestors) &&
+      !isSafeModuleConstantReference(node, ancestors, constants)
+    ) {
+      const name = node.name;
+      if (!tainted.has(name)) {
+        tainted.add(name);
+        const unresolved = {
+          expression:
+            sliceSource(node as unknown as BaseNode, sourceText) ?? name,
+          start:
+            typeof node.start === 'number' ? (node.start as number) : undefined,
+        };
+        const constant = constants.get(name);
+        constant?.unsafeReferences.push(unresolved);
+        constant?.unresolved.push(unresolved);
+      }
+    }
+
+    const nextShadowed = createsLexicalScope(node)
+      ? new Set([...shadowed, ...collectScopeBindings(node)])
+      : shadowed;
+    const nextAncestors = [...ancestors, node];
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'loc' || key === 'range' || key === 'start' || key === 'end')
+        continue;
+      visit(child, nextAncestors, nextShadowed);
+    }
+  };
+
+  visit(body, [], new Set());
+}
+
+function createsLexicalScope(node: Record<string, unknown>): boolean {
+  return (
+    node.type === 'BlockStatement' ||
+    node.type === 'FunctionDeclaration' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'ArrowFunctionExpression' ||
+    node.type === 'CatchClause' ||
+    node.type === 'ForStatement' ||
+    node.type === 'ForInStatement' ||
+    node.type === 'ForOfStatement' ||
+    node.type === 'ClassDeclaration' ||
+    node.type === 'ClassExpression'
+  );
+}
+
+function collectScopeBindings(node: Record<string, unknown>): Set<string> {
+  const bindings = new Set<string>();
+  const addPattern = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return;
+    const pattern = value as Record<string, unknown>;
+    if (pattern.type === 'Identifier' && typeof pattern.name === 'string') {
+      bindings.add(pattern.name);
+      return;
+    }
+    if (pattern.type === 'RestElement') {
+      addPattern(pattern.argument);
+      return;
+    }
+    if (pattern.type === 'AssignmentPattern') {
+      addPattern(pattern.left);
+      return;
+    }
+    if (pattern.type === 'ArrayPattern' && Array.isArray(pattern.elements)) {
+      for (const element of pattern.elements) addPattern(element);
+      return;
+    }
+    if (pattern.type === 'ObjectPattern' && Array.isArray(pattern.properties)) {
+      for (const property of pattern.properties) {
+        if (!property || typeof property !== 'object') continue;
+        const propertyNode = property as Record<string, unknown>;
+        addPattern(
+          propertyNode.type === 'RestElement'
+            ? propertyNode.argument
+            : propertyNode.value,
+        );
+      }
+    }
+  };
+
+  if (
+    node.type === 'FunctionDeclaration' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'ArrowFunctionExpression'
+  ) {
+    if (node.type !== 'ArrowFunctionExpression') addPattern(node.id);
+    if (Array.isArray(node.params)) {
+      for (const parameter of node.params) addPattern(parameter);
+    }
+    collectFunctionVarBindings(node.body, bindings);
+  } else if (node.type === 'CatchClause') {
+    addPattern(node.param);
+  } else if (
+    node.type === 'ForStatement' ||
+    node.type === 'ForInStatement' ||
+    node.type === 'ForOfStatement'
+  ) {
+    const declaration = node.type === 'ForStatement' ? node.init : node.left;
+    if (
+      declaration &&
+      typeof declaration === 'object' &&
+      (declaration as Record<string, unknown>).type === 'VariableDeclaration'
+    ) {
+      for (const declarator of (declaration as Record<string, unknown>)
+        .declarations as Array<Record<string, unknown>>) {
+        addPattern(declarator.id);
+      }
+    }
+  } else if (
+    (node.type === 'ClassDeclaration' || node.type === 'ClassExpression') &&
+    node.id
+  ) {
+    addPattern(node.id);
+  }
+
+  if (node.type === 'BlockStatement' && Array.isArray(node.body)) {
+    for (const statement of node.body as Array<Record<string, unknown>>) {
+      const declaration =
+        statement.type === 'ExportNamedDeclaration'
+          ? (statement.declaration as Record<string, unknown> | undefined)
+          : statement;
+      if (declaration?.type === 'VariableDeclaration') {
+        for (const declarator of declaration.declarations as Array<
+          Record<string, unknown>
+        >) {
+          addPattern(declarator.id);
+        }
+      } else if (
+        declaration?.type === 'FunctionDeclaration' ||
+        declaration?.type === 'ClassDeclaration'
+      ) {
+        addPattern(declaration.id);
+      }
+    }
+  }
+
+  return bindings;
+}
+
+function collectFunctionVarBindings(
+  value: unknown,
+  bindings: Set<string>,
+): void {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectFunctionVarBindings(entry, bindings);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const node = value as Record<string, unknown>;
+  if (
+    node.type === 'FunctionDeclaration' ||
+    node.type === 'FunctionExpression' ||
+    node.type === 'ArrowFunctionExpression'
+  ) {
+    return;
+  }
+  if (node.type === 'VariableDeclaration' && node.kind === 'var') {
+    for (const declarator of node.declarations as Array<
+      Record<string, unknown>
+    >) {
+      const id = declarator.id as Record<string, unknown> | undefined;
+      if (id?.type === 'Identifier' && typeof id.name === 'string') {
+        bindings.add(id.name);
+      }
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (key === 'loc' || key === 'range' || key === 'start' || key === 'end')
+      continue;
+    collectFunctionVarBindings(child, bindings);
+  }
+}
+
+function isTypeOnlyReference(
+  identifier: Record<string, unknown>,
+  ancestors: Array<Record<string, unknown>>,
+): boolean {
+  let child = identifier;
+  for (let index = ancestors.length - 1; index >= 0; index--) {
+    const parent = ancestors[index];
+    if (
+      (parent.type === 'TSAsExpression' ||
+        parent.type === 'TSSatisfiesExpression' ||
+        parent.type === 'TSNonNullExpression' ||
+        parent.type === 'TSTypeAssertion') &&
+      parent.expression === child
+    ) {
+      child = parent;
+      continue;
+    }
+    if (typeof parent.type === 'string' && parent.type.startsWith('TS')) {
+      return true;
+    }
+    break;
+  }
+  return false;
+}
+
+function propagateModuleConstantTaint(
+  constants: Map<string, ModuleConstant>,
+): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const constant of constants.values()) {
+      for (const dependency of constant.dependencies) {
+        const source = constants.get(dependency.name);
+        if (!source) continue;
+        for (const unresolved of source.unresolved) {
+          if (
+            dependency.start !== undefined &&
+            unresolved.start !== undefined &&
+            unresolved.start > dependency.start &&
+            !hasNestedReferenceValue(source.value)
+          ) {
+            continue;
+          }
+          if (
+            !constant.unresolved.some(
+              (existing) =>
+                existing.expression === unresolved.expression &&
+                existing.start === unresolved.start,
+            )
+          ) {
+            constant.unresolved.push(unresolved);
+            changed = true;
+          }
+        }
+        if (hasNestedReferenceValue(source.value)) {
+          for (const unsafeReference of constant.unsafeReferences) {
+            const matchesUnsafeReference = (existing: UnresolvedSpread) =>
+              existing.expression === unsafeReference.expression &&
+              existing.start === unsafeReference.start;
+            if (!source.unresolved.some(matchesUnsafeReference)) {
+              source.unresolved.push(unsafeReference);
+              changed = true;
+            }
+            if (!source.unsafeReferences.some(matchesUnsafeReference)) {
+              source.unsafeReferences.push(unsafeReference);
+              changed = true;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function hasNestedReferenceValue(value: Record<string, unknown>): boolean {
+  return Object.values(value).some(
+    (entry) => entry !== null && typeof entry === 'object',
+  );
+}
+
+function isSafeModuleConstantReference(
+  identifier: Record<string, unknown>,
+  ancestors: Array<Record<string, unknown>>,
+  constants: Map<string, ModuleConstant>,
+): boolean {
+  let child = identifier;
+
+  for (let index = ancestors.length - 1; index >= 0; index--) {
+    const parent = ancestors[index];
+
+    if (parent.type === 'VariableDeclarator' && parent.id === child) {
+      return true;
+    }
+
+    if (
+      parent.type === 'Property' &&
+      parent.key === child &&
+      parent.computed === false &&
+      parent.shorthand === false
+    ) {
+      return true;
+    }
+
+    if (
+      parent.type === 'MemberExpression' &&
+      parent.property === child &&
+      parent.computed === false
+    ) {
+      return true;
+    }
+
+    if (
+      (parent.type === 'TSAsExpression' ||
+        parent.type === 'TSSatisfiesExpression' ||
+        parent.type === 'TSNonNullExpression' ||
+        parent.type === 'TSTypeAssertion' ||
+        parent.type === 'ParenthesizedExpression') &&
+      parent.expression === child
+    ) {
+      child = parent;
+      continue;
+    }
+
+    if (parent.type === 'SpreadElement' && parent.argument === child) {
+      const name =
+        typeof identifier.name === 'string' ? identifier.name : undefined;
+      const constant = name ? constants.get(name) : undefined;
+      if (!constant || !hasNestedReferenceValue(constant.value)) return true;
+
+      const moduleConstantInitializer = [...constants.values()].some(
+        (candidate) =>
+          candidate.dependencies.some(
+            (dependency) =>
+              dependency.name === name && dependency.start === parent.start,
+          ),
+      );
+      if (moduleConstantInitializer) return true;
+
+      const smrtDecorator = ancestors.some((ancestor) => {
+        if (
+          ancestor.type !== 'Decorator' ||
+          !ancestor.expression ||
+          typeof ancestor.expression !== 'object'
+        ) {
+          return false;
+        }
+        const expression = ancestor.expression as Record<string, unknown>;
+        if (
+          expression.type !== 'CallExpression' ||
+          !expression.callee ||
+          typeof expression.callee !== 'object'
+        ) {
+          return false;
+        }
+        const callee = expression.callee as Record<string, unknown>;
+        return callee.type === 'Identifier' && callee.name === 'smrt';
+      });
+      return smrtDecorator;
+    }
+
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Turn unresolvable `@smrt()` config spreads into `severity: 'error'` scan
+ * diagnostics.
+ *
+ * Deliberately fail-loud rather than fail-quiet. A dropped spread may have
+ * carried `api`/`mcp`/`cli`, and an absent surface key means *default open* —
+ * so silently discarding one converts a deliberate lockdown into a published
+ * CRUD surface with no signal anywhere. Erroring matches the precedent in
+ * `verify-completeness.ts`, where scan errors short-circuit so a broken source
+ * can never masquerade as a complete manifest.
+ *
+ * @see https://github.com/happyvertical/smrt/issues/2100
+ */
+function reportUnresolvedSpreads(
+  unresolved: UnresolvedSpread[],
+  filePath: string,
+  sourceText: string,
+  errors: ScanError[],
+): void {
+  for (const spread of unresolved) {
+    const loc =
+      spread.start === undefined
+        ? undefined
+        : getLineColumn(sourceText, spread.start);
+    errors.push({
+      message:
+        `Cannot statically resolve \`${spread.expression}\` while expanding a @smrt() config. ` +
+        `Only literal keys/values and unescaped module-scope \`const\` object literals ` +
+        `in the same file are supported. Inline the keys or remove the mutation/alias — ` +
+        `an unresolved expression ` +
+        `would drop api/mcp/cli from the manifest, and an absent surface defaults to open.`,
+      filePath,
+      line: loc?.line,
+      column: loc?.column,
+      severity: 'error',
+    });
+  }
+}
+
+/**
  * Extract class definition from an AST node
  */
 function extractClassFromNode(
@@ -883,6 +1502,7 @@ function extractClassFromNode(
   filePath: string,
   sourceText: string,
   importAliases: Map<string, string>,
+  ctx?: DecoratorConfigContext,
 ): RawClassDefinition | null {
   // Handle export declarations
   if (node.type === 'ExportNamedDeclaration' && node.declaration) {
@@ -891,6 +1511,7 @@ function extractClassFromNode(
       filePath,
       sourceText,
       importAliases,
+      ctx,
     );
   }
   if (node.type === 'ExportDefaultDeclaration' && node.declaration) {
@@ -899,12 +1520,19 @@ function extractClassFromNode(
       filePath,
       sourceText,
       importAliases,
+      ctx,
     );
   }
 
   // Handle class declaration
   if (node.type === 'ClassDeclaration') {
-    return extractClassDeclaration(node, filePath, sourceText, importAliases);
+    return extractClassDeclaration(
+      node,
+      filePath,
+      sourceText,
+      importAliases,
+      ctx,
+    );
   }
 
   return null;
@@ -918,6 +1546,7 @@ function extractClassDeclaration(
   filePath: string,
   sourceText: string,
   importAliases: Map<string, string>,
+  ctx?: DecoratorConfigContext,
 ): RawClassDefinition {
   const className = node.id?.name || 'AnonymousClass';
 
@@ -930,20 +1559,31 @@ function extractClassDeclaration(
   );
   const hasSmartDecorator = !!smrtDecorator;
   const smrtConfig = smrtDecorator
-    ? extractDecoratorConfig(smrtDecorator, sourceText)
+    ? extractDecoratorConfig(
+        smrtDecorator,
+        sourceText,
+        ctx ? { ...ctx, requireLiteralValues: true } : ctx,
+      )
     : null;
   const decoratorConfig =
     tenantScopedDecorator || reportDecorator
       ? {
           ...(smrtConfig ?? {}),
           ...(reportDecorator
-            ? { report: extractDecoratorConfig(reportDecorator, sourceText) }
+            ? {
+                report: extractDecoratorConfig(
+                  reportDecorator,
+                  sourceText,
+                  ctx,
+                ),
+              }
             : {}),
           ...(tenantScopedDecorator
             ? {
                 tenantScoped: extractDecoratorConfig(
                   tenantScopedDecorator,
                   sourceText,
+                  ctx,
                 ),
               }
             : {}),
@@ -1020,13 +1660,14 @@ function isNamedDecorator(decorator: Decorator, name: string): boolean {
 function extractDecoratorConfig(
   decorator: Decorator,
   sourceText: string,
+  ctx?: DecoratorConfigContext,
 ): RawDecoratorConfig | null {
   const expr = decorator.expression;
 
   if (expr.type === 'CallExpression' && expr.arguments.length > 0) {
-    const arg = expr.arguments[0];
-    if (arg.type === 'ObjectExpression') {
-      return extractObjectLiteral(arg, sourceText) as RawDecoratorConfig;
+    const arg = unwrapTypeAssertion(expr.arguments[0]);
+    if (arg?.type === 'ObjectExpression') {
+      return extractObjectLiteral(arg, sourceText, ctx) as RawDecoratorConfig;
     }
   }
 
@@ -1040,17 +1681,83 @@ function extractDecoratorConfig(
 function extractObjectLiteral(
   node: ObjectExpression,
   sourceText: string,
+  ctx?: DecoratorConfigContext,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
+  // Iterate in source order so spread/property precedence matches runtime
+  // semantics: `{ api: true, ...CFG }` takes `api` from CFG, while
+  // `{ ...CFG, api: true }` overrides it.
   for (const prop of node.properties) {
-    if (prop.type === 'Property' && !prop.computed) {
+    if (prop.type === 'SpreadElement') {
+      // A spread that reaches the manifest as "absent" is indistinguishable
+      // from a surface the author never declared — and absent means default
+      // *open*. Resolve it, or record it for a scan error. Never drop it
+      // silently. See issue #2100.
+      const argument = unwrapTypeAssertion(prop.argument);
+      const constant =
+        argument?.type === 'Identifier'
+          ? ctx?.constants.get(argument.name)
+          : undefined;
+      const resolved =
+        constant?.value ??
+        (argument?.type === 'ObjectExpression'
+          ? extractObjectLiteral(argument, sourceText, ctx)
+          : undefined);
+
+      if (resolved) {
+        if (constant && ctx?.dependencies && argument?.type === 'Identifier') {
+          ctx.dependencies.push({
+            name: argument.name,
+            start: prop.start,
+          });
+        }
+        for (const [key, value] of Object.entries(resolved)) {
+          if (isSafeObjectKey(key)) {
+            result[key] = value;
+          }
+        }
+        // A tainted constant resolved to a PARTIAL object — replay the spreads
+        // its own initializer could not resolve, or the drop would go unnoticed
+        // here even though this site depends on the missing keys.
+        if (constant?.unresolved.length && ctx && !ctx.dependencies) {
+          ctx.unresolved.push(
+            ...constant.unresolved.filter(
+              (unresolved) =>
+                hasNestedReferenceValue(constant.value) ||
+                prop.start === undefined ||
+                unresolved.start === undefined ||
+                unresolved.start <= prop.start,
+            ),
+          );
+        }
+      } else if (ctx) {
+        ctx.unresolved.push({
+          expression: sliceSource(prop, sourceText) ?? '...<unknown>',
+          start: prop.start,
+        });
+      }
+      continue;
+    }
+
+    if (prop.type === 'Property') {
       const key = getPropertyKey(prop.key);
+      if (
+        prop.shorthand ||
+        (prop.computed &&
+          !(prop.key.type === 'Literal' && typeof prop.key.value === 'string'))
+      ) {
+        ctx?.unresolved.push({
+          expression: sliceSource(prop, sourceText) ?? '<unknown property>',
+          start: prop.start,
+        });
+        continue;
+      }
       // Skip prototype-pollution keys (__proto__/constructor/prototype) so a
       // decorator-config property of that name cannot mutate the metadata
       // object's prototype.
       if (key && isSafeObjectKey(key)) {
-        result[key] = extractValue(prop.value, sourceText);
+        result[key] = extractValue(prop.value, sourceText, ctx);
       }
     }
   }
@@ -1074,7 +1781,16 @@ function getPropertyKey(node: Expression): string | null {
 /**
  * Extract value from expression
  */
-function extractValue(node: Expression | Pattern, sourceText: string): unknown {
+function extractValue(
+  node: Expression | Pattern,
+  sourceText: string,
+  ctx?: DecoratorConfigContext,
+): unknown {
+  const unwrapped = unwrapTypeAssertion(node as Expression);
+  if (unwrapped && unwrapped !== node) {
+    return extractValue(unwrapped, sourceText, ctx);
+  }
+
   switch (node.type) {
     case 'Literal':
       return node.value;
@@ -1085,9 +1801,31 @@ function extractValue(node: Expression | Pattern, sourceText: string): unknown {
       if (node.name === 'null') return null;
       if (node.name === 'true') return true;
       if (node.name === 'false') return false;
+      if (ctx?.requireLiteralValues) {
+        ctx.unresolved.push({
+          expression: sliceSource(node, sourceText) ?? node.name,
+          start: node.start,
+        });
+      }
       return node.name; // Return as string for class references
 
-    case 'ArrayExpression':
+    case 'ArrayExpression': {
+      // Array spreads (e.g. `include: [...BASE_ACTIONS, 'archive']`) are not
+      // resolved, but must not vanish silently: a dropped element changes an
+      // include/exclude allowlist. Record for a scan error instead.
+      for (const el of node.elements) {
+        if (
+          el &&
+          typeof el === 'object' &&
+          el.type === 'SpreadElement' &&
+          ctx
+        ) {
+          ctx.unresolved.push({
+            expression: sliceSource(el, sourceText) ?? '...<unknown>',
+            start: el.start,
+          });
+        }
+      }
       return node.elements
         .filter(
           (el: Expression | SpreadElement | null): el is Expression =>
@@ -1096,10 +1834,11 @@ function extractValue(node: Expression | Pattern, sourceText: string): unknown {
             'type' in el &&
             el.type !== 'SpreadElement',
         )
-        .map((el: Expression) => extractValue(el, sourceText));
+        .map((el: Expression) => extractValue(el, sourceText, ctx));
+    }
 
     case 'ObjectExpression':
-      return extractObjectLiteral(node, sourceText);
+      return extractObjectLiteral(node, sourceText, ctx);
 
     case 'UnaryExpression':
       if (node.operator === '-' && node.argument?.type === 'Literal') {
@@ -1114,14 +1853,24 @@ function extractValue(node: Expression | Pattern, sourceText: string): unknown {
     case 'NewExpression': {
       // Return the raw source for complex expressions
       const src = sliceSource(node, sourceText);
-      if (src) return src;
+      if (src) {
+        if (ctx?.requireLiteralValues) {
+          ctx.unresolved.push({ expression: src, start: node.start });
+        }
+        return src;
+      }
       break;
     }
   }
 
   // For complex expressions, return raw source if available
   const rawSrc = sliceSource(node, sourceText);
-  if (rawSrc) return rawSrc;
+  if (rawSrc) {
+    if (ctx?.requireLiteralValues) {
+      ctx.unresolved.push({ expression: rawSrc, start: node.start });
+    }
+    return rawSrc;
+  }
 
   return undefined;
 }

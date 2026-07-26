@@ -247,4 +247,27 @@ describe('ManifestBuilder coverage', () => {
       expect(obj.filePath).not.toContain('\\');
     }
   });
+
+  it('aborts instead of emitting a manifest from scan errors', async () => {
+    writeFileSync(
+      join(dir, 'src', 'unsafe.ts'),
+      `import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { IMPORTED_SURFACE } from './shared.js';
+
+@smrt({ ...IMPORTED_SURFACE })
+class Unsafe extends SmrtObject {}
+`,
+    );
+
+    const builder = new ManifestBuilder();
+    process.chdir(dir);
+
+    await expect(
+      builder.generate({
+        include: ['src/**/*.ts'],
+        outputDir: join(dir, 'out'),
+        generateTypeStub: false,
+      }),
+    ).rejects.toThrow(/Build aborted due to 1 scan error/);
+  });
 });
