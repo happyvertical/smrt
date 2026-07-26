@@ -297,7 +297,7 @@ The documentation build discovers package READMEs from workspace `package.json` 
 ## Related projects
 
 - [HappyVertical SDK](https://github.com/happyvertical/sdk) — infrastructure packages used by s-m-r-t.
-- [Praeco](https://github.com/happyvertical/praeco) — a production application built on s-m-r-t.
+- [s-m-r-t SaaS starter](https://github.com/happyvertical/smrt-saas-starter) — reference application, demo, and template baseline.
 
 ## License
 
