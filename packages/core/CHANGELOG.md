@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.24
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: link SaaS starter and normalize branding (#2090)
+  - @happyvertical/smrt-config@0.40.24
+  - @happyvertical/smrt-types@0.40.24
+  - @happyvertical/smrt-scanner@0.40.24
+
 ## 0.40.23
 
 ### Patch Changes
