@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.23
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: split package agent docs by module (#2109)
+  - @happyvertical/smrt-config@0.40.23
+  - @happyvertical/smrt-types@0.40.23
+  - @happyvertical/smrt-scanner@0.40.23
+
 ## 0.40.22
 
 ### Patch Changes
