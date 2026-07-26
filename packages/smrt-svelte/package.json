@@ -75,7 +75,8 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "agents"
   ],
   "scripts": {
     "build": "svelte-package -i src --tsconfig tsconfig.svelte.json",

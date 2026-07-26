@@ -15,6 +15,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { readAgentModuleDocs } from '@happyvertical/smrt-core/knowledge';
+import type { DomainKnowledgeModuleDoc } from '@happyvertical/smrt-types';
 import type { CLICommand } from '../cli-generator.js';
 
 export interface PackageInfo {
@@ -25,6 +27,13 @@ export interface PackageInfo {
   /** Backward-compatible alias for older tests/importers. */
   claudeMd?: string | null;
   docSource?: 'AGENTS.md' | 'CLAUDE.md' | null;
+  /**
+   * Sibling module docs linked from the package's AGENTS.md (#2108). Oversized
+   * package docs are split by module into `agents/<module>.md` instead of nested
+   * AGENTS.md files, so the snapshot must follow the links or it loses prose
+   * that cannot be regenerated from the manifest.
+   */
+  moduleDocs?: DomainKnowledgeModuleDoc[];
 }
 
 export interface RootDocInfo {
@@ -125,6 +134,13 @@ function createDocsCommand(config: DocsCommandOptions): CLICommand {
         const withAgentDocs = allPackages.filter((p) => p.agentMd).length;
         if (withAgentDocs > 0) {
           console.log(`   ${withAgentDocs} with AGENTS.md`);
+        }
+        const moduleDocCount = allPackages.reduce(
+          (total, p) => total + (p.moduleDocs?.length ?? 0),
+          0,
+        );
+        if (moduleDocCount > 0) {
+          console.log(`   ${moduleDocCount} linked module docs`);
         }
         if (rootDocs.length > 0) {
           console.log(`   ${rootDocs.length} framework documents included`);
@@ -279,6 +295,10 @@ function loadPackageInfo(
       agentMd: agentDoc.content,
       claudeMd: agentDoc.content,
       docSource: agentDoc.source,
+      moduleDocs:
+        agentDoc.source === 'AGENTS.md'
+          ? readAgentModuleDocs(packagePath, agentDoc.content ?? undefined)
+          : [],
     };
 
     return info;
@@ -424,6 +444,30 @@ function renderAgentMd(content: string): string {
   return content.trim();
 }
 
+/**
+ * The package's AGENTS.md followed by every module doc it links (#2108).
+ * The links stay in the rendered text so a reader can still map a section back
+ * to its source path; the bodies follow so nothing is lost downstream.
+ */
+function renderPackageDoc(pkg: PackageInfo, lines: string[]): void {
+  const content = pkg.agentMd ?? pkg.claudeMd;
+  if (!content) {
+    lines.push('*No AGENTS.md found for this package.*');
+    lines.push('');
+    return;
+  }
+
+  lines.push(renderAgentMd(content));
+  lines.push('');
+
+  for (const doc of pkg.moduleDocs ?? []) {
+    lines.push(`#### ${doc.path}`);
+    lines.push('');
+    lines.push(renderAgentMd(doc.content));
+    lines.push('');
+  }
+}
+
 export function generateMarkdown(
   packages: PackageInfo[],
   rootDocs?: RootDocInfo[],
@@ -486,14 +530,7 @@ export function generateMarkdown(
     lines.push(`## ${pkg.name}`);
     lines.push('');
 
-    const content = pkg.agentMd ?? pkg.claudeMd;
-    if (content) {
-      lines.push(renderAgentMd(content));
-      lines.push('');
-    } else {
-      lines.push('*No AGENTS.md found for this package.*');
-      lines.push('');
-    }
+    renderPackageDoc(pkg, lines);
   }
 
   if (sdkPackages && sdkPackages.length > 0) {
@@ -508,14 +545,7 @@ export function generateMarkdown(
       lines.push(`### ${pkg.name}`);
       lines.push('');
 
-      const content = pkg.agentMd ?? pkg.claudeMd;
-      if (content) {
-        lines.push(renderAgentMd(content));
-        lines.push('');
-      } else {
-        lines.push('*No AGENTS.md found for this package.*');
-        lines.push('');
-      }
+      renderPackageDoc(pkg, lines);
     }
   }
 

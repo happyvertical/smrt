@@ -219,6 +219,35 @@ Gamma content.
       expect(markdown).not.toContain('# My Package');
     });
 
+    it('should append the module docs AGENTS.md links (#2108)', () => {
+      // An oversized package doc is split into sibling agents/<module>.md files,
+      // so the snapshot must follow the links or it silently loses curated
+      // prose that cannot be regenerated from the manifest.
+      const packages: PackageInfo[] = [
+        {
+          name: '@test/split-pkg',
+          version: '1.0.0',
+          readme: null,
+          agentMd:
+            '# Split\n\nOrientation and Gotchas.\n\n| Module | Module doc |\n|---|---|\n| payouts | [agents/payouts.md](agents/payouts.md) |',
+          moduleDocs: [
+            {
+              path: 'agents/payouts.md',
+              module: 'payouts',
+              content: '# split/payouts\n\nclaimForPayout never double-owns.',
+            },
+          ],
+        },
+      ];
+
+      const markdown = generateMarkdown(packages);
+
+      expect(markdown).toContain('Orientation and Gotchas.');
+      expect(markdown).toContain('#### agents/payouts.md');
+      expect(markdown).toContain('claimForPayout never double-owns.');
+      expect(markdown).not.toContain('# split/payouts');
+    });
+
     it('should include footer with regeneration note', () => {
       const packages: PackageInfo[] = [];
 

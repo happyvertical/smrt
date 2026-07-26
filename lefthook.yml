@@ -224,6 +224,17 @@ pre-push:
         Use a dependency / devDependency / @crossPackageRef indirection.
         Run: pnpm check:no-smrt-peers
 
+    agents-chain:
+      # Instruction-chain budget (#2106, #2108): the root AGENTS.md plus every
+      # AGENTS.md down to a package is handed to an agent as one additive chain,
+      # capped at 32 KB by the org `hv-agent audit`. Warns above 80% of the cap.
+      run: node scripts/check-agents-chain.mjs
+      fail_text: |
+        ❌ An AGENTS.md instruction chain exceeds 32 KB.
+        Split per-module semantics into packages/<pkg>/agents/<module>.md and link
+        them from a Modules table; keep invariants and Gotchas inline. Never add
+        nested AGENTS.md files — chains are additive. Run: pnpm check:agents-chain
+
     deps-acyclic:
       # DAG guardrail (#1582): the smrt package graph (deps + peers) must stay
       # acyclic. Node-only; `pnpm deps:check` is the deeper source-import variant.
