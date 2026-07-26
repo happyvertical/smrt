@@ -276,6 +276,32 @@ export function getSyntheticMigrationNameForChange(
   }
 }
 
+/**
+ * Return every tracker name that can represent the current schema change.
+ *
+ * New type upgrades use a fingerprinted id, but releases before #2111 wrote
+ * failures under the bare table-and-column id. Keep that old id as a
+ * classification alias only: execution always uses the fingerprinted id, so
+ * no applied migration record is rewritten or reused for a new conversion.
+ */
+export function getSyntheticMigrationNamesForChange(
+  change: SchemaChangeLike,
+): string[] {
+  const migrationName = getSyntheticMigrationNameForChange(change);
+  if (!migrationName) {
+    return [];
+  }
+
+  if (change.type === 'type_upgrade' && change.name) {
+    const legacyName = `type_upgrade_${change.table}_${change.name}`;
+    return migrationName === legacyName
+      ? [migrationName]
+      : [migrationName, legacyName];
+  }
+
+  return [migrationName];
+}
+
 export function shouldFailDbMigrate(state: DbMigrateFailureState): boolean {
   return (
     (state.tableErrorCount ?? 0) > 0 ||
@@ -331,8 +357,7 @@ export function getUnresolvedGeneratedMigrationNames(
       continue;
     }
 
-    const migrationName = getSyntheticMigrationNameForChange(change);
-    if (migrationName) {
+    for (const migrationName of getSyntheticMigrationNamesForChange(change)) {
       names.add(migrationName);
     }
   }

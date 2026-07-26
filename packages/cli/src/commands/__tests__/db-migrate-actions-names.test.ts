@@ -3,6 +3,7 @@ import {
   classifyTypeUpgradeSql,
   getSyntheticMigrationNameForAction,
   getSyntheticMigrationNameForChange,
+  getSyntheticMigrationNamesForChange,
   getUnresolvedGeneratedMigrationNames,
   partitionSchemaChanges,
 } from '../db-migrate-actions.js';
@@ -261,6 +262,22 @@ describe('getSyntheticMigrationNameForChange', () => {
         sql: utcConversion.sql,
       }),
     ).toBe(utcId);
+  });
+
+  it('keeps the legacy bare type-upgrade id as a status-only alias', () => {
+    const change = {
+      type: 'type_upgrade' as const,
+      table: 'ad_events',
+      name: 'created_at',
+      column: { type: 'TIMESTAMPTZ' },
+      mismatch: { actual: 'TIMESTAMP', expected: 'TIMESTAMPTZ' },
+      sql: "ALTER TABLE ad_events ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC'",
+    };
+
+    expect(getSyntheticMigrationNamesForChange(change)).toEqual([
+      getSyntheticMigrationNameForChange(change),
+      'type_upgrade_ad_events_created_at',
+    ]);
   });
 
   it('returns null for unknown types', () => {

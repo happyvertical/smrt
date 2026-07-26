@@ -453,7 +453,7 @@ describe('db:status', () => {
     });
   });
 
-  it('keeps failed migrations actionable when the live diff still requires them', async () => {
+  it('keeps legacy failed type upgrades actionable when the live diff still requires them', async () => {
     const typeUpgrade = {
       type: 'type_upgrade' as const,
       table: '_smrt_agent_schedules',
@@ -471,7 +471,7 @@ describe('db:status', () => {
     getHistoryMock.mockResolvedValue([
       {
         id: 'failed-2',
-        name: typeUpgradeName,
+        name: 'type_upgrade__smrt_agent_schedules_agent_config',
         version: '1.0.0',
         checksum: 'def',
         applied_checksum: null,
@@ -499,7 +499,7 @@ describe('db:status', () => {
     );
     expect(parsed.migrations.failed.actionRequired).toBe(1);
     expect(parsed.migrations.failed.details[0]).toMatchObject({
-      name: typeUpgradeName,
+      name: 'type_upgrade__smrt_agent_schedules_agent_config',
       resolution: 'action_required',
       kind: 'type_upgrade',
     });
