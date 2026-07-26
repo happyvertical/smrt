@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   coerceWorkbenchModules,
+  findWorkbenchRouteByHash,
   mergeWorkbenchModules,
   normalizeWorkbenchModule,
   qualifyWorkbenchRouteId,
+  workbenchRouteHash,
 } from '../runtime.js';
 
 describe('@happyvertical/smrt-workbench runtime', () => {
@@ -103,5 +105,31 @@ describe('qualifyWorkbenchRouteId', () => {
     expect(
       qualifyWorkbenchRouteId('@happyvertical/smrt-assets', 'manager'),
     ).toBe('@happyvertical/smrt-assets:manager');
+  });
+});
+
+describe('Workbench route fragments', () => {
+  it('maps embedded route hashes back to normalized host routes', () => {
+    const routes = normalizeWorkbenchModule({
+      packageName: '@happyvertical/smrt-content',
+      routeModules: [
+        {
+          packageName: '@happyvertical/smrt-content',
+          routes: {
+            workspace: {
+              id: 'content.workspace',
+              title: 'Contents',
+              defaultPath: '/workspace',
+            },
+          },
+        },
+      ],
+    }).routes;
+
+    expect(workbenchRouteHash('content.workspace')).toBe('#content-workspace');
+    expect(
+      findWorkbenchRouteByHash(routes, '#content-workspace')?.qualifiedId,
+    ).toBe('@happyvertical/smrt-content:content.workspace');
+    expect(findWorkbenchRouteByHash(routes, '#missing')).toBeNull();
   });
 });

@@ -136,7 +136,24 @@ describe('workbench commands', () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
-  it('starts the host from an installed workbench package', async () => {
+  it('explains the node-modules requirement for Yarn Plug’n’Play', async () => {
+    rmSync(join(projectRoot, 'packages'), { recursive: true, force: true });
+    writeFileSync(
+      join(projectRoot, 'package.json'),
+      '{"name":"pnp-consumer","packageManager":"yarn@4.9.2"}\n',
+    );
+    writeFileSync(join(projectRoot, '.pnp.cjs'), 'module.exports = {};\n');
+    process.chdir(projectRoot);
+
+    await expect(
+      (await loadCommands())['workbench:dev'].handler([], {}),
+    ).rejects.toThrow('nodeLinker: node-modules');
+
+    expect(importWorkspaceModuleMock).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('starts the installed host with the consumer package manager', async () => {
     rmSync(join(projectRoot, 'packages'), { recursive: true, force: true });
     writeFileSync(
       join(projectRoot, 'package.json'),
@@ -167,18 +184,21 @@ describe('workbench commands', () => {
     );
     process.chdir(projectRoot);
 
-    await (await loadCommands())['workbench:dev'].handler([], {
+    const commands = await loadCommands();
+    await commands['workbench:dev'].handler([], {
       host: '127.0.0.1',
       port: '5570',
     });
 
     expect(importWorkspaceModuleMock).not.toHaveBeenCalled();
     expect(spawnMock).toHaveBeenCalledWith(
-      'pnpm',
+      'npm',
       [
-        '--dir',
+        '--prefix',
         join(installedRoot, 'host'),
+        'run',
         'dev',
+        '--',
         '--host',
         '127.0.0.1',
         '--port',
@@ -190,6 +210,58 @@ describe('workbench commands', () => {
           SMRT_WORKBENCH_PROJECT_ROOT: projectRoot,
         }),
       }),
+    );
+
+    spawnMock.mockClear();
+    writeFileSync(join(projectRoot, 'yarn.lock'), '');
+    await commands['workbench:dev'].handler([], {
+      host: '127.0.0.1',
+      port: '5571',
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'yarn',
+      [
+        '--cwd',
+        join(installedRoot, 'host'),
+        'dev',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '5571',
+      ],
+      expect.objectContaining({ cwd: projectRoot }),
+    );
+
+    spawnMock.mockClear();
+    const nestedProjectRoot = join(projectRoot, 'apps', 'consumer');
+    mkdirSync(nestedProjectRoot, { recursive: true });
+    writeFileSync(
+      join(nestedProjectRoot, 'package.json'),
+      '{"name":"nested-consumer","type":"module"}\n',
+    );
+    writeFileSync(
+      join(projectRoot, 'pnpm-lock.yaml'),
+      'lockfileVersion: "9.0"\n',
+    );
+    process.chdir(nestedProjectRoot);
+    await commands['workbench:dev'].handler([], {
+      host: '127.0.0.1',
+      port: '5572',
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'pnpm',
+      [
+        '--dir',
+        join(installedRoot, 'host'),
+        'dev',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '5572',
+      ],
+      expect.objectContaining({ cwd: nestedProjectRoot }),
     );
   });
 });

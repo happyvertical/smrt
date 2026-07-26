@@ -102,6 +102,17 @@ function readPkg(name) {
   return { path, json: JSON.parse(readFileSync(path, 'utf8')) };
 }
 
+function readPkgByPackageName(packageName) {
+  for (const directoryName of listPackages()) {
+    const pkg = readPkg(directoryName);
+    if (pkg?.json.name === packageName) {
+      return pkg;
+    }
+  }
+
+  return null;
+}
+
 // Recursively walk an exports map looking for any entry that has both `types`
 // and `import` conditions where `types` is not the first key.
 function findExportsOrderViolations(obj, path = '') {
@@ -198,12 +209,13 @@ function checkPackage(name) {
       );
     } else {
       const referencePackageName = fixedGroup[0];
-      const referenceDirName = referencePackageName.replace(
-        '@happyvertical/smrt-',
-        '',
-      );
-      const referenceVersion = readPkg(referenceDirName)?.json.version;
-      if (referenceVersion && json.version !== referenceVersion) {
+      const referenceVersion =
+        readPkgByPackageName(referencePackageName)?.json.version;
+      if (!referenceVersion) {
+        violations.push(
+          `fixed release group reference package ${JSON.stringify(referencePackageName)} could not be resolved`,
+        );
+      } else if (json.version !== referenceVersion) {
         violations.push(
           `version ${JSON.stringify(json.version)} must match fixed release group version ${JSON.stringify(referenceVersion)}`,
         );

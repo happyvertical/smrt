@@ -68,6 +68,25 @@ function findInstalledWorkbenchPackageRoot(cwd: string): string | null {
   }
 }
 
+function findYarnPnpRoot(cwd: string): string | null {
+  let current = resolve(cwd);
+
+  while (true) {
+    if (
+      existsSync(join(current, '.pnp.cjs')) ||
+      existsSync(join(current, '.pnp.js'))
+    ) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
 function resolveInstalledWorkbenchEntry(cwd: string): string | null {
   const packageRoot = findInstalledWorkbenchPackageRoot(cwd);
   const entryPath = packageRoot ? join(packageRoot, 'dist', 'index.js') : null;
@@ -77,6 +96,14 @@ function resolveInstalledWorkbenchEntry(cwd: string): string | null {
 function loadWorkbenchRuntime(cwd: string): Promise<SmrtWorkbenchRuntime> {
   if (!workbenchRuntimePromise) {
     const installedEntry = resolveInstalledWorkbenchEntry(cwd);
+    const workspaceRoot = findWorkspaceWorkbenchRoot(cwd);
+    if (!installedEntry && !workspaceRoot && findYarnPnpRoot(cwd)) {
+      return Promise.reject(
+        new Error(
+          'SMRT workbench requires Yarn to use nodeLinker: node-modules; Yarn Plug’n’Play does not expose the browser host as a physical directory.',
+        ),
+      );
+    }
     workbenchRuntimePromise = installedEntry
       ? import(pathToFileURL(installedEntry).href)
       : importWorkspaceModule<SmrtWorkbenchRuntime>({
@@ -140,6 +167,61 @@ function resolveWorkspaceWorkbenchHostDir(
 ): string | null {
   const hostDir = join(workspaceRoot, 'packages', 'smrt-workbench', 'host');
   return existsSync(join(hostDir, 'package.json')) ? hostDir : null;
+}
+
+function detectPackageManager(projectRoot: string): 'pnpm' | 'yarn' | 'npm' {
+  let current = resolve(projectRoot);
+
+  while (true) {
+    if (existsSync(join(current, 'pnpm-lock.yaml'))) {
+      return 'pnpm';
+    }
+    if (existsSync(join(current, 'yarn.lock'))) {
+      return 'yarn';
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return 'npm';
+    }
+    current = parent;
+  }
+}
+
+function workbenchDevCommand(
+  packageManager: 'pnpm' | 'yarn' | 'npm',
+  hostDir: string,
+  host: string,
+  port: string,
+): { command: string; args: string[] } {
+  if (packageManager === 'pnpm') {
+    return {
+      command: 'pnpm',
+      args: ['--dir', hostDir, 'dev', '--host', host, '--port', port],
+    };
+  }
+
+  if (packageManager === 'yarn') {
+    return {
+      command: 'yarn',
+      args: ['--cwd', hostDir, 'dev', '--host', host, '--port', port],
+    };
+  }
+
+  return {
+    command: 'npm',
+    args: [
+      '--prefix',
+      hostDir,
+      'run',
+      'dev',
+      '--',
+      '--host',
+      host,
+      '--port',
+      port,
+    ],
+  };
 }
 
 export const workbenchCommands: Record<string, CLICommand> = {
@@ -218,9 +300,18 @@ export const workbenchCommands: Record<string, CLICommand> = {
         console.log(`Focused package: ${scope.packageName}\n`);
       }
 
+      const packageManager = workspaceRoot
+        ? 'pnpm'
+        : detectPackageManager(scope.projectRoot);
+      const devCommand = workbenchDevCommand(
+        packageManager,
+        resolve(hostDir),
+        host,
+        port,
+      );
       await runCommand(
-        'pnpm',
-        ['--dir', resolve(hostDir), 'dev', '--host', host, '--port', port],
+        devCommand.command,
+        devCommand.args,
         scope.projectRoot,
         env,
       );

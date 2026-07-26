@@ -8,6 +8,10 @@ workspace package. Consumer projects add `"workbench": "smrt workbench dev"` to
 their package scripts after installing `@happyvertical/smrt-cli` and
 `@happyvertical/smrt-workbench`.
 
+Yarn consumers must use `nodeLinker: node-modules`. The workbench browser host
+is served from the installed package directory and is not available through
+Yarn Plug'n'Play's virtual filesystem.
+
 - workspace root: aggregate view of all workspace packages
 - package directory: aggregate host focused to that package
 - consumer project: installed s-m-r-t package metadata plus local project knowledge

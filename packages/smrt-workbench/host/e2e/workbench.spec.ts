@@ -238,6 +238,23 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
   await expect(page.getByTestId('workbench-route-stage')).not.toContainText(
     'Failed to load contents',
   );
+  await page
+    .getByTestId('workbench-route-stage')
+    .getByRole('link', { name: 'Governance', exact: true })
+    .click();
+  await expect(page).toHaveURL(/#content-governance$/);
+  await expect(page.getByTestId('workbench-route-stage')).toContainText(
+    'Manage review policies',
+  );
+  await page.reload();
+  await expect(page.getByTestId('workbench-route-stage')).toContainText(
+    'Manage review policies',
+  );
+  await expect(
+    page.locator(
+      '[data-workbench-package="@happyvertical/smrt-content"]',
+    ),
+  ).toHaveClass(/selected/);
 
   await page
     .getByPlaceholder('Package name or description')

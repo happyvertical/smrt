@@ -203,14 +203,9 @@ function addWatchFileIfExists(
 export function smrtWorkbenchVitePlugin(
   options: SmrtWorkbenchVitePluginOptions = {},
 ): Plugin {
-  let hostRoot = process.cwd();
-
   return {
     name: 'smrt-workbench-vite-plugin',
     enforce: 'pre',
-    configResolved(config) {
-      hostRoot = config.root ? resolve(config.root) : process.cwd();
-    },
     resolveId(id) {
       if (id === VIRTUAL_WORKBENCH_PROJECT_MODULE_ID) {
         return RESOLVED_VIRTUAL_WORKBENCH_PROJECT_MODULE_ID;

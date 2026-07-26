@@ -15,7 +15,7 @@ import {
 } from '@happyvertical/smrt-ui/themes';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
-import { mergeWorkbenchModules } from '../runtime.js';
+import { findWorkbenchRouteByHash, mergeWorkbenchModules } from '../runtime.js';
 import type {
   ResolvedWorkbenchRouteEntry,
   SmrtWorkbenchModule,
@@ -153,6 +153,22 @@ const shellState = createShellState({
 
 onMount(() => {
   isHydrated = true;
+  const selectRouteFromHash = () => {
+    const route = findWorkbenchRouteByHash(
+      normalizedModules.flatMap((module) => module.routes),
+      window.location.hash,
+    );
+    if (route) {
+      selectRoute(route);
+    }
+  };
+
+  window.addEventListener('hashchange', selectRouteFromHash);
+  selectRouteFromHash();
+
+  return () => {
+    window.removeEventListener('hashchange', selectRouteFromHash);
+  };
 });
 
 const packageStats = $derived(
@@ -419,6 +435,8 @@ function selectPlaygroundEntry(entry: WorkbenchPlaygroundNavEntry) {
 }
 
 function selectRoute(route: ResolvedWorkbenchRouteEntry) {
+  selectedPackageName = route.packageName;
+  expandedPackageName = route.packageName;
   selectedRouteId = route.qualifiedId;
   activeTab = 'routes';
 }

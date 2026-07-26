@@ -56,6 +56,34 @@ export function qualifyWorkbenchRouteId(
   return `${packageName}:${routeId}`;
 }
 
+export function workbenchRouteHash(routeId: string): string {
+  return `#${routeId.replace(/[^a-zA-Z0-9_-]+/g, '-')}`;
+}
+
+export function findWorkbenchRouteByHash(
+  routes: ResolvedWorkbenchRouteEntry[],
+  hash: string,
+): ResolvedWorkbenchRouteEntry | null {
+  if (!hash.startsWith('#')) {
+    return null;
+  }
+
+  let fragment: string;
+  try {
+    fragment = decodeURIComponent(hash.slice(1));
+  } catch {
+    return null;
+  }
+  return (
+    routes.find(
+      (route) =>
+        fragment === route.id ||
+        fragment === route.qualifiedId ||
+        `#${fragment}` === workbenchRouteHash(route.id),
+    ) || null
+  );
+}
+
 export function normalizeWorkbenchModule(
   module: SmrtWorkbenchModule,
 ): ResolvedWorkbenchModule {
