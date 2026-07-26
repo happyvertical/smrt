@@ -8,6 +8,7 @@ export interface OxcScannerLike {
         filePath: string;
         message: string;
         line?: number;
+        severity: 'error' | 'warning';
       }>;
     };
     resolved: unknown[];

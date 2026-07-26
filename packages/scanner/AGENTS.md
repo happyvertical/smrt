@@ -67,15 +67,19 @@ executes the source.
   unwrapped from their `UnaryExpression` before the check.
 - **Static property capture**: captures `uiSlots` and `adminRoutes` for agent
   manifest generation.
-- **`@smrt()` config spreads resolve only against same-file `const`s** (issue
+- **`@smrt()` config spreads resolve only against unescaped same-file `const`s** (issue
   #2100). `@smrt({ ...INTERNAL_SURFACE })` works when `INTERNAL_SURFACE` is a
   module-scope `const` object literal in the same file (`as const` and
   `export const` included); a constant may spread an earlier constant. Anything
-  else — an imported constant, a `let`, a function call, a spread inside an
-  include array — is reported as a `severity: 'error'` scan diagnostic, never
-  silently dropped. Silence would be unsafe: a dropped spread can remove
-  `api`/`mcp`/`cli`, and an ABSENT surface key means default-open full CRUD, so
-  a quiet drop turns a deliberate lockdown into a published surface.
+  else — an imported constant, a `let`, a function call, a computed non-literal
+  key, shorthand or non-literal value, mutation/alias/escape, or a spread inside
+  an include array — is reported as a `severity: 'error'` scan diagnostic,
+  never silently dropped. `const` prevents rebinding but not property mutation,
+  and object spread is shallow, so only binding-aware spread references whose
+  shared nested values remain safe through the decorator use are trusted.
+  Silence would be unsafe: a dropped spread can remove `api`/`mcp`/`cli`, and an
+  ABSENT surface key means default-open full CRUD, so a quiet drop turns a
+  deliberate lockdown into a published surface.
   A constant whose own initializer holds an unresolvable spread
   (`const CFG = { ...IMPORTED }`) is tracked as **tainted**: it still resolves,
   but its taint replays into the diagnostics of every decorator that spreads

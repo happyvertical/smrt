@@ -278,6 +278,22 @@ export class ManifestBuilder {
     });
 
     const { results, resolved } = await scanner.scanAndResolve();
+    const scanErrors = results.errors.filter(
+      (diagnostic) => diagnostic.severity === 'error',
+    );
+    if (scanErrors.length > 0) {
+      const detail = scanErrors
+        .map((diagnostic) => {
+          const where = diagnostic.line
+            ? `${diagnostic.filePath}:${diagnostic.line}`
+            : diagnostic.filePath;
+          return `${where} — ${diagnostic.message}`;
+        })
+        .join('; ');
+      throw new Error(
+        `[smrt] Build aborted due to ${scanErrors.length} scan error(s): ${detail}`,
+      );
+    }
 
     // Read package.json for metadata
     let packageName: string | undefined;

@@ -62,6 +62,30 @@ describe('@smrt() config spread resolution (#2100)', () => {
     expect(config).toMatchObject({ api: false, cli: false, mcp: false });
   });
 
+  it('resolves a spread through an angle-bracket const assertion', () => {
+    const { config, errors } = configOf(`
+      const INTERNAL_SURFACES = <const>{ api: false, cli: false, mcp: false };
+
+      @smrt({ ...INTERNAL_SURFACES })
+      class AssistanceRequest extends SmrtObject {}
+    `);
+
+    expect(errors).toHaveLength(0);
+    expect(config).toMatchObject({ api: false, cli: false, mcp: false });
+  });
+
+  it('unwraps assertions and parentheses around the decorator config', () => {
+    const { config, errors } = configOf(`
+      const INTERNAL_SURFACE = { api: false, mcp: false };
+
+      @smrt(({ ...INTERNAL_SURFACE, cli: false }) as const)
+      class Widget extends SmrtObject {}
+    `);
+
+    expect(errors).toHaveLength(0);
+    expect(config).toMatchObject({ api: false, cli: false, mcp: false });
+  });
+
   it('resolves a spread of an exported const', () => {
     const { config, errors } = configOf(`
       export const SHARED = { api: false, mcp: false };
@@ -144,6 +168,18 @@ describe('@smrt() config spread resolution (#2100)', () => {
     expect(config).toMatchObject({ api: false, mcp: false });
   });
 
+  it('resolves a computed literal property key', () => {
+    const { config, errors } = configOf(`
+      const INTERNAL_SURFACE = { api: true, ['api']: false };
+
+      @smrt({ ...INTERNAL_SURFACE })
+      class Widget extends SmrtObject {}
+    `);
+
+    expect(errors).toHaveLength(0);
+    expect(config?.api).toBe(false);
+  });
+
   describe('unresolvable spreads fail loud', () => {
     it('reports an imported constant as a scan error', () => {
       // Cross-file resolution is out of scope; the point is that it must not
@@ -194,6 +230,232 @@ describe('@smrt() config spread resolution (#2100)', () => {
       `);
 
       expect(errors).toHaveLength(1);
+    });
+
+    it('reports shorthand values instead of serializing identifier names', () => {
+      const { errors } = configOf(`
+        const api = false;
+        const CFG = { api };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('api');
+    });
+
+    it('reports explicit identifier values instead of serializing their names', () => {
+      const { errors } = configOf(`
+        const CLOSED = false;
+        const CFG = { api: CLOSED };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('CLOSED');
+    });
+
+    it('reports call-expression values instead of serializing source text', () => {
+      const { errors } = configOf(`
+        const CFG = { api: lockdown() };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('lockdown()');
+    });
+
+    it('reports member-expression values instead of serializing source text', () => {
+      const { errors } = configOf(`
+        const CFG = { api: policy.closed };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('policy.closed');
+    });
+
+    it('reports a computed non-literal property key', () => {
+      const { errors } = configOf(`
+        const key = 'api';
+        const CFG = { [key]: false };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('[key]');
+    });
+
+    it('reports a config object that is mutated after declaration', () => {
+      const { errors } = configOf(`
+        const CFG = { api: true };
+        CFG.api = false;
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('CFG');
+    });
+
+    it('reports a config object that escapes through an alias', () => {
+      const { errors } = configOf(`
+        const CFG = { api: false };
+        const ALIAS = CFG;
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('CFG');
+    });
+
+    it('propagates a prior mutation through a derived constant', () => {
+      const { errors } = configOf(`
+        const BASE = { api: true };
+        BASE.api = false;
+        const CFG = { ...BASE };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('BASE');
+    });
+
+    it('propagates a later nested mutation through a shallow object spread', () => {
+      const { errors } = configOf(`
+        const BASE = { api: { include: ['list', 'delete'] } };
+        const CFG = { ...BASE };
+        BASE.api.include.pop();
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('BASE');
+    });
+
+    it('propagates derived-object mutation back to shared nested dependencies', () => {
+      const { errors } = configOf(`
+        const CFG = { api: { include: ['list', 'delete'] } };
+        const ALIAS = { ...CFG };
+        ALIAS.api.include.pop();
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('ALIAS');
+    });
+
+    it('taints a nested-value spread that escapes inline', () => {
+      const { errors } = configOf(`
+        const CFG = { api: { include: ['list', 'delete'] } };
+        consume({ ...CFG });
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('CFG');
+    });
+
+    it('taints an escaping spread nested in another constant initializer', () => {
+      const { errors } = configOf(`
+        const CFG = { api: { include: ['list', 'delete'] } };
+        const ALIAS = { result: consume({ ...CFG }) };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('CFG');
+    });
+
+    it('does not confuse a shadowed local binding with the module constant', () => {
+      const { config, errors } = configOf(`
+        const CFG = { api: false };
+        function inspect(CFG: string) {
+          return CFG;
+        }
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(0);
+      expect(config?.api).toBe(false);
+    });
+
+    it('ignores type-only references to the module constant', () => {
+      const { config, errors } = configOf(`
+        const CFG = { api: false };
+        type Surface = typeof CFG;
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(0);
+      expect(config?.api).toBe(false);
+    });
+
+    it('does not confuse a noncomputed member name with the module constant', () => {
+      const { config, errors } = configOf(`
+        const CFG = { api: false };
+        console.log(other.CFG);
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+      `);
+
+      expect(errors).toHaveLength(0);
+      expect(config?.api).toBe(false);
+    });
+
+    it('does not taint a decorator for a later mutation', () => {
+      const { config, errors } = configOf(`
+        const CFG = { api: false };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+
+        CFG.api = true;
+      `);
+
+      expect(errors).toHaveLength(0);
+      expect(config?.api).toBe(false);
+    });
+
+    it('retains later taint when a decorator spread shares nested values', () => {
+      const { errors } = configOf(`
+        const CFG = { api: { include: ['list', 'delete'] } };
+
+        @smrt({ ...CFG })
+        class Widget extends SmrtObject {}
+
+        CFG.api.include.pop();
+      `);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('CFG');
     });
 
     // Without this, the silent-drop failure mode returns one level removed:
