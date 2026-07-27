@@ -279,7 +279,7 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
     options: ClaimForgeDeliveryOptions,
     audit?: ForgeProjectionAuditHook,
   ): Promise<ForgeDelivery | null> {
-    if (options.leaseMs <= 0) throw new Error('leaseMs must be positive');
+    assertFinitePositive('leaseMs', options.leaseMs);
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
     const token = randomUUID();
@@ -432,6 +432,9 @@ export class ForgeProjectionRuntime {
     this.leaseMs = options.leaseMs ?? 30_000;
     this.retryBaseMs = options.retryBaseMs ?? 1_000;
     this.retryMaxMs = options.retryMaxMs ?? 300_000;
+    assertFinitePositive('leaseMs', this.leaseMs);
+    assertFiniteNonNegative('retryBaseMs', this.retryBaseMs);
+    assertFiniteNonNegative('retryMaxMs', this.retryMaxMs);
     this.audit = options.audit;
   }
 
@@ -608,6 +611,18 @@ export class ForgeProjectionRuntime {
 
 function assertNonEmpty(name: string, value: string): void {
   if (value.trim().length === 0) throw new Error(`${name} must not be empty`);
+}
+
+function assertFinitePositive(name: string, value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${name} must be a finite positive number`);
+  }
+}
+
+function assertFiniteNonNegative(name: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${name} must be a finite non-negative number`);
+  }
 }
 
 function assertObservation(observation: ForgeObservation): void {

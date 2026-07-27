@@ -118,6 +118,33 @@ describe('durable forge delivery projection', () => {
     });
   });
 
+  it('rejects invalid lease and retry timing before processing a delivery', async () => {
+    const db = await testDb();
+    const base = { db, workerId: 'invalid-timing-worker' };
+
+    expect(
+      () => new ForgeProjectionRuntime({ ...base, leaseMs: Number.NaN }),
+    ).toThrow('leaseMs must be a finite positive number');
+    expect(
+      () => new ForgeProjectionRuntime({ ...base, retryBaseMs: -1 }),
+    ).toThrow('retryBaseMs must be a finite non-negative number');
+    expect(
+      () =>
+        new ForgeProjectionRuntime({
+          ...base,
+          retryMaxMs: Number.POSITIVE_INFINITY,
+        }),
+    ).toThrow('retryMaxMs must be a finite non-negative number');
+
+    const inbox = await ForgeDeliveryCollection.create({ db });
+    await expect(
+      inbox.claimReady({
+        workerId: 'invalid-timing-worker',
+        leaseMs: Number.POSITIVE_INFINITY,
+      }),
+    ).rejects.toThrow('leaseMs must be a finite positive number');
+  });
+
   it('restores tenant context and ignores delayed older observations', async () => {
     const db = await testDb();
     const inbox = await ForgeDeliveryCollection.create({ db });

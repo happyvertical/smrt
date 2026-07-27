@@ -9,6 +9,10 @@ deduplicated. A worker lease owns each attempt; failures use bounded exponential
 retry, then remain in `dead_letter` until an operator calls `replay()` from the
 owning tenant context.
 
+`leaseMs` must be a finite positive duration. `retryBaseMs` and `retryMaxMs`
+must be finite, non-negative durations; invalid timing configuration is rejected
+before a lease can be claimed.
+
 ```ts
 const inbox = await ForgeDeliveryCollection.create({ db });
 
