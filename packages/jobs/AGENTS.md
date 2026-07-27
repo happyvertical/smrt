@@ -81,6 +81,28 @@ const handle = await doc.background('analyze', { detailed: true })
 await handle.wait({ timeout: 60000, pollInterval: 100 }); // polling-based
 ```
 
+## Durable forge projections
+
+`ForgeDeliveryCollection` owns the provider-neutral delivery inbox in
+`_smrt_forge_deliveries`; `ForgeProjectionRuntime` owns lease/retry/dead-letter
+transitions and monotonic checkpoints in
+`_smrt_forge_projection_checkpoints`.
+
+- Inbox identity is `(tenant_id, provider, delivery_id)`.
+- Tenant-facing accept/replay requires ambient tenant context. Worker claim is
+  cross-tenant, then runtime restores the captured context before observation.
+- Projection callbacks must write through `ForgeProjectionContext.db`; the
+  application projection, checkpoint, and inbox completion share one
+  transaction.
+- Observation identity is tracker-independent
+  `(projection, subjectKey, version)`. Equal or older versions are acknowledged
+  without reapplying.
+- Lease-token conditions guard every terminal/failure write. Expired final
+  attempts become replayable `dead_letter` rows, and persisted errors are
+  redacted.
+- Generated API, CLI, and MCP surfaces stay disabled; replay is an explicit
+  tenant-scoped operator action.
+
 `bg()` is shorthand: `await doc.bg('analyze', args)` → enqueues immediately, returns JobHandle.
 
 ## withBackgroundJobs(Class)
@@ -92,6 +114,9 @@ Mixin that adds `bg()` and `background()` to any SmrtObject. Uses WeakMap for co
 - **Cron not timezone-aware**: cron fields match the server's **local** time, not UTC (set `TZ` for UTC); no missed-run catch-up (fire-once-forward)
 - **At-least-once execution**: a timeout cannot preempt a running handler; timed-out jobs fail without retry but the handler keeps running — make handlers idempotent (see "Timeouts & at-least-once")
 - **No dead letter queue**: failed jobs stay in DB with `status='failed'` — manual intervention
+- **Forge deliveries are not SmrtJobs**: they use their own replayable
+  dead-letter inbox and projection checkpoint contract. Do not enqueue provider
+  deliveries as generic background jobs.
 - **Result storage**: `resultPointer` is just a string — app must implement result backend
 - **Lazy builder**: `background()` returns builder — nothing happens until `enqueue()`
 - **wait() is polling**: JobHandle.wait() polls DB every 100ms (configurable)

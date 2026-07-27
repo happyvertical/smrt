@@ -56,6 +56,23 @@ export {
   redactErrorForPersistence,
   redactErrorMessage,
 } from './error-redaction.js';
+// Durable provider-neutral forge delivery inbox and projection runtime.
+export {
+  type AcceptedForgeDelivery,
+  type AcceptForgeDeliveryInput,
+  type ClaimForgeDeliveryOptions,
+  ForgeDelivery,
+  ForgeDeliveryCollection,
+  type ForgeDeliveryStatus,
+  type ForgeObservation,
+  type ForgeProjectionAuditEvent,
+  type ForgeProjectionAuditHook,
+  ForgeProjectionCheckpoint,
+  type ForgeProjectionContext,
+  ForgeProjectionRuntime,
+  type ForgeProjectionRuntimeOptions,
+  type ForgeProjector,
+} from './forge-projection.js';
 // Fluent job builder and utilities
 export {
   JobBuilder,
