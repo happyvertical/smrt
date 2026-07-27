@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.30
+
+### Patch Changes
+
+- ### Features
+
+  - add durable forge projection inbox (#2126) (jobs)
+  - @happyvertical/smrt-config@0.40.30
+  - @happyvertical/smrt-types@0.40.30
+  - @happyvertical/smrt-scanner@0.40.30
+
 ## 0.40.29
 
 ### Patch Changes
