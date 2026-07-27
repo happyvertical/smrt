@@ -135,6 +135,13 @@ describe('durable forge delivery projection', () => {
           retryMaxMs: Number.POSITIVE_INFINITY,
         }),
     ).toThrow('retryMaxMs must be a finite non-negative number');
+    expect(
+      () =>
+        new ForgeProjectionRuntime({
+          ...base,
+          retryBaseMs: Number.MAX_VALUE,
+        }),
+    ).toThrow('retryBaseMs must not exceed 2147483647');
 
     const inbox = await ForgeDeliveryCollection.create({ db });
     await expect(
@@ -258,6 +265,47 @@ describe('durable forge delivery projection', () => {
       attempts: 1,
       replay_count: 1,
       last_error: null,
+    });
+  });
+
+  it('dead-letters a retry that would exceed the supported Date range', async () => {
+    const db = await testDb();
+    const inbox = await ForgeDeliveryCollection.create({ db });
+    const nearDateLimit = new Date(8_640_000_000_000_000 - 1);
+    const accepted = await withTenant({ tenantId: TENANT_A }, () =>
+      inbox.accept({
+        ...deliveryInput('date-limit'),
+        maxAttempts: 2,
+        receivedAt: nearDateLimit,
+      }),
+    );
+    const runtime = new ForgeProjectionRuntime({
+      db,
+      workerId: 'date-limit-worker',
+      leaseMs: 1,
+      retryBaseMs: 2,
+      retryMaxMs: 2,
+    });
+
+    await runtime.processNext(
+      {
+        async observe() {
+          throw new Error('provider apiKey=super-secret-value rejected');
+        },
+        async project() {},
+      },
+      { now: nearDateLimit },
+    );
+
+    expect(await rowFor(db, accepted.delivery.id ?? '')).toMatchObject({
+      status: 'dead_letter',
+      attempts: 1,
+      lease_owner: null,
+      lease_token: null,
+      lease_expires_at: null,
+      last_error:
+        'provider apiKey=***REDACTED*** rejected; retry schedule exceeds the supported Date range',
+      next_attempt_at: nearDateLimit.toISOString(),
     });
   });
 

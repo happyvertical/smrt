@@ -20,6 +20,8 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { redactErrorForPersistence } from './error-redaction.js';
 
 const MAX_OBSERVATION_VERSION = 2_147_483_647;
+const MAX_FORGE_DURATION_MS = 2_147_483_647;
+const MAX_DATE_TIMESTAMP_MS = 8_640_000_000_000_000;
 
 type DatabaseWithConfig = DatabaseInterface & {
   config?: {
@@ -576,6 +578,11 @@ export class ForgeProjectionRuntime {
       this.retryMaxMs,
       this.retryBaseMs * 2 ** Math.max(0, delivery.attempts - 1),
     );
+    const retryAt = terminal ? now.toISOString() : tryAddDuration(now, delay);
+    const scheduleOverflow = retryAt === null;
+    const lastError = scheduleOverflow
+      ? `${redactErrorForPersistence(error)}; retry schedule exceeds the supported Date range`
+      : redactErrorForPersistence(error);
     const result = await this.db.query(
       `UPDATE _smrt_forge_deliveries
           SET status = ?,
@@ -589,9 +596,9 @@ export class ForgeProjectionRuntime {
           AND lease_token = ?
           AND lease_expires_at >= ?
         RETURNING id`,
-      terminal ? 'dead_letter' : 'retry',
-      new Date(now.getTime() + delay).toISOString(),
-      redactErrorForPersistence(error),
+      terminal || scheduleOverflow ? 'dead_letter' : 'retry',
+      retryAt ?? now.toISOString(),
+      lastError,
       now.toISOString(),
       delivery.id,
       delivery.tenantId,
@@ -600,7 +607,10 @@ export class ForgeProjectionRuntime {
     );
     if (result.rows.length === 1) {
       await this.audit?.({
-        type: terminal ? 'delivery.dead_lettered' : 'delivery.retry_scheduled',
+        type:
+          terminal || scheduleOverflow
+            ? 'delivery.dead_lettered'
+            : 'delivery.retry_scheduled',
         tenantId: delivery.tenantId,
         deliveryId: delivery.deliveryId,
         attempt: delivery.attempts,
@@ -617,12 +627,29 @@ function assertFinitePositive(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${name} must be a finite positive number`);
   }
+  if (value > MAX_FORGE_DURATION_MS) {
+    throw new Error(`${name} must not exceed ${MAX_FORGE_DURATION_MS}`);
+  }
 }
 
 function assertFiniteNonNegative(name: string, value: number): void {
   if (!Number.isFinite(value) || value < 0) {
     throw new Error(`${name} must be a finite non-negative number`);
   }
+  if (value > MAX_FORGE_DURATION_MS) {
+    throw new Error(`${name} must not exceed ${MAX_FORGE_DURATION_MS}`);
+  }
+}
+
+function tryAddDuration(now: Date, durationMs: number): string | null {
+  const timestamp = now.getTime() + durationMs;
+  if (
+    !Number.isFinite(timestamp) ||
+    Math.abs(timestamp) > MAX_DATE_TIMESTAMP_MS
+  ) {
+    return null;
+  }
+  return new Date(timestamp).toISOString();
 }
 
 function assertObservation(observation: ForgeObservation): void {
