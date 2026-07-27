@@ -4,6 +4,7 @@ import './__smrt-register__.js';
 
 import { randomUUID } from 'node:crypto';
 import {
+  detectEngine,
   field,
   SmrtCollection,
   SmrtObject,
@@ -17,6 +18,16 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { redactErrorForPersistence } from './error-redaction.js';
+
+const MAX_OBSERVATION_VERSION = 2_147_483_647;
+
+type DatabaseWithConfig = DatabaseInterface & {
+  config?: {
+    type?: string;
+    url?: string;
+  };
+  type?: string;
+};
 
 export type ForgeDeliveryStatus =
   | 'pending'
@@ -168,6 +179,8 @@ export class ForgeProjectionCheckpoint extends SmrtObject {
   @field({ type: 'text', required: true })
   subjectKey: string = '';
 
+  // The current portable field contract persists this as a signed 32-bit
+  // integer. `assertObservation()` enforces the matching public range.
   @field({ type: 'integer', required: true })
   observationVersion: number = 0;
 
@@ -270,6 +283,10 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
     const token = randomUUID();
+    const lockClause =
+      getDatabaseEngine(this.db) === 'postgres'
+        ? ' FOR UPDATE SKIP LOCKED'
+        : '';
 
     // An expired final attempt cannot be safely re-run. Move it to the
     // operator-recoverable terminal state before selecting another candidate.
@@ -303,9 +320,9 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
              AND (
                (status IN ('pending', 'retry') AND next_attempt_at <= ?)
                OR (status = 'leased' AND lease_expires_at < ?)
-             )
+           )
            ORDER BY next_attempt_at ASC, received_at ASC, created_at ASC, id ASC
-           LIMIT 1
+           LIMIT 1${lockClause}
         )
           AND (
             (status IN ('pending', 'retry') AND next_attempt_at <= ?)
@@ -327,12 +344,17 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
     const delivery = claimed[0] ?? null;
     if (delivery) {
       await withTenant({ tenantId: delivery.tenantId }, async () => {
-        await audit?.({
-          type: 'delivery.leased',
-          tenantId: delivery.tenantId,
-          deliveryId: delivery.deliveryId,
-          attempt: delivery.attempts,
-        });
+        try {
+          await audit?.({
+            type: 'delivery.leased',
+            tenantId: delivery.tenantId,
+            deliveryId: delivery.deliveryId,
+            attempt: delivery.attempts,
+          });
+        } catch {
+          // The durable lease already committed. Observability failures must
+          // not strand it or consume an attempt before its projector runs.
+        }
       });
     }
     return delivery;
@@ -591,9 +613,25 @@ function assertNonEmpty(name: string, value: string): void {
 function assertObservation(observation: ForgeObservation): void {
   assertNonEmpty('observation.projection', observation.projection);
   assertNonEmpty('observation.subjectKey', observation.subjectKey);
-  if (!Number.isSafeInteger(observation.version) || observation.version < 0) {
-    throw new Error('observation.version must be a non-negative safe integer');
+  if (
+    !Number.isSafeInteger(observation.version) ||
+    observation.version < 0 ||
+    observation.version > MAX_OBSERVATION_VERSION
+  ) {
+    throw new Error(
+      `observation.version must be an integer from 0 to ${MAX_OBSERVATION_VERSION}`,
+    );
   }
+}
+
+function getDatabaseEngine(
+  db: DatabaseInterface,
+): ReturnType<typeof detectEngine> {
+  const dbWithConfig = db as DatabaseWithConfig;
+  return detectEngine(
+    db.url || dbWithConfig.config?.url || '',
+    dbWithConfig.type || dbWithConfig.config?.type,
+  );
 }
 
 function clampMaxAttempts(value: number): number {

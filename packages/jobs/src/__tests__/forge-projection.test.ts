@@ -233,6 +233,69 @@ describe('durable forge delivery projection', () => {
       last_error: null,
     });
   });
+
+  it('does not strand a lease when the leased audit hook fails', async () => {
+    const db = await testDb();
+    const inbox = await ForgeDeliveryCollection.create({ db });
+    const accepted = await withTenant({ tenantId: TENANT_A }, () =>
+      inbox.accept({ ...deliveryInput('audit-failure'), maxAttempts: 1 }),
+    );
+    const runtime = new ForgeProjectionRuntime({
+      db,
+      workerId: 'audit-worker',
+      audit: async (event) => {
+        if (event.type === 'delivery.leased') {
+          throw new Error('audit collector unavailable');
+        }
+      },
+    });
+
+    await runtime.processNext({
+      async observe() {
+        return {
+          projection: 'audit',
+          subjectKey: 'delivery',
+          version: 1,
+          value: null,
+        };
+      },
+      async project() {},
+    });
+
+    expect(await rowFor(db, accepted.delivery.id ?? '')).toMatchObject({
+      status: 'completed',
+      attempts: 1,
+    });
+  });
+
+  it('dead-letters an observation version beyond portable checkpoint storage', async () => {
+    const db = await testDb();
+    const inbox = await ForgeDeliveryCollection.create({ db });
+    const accepted = await withTenant({ tenantId: TENANT_A }, () =>
+      inbox.accept({ ...deliveryInput('oversized-version'), maxAttempts: 1 }),
+    );
+    const runtime = new ForgeProjectionRuntime({
+      db,
+      workerId: 'version-worker',
+    });
+
+    await runtime.processNext({
+      async observe() {
+        return {
+          projection: 'version',
+          subjectKey: 'delivery',
+          version: 2_147_483_648,
+          value: null,
+        };
+      },
+      async project() {},
+    });
+
+    expect(await rowFor(db, accepted.delivery.id ?? '')).toMatchObject({
+      status: 'dead_letter',
+      last_error: 'observation.version must be an integer from 0 to 2147483647',
+    });
+  });
 });
 
 function deliveryInput(deliveryId: string) {

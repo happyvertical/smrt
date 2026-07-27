@@ -41,11 +41,12 @@ await runtime.processNext({
 ```
 
 `projection` and `subjectKey` are application-defined. A pull request is not
-treated as a tracker issue. `version` must be a non-negative monotonic integer;
-observations at or below the durable checkpoint are acknowledged without
-reapplying side effects. Provider normalization runs with the delivery's tenant
-context restored. Generated REST/MCP/CLI surfaces are disabled for both system
-tables; operator replay requires an explicit in-process tenant context.
+treated as a tracker issue. `version` must be a non-negative monotonic signed
+32-bit integer (`0` through `2,147,483,647`); observations at or below the
+durable checkpoint are acknowledged without reapplying side effects. Provider
+normalization runs with the delivery's tenant context restored. Generated
+REST/MCP/CLI surfaces are disabled for both system tables; operator replay
+requires an explicit in-process tenant context.
 
 The manifest-driven migration adds `_smrt_forge_deliveries` and
 `_smrt_forge_projection_checkpoints`. Run `smrt db:migrate` before starting a
@@ -114,8 +115,9 @@ process.on('SIGTERM', () => runner.stop());
 `TaskRunner` records heartbeat telemetry, but recovery keys on a worker
 incarnation's live lease rather than a per-job heartbeat threshold. A blocked
 event loop must not make a still-running handler appear dead and cause a
-concurrent duplicate execution. See the architecture section above for the
-live-set and off-loop lease-renewal details.
+concurrent duplicate execution. See the live-set and off-loop lease-renewal
+details in
+[Worker liveness & recovery](AGENTS.md#worker-liveness--recovery-1474).
 
 Job handlers remain at-least-once. Avoid synchronous, CPU-bound, or otherwise
 long-running work when possible; make external effects idempotent because a
