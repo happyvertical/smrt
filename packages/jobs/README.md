@@ -11,9 +11,10 @@ owning tenant context.
 
 `leaseMs` must be a finite positive duration. `retryBaseMs` and `retryMaxMs`
 must be finite, non-negative durations no greater than 2,147,483,647 ms;
-invalid timing configuration is rejected before a lease can be claimed. A retry
-that would exceed the JavaScript `Date` range is durably dead-lettered instead
-of being left leased.
+invalid timing configuration is rejected before a lease can be claimed. A lease
+that would exceed the JavaScript `Date` range is rejected before any lease
+write; a retry that would exceed that range is durably dead-lettered instead of
+being left leased.
 
 ```ts
 const inbox = await ForgeDeliveryCollection.create({ db });

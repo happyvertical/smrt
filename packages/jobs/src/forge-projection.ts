@@ -284,6 +284,10 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
     assertFinitePositive('leaseMs', options.leaseMs);
     const now = options.now ?? new Date();
     const nowIso = now.toISOString();
+    const leaseExpiresAt = tryAddDuration(now, options.leaseMs);
+    if (!leaseExpiresAt) {
+      throw new Error('leaseMs extends past the supported Date range');
+    }
     const token = randomUUID();
     const lockClause =
       getDatabaseEngine(this.db) === 'postgres'
@@ -334,7 +338,7 @@ export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
       [
         options.workerId,
         token,
-        new Date(now.getTime() + options.leaseMs).toISOString(),
+        leaseExpiresAt,
         nowIso,
         nowIso,
         nowIso,
@@ -626,9 +630,6 @@ function assertNonEmpty(name: string, value: string): void {
 function assertFinitePositive(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0) {
     throw new Error(`${name} must be a finite positive number`);
-  }
-  if (value > MAX_FORGE_DURATION_MS) {
-    throw new Error(`${name} must not exceed ${MAX_FORGE_DURATION_MS}`);
   }
 }
 

@@ -126,6 +126,9 @@ describe('durable forge delivery projection', () => {
       () => new ForgeProjectionRuntime({ ...base, leaseMs: Number.NaN }),
     ).toThrow('leaseMs must be a finite positive number');
     expect(
+      () => new ForgeProjectionRuntime({ ...base, leaseMs: Number.MAX_VALUE }),
+    ).not.toThrow();
+    expect(
       () => new ForgeProjectionRuntime({ ...base, retryBaseMs: -1 }),
     ).toThrow('retryBaseMs must be a finite non-negative number');
     expect(
@@ -150,6 +153,12 @@ describe('durable forge delivery projection', () => {
         leaseMs: Number.POSITIVE_INFINITY,
       }),
     ).rejects.toThrow('leaseMs must be a finite positive number');
+    await expect(
+      inbox.claimReady({
+        workerId: 'invalid-timing-worker',
+        leaseMs: Number.MAX_VALUE,
+      }),
+    ).rejects.toThrow('leaseMs extends past the supported Date range');
   });
 
   it('restores tenant context and ignores delayed older observations', async () => {
