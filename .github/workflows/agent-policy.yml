@@ -21,7 +21,7 @@ permissions:
 
 concurrency:
   group: >-
-    agent-policy-diagnostic-${{
+    agent-policy-authority-${{
       github.event.merge_group.head_sha ||
       github.event.pull_request.number ||
       inputs.pr_number ||
@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   lifecycle:
-    name: lifecycle / diagnostic
+    name: lifecycle
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -45,6 +45,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_REPOSITORY: ${{ github.repository }}
+          TARGET_REPOSITORY_NUMERIC_ID: ${{ github.repository_id }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           source_repository=$(gh api repos/happyvertical/.github --jq '.id')
@@ -52,24 +54,124 @@ jobs:
             echo "trusted policy source repository id is $source_repository, expected 1129270614" >&2
             exit 1
           }
-          channel_state="$RUNNER_TEMP/hv-agent-policy-channels.json"
-          gh api 'repos/happyvertical/.github/contents/.github/agent-policy-channels.json?ref=main' \
-            --jq '.content' | base64 --decode > "$channel_state"
+          active_state="$RUNNER_TEMP/hv-agent-policy-active-channels.json"
+          active_lock="$RUNNER_TEMP/hv-agent-policy-active-lock.json"
+          active_state_error="$RUNNER_TEMP/hv-agent-policy-active-channels.error"
           protected_selector="$RUNNER_TEMP/hv-agent-policy-channel-select"
-          gh api 'repos/happyvertical/.github/contents/scripts/hv-agent-policy-channel-select?ref=main' \
-            --jq '.content' | base64 --decode > "$protected_selector"
-          chmod +x "$protected_selector"
+          protected_channels="$RUNNER_TEMP/hv_agent_policy_channels.py"
+          channels_active=true
+          if gh api 'repos/happyvertical/.github/contents/.github/agent-policy-channels.json?ref=main' \
+              --jq '.content' 2> "$active_state_error" \
+              | base64 --decode > "$active_state"; then
+            gh api 'repos/happyvertical/.github/contents/scripts/hv-agent-policy-channel-select?ref=main' \
+              --jq '.content' | base64 --decode > "$protected_selector"
+            gh api 'repos/happyvertical/.github/contents/scripts/hv_agent_policy_channels.py?ref=main' \
+              --jq '.content' | base64 --decode > "$protected_channels"
+            gh api 'repos/happyvertical/.github/contents/.github/agent-policy-lock.json?ref=main' \
+              --jq '.content' | base64 --decode > "$active_lock"
+            chmod +x "$protected_selector"
+          elif grep -q 'HTTP 404' "$active_state_error"; then
+            channels_active=false
+            gh api 'repos/happyvertical/.github/contents/.github/agent-policy-lock.json?ref=main' \
+              --jq '.content' | base64 --decode > "$active_lock"
+            python3 - "$active_lock" "$active_state" <<'PY'
+          import json
+          import re
+          import sys
+
+          lock = json.load(open(sys.argv[1], encoding="utf-8"))
+          fields = {
+              "schema", "artifact", "generation", "policy_revision",
+              "source_commit", "source_tree_sha256",
+          }
+          if not isinstance(lock, dict) or set(lock) != fields:
+              raise SystemExit("generation-7 bootstrap lock has unexpected fields")
+          if lock.get("schema") != "hv-agent-policy-lock:v1" or lock.get("generation") != 7:
+              raise SystemExit("missing central channels may bootstrap only from stable generation 7")
+          if not re.fullmatch(
+              r"ghcr\.io/happyvertical/agent-policy@sha256:[0-9a-f]{64}",
+              str(lock.get("artifact")),
+          ):
+              raise SystemExit("generation-7 bootstrap lock has an invalid artifact")
+          if not re.fullmatch(r"[0-9a-f]{40}", str(lock.get("source_commit"))):
+              raise SystemExit("generation-7 bootstrap lock has an invalid source commit")
+          if not re.fullmatch(r"[0-9a-f]{64}", str(lock.get("source_tree_sha256"))):
+              raise SystemExit("generation-7 bootstrap lock has an invalid source tree")
+          if not isinstance(lock.get("policy_revision"), str) or not lock["policy_revision"]:
+              raise SystemExit("generation-7 bootstrap lock has an invalid policy revision")
+          state = {
+              "schema": "hv-agent-policy-channels:v1",
+              "revision": 1,
+              "default_channel": "stable",
+              "channels": {"stable": lock},
+              "assignments": {},
+              "promotion": None,
+              "transition": {
+                  "action": "bootstrap",
+                  "from_revision": 0,
+                  "to_revision": 1,
+                  "artifact": lock["artifact"],
+                  "previous_artifact": None,
+                  "evidence_sha256": None,
+              },
+          }
+          with open(sys.argv[2], "w", encoding="utf-8") as output:
+              json.dump(state, output, indent=2, sort_keys=True)
+              output.write("\n")
+          PY
+          else
+            cat "$active_state_error" >&2
+            exit 1
+          fi
           selected_lock="$RUNNER_TEMP/hv-agent-policy-selected-lock.json"
-          target_repository_id=$(gh api "repos/$TARGET_REPOSITORY" --jq '.node_id')
-          channel=$(python3 "$protected_selector" \
-            "$channel_state" "$selected_lock" "$target_repository_id")
+          if test "$channels_active" = true; then
+            if test "$TARGET_REPOSITORY_NUMERIC_ID" = 1129270614 \
+                && test "$EVENT_NAME" != workflow_dispatch; then
+              test -f .github/agent-policy-channels.json \
+                && test -f .github/agent-policy-lock.json || {
+                echo 'central policy channels cannot be removed after bootstrap' >&2
+                exit 1
+              }
+            fi
+            candidate=()
+            if test "$TARGET_REPOSITORY_NUMERIC_ID" = 1129270614 \
+                && test "$EVENT_NAME" != workflow_dispatch \
+                && test -f .github/agent-policy-channels.json \
+                && test -f .github/agent-policy-lock.json; then
+              if ! cmp -s .github/agent-policy-channels.json "$active_state"; then
+                candidate=(.github/agent-policy-channels.json .github/agent-policy-lock.json)
+                transition_revision=$(jq -r '.transition.to_revision' .github/agent-policy-channels.json)
+                transition_evidence=".github/agent-policy-evidence/revision-${transition_revision}.json"
+                if test -f "$transition_evidence"; then
+                  transition_bundle=".github/agent-policy-evidence/revision-${transition_revision}.bundle"
+                  test -f "$transition_bundle" || {
+                    echo "transition evidence lacks its protected rollout signature bundle" >&2
+                    exit 1
+                  }
+                  cosign verify-blob "$transition_evidence" \
+                    --bundle "$transition_bundle" \
+                    --certificate-identity 'https://github.com/happyvertical/.github/.github/workflows/agent-policy-rollout.yml@refs/heads/main' \
+                    --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+                  candidate+=("$transition_evidence")
+                fi
+              elif ! cmp -s .github/agent-policy-lock.json "$active_lock"; then
+                candidate=(.github/agent-policy-lock.json)
+              fi
+            fi
+            target_repository_id=$(gh api "repos/$TARGET_REPOSITORY" --jq '.node_id')
+            channel=$(python3 "$protected_selector" \
+              "$active_state" "$selected_lock" "$target_repository_id" "${candidate[@]}")
+          else
+            cp "$RUNNER_TEMP/hv-agent-policy-active-lock.json" "$selected_lock"
+            channel=stable
+          fi
           artifact=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact"])' "$selected_lock")
           {
             echo "HV_POLICY_ARTIFACT=$artifact"
             echo "HV_POLICY_CHANNEL=$channel"
             echo "HV_POLICY_LOCK=$selected_lock"
           } >> "$GITHUB_ENV"
-      - name: Load selected policy runtime
+      - name: Load locked policy runtime
         env:
           POLICY_ARTIFACT: ${{ env.HV_POLICY_ARTIFACT }}
           POLICY_PUBLISHER_IDENTITY: ${{ vars.AGENT_POLICY_PUBLISHER_IDENTITY }}
