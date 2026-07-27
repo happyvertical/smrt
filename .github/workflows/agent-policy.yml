@@ -37,9 +37,41 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        with:
-          cosign-release: v3.0.6
+      # cosign-installer v4 shells out to envsubst, which is not part of the
+      # provider-neutral general runner contract. Download the publisher-
+      # compatible cosign v3 binary directly and verify its pinned SHA-256 so
+      # lifecycle enforcement has the same dependencies on every provider.
+      - name: Install signature verifier
+        env:
+          COSIGN_VERSION: v3.0.6
+          COSIGN_SHA256_AMD64: c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74
+          COSIGN_SHA256_ARM64: bedac92e8c3729864e13d4a17048007cfafa79d5deca993a43a90ffe018ef2b8
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) asset=cosign-linux-amd64; expected="$COSIGN_SHA256_AMD64" ;;
+            aarch64 | arm64) asset=cosign-linux-arm64; expected="$COSIGN_SHA256_ARM64" ;;
+            *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          install_dir="$RUNNER_TEMP/hv-cosign"
+          mkdir -p "$install_dir"
+          curl -fsSL -o "$install_dir/cosign" \
+            "https://github.com/sigstore/cosign/releases/download/$COSIGN_VERSION/$asset"
+          actual=$(python3 - "$install_dir/cosign" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+
+          print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())
+          PY
+          )
+          test "$actual" = "$expected" || {
+            echo "cosign checksum mismatch: expected $expected, got $actual" >&2
+            exit 1
+          }
+          chmod +x "$install_dir/cosign"
+          echo "$install_dir" >> "$GITHUB_PATH"
+          "$install_dir/cosign" version
       - name: Select source-owned policy channel
         shell: bash
         env:

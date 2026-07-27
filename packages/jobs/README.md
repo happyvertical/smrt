@@ -1,5 +1,64 @@
 # @happyvertical/smrt-jobs
 
+## Durable forge projections
+
+`ForgeDeliveryCollection` and `ForgeProjectionRuntime` provide a
+provider-neutral inbox for durable forge webhook projection. The inbox identity
+is `(tenantId, provider, deliveryId)`, so provider retries are atomically
+deduplicated. A worker lease owns each attempt; failures use bounded exponential
+retry, then remain in `dead_letter` until an operator calls `replay()` from the
+owning tenant context.
+
+`leaseMs` must be a finite positive duration. `retryBaseMs` and `retryMaxMs`
+must be finite, non-negative durations no greater than 2,147,483,647 ms;
+invalid timing configuration is rejected before a lease can be claimed. A lease
+that would exceed the JavaScript `Date` range is rejected before any lease
+write; a retry that would exceed that range is durably dead-lettered instead of
+being left leased.
+
+```ts
+const inbox = await ForgeDeliveryCollection.create({ db });
+
+await withTenant({ tenantId }, () =>
+  inbox.accept({
+    provider: 'github',
+    deliveryId: request.headers.get('x-github-delivery')!,
+    eventName: 'pull_request',
+    repositoryKey: 'example/forge-repository',
+    payload,
+  }),
+);
+
+const runtime = new ForgeProjectionRuntime({ db, workerId: workerKey });
+await runtime.processNext({
+  async observe(delivery) {
+    return {
+      projection: 'pull-request-revision',
+      subjectKey: `${delivery.repositoryKey}:pr:${delivery.payload.number}`,
+      version: Number(delivery.payload.revision),
+      value: delivery.payload,
+    };
+  },
+  async project(observation, context) {
+    // Always use context.db: it is the transaction shared by the application
+    // projection, monotonic checkpoint, and inbox completion.
+    await writeProjection(context.db, observation);
+  },
+});
+```
+
+`projection` and `subjectKey` are application-defined. A pull request is not
+treated as a tracker issue. `version` must be a non-negative monotonic signed
+32-bit integer (`0` through `2,147,483,647`); observations at or below the
+durable checkpoint are acknowledged without reapplying side effects. Provider
+normalization runs with the delivery's tenant context restored. Generated
+REST/MCP/CLI surfaces are disabled for both system tables; operator replay
+requires an explicit in-process tenant context.
+
+The manifest-driven migration adds `_smrt_forge_deliveries` and
+`_smrt_forge_projection_checkpoints`. Run `smrt db:migrate` before starting a
+forge projection worker.
+
 Background job execution for s-m-r-t objects. Provides persistent queue storage, retry strategies, cron-based scheduling, and a fluent `JobBuilder` API via the `withBackgroundJobs()` mixin.
 
 ## Installation
@@ -58,26 +117,19 @@ runner.on('job:failed', (job, error) => { /* ... */ });
 process.on('SIGTERM', () => runner.stop());
 ```
 
-### Heartbeat-safe job execution
+### Liveness-safe job execution
 
-`TaskRunner` keeps jobs alive with a heartbeat timer. If your job blocks the
-Node.js event loop for longer than the effective stale-job threshold, the runner
-will recover that work as stale and mark it failed.
+`TaskRunner` records heartbeat telemetry, but recovery keys on a worker
+incarnation's live lease rather than a per-job heartbeat threshold. A blocked
+event loop must not make a still-running handler appear dead and cause a
+concurrent duplicate execution. See the live-set and off-loop lease-renewal
+details in
+[Worker liveness & recovery](AGENTS.md#worker-liveness--recovery-1474).
 
-Common causes:
-
-- `execSync`, `spawnSync`, or other synchronous subprocess APIs
-- long CPU-bound loops in the job method itself
-- large synchronous filesystem work
-
-Prefer async subprocess APIs (`spawn`, `execFile`, streamed stdio) for long
-exports/builds/uploads, or move CPU-heavy work into a separate process or
-worker thread. If a job is intentionally long-running, tune
-`heartbeatInterval` and `staleJobThresholdMs` together so the stale threshold
-comfortably exceeds the longest gap between heartbeats.
-
-`ScheduleRunner` uses the same stale-heartbeat recovery rules when reconciling
-scheduled jobs.
+Job handlers remain at-least-once. Avoid synchronous, CPU-bound, or otherwise
+long-running work when possible; make external effects idempotent because a
+process crash after an effect but before its terminal write still permits a
+later retry.
 
 ### Schedule recurring jobs with ScheduleRunner
 
@@ -119,7 +171,7 @@ taskRunner.on('job:failed', (job, error) => {
 | `JobBuilder` | Fluent API: `.delay()`, `.priority()`, `.retries()`, `.queue()`, `.timeout()`, `.enqueue()` |
 | `JobHandle` | Track, wait, cancel, or retry an enqueued job |
 | `JobContextLogger` | Logger that auto-injects job context (jobId, attempt, queue) |
-| `TaskRunner` | Polling-based execution engine with concurrency control and heartbeats |
+| `TaskRunner` | Polling-based execution engine with concurrency control and liveness leases |
 | `ScheduleRunner` | Polls for due cron schedules and creates SmrtJob entries |
 
 `TaskRunner` uses `SmrtJobCollection.claimReady()` so multiple workers can poll
