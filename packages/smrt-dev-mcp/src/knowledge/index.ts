@@ -4,11 +4,20 @@ import type { Dirent } from 'node:fs';
 import {
   existsSync,
   lstatSync,
+  opendirSync,
   readdirSync,
   readFileSync,
   realpathSync,
 } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import {
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
@@ -328,8 +337,13 @@ const WALK_SKIP_DIRS = new Set([
 /** Used only when neither pnpm-workspace.yaml nor package.json#workspaces exists. */
 const WORKSPACE_GLOB_FALLBACK = ['packages/*'];
 
-/** Bounds `**` expansion so a stray glob cannot walk an entire disk. */
-const MAX_GLOB_DEPTH = 6;
+/**
+ * Bounds total directory-entry work across every workspace glob. This is a
+ * cardinality budget rather than a depth cap: valid deeply nested workspaces
+ * remain discoverable, while broad or repeated globstars fail loudly before
+ * they can amplify into unbounded filesystem work.
+ */
+const MAX_WORKSPACE_GLOB_TRAVERSAL_ENTRIES = 10_000;
 
 /** Caps the downstream package fallback so a large product stays in budget. */
 const MAX_FALLBACK_PACKAGES = 8;
@@ -388,6 +402,7 @@ export async function buildKnowledgeIndex(
     globs,
     globSource,
     dirs: packageDirs,
+    diagnostics: discoveryDiagnostics,
   } = discoverProjectPackageDirs(rootDir);
   const packages = packageDirs.map((dir) =>
     readKnowledgePackage(rootDir, dir, includeDocs),
@@ -434,7 +449,12 @@ export async function buildKnowledgeIndex(
     sdkPackages,
     relationshipsV2: summarizeRelationshipsV2(scopedPackages),
     coverage,
-    diagnostics: buildIndexDiagnostics(rootDir, uniquePackages, coverage),
+    diagnostics: buildIndexDiagnostics(
+      rootDir,
+      uniquePackages,
+      coverage,
+      discoveryDiagnostics,
+    ),
   };
 }
 
@@ -490,8 +510,9 @@ function buildIndexDiagnostics(
   rootDir: string,
   packages: KnowledgePackage[],
   coverage: KnowledgeCoverage,
+  discoveryDiagnostics: KnowledgeDiagnostic[] = [],
 ): KnowledgeDiagnostic[] {
-  const diagnostics: KnowledgeDiagnostic[] = [];
+  const diagnostics: KnowledgeDiagnostic[] = [...discoveryDiagnostics];
   const totalObjects = packages.reduce(
     (total, pkg) => total + pkg.objects.length,
     0,
@@ -1184,25 +1205,102 @@ function unquoteYamlScalar(value: string): string {
  * negations. Expansion walks the tree with `readdir` rather than adding a glob
  * dependency.
  */
-function expandWorkspaceGlobs(rootDir: string, globs: string[]): string[] {
-  const negations = globs
-    .filter((glob) => glob.trim().startsWith('!'))
-    .map((glob) => globToRegExp(normalizeGlob(glob.trim().slice(1))));
-  const matched = new Set<string>();
+interface WorkspaceGlobExpansion {
+  dirs: string[];
+  diagnostics: KnowledgeDiagnostic[];
+  fatal: boolean;
+}
 
-  for (const glob of globs.filter((entry) => !entry.trim().startsWith('!'))) {
-    for (const dir of expandGlob(rootDir, normalizeGlob(glob))) {
-      matched.add(dir);
+interface WorkspaceGlobTraversalBudget {
+  entries: number;
+}
+
+class WorkspaceGlobTraversalLimitError extends Error {
+  constructor(readonly glob: string) {
+    super(
+      `Workspace glob traversal exceeded ${MAX_WORKSPACE_GLOB_TRAVERSAL_ENTRIES} directory entries while expanding ${glob}`,
+    );
+    this.name = 'WorkspaceGlobTraversalLimitError';
+  }
+}
+
+function expandWorkspaceGlobs(
+  rootDir: string,
+  globs: string[],
+): WorkspaceGlobExpansion {
+  const diagnostics: KnowledgeDiagnostic[] = [];
+  const positiveGlobs: string[] = [];
+  const negations: RegExp[] = [];
+
+  for (const rawGlob of globs) {
+    const negated = rawGlob.trim().startsWith('!');
+    const glob = normalizeGlob(
+      negated ? rawGlob.trim().slice(1) : rawGlob.trim(),
+    );
+    const unsafeReason = unsafeWorkspaceGlobReason(glob);
+    if (unsafeReason) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'unsafe-workspace-glob',
+        message: `Rejected workspace glob ${JSON.stringify(rawGlob)}: ${unsafeReason}.`,
+        remedy:
+          'Keep every workspace glob relative to the declared workspace root; absolute paths and parent-directory (`..`) segments are not supported.',
+      });
+      continue;
+    }
+    if (!glob) continue;
+    if (negated) {
+      negations.push(globToRegExp(glob));
+    } else {
+      positiveGlobs.push(glob);
     }
   }
 
-  return [...matched]
+  const matched = new Set<string>();
+  const budget: WorkspaceGlobTraversalBudget = { entries: 0 };
+
+  try {
+    for (const glob of positiveGlobs) {
+      for (const dir of expandGlob(rootDir, glob, budget)) {
+        matched.add(dir);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof WorkspaceGlobTraversalLimitError)) throw error;
+    diagnostics.push({
+      severity: 'error',
+      code: 'workspace-glob-expansion-limit',
+      message: error.message,
+      remedy:
+        'Narrow the workspace package globs or remove repeated broad globstars. Discovery stopped without reading any partially matched package set.',
+    });
+    return { dirs: [], diagnostics, fatal: true };
+  }
+
+  const resolvedRoot = realpathSync(rootDir);
+  const confined = [...matched]
+    .map((dir) => confinedRealPath(resolvedRoot, dir))
+    .filter((dir): dir is string => dir !== undefined);
+  if (confined.length !== matched.size) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'workspace-glob-root-escape',
+      message:
+        'Rejected a workspace package directory whose real path resolves outside the workspace root.',
+      remedy:
+        'Keep workspace packages inside the workspace root and do not route workspace globs through symlinks to sibling directories.',
+    });
+  }
+
+  const dirs = [...new Set(confined)]
     .filter((dir) => existsSync(join(dir, 'package.json')))
     .filter((dir) => {
       const rel = relative(rootDir, dir).replaceAll('\\', '/');
       return rel !== '' && !negations.some((pattern) => pattern.test(rel));
     })
     .sort();
+
+  return { dirs, diagnostics, fatal: false };
 }
 
 function normalizeGlob(glob: string): string {
@@ -1213,7 +1311,43 @@ function normalizeGlob(glob: string): string {
     .replace(/\/+$/, '');
 }
 
-function expandGlob(rootDir: string, glob: string): string[] {
+function unsafeWorkspaceGlobReason(glob: string): string | undefined {
+  if (glob.includes('\0')) return 'NUL bytes are not valid path content';
+  if (isAbsolute(glob) || /^[A-Za-z]:\//.test(glob)) {
+    return 'absolute paths are outside the workspace trust boundary';
+  }
+  if (glob.split('/').includes('..')) {
+    return 'parent-directory segments can escape the workspace root';
+  }
+  return undefined;
+}
+
+function confinedRealPath(
+  resolvedRoot: string,
+  candidate: string,
+): string | undefined {
+  try {
+    const resolvedCandidate = realpathSync(candidate);
+    const rel = relative(resolvedRoot, resolvedCandidate);
+    if (
+      rel === '' ||
+      (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
+    ) {
+      // Preserve the caller's lexical root for stable relative paths after
+      // validating the candidate's canonical target.
+      return candidate;
+    }
+  } catch {
+    // A disappeared or unreadable candidate is not a package directory.
+  }
+  return undefined;
+}
+
+function expandGlob(
+  rootDir: string,
+  glob: string,
+  budget: WorkspaceGlobTraversalBudget,
+): string[] {
   const segments = glob.split('/').filter((segment) => segment !== '');
   if (segments.length === 0) return [];
 
@@ -1224,13 +1358,15 @@ function expandGlob(rootDir: string, glob: string): string[] {
       if (segment === '**') {
         // A globstar may consume zero segments, so `apps/**/host` must also
         // match `apps/host`.
-        next.push(dir, ...descendantDirs(dir, MAX_GLOB_DEPTH));
+        next.push(dir, ...descendantDirs(dir, budget, glob));
         continue;
       }
       if (segment.includes('*')) {
         const pattern = globToRegExp(segment);
         next.push(
-          ...childDirs(dir).filter((child) => pattern.test(basename(child))),
+          ...childDirs(dir, budget, glob).filter((child) =>
+            pattern.test(basename(child)),
+          ),
         );
         continue;
       }
@@ -1244,23 +1380,49 @@ function expandGlob(rootDir: string, glob: string): string[] {
   return current;
 }
 
-function childDirs(dir: string): string[] {
+function childDirs(
+  dir: string,
+  budget: WorkspaceGlobTraversalBudget,
+  glob: string,
+): string[] {
+  const children: string[] = [];
   try {
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !WALK_SKIP_DIRS.has(entry.name))
-      .map((entry) => join(dir, entry.name));
-  } catch {
-    return [];
+    const directory = opendirSync(dir);
+    try {
+      let entry: Dirent | null = directory.readSync();
+      while (entry !== null) {
+        budget.entries += 1;
+        if (budget.entries > MAX_WORKSPACE_GLOB_TRAVERSAL_ENTRIES) {
+          throw new WorkspaceGlobTraversalLimitError(glob);
+        }
+        if (entry.isDirectory() && !WALK_SKIP_DIRS.has(entry.name)) {
+          children.push(join(dir, entry.name));
+        }
+        entry = directory.readSync();
+      }
+    } finally {
+      directory.closeSync();
+    }
+    return children;
+  } catch (error) {
+    if (error instanceof WorkspaceGlobTraversalLimitError) throw error;
+    return children;
   }
 }
 
-function descendantDirs(dir: string, depth: number): string[] {
-  if (depth <= 0) return [];
-  const children = childDirs(dir);
-  return children.flatMap((child) => [
-    child,
-    ...descendantDirs(child, depth - 1),
-  ]);
+function descendantDirs(
+  dir: string,
+  budget: WorkspaceGlobTraversalBudget,
+  glob: string,
+): string[] {
+  const descendants: string[] = [];
+  const pending = [dir];
+  for (let index = 0; index < pending.length; index += 1) {
+    const children = childDirs(pending[index] as string, budget, glob);
+    descendants.push(...children);
+    pending.push(...children);
+  }
+  return descendants;
 }
 
 function isDirectory(path: string): boolean {
@@ -1296,16 +1458,27 @@ function discoverProjectPackageDirs(rootDir: string): {
   globs: string[];
   globSource: WorkspaceGlobSource;
   dirs: string[];
+  diagnostics: KnowledgeDiagnostic[];
 } {
   const { globs, source } = readWorkspaceGlobs(rootDir);
-  const workspaceDirs = expandWorkspaceGlobs(rootDir, globs);
+  const expansion = expandWorkspaceGlobs(rootDir, globs);
   // A single-package repo is its own package, and a workspace root can also own
   // objects. Coverage reporting makes an empty root visible instead of hiding
   // it behind the old "only if it already has an artifact" gate (#2143).
-  const dirs = existsSync(join(rootDir, 'package.json'))
-    ? [rootDir, ...workspaceDirs.filter((dir) => dir !== rootDir)]
-    : workspaceDirs;
-  return { globs, globSource: source, dirs };
+  const dirs = expansion.fatal
+    ? []
+    : existsSync(join(rootDir, 'package.json'))
+      ? [
+          rootDir,
+          ...expansion.dirs.filter((dir) => resolve(dir) !== resolve(rootDir)),
+        ]
+      : expansion.dirs;
+  return {
+    globs,
+    globSource: source,
+    dirs,
+    diagnostics: expansion.diagnostics,
+  };
 }
 
 function discoverInstalledSdkPackages(

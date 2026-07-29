@@ -34,6 +34,14 @@ has a `package.json`, which is how single-package repos resolve; it is scanned
 with the member package directories excluded so it can own objects without
 absorbing theirs.
 
+Workspace globs are a filesystem trust boundary. Absolute paths and `..`
+segments are rejected, and every matched directory is realpath-confined to the
+workspace root before its manifest is read. All positive globs share a 10,000
+directory-entry traversal budget; exceeding it is a fatal diagnostic that
+returns no partially discovered package set. This cardinality limit preserves
+valid deeply nested `**` workspaces without allowing repeated globstars to
+amplify into unbounded filesystem work.
+
 Per package, objects resolve in this order, and the winner is recorded in
 `objectSource` with a reason:
 

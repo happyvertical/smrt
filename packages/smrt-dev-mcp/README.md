@@ -66,6 +66,13 @@ the same as `packages/*` ones. Resolution order:
 2. `package.json#workspaces` (array or `{ packages: [...] }`)
 3. `packages/*` as a last-resort fallback
 
+Workspace globs must remain relative to the declared root: absolute paths and
+`..` segments are rejected, and matched directories are realpath-confined before
+their manifests are read. Positive globs share a 10,000 directory-entry
+traversal budget. Exceeding it stops discovery with an error diagnostic and no
+partial package set; deeply nested valid `**` matches remain supported because
+the limit is based on work performed rather than directory depth.
+
 The workspace root is also indexed when it has a `package.json`, which is how
 single-package repositories work; it is scanned with the member package
 directories excluded so it can own objects without absorbing theirs. Per package, objects resolve from a domain

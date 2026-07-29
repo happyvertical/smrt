@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildArchitectureContext,
@@ -990,6 +990,67 @@ describe('workspace discovery', () => {
 
     expect(names).toContain('@acme/shallow');
     expect(names).toContain('@acme/deep');
+  });
+
+  it('discovers a valid globstar package deeper than six directory levels', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/**/host'"]);
+    const deepPackage = 'apps/a/b/c/d/e/f/g/h/host';
+    await writeManifestPackage(rootDir, deepPackage, '@acme/very-deep', [
+      'DeepModel',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.coverage.packageDirs).toContain(deepPackage);
+    expect(
+      index.packages.find((pkg) => pkg.name === '@acme/very-deep')?.objects,
+    ).toHaveLength(1);
+  });
+
+  it('rejects parent-directory workspace globs at the project boundary', async () => {
+    const outsideDir = join(dirname(rootDir), `${basename(rootDir)}-outside`);
+    try {
+      await writeWorkspaceYaml(rootDir, [`'../${basename(outsideDir)}'`]);
+      await writeManifestPackage(outsideDir, '.', '@acme/outside', [
+        'OutsideModel',
+      ]);
+
+      const index = await buildKnowledgeIndex({ rootDir });
+
+      expect(index.packages.map((pkg) => pkg.name)).not.toContain(
+        '@acme/outside',
+      );
+      expect(index.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'unsafe-workspace-glob',
+          }),
+        ]),
+      );
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails loudly when repeated globstars exceed the traversal budget', async () => {
+    await writeWorkspaceYaml(rootDir, ["'**/**'"]);
+    const segments = Array.from({ length: 150 }, (_, index) => `d${index}`);
+    await writeManifestPackage(rootDir, join(...segments), '@acme/amplified', [
+      'AmplifiedModel',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.packages).toHaveLength(0);
+    expect(index.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'error',
+          code: 'workspace-glob-expansion-limit',
+        }),
+      ]),
+    );
   });
 
   it('does not report a discovery failure when a scope filter excludes the model', async () => {
