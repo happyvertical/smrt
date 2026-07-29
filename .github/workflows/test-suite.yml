@@ -484,10 +484,11 @@ jobs:
       # per-runner load low so transient resource-pressure timing flakes stay
       # rare.
       - name: Run package tests (shard ${{ matrix.shard }}, excluding core and video)
-        run: >-
-          node scripts/test-packages-shard.mjs '${{ matrix.shard }}'
-          | xargs -r pnpm turbo run test --concurrency=2
-          --filter='!@happyvertical/smrt-video'
+        run: |
+          set -o pipefail
+          node scripts/test-packages-shard.mjs '${{ matrix.shard }}' |
+            xargs -r pnpm turbo run test --concurrency=2 \
+              --filter='!@happyvertical/smrt-video'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
