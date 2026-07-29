@@ -1,7 +1,7 @@
 # Continuous integration architecture
 
 SMRT uses hosted runners for lightweight static and control-plane checks and
-the shared `ci-linux-x64` pool for general builds, tests, and publishing. The
+the shared `arc-happyvertical` broker pool for general builds, tests, and publishing. The
 internal Turborepo server is the build-output cache; GitHub Actions cache
 archives are deliberately not used for `.turbo/cache`. If the remote cache is
 unavailable, Turbo performs a cold build.
@@ -22,13 +22,23 @@ never prevent the tests from running.
 
 ## Runner selection
 
-- `ci-linux-x64` is the default selector for general Linux work. It combines
-  ARC capacity with allowlisted PXE hosts using one workflow-facing label.
+- `arc-happyvertical` is the default selector for general Linux work. It is the
+  workflow-facing broker alias; only runner-pool policy chooses its backing
+  capacity.
 - `arc-happyvertical-node` is reserved for the runner-image smoke test and
   PostgreSQL shadow validation. Those jobs depend on its cluster-local database
   URL mount and intentionally do not join the general pool.
 - Lightweight lifecycle, policy, aggregation, stale-management, and mobile
   jobs remain GitHub-hosted when they do not benefit from a self-hosted cache.
+
+The PR caller uses `pull_request_target`, so GitHub loads runner selection from
+the trusted base branch rather than contributor-controlled merge YAML. It passes
+a PR head SHA to reusable general-CI workflows only when the head repository
+equals `github.repository`; merge-group and trusted push workflows use the
+broker normally. External fork PRs keep a base-revision hosted control-plane
+check, while the self-hosted validation and publish-dry-run calls are skipped
+and `Required CI` rejects the run. Broker admission must also deny those fork
+events before making a reservation.
 
 The retired `CI_NODE_RUNNER_ENABLED` switch no longer controls job placement
 and can be removed from the repository after this workflow migration is live.
@@ -59,7 +69,7 @@ representative code-changing PR run.
 
 After that canary run:
 
-1. Verify the `ci-linux-x64` ARC/PXE canary and one representative SMRT run.
+1. Verify the `arc-happyvertical` broker canary and one representative SMRT run.
 2. Set `CI_POSTGRES_ENABLED=true` after the disposable cluster and runner URL
    mount pass the manual shadow workflow.
 3. Set `CI_MERGE_QUEUE_ENABLED=true`.
@@ -142,9 +152,10 @@ p95 exceeds 45 seconds, runner memory exceeds 8 GiB, required contexts vanish,
 or retries/failures increase. Target setup p50 below 30 seconds, queue p95 below
 two minutes, and at least 30% fewer self-hosted runner-minutes per PR.
 
-Rollback runner placement by restoring general jobs to
-`arc-happyvertical-node`. Merge-queue rollout can be reversed independently by
-clearing `CI_MERGE_QUEUE_ENABLED`, restoring the previous required status list,
-and removing the merge-queue rule. PostgreSQL can be removed from the required
-aggregator without altering SQLite coverage. The artifact publisher can
-temporarily fall back to Changesets through manual dispatch.
+Runner placement remains brokered through `arc-happyvertical`; change backing
+capacity only in runner-pool policy, not workflow labels. Merge-queue rollout
+can be reversed independently by clearing `CI_MERGE_QUEUE_ENABLED`, restoring
+the previous required status list, and removing the merge-queue rule.
+PostgreSQL can be removed from the required aggregator without altering SQLite
+coverage. The artifact publisher can temporarily fall back to Changesets
+through manual dispatch.
