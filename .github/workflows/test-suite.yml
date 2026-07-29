@@ -469,11 +469,12 @@ jobs:
 
       # smrt-video loads the full SMRT manifest graph. When it runs near the end
       # of shard 2 beside another Turbo task, constrained ARC runners can kill
-      # its otherwise passing Vitest fork. Run it first in a fresh process, then
-      # exclude it from the general batch so coverage remains exactly once.
+      # its otherwise passing Vitest fork. Run it first through Turbo so a fresh
+      # runner builds its dependency closure, then exclude it from the general
+      # batch so coverage remains exactly once.
       - name: Run video package tests in isolation
         if: matrix.shard == '2/3'
-        run: pnpm --filter='@happyvertical/smrt-video' test
+        run: pnpm turbo run test --concurrency=1 --filter='@happyvertical/smrt-video'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
