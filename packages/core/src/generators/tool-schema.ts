@@ -99,7 +99,12 @@ export function fieldTypeToJsonSchema(field: ToolFieldMeta): ToolJsonSchema {
       break;
     case 'foreignKey':
       schema.type = 'string';
-      schema.description = `ID of related ${field.related || 'object'}`;
+      // The generic relation hint is a fallback only — an authored
+      // `@field({ description })` wins (#2046 threads descriptions into web
+      // tool descriptors; clobbering them here would strip the help text).
+      if (!field.description) {
+        schema.description = `ID of related ${field.related || 'object'}`;
+      }
       break;
     default:
       schema.type = 'string';
