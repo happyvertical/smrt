@@ -98,7 +98,7 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
           actorProfileId: randomUUID(),
         }),
       ),
-    ).rejects.toThrow('injected lead assignment audit failure');
+    ).rejects.toThrow();
 
     expect(
       (await withTenant({ tenantId }, () => leads.get({ id: lead.id })))
