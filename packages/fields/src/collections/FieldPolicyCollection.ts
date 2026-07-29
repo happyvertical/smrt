@@ -22,12 +22,21 @@ const MAX_BATCH_OBJECT_REFS = 100;
  * `resolveBatch` is a custom collection-scoped action (NOT a system route —
  * core's generated system trio is closed): the generated route parses the
  * body, calls the method on the app-configured collection instance (which
- * carries the app database), and serializes the plain result. Exposure is
- * fully explicit: only `resolveBatch` over the API, nothing over MCP/CLI.
+ * carries the app database), and serializes the plain result.
+ *
+ * Exposure note: a decorated collection's config becomes the RUNTIME registry
+ * authority for its item class (core merges the collection registration onto
+ * the item slot), while build-time generation reads each manifest object's
+ * own config. This config therefore mirrors FieldPolicy's API posture —
+ * writes open plus the batch action, reads CLOSED (generated list/get would
+ * enumerate every tenant's/user's rows) — and closes the runtime CLI/MCP
+ * surfaces entirely (the ContentContributions precedent; the cli↔api
+ * coherence gate does not admit standard CRUD entries on a collection's
+ * `cli.include`). Keep the api include lists in lockstep with FieldPolicy's.
  */
 @smrt({
   api: {
-    include: ['resolveBatch'],
+    include: ['create', 'update', 'delete', 'resolveBatch'],
     routes: {
       resolveBatch: {
         scope: 'collection',
@@ -36,43 +45,11 @@ const MAX_BATCH_OBJECT_REFS = 100;
       },
     },
   },
-  mcp: false,
   cli: false,
+  mcp: false,
 })
 export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
   static readonly _itemClass = FieldPolicy;
-
-  private excludeRowId(
-    items: FieldPolicy[],
-    excludeId?: string,
-  ): FieldPolicy[] {
-    return items.filter((item) => (excludeId ? item.id !== excludeId : true));
-  }
-
-  /** App-scope row for one field, or null. */
-  async getAppRow(
-    objectRef: string,
-    fieldName: string,
-    options: { excludeId?: string } = {},
-  ): Promise<FieldPolicy | null> {
-    const items = await this.list({
-      where: { objectRef, fieldName, scopeType: 'app' },
-    });
-    return this.excludeRowId(items, options.excludeId)[0] ?? null;
-  }
-
-  /** Direct tenant-scope row for one field and tenant, or null. */
-  async getTenantRow(
-    objectRef: string,
-    fieldName: string,
-    tenantId: string,
-    options: { excludeId?: string } = {},
-  ): Promise<FieldPolicy | null> {
-    const items = await this.list({
-      where: { objectRef, fieldName, scopeType: 'tenant', tenantId },
-    });
-    return this.excludeRowId(items, options.excludeId)[0] ?? null;
-  }
 
   /** All app-scope rows for an object, keyed by field name. */
   async getAppRows(objectRef: string): Promise<Map<string, FieldPolicy>> {

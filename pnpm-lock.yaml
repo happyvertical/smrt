@@ -1064,6 +1064,9 @@ importers:
         specifier: ^0.84.0
         version: 0.84.0(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
     devDependencies:
+      '@happyvertical/smrt-cli':
+        specifier: workspace:*
+        version: link:../cli
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users

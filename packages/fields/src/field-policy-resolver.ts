@@ -98,13 +98,20 @@ export async function resolveFieldPolicyExplained(
     ? await collection.getAppRows(objectRef)
     : new Map<string, FieldPolicy>();
 
-  let chain: FieldPolicyTenantNode[] = [];
+  let survivingChain: FieldPolicyTenantNode[] = [];
   let tenantRows = new Map<string, Map<string, FieldPolicy>>();
   if (collection && tenantId) {
-    chain = await resolveTenantChain(tenantId, options);
+    const chain = await resolveTenantChain(tenantId, options);
+    // Permission-inheritance breaks are chain-STRUCTURAL (node flags, not
+    // rows), so a break at node i discards every earlier tenant contribution
+    // for ALL fields — the merge baseline resets to the app-layer state
+    // there. Only the suffix from the LAST break participates in merging and
+    // in the explained layers, so sequentially replaying the listed deltas
+    // always reproduces the merged result.
+    survivingChain = selectSurvivingChainSuffix(chain);
     tenantRows = await collection.getTenantRows(
       objectRef,
-      chain.map((node) => node.id),
+      survivingChain.map((node) => node.id),
     );
   }
 
@@ -137,30 +144,18 @@ export async function resolveFieldPolicyExplained(
       state = applyDelta(state, delta);
     }
 
-    // Tenant chain walk, root → leaf, mirroring smrt-features: a node only
-    // inherits the accumulated tenant-layer state when its parent cascades
-    // permissions and it accepts them; otherwise its baseline resets to the
-    // app-layer state.
-    const appLayerState = state;
-    let accumulated = appLayerState;
-    for (let index = 0; index < chain.length; index++) {
-      const current = chain[index];
-      const previous = index > 0 ? chain[index - 1] : null;
-      const shouldInherit =
-        index === 0 ||
-        (!!previous?.cascadePermissions && current.inheritPermissions);
-      const baseline = shouldInherit ? accumulated : appLayerState;
-
-      const row = tenantRows.get(current.id)?.get(fieldName);
+    // Tenant chain walk, root → leaf, over the surviving suffix only (nodes
+    // before the last permission-inheritance break contribute nothing — see
+    // selectSurvivingChainSuffix). Equivalent to smrt-features' baseline
+    // walk, but the explained contributions never list discarded ancestors.
+    for (const node of survivingChain) {
+      const row = tenantRows.get(node.id)?.get(fieldName);
       if (row) {
         const delta = rowToDelta(row);
-        contributions.push({ layer: 'tenant', tenantId: current.id, delta });
-        accumulated = applyDelta(baseline, delta);
-      } else {
-        accumulated = baseline;
+        contributions.push({ layer: 'tenant', tenantId: node.id, delta });
+        state = applyDelta(state, delta);
       }
     }
-    state = accumulated;
 
     // Org lock: when the code/app/tenant tiers resolve locked, the user tier
     // is skipped entirely — a stale user row cannot bypass a later lock.
@@ -310,6 +305,28 @@ function applyDelta(
   };
 }
 
+/**
+ * The chain suffix that actually participates in merging: nodes from the
+ * LAST permission-inheritance break onward (a node breaks inheritance when
+ * its parent does not cascade permissions or it does not accept them —
+ * smrt-features semantics). Everything before the last break is discarded
+ * for every field, so it is excluded from both merging and the explained
+ * layer contributions.
+ */
+function selectSurvivingChainSuffix(
+  chain: FieldPolicyTenantNode[],
+): FieldPolicyTenantNode[] {
+  let survivingStart = 0;
+  for (let index = 1; index < chain.length; index++) {
+    const inherits =
+      chain[index - 1].cascadePermissions && chain[index].inheritPermissions;
+    if (!inherits) {
+      survivingStart = index;
+    }
+  }
+  return chain.slice(survivingStart);
+}
+
 async function resolveTenantChain(
   tenantId: string,
   options: ResolveFieldPolicyOptions,
@@ -369,19 +386,43 @@ async function defaultTenantHierarchyLoader(
   }
 }
 
-function isMissingUsersDependency(error: unknown): boolean {
-  if (!(error instanceof Error)) {
+/**
+ * Whether an import failure means `@happyvertical/smrt-users` is simply not
+ * installed (→ flat-tenant fallback) rather than installed-but-broken
+ * (→ rethrow). Node reports a missing bare specifier as
+ * `ERR_MODULE_NOT_FOUND` with the message `Cannot find package '...'`, so
+ * both the error `code` (across the whole `cause` chain) and that message
+ * text are matched alongside the wrapper texts `importWorkspaceModule`
+ * produces. A transitive `ERR_MODULE_NOT_FOUND` raised INSIDE smrt-users
+ * names the other package, fails the smrt-users text check, and rethrows.
+ *
+ * Exported for direct testing; not re-exported from the package index.
+ */
+export function isMissingUsersDependency(error: unknown): boolean {
+  let sawModuleNotFound = false;
+  let text = '';
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    text += ` ${current.message}`;
+    const code = (current as { code?: unknown }).code;
+    if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
+      sawModuleNotFound = true;
+    }
+    current = current.cause;
+  }
+
+  if (!text.includes('@happyvertical/smrt-users')) {
     return false;
   }
 
-  const causeMessage =
-    error.cause instanceof Error ? ` ${error.cause.message}` : '';
-  const text = `${error.message}${causeMessage}`;
-
   return (
-    text.includes('@happyvertical/smrt-users') &&
-    (text.includes('Cannot find module') ||
-      text.includes('Failed to load') ||
-      text.includes('could not find'))
+    sawModuleNotFound ||
+    text.includes('Cannot find package') ||
+    text.includes('Cannot find module') ||
+    text.includes('Failed to load') ||
+    text.includes('could not find')
   );
 }

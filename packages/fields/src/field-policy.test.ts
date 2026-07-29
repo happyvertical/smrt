@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   field,
   getTestDatabase,
+  meta,
   ObjectRegistry,
   SmrtObject,
   smrt,
@@ -14,6 +15,10 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+// Registers smrt-users' classes (Tenant) so getTestDatabase can create the
+// tenants table the write-time org checks read through the default hierarchy
+// loader.
+import { TenantCollection } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 
@@ -54,6 +59,9 @@ class PolicyModelDoc extends SmrtObject {
 
   @field({ required: true })
   category: string = 'general';
+
+  @meta()
+  legacyNotes: string = '';
 }
 
 function fixtureRef(): string {
@@ -72,7 +80,7 @@ describe('FieldPolicy write-time validation', () => {
   beforeEach(async () => {
     setupTestTenancy();
     clearFieldPolicyCache();
-    db = await getTestDatabase({ classes: ['FieldPolicy'] });
+    db = await getTestDatabase({ classes: ['FieldPolicy', 'Tenant'] });
     policies = await FieldPolicyCollection.create({ db });
     objectRef = fixtureRef();
   });
@@ -123,6 +131,17 @@ describe('FieldPolicy write-time validation', () => {
         help: 'x',
       }),
     ).rejects.toThrow(/system field/);
+
+    // STI meta storage fields are excluded by the resolver, so accepting a
+    // row would persist policy that silently never applies.
+    await expect(
+      policies.create({
+        objectRef,
+        fieldName: 'legacyNotes',
+        scopeType: 'app',
+        help: 'x',
+      }),
+    ).rejects.toThrow(/STI meta storage/);
   });
 
   it('rejects invalid scopeType, visibility, and displayOrder values', async () => {
@@ -583,5 +602,250 @@ describe('FieldPolicy write-time validation', () => {
         expect(crossTenant.help).toBe('bypass');
       },
     );
+  });
+
+  it('fails closed on deletes of rows the ambient context does not own', async () => {
+    const contextTenant = randomUUID();
+    const foreignTenant = randomUUID();
+    const contextUser = randomUUID();
+    const foreignUser = randomUUID();
+
+    // Rows created outside any context (platform admin flow).
+    const appRow = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'app',
+      help: 'app row',
+    });
+    const foreignTenantRow = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'tenant',
+      tenantId: foreignTenant,
+      help: 'foreign tenant row',
+    });
+    const foreignUserRow = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'user',
+      userId: foreignUser,
+      help: 'foreign user row',
+    });
+    const ownTenantRow = await policies.create({
+      objectRef,
+      fieldName: 'category',
+      scopeType: 'tenant',
+      tenantId: contextTenant,
+      help: 'own tenant row',
+    });
+
+    await withTenant(
+      {
+        tenantId: contextTenant,
+        userId: contextUser,
+        permissions: new Set<string>(),
+      },
+      async () => {
+        // A caller holding a foreign row id (e.g. via the generated DELETE
+        // route) must not remove rows outside its own scope.
+        await expect(appRow.delete()).rejects.toThrow(TenantIsolationError);
+        await expect(foreignTenantRow.delete()).rejects.toThrow(
+          TenantIsolationError,
+        );
+        await expect(foreignUserRow.delete()).rejects.toThrow(
+          TenantIsolationError,
+        );
+
+        // Own-tenant rows remain deletable.
+        await ownTenantRow.delete();
+      },
+    );
+
+    const remaining = await policies.list({ where: { objectRef } });
+    expect(remaining.map((row) => row.help).sort()).toEqual([
+      'app row',
+      'foreign tenant row',
+      'foreign user row',
+    ]);
+
+    // Super-admin bypass keeps deliberate cross-scope deletes.
+    await withTenant(
+      {
+        tenantId: contextTenant,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => {
+        await foreignTenantRow.delete();
+      },
+    );
+    const afterBypass = await policies.list({ where: { objectRef } });
+    expect(afterBypass).toHaveLength(2);
+  });
+
+  it('rejects re-scoping a foreign persisted row into the caller scope', async () => {
+    const contextTenant = randomUUID();
+    const foreignTenant = randomUUID();
+    const contextUser = randomUUID();
+    const foreignUser = randomUUID();
+
+    const foreignTenantRow = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'tenant',
+      tenantId: foreignTenant,
+      help: 'foreign tenant policy',
+    });
+    const foreignUserRow = await policies.create({
+      objectRef,
+      fieldName: 'category',
+      scopeType: 'user',
+      userId: foreignUser,
+      help: 'foreign user policy',
+    });
+
+    await withTenant(
+      {
+        tenantId: contextTenant,
+        userId: contextUser,
+        permissions: new Set<string>(),
+      },
+      async () => {
+        // Authorization runs against the PERSISTED scope, so flipping the
+        // ownership columns to the caller's own ids must not be accepted
+        // (the identity-change path would otherwise delete the foreign row).
+        foreignTenantRow.tenantId = contextTenant;
+        await expect(foreignTenantRow.save()).rejects.toThrow(
+          TenantIsolationError,
+        );
+
+        foreignUserRow.userId = contextUser;
+        await expect(foreignUserRow.save()).rejects.toThrow(
+          TenantIsolationError,
+        );
+
+        // Even without changing scope, mutating a foreign row is rejected.
+        const [persistedForeign] = await policies.list({
+          where: { objectRef, fieldName: 'summary', scopeType: 'tenant' },
+        });
+        persistedForeign.help = 'hijacked';
+        await expect(persistedForeign.save()).rejects.toThrow(
+          TenantIsolationError,
+        );
+      },
+    );
+
+    // The foreign rows survive unchanged under their original scope.
+    const rows = await policies.list({ where: { objectRef } });
+    expect(rows.map((row) => row.help).sort()).toEqual([
+      'foreign tenant policy',
+      'foreign user policy',
+    ]);
+    expect(rows.find((row) => row.scopeType === 'tenant')?.tenantId).toBe(
+      foreignTenant,
+    );
+    expect(rows.find((row) => row.scopeType === 'user')?.userId).toBe(
+      foreignUser,
+    );
+  });
+
+  it('enforces a cascading ancestor-tenant lock against user writes', async () => {
+    const tenants = await TenantCollection.create({ db });
+    const root = await tenants.create({ name: 'Lock Root' });
+    await root.save();
+    const child = await tenants.createChild(root.id, {
+      name: 'Lock Child',
+      inheritPermissions: true,
+    });
+
+    // The parent tenant locks the field; no direct child row exists.
+    await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'tenant',
+      tenantId: String(root.id),
+      locked: true,
+    });
+
+    const userId = randomUUID();
+    await withTenant(
+      {
+        tenantId: String(child.id),
+        userId,
+        permissions: new Set<string>(),
+      },
+      async () => {
+        await expect(
+          policies.create({
+            objectRef,
+            fieldName: 'summary',
+            scopeType: 'user',
+            userId,
+            help: 'mine',
+          }),
+        ).rejects.toThrow(/locked by org policy/);
+      },
+    );
+  });
+
+  it('accepts demotions whose only usable default cascades from an ancestor tenant', async () => {
+    const tenants = await TenantCollection.create({ db });
+    const root = await tenants.create({ name: 'Default Root' });
+    await root.save();
+    const child = await tenants.createChild(root.id, {
+      name: 'Default Child',
+      inheritPermissions: true,
+    });
+
+    // The only usable default for required `title` lives on the ROOT tenant.
+    await policies.create({
+      objectRef,
+      fieldName: 'title',
+      scopeType: 'tenant',
+      tenantId: String(root.id),
+      defaultValue: JSON.stringify('Root seeded title'),
+    });
+
+    // A child-tenant demotion resolves that ancestor default through the
+    // hierarchy walk and is accepted.
+    const childDemotion = await policies.create({
+      objectRef,
+      fieldName: 'title',
+      scopeType: 'tenant',
+      tenantId: String(child.id),
+      visibility: 'hidden',
+    });
+    expect(childDemotion.visibility).toBe('hidden');
+
+    // A user demotion under the child tenant's context resolves it too.
+    const userId = randomUUID();
+    await withTenant(
+      {
+        tenantId: String(child.id),
+        userId,
+        permissions: new Set<string>(),
+      },
+      async () => {
+        const userDemotion = await policies.create({
+          objectRef,
+          fieldName: 'title',
+          scopeType: 'user',
+          userId,
+          visibility: 'advanced',
+        });
+        expect(userDemotion.visibility).toBe('advanced');
+      },
+    );
+
+    // An unrelated tenant with no ancestor default is still rejected.
+    await expect(
+      policies.create({
+        objectRef,
+        fieldName: 'title',
+        scopeType: 'tenant',
+        tenantId: randomUUID(),
+        visibility: 'hidden',
+      }),
+    ).rejects.toThrow(/no resolved default/);
   });
 });

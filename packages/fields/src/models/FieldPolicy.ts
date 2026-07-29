@@ -14,7 +14,6 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { invalidateFieldPolicyCache } from '../cache.js';
 import {
   assertDefaultValueMatchesFieldType,
-  getCodeDefault,
   getFieldReadPermission,
   getObjectFieldMap,
   isRequiredField,
@@ -22,7 +21,6 @@ import {
   isTransientField,
   isUsableRequiredDefault,
   type RegisteredFieldInfo,
-  sanitizeFieldUIHints,
 } from '../field-definitions.js';
 import {
   APP_FIELD_POLICY_SCOPE_KEY,
@@ -31,6 +29,7 @@ import {
   type FieldPolicyOptions,
   type FieldPolicyScopeType,
   type FieldPolicyVisibility,
+  type ResolvedFieldPolicy,
 } from '../types.js';
 
 type FieldPolicyIdentity = {
@@ -38,6 +37,8 @@ type FieldPolicyIdentity = {
   fieldName: string;
   scopeType: string;
   scopeKey: string;
+  tenantId: string | null;
+  userId: string | null;
 };
 
 type FieldPolicyTransactionHandle = DatabaseInterface & {
@@ -59,12 +60,20 @@ type FieldPolicyTransactionHandle = DatabaseInterface & {
  * defaults are type-checked, and the security rail (`sensitive` /
  * `readPermission` / `transient`) refuses stored defaults outright.
  */
+// The generated surfaces expose NO read verbs anywhere: list/get on this
+// non-@TenantScoped model would enumerate every tenant's and user's policy
+// rows to any authenticated principal, and the generated CLI invokes methods
+// over HTTP so CLI reads would be equally exposed (and unreachable once the
+// API closes them — the build-time cli↔api coherence gate enforces that).
+// Reads go through the context-scoped batch resolver
+// (FieldPolicyCollection.resolveBatch) and the server-side resolver/explain
+// APIs.
 @smrt({
   tableName: '_smrt_field_policies',
   conflictColumns: ['object_ref', 'field_name', 'scope_type', 'scope_key'],
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: { include: ['create', 'update', 'delete'] },
   cli: {
-    include: ['list', 'get', 'create', 'update', 'delete'],
+    include: ['create', 'update', 'delete'],
     exclude: ['getDefaultValue', 'setDefaultValue'],
   },
   mcp: { include: [] },
@@ -182,6 +191,13 @@ export class FieldPolicy extends SmrtObject {
 
   override async save(): Promise<this> {
     const previousIdentity = await this.getPersistedIdentity();
+    // The caller must own the row AS PERSISTED before any mutation is
+    // accepted — otherwise a foreign row could be re-scoped into the caller's
+    // own tenant/user (and the identity-change path below would then delete
+    // the original foreign row).
+    if (previousIdentity) {
+      this.assertScopeOwnedByAmbientContext(previousIdentity, 'save');
+    }
     this.normalizeDefaultValueForPersistence();
     await this.validateFieldPolicy();
     // scopeKey makes the conflict-column tuple total even though tenantId and
@@ -276,9 +292,19 @@ export class FieldPolicy extends SmrtObject {
   }
 
   override async delete(): Promise<void> {
-    const objectRef = this.objectRef;
+    // Authorize against the PERSISTED row, not in-memory state: the generated
+    // DELETE route (and any caller holding a foreign row id) must not remove
+    // app rows or another tenant's/user's rows from inside a tenant context.
+    const persisted = await this.getPersistedIdentity();
+    if (persisted) {
+      this.assertScopeOwnedByAmbientContext(persisted, 'delete');
+    }
+    const objectRef = persisted?.objectRef ?? this.objectRef;
     await super.delete();
     invalidateFieldPolicyCache(objectRef, this.db);
+    if (this.objectRef && this.objectRef !== objectRef) {
+      invalidateFieldPolicyCache(this.objectRef, this.db);
+    }
   }
 
   private async validateFieldPolicy(): Promise<void> {
@@ -333,6 +359,14 @@ export class FieldPolicy extends SmrtObject {
           `pseudo-field and is not policy-addressable`,
       );
     }
+    // The resolver excludes STI meta storage fields, so accepting a row here
+    // would persist policy that silently never applies.
+    if (fieldDef.type === 'meta') {
+      throw new Error(
+        `Field "${this.fieldName}" on "${this.objectRef}" is STI meta ` +
+          `storage and is not policy-addressable`,
+      );
+    }
 
     if (this.locked !== null && this.scopeType === 'user') {
       throw new Error(
@@ -352,31 +386,82 @@ export class FieldPolicy extends SmrtObject {
     }
 
     // Required-field invariant (write side): demoting a required field to
-    // advanced/hidden needs a usable resolved default. The resolver enforces
+    // advanced/hidden needs a usable resolved default — either this row's own
+    // default or one resolved by the org tiers (code → app → tenant chain,
+    // INCLUDING cascading ancestor-tenant defaults). The resolver enforces
     // the same rule again at read time (safety net) because a DIFFERENT row's
     // later deletion can invalidate what held here.
-    if (
+    const demotesRequiredField =
       (this.visibility === 'advanced' || this.visibility === 'hidden') &&
-      isRequiredField(fieldDef)
-    ) {
-      const ownDefault =
-        this.defaultValue !== null
-          ? { value: this.parseDefaultValueOrThrow() }
+      isRequiredField(fieldDef);
+    const ownDefault =
+      demotesRequiredField && this.defaultValue !== null
+        ? { value: this.parseDefaultValueOrThrow() }
+        : undefined;
+    const needsOrgDefault =
+      demotesRequiredField && !isUsableRequiredDefault(ownDefault);
+    const needsLockCheck = this.scopeType === 'user';
+
+    if (needsOrgDefault || needsLockCheck) {
+      const orgPolicy = await this.resolveOrgTierFieldPolicy();
+
+      if (needsOrgDefault) {
+        const orgDefault = orgPolicy?.hasDefault
+          ? { value: orgPolicy.defaultValue }
           : undefined;
-      const effectiveDefault =
-        ownDefault ?? (await this.resolveLowerLayerDefault(fieldDef));
-      if (!isUsableRequiredDefault(effectiveDefault)) {
+        if (!isUsableRequiredDefault(orgDefault)) {
+          throw new Error(
+            `Cannot set visibility "${this.visibility}" for required field ` +
+              `"${this.objectRef}.${this.fieldName}": no resolved default ` +
+              `exists at or below this layer`,
+          );
+        }
+      }
+
+      // Org lock enforcement (write side): the effective lock includes
+      // cascading ancestor-tenant locks, not just the direct tenant row. The
+      // resolver additionally skips the user layer at read time whenever the
+      // org tiers resolve locked, so stale user rows cannot bypass a lock.
+      if (needsLockCheck && orgPolicy?.locked) {
         throw new Error(
-          `Cannot set visibility "${this.visibility}" for required field ` +
-            `"${this.objectRef}.${this.fieldName}": no resolved default ` +
-            `exists at or below this layer`,
+          `Field "${this.objectRef}.${this.fieldName}" is locked by org ` +
+            `policy; user-scope overrides are not allowed`,
         );
       }
     }
+  }
 
-    if (this.scopeType === 'user') {
-      await this.assertNotLockedForUserWrite(fieldDef);
-    }
+  /**
+   * Effective org-tier (code → app → tenant hierarchy) policy for this row's
+   * field, computed by the RESOLVER so write-time checks share the one
+   * precedence implementation — including ancestor-tenant cascades via the
+   * default hierarchy loader. The chain tenant is the row's own tenant for
+   * tenant-scope rows, the ambient context tenant for user-scope rows, and
+   * none for app-scope rows (their only lower layer is the code seed).
+   *
+   * On updates the resolver sees this row's PERSISTED version (there is no
+   * self-exclusion), so a save that removes the only default while demoting
+   * can pass here; the resolver-side safety net stays authoritative at read
+   * time.
+   */
+  private async resolveOrgTierFieldPolicy(): Promise<
+    ResolvedFieldPolicy | undefined
+  > {
+    const tenantIdForChain =
+      this.scopeType === 'tenant'
+        ? this.tenantId
+        : this.scopeType === 'user'
+          ? (getCurrentTenant()?.tenantId ?? null)
+          : null;
+
+    // Dynamic import: the resolver statically imports the collection, which
+    // statically imports this model.
+    const { resolveFieldPolicy } = await import('../field-policy-resolver.js');
+    const resolved = await resolveFieldPolicy(this.objectRef, {
+      tenantId: tenantIdForChain,
+      db: this.options.db ?? this.options.persistence,
+    });
+    return resolved.fields[this.fieldName];
   }
 
   /**
@@ -410,46 +495,68 @@ export class FieldPolicy extends SmrtObject {
 
   /**
    * Fail-closed write boundary against the ambient tenant context: a
-   * non-bypass tenant-scoped caller may only write rows for its own tenant
+   * non-bypass tenant-scoped caller may only touch rows for its own tenant
    * (and, when the context carries a user id, only user rows for itself);
-   * app-wide rows require no tenant context or super-admin bypass.
+   * app-wide rows require no tenant context or super-admin bypass. Applied to
+   * the NEW scope on save and to the PERSISTED scope on save/delete of an
+   * existing row.
    */
-  private validateTenantContextBoundary(): void {
+  private assertScopeOwnedByAmbientContext(
+    scope: {
+      scopeType: string;
+      tenantId: string | null;
+      userId: string | null;
+    },
+    operation: 'save' | 'delete',
+  ): void {
     const context = getCurrentTenant();
     if (!context || isSuperAdminBypass()) {
       return;
     }
 
-    if (this.scopeType === 'app') {
+    if (scope.scopeType === 'app') {
       throw new TenantIsolationError(
-        'App-scope field policy writes are not allowed inside a tenant ' +
-          'context (use a system context or super-admin bypass)',
+        `App-scope field policy ${operation}s are not allowed inside a ` +
+          'tenant context (use a system context or super-admin bypass)',
         { tenantId: context.tenantId },
       );
     }
 
-    if (this.scopeType === 'tenant' && this.tenantId !== context.tenantId) {
+    if (scope.scopeType === 'tenant' && scope.tenantId !== context.tenantId) {
       throw new TenantIsolationError(
-        `Tenant isolation violation in FieldPolicy.save: context tenant is ` +
-          `'${context.tenantId}' but the row targets '${this.tenantId}'`,
+        `Tenant isolation violation in FieldPolicy.${operation}: context ` +
+          `tenant is '${context.tenantId}' but the row belongs to ` +
+          `'${scope.tenantId}'`,
         {
           tenantId: context.tenantId,
-          attemptedTenantId: this.tenantId ?? undefined,
+          attemptedTenantId: scope.tenantId ?? undefined,
         },
       );
     }
 
     if (
-      this.scopeType === 'user' &&
+      scope.scopeType === 'user' &&
       context.userId !== undefined &&
-      this.userId !== context.userId
+      scope.userId !== context.userId
     ) {
       throw new TenantIsolationError(
-        `Tenant isolation violation in FieldPolicy.save: context user is ` +
-          `'${context.userId}' but the row targets '${this.userId}'`,
+        `Tenant isolation violation in FieldPolicy.${operation}: context ` +
+          `user is '${context.userId}' but the row belongs to ` +
+          `'${scope.userId}'`,
         { tenantId: context.tenantId },
       );
     }
+  }
+
+  private validateTenantContextBoundary(): void {
+    this.assertScopeOwnedByAmbientContext(
+      {
+        scopeType: this.scopeType,
+        tenantId: this.tenantId,
+        userId: this.userId,
+      },
+      'save',
+    );
   }
 
   private validateDefaultAgainstSecurityRail(
@@ -489,108 +596,6 @@ export class FieldPolicy extends SmrtObject {
     }
   }
 
-  /**
-   * Best-effort lower-layer default for the write-time required-field check:
-   * code seed, then the app row, then — for user rows saved inside a tenant
-   * context — that tenant's direct row. Hierarchy-sourced (ancestor tenant)
-   * defaults are only visible to the resolver, which re-enforces the
-   * invariant at read time.
-   */
-  private async resolveLowerLayerDefault(
-    fieldDef: RegisteredFieldInfo,
-  ): Promise<{ value: unknown } | undefined> {
-    const layers: Array<{ value: unknown } | undefined> = [
-      getCodeDefault(fieldDef),
-    ];
-
-    const { FieldPolicyCollection } = await import(
-      '../collections/FieldPolicyCollection.js'
-    );
-    const collection = await FieldPolicyCollection.create({
-      db: this.options.db ?? this.options.persistence,
-    });
-
-    if (this.scopeType !== 'app') {
-      const appRow = await collection.getAppRow(
-        this.objectRef,
-        this.fieldName,
-        { excludeId: this.id ?? undefined },
-      );
-      if (appRow && appRow.defaultValue !== null) {
-        layers.push({ value: appRow.getDefaultValue() });
-      }
-    }
-
-    if (this.scopeType === 'user') {
-      const contextTenantId = getCurrentTenant()?.tenantId;
-      if (contextTenantId) {
-        const tenantRow = await collection.getTenantRow(
-          this.objectRef,
-          this.fieldName,
-          contextTenantId,
-          { excludeId: this.id ?? undefined },
-        );
-        if (tenantRow && tenantRow.defaultValue !== null) {
-          layers.push({ value: tenantRow.getDefaultValue() });
-        }
-      }
-    }
-
-    // Highest contributing lower layer wins (tenant over app over code).
-    for (let index = layers.length - 1; index >= 0; index--) {
-      const layer = layers[index];
-      if (layer !== undefined) {
-        return layer;
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * Org lock enforcement (write side): a user-scope row is rejected while the
-   * effective lock — code seed (`ui.locked`), overridden by the app row, then
-   * by the ambient context tenant's row — is true. The resolver additionally
-   * skips the user layer at read time whenever the org tiers resolve locked,
-   * so stale user rows cannot bypass a later lock.
-   */
-  private async assertNotLockedForUserWrite(
-    fieldDef: RegisteredFieldInfo,
-  ): Promise<void> {
-    const ui = sanitizeFieldUIHints(fieldDef._meta?.ui);
-    let effectiveLocked = ui?.locked === true;
-
-    const { FieldPolicyCollection } = await import(
-      '../collections/FieldPolicyCollection.js'
-    );
-    const collection = await FieldPolicyCollection.create({
-      db: this.options.db ?? this.options.persistence,
-    });
-
-    const appRow = await collection.getAppRow(this.objectRef, this.fieldName);
-    if (appRow && appRow.locked !== null) {
-      effectiveLocked = appRow.locked;
-    }
-
-    const contextTenantId = getCurrentTenant()?.tenantId;
-    if (contextTenantId) {
-      const tenantRow = await collection.getTenantRow(
-        this.objectRef,
-        this.fieldName,
-        contextTenantId,
-      );
-      if (tenantRow && tenantRow.locked !== null) {
-        effectiveLocked = tenantRow.locked;
-      }
-    }
-
-    if (effectiveLocked) {
-      throw new Error(
-        `Field "${this.objectRef}.${this.fieldName}" is locked by org ` +
-          `policy; user-scope overrides are not allowed`,
-      );
-    }
-  }
-
   private async getPersistedIdentity(): Promise<FieldPolicyIdentity | null> {
     if (!this.id) {
       return null;
@@ -611,12 +616,18 @@ export class FieldPolicy extends SmrtObject {
       }
       return fallback;
     };
+    const readNullable = (camel: string, snake: string): string | null => {
+      const value = row[camel] !== undefined ? row[camel] : row[snake];
+      return value === undefined || value === null ? null : String(value);
+    };
 
     return {
       objectRef: read('objectRef', 'object_ref', this.objectRef),
       fieldName: read('fieldName', 'field_name', this.fieldName),
       scopeType: read('scopeType', 'scope_type', this.scopeType),
       scopeKey: read('scopeKey', 'scope_key', this.scopeKey),
+      tenantId: readNullable('tenantId', 'tenant_id'),
+      userId: readNullable('userId', 'user_id'),
     };
   }
 

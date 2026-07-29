@@ -35,6 +35,7 @@
     "@happyvertical/sql": "catalog:"
   },
   "devDependencies": {
+    "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "24.13.2",

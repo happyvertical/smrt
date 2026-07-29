@@ -118,8 +118,10 @@ export interface ResolvedObjectFieldPolicy {
  * Explain variant: merged result plus the ordered per-layer contributions for
  * each field, so admin/gear UIs (#2049/#2050) never re-derive precedence.
  * Layers are listed in application order (code, app, tenant chain root → leaf,
- * user); tenant chain nodes that break permission inheritance reset the
- * baseline to the app-layer state before their delta applies.
+ * user) and contain ONLY contributions that survive into the merged result:
+ * tenant ancestors discarded by a permission-inheritance break and user rows
+ * suppressed by an effective org lock are omitted, so sequentially replaying
+ * the listed deltas reproduces the merged policy.
  */
 export interface ExplainedObjectFieldPolicy extends ResolvedObjectFieldPolicy {
   layers: Record<string, FieldPolicyLayerContribution[]>;

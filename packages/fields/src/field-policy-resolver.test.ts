@@ -18,10 +18,15 @@ import { TenantCollection } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 import {
+  isMissingUsersDependency,
   resolveFieldPolicy,
   resolveFieldPolicyExplained,
 } from './field-policy-resolver.js';
-import type { FieldPolicyTenantHierarchyLoader } from './types.js';
+import type {
+  ExplainedObjectFieldPolicy,
+  FieldPolicyTenantHierarchyLoader,
+  FieldPolicyVisibility,
+} from './types.js';
 
 @smrt({
   packageName: '@test/smrt-fields-resolver',
@@ -64,6 +69,62 @@ function fixtureRef(): string {
 }
 
 const flatLoader: FieldPolicyTenantHierarchyLoader = async () => null;
+
+/**
+ * Sequentially replay the explained layer deltas (plus the required-field
+ * safety net) and assert the result reproduces the merged policy for every
+ * field — the contract that lets #2049/#2050 UIs trust the layer lists.
+ */
+function expectLayersToReproduceMerged(
+  explained: ExplainedObjectFieldPolicy,
+): void {
+  for (const [fieldName, merged] of Object.entries(explained.fields)) {
+    const contributions = explained.layers[fieldName] ?? [];
+    let defaultBox: { value: unknown } | undefined;
+    let visibility: FieldPolicyVisibility = 'basic';
+    let help: string | undefined;
+    let label: string | undefined;
+    let order: number | undefined;
+    let locked: boolean | undefined;
+
+    for (const { delta } of contributions) {
+      defaultBox = delta.default ?? defaultBox;
+      visibility = delta.visibility ?? visibility;
+      help = delta.help ?? help;
+      label = delta.label ?? label;
+      order = delta.order ?? order;
+      locked = delta.locked ?? locked;
+    }
+
+    const usableDefault =
+      defaultBox !== undefined &&
+      defaultBox.value !== null &&
+      defaultBox.value !== '';
+    if (merged.required && !usableDefault && visibility !== 'basic') {
+      visibility = 'basic';
+    }
+
+    expect({
+      fieldName,
+      hasDefault: defaultBox !== undefined,
+      defaultValue: defaultBox?.value,
+      visibility,
+      help: help ?? null,
+      label: label ?? null,
+      order: order ?? null,
+      locked: locked === true,
+    }).toEqual({
+      fieldName,
+      hasDefault: merged.hasDefault,
+      defaultValue: merged.defaultValue,
+      visibility: merged.visibility,
+      help: merged.help,
+      label: merged.label,
+      order: merged.order,
+      locked: merged.locked,
+    });
+  }
+}
 
 describe('resolveFieldPolicy', () => {
   let db: DatabaseInterface;
@@ -379,14 +440,40 @@ describe('resolveFieldPolicy', () => {
       scopeType: 'tenant',
       tenantId: rootTenant,
       defaultValue: JSON.stringify('root default'),
+      help: 'root help',
+    });
+    // The child's own sparse row survives the break and applies over the
+    // app layer (NOT over the discarded root layer).
+    await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'tenant',
+      tenantId: detachedChild,
+      help: 'child help',
     });
 
-    const resolved = await resolveFieldPolicy(objectRef, {
+    const explained = await resolveFieldPolicyExplained(objectRef, {
       db,
       tenantId: detachedChild,
       tenantHierarchyLoader: loader,
     });
-    expect(resolved.fields.summary.defaultValue).toBe('app default');
+    expect(explained.fields.summary.defaultValue).toBe('app default');
+    expect(explained.fields.summary.help).toBe('child help');
+
+    // The discarded ancestor never appears in the explained layers, so the
+    // listed contributions reproduce the merged result on replay.
+    const summaryLayers = explained.layers.summary;
+    expect(
+      summaryLayers.some(
+        (layer) => layer.layer === 'tenant' && layer.tenantId === rootTenant,
+      ),
+    ).toBe(false);
+    expect(
+      summaryLayers.some(
+        (layer) => layer.layer === 'tenant' && layer.tenantId === detachedChild,
+      ),
+    ).toBe(true);
+    expectLayersToReproduceMerged(explained);
   });
 
   it('uses the smrt-users tenant hierarchy via the default loader', async () => {
@@ -608,15 +695,76 @@ describe('resolveFieldPolicy', () => {
     expect(layers[3].userId).toBe(userId);
     expect(layers[3].delta.visibility).toBe('advanced');
 
-    // The merged view reproduces the layered application.
+    // The merged view reproduces the layered application — for summary and
+    // for every other field's listed contributions.
     expect(explained.fields.summary.defaultValue).toBe('tenant default');
     expect(explained.fields.summary.visibility).toBe('advanced');
     expect(explained.fields.summary.help).toBe('app help');
+    expectLayersToReproduceMerged(explained);
   });
 
   it('resolves the code seed alone when no database is supplied', async () => {
     const resolved = await resolveFieldPolicy(objectRef, {});
     expect(resolved.fields.summary.visibility).toBe('basic');
     expect(resolved.fields.priority.defaultValue).toBe(3);
+  });
+});
+
+describe('isMissingUsersDependency', () => {
+  it("treats Node's ERR_MODULE_NOT_FOUND missing-package shape as absent", () => {
+    // The exact shape Node raises for a missing bare specifier.
+    const direct = new Error(
+      "Cannot find package '@happyvertical/smrt-users' imported from " +
+        '/app/node_modules/@happyvertical/smrt-fields/dist/index.js',
+    );
+    (direct as { code?: string }).code = 'ERR_MODULE_NOT_FOUND';
+    expect(isMissingUsersDependency(direct)).toBe(true);
+
+    // The same failure surfaced through a wrapper's cause chain.
+    const wrapped = new Error(
+      'Failed to load @happyvertical/smrt-users for tenant-aware field ' +
+        'policy resolution',
+      { cause: direct },
+    );
+    expect(isMissingUsersDependency(wrapped)).toBe(true);
+
+    // A cause-only code (wrapper without one of the known texts).
+    const inner = new Error(
+      'some loader failure for @happyvertical/smrt-users',
+    );
+    const carrier = new Error('import failed', { cause: inner });
+    (inner as { code?: string }).code = 'ERR_MODULE_NOT_FOUND';
+    expect(isMissingUsersDependency(carrier)).toBe(true);
+
+    // importWorkspaceModule's own source-fallback message.
+    expect(
+      isMissingUsersDependency(
+        new Error(
+          'Failed to load @happyvertical/smrt-users for tenant-aware field ' +
+            'policy resolution: could not find /workspace/packages/users/src',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('rethrows installed-but-broken failures instead of falling back', () => {
+    // A transitive missing dependency INSIDE smrt-users names the other
+    // package — that is a broken install, not an absent one.
+    const transitive = new Error(
+      "Cannot find package 'left-pad' imported from " +
+        '/workspace/packages/users/dist/index.js',
+    );
+    (transitive as { code?: string }).code = 'ERR_MODULE_NOT_FOUND';
+    expect(isMissingUsersDependency(transitive)).toBe(false);
+
+    // An unrelated runtime error mentioning the package is not a missing
+    // module either.
+    expect(
+      isMissingUsersDependency(
+        new Error('@happyvertical/smrt-users threw during initialization'),
+      ),
+    ).toBe(false);
+
+    expect(isMissingUsersDependency('not an error')).toBe(false);
   });
 });

@@ -9,8 +9,17 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - `FieldPolicy` (`_smrt_field_policies` table) — sparse override rows keyed
   `(objectRef, fieldName, scopeType, scopeKey)`; NULL column = inherit from
   the lower layer, reset = row DELETE (later lower-layer changes flow through)
-- `FieldPolicyCollection` — CRUD surface plus the `resolveBatch` custom
-  collection-scoped action (`POST /<collection>/resolve`)
+- `FieldPolicyCollection` — write surface plus the `resolveBatch` custom
+  collection-scoped action (`POST /<collection>/resolve`). NO generated
+  surface exposes read verbs: API `list`/`get` on this non-tenant-scoped
+  model would enumerate every tenant's and user's rows; the model's CLI is
+  writes-only (the generated CLI invokes over HTTP, and the cli↔api
+  coherence gate rejects CLI entries without API routes); the runtime
+  CLI/MCP surfaces are closed by the collection config (ContentContributions
+  precedent). Reads go through `resolveBatch` (context-scoped) or the
+  server-side resolver. Keep the api include lists in lockstep: a decorated
+  collection's config is the RUNTIME registry authority for its item class,
+  while build-time generation reads each manifest object's own config.
 - `resolveFieldPolicy(objectRef, { tenantId, userId, db })` — merged policy
 - `resolveFieldPolicyExplained(...)` — merged policy plus ordered per-layer
   contributions (code/app/tenant/user) for gear/admin UIs (#2049/#2050)
@@ -23,9 +32,12 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 2. App rows — `scopeType: 'app'`, `tenantId`/`userId` null
 3. Tenant rows — hierarchy walk root → leaf via an injected
    `tenantHierarchyLoader` (smrt-features shape); the default loader
-   dynamic-imports `@happyvertical/smrt-users` and falls back to a flat
-   single-tenant chain when absent; chain nodes that break permission
-   inheritance reset their baseline to the app-layer state
+   dynamic-imports `@happyvertical/smrt-users` (missing-package failures —
+   `ERR_MODULE_NOT_FOUND` / "Cannot find package" across the cause chain —
+   fall back to a flat single-tenant chain). A node that breaks permission
+   inheritance discards every earlier tenant contribution (chain-structural),
+   so only the suffix from the LAST break participates — in merging AND in
+   the explained layers, which therefore replay to the merged result
 4. User rows — keyed by `userId` alone (preferences follow the user); both
    defaults AND visibility resolve through this tier
 
@@ -38,7 +50,9 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - **Manifest as definition registry**: writes validate against the live
   `ObjectRegistry` (never checked-in manifest.json artifacts): unknown
   objectRef/fieldName rejected; defaults type-checked against the field type;
-  system fields and relationship pseudo-fields are not policy-addressable.
+  system fields, relationship pseudo-fields, and STI meta storage fields are
+  not policy-addressable (the resolver excludes them, so rows would silently
+  never apply).
 - **Security rail**: defaults are refused on `transient`, `sensitive`, and
   `readPermission`-gated fields (both top-level and `_meta` flags checked).
   `resolveBatch` responses omit sensitive/read-permission-gated fields for
@@ -50,11 +64,20 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - **Org lock**: `locked` may be set on app/tenant rows only; while the
   code/app/tenant tiers resolve locked, user-scope writes are rejected and
   existing user rows are skipped at resolution.
+- **Write-time org checks reuse the resolver**: the required-demotion default
+  and the user-write lock are computed by `resolveFieldPolicy` over the org
+  tiers (default hierarchy loader), so cascading ancestor-tenant defaults and
+  locks are honored at save time too. On updates the resolver sees the row's
+  persisted version (no self-exclusion), so the resolver-side safety net
+  remains the authoritative enforcement at read time.
 - **Isolation**: a non-bypass tenant context may only resolve/write its own
   tenant (and own user when the context carries one); app-scope writes inside
-  a tenant context require super-admin bypass. `resolveBatch` takes identity
-  exclusively from the ambient tenant context — the request body cannot
-  select another tenant or user.
+  a tenant context require super-admin bypass. `save()` and `delete()` on an
+  EXISTING row additionally authorize the caller against the row's PERSISTED
+  scope before accepting anything — a foreign row cannot be re-scoped into
+  the caller's tenant/user or deleted by id from another tenant's context.
+  `resolveBatch` takes identity exclusively from the ambient tenant context —
+  the request body cannot select another tenant or user.
 
 ## Caching and invalidation
 

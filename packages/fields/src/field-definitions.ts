@@ -29,7 +29,7 @@ export type RegisteredFieldInfo =
  * registry, throwing a descriptive error when the class is unknown.
  */
 export function requireRegisteredObject(objectRef: string): void {
-  if (!objectRef || !objectRef.includes(':')) {
+  if (!objectRef?.includes(':')) {
     throw new Error(
       `Field policy objectRef must be a qualified class name ` +
         `("@package/name:ClassName"), got "${objectRef}"`,
