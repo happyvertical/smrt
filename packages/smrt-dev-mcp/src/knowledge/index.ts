@@ -393,20 +393,16 @@ export async function buildKnowledgeIndex(
     readKnowledgePackage(rootDir, dir, includeDocs),
   );
 
-  // A monorepo root would otherwise scan every member package and claim all of
-  // their objects as its own; members resolve themselves below.
-  const rootDelegates = packageDirs.length > 1;
+  // A workspace root can own objects of its own, but scanning it naively would
+  // also sweep every member package and claim their objects as the root's. Scan
+  // it with the member directories excluded instead of skipping it (#2143).
+  const memberExcludes = packageDirs
+    .filter((dir) => resolve(dir) !== resolve(rootDir))
+    .map((dir) => `${relative(rootDir, dir).replaceAll('\\', '/')}/**`);
   await Promise.all(
-    packages.map((pkg) => {
-      if (pkg.isWorkspaceRoot && rootDelegates) {
-        if (pkg.objectSource === 'none') {
-          pkg.objectSourceReason =
-            'workspace-root-delegates-to-member-packages';
-        }
-        return Promise.resolve();
-      }
-      return applyScannerFallback(pkg);
-    }),
+    packages.map((pkg) =>
+      applyScannerFallback(pkg, pkg.isWorkspaceRoot ? memberExcludes : []),
+    ),
   );
 
   packages.push(
@@ -417,12 +413,16 @@ export async function buildKnowledgeIndex(
   const scopedPackages = filterKnowledgePackages(uniquePackages, options);
   const smrtPackages = scopedPackages.filter((pkg) => pkg.kind === 'smrt');
   const sdkPackages = scopedPackages.filter((pkg) => pkg.kind === 'sdk');
+  // Coverage and diagnostics answer "did discovery work", which is a property of
+  // the whole workspace. Computing them from the scoped subset made
+  // `scope: 'sdk'` (or a `--package` filter) report a false discovery failure on
+  // a repository whose model was found perfectly well.
   const coverage = buildCoverage({
     rootDir,
     globs,
     globSource,
     packageDirs,
-    packages: scopedPackages,
+    packages: uniquePackages,
   });
 
   return {
@@ -434,7 +434,7 @@ export async function buildKnowledgeIndex(
     sdkPackages,
     relationshipsV2: summarizeRelationshipsV2(scopedPackages),
     coverage,
-    diagnostics: buildIndexDiagnostics(rootDir, scopedPackages, coverage),
+    diagnostics: buildIndexDiagnostics(rootDir, uniquePackages, coverage),
   };
 }
 
@@ -475,9 +475,6 @@ function remedyForReason(pkg: KnowledgePackage): string {
   }
   if (reason === 'no-smrt-objects-in-sources') {
     return 'No @smrt() classes were found in this package. Expected if it is a UI, contract, or tooling package.';
-  }
-  if (reason === 'workspace-root-delegates-to-member-packages') {
-    return 'Expected: the workspace root delegates object discovery to its member packages.';
   }
   return `Add @smrt() classes, or run pnpm build in ${pkg.relativeDirectory || '.'} to emit .smrt/manifest.json.`;
 }
@@ -570,19 +567,15 @@ function buildIndexDiagnostics(
 function buildDuplicateIdentityDiagnostics(
   packages: KnowledgePackage[],
 ): KnowledgeDiagnostic[] {
-  const owners = new Map<string, string[]>();
-  for (const pkg of packages) {
-    for (const object of pkg.objects) {
-      const identity = objectIdentity(object);
-      const current = owners.get(identity) ?? [];
-      if (!current.includes(pkg.name)) current.push(pkg.name);
-      owners.set(identity, current);
-    }
+  const duplicates: Array<[string, string[]]> = [];
+  for (const [identity, entries] of groupObjectsByIdentity(packages)) {
+    // Report only the collisions the corpus actually collapses.
+    if (collapseIdentityGroup(entries).length >= entries.length) continue;
+    duplicates.push([
+      identity,
+      [...new Set(entries.map((entry) => entry.pkg.name))],
+    ]);
   }
-
-  const duplicates = [...owners.entries()].filter(
-    ([, names]) => names.length > 1,
-  );
   if (duplicates.length === 0) return [];
 
   const sample = duplicates
@@ -619,11 +612,18 @@ export async function checkKnowledgeFreshnessFromIndex(
 
   // Keep these structured MCP/CLI checks in sync with
   // scripts/check-standards.mjs, which enforces the same package docs rules.
-  // The workspace root is not a publishable package, so the packaging rules
-  // (files allowlist, shipped docs) do not apply to it — it only became visible
-  // to this loop when discovery stopped gating root inclusion (#2143).
-  for (const pkg of index.packages.filter(
+  //
+  // A monorepo root is glue rather than a publishable package, so it is exempt —
+  // it only became visible to this loop when discovery stopped gating root
+  // inclusion (#2143). But in a single-package repository the root IS the
+  // published package, so exempting every root would turn this gate into a
+  // no-op for exactly the layout #2143 added support for.
+  const hasMemberPackages = index.packages.some(
     (item) => item.kind !== 'sdk' && !item.isWorkspaceRoot,
+  );
+  for (const pkg of index.packages.filter(
+    (item) =>
+      item.kind !== 'sdk' && !(item.isWorkspaceRoot && hasMemberPackages),
   )) {
     const packageJsonPath = join(pkg.directory, 'package.json');
 
@@ -1222,7 +1222,9 @@ function expandGlob(rootDir: string, glob: string): string[] {
     const next: string[] = [];
     for (const dir of current) {
       if (segment === '**') {
-        next.push(...descendantDirs(dir, MAX_GLOB_DEPTH));
+        // A globstar may consume zero segments, so `apps/**/host` must also
+        // match `apps/host`.
+        next.push(dir, ...descendantDirs(dir, MAX_GLOB_DEPTH));
         continue;
       }
       if (segment.includes('*')) {
@@ -1555,7 +1557,10 @@ function relativeOrAbsolute(rootDir: string, path: string): string {
  * Mutates in place because `mcpTools` and `relationshipFeatures` are derived
  * from `objects` and have to be recomputed together.
  */
-async function applyScannerFallback(pkg: KnowledgePackage): Promise<void> {
+async function applyScannerFallback(
+  pkg: KnowledgePackage,
+  extraExcludes: string[] = [],
+): Promise<void> {
   if (pkg.objectSource !== 'none') return;
   if (!hasScannableSources(pkg.directory)) {
     pkg.objectSourceReason = `${pkg.objectSourceReason ?? 'no-artifact'}; no-typescript-sources`;
@@ -1563,7 +1568,11 @@ async function applyScannerFallback(pkg: KnowledgePackage): Promise<void> {
   }
 
   try {
-    const objects = await scanPackageObjects(pkg.directory, pkg.name);
+    const objects = await scanPackageObjects(
+      pkg.directory,
+      pkg.name,
+      extraExcludes,
+    );
     if (objects.length === 0) {
       pkg.objectSourceReason = 'no-smrt-objects-in-sources';
       return;
@@ -1578,9 +1587,14 @@ async function applyScannerFallback(pkg: KnowledgePackage): Promise<void> {
   }
 }
 
-/** Cheap bounded probe — stops at the first candidate instead of walking a whole tree. */
-function hasScannableSources(directory: string, depth = 4): boolean {
-  if (depth < 0) return false;
+/**
+ * Stops at the first candidate instead of walking a whole tree.
+ *
+ * Deliberately unbounded in depth: a package may keep its models at
+ * `src/features/billing/models/internal/Invoice.ts`, and a shallow probe would
+ * report "no TypeScript sources" for a package `OxcScanner` can actually read.
+ */
+function hasScannableSources(directory: string): boolean {
   let entries: Dirent[];
   try {
     entries = readdirSync(directory, { withFileTypes: true });
@@ -1607,17 +1621,18 @@ function hasScannableSources(directory: string, depth = 4): boolean {
     }
   }
 
-  return subdirectories.some((child) => hasScannableSources(child, depth - 1));
+  return subdirectories.some((child) => hasScannableSources(child));
 }
 
 async function scanPackageObjects(
   directory: string,
   packageName: string,
+  extraExcludes: string[] = [],
 ): Promise<KnowledgeObject[]> {
   const scanner = new OxcScanner({
     cwd: directory,
     include: SCAN_INCLUDE,
-    exclude: SCAN_EXCLUDE,
+    exclude: [...SCAN_EXCLUDE, ...extraExcludes],
   });
   const { results, resolved } = await scanner.scanAndResolve();
   const decorated = resolved.filter((classDef) => classDef.hasSmartDecorator);
@@ -1939,18 +1954,124 @@ function objectIdentity(object: KnowledgeObject): string {
   return `${object.className}::${object.tableName ?? object.collection ?? ''}`;
 }
 
+/**
+ * True when either package declares the other as a dependency.
+ *
+ * This is what separates a re-qualified copy from a coincidence. A consuming
+ * package can only restate its *dependencies'* objects, so a shared identity
+ * across a dependency edge is one table reported twice. Two unrelated packages
+ * that happen to share a class and table name (observed: `Account::accounts` in
+ * both smrt-messages and smrt-ledgers) are genuinely distinct objects and must
+ * both keep contributing their fields.
+ */
+function hasDependencyEdge(a: KnowledgePackage, b: KnowledgePackage): boolean {
+  return dependsOn(a, b.name) || dependsOn(b, a.name);
+}
+
+/**
+ * Picks the copy that owns the class within one connected group.
+ *
+ * Ownership follows the dependency direction: a consumer can restate its
+ * *dependency's* objects, never the reverse, so the entry that the most other
+ * members of the group depend on is the declaring package. Provenance alone is
+ * not enough — preferring a scanner copy kept `smrt-support`'s compatibility
+ * subtype over the canonical `smrt-projects` model and changed the facts.
+ */
+function pickOwningEntry(
+  entries: Array<{ pkg: KnowledgePackage; object: KnowledgeObject }>,
+): { pkg: KnowledgePackage; object: KnowledgeObject } {
+  let best = entries[0];
+  let bestScore = -1;
+  for (const entry of entries) {
+    const score = entries.filter(
+      (other) => other !== entry && dependsOn(other.pkg, entry.pkg.name),
+    ).length;
+    // Entries arrive name-sorted, so ties resolve deterministically.
+    if (score > bestScore) {
+      best = entry;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function dependsOn(pkg: KnowledgePackage, name: string): boolean {
+  return (
+    name in pkg.dependencies ||
+    name in pkg.devDependencies ||
+    name in pkg.peerDependencies
+  );
+}
+
 function dedupeObjectsByIdentity(
   packages: KnowledgePackage[],
 ): KnowledgeObject[] {
-  const seen = new Map<string, KnowledgeObject>();
+  const groups = groupObjectsByIdentity(packages);
+  return [...groups.values()].flatMap((entries) =>
+    collapseIdentityGroup(entries).map((entry) => entry.object),
+  );
+}
+
+function groupObjectsByIdentity(
+  packages: KnowledgePackage[],
+): Map<string, Array<{ pkg: KnowledgePackage; object: KnowledgeObject }>> {
+  const groups = new Map<
+    string,
+    Array<{ pkg: KnowledgePackage; object: KnowledgeObject }>
+  >();
   for (const pkg of packages) {
     for (const object of pkg.objects) {
       const identity = objectIdentity(object);
-      // Keep the first (packages are name-sorted) so the count is stable.
-      if (!seen.has(identity)) seen.set(identity, object);
+      const entries = groups.get(identity) ?? [];
+      entries.push({ pkg, object });
+      groups.set(identity, entries);
     }
   }
-  return [...seen.values()];
+  return groups;
+}
+
+/**
+ * Collapses entries linked by dependency edges, leaving unrelated same-named
+ * objects intact.
+ *
+ * Grouping is by connected component, not a greedy first match: when two
+ * independent consumers both restate one shared dependency's object, neither
+ * consumer has an edge to the other, so a greedy pass would keep both and
+ * double-count the very table this exists to collapse. Packages arrive
+ * name-sorted, so the result is stable.
+ */
+function collapseIdentityGroup(
+  entries: Array<{ pkg: KnowledgePackage; object: KnowledgeObject }>,
+): Array<{ pkg: KnowledgePackage; object: KnowledgeObject }> {
+  if (entries.length === 1) return entries;
+
+  const parent = entries.map((_, index) => index);
+  const find = (index: number): number => {
+    let root = index;
+    while (parent[root] !== root) root = parent[root];
+    return root;
+  };
+  for (let a = 0; a < entries.length; a += 1) {
+    for (let b = a + 1; b < entries.length; b += 1) {
+      if (!hasDependencyEdge(entries[a].pkg, entries[b].pkg)) continue;
+      const rootA = find(a);
+      const rootB = find(b);
+      if (rootA !== rootB) parent[rootB] = rootA;
+    }
+  }
+
+  const components = new Map<
+    number,
+    Array<{ pkg: KnowledgePackage; object: KnowledgeObject }>
+  >();
+  for (const [index, entry] of entries.entries()) {
+    const root = find(index);
+    components.set(root, [...(components.get(root) ?? []), entry]);
+  }
+
+  return [...components.values()].map((component) =>
+    component.length === 1 ? component[0] : pickOwningEntry(component),
+  );
 }
 
 function summarizeRelationshipsV2(packages: KnowledgePackage[]) {

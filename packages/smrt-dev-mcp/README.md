@@ -67,7 +67,8 @@ the same as `packages/*` ones. Resolution order:
 3. `packages/*` as a last-resort fallback
 
 The workspace root is also indexed when it has a `package.json`, which is how
-single-package repositories work. Per package, objects resolve from a domain
+single-package repositories work; it is scanned with the member package
+directories excluded so it can own objects without absorbing theirs. Per package, objects resolve from a domain
 artifact, then a package-local manifest, then a source scan
 (`@happyvertical/smrt-scanner`) — the same fallback `introspect-project` uses, so
 both paths agree on one root. Every package records `objectSource`
@@ -75,7 +76,12 @@ both paths agree on one root. Every package records `objectSource`
 
 Manifest objects that belong to another package are rejected rather than counted:
 a runtime `.smrt/manifest.json` is often an aggregate registering a package's
-dependencies too, and counting those inflates the relationship facts.
+dependencies too, and counting those inflates the relationship facts. A consuming
+package's artifact can also restate its dependency's objects under its own name,
+so `Relationships-v2` collapses a shared `className::tableName` across a
+dependency edge — by connected component, keeping the copy the others depend on —
+and reports `duplicate-object-identity`. Unrelated packages that share a class
+name stay distinct.
 
 The index therefore carries two extra blocks (`schemaVersion: 2`):
 

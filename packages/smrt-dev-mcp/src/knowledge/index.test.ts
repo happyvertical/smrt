@@ -816,14 +816,16 @@ describe('workspace discovery', () => {
     );
   });
 
-  it('counts one table once when two packages both report it', async () => {
+  it('counts one table once when a consuming package restates its dependency', async () => {
     await writeWorkspaceYaml(rootDir, ["'apps/*'", "'packages/*'"]);
     // A consuming app's stale artifact re-qualifies its dependency's objects
     // under its own package name, which name-prefix ownership cannot detect.
     await writeManifestPackage(rootDir, 'packages/work', '@acme/work', [
       'Plan',
     ]);
-    await writeManifestPackage(rootDir, 'apps/web', '@acme/web', ['Plan']);
+    await writeManifestPackage(rootDir, 'apps/web', '@acme/web', ['Plan'], {
+      '@acme/work': 'workspace:*',
+    });
 
     const index = await buildKnowledgeIndex({ rootDir });
 
@@ -831,6 +833,217 @@ describe('workspace discovery', () => {
     expect(index.diagnostics.map((entry) => entry.code)).toContain(
       'duplicate-object-identity',
     );
+  });
+
+  it('keeps same-named objects from unrelated packages as distinct', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    // Two unrelated packages each declaring their own `Account` is a real
+    // collision, not a double count — both must keep contributing fields.
+    await writeManifestPackage(rootDir, 'packages/messages', '@acme/messages', [
+      'Account',
+    ]);
+    await writeManifestPackage(rootDir, 'packages/ledgers', '@acme/ledgers', [
+      'Account',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.relationshipsV2.foreignKeyFields).toBe(2);
+    expect(index.diagnostics.map((entry) => entry.code)).not.toContain(
+      'duplicate-object-identity',
+    );
+  });
+
+  it('collapses one table across two independent consumers of a shared dependency', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/*'", "'packages/*'"]);
+    // Neither consumer has an edge to the other, so a greedy pairwise collapse
+    // would keep both restatements and double-count the shared table.
+    await writeManifestPackage(rootDir, 'packages/work', '@acme/work', [
+      'Plan',
+    ]);
+    await writeManifestPackage(rootDir, 'apps/web1', '@acme/web1', ['Plan'], {
+      '@acme/work': 'workspace:*',
+    });
+    await writeManifestPackage(rootDir, 'apps/web2', '@acme/web2', ['Plan'], {
+      '@acme/work': 'workspace:*',
+    });
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.relationshipsV2.foreignKeyFields).toBe(1);
+  });
+
+  it('keeps the dependency-owned copy rather than the consumer restatement', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/*'", "'packages/*'"]);
+    // The owner declares two foreignKey fields; the consumer's stale copy has
+    // one. Picking the owner is what keeps the facts canonical.
+    await writeManifestPackage(
+      rootDir,
+      'packages/work',
+      '@acme/work',
+      [],
+      {},
+      {
+        '@acme/work:Plan': {
+          className: 'Plan',
+          qualifiedName: '@acme/work:Plan',
+          collection: 'plans',
+          fields: {
+            ownerId: { type: 'foreignKey', related: 'Owner' },
+            teamId: { type: 'foreignKey', related: 'Team' },
+          },
+          schema: { tableName: 'plans' },
+        },
+      },
+    );
+    await writeManifestPackage(rootDir, 'apps/web', '@acme/web', ['Plan'], {
+      '@acme/work': 'workspace:*',
+    });
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.relationshipsV2.foreignKeyFields).toBe(2);
+  });
+
+  it('scans root-owned sources while excluding member packages', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    await writeFile(
+      join(rootDir, 'package.json'),
+      JSON.stringify({ name: '@acme/root', version: '1.0.0' }, null, 2),
+    );
+    await mkdir(join(rootDir, 'src'), { recursive: true });
+    await writeFile(
+      join(rootDir, 'src', 'root-model.ts'),
+      [
+        "import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        '',
+        "@smrt({ tableName: 'root_things' })",
+        'export class RootThing extends SmrtObject {',
+        "  @foreignKey('Owner')",
+        "  ownerId: string = '';",
+        '}',
+      ].join('\n'),
+    );
+    await writeManifestPackage(rootDir, 'packages/member', '@acme/member', [
+      'Member',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const root = index.packages.find((pkg) => pkg.name === '@acme/root');
+
+    // The root owns RootThing and must NOT absorb the member's objects.
+    expect(root?.objectSource).toBe('scanner');
+    expect(root?.objects.map((object) => object.className)).toEqual([
+      'RootThing',
+    ]);
+    expect(index.relationshipsV2.foreignKeyFields).toBe(2);
+  });
+
+  it('finds models nested deeper than a shallow probe would reach', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    const deep = join(
+      rootDir,
+      'packages',
+      'billing',
+      'src',
+      'features',
+      'billing',
+      'models',
+      'internal',
+    );
+    await mkdir(deep, { recursive: true });
+    await writeFile(
+      join(rootDir, 'packages', 'billing', 'package.json'),
+      JSON.stringify({ name: '@acme/billing', version: '1.0.0' }, null, 2),
+    );
+    await writeFile(
+      join(deep, 'Invoice.ts'),
+      [
+        "import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        '',
+        "@smrt({ tableName: 'invoices' })",
+        'export class Invoice extends SmrtObject {',
+        "  @foreignKey('Customer')",
+        "  customerId: string = '';",
+        '}',
+      ].join('\n'),
+    );
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const billing = index.packages.find((pkg) => pkg.name === '@acme/billing');
+
+    expect(billing?.objectSource).toBe('scanner');
+    expect(billing?.objects.map((object) => object.className)).toEqual([
+      'Invoice',
+    ]);
+  });
+
+  it('matches a globstar against zero directory segments', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/**/host'"]);
+    await writeManifestPackage(rootDir, 'apps/host', '@acme/shallow', ['A']);
+    await writeManifestPackage(rootDir, 'apps/nested/host', '@acme/deep', [
+      'B',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const names = index.packages.map((pkg) => pkg.name);
+
+    expect(names).toContain('@acme/shallow');
+    expect(names).toContain('@acme/deep');
+  });
+
+  it('does not report a discovery failure when a scope filter excludes the model', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    await writeManifestPackage(rootDir, 'packages/core', '@acme/core', [
+      'Ledger',
+    ]);
+
+    // Scoping to SDK packages leaves zero objects in the scoped set, but the
+    // workspace model was discovered fine — that must not read as a failure.
+    const scoped = await buildKnowledgeIndex({ rootDir, scope: 'sdk' });
+
+    expect(scoped.packages).toHaveLength(0);
+    expect(scoped.diagnostics.map((entry) => entry.code)).not.toContain(
+      'no-smrt-objects-discovered',
+    );
+    expect(scoped.coverage.packagesWithObjects).toEqual(
+      expect.arrayContaining(['@acme/core (1, manifest)']),
+    );
+  });
+
+  it('still validates docs and packaging for a single-package root', async () => {
+    // The sole publishable package IS the workspace root here, so exempting
+    // every root would silently turn the freshness gate into a no-op.
+    await writeManifestPackage(rootDir, '.', '@acme/solo', ['Invoice']);
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+    const codes = result.issues.map((issue) => issue.code);
+
+    expect(result.ok).toBe(false);
+    expect(codes).toContain('missing-agents-md');
+    expect(codes).toContain('package-files-missing-agents');
+  });
+
+  it('exempts a monorepo root from publishable-package rules', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    await writeFile(
+      join(rootDir, 'package.json'),
+      JSON.stringify({ name: '@acme/root', version: '1.0.0' }, null, 2),
+    );
+    await writeManifestPackage(rootDir, 'packages/core', '@acme/core', [
+      'Ledger',
+    ]);
+    await writeFile(join(rootDir, 'packages', 'core', 'AGENTS.md'), '# core\n');
+    await writeFile(
+      join(rootDir, 'packages', 'core', 'CLAUDE.md'),
+      '@AGENTS.md\n',
+    );
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+
+    expect(
+      result.issues.filter((issue) => issue.packageName === '@acme/root'),
+    ).toEqual([]);
   });
 
   it('keeps prompt bundles small by default and embeds docs only on request', async () => {
@@ -890,31 +1103,39 @@ async function writeManifestPackage(
   relativeDir: string,
   packageName: string,
   classNames: string[],
+  dependencies: Record<string, string> = {},
+  explicitObjects?: Record<string, unknown>,
 ): Promise<void> {
   const pkgDir = join(rootDir, relativeDir);
   await mkdir(join(pkgDir, '.smrt'), { recursive: true });
   await writeFile(
     join(pkgDir, 'package.json'),
-    JSON.stringify({ name: packageName, version: '1.0.0' }, null, 2),
+    JSON.stringify(
+      { name: packageName, version: '1.0.0', dependencies },
+      null,
+      2,
+    ),
   );
   await writeFile(
     join(pkgDir, '.smrt', 'manifest.json'),
     JSON.stringify({
       version: '1',
       packageName,
-      objects: Object.fromEntries(
-        classNames.map((className) => [
-          `${packageName}:${className}`,
-          {
-            className,
-            qualifiedName: `${packageName}:${className}`,
-            collection: `${className.toLowerCase()}s`,
-            extends: 'SmrtObject',
-            fields: { ownerId: { type: 'foreignKey', related: 'Owner' } },
-            schema: { tableName: `${className.toLowerCase()}s` },
-          },
-        ]),
-      ),
+      objects:
+        explicitObjects ??
+        Object.fromEntries(
+          classNames.map((className) => [
+            `${packageName}:${className}`,
+            {
+              className,
+              qualifiedName: `${packageName}:${className}`,
+              collection: `${className.toLowerCase()}s`,
+              extends: 'SmrtObject',
+              fields: { ownerId: { type: 'foreignKey', related: 'Owner' } },
+              schema: { tableName: `${className.toLowerCase()}s` },
+            },
+          ]),
+        ),
     }),
   );
 }

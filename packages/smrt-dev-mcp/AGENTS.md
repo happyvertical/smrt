@@ -30,7 +30,9 @@ Discovery reads the workspace globs instead of assuming `<root>/packages`:
 `package.json#workspaces`, then a `packages/*` fallback. `findProjectRoot` looks
 for a workspace declaration only — requiring a literal `packages/` directory is
 what mis-rooted every `apps/*` product. The workspace root is indexed whenever it
-has a `package.json`, which is how single-package repos resolve.
+has a `package.json`, which is how single-package repos resolve; it is scanned
+with the member package directories excluded so it can own objects without
+absorbing theirs.
 
 Per package, objects resolve in this order, and the winner is recorded in
 `objectSource` with a reason:
@@ -106,12 +108,29 @@ launcher or a small wrapper script with an absolute Node path.
   Objects whose `packageName`/`qualifiedName` disagree with the owning package are
   rejected with a diagnostic. A *consuming* package's artifact can also
   re-qualify its dependency's objects under its own name, which prefixes cannot
-  detect, so `summarizeRelationshipsV2` counts each `className::tableName` once
-  and reports `duplicate-object-identity`.
+  detect. `summarizeRelationshipsV2` therefore collapses a shared
+  `className::tableName` **only across a dependency edge** (a package can only
+  restate its own dependencies' objects) and reports
+  `duplicate-object-identity`. Two unrelated packages that happen to share a
+  class and table name — `Account::accounts` exists in both smrt-messages and
+  smrt-ledgers — are distinct objects and both keep contributing.
+  - Grouping is by **connected component**, not a greedy pairwise match: two
+    independent consumers restating one shared dependency have no edge to each
+    other, so a greedy pass would keep both and double-count.
+  - The surviving copy is the one the others **depend on**, since ownership
+    follows the dependency direction. Provenance is not a sufficient signal —
+    preferring a `scanner` copy kept `smrt-support`'s compatibility subtype over
+    the canonical `smrt-projects` model and changed the facts.
 - **Budgets are enforced at the transport boundary**: `KnowledgePackage` carries
   the full `agentDoc` and domain manifest, so the MCP handlers project a compact
   package record unless `detail: 'full'`. Library callers (the CLI) still receive
   the full objects.
 - **Private packages skip packaging checks**: the `files` allowlist governs npm
   publication, so `private: true` packages are exempt; authored docs are still
-  required. The workspace root is exempt from both.
+  required. A workspace root is exempt from both — but **only when member
+  packages exist**. In a single-package repo the root is the published package,
+  so exempting every root would make the freshness gate a no-op for exactly the
+  layout #2143 added support for.
+- **Coverage and diagnostics are computed before scope filtering**: they answer
+  "did discovery work", which is a whole-workspace property. Deriving them from
+  the scoped subset made `scope: 'sdk'` report a false discovery failure.
