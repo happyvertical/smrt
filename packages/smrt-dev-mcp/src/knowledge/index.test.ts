@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -1033,9 +1033,65 @@ describe('workspace discovery', () => {
     }
   });
 
-  it('fails loudly when repeated globstars exceed the traversal budget', async () => {
-    await writeWorkspaceYaml(rootDir, ["'**/**'"]);
-    const segments = Array.from({ length: 150 }, (_, index) => `d${index}`);
+  it('rejects absolute and unsafe negated workspace globs', async () => {
+    await writeWorkspaceYaml(rootDir, [
+      "'packages/*'",
+      "'/tmp/outside'",
+      "'C:/outside'",
+      "'!../outside'",
+    ]);
+    await writeManifestPackage(rootDir, 'packages/core', '@acme/core', [
+      'CoreModel',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.packages.map((pkg) => pkg.name)).toContain('@acme/core');
+    expect(
+      index.diagnostics.filter(
+        (diagnostic) => diagnostic.code === 'unsafe-workspace-glob',
+      ),
+    ).toHaveLength(3);
+  });
+
+  it('rejects a workspace symlink whose real path escapes the root', async () => {
+    const outsideDir = join(
+      dirname(rootDir),
+      `${basename(rootDir)}-symlink-target`,
+    );
+    try {
+      await writeWorkspaceYaml(rootDir, ["'packages/outside-link'"]);
+      await writeManifestPackage(outsideDir, '.', '@acme/outside', [
+        'OutsideModel',
+      ]);
+      await mkdir(join(rootDir, 'packages'), { recursive: true });
+      await symlink(
+        outsideDir,
+        join(rootDir, 'packages', 'outside-link'),
+        'dir',
+      );
+
+      const index = await buildKnowledgeIndex({ rootDir });
+
+      expect(index.packages.map((pkg) => pkg.name)).not.toContain(
+        '@acme/outside',
+      );
+      expect(index.diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'workspace-glob-root-escape',
+          }),
+        ]),
+      );
+    } finally {
+      await rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it('shares the traversal budget across multiple positive globs', async () => {
+    await writeWorkspaceYaml(rootDir, ["'**/**'", "'**/**'"]);
+    const segments = Array.from({ length: 100 }, (_, index) => `d${index}`);
     await writeManifestPackage(rootDir, join(...segments), '@acme/amplified', [
       'AmplifiedModel',
     ]);
@@ -1048,6 +1104,30 @@ describe('workspace discovery', () => {
         expect.objectContaining({
           severity: 'error',
           code: 'workspace-glob-expansion-limit',
+        }),
+      ]),
+    );
+  });
+
+  it('fails before package reads when the package cardinality cap is exceeded', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    for (let index = 0; index < 513; index += 1) {
+      const packageDir = join(rootDir, 'packages', `pkg-${index}`);
+      await mkdir(packageDir, { recursive: true });
+      await writeFile(
+        join(packageDir, 'package.json'),
+        JSON.stringify({ name: `@acme/pkg-${index}`, version: '1.0.0' }),
+      );
+    }
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.packages).toHaveLength(0);
+    expect(index.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'error',
+          code: 'workspace-package-limit',
         }),
       ]),
     );

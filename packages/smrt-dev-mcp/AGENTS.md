@@ -40,7 +40,9 @@ workspace root before its manifest is read. All positive globs share a 10,000
 directory-entry traversal budget; exceeding it is a fatal diagnostic that
 returns no partially discovered package set. This cardinality limit preserves
 valid deeply nested `**` workspaces without allowing repeated globstars to
-amplify into unbounded filesystem work.
+amplify into unbounded filesystem work. Discovery also stops before package
+reads when more than 512 packages match, revalidates confinement immediately
+before reading each package, and runs at most eight scanner fallbacks at once.
 
 Per package, objects resolve in this order, and the winner is recorded in
 `objectSource` with a reason:

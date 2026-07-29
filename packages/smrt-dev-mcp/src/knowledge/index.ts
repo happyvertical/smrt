@@ -345,6 +345,12 @@ const WORKSPACE_GLOB_FALLBACK = ['packages/*'];
  */
 const MAX_WORKSPACE_GLOB_TRAVERSAL_ENTRIES = 10_000;
 
+/** Prevents a broad but sub-budget glob from fanning out package reads. */
+const MAX_DISCOVERED_WORKSPACE_PACKAGES = 512;
+
+/** Bounds simultaneous OxcScanner instances and their filesystem handles. */
+const MAX_SCANNER_CONCURRENCY = 8;
+
 /** Caps the downstream package fallback so a large product stays in budget. */
 const MAX_FALLBACK_PACKAGES = 8;
 
@@ -401,12 +407,27 @@ export async function buildKnowledgeIndex(
   const {
     globs,
     globSource,
-    dirs: packageDirs,
+    dirs: discoveredPackageDirs,
     diagnostics: discoveryDiagnostics,
   } = discoverProjectPackageDirs(rootDir);
-  const packages = packageDirs.map((dir) =>
-    readKnowledgePackage(rootDir, dir, includeDocs),
-  );
+  const resolvedRoot = realpathSync(rootDir);
+  const packageDirs: string[] = [];
+  const packages: KnowledgePackage[] = [];
+  for (const dir of discoveredPackageDirs) {
+    if (confinedRealPath(resolvedRoot, dir) === undefined) {
+      discoveryDiagnostics.push({
+        severity: 'error',
+        code: 'workspace-package-root-escape',
+        message:
+          'Rejected a workspace package whose real path changed or escaped the workspace root before it could be read.',
+        remedy:
+          'Keep workspace package paths stable and inside the workspace root throughout knowledge discovery.',
+      });
+      continue;
+    }
+    packageDirs.push(dir);
+    packages.push(readKnowledgePackage(rootDir, dir, includeDocs));
+  }
 
   // A workspace root can own objects of its own, but scanning it naively would
   // also sweep every member package and claim their objects as the root's. Scan
@@ -414,11 +435,7 @@ export async function buildKnowledgeIndex(
   const memberExcludes = packageDirs
     .filter((dir) => resolve(dir) !== resolve(rootDir))
     .map((dir) => `${relative(rootDir, dir).replaceAll('\\', '/')}/**`);
-  await Promise.all(
-    packages.map((pkg) =>
-      applyScannerFallback(pkg, pkg.isWorkspaceRoot ? memberExcludes : []),
-    ),
-  );
+  await applyScannerFallbacks(packages, memberExcludes);
 
   packages.push(
     ...discoverInstalledSdkPackages(rootDir, packageDirs, includeDocs),
@@ -1352,7 +1369,7 @@ function expandGlob(
   if (segments.length === 0) return [];
 
   let current = [rootDir];
-  for (const segment of segments) {
+  for (const [segmentIndex, segment] of segments.entries()) {
     const next: string[] = [];
     for (const dir of current) {
       if (segment === '**') {
@@ -1371,7 +1388,10 @@ function expandGlob(
         continue;
       }
       const literal = join(dir, segment);
-      if (isDirectory(literal)) next.push(literal);
+      const isFinalSegment = segmentIndex === segments.length - 1;
+      if (isDirectory(literal) || (isFinalSegment && isSymbolicLink(literal))) {
+        next.push(literal);
+      }
     }
     current = [...new Set(next)];
     if (current.length === 0) break;
@@ -1433,6 +1453,14 @@ function isDirectory(path: string): boolean {
   }
 }
 
+function isSymbolicLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Translates a workspace glob into an anchored regular expression. `*` stays
  * within one path segment; `**` spans any depth (and collapses so `a/**` also
@@ -1473,6 +1501,23 @@ function discoverProjectPackageDirs(rootDir: string): {
           ...expansion.dirs.filter((dir) => resolve(dir) !== resolve(rootDir)),
         ]
       : expansion.dirs;
+  if (dirs.length > MAX_DISCOVERED_WORKSPACE_PACKAGES) {
+    return {
+      globs,
+      globSource: source,
+      dirs: [],
+      diagnostics: [
+        ...expansion.diagnostics,
+        {
+          severity: 'error',
+          code: 'workspace-package-limit',
+          message: `Workspace discovery found ${dirs.length} packages, exceeding the ${MAX_DISCOVERED_WORKSPACE_PACKAGES}-package limit.`,
+          remedy:
+            'Narrow the workspace package globs. Discovery stopped without reading any partially matched package set.',
+        },
+      ],
+    };
+  }
   return {
     globs,
     globSource: source,
@@ -1757,6 +1802,25 @@ async function applyScannerFallback(
     pkg.relationshipFeatures = relationshipFeatures(objects);
   } catch (error) {
     pkg.objectSourceReason = `scanner-failed: ${messageFromError(error)}`;
+  }
+}
+
+async function applyScannerFallbacks(
+  packages: KnowledgePackage[],
+  memberExcludes: string[],
+): Promise<void> {
+  for (
+    let offset = 0;
+    offset < packages.length;
+    offset += MAX_SCANNER_CONCURRENCY
+  ) {
+    await Promise.all(
+      packages
+        .slice(offset, offset + MAX_SCANNER_CONCURRENCY)
+        .map((pkg) =>
+          applyScannerFallback(pkg, pkg.isWorkspaceRoot ? memberExcludes : []),
+        ),
+    );
   }
 }
 

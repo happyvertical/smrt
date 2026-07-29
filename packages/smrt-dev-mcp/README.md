@@ -71,7 +71,10 @@ Workspace globs must remain relative to the declared root: absolute paths and
 their manifests are read. Positive globs share a 10,000 directory-entry
 traversal budget. Exceeding it stops discovery with an error diagnostic and no
 partial package set; deeply nested valid `**` matches remain supported because
-the limit is based on work performed rather than directory depth.
+the limit is based on work performed rather than directory depth. A separate
+512-package cap prevents broad matches from fanning out package reads, package
+paths are revalidated immediately before those reads, and scanner fallbacks run
+with at most eight concurrent scanners.
 
 The workspace root is also indexed when it has a `package.json`, which is how
 single-package repositories work; it is scanned with the member package
