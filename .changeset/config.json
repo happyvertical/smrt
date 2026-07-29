@@ -24,6 +24,7 @@
       "@happyvertical/smrt-events",
       "@happyvertical/smrt-facts",
       "@happyvertical/smrt-features",
+      "@happyvertical/smrt-fields",
       "@happyvertical/smrt-gnode",
       "@happyvertical/smrt-images",
       "@happyvertical/smrt-inventory",
