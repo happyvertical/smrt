@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.32
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - align client generation and timestamp migrations (#2135) (core)
+  - @happyvertical/smrt-config@0.40.32
+  - @happyvertical/smrt-types@0.40.32
+  - @happyvertical/smrt-scanner@0.40.32
+
 ## 0.40.31
 
 ### Patch Changes
