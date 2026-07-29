@@ -220,54 +220,66 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
       markSecondLockAttempted();
       releaseFirstLock();
     }, 5_000);
-    const firstCompletion = complete();
-    await firstLockAcquired;
-    const secondCompletion = complete();
-    await secondLockAttempted;
+    let firstCompletion: ReturnType<typeof complete> | undefined;
+    let secondCompletion: ReturnType<typeof complete> | undefined;
+    try {
+      firstCompletion = complete();
+      await firstLockAcquired;
+      secondCompletion = complete();
+      await secondLockAttempted;
 
-    let blockingPids: number[] = [];
-    const waitDeadline = Date.now() + 3_000;
-    while (blockingPids.length === 0 && Date.now() < waitDeadline) {
-      const blockingRows = rowsOf(
-        await db.query(
-          'SELECT pg_blocking_pids($1::integer) AS blocking_pids',
-          secondBackendPid,
-        ),
-      );
-      const value = blockingRows[0]?.blocking_pids;
-      blockingPids = Array.isArray(value) ? value.map(Number) : [];
-      if (blockingPids.length === 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      let blockingPids: number[] = [];
+      const waitDeadline = Date.now() + 3_000;
+      while (blockingPids.length === 0 && Date.now() < waitDeadline) {
+        const blockingRows = rowsOf(
+          await db.query(
+            'SELECT pg_blocking_pids($1::integer) AS blocking_pids',
+            secondBackendPid,
+          ),
+        );
+        const value = blockingRows[0]?.blocking_pids;
+        blockingPids = Array.isArray(value) ? value.map(Number) : [];
+        if (blockingPids.length === 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        }
       }
-    }
 
-    releaseFirstLock();
-    clearTimeout(barrierTimeout);
-    const results = await Promise.all([firstCompletion, secondCompletion]);
-    expect(barrierTimedOut).toBe(false);
-    expect(firstBackendPid).toBeGreaterThan(0);
-    expect(secondBackendPid).toBeGreaterThan(0);
-    expect(secondBackendPid).not.toBe(firstBackendPid);
-    expect(blockingPids).toContain(firstBackendPid);
-    expect(results.map((result) => result.completed).sort()).toEqual([
-      false,
-      true,
-    ]);
-    expect(results[0].task.id).toBe(results[1].task.id);
-    await withTenant({ tenantId }, async () => {
-      const timeline = await activities.findBySubject(
-        'lead',
-        lead.id as string,
-      );
-      expect(
-        timeline.filter(
-          (activity) => activity.activityKind === 'task_completion',
+      releaseFirstLock();
+      const results = await Promise.all([firstCompletion, secondCompletion]);
+      expect(barrierTimedOut).toBe(false);
+      expect(firstBackendPid).toBeGreaterThan(0);
+      expect(secondBackendPid).toBeGreaterThan(0);
+      expect(secondBackendPid).not.toBe(firstBackendPid);
+      expect(blockingPids).toContain(firstBackendPid);
+      expect(results.map((result) => result.completed).sort()).toEqual([
+        false,
+        true,
+      ]);
+      expect(results[0].task.id).toBe(results[1].task.id);
+      await withTenant({ tenantId }, async () => {
+        const timeline = await activities.findBySubject(
+          'lead',
+          lead.id as string,
+        );
+        expect(
+          timeline.filter(
+            (activity) => activity.activityKind === 'task_completion',
+          ),
+        ).toHaveLength(1);
+        expect(
+          await activities.findOpenTasks('lead', lead.id as string),
+        ).toEqual([]);
+      });
+    } finally {
+      releaseFirstLock();
+      clearTimeout(barrierTimeout);
+      await Promise.allSettled(
+        [firstCompletion, secondCompletion].filter(
+          (completion): completion is ReturnType<typeof complete> =>
+            completion !== undefined,
         ),
-      ).toHaveLength(1);
-      expect(await activities.findOpenTasks('lead', lead.id as string)).toEqual(
-        [],
       );
-    });
+    }
   });
 
   it('fails closed on a foreign Lead identifier without exposing its task or timeline', async () => {
@@ -300,6 +312,62 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
       ),
     ).rejects.toMatchObject({ reason: 'lead_unavailable' });
     await withTenant({ tenantId: tenantA }, async () => {
+      expect(
+        await activities.findOpenTasks('lead', lead.id as string),
+      ).toHaveLength(1);
+    });
+  });
+
+  it('fails closed on malformed workflow UUIDs before PostgreSQL casts', async () => {
+    const tenantId = randomUUID();
+    const lead = await createLead(tenantId);
+    const workflow = await LeadWorkflowService.create({ db });
+    const actorProfileId = randomUUID();
+    const task = await withTenant({ tenantId }, () =>
+      workflow.scheduleNextAction({
+        leadId: lead.id as string,
+        actorProfileId,
+        summary: 'Validate identifier boundary',
+        dueAt: new Date('2026-09-06T12:00:00.000Z'),
+      }),
+    );
+
+    await expect(
+      withTenant({ tenantId }, () =>
+        workflow.completeNextAction({
+          leadId: 'not-a-uuid',
+          taskId: task.id as string,
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: 'lead_unavailable' });
+    await expect(
+      withTenant({ tenantId }, () =>
+        workflow.completeNextAction({
+          leadId: lead.id as string,
+          taskId: 'not-a-uuid',
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: 'task_unavailable' });
+    await expect(
+      withTenant({ tenantId }, () => workflow.getLeadTimeline('not-a-uuid')),
+    ).rejects.toMatchObject({ reason: 'lead_unavailable' });
+    await expect(
+      withTenant({ tenantId }, () =>
+        workflow.getLeadWorkState({ leadId: 'not-a-uuid' }),
+      ),
+    ).rejects.toMatchObject({ reason: 'lead_unavailable' });
+    await expect(
+      withTenant({ tenantId }, () =>
+        workflow.assignLead({
+          leadId: lead.id as string,
+          ownerRepId: 'not-a-uuid',
+          actorProfileId,
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: 'representative_unavailable' });
+    await withTenant({ tenantId }, async () => {
       expect(
         await activities.findOpenTasks('lead', lead.id as string),
       ).toHaveLength(1);

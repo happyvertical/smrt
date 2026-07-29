@@ -38,6 +38,9 @@ export type LeadHumanActivityKind = (typeof LEAD_HUMAN_ACTIVITY_KINDS)[number];
 /** Maximum persisted text length for generic workflow summaries and reasons. */
 export const MAX_LEAD_WORKFLOW_TEXT_LENGTH = 1_000;
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
 /** Queue state for a lead's next actionable follow-up step. */
 export type LeadWorkQueueState =
   | 'terminal'
@@ -583,6 +586,12 @@ export class LeadWorkflowService {
     leadId: string,
     tenantId: string,
   ): Promise<Lead> {
+    if (!UUID_RE.test(leadId)) {
+      throw this.refusal(
+        'lead_unavailable',
+        'Lead is unavailable in the active tenant',
+      );
+    }
     if (deps.supportsRowLocks) {
       const rows = await deps.leads.query(
         `SELECT * FROM ${deps.leads.tableName}
@@ -607,6 +616,12 @@ export class LeadWorkflowService {
     leadId: string,
     tenantId: string,
   ): Promise<SalesActivity> {
+    if (!UUID_RE.test(taskId)) {
+      throw this.refusal(
+        'task_unavailable',
+        'Task is unavailable for this lead',
+      );
+    }
     if (deps.supportsRowLocks) {
       const rows = await deps.activities.query(
         `SELECT * FROM ${deps.activities.tableName}
@@ -645,6 +660,12 @@ export class LeadWorkflowService {
     leadId: string,
     tenantId: string,
   ): Promise<Lead> {
+    if (!UUID_RE.test(leadId)) {
+      throw this.refusal(
+        'lead_unavailable',
+        'Lead is unavailable in the active tenant',
+      );
+    }
     const lead = await leads.get({ id: leadId }, { cache: false });
     if (!lead || lead.tenantId !== tenantId) {
       throw this.refusal(
@@ -745,7 +766,7 @@ export class LeadWorkflowService {
 
   private requireIdentifier(value: string, field: string): string {
     const normalized = typeof value === 'string' ? value.trim() : '';
-    if (!normalized) {
+    if (!normalized || (field === 'ownerRepId' && !UUID_RE.test(normalized))) {
       throw this.refusal(
         field === 'ownerRepId'
           ? 'representative_unavailable'
