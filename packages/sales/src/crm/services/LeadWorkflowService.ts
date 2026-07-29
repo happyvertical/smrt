@@ -212,6 +212,11 @@ interface LeadWorkflowServiceDeps {
   representatives: SalesRepresentativeCollection;
 }
 
+/** Transaction-scoped collections inherit the outer adapter's lock capability. */
+interface LeadWorkflowTransactionDeps extends LeadWorkflowServiceDeps {
+  supportsRowLocks: boolean;
+}
+
 interface TransactionCapableDatabase extends DatabaseInterface {
   transaction?<T>(fn: (tx: DatabaseInterface) => Promise<T>): Promise<T>;
 }
@@ -514,7 +519,7 @@ export class LeadWorkflowService {
   }
 
   private async runMutation<T>(
-    fn: (deps: LeadWorkflowServiceDeps, tenantId: string) => Promise<T>,
+    fn: (deps: LeadWorkflowTransactionDeps, tenantId: string) => Promise<T>,
   ): Promise<T> {
     const tenantId = this.requireActiveTenant();
     const db = this.deps.leads.db as TransactionCapableDatabase;
@@ -527,6 +532,10 @@ export class LeadWorkflowService {
     // `transaction()` is an adapter method, not a detached callback: bind the
     // database receiver before the serial queue invokes it later.
     const transaction = db.transaction.bind(db);
+    // Transaction callback views intentionally omit pool-only lifecycle
+    // methods such as `acquireSession`. Capture the pool capability before
+    // entering the callback so PostgreSQL still takes its row-lock path.
+    const supportsRowLocks = this.supportsRowLocks(db);
     const runTransaction = async () =>
       await transaction(async (tx) =>
         fn(
@@ -546,6 +555,7 @@ export class LeadWorkflowService {
               _reuseInitializedDb: true,
               _deferRuntimeInitialization: true,
             }),
+            supportsRowLocks,
           },
           tenantId,
         ),
@@ -554,7 +564,7 @@ export class LeadWorkflowService {
     // PostgreSQL transactions have independent pooled sessions and acquire a
     // row lock below. SQLite/DuckDB/JSON multiplex one connection instead;
     // chain their whole mutation so two readers cannot both complete one task.
-    if (this.supportsRowLocks(db)) return await runTransaction();
+    if (supportsRowLocks) return await runTransaction();
     const previous = singleConnectionMutationTails.get(db) ?? Promise.resolve();
     const turn = previous.then(runTransaction, runTransaction);
     singleConnectionMutationTails.set(
@@ -569,11 +579,11 @@ export class LeadWorkflowService {
 
   /** PostgreSQL gets a row lock; other adapters are serialized by runMutation. */
   private async lockLead(
-    deps: LeadWorkflowServiceDeps,
+    deps: LeadWorkflowTransactionDeps,
     leadId: string,
     tenantId: string,
   ): Promise<Lead> {
-    if (this.supportsRowLocks(deps.leads.db)) {
+    if (deps.supportsRowLocks) {
       const rows = await deps.leads.query(
         `SELECT * FROM ${deps.leads.tableName}
          WHERE id = $1 AND tenant_id = $2
@@ -592,12 +602,12 @@ export class LeadWorkflowService {
   }
 
   private async lockLeadTask(
-    deps: LeadWorkflowServiceDeps,
+    deps: LeadWorkflowTransactionDeps,
     taskId: string,
     leadId: string,
     tenantId: string,
   ): Promise<SalesActivity> {
-    if (this.supportsRowLocks(deps.activities.db)) {
+    if (deps.supportsRowLocks) {
       const rows = await deps.activities.query(
         `SELECT * FROM ${deps.activities.tableName}
          WHERE id = $1

@@ -129,6 +129,30 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
       }),
     );
 
+    // PostgreSQL transaction callback views intentionally omit the pool's
+    // `acquireSession` capability. Record their queries to prove the workflow
+    // retains the outer adapter classification and still locks both rows.
+    const originalTransaction = db.transaction.bind(db);
+    const transactionQueries: string[] = [];
+    db.transaction = async (callback) =>
+      await originalTransaction(async (tx) => {
+        const query = tx.query.bind(tx);
+        const tracked = new Proxy(tx, {
+          get(target, property, receiver) {
+            if (property === 'query') {
+              return async (
+                ...args: Parameters<DatabaseInterface['query']>
+              ) => {
+                transactionQueries.push(String(args[0]));
+                return await query(...args);
+              };
+            }
+            return Reflect.get(target, property, receiver);
+          },
+        }) as DatabaseInterface;
+        return await callback(tracked);
+      });
+
     let ready = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -155,6 +179,9 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
       true,
     ]);
     expect(results[0].task.id).toBe(results[1].task.id);
+    expect(
+      transactionQueries.filter((query) => /FOR UPDATE/u.test(query)),
+    ).toHaveLength(4);
     await withTenant({ tenantId }, async () => {
       const timeline = await activities.findBySubject(
         'lead',
