@@ -145,6 +145,174 @@ describe('SvelteKit Route Generator', () => {
       expect(configContent).toContain('requestScopedDb ?? config.db');
     });
 
+    it('does not let transitive collection subclasses emit model CRUD routes', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          WidgetCollection: {
+            className: 'WidgetCollection',
+            collection: 'widgets',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Widget',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          SpecialWidget: {
+            className: 'SpecialWidget',
+            collection: 'specialWidgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          SpecialWidgetCollection: {
+            className: 'SpecialWidgetCollection',
+            collection: 'widgets',
+            extends: 'WidgetCollection',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const generatedWidgetRoutes = vi
+        .mocked(writeFileSync)
+        .mock.calls.filter(([filePath]) =>
+          String(filePath).includes('/src/routes/api/widgets/'),
+        );
+      expect(generatedWidgetRoutes).toEqual([]);
+    });
+
+    it('resolves an inherited collection item type for custom routes', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Widget: {
+            className: 'Widget',
+            collection: 'widgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          WidgetCollection: {
+            className: 'WidgetCollection',
+            collection: 'widgets',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Widget',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          SpecialWidget: {
+            className: 'SpecialWidget',
+            collection: 'specialWidgets',
+            extends: 'SmrtObject',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          SpecialWidgetCollection: {
+            className: 'SpecialWidgetCollection',
+            collection: 'widgets',
+            extends: 'WidgetCollection',
+            fields: {},
+            methods: {
+              restoreSpecial: {
+                name: 'restoreSpecial',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['restoreSpecial'] },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const route = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([filePath]) =>
+          String(filePath).includes(
+            '/src/routes/api/widgets/restoreSpecial/+server.ts',
+          ),
+        );
+      expect(route).toBeDefined();
+      const content = route?.[1] as string;
+      expectGetCollectionCall(content, 'Widget', 'Widget');
+      expect(content).not.toContain("getCollection('SpecialWidget')");
+    });
+
+    it('keeps an inherited item type name when a partial manifest omits the item', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          WidgetCollection: {
+            className: 'WidgetCollection',
+            collection: 'widgets',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Widget',
+            fields: {},
+            methods: {
+              restoreSpecial: {
+                name: 'restoreSpecial',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['restoreSpecial'] },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const route = vi
+        .mocked(writeFileSync)
+        .mock.calls.find(([filePath]) =>
+          String(filePath).includes(
+            '/src/routes/api/widgets/restoreSpecial/+server.ts',
+          ),
+        );
+      expect(route).toBeDefined();
+      const content = route?.[1] as string;
+      expect(content).toContain("    'Widget',");
+      expect(content).not.toContain("'WidgetCollection'");
+    });
+
     it('should skip config generation when file already exists', async () => {
       vi.mocked(existsSync).mockReturnValue(true);
 
@@ -2301,6 +2469,101 @@ describe('SvelteKit Route Generator', () => {
       ).toEqual(['listSpecial']);
       expect(findCliApiCoherenceViolations(manifest)).toEqual([
         { className: 'DocCollection', unreachable: ['misconfigured'] },
+      ]);
+    });
+
+    it('does not claim CRUD routes for collection classes', () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          DocCollection: {
+            className: 'DocCollection',
+            collection: 'docs',
+            fields: {},
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Doc',
+            methods: {},
+            decoratorConfig: {
+              api: true,
+              cli: { include: ['list'] },
+            },
+          },
+        },
+      };
+
+      expect(
+        Array.from(
+          resolveApiActionSet(manifest.objects.DocCollection, manifest),
+        ),
+      ).toEqual([]);
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([
+        { className: 'DocCollection', unreachable: ['list'] },
+      ]);
+    });
+
+    it('uses manifest ancestry for transitive collection CLI/API coherence', () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Doc: {
+            className: 'Doc',
+            collection: 'docs',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          DocCollection: {
+            className: 'DocCollection',
+            collection: 'docs',
+            fields: {},
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Doc',
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          SpecialDocCollection: {
+            className: 'SpecialDocCollection',
+            collection: 'docs',
+            fields: {},
+            extends: 'DocCollection',
+            methods: {
+              collectionAction: {
+                name: 'collectionAction',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+              itemAction: {
+                name: 'itemAction',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['collectionAction', 'itemAction'],
+                routes: {
+                  collectionAction: { scope: 'collection' },
+                  itemAction: { scope: 'item' },
+                },
+              },
+              cli: { include: ['collectionAction', 'itemAction'] },
+            },
+          },
+        },
+      };
+
+      expect(
+        Array.from(
+          resolveApiActionSet(manifest.objects.SpecialDocCollection, manifest),
+        ),
+      ).toEqual(['collectionAction']);
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([
+        {
+          className: 'SpecialDocCollection',
+          unreachable: ['itemAction'],
+        },
       ]);
     });
   });

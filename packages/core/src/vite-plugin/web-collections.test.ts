@@ -21,6 +21,9 @@ import {
   buildWebRelationships,
   buildWebToolDescriptors,
   computeWebManifestHash,
+  isCollectionManifestClass,
+  resolveCollectionItemObject,
+  resolveCollectionItemTypeName,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -52,6 +55,113 @@ function manifest(...objects: SmartObjectDefinition[]): SmartObjectManifest {
     ),
   } as SmartObjectManifest;
 }
+
+describe('collection item ancestry', () => {
+  const baseWidget = obj({
+    className: 'Widget',
+    collection: 'widgets',
+    packageName: '@base/pkg',
+    qualifiedName: '@base/pkg:Widget',
+  });
+  const childWidget = obj({
+    className: 'Widget',
+    collection: 'childWidgets',
+    packageName: '@child/pkg',
+    qualifiedName: '@child/pkg:Widget',
+  });
+  const baseCollection = obj({
+    className: 'WidgetCollection',
+    collection: 'widgets',
+    packageName: '@base/pkg',
+    qualifiedName: '@base/pkg:WidgetCollection',
+    extends: 'SmrtCollection',
+    extendsTypeArg: 'Widget',
+  });
+  const childCollection = obj({
+    className: 'SpecialWidgetCollection',
+    collection: 'widgets',
+    packageName: '@child/pkg',
+    qualifiedName: '@child/pkg:SpecialWidgetCollection',
+    extends: 'WidgetCollection',
+    extendsQualified: '@base/pkg:WidgetCollection',
+  });
+
+  it('resolves an inherited generic in the package that declared it', () => {
+    const crossPackageManifest = manifest(
+      childWidget,
+      childCollection,
+      baseCollection,
+      baseWidget,
+    );
+
+    expect(
+      resolveCollectionItemObject(crossPackageManifest, childCollection),
+    ).toBe(baseWidget);
+    expect(
+      resolveCollectionItemTypeName(crossPackageManifest, childCollection),
+    ).toBe('Widget');
+  });
+
+  it('keeps a qualified generic reference when a partial manifest omits its item', () => {
+    const partialManifest = manifest(
+      childWidget,
+      childCollection,
+      baseCollection,
+    );
+
+    expect(
+      resolveCollectionItemObject(partialManifest, childCollection),
+    ).toBeUndefined();
+    expect(
+      resolveCollectionItemTypeName(partialManifest, childCollection),
+    ).toBe('@base/pkg:Widget');
+  });
+
+  it('uses qualified manifest keys when legacy object bodies omit package identity', () => {
+    const child = obj({
+      className: 'SpecialDocCollection',
+      collection: 'docs',
+      extends: 'DocCollection',
+      qualifiedName: '@z/base:SpecialDocCollection',
+    });
+    const realParent = obj({
+      className: 'DocCollection',
+      collection: 'docs',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Doc',
+      qualifiedName: '@z/base:DocCollection',
+    });
+    const collidingParent = obj({
+      className: 'DocCollection',
+      collection: 'unrelated',
+      extends: 'SmrtObject',
+      qualifiedName: '@a/other:DocCollection',
+    });
+    const realItem = obj({
+      className: 'Doc',
+      collection: 'docs',
+      qualifiedName: '@z/base:Doc',
+    });
+    for (const candidate of [child, realParent, collidingParent, realItem]) {
+      candidate.qualifiedName = undefined;
+      candidate.packageName = undefined;
+    }
+    const legacyManifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      objects: {
+        '@z/base:SpecialDocCollection': child,
+        '@z/base:DocCollection': realParent,
+        '@z/base:Doc': realItem,
+        '@a/other:DocCollection': collidingParent,
+      },
+    } as SmartObjectManifest;
+
+    expect(isCollectionManifestClass(legacyManifest, child)).toBe(true);
+    expect(resolveCollectionItemTypeName(legacyManifest, child)).toBe('Doc');
+    expect(resolveCollectionItemObject(legacyManifest, child)).toBe(realItem);
+  });
+});
 
 describe('buildWebToolDescriptors', () => {
   const field = (f: Partial<FieldDefinition>): FieldDefinition =>

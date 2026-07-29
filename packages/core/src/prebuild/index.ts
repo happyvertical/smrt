@@ -6,7 +6,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SmartObjectManifest } from '../scanner/types';
-import { selectApiClientEntries } from '../vite-plugin/api-client-entries.js';
+import {
+  renderApiClientCrudType,
+  renderApiClientCustomMethodParameters,
+  selectApiClientEntries,
+} from '../vite-plugin/api-client-entries.js';
 import { selectWebCollectionEntries } from '../vite-plugin/web-collections.js';
 
 export interface PrebuildOptions {
@@ -164,16 +168,37 @@ declare module '@smrt/manifest' {
 
   // Generate client module declaration
   const apiClientInterface = selectApiClientEntries(manifest)
-    .map(({ clientKey, dataInterfaceName }) => {
-      return `    ${clientKey}: CrudOperations<${dataInterfaceName}>;`;
+    .map(({ clientKey, dataInterfaceName, crudMethods, customMethods }) => {
+      const overriddenMethods = customMethods.map(({ name }) => name);
+      const crudType = renderApiClientCrudType(
+        dataInterfaceName,
+        crudMethods,
+        overriddenMethods,
+      );
+      const customSignatures = customMethods
+        .map(
+          (method) =>
+            `      ${method.name}(${renderApiClientCustomMethodParameters(
+              method,
+              mapFieldTypeToTypeScript,
+            )}): Promise<any>;`,
+        )
+        .join('\n');
+
+      if (customSignatures) {
+        const intersection = crudType ? `${crudType} & ` : '';
+        return `    ${JSON.stringify(clientKey)}: ${intersection}{\n${customSignatures}\n    };`;
+      }
+
+      return `    ${JSON.stringify(clientKey)}: ${crudType ?? 'Record<string, never>'};`;
     })
     .join('\n');
 
   // Wire-shape policy (#1797): the server returns BARE JSON — a bare array for
   // list/search, a bare object for get/create/update — with snake_case field
-  // names (created_at, updated_at). These declarations match that shape (no
-  // envelope, no camelCase) and are byte-identical to the vite-plugin client
-  // declaration. Fetchers reject on non-2xx with a SmrtClientError (#1796).
+  // names (created_at, updated_at). These physical declarations share client
+  // entry selection and method-signature rendering with the Vite declaration.
+  // Fetchers reject on non-2xx with a SmrtClientError (#1796).
   const clientDeclaration = `/**
  * Auto-generated API client module declaration
  */
@@ -281,7 +306,7 @@ ${objectImports}
   const webCollectionEntries = selectWebCollectionEntries(manifest)
     .map(
       ({ collection, obj }) =>
-        `    ${collection}: SmrtWebCollectionDefinition<import('./smrt-objects').${obj.className}Data>;`,
+        `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('./smrt-objects').${obj.className}Data>;`,
     )
     .join('\n');
 

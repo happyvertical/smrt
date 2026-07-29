@@ -197,6 +197,35 @@ describe('smrtConsumer load with a populated manifest', () => {
             methods: {},
             decoratorConfig: {},
           },
+          AuditEvent: {
+            className: 'AuditEvent',
+            collection: 'audit-events',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          HiddenWidget: {
+            className: 'HiddenWidget',
+            collection: 'hiddenWidgets',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: false },
+          },
+          Report: {
+            className: 'Report',
+            collection: 'reports',
+            fields: {},
+            methods: {
+              revealSecret: {
+                name: 'revealSecret',
+                parameters: [],
+                returnType: 'string',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: { api: { include: ['get', 'revealSecret'] } },
+          },
         },
       }),
     );
@@ -215,17 +244,52 @@ describe('smrtConsumer load with a populated manifest', () => {
     const plugin = await pluginWithObjects();
     const load = getHook(plugin, 'load');
 
-    const client = await load.call({}, '\0smrt-consumer:client');
-    // Object keys are quoted (#1795), so a simple name appears as "Widget":.
-    expect(client).toContain('"Widget":');
+    const client = (await load.call({}, '\0smrt-consumer:client')) as string;
+    expect(client).toContain('"widgets":');
     expect(client).toContain("'/widgets'");
-    // The fallback emits every CRUD verb the declared CrudOperations promises,
-    // including search — otherwise the @smrt/client d.ts would advertise a
-    // method the runtime object lacks (TypeError at call time).
     expect(client).toContain('search:');
+    expect(client).toContain('"reports":');
+    expect(client).toContain('revealSecret:');
+    expect(client).toContain('"audit-events":');
+    expect(client).not.toContain('hiddenWidgets');
+
+    const dataUri = `data:text/javascript,${encodeURIComponent(client)}`;
+    const mod = await import(dataUri);
+    const api = mod.createClient('/api/v1');
+    expect(Object.keys(api)).toEqual(['audit-events', 'reports', 'widgets']);
+    expect(Object.keys(api.reports).sort()).toEqual(['get', 'revealSecret']);
+    expect(api['audit-events']).toBeDefined();
+    expect(Object.keys(api.widgets).sort()).toEqual([
+      'create',
+      'delete',
+      'get',
+      'list',
+      'search',
+      'update',
+    ]);
 
     const types = await load.call({}, '\0smrt-consumer:types');
     expect(types).toContain('export interface WidgetData');
+  });
+
+  it('applies the configured kebabRoutes policy to consumer custom methods', async () => {
+    const plugin = smrtConsumer({
+      packages: ['@acme/widgets'],
+      generateTypes: false,
+      projectRoot,
+      disableScanning: true,
+      kebabRoutes: true,
+    });
+
+    // Reuse the package fixture populated by the helper, then initialize this
+    // plugin with the route policy used by the producer SvelteKit generator.
+    await pluginWithObjects();
+    await plugin.buildStart?.call({} as any);
+    const load = getHook(plugin, 'load');
+    const client = (await load.call({}, '\0smrt-consumer:client')) as string;
+
+    expect(client).toContain("'/reports/' + id + '/reveal-secret'");
+    expect(client).not.toContain("'/reports/' + id + '/revealSecret'");
   });
 
   it('emits SYNTACTICALLY VALID client code for a package-qualified manifest key (#1795)', async () => {
@@ -275,17 +339,18 @@ describe('smrtConsumer load with a populated manifest', () => {
     const load = getHook(plugin, 'load');
     const client = (await load.call({}, '\0smrt-consumer:client')) as string;
 
-    // The qualified key is present and QUOTED.
-    expect(client).toContain('"@acme/assets:AssetAssociation":');
+    // Runtime keys use the same stable collection key as declarations.
+    expect(client).toContain('"asset_associations":');
+    expect(client).not.toContain('@acme/assets:AssetAssociation');
 
     // The emitted module must be syntactically valid: import it as a data URI.
     // A pre-fix unquoted key throws SyntaxError here.
     const dataUri = `data:text/javascript,${encodeURIComponent(client)}`;
     const mod = await import(dataUri);
     expect(typeof mod.createClient).toBe('function');
-    // The client exposes the qualified key as a collection accessor.
+    // The client exposes the stable collection key as its accessor.
     const api = mod.createClient('/api/v1');
-    const accessor = api['@acme/assets:AssetAssociation'];
+    const accessor = api.asset_associations;
     expect(accessor).toBeDefined();
     // Every CRUD verb the declared CrudOperations promises is present.
     for (const verb of [

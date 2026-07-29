@@ -11,10 +11,20 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { resolveApiActionRouteConfig } from './sveltekit-generator.js';
 import {
   findManifestObjectByName,
   isCollectionManifestClass,
+  resolveCollectionItemObject,
 } from './web-collections.js';
+
+export type ApiClientCrudMethod =
+  | 'list'
+  | 'get'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'search';
 
 export interface ApiClientEntry {
   /** Original key in manifest.objects. */
@@ -25,6 +35,82 @@ export interface ApiClientEntry {
   clientKey: string;
   /** Row-payload interface used by CRUD methods for this entry. */
   dataInterfaceName: string;
+  /** Standard client operations whose server routes are actually emitted. */
+  crudMethods: ApiClientCrudMethod[];
+  /** Custom methods whose routes are actually emitted by the server. */
+  customMethods: Array<{
+    name: string;
+    scope: 'item' | 'collection';
+    pathParamNames: string[];
+    parameters: Array<{
+      name: string;
+      type: string;
+      optional?: boolean;
+      default?: unknown;
+    }>;
+  }>;
+}
+
+export function renderApiClientCrudType(
+  dataInterfaceName: string,
+  crudMethods: ApiClientCrudMethod[],
+  overriddenMethods: string[] = [],
+): string | undefined {
+  const overridden = new Set(overriddenMethods);
+  const methods = crudMethods.filter((method) => !overridden.has(method));
+  if (methods.length === 0) return undefined;
+  if (
+    methods.length === 6 &&
+    methods.every(
+      (method, index) => method === [...STANDARD_API_ACTIONS, 'search'][index],
+    )
+  ) {
+    return `CrudOperations<${dataInterfaceName}>`;
+  }
+  return `Pick<CrudOperations<${dataInterfaceName}>, ${methods
+    .map((method) => JSON.stringify(method))
+    .join(' | ')}>`;
+}
+
+export function renderApiClientCustomMethodParameters(
+  method: ApiClientEntry['customMethods'][number],
+  mapType: (type: string) => string,
+): string {
+  const pathParamNames = new Set(method.pathParamNames);
+  const params = method.parameters;
+  const hasSingleOptionsParameter =
+    params.length === 1 && params[0]?.name === 'options';
+  const requiredPathProperties = method.pathParamNames
+    .map((name) => `${name}: string`)
+    .join('; ');
+  let optionsType: string;
+
+  if (hasSingleOptionsParameter) {
+    const directOptionsType = mapType(params[0].type);
+    optionsType = requiredPathProperties
+      ? `${directOptionsType} & { ${requiredPathProperties} }`
+      : directOptionsType;
+  } else {
+    const parameterNames = new Set(params.map((param) => param.name));
+    const properties = params.map(
+      (param) =>
+        `${param.name}${pathParamNames.has(param.name) ? '' : '?'}: ${mapType(param.type)}`,
+    );
+    for (const pathParamName of method.pathParamNames) {
+      if (!parameterNames.has(pathParamName)) {
+        properties.push(`${pathParamName}: string`);
+      }
+    }
+    optionsType =
+      properties.length > 0
+        ? `{ ${properties.join('; ')} }`
+        : 'Record<string, never>';
+  }
+
+  const optionsParameter = `${method.pathParamNames.length > 0 ? 'options' : 'options?'}: ${optionsType}`;
+  return method.scope === 'collection'
+    ? optionsParameter
+    : `id: string, ${optionsParameter}`;
 }
 
 interface ManifestCandidate {
@@ -78,39 +164,180 @@ function isAncestorOf(
   return false;
 }
 
-function resolveCollectionItemObject(
+const STANDARD_API_ACTIONS = [
+  'list',
+  'get',
+  'create',
+  'update',
+  'delete',
+] as const;
+const STANDARD_API_ACTION_SET = new Set<string>(STANDARD_API_ACTIONS);
+
+function resolveGeneratedClientCustomMethods(
+  obj: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): ApiClientEntry['customMethods'] {
+  const apiConfig = obj.decoratorConfig?.api;
+  if (apiConfig === false) return [];
+
+  const config =
+    typeof apiConfig === 'object' && apiConfig !== null ? apiConfig : undefined;
+  const included = Array.isArray(config?.include) ? config.include : undefined;
+  const excluded = Array.isArray(config?.exclude) ? config.exclude : undefined;
+  const isCollection = isCollectionManifestClass(manifest, obj);
+
+  return Object.entries(obj.methods ?? {}).flatMap(([name, method]) => {
+    if (STANDARD_API_ACTION_SET.has(name) || !method.isPublic) return [];
+    if (included && !included.includes(name)) return [];
+    if (excluded?.includes(name)) return [];
+
+    const scope =
+      config?.routes?.[name]?.scope ??
+      (isCollection || method.isStatic ? 'collection' : 'item');
+    if (isCollection && scope !== 'collection') return [];
+    if (!isCollection && scope === 'collection' && !method.isStatic) return [];
+
+    const routeConfig = resolveApiActionRouteConfig(
+      name,
+      method,
+      apiConfig,
+      {},
+      isCollection ? 'collection' : method.isStatic ? 'collection' : 'item',
+    );
+
+    return [
+      {
+        name,
+        scope,
+        pathParamNames: routeConfig.pathParamNames,
+        parameters: method.parameters ?? [],
+      },
+    ];
+  });
+}
+
+function resolveCrudObject(
   obj: SmartObjectDefinition,
   manifest: SmartObjectManifest,
 ): SmartObjectDefinition | undefined {
-  const seen = new Set<string>();
-  let candidate: SmartObjectDefinition | undefined = obj;
+  if (!isCollectionManifestClass(manifest, obj)) return obj;
 
-  while (candidate) {
-    if (candidate.extendsTypeArg) {
-      const itemObject = findManifestObjectByName(
-        manifest,
-        candidate.extendsTypeArg,
-        candidate,
-      );
-      if (itemObject) return itemObject;
-    }
+  const itemObject = resolveCollectionItemObject(manifest, obj);
+  if (itemObject) return itemObject;
 
-    if (candidate.className.endsWith('Collection')) {
-      const conventionalItem = findManifestObjectByName(
-        manifest,
-        candidate.className.slice(0, -'Collection'.length),
-        candidate,
-      );
-      if (conventionalItem) return conventionalItem;
-    }
+  // A non-conventional collection can still share an endpoint with a model.
+  return Object.values(manifest.objects)
+    .filter(
+      (candidate) =>
+        candidate.collection === obj.collection &&
+        !isCollectionManifestClass(manifest, candidate),
+    )
+    .sort((left, right) =>
+      compareText(
+        left.qualifiedName ?? left.className,
+        right.qualifiedName ?? right.className,
+      ),
+    )[0];
+}
 
-    const parentName = candidate.extendsQualified || candidate.extends;
-    if (!parentName || seen.has(parentName)) return undefined;
-    seen.add(parentName);
-    candidate = findManifestObjectByName(manifest, parentName, candidate);
+function resolveGeneratedClientCrudMethods(
+  obj: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): ApiClientCrudMethod[] {
+  const crudObject = resolveCrudObject(obj, manifest);
+  const apiConfig = crudObject?.decoratorConfig?.api;
+  if (!crudObject || apiConfig === false) return [];
+
+  if (apiConfig === true || apiConfig === undefined) {
+    return [...STANDARD_API_ACTIONS, 'search'];
+  }
+  if (typeof apiConfig !== 'object' || apiConfig === null) {
+    return [...STANDARD_API_ACTIONS, 'search'];
   }
 
-  return undefined;
+  const included = Array.isArray(apiConfig.include)
+    ? apiConfig.include
+    : undefined;
+  const excluded = Array.isArray(apiConfig.exclude) ? apiConfig.exclude : [];
+  const standardMethods = (
+    included
+      ? STANDARD_API_ACTIONS.filter((action) => included.includes(action))
+      : [...STANDARD_API_ACTIONS]
+  ).filter((action) => !excluded.includes(action));
+
+  // Preserve the historical search convenience only for an unbounded API
+  // config. Explicit include lists are fail-closed; a real custom search
+  // method is carried separately by resolveGeneratedClientCustomMethods().
+  const includeSearch = !included && !excluded.includes('search');
+  return includeSearch ? [...standardMethods, 'search'] : standardMethods;
+}
+
+/**
+ * Resolve the CRUD surface that the generated route files actually expose for
+ * one shared collection endpoint.
+ *
+ * Route generation processes manifest objects in insertion order. Collection
+ * and item handlers live in separate files, and the last model that emits each
+ * file replaces the earlier file. Mirror that behavior here so every client
+ * alias for a shared endpoint has the same, real action set.
+ */
+function resolveGeneratedEndpointCrudMethods(
+  collection: string,
+  manifest: SmartObjectManifest,
+): ApiClientCrudMethod[] {
+  let collectionMethods: ApiClientCrudMethod[] = [];
+  let itemMethods: ApiClientCrudMethod[] = [];
+
+  for (const obj of Object.values(manifest.objects)) {
+    if (
+      obj.collection !== collection ||
+      isCollectionManifestClass(manifest, obj)
+    ) {
+      continue;
+    }
+
+    const methods = resolveGeneratedClientCrudMethods(obj, manifest);
+    const emittedCollectionMethods = methods.filter((method) =>
+      ['list', 'create', 'search'].includes(method),
+    );
+    const emittedItemMethods = methods.filter((method) =>
+      ['get', 'update', 'delete'].includes(method),
+    );
+
+    // generateRoutesForObject only writes a route file when that file has at
+    // least one standard handler. A custom-only object leaves an earlier CRUD
+    // file intact rather than replacing it with an empty file.
+    if (
+      emittedCollectionMethods.some(
+        (method) => method === 'list' || method === 'create',
+      )
+    ) {
+      collectionMethods = emittedCollectionMethods;
+    }
+    if (emittedItemMethods.length > 0) {
+      itemMethods = emittedItemMethods;
+    }
+  }
+
+  const emitted = new Set([...collectionMethods, ...itemMethods]);
+  const orderedMethods: ApiClientCrudMethod[] = [
+    ...STANDARD_API_ACTIONS,
+    'search',
+  ];
+  return orderedMethods.filter((method) => emitted.has(method));
+}
+
+function exposesApiClientSurface(
+  obj: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): boolean {
+  if (obj.decoratorConfig?.api === false) return false;
+  if (resolveGeneratedClientCrudMethods(obj, manifest).length > 0) return true;
+
+  // A disabled item has no CRUD routes. Keep its companion collection only
+  // when the collection itself contributes a custom route that the SvelteKit
+  // generator will actually emit.
+  return resolveGeneratedClientCustomMethods(obj, manifest).length > 0;
 }
 
 function resolveDataInterfaceName(
@@ -121,7 +348,7 @@ function resolveDataInterfaceName(
     return `${obj.className}Data`;
   }
 
-  const itemObject = resolveCollectionItemObject(obj, manifest);
+  const itemObject = resolveCollectionItemObject(manifest, obj);
   return `${itemObject?.className || obj.className}Data`;
 }
 
@@ -183,8 +410,8 @@ function selectCanonicalOwner(
   }
 
   return [...group].sort((left, right) => {
-    const leftHasItem = resolveCollectionItemObject(left.obj, manifest);
-    const rightHasItem = resolveCollectionItemObject(right.obj, manifest);
+    const leftHasItem = resolveCollectionItemObject(manifest, left.obj);
+    const rightHasItem = resolveCollectionItemObject(manifest, right.obj);
     if (Boolean(leftHasItem) !== Boolean(rightHasItem)) {
       return leftHasItem ? -1 : 1;
     }
@@ -200,9 +427,9 @@ function selectCanonicalOwner(
 export function selectApiClientEntries(
   manifest: SmartObjectManifest,
 ): ApiClientEntry[] {
-  const candidates = Object.entries(manifest.objects).map(
-    ([objectName, obj]): ManifestCandidate => ({ objectName, obj }),
-  );
+  const candidates = Object.entries(manifest.objects)
+    .filter(([, obj]) => exposesApiClientSurface(obj, manifest))
+    .map(([objectName, obj]): ManifestCandidate => ({ objectName, obj }));
   const candidatesByCollection = new Map<string, ManifestCandidate[]>();
 
   for (const candidate of candidates) {
@@ -264,6 +491,11 @@ export function selectApiClientEntries(
       obj,
       clientKey,
       dataInterfaceName: resolveDataInterfaceName(obj, manifest),
+      crudMethods: resolveGeneratedEndpointCrudMethods(
+        obj.collection,
+        manifest,
+      ),
+      customMethods: resolveGeneratedClientCustomMethods(obj, manifest),
     };
   });
 }
