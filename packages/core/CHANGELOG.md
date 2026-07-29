@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.31
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: broker trusted SMRT CI (#2124)
+  - @happyvertical/smrt-config@0.40.31
+  - @happyvertical/smrt-types@0.40.31
+  - @happyvertical/smrt-scanner@0.40.31
+
 ## 0.40.30
 
 ### Patch Changes
