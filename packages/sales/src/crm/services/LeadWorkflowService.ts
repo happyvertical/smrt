@@ -812,12 +812,21 @@ function queueProjection(state: LeadWorkQueueState): LeadWorkQueueProjection {
 }
 
 function calendarDayKey(date: Date, timeZone: string | undefined): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
+  const options: Intl.DateTimeFormatOptions = {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(date);
+  };
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat('en-US', { ...options, timeZone });
+  } catch {
+    // A host-provided timezone is advisory queue-display input, not a reason
+    // for a work-state projection to fail. Invalid IANA values use the
+    // runtime timezone just as an omitted value does.
+    formatter = new Intl.DateTimeFormat('en-US', options);
+  }
+  const parts = formatter.formatToParts(date);
   const get = (type: Intl.DateTimeFormatPartTypes): string =>
     parts.find((part) => part.type === type)?.value ?? '';
   return `${get('year')}-${get('month')}-${get('day')}`;

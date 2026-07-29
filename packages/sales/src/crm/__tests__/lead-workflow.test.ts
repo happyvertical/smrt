@@ -624,4 +624,16 @@ describe('projectLeadWorkQueue', () => {
       'reopenable',
     );
   });
+
+  it('falls back to the runtime timezone for invalid host timezone input', () => {
+    const input = {
+      status: 'working' as const,
+      ownerRepId: 'rep',
+      nextAction: { dueAt: new Date('2026-07-02T05:45:00Z') },
+      now,
+    };
+    expect(
+      projectLeadWorkQueue({ ...input, timeZone: 'Not/A_Real_Timezone' }),
+    ).toEqual(projectLeadWorkQueue(input));
+  });
 });
