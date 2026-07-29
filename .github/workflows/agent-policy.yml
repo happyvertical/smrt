@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
       # cosign-installer v4 shells out to envsubst, which is not part of the
       # provider-neutral general runner contract. Download the publisher-
@@ -79,20 +79,81 @@ jobs:
           TARGET_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          source_repository=$(gh api repos/happyvertical/.github --jq '.id')
-          test "$source_repository" = 1129270614 || {
-            echo "trusted policy source repository id is $source_repository, expected 1129270614" >&2
-            exit 1
-          }
           channel_state="$RUNNER_TEMP/hv-agent-policy-channels.json"
-          gh api 'repos/happyvertical/.github/contents/.github/agent-policy-channels.json?ref=main' \
-            --jq '.content' | base64 --decode > "$channel_state"
           protected_selector="$RUNNER_TEMP/hv-agent-policy-channel-select"
-          gh api 'repos/happyvertical/.github/contents/scripts/hv-agent-policy-channel-select?ref=main' \
-            --jq '.content' | base64 --decode > "$protected_selector"
+          target_repository_id=$(python3 - "$channel_state" "$protected_selector" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+          token = os.environ["GH_TOKEN"]
+
+          class RejectRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+                  return None
+
+          opener = urllib.request.build_opener(RejectRedirects)
+
+          def fetch(path, accept="application/vnd.github+json"):
+              request = urllib.request.Request(
+                  f"{api_url}/{path}",
+                  headers={
+                      "Accept": accept,
+                      "Authorization": f"Bearer {token}",
+                      "User-Agent": "happyvertical-agent-policy-bootstrap",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with opener.open(request, timeout=30) as response:
+                      return response.read()
+              except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+                  raise SystemExit(f"GitHub API request failed for {path}: {exc}") from exc
+
+          def fetch_json(path):
+              try:
+                  value = json.loads(fetch(path))
+              except json.JSONDecodeError as exc:
+                  raise SystemExit(f"GitHub API returned invalid JSON for {path}") from exc
+              if not isinstance(value, dict):
+                  raise SystemExit(f"GitHub API returned an invalid object for {path}")
+              return value
+
+          source_repository = fetch_json("repos/happyvertical/.github").get("id")
+          if source_repository != 1129270614:
+              raise SystemExit(
+                  "trusted policy source repository id is "
+                  f"{source_repository}, expected 1129270614"
+              )
+
+          raw_accept = "application/vnd.github.raw+json"
+          pathlib.Path(sys.argv[1]).write_bytes(fetch(
+              "repos/happyvertical/.github/contents/.github/agent-policy-channels.json?ref=main",
+              raw_accept,
+          ))
+          pathlib.Path(sys.argv[2]).write_bytes(fetch(
+              "repos/happyvertical/.github/contents/scripts/hv-agent-policy-channel-select?ref=main",
+              raw_accept,
+          ))
+
+          target_repository = urllib.parse.quote(
+              os.environ["TARGET_REPOSITORY"], safe="/",
+          )
+          target_repository_id = fetch_json(
+              f"repos/{target_repository}",
+          ).get("node_id")
+          if not isinstance(target_repository_id, str) or not target_repository_id:
+              raise SystemExit("target repository has no immutable node ID")
+          print(target_repository_id)
+          PY
+          )
           chmod +x "$protected_selector"
           selected_lock="$RUNNER_TEMP/hv-agent-policy-selected-lock.json"
-          target_repository_id=$(gh api "repos/$TARGET_REPOSITORY" --jq '.node_id')
           channel=$(python3 "$protected_selector" \
             "$channel_state" "$selected_lock" "$target_repository_id")
           artifact=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact"])' "$selected_lock")
