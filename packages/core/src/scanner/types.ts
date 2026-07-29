@@ -11,6 +11,35 @@ import type { SmartObjectConfig } from '../registry.js';
 export type QualifiedClassName = `${string}:${string}`;
 
 /**
+ * Static per-field UI hints authored via `@field({ ui })` (#2046).
+ *
+ * A pure presentation seed for the field-policy rail (epic #2045): it rides the
+ * manifest under the field's `_meta.ui` (never promoted to a top-level
+ * `FieldDefinition` key), reaches runtime at `field._meta.ui` via
+ * `ObjectRegistry.getAllFields()`, and is emitted to the browser in generated
+ * web-collection definitions. It has NO schema, persistence, or security
+ * effect — `sensitive`/`readPermission` remain the security rail.
+ */
+export interface FieldUIHints {
+  /**
+   * Seed the field into the "basic" visibility tier (shown before the
+   * advanced disclosure). Unmarked fields default per the cold-start rule:
+   * an object with no basic markers renders everything basic; once any field
+   * is marked, unmarked fields default to advanced.
+   */
+  basic?: boolean;
+  /** Grouping key for form section/grouping (consumer-defined label). */
+  group?: string;
+  /** Relative sort order within the form/group (ascending). */
+  order?: number;
+  /**
+   * Seed the field's policy as locked: org/user policy tiers may not
+   * override it unless an org admin explicitly unlocks it.
+   */
+  locked?: boolean;
+}
+
+/**
  * Structured metadata attached to a field definition under `_meta`.
  *
  * Captures the field-helper options the scanner and schema/manifest
@@ -35,6 +64,8 @@ export interface FieldMeta {
   unique?: boolean;
   /** Column description carried into generated schema. */
   description?: string;
+  /** Static per-field UI hints authored via `@field({ ui })` (#2046). */
+  ui?: FieldUIHints;
   /** Opt-in column/JSON-path indexing flag. */
   indexed?: boolean;
   /** Foreign-key delete action carried in metadata. */

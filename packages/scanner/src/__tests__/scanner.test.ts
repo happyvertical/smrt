@@ -99,6 +99,32 @@ describe('OxcScanner', () => {
     `,
     );
 
+    // Field-policy UI metadata seeds (#2046): class-level ui bag with
+    // description + per-field @field({ ui }) hints.
+    writeFileSync(
+      join(tempDir, 'policy-seeded.ts'),
+      `
+      import { SmrtObject, smrt, field } from '@happyvertical/smrt-core';
+
+      @smrt({
+        ui: {
+          icon: 'quote',
+          label: 'Quotes',
+          description: 'A priced offer sent to a customer.',
+        },
+      })
+      export class PolicySeeded extends SmrtObject {
+        @field({ ui: { basic: true, group: 'identity', order: 1 }, description: 'Customer-visible name' })
+        name: string = '';
+
+        @field({ ui: { locked: true } })
+        taxClass: string = '';
+
+        plain: string = '';
+      }
+    `,
+    );
+
     // Create subdirectory with STI example
     const stiDir = join(tempDir, 'events');
     const mkdirSync = require('node:fs').mkdirSync;
@@ -157,18 +183,19 @@ describe('OxcScanner', () => {
 
       const results = await scanner.scan();
 
-      // Should find Product, Category, TestAgent, Event, Meeting, Conference
-      // Helper should be found but not as a SMRT class
+      // Should find Product, Category, TestAgent, PolicySeeded, Event,
+      // Meeting, Conference. Helper should be found but not as a SMRT class
       const smrtClasses = results.files
         .flatMap((f) => f.classes)
         .filter((c) => c.hasSmartDecorator);
 
-      expect(smrtClasses.length).toBe(6);
+      expect(smrtClasses.length).toBe(7);
       expect(smrtClasses.map((c) => c.className).sort()).toEqual([
         'Category',
         'Conference',
         'Event',
         'Meeting',
+        'PolicySeeded',
         'Product',
         'TestAgent',
       ]);
@@ -327,6 +354,41 @@ describe('OxcScanner', () => {
       const productDef = manifest.objects['@test/agent-pkg:Product'];
       expect(productDef.decoratorConfig.agent).toBeUndefined();
     });
+
+    it('carries class-level ui (with description) and per-field _meta.ui into the manifest (#2046)', async () => {
+      const scanner = new OxcScanner({
+        cwd: tempDir,
+        include: ['**/*.ts'],
+      });
+
+      const { resolved } = await scanner.scanAndResolve();
+      const { ManifestAdapter } = await import('../manifest-adapter.js');
+      const adapter = new ManifestAdapter();
+      const manifest = adapter.toManifest(resolved, {
+        packageName: '@test/agent-pkg',
+      });
+
+      const def = manifest.objects['@test/agent-pkg:PolicySeeded'];
+      expect(def).toBeDefined();
+
+      // Class-level bag: icon/label as before, description newly alongside.
+      expect(def.decoratorConfig.ui).toEqual({
+        icon: 'quote',
+        label: 'Quotes',
+        description: 'A priced offer sent to a customer.',
+      });
+
+      // Per-field hints ride _meta.ui, never a top-level field key.
+      expect(def.fields.name._meta?.ui).toEqual({
+        basic: true,
+        group: 'identity',
+        order: 1,
+      });
+      expect(def.fields.name).not.toHaveProperty('ui');
+      expect(def.fields.name.description).toBe('Customer-visible name');
+      expect(def.fields.taxClass._meta?.ui).toEqual({ locked: true });
+      expect(def.fields.plain._meta?.ui).toBeUndefined();
+    });
   });
 
   describe('type alias resolution (end-to-end)', () => {
@@ -455,7 +517,7 @@ describe('OxcScanner', () => {
 
       expect(stats.fileCount).toBeGreaterThan(0);
       expect(stats.totalClasses).toBeGreaterThan(0);
-      expect(stats.smrtClasses).toBe(9); // Product, Category, TestAgent, Event, Meeting, Conference, Performer, Widget, ExternalEnumUser
+      expect(stats.smrtClasses).toBe(10); // Product, Category, TestAgent, PolicySeeded, Event, Meeting, Conference, Performer, Widget, ExternalEnumUser
       expect(stats.stiClasses).toBe(3); // Event, Meeting, Conference
       expect(stats.parseTimeMs).toBeGreaterThanOrEqual(0);
     });

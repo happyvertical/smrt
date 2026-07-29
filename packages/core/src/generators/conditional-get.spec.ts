@@ -478,7 +478,15 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
             fields: {
               id: { type: 'uuid' },
               cityId: { type: 'foreignKey', related: 'ParityCity' },
-              displayName: { type: 'text', default: 'Venue' },
+              displayName: {
+                type: 'text',
+                default: 'Venue',
+                // Scanner manifests expose description top-level; runtime
+                // registration keeps it in `_meta` (see runtime half below).
+                // Both halves also carry `_meta.ui` (#2046) the same way.
+                description: 'Public venue name',
+                _meta: { ui: { basic: true, order: 1 } },
+              },
             },
             methods: {},
             decoratorConfig: {
@@ -544,7 +552,21 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
             fields: new Map([
               ['id', { type: 'uuid' }],
               ['cityId', { type: 'foreignKey', related: 'ParityCity' }],
-              ['displayName', { type: 'text', _meta: { default: 'Venue' } }],
+              [
+                'displayName',
+                {
+                  type: 'text',
+                  // Runtime decorator registration keeps default, description
+                  // AND ui under `_meta` (registeredFieldsToManifest hoists
+                  // only `default`). The emission must read the fallbacks or
+                  // this hash diverges from the scanner half (#2046).
+                  _meta: {
+                    default: 'Venue',
+                    description: 'Public venue name',
+                    ui: { basic: true, order: 1 },
+                  },
+                },
+              ],
             ]),
             methods: new Map(),
             config: {

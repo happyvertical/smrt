@@ -6,6 +6,7 @@
  */
 
 import { ObjectRegistry } from '../registry.js';
+import type { FieldUIHints } from '../scanner/types.js';
 import type { SQLDataType } from '../schema/types.js';
 import {
   type CompatiblePropertyDecorator,
@@ -13,6 +14,8 @@ import {
   type LegacyPropertyDecoratorTarget,
   registerCompatibleFieldDecorator,
 } from './compatibility.js';
+
+export type { FieldUIHints } from '../scanner/types.js';
 
 /**
  * Meta type wrapper for STI (Single Table Inheritance) meta fields
@@ -113,6 +116,16 @@ export interface FieldOptions {
   readPermission?: string;
   /** Field description */
   description?: string;
+  /**
+   * Static UI hints for the field-policy rail (#2046, epic #2045).
+   *
+   * A pure presentation seed — carried in the manifest under the field's
+   * `_meta.ui`, readable at runtime via `getAllFields()` at `field._meta.ui`,
+   * and emitted to the browser in generated web-collection definitions. Has no
+   * schema, persistence, or security effect; `sensitive`/`readPermission`
+   * remain the security rail.
+   */
+  ui?: FieldUIHints;
   /**
    * Controls whether the field is included in JSON exports.
    * - `true`: Always exported (unless site explicitly excludes it)

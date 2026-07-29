@@ -205,6 +205,12 @@ describe('generateDeclarations', () => {
       '"audit-events": CrudOperations<AuditEventData>;',
     );
     expect(webDecl).toContain('"audit-events": SmrtWebCollectionDefinition<');
+    // #2046 widened field metadata — keep the physical d.ts aligned with the
+    // runtime WebFieldDefinition and the ambient virt-web declaration.
+    expect(webDecl).toContain('export type SmrtWebFieldType =');
+    expect(webDecl).toContain('export interface SmrtWebFieldUIHints {');
+    expect(webDecl).toContain('description?: string;');
+    expect(webDecl).toContain('ui?: SmrtWebFieldUIHints;');
 
     const sourceFile = ts.createSourceFile(
       'generated-virtual-modules.d.ts',

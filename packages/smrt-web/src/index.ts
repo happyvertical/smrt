@@ -126,13 +126,44 @@ export { createUpdateState } from './update-state.js';
 // ---------------------------------------------------------------------------
 
 /**
+ * The field types core's web-collection emission actually produces —
+ * relationship pseudo-columns (`oneToMany`/`manyToMany`) and STI `meta`
+ * internals never reach an emitted definition. Textual mirror of core's
+ * `WebFieldType` (this package is deliberately smrt-dependency-free, so it
+ * cannot import the source type); the four co-managed sites are core's
+ * runtime type, the ambient virt-web d.ts, the physical `@smrt/web` d.ts,
+ * and this mirror.
+ */
+export type SmrtWebFieldType =
+  | 'text'
+  | 'decimal'
+  | 'boolean'
+  | 'integer'
+  | 'datetime'
+  | 'json'
+  | 'foreignKey'
+  | 'crossPackageRef';
+
+/** Static `@field({ ui })` hints (#2046) — the field-policy rail seed. */
+export interface SmrtWebFieldUIHints {
+  basic?: boolean;
+  group?: string;
+  order?: number;
+  locked?: boolean;
+}
+
+/**
  * Field metadata emitted per column by the `@happyvertical/smrt-virt-web`
  * virtual module (generated from the package manifest).
  */
 export interface SmrtWebFieldDefinition {
-  type: string;
+  type: SmrtWebFieldType;
   required?: boolean;
   default?: unknown;
+  /** Developer-authored `@field({ description })` (#2046) — end-user help seed. */
+  description?: string;
+  /** Static `@field({ ui })` hints (#2046). */
+  ui?: SmrtWebFieldUIHints;
 }
 
 /** The relationship kinds a generated web collection edge can describe. */

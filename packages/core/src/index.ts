@@ -102,6 +102,7 @@ export {
   type CrossPackageRefOptions,
   crossPackageRef,
   type FieldOptions,
+  type FieldUIHints,
   field,
   foreignKey,
   type Meta,

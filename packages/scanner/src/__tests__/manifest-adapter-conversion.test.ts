@@ -182,6 +182,34 @@ describe('ManifestAdapter conversion', () => {
       // Array argument is not a valid options object → treated as plain text field.
       expect(result?.type).toBe('text');
     });
+
+    it('carries the nested @field ui bag into _meta.ui without top-level promotion (#2046)', () => {
+      const result = adapter.convertField(
+        field({
+          name: 'taxClass',
+          typeAnnotation: 'string',
+          initializer: "''",
+          decorators: [
+            {
+              name: 'field',
+              arguments: [
+                "{ ui: { basic: true, group: 'pricing', order: 3, locked: false }, description: 'Tax classification' }",
+              ],
+            },
+          ],
+        }),
+      );
+      expect(result?._meta?.ui).toEqual({
+        basic: true,
+        group: 'pricing',
+        order: 3,
+        locked: false,
+      });
+      // ui is a pure _meta carrier — never a top-level FieldDefinition key.
+      expect(result).not.toHaveProperty('ui');
+      expect(result?.description).toBe('Tax classification');
+      expect(result?._meta?.description).toBe('Tax classification');
+    });
   });
 
   describe('@meta decorator', () => {
