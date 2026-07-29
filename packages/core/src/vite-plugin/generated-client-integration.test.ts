@@ -44,8 +44,9 @@ import { field } from '../decorators';
 import { APIGenerator } from '../generators/rest';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
+import type { SmartObjectManifest } from '../scanner/types.js';
 import { getTestDatabase } from '../testing/database';
-import { smrtPlugin } from './index.js';
+import { generateTypeDeclarationFile, smrtPlugin } from './index.js';
 
 // A collection whose canonical segment is already plural
 // (`GenClientProduct` -> `genclientproducts`). The generated client emits GET
@@ -212,6 +213,27 @@ export class GenClientMessage extends SmrtObject {}
 
 @smrt({ api: { public: true } })
 export class GenClientEmail extends GenClientMessage {}
+
+@smrt({ api: { public: true } })
+export class GenClientSecretCollection extends SmrtCollection<GenClientSecret> {
+  async reveal(): Promise<string> {
+    return 'revealed';
+  }
+}
+
+@smrt({ api: false })
+export class GenClientSecret extends SmrtObject {
+  @field({ type: 'text' })
+  value: string = '';
+}
+
+@smrt({ api: { public: true, include: ['get', 'ping'] } })
+export class GenClientReadonly extends SmrtObject {
+  async ping(): Promise<string> {
+    return 'pong';
+  }
+}
+
 `,
     );
 
@@ -238,11 +260,11 @@ export class GenClientEmail extends GenClientMessage {}
     // pluralizes to `genclientproducts`; assert that here so a future
     // inflection change surfaces as a readable failure rather than an
     // `undefined.list()` TypeError below.
-    expect(clientSource).toContain('genclientproducts:');
-    expect(clientSource).toContain('genClientProductCollection:');
-    expect(clientSource.match(/\n {2}genclientproducts:/g)).toHaveLength(1);
-    expect(clientSource.match(/\n {2}contents:/g)).toHaveLength(1);
-    expect(clientSource).toContain('contents2:');
+    expect(clientSource).toContain('"genclientproducts":');
+    expect(clientSource).toContain('"genClientProductCollection":');
+    expect(clientSource.match(/\n {2}"genclientproducts":/g)).toHaveLength(1);
+    expect(clientSource.match(/\n {2}"contents":/g)).toHaveLength(1);
+    expect(clientSource).toContain('"contents2":');
     expect(clientSource).toContain('findFeatured: (options)');
     expect(clientSource).not.toContain('findFeatured: (id, options)');
     expect(clientSource).not.toContain('list: (id, options)');
@@ -254,18 +276,33 @@ export class GenClientEmail extends GenClientMessage {}
     expect(clientSource).toContain('summarize: (id, options)');
     expect(clientSource).toContain('findUnread: (options)');
     expect(clientSource).not.toContain('findUnread: (id, options)');
+    const customOnlyClientSource = clientSource.match(
+      /\n {2}"genclientsecrets": \{([\s\S]*?)\n {2}\}/,
+    )?.[1];
+    expect(customOnlyClientSource).toContain('reveal: (options)');
+    expect(customOnlyClientSource).not.toMatch(
+      /\b(list|get|create|update|delete|search):/,
+    );
+    const partialClientSource = clientSource.match(
+      /\n {2}"genclientreadonlies": \{([\s\S]*?)\n {2}\}/,
+    )?.[1];
+    expect(partialClientSource).toContain('get: (id)');
+    expect(partialClientSource).toContain('ping: (id, options)');
+    expect(partialClientSource).not.toMatch(
+      /\b(list|create|update|delete|search):/,
+    );
     const declarationSource = readFileSync(
       join(projectRoot, 'src', 'types', 'virtual-modules.d.ts'),
       'utf-8',
     );
     expect(declarationSource).toContain(
-      'genclientproducts: CrudOperations<GenClientProductData>;',
+      '"genclientproducts": CrudOperations<GenClientProductData>;',
     );
     expect(declarationSource).not.toContain(
-      'genclientproducts: CrudOperations<GenClientProductCollectionData>;',
+      '"genclientproducts": CrudOperations<GenClientProductCollectionData>;',
     );
     expect(declarationSource).toContain(
-      'genClientProductCollection: Omit<CrudOperations<GenClientProductData>, "search"> & {',
+      '"genClientProductCollection": Pick<CrudOperations<GenClientProductData>, "list" | "get" | "create" | "update" | "delete"> & {',
     );
     expect(declarationSource).toMatch(
       /export interface GenClientProductData \{[\s\S]*?name: string;[\s\S]*?price: number;[\s\S]*?\n {2}\}/,
@@ -279,13 +316,22 @@ export class GenClientEmail extends GenClientMessage {}
       'describe(id: string, options: { tone: string }): Promise<any>;',
     );
     expect(declarationSource).toContain(
-      'contents: CrudOperations<ContentData> & {\n      summarize(id: string, options?: Record<string, never>): Promise<any>;',
+      '"contents": CrudOperations<ContentData> & {\n      summarize(id: string, options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).toContain(
-      'contents2: CrudOperations<ContentData> & {\n      featured(options?: Record<string, never>): Promise<any>;',
+      '"contents2": CrudOperations<ContentData> & {\n      featured(options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).toContain(
-      'genClientEmailCollection: CrudOperations<GenClientEmailData> & {\n      findUnread(options?: Record<string, never>): Promise<any>;',
+      '"genClientEmailCollection": CrudOperations<GenClientMessageData> & {\n      findUnread(options?: Record<string, never>): Promise<any>;',
+    );
+    expect(declarationSource).toContain(
+      '"genclientsecrets": {\n      reveal(options?: Record<string, never>): Promise<any>;\n    };',
+    );
+    expect(declarationSource).not.toContain(
+      '"genclientsecrets": CrudOperations<GenClientSecretData>',
+    );
+    expect(declarationSource).toContain(
+      '"genclientreadonlies": Pick<CrudOperations<GenClientReadonlyData>, "get"> & {\n      ping(id: string, options?: Record<string, never>): Promise<any>;',
     );
 
     // Evaluate the generated ESM the way a bundler would: write it to disk and
@@ -296,6 +342,7 @@ export class GenClientEmail extends GenClientMessage {}
     writeFileSync(clientModulePath, clientSource, 'utf-8');
     const mod = await import(pathToFileURL(clientModulePath).href);
     createClient = mod.createClient;
+    expect(Object.keys(createClient().genclientsecrets)).toEqual(['reveal']);
 
     // Real in-memory SQLite collection + generated server. No registerCollection
     // on the APIGenerator — force the auto-discovery path.
@@ -314,6 +361,39 @@ export class GenClientEmail extends GenClientMessage {}
     if (projectRoot) rmSync(projectRoot, { recursive: true, force: true });
     if (clientModuleDir)
       rmSync(clientModuleDir, { recursive: true, force: true });
+  });
+
+  it('quotes non-identifier keys in Vite client and web declarations', async () => {
+    const declarationRoot = mkdtempSync(join(tmpdir(), 'smrt-vite-types-'));
+    try {
+      const manifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 1,
+        objects: {
+          AuditEvent: {
+            className: 'AuditEvent',
+            collection: 'audit-events',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      };
+
+      await generateTypeDeclarationFile(manifest, declarationRoot, 'types');
+      const declarationSource = readFileSync(
+        join(declarationRoot, 'types', 'virtual-modules.d.ts'),
+        'utf-8',
+      );
+      expect(declarationSource).toContain(
+        '"audit-events": CrudOperations<AuditEventData>;',
+      );
+      expect(declarationSource).toContain(
+        '"audit-events": SmrtWebCollectionDefinition<',
+      );
+    } finally {
+      rmSync(declarationRoot, { force: true, recursive: true });
+    }
   });
 
   afterEach(() => {

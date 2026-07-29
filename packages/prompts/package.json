@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-prompts",
-  "version": "0.40.31",
+  "version": "0.40.33",
   "description": "Typed prompt registry, override resolution, and tenant-aware prompt settings for SMRT",
   "type": "module",
   "main": "./dist/index.js",

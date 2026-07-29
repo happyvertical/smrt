@@ -112,6 +112,14 @@ describe('collectSyncApplyTargets', () => {
           extends: 'SmrtCollection',
           extendsTypeArg: 'Product',
         },
+        SpecialProductCollection: {
+          className: 'SpecialProductCollection',
+          collection: 'products',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: true },
+          extends: 'ProductCollection',
+        },
       }),
     );
     expect(targets).toHaveLength(0);

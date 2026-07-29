@@ -67,14 +67,17 @@ smrt db:migrate --postgres-timestamp-legacy-timezone UTC
 ```
 
 The option has no default and rejects every value other than `UTC`. On
-PostgreSQL, it allows the manifest-owned timestamp columns to be converted to
-`timestamptz` with `USING column AT TIME ZONE 'UTC'`, preserving the proven UTC
-instants. It is not safe for a database with any local-time writer; use an
-application-owned, provenance-aware migration in that case. Rehearse against a
-restored clone and keep a verified backup because type upgrades have no
-automatic down migration. `smrt db:diff --postgres-timestamp-legacy-timezone
-UTC` and `smrt db:migrate --dry-run --postgres-timestamp-legacy-timezone UTC`
-both preview the same conversion without writing it.
+PostgreSQL, `db:migrate` first converts framework-owned `_smrt_*` timestamp
+columns before migration-tracker bootstrap, then converts manifest-owned
+columns to `timestamptz` with `USING column AT TIME ZONE 'UTC'`. This preserves
+the proven UTC instants. It is not safe for a database with any local-time
+writer; use an application-owned, provenance-aware migration in that case.
+Rehearse against a restored clone and keep a verified backup because type
+upgrades have no automatic down migration. `smrt db:diff
+--postgres-timestamp-legacy-timezone UTC` previews manifest-owned changes;
+`smrt db:migrate --dry-run --postgres-timestamp-legacy-timezone UTC` also
+queries and prints the read-only `_smrt_*` conversion plan without initializing
+the tracker or writing to the database.
 
 ### Code Generation
 

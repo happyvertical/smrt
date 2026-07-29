@@ -3,7 +3,10 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
-import { selectApiClientEntries } from './api-client-entries.js';
+import {
+  type ApiClientCrudMethod,
+  selectApiClientEntries,
+} from './api-client-entries.js';
 
 const agreementExecutionCollection = {
   className: 'AgreementExecutionCollection',
@@ -112,6 +115,237 @@ describe('selectApiClientEntries', () => {
     ]);
   });
 
+  it('excludes api:false objects without changing canonical ownership or client keys', () => {
+    const manifest = buildManifest(false);
+    manifest.objects.HiddenAgreementExecution = {
+      className: 'HiddenAgreementExecution',
+      collection: 'agreementExecutions',
+      extends: 'SmrtObject',
+      fields: { secret: { type: 'text', required: true } },
+      methods: {},
+      decoratorConfig: { api: false },
+    } as SmartObjectDefinition;
+    manifest.objects.InternalCheckpoint = {
+      className: 'InternalCheckpoint',
+      collection: 'internalCheckpoints',
+      extends: 'SmrtObject',
+      fields: { cursor: { type: 'text', required: true } },
+      methods: {},
+      decoratorConfig: { api: false },
+    } as SmartObjectDefinition;
+
+    expect(
+      selectApiClientEntries(manifest).map(({ clientKey, obj }) => [
+        clientKey,
+        obj.className,
+      ]),
+    ).toEqual([
+      ['agreementExecutions', 'AgreementExecution'],
+      ['agreementExecutionCollection', 'AgreementExecutionCollection'],
+      ['contents', 'Content'],
+      ['contents2', 'Contents'],
+    ]);
+  });
+
+  it('keeps only routed companion collection methods when its item model has api:false', () => {
+    const hiddenModel = {
+      className: 'Secret',
+      collection: 'secrets',
+      extends: 'SmrtObject',
+      fields: { value: { type: 'text', required: true } },
+      methods: {},
+      decoratorConfig: { api: false },
+    } as SmartObjectDefinition;
+    const implicitCollection = {
+      className: 'SecretCollection',
+      collection: 'secrets',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Secret',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    } as SmartObjectDefinition;
+
+    const implicitManifest = {
+      version: '1.0.0',
+      timestamp: 1,
+      objects: {
+        Secret: hiddenModel,
+        SecretCollection: implicitCollection,
+      },
+    } satisfies SmartObjectManifest;
+
+    expect(selectApiClientEntries(implicitManifest)).toEqual([]);
+
+    const customOnlyEntries = selectApiClientEntries({
+      ...implicitManifest,
+      objects: {
+        ...implicitManifest.objects,
+        SecretCollection: {
+          ...implicitCollection,
+          methods: {
+            reveal: {
+              name: 'reveal',
+              async: true,
+              parameters: [],
+              returnType: 'string',
+              isStatic: false,
+              isPublic: true,
+            },
+          },
+        },
+      },
+    });
+    expect(
+      customOnlyEntries.map(({ clientKey, obj }) => [clientKey, obj.className]),
+    ).toEqual([['secrets', 'SecretCollection']]);
+    expect(customOnlyEntries[0]).toMatchObject({
+      crudMethods: [],
+      customMethods: [{ name: 'reveal', scope: 'collection' }],
+    });
+
+    expect(
+      selectApiClientEntries({
+        ...implicitManifest,
+        objects: {
+          ...implicitManifest.objects,
+          SecretCollection: {
+            ...implicitCollection,
+            methods: {
+              reveal: {
+                name: 'reveal',
+                async: true,
+                parameters: [],
+                returnType: 'string',
+                isStatic: false,
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                routes: {
+                  reveal: { scope: 'item' },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ).toEqual([]);
+
+    expect(
+      selectApiClientEntries({
+        ...implicitManifest,
+        objects: {
+          ...implicitManifest.objects,
+          SecretCollection: {
+            ...implicitCollection,
+            decoratorConfig: { api: true },
+          },
+        },
+      }),
+    ).toEqual([]);
+  });
+
+  it('prefers an inherited generic item over a subclass naming collision', () => {
+    const manifest = {
+      version: '1.0.0',
+      timestamp: 1,
+      objects: {
+        Widget: {
+          className: 'Widget',
+          collection: 'widgets',
+          extends: 'SmrtObject',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: false },
+        },
+        SpecialWidget: {
+          className: 'SpecialWidget',
+          collection: 'specialWidgets',
+          extends: 'SmrtObject',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: false },
+        },
+        WidgetCollection: {
+          className: 'WidgetCollection',
+          collection: 'widgets',
+          extends: 'SmrtCollection',
+          extendsTypeArg: 'Widget',
+          fields: {},
+          methods: {},
+          decoratorConfig: { api: false },
+        },
+        SpecialWidgetCollection: {
+          className: 'SpecialWidgetCollection',
+          collection: 'widgets',
+          extends: 'WidgetCollection',
+          fields: {},
+          methods: {
+            restoreSpecial: {
+              name: 'restoreSpecial',
+              async: true,
+              parameters: [],
+              returnType: 'Widget[]',
+              isStatic: false,
+              isPublic: true,
+            },
+          },
+          decoratorConfig: {
+            api: { include: ['restoreSpecial'] },
+          },
+        },
+      },
+    } satisfies SmartObjectManifest;
+
+    const entry = selectApiClientEntries(manifest).find(
+      ({ obj }) => obj.className === 'SpecialWidgetCollection',
+    );
+    expect(entry).toMatchObject({
+      clientKey: 'widgets',
+      dataInterfaceName: 'WidgetData',
+      customMethods: [{ name: 'restoreSpecial', scope: 'collection' }],
+    });
+  });
+
+  it('carries the exact standard action set for partial and custom-only APIs', () => {
+    const manifest = buildManifest(false);
+    manifest.objects.AgreementExecution = {
+      ...agreementExecution,
+      methods: {
+        reveal: {
+          name: 'reveal',
+          async: true,
+          parameters: [],
+          returnType: 'string',
+          isStatic: false,
+          isPublic: true,
+        },
+      },
+      decoratorConfig: {
+        api: {
+          include: ['get', 'update', 'reveal'],
+          exclude: ['update'],
+        },
+      },
+    };
+
+    const entries = selectApiClientEntries(manifest).filter(
+      ({ obj }) => obj.collection === 'agreementExecutions',
+    );
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      clientKey: 'agreementExecutions',
+      crudMethods: ['get'],
+      customMethods: [{ name: 'reveal', scope: 'item' }],
+    });
+    expect(entries[1]).toMatchObject({
+      clientKey: 'agreementExecutionCollection',
+      crudMethods: ['get'],
+    });
+  });
+
   it('uses a transitive canonical rank for mixed STI and unrelated models', () => {
     const entries: Array<[string, SmartObjectDefinition]> = [
       [
@@ -166,6 +400,49 @@ describe('selectApiClientEntries', () => {
         ['mOther', 'MOther'],
       ]);
     }
+  });
+
+  it('matches CRUD aliases to the route files actually emitted for a shared collection', () => {
+    const base = {
+      className: 'RecordBase',
+      collection: 'records',
+      extends: 'SmrtObject',
+      fields: { base: { type: 'text' } },
+      methods: {},
+      decoratorConfig: {
+        tableStrategy: 'sti',
+        api: { include: ['list', 'get', 'create'] },
+      },
+    } as SmartObjectDefinition;
+    const child = {
+      className: 'RecordChild',
+      collection: 'records',
+      extends: 'RecordBase',
+      fields: { child: { type: 'text' } },
+      methods: {},
+      decoratorConfig: { api: { include: ['get', 'update'] } },
+    } as SmartObjectDefinition;
+
+    const summarize = (
+      objects: Record<string, SmartObjectDefinition>,
+    ): Array<[string, ApiClientCrudMethod[]]> =>
+      selectApiClientEntries({
+        version: '1.0.0',
+        timestamp: 1,
+        objects,
+      }).map(({ clientKey, crudMethods }) => [clientKey, crudMethods]);
+
+    // Base writes the collection file; the later child replaces the item file.
+    expect(summarize({ RecordBase: base, RecordChild: child })).toEqual([
+      ['records', ['list', 'get', 'create', 'update']],
+      ['recordChild', ['list', 'get', 'create', 'update']],
+    ]);
+
+    // Reversing manifest order makes the base the final writer of both files.
+    expect(summarize({ RecordChild: child, RecordBase: base })).toEqual([
+      ['records', ['list', 'get', 'create']],
+      ['recordChild', ['list', 'get', 'create']],
+    ]);
   });
 
   it('resolves duplicate simple parent names deterministically across packages', () => {

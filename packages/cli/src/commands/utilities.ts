@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url';
 import {
   generateDDLForEngine,
   isQualifiedName,
+  migratePostgresSystemTimestamps,
   ObjectRegistry,
+  planPostgresSystemTimestampMigrations,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
 import type {
@@ -1216,6 +1218,7 @@ export default testManifest;
         const postgresTimestampMigration = resolvePostgresTimestampMigration(
           options['postgres-timestamp-legacy-timezone'],
         );
+        const isDryRun = options['dry-run'] ?? false;
 
         // 1. Load CLI config
         const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -1345,6 +1348,26 @@ export default testManifest;
           `✓ Connected to ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`,
         );
 
+        // MigrationTracker bootstraps framework-owned tables and deliberately
+        // rejects legacy timezone-naive system columns. Apply the same
+        // explicit UTC confirmation to those tables first so the documented
+        // one-shot PostgreSQL migration path can reach schema comparison.
+        const systemTimestampPreview =
+          postgresTimestampMigration && isDryRun
+            ? await planPostgresSystemTimestampMigrations(
+                db,
+                postgresTimestampMigration,
+                dbType,
+              )
+            : [];
+        if (postgresTimestampMigration && !isDryRun) {
+          await migratePostgresSystemTimestamps(
+            db,
+            postgresTimestampMigration,
+            dbType,
+          );
+        }
+
         // 7.5. Initialize MigrationTracker for tracking applied migrations
         const { MigrationTracker, shortChecksum } = await import(
           '@happyvertical/smrt-core/migrations'
@@ -1354,11 +1377,17 @@ export default testManifest;
           db,
           useConcurrentIndexes: options['postgres-safe'] ?? false,
         });
-        await tracker.initialize();
+        if (!isDryRun) {
+          await tracker.initialize();
+        }
 
         if (options.verbose) {
           const engine = tracker.getEngine();
-          console.log(`Migration tracker initialized (engine: ${engine})`);
+          console.log(
+            isDryRun
+              ? `Migration tracker preview configured (engine: ${engine})`
+              : `Migration tracker initialized (engine: ${engine})`,
+          );
           if (options['postgres-safe'] && engine === 'postgres') {
             console.log(
               'PostgreSQL-safe mode enabled (CONCURRENTLY, lock_timeout)',
@@ -1372,7 +1401,6 @@ export default testManifest;
         const migrations: MigrationAction[] = [];
         const manualInterventions: MigrationAction[] = [];
         const tableErrorCount = 0;
-        const isDryRun = options['dry-run'] ?? false;
         const applySchemaMigrations = shouldApplySchemaMigrations({
           dryRun: isDryRun,
         });
@@ -1473,7 +1501,8 @@ export default testManifest;
         const schemaUpToDate =
           migrations.length === 0 &&
           manualInterventions.length === 0 &&
-          !tablesCreated;
+          !tablesCreated &&
+          systemTimestampPreview.length === 0;
 
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
@@ -1491,6 +1520,20 @@ export default testManifest;
             );
           } else {
             console.log('📋 Migration Preview (not executed):\n');
+
+            if (systemTimestampPreview.length > 0) {
+              console.log(
+                `  🕰️  SMRT system timestamp columns to convert: ${systemTimestampPreview.length}`,
+              );
+              for (const migration of systemTimestampPreview) {
+                console.log(
+                  migration.kind === 'column'
+                    ? `     ${migration.tableName}.${migration.columnName}`
+                    : '     _smrt_changes append function signature',
+                );
+              }
+              console.log();
+            }
 
             const columnMigrations = migrations.filter(
               (m) => m.type === 'add_column',
@@ -1532,6 +1575,12 @@ export default testManifest;
             }
 
             console.log('  SQL Statements:\n');
+            for (const migration of systemTimestampPreview) {
+              const terminator = migration.sql.trimEnd().endsWith(';')
+                ? ''
+                : ';';
+              console.log(`    ${migration.sql}${terminator}`);
+            }
             for (const m of migrations) {
               const sqlStatements = m.sqlStatements ?? (m.sql ? [m.sql] : []);
               for (const sql of sqlStatements) {

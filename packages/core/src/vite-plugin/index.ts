@@ -11,27 +11,32 @@ import type {
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
-import { CLIENT_FETCH_RUNTIME } from '../generated-client-runtime.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import type { SmartObjectManifest } from '../scanner/types';
 import type { SchemaDefinition } from '../schema/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
-import { selectApiClientEntries } from './api-client-entries.js';
+import {
+  renderApiClientCrudType,
+  renderApiClientCustomMethodParameters,
+  selectApiClientEntries,
+} from './api-client-entries.js';
+import {
+  GENERATED_CLIENT_BASE_METHODS,
+  GENERATED_CLIENT_CRUD_METHODS,
+  generateClientModule,
+} from './generated-client.js';
 import { importBuildAwareModule } from './import-build-aware.js';
 import {
   findCliApiCoherenceViolations,
   generateSvelteKitRoutes,
-  resolveApiActionRouteConfig,
-  resolveApiActionSet,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
 import {
   buildWebCollectionDefinition,
   buildWebToolDescriptors,
   computeWebManifestHash,
-  isCollectionManifestClass,
   selectWebCollectionEntries,
 } from './web-collections.js';
 
@@ -1189,184 +1194,6 @@ export { setupRoutes as default };
   }
 }
 
-const GENERATED_CLIENT_CRUD_METHODS = new Set([
-  'list',
-  'get',
-  'create',
-  'update',
-  'delete',
-]);
-
-const GENERATED_CLIENT_BASE_METHODS = new Set([
-  ...GENERATED_CLIENT_CRUD_METHODS,
-  'search',
-]);
-
-function generateClientModule(
-  manifest: SmartObjectManifest,
-  options: { kebabRoutes?: boolean } = {},
-): string {
-  const objects = selectApiClientEntries(manifest);
-
-  const clientMethods = objects
-    .map(({ obj, clientKey }) => {
-      const { collection, methods = {} } = obj;
-
-      // Honor api include/exclude + scope/static skip rules for custom methods,
-      // so the client only emits proxies for methods that actually have routes
-      // emitted by the server. (Custom only — CRUD is left unconditional to
-      // preserve the existing client-type contract.)
-      const exposedActions = resolveApiActionSet(obj);
-      const apiConfig = obj.decoratorConfig?.api;
-
-      const customMethods = Object.entries(methods).filter(
-        ([name, method]) =>
-          !GENERATED_CLIENT_CRUD_METHODS.has(name) &&
-          method.isPublic &&
-          exposedActions.has(name),
-      );
-
-      // Generate custom method implementations using the same route metadata
-      // as the SvelteKit server generator. All fetchers reject on !response.ok
-      // (#1796) via __smrtFetchJson.
-      const customMethodImpls = customMethods
-        .map(([methodName, method]) => {
-          const routeConfig = resolveApiActionRouteConfig(
-            methodName,
-            method,
-            apiConfig,
-            { kebabRoutes: options.kebabRoutes },
-            isCollectionManifestClass(manifest, obj)
-              ? 'collection'
-              : method.isStatic
-                ? 'collection'
-                : 'item',
-          );
-          const urlSegment = routeConfig.pathSegments.join('/');
-          const args =
-            routeConfig.scope === 'collection' ? 'options' : 'id, options';
-          const route =
-            routeConfig.scope === 'collection'
-              ? `basePath + '/${collection}/${urlSegment}'`
-              : `basePath + '/${collection}/' + id + '/${urlSegment}'`;
-          const actionUrl = `__smrtActionUrl(${route}, options, ${JSON.stringify(
-            routeConfig.pathParamNames,
-          )}, ${routeConfig.method === 'GET'})`;
-          const requestInit =
-            routeConfig.method === 'GET'
-              ? `{
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    }`
-              : `{
-      method: '${routeConfig.method}',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(options || {})
-    }`;
-          return `    ${methodName}: (${args}) => __smrtFetchActionResult(${actionUrl}, ${requestInit})`;
-        })
-        .join(',\n');
-
-      const customMethodsBlock =
-        customMethods.length > 0 ? `,\n${customMethodImpls}` : '';
-
-      return `
-  ${clientKey}: {
-    list: (params) => __smrtFetchJson(basePath + '/${collection}', {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    }),
-
-    get: (id) => __smrtFetchJson(basePath + '/${collection}/' + id, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    }),
-
-    create: (data) => __smrtFetchJson(basePath + '/${collection}', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }),
-
-    update: (id, data) => __smrtFetchJson(basePath + '/${collection}/' + id, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }),
-
-    delete: (id) => __smrtFetchOk(basePath + '/${collection}/' + id, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' }
-    }),
-
-    search: (query) => __smrtFetchJson(basePath + '/${collection}/search?q=' + encodeURIComponent(query), {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    })${customMethodsBlock}
-  }`;
-    })
-    .join(',');
-
-  return `
-// Auto-generated API client from SMRT objects
-// This file is generated automatically - do not edit
-
-${CLIENT_FETCH_RUNTIME}
-
-async function __smrtFetchActionResult(url, init) {
-  const body = await __smrtFetchJson(url, init);
-  return body &&
-    typeof body === 'object' &&
-    Object.prototype.hasOwnProperty.call(body, 'result')
-    ? body.result
-    : body;
-}
-
-function __smrtActionUrl(url, options, pathParamNames, includeQuery) {
-  const values = options && typeof options === 'object' ? options : {};
-  const pathParams = new Set(pathParamNames);
-  let resolvedUrl = url;
-  for (const name of pathParamNames) {
-    const value = values[name];
-    if (value === undefined || value === null) {
-      throw new Error('Missing generated client route parameter: ' + name);
-    }
-    resolvedUrl = resolvedUrl.replace(
-      '[' + name + ']',
-      encodeURIComponent(String(value)),
-    );
-  }
-
-  if (!includeQuery) return resolvedUrl;
-
-  const searchParams = new URLSearchParams();
-  for (const [name, value] of Object.entries(values)) {
-    if (pathParams.has(name) || value === undefined) continue;
-    if (Array.isArray(value)) {
-      for (const item of value) searchParams.append(name, String(item));
-      continue;
-    }
-    searchParams.append(
-      name,
-      value !== null && typeof value === 'object'
-        ? JSON.stringify(value)
-        : String(value),
-    );
-  }
-
-  const query = searchParams.toString();
-  return query ? resolvedUrl + '?' + query : resolvedUrl;
-}
-
-export function createClient(basePath = '/api/v1') {
-  return {${clientMethods}
-  };
-}
-
-export { createClient as default };
-`;
-}
-
 /**
  * Generate the virtual web-collection definition module
  * (`@happyvertical/smrt-virt-web`, #1761).
@@ -1629,7 +1456,7 @@ export { manifest as default };
  * Generate TypeScript declaration file for virtual modules
  * This eliminates the need for manual type maintenance
  */
-async function generateTypeDeclarationFile(
+export async function generateTypeDeclarationFile(
   manifest: SmartObjectManifest,
   projectRoot: string,
   typeDeclarationsPath: string,
@@ -1678,90 +1505,62 @@ ${fields}
     // runtime — otherwise consumers see methods in autocomplete that are
     // undefined at runtime.
     const apiClientInterface = selectApiClientEntries(manifest)
-      .map(({ obj, clientKey, dataInterfaceName }) => {
-        const { methods = {} } = obj;
-        const apiConfig = obj.decoratorConfig?.api;
-        const interfaceName = dataInterfaceName;
-        const exposedActions = resolveApiActionSet(obj);
-        const customMethods = Object.entries(methods).filter(
-          ([name, method]) =>
-            !GENERATED_CLIENT_CRUD_METHODS.has(name) &&
-            method.isPublic &&
-            exposedActions.has(name),
-        );
-
-        // Generate custom method signatures
-        const customMethodSignatures = customMethods
-          .map(([methodName, method]) => {
-            const routeConfig = resolveApiActionRouteConfig(
-              methodName,
-              method,
-              apiConfig,
-              {},
-              isCollectionManifestClass(manifest, obj)
-                ? 'collection'
-                : method.isStatic
-                  ? 'collection'
-                  : 'item',
-            );
-            const params = method.parameters || [];
-            const pathParamNames = new Set(routeConfig.pathParamNames);
-            const hasSingleOptionsParameter =
-              params.length === 1 && params[0]?.name === 'options';
-            const requiredPathProperties = routeConfig.pathParamNames
-              .map((name) => `${name}: string`)
-              .join('; ');
-            let optionsType: string;
-            if (hasSingleOptionsParameter) {
-              const directOptionsType = mapTypeScriptType(params[0].type);
-              optionsType = requiredPathProperties
-                ? `${directOptionsType} & { ${requiredPathProperties} }`
-                : directOptionsType;
-            } else {
-              const parameterNames = new Set(params.map((param) => param.name));
-              const properties = params.map(
-                (param) =>
-                  `${param.name}${pathParamNames.has(param.name) ? '' : '?'}: ${mapTypeScriptType(param.type)}`,
-              );
-              for (const pathParamName of routeConfig.pathParamNames) {
-                if (!parameterNames.has(pathParamName)) {
-                  properties.push(`${pathParamName}: string`);
-                }
-              }
-              optionsType =
-                properties.length > 0
-                  ? `{ ${properties.join('; ')} }`
-                  : 'Record<string, never>';
-            }
-            const optionsParameter = `${routeConfig.pathParamNames.length > 0 ? 'options' : 'options?'}: ${optionsType}`;
-            const signature =
-              routeConfig.scope === 'collection'
-                ? optionsParameter
-                : `id: string, ${optionsParameter}`;
-            return `      ${methodName}(${signature}): Promise<any>;`;
-          })
-          .join('\n');
-
-        const overriddenBaseMethods = customMethods
-          .map(([methodName]) => methodName)
-          .filter((methodName) =>
-            GENERATED_CLIENT_BASE_METHODS.has(methodName),
+      .map(
+        ({
+          obj,
+          clientKey,
+          dataInterfaceName,
+          crudMethods,
+          customMethods: exposedMethods,
+        }) => {
+          const { methods = {} } = obj;
+          const interfaceName = dataInterfaceName;
+          const exposedActionNames = new Set(
+            exposedMethods.map((method) => method.name),
           );
-        const crudOperationsType =
-          overriddenBaseMethods.length > 0
-            ? `Omit<CrudOperations<${interfaceName}>, ${overriddenBaseMethods
-                .map((methodName) => JSON.stringify(methodName))
-                .join(' | ')}>`
-            : `CrudOperations<${interfaceName}>`;
+          const customMethods = Object.entries(methods).filter(
+            ([name, method]) =>
+              !GENERATED_CLIENT_CRUD_METHODS.has(name) &&
+              method.isPublic &&
+              exposedActionNames.has(name),
+          );
 
-        if (customMethods.length > 0) {
-          // Object with custom methods: include both CRUD and custom methods
-          return `    ${clientKey}: ${crudOperationsType} & {\n${customMethodSignatures}\n    };`;
-        } else {
-          // Standard CRUD operations only
-          return `    ${clientKey}: ${crudOperationsType};`;
-        }
-      })
+          // Generate custom method signatures
+          const customMethodSignatures = customMethods
+            .map(([methodName]) => {
+              const exposedMethod = exposedMethods.find(
+                ({ name }) => name === methodName,
+              );
+              if (!exposedMethod) return '';
+              const signature = renderApiClientCustomMethodParameters(
+                exposedMethod,
+                mapTypeScriptType,
+              );
+              return `      ${methodName}(${signature}): Promise<any>;`;
+            })
+            .join('\n');
+
+          const overriddenBaseMethods = customMethods
+            .map(([methodName]) => methodName)
+            .filter((methodName) =>
+              GENERATED_CLIENT_BASE_METHODS.has(methodName),
+            );
+          const crudOperationsType = renderApiClientCrudType(
+            interfaceName,
+            crudMethods,
+            overriddenBaseMethods,
+          );
+
+          if (customMethods.length > 0) {
+            const intersection = crudOperationsType
+              ? `${crudOperationsType} & `
+              : '';
+            return `    ${JSON.stringify(clientKey)}: ${intersection}{\n${customMethodSignatures}\n    };`;
+          }
+
+          return `    ${JSON.stringify(clientKey)}: ${crudOperationsType ?? 'Record<string, never>'};`;
+        },
+      )
       .join('\n');
 
     // Typed web collection definitions (#1761): one entry per REST collection,
@@ -1772,7 +1571,7 @@ ${fields}
     const webCollectionInterface = selectWebCollectionEntries(manifest)
       .map(
         ({ collection, obj }) =>
-          `    ${collection}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${obj.className}Data>;`,
+          `    ${JSON.stringify(collection)}: SmrtWebCollectionDefinition<import('@happyvertical/smrt-virt-types').${obj.className}Data>;`,
       )
       .join('\n');
 

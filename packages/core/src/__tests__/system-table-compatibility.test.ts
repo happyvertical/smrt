@@ -7,6 +7,7 @@ import {
   ensureJobEventsSystemTableCompatibility,
   ensureJobsSystemTableCompatibility,
   migratePostgresSystemTimestamps,
+  planPostgresSystemTimestampMigrations,
 } from '../system/compatibility';
 import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from '../system/schema';
 
@@ -555,7 +556,91 @@ describe('system table compatibility', () => {
     expect(migration).toContain(
       'DROP FUNCTION IF EXISTS _smrt_append_change(text,text,text,text,timestamp without time zone)',
     );
+    expect(migration).toContain(
+      "IF to_regprocedure('_smrt_append_change(text,text,text,text,timestamp without time zone)') IS NOT NULL THEN",
+    );
     expect(migration).toContain('p_created_at TIMESTAMPTZ');
+  });
+
+  it('plans legacy PostgreSQL system timestamp conversions without mutating', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{ timezone: 'UTC', legacy_change_feed_function_exists: true }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { table_name: '_smrt_dispatch', column_name: 'created_at' },
+          { table_name: '_smrt_jobs', column_name: 'run_at' },
+        ],
+      });
+
+    const plan = await planPostgresSystemTimestampMigrations(
+      { url: 'postgresql://localhost/test', query } as any,
+      { legacyTimezone: 'UTC' },
+      'postgres',
+    );
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(plan).toEqual([
+      {
+        kind: 'column',
+        tableName: '_smrt_dispatch',
+        columnName: 'created_at',
+        sql: `ALTER TABLE "_smrt_dispatch" ALTER COLUMN "created_at" TYPE TIMESTAMPTZ USING "created_at" AT TIME ZONE 'UTC'`,
+      },
+      {
+        kind: 'column',
+        tableName: '_smrt_jobs',
+        columnName: 'run_at',
+        sql: `ALTER TABLE "_smrt_jobs" ALTER COLUMN "run_at" TYPE TIMESTAMPTZ USING "run_at" AT TIME ZONE 'UTC'`,
+      },
+      expect.objectContaining({
+        kind: 'change-feed-function',
+        tableName: '_smrt_changes',
+        sql: expect.stringContaining(
+          'DROP FUNCTION IF EXISTS _smrt_append_change',
+        ),
+      }),
+    ]);
+  });
+
+  it('does not re-plan an already-removed legacy change-feed helper', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{ timezone: 'UTC', legacy_change_feed_function_exists: false }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await expect(
+      planPostgresSystemTimestampMigrations(
+        { url: 'postgresql://localhost/test', query } as any,
+        { legacyTimezone: 'UTC' },
+        'postgres',
+      ),
+    ).resolves.toEqual([]);
+    expect(String(query.mock.calls[0]?.[0])).toContain('to_regprocedure');
+  });
+
+  it('refuses to preview the system timestamp migration outside a UTC session', async () => {
+    const query = vi.fn(async () => ({
+      rows: [
+        {
+          timezone: 'America/Edmonton',
+          legacy_change_feed_function_exists: false,
+        },
+      ],
+    }));
+
+    await expect(
+      planPostgresSystemTimestampMigrations(
+        { url: 'postgresql://localhost/test', query } as any,
+        { legacyTimezone: 'UTC' },
+        'postgres',
+      ),
+    ).rejects.toThrow('outside a UTC PostgreSQL session');
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('refuses to stamp a partial PostgreSQL system schema with legacy timestamps', async () => {

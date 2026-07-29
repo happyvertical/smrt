@@ -17,6 +17,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { generateDeclarations, generateDeclarationsFromCLI } from './index.js';
@@ -170,8 +171,8 @@ describe('generateDeclarations', () => {
     const clientDecl = readFileSync(join(outDir, 'smrt-client.d.ts'), 'utf-8');
     expect(clientDecl).toContain("declare module '@smrt/client'");
     // Client interface derives CRUD operations keyed by unique collection name.
-    expect(clientDecl).toContain('articles: CrudOperations<ArticleData>;');
-    expect(clientDecl).toContain('authors: CrudOperations<AuthorData>;');
+    expect(clientDecl).toContain('"articles": CrudOperations<ArticleData>;');
+    expect(clientDecl).toContain('"authors": CrudOperations<AuthorData>;');
 
     const typesDecl = readFileSync(join(outDir, 'smrt-types.d.ts'), 'utf-8');
     expect(typesDecl).toContain("declare module '@smrt/types'");
@@ -179,6 +180,49 @@ describe('generateDeclarations', () => {
     expect(typesDecl).toContain(
       "export type ArticleData = import('./smrt-objects').ArticleData;",
     );
+  });
+
+  it('quotes non-identifier collection keys in client and web declarations', async () => {
+    const manifest = buildManifest();
+    manifest.objects.AuditEvent = {
+      className: 'AuditEvent',
+      collection: 'audit-events',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+    } as any;
+
+    await generateDeclarations({
+      manifest,
+      outDir,
+      includeVirtualModules: true,
+      includeObjectTypes: true,
+    });
+
+    const clientDecl = readFileSync(join(outDir, 'smrt-client.d.ts'), 'utf-8');
+    const webDecl = readFileSync(join(outDir, 'smrt-web.d.ts'), 'utf-8');
+    expect(clientDecl).toContain(
+      '"audit-events": CrudOperations<AuditEventData>;',
+    );
+    expect(webDecl).toContain('"audit-events": SmrtWebCollectionDefinition<');
+
+    const sourceFile = ts.createSourceFile(
+      'generated-virtual-modules.d.ts',
+      `${clientDecl}\n${webDecl}`,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TS,
+    );
+    const diagnostics = (
+      sourceFile as ts.SourceFile & {
+        parseDiagnostics: readonly ts.Diagnostic[];
+      }
+    ).parseDiagnostics;
+    expect(
+      diagnostics.filter(
+        (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+      ),
+    ).toEqual([]);
   });
 
   it('types canonical collection endpoints from populated models regardless of manifest order', async () => {
@@ -209,16 +253,66 @@ describe('generateDeclarations', () => {
 
     expect(collectionFirstClient).toBe(modelFirstClient);
     expect(collectionFirstClient).toContain(
-      'agreementExecutions: CrudOperations<AgreementExecutionData>;',
+      '"agreementExecutions": CrudOperations<AgreementExecutionData>;',
     );
     expect(collectionFirstClient).toContain(
-      'agreementExecutionCollection: CrudOperations<AgreementExecutionData>;',
+      '"agreementExecutionCollection": CrudOperations<AgreementExecutionData>;',
     );
     expect(collectionFirstClient).not.toContain(
-      'agreementExecutions: CrudOperations<AgreementExecutionCollectionData>;',
+      '"agreementExecutions": CrudOperations<AgreementExecutionCollectionData>;',
     );
     expect(objectTypes).toMatch(
       /export interface AgreementExecutionData \{[\s\S]*status: string;[\s\S]*amount: number;[\s\S]*\}/,
+    );
+  });
+
+  it('declares a hidden item companion as custom-only without phantom CRUD', async () => {
+    const manifest = {
+      version: '1.0.0',
+      timestamp: 1,
+      objects: {
+        Secret: {
+          className: 'Secret',
+          collection: 'secrets',
+          extends: 'SmrtObject',
+          fields: { value: { type: 'text' } },
+          methods: {},
+          decoratorConfig: { api: false },
+        },
+        SecretCollection: {
+          className: 'SecretCollection',
+          collection: 'secrets',
+          extends: 'SmrtCollection',
+          extendsTypeArg: 'Secret',
+          fields: {},
+          methods: {
+            reveal: {
+              name: 'reveal',
+              async: true,
+              parameters: [{ name: 'token', type: 'text' }],
+              returnType: 'string',
+              isStatic: false,
+              isPublic: true,
+            },
+          },
+          decoratorConfig: {
+            api: { routes: { reveal: { path: 'reveal/[token]' } } },
+          },
+        },
+      },
+    } as SmartObjectManifest;
+
+    await generateDeclarations({ manifest, outDir });
+    const clientDeclaration = readFileSync(
+      join(outDir, 'smrt-client.d.ts'),
+      'utf-8',
+    );
+
+    expect(clientDeclaration).toContain(
+      '"secrets": {\n      reveal(options: { token: string }): Promise<any>;\n    };',
+    );
+    expect(clientDeclaration).not.toContain(
+      '"secrets": CrudOperations<SecretData>',
     );
   });
 

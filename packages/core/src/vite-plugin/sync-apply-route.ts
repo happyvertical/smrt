@@ -25,6 +25,7 @@ import type {
 } from '../scanner/types';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
+import { isCollectionManifestClass } from './web-collections.js';
 
 const MUTATING_ACTIONS = ['create', 'update', 'delete'] as const;
 
@@ -113,11 +114,6 @@ function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
   return Array.isArray(config?.writable) ? config.writable : null;
 }
 
-/** Mirror of sveltekit-generator.ts `isCollectionClass`. */
-function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
-  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
-}
-
 /**
  * Collect the syncable targets from a manifest: non-collection objects whose
  * API config is enabled and exposes at least one mutating action.
@@ -128,7 +124,7 @@ export function collectSyncApplyTargets(
   const targets: SyncTargetSpec[] = [];
 
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
-    if (isCollectionClass(objectDef)) continue;
+    if (isCollectionManifestClass(manifest, objectDef)) continue;
 
     const apiConfig = objectDef.decoratorConfig?.api;
     if (apiConfig === false) continue;

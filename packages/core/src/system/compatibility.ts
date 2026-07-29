@@ -107,6 +107,90 @@ export interface PostgresSystemTimestampMigrationConfirmation {
   legacyTimezone: 'UTC';
 }
 
+export interface PostgresSystemTimestampMigrationPlan {
+  kind: 'column' | 'change-feed-function';
+  tableName: string;
+  columnName?: string;
+  sql: string;
+}
+
+function quotePostgresIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+/**
+ * Read-only plan for the framework-owned timestamp conversion. This is kept
+ * separate from the atomic mutator so CLI dry-runs can report every ALTER
+ * without bootstrapping or changing framework tables.
+ */
+export async function planPostgresSystemTimestampMigrations(
+  db: DatabaseInterface,
+  confirmation: PostgresSystemTimestampMigrationConfirmation,
+  typeHint?: string,
+): Promise<PostgresSystemTimestampMigrationPlan[]> {
+  if (getDatabaseEngine(db, typeHint) !== 'postgres') return [];
+  if (confirmation.legacyTimezone !== 'UTC') {
+    throw new Error(
+      'Legacy SMRT system timestamp migration requires an explicit UTC provenance confirmation',
+    );
+  }
+
+  const sessionRows = getQueryRows(
+    await db.query(`
+      SELECT
+        current_setting('TimeZone') AS timezone,
+        to_regprocedure('${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}')
+          IS NOT NULL AS legacy_change_feed_function_exists
+    `),
+  );
+  const session = sessionRows[0] ?? {};
+  const timezone = String(session.timezone ?? '').toUpperCase();
+  if (!['UTC', 'ETC/UTC', 'GMT'].includes(timezone)) {
+    throw new Error(
+      `Refusing to preview legacy SMRT timestamp migration outside a UTC PostgreSQL session (current TimeZone: ${String(session.timezone ?? 'unknown')})`,
+    );
+  }
+
+  const rows = getQueryRows(
+    await db.query(`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = current_schema()
+        AND table_name LIKE '\\_smrt\\_%' ESCAPE '\\'
+        AND data_type = 'timestamp without time zone'
+      ORDER BY table_name, ordinal_position
+    `),
+  );
+
+  const plans: PostgresSystemTimestampMigrationPlan[] = rows.map((row) => {
+    const tableName = String(row.table_name);
+    const columnName = String(row.column_name);
+    const table = quotePostgresIdentifier(tableName);
+    const column = quotePostgresIdentifier(columnName);
+    return {
+      kind: 'column',
+      tableName,
+      columnName,
+      sql: `ALTER TABLE ${table} ALTER COLUMN ${column} TYPE TIMESTAMPTZ USING ${column} AT TIME ZONE 'UTC'`,
+    };
+  });
+
+  if (
+    session.legacy_change_feed_function_exists === true ||
+    session.legacy_change_feed_function_exists === 't' ||
+    session.legacy_change_feed_function_exists === 'true' ||
+    session.legacy_change_feed_function_exists === 1
+  ) {
+    plans.push({
+      kind: 'change-feed-function',
+      tableName: '_smrt_changes',
+      sql: `DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};\n${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}`,
+    });
+  }
+
+  return plans;
+}
+
 /**
  * Fail closed when framework-owned PostgreSQL tables still contain legacy
  * timezone-naive timestamps. Call this before recording the current system
@@ -180,7 +264,7 @@ export async function migratePostgresSystemTimestamps(
           target.column_name
         );
       END LOOP;
-      IF to_regclass('_smrt_changes') IS NOT NULL THEN
+      IF to_regprocedure('${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}') IS NOT NULL THEN
         DROP FUNCTION IF EXISTS ${LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY};
         EXECUTE $smrt_change_feed_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION.trim()}
