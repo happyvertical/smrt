@@ -293,6 +293,20 @@ describe('LeadWorkflowService', () => {
       'may only be set through LeadWorkflowService',
     );
 
+    const opportunityTask = await workflow(() =>
+      activities.create({
+        tenantId,
+        subjectKind: 'opportunity',
+        subjectId: randomUUID(),
+        activityKind: 'task',
+        summary: 'Existing opportunity task',
+        dueAt: new Date('2026-09-01T16:00:00Z'),
+        actorProfileId,
+      }),
+    );
+    opportunityTask.completedAt = new Date('2026-09-01T17:00:00Z');
+    await expect(opportunityTask.save()).resolves.toBe(opportunityTask);
+
     const completed = await workflow(() =>
       service.completeNextAction({
         leadId: lead.id as string,

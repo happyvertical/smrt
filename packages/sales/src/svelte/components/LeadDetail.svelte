@@ -81,6 +81,19 @@ let humanActivitySummary = $state('');
 let nextActionSummary = $state('');
 let nextActionDueAt = $state('');
 
+// Hosts can retain this component while selecting another Lead. Clear every
+// draft in that case so no owner, reason, or activity for the old Lead can be
+// submitted against the new one.
+$effect(() => {
+  lead.id;
+  selectedRepId = '';
+  disqualificationReason = '';
+  humanActivityKind = 'note';
+  humanActivitySummary = '';
+  nextActionSummary = '';
+  nextActionDueAt = '';
+});
+
 function submitAssignment() {
   if (selectedRepId) onAssign?.(lead.id, selectedRepId);
 }

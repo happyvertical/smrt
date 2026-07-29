@@ -524,7 +524,9 @@ export class LeadWorkflowService {
         'Lead workflow mutations require a transaction-capable database adapter',
       );
     }
-    const transaction = db.transaction;
+    // `transaction()` is an adapter method, not a detached callback: bind the
+    // database receiver before the serial queue invokes it later.
+    const transaction = db.transaction.bind(db);
     const runTransaction = async () =>
       await transaction(async (tx) =>
         fn(

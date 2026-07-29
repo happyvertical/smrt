@@ -154,9 +154,10 @@ export class SalesActivity extends SmrtObject {
   }
 
   /**
-   * Keep task completion monotonic and service-owned even for direct model
-   * callers. Immutable activities have no generated update endpoint; this
-   * guard also closes the direct `model.completedAt = …; save()` escape hatch.
+   * Keep Lead-task completion monotonic and service-owned even for direct
+   * model callers. The shared activity model continues to support existing
+   * opportunity and imported-history completion flows; only the Lead
+   * follow-up workflow owns its task completion transition.
    */
   override async save(): Promise<this> {
     const priorCompletedAt = await this.resolvePersistedCompletedAt();
@@ -173,7 +174,11 @@ export class SalesActivity extends SmrtObject {
         'SalesActivity.completedAt is monotonic and cannot be changed once set.',
       );
     }
-    if (isNewCompletion && !workflowCompletionPermits.has(this)) {
+    if (
+      isLeadTask(this) &&
+      isNewCompletion &&
+      !workflowCompletionPermits.has(this)
+    ) {
       throw new Error(
         'SalesActivity.completedAt may only be set through LeadWorkflowService.',
       );
@@ -207,6 +212,10 @@ export class SalesActivity extends SmrtObject {
 
 function sameInstant(expected: Date, actual: Date | null): actual is Date {
   return actual !== null && expected.getTime() === actual.getTime();
+}
+
+function isLeadTask(activity: SalesActivity): boolean {
+  return activity.subjectKind === 'lead' && activity.activityKind === 'task';
 }
 
 export default SalesActivity;
