@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-workbench",
-  "version": "0.40.24",
+  "version": "0.40.33",
   "description": "Shared SMRT package and project workbench",
   "type": "module",
   "main": "./dist/index.js",

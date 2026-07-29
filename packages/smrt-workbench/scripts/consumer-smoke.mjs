@@ -3,6 +3,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -15,7 +17,12 @@ import assert from 'node:assert/strict';
 
 const packageRoot = resolve(import.meta.dirname, '..');
 const repoRoot = resolve(packageRoot, '..', '..');
-const tempRoot = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-workbench-pack-')));
+const packageVersion = JSON.parse(
+  readFileSync(join(packageRoot, 'package.json'), 'utf8'),
+).version;
+const tempRoot = realpathSync(
+  mkdtempSync(join(tmpdir(), 'smrt-workbench-pack-')),
+);
 const consumerRoot = join(tempRoot, 'consumer');
 const scopeDir = join(consumerRoot, 'node_modules', '@happyvertical');
 const installedRoot = join(scopeDir, 'smrt-workbench');
@@ -31,6 +38,26 @@ function run(command, args, options = {}) {
   });
 }
 
+function linkInstalledDependencies(sourceNodeModules, targetNodeModules) {
+  mkdirSync(targetNodeModules, { recursive: true });
+  for (const entry of readdirSync(sourceNodeModules, { withFileTypes: true })) {
+    const source = join(sourceNodeModules, entry.name);
+    const target = join(targetNodeModules, entry.name);
+    if (entry.isDirectory() && entry.name.startsWith('@')) {
+      mkdirSync(target, { recursive: true });
+      for (const scopedEntry of readdirSync(source)) {
+        symlinkSync(
+          realpathSync(join(source, scopedEntry)),
+          join(target, scopedEntry),
+          'dir',
+        );
+      }
+      continue;
+    }
+    symlinkSync(realpathSync(source), target, 'dir');
+  }
+}
+
 try {
   const packResult = JSON.parse(
     run('npm', [
@@ -42,7 +69,11 @@ try {
     ]),
   );
   const tarballName = packResult.at(-1)?.filename;
-  assert.equal(typeof tarballName, 'string', 'npm pack did not return a tarball');
+  assert.equal(
+    typeof tarballName,
+    'string',
+    'npm pack did not return a tarball',
+  );
 
   mkdirSync(installedRoot, { recursive: true });
   run(
@@ -68,16 +99,17 @@ try {
     'packed artifact omitted the workbench runtime',
   );
 
-  symlinkSync(
+  linkInstalledDependencies(
     join(packageRoot, 'node_modules'),
     join(installedRoot, 'node_modules'),
-    'dir',
   );
-  symlinkSync(
-    join(repoRoot, 'packages', 'content'),
-    join(scopeDir, 'smrt-content'),
-    'dir',
-  );
+  if (!existsSync(join(scopeDir, 'smrt-content'))) {
+    symlinkSync(
+      join(repoRoot, 'packages', 'content'),
+      join(scopeDir, 'smrt-content'),
+      'dir',
+    );
+  }
   writeFileSync(
     join(consumerRoot, 'package.json'),
     `${JSON.stringify(
@@ -86,8 +118,8 @@ try {
         private: true,
         type: 'module',
         dependencies: {
-          '@happyvertical/smrt-content': '0.40.24',
-          '@happyvertical/smrt-workbench': '0.40.24',
+          '@happyvertical/smrt-content': packageVersion,
+          '@happyvertical/smrt-workbench': packageVersion,
         },
       },
       null,
@@ -96,16 +128,16 @@ try {
   );
 
   const runtime = await import(
-    `${pathToFileURL(join(installedRoot, 'dist', 'index.js')).href}?smoke=${Date.now()}`
+    `${
+      pathToFileURL(join(installedRoot, 'dist', 'index.js')).href
+    }?smoke=${Date.now()}`
   );
   const scope = runtime.resolveWorkbenchScope(consumerRoot);
   assert.equal(scope.mode, 'consumer');
 
   const project = await runtime.buildWorkbenchProject(scope);
   assert.equal(
-    project.packages.some(
-      (pkg) => pkg.name === '@happyvertical/smrt-content',
-    ),
+    project.packages.some((pkg) => pkg.name === '@happyvertical/smrt-content'),
     true,
     'consumer metadata omitted the installed content package',
   );
