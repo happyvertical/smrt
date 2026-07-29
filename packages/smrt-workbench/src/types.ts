@@ -1,4 +1,6 @@
-export type WorkbenchComponentType = (...args: any[]) => any;
+import type { Component } from 'svelte';
+
+export type WorkbenchComponentType = Component<Record<string, unknown>>;
 export type WorkbenchComponentModule =
   | WorkbenchComponentType
   | {

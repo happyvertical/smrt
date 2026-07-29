@@ -4,9 +4,9 @@
  * Shared SMRT package/project workbench host launcher.
  */
 
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { importWorkspaceModule } from '@happyvertical/smrt-core/utils/import-workspace-module';
 import type { CLICommand } from '../cli-generator.js';
@@ -25,6 +25,99 @@ interface SmrtWorkbenchRuntime {
 }
 
 let workbenchRuntimePromise: Promise<SmrtWorkbenchRuntime> | null = null;
+
+function packageManagerEntryMatches(
+  command: string,
+  entryPath: string,
+): boolean {
+  const expectedNames: Record<string, string[]> = {
+    npm: ['npm-cli.js', 'npm.cjs', 'npm.js'],
+    pnpm: ['pnpm.cjs', 'pnpm.js'],
+    yarn: ['yarn.cjs', 'yarn.js'],
+  };
+  return (
+    expectedNames[command]?.includes(basename(entryPath).toLowerCase()) ?? false
+  );
+}
+
+function resolveWindowsCommandShimEntry(command: string): string | null {
+  let shimPaths: string;
+  try {
+    shimPaths = execFileSync('where.exe', [`${command}.cmd`], {
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+  } catch {
+    return null;
+  }
+
+  const shimPath = shimPaths
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find(Boolean);
+  if (!shimPath || !existsSync(shimPath)) return null;
+
+  try {
+    const packageRoot = realpathSync(
+      join(dirname(shimPath), 'node_modules', command),
+    );
+    const shim = readFileSync(shimPath, 'utf8');
+    const entryPattern = /(?:%dp0%|%~dp0)([^"\r\n]*?\.(?:cjs|mjs|js))/gi;
+    for (const match of shim.matchAll(entryPattern)) {
+      const relativeEntry = match[1]
+        ?.replace(/^[\\/]+/, '')
+        .replace(/[\\/]+/g, sep);
+      if (!relativeEntry) continue;
+      const entryPath = resolve(dirname(shimPath), relativeEntry);
+      const realEntryPath = existsSync(entryPath)
+        ? realpathSync(entryPath)
+        : null;
+      if (
+        realEntryPath?.startsWith(`${packageRoot}${sep}`) &&
+        packageManagerEntryMatches(command, realEntryPath)
+      ) {
+        return realEntryPath;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function windowsPackageManagerInvocation(
+  command: string,
+  args: string[],
+): { command: string; args: string[] } {
+  const nodeRoot = dirname(process.execPath);
+  const bundledEntry =
+    command === 'npm'
+      ? join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+      : join(nodeRoot, 'node_modules', 'corepack', 'dist', `${command}.js`);
+  if (existsSync(bundledEntry)) {
+    return {
+      command: process.execPath,
+      args: [bundledEntry, ...args],
+    };
+  }
+
+  const shimEntry = resolveWindowsCommandShimEntry(command);
+  if (shimEntry) {
+    return {
+      command: process.execPath,
+      args: [shimEntry, ...args],
+    };
+  }
+
+  // Standalone and version-manager installations commonly expose a native
+  // package-manager shim. An .exe can be launched directly without a shell;
+  // a cmd.exe fallback is deliberately excluded because CLI arguments may
+  // include consumer-controlled paths and host values.
+  return {
+    command: `${command}.exe`,
+    args,
+  };
+}
 
 function findWorkspaceWorkbenchRoot(cwd: string): string | null {
   let current = resolve(cwd);
@@ -124,11 +217,16 @@ function runCommand(
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(command, args, {
+    const invocation =
+      process.platform === 'win32'
+        ? windowsPackageManagerInvocation(command, args)
+        : { command, args };
+
+    const child = spawn(invocation.command, invocation.args, {
       cwd,
       env,
       stdio: 'inherit',
-      shell: process.platform === 'win32',
+      shell: false,
     });
 
     child.on('error', reject);
@@ -141,6 +239,28 @@ function runCommand(
       reject(new Error(`${command} exited with code ${code ?? 1}`));
     });
   });
+}
+
+function resolveWorkbenchPort(value: string | undefined): string {
+  const port = value ?? '5570';
+  if (!/^[1-9]\d*$/.test(port)) {
+    throw new Error(
+      `Invalid workbench port "${port}". Expected an integer from 1 to 65535.`,
+    );
+  }
+
+  const numericPort = Number(port);
+  if (!Number.isSafeInteger(numericPort) || numericPort > 65535) {
+    throw new Error(
+      `Invalid workbench port "${port}". Expected an integer from 1 to 65535.`,
+    );
+  }
+
+  return String(numericPort);
+}
+
+function workbenchUrlHost(host: string): string {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
 function isLoopbackHost(host: string): boolean {
@@ -283,8 +403,8 @@ export const workbenchCommands: Record<string, CLICommand> = {
           `Refusing to expose the workbench on non-loopback host "${host}". Re-run with --allow-remote only on a trusted network.`,
         );
       }
-      const port = options.port || '5570';
-      const url = `http://${host}:${port}/`;
+      const port = resolveWorkbenchPort(options.port);
+      const url = `http://${workbenchUrlHost(host)}:${port}/`;
       const env = {
         ...process.env,
         SMRT_WORKBENCH_CWD: cwd,

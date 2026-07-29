@@ -6,13 +6,16 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { importWorkspaceModuleMock, spawnMock } = vi.hoisted(() => ({
-  importWorkspaceModuleMock: vi.fn(),
-  spawnMock: vi.fn(),
-}));
+const { execFileSyncMock, importWorkspaceModuleMock, spawnMock } = vi.hoisted(
+  () => ({
+    execFileSyncMock: vi.fn(),
+    importWorkspaceModuleMock: vi.fn(),
+    spawnMock: vi.fn(),
+  }),
+);
 
 vi.mock('@happyvertical/smrt-core/utils/import-workspace-module', () => ({
   importWorkspaceModule: importWorkspaceModuleMock,
@@ -20,7 +23,11 @@ vi.mock('@happyvertical/smrt-core/utils/import-workspace-module', () => ({
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
-  return { ...actual, spawn: spawnMock };
+  return {
+    ...actual,
+    execFileSync: execFileSyncMock,
+    spawn: spawnMock,
+  };
 });
 
 async function loadCommands() {
@@ -45,6 +52,9 @@ describe('workbench commands', () => {
       '{"name":"smrt-workbench-host"}\n',
     );
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    execFileSyncMock.mockImplementation(() => {
+      throw new Error('not found');
+    });
     importWorkspaceModuleMock.mockResolvedValue({
       findSmrtWorkbenchWorkspaceRoot: () => projectRoot,
       resolveWorkbenchScope: (
@@ -72,6 +82,7 @@ describe('workbench commands', () => {
     process.chdir(originalCwd);
     logSpy.mockRestore();
     importWorkspaceModuleMock.mockReset();
+    execFileSyncMock.mockReset();
     spawnMock.mockReset();
     rmSync(projectRoot, { recursive: true, force: true });
   });
@@ -99,6 +110,7 @@ describe('workbench commands', () => {
       ],
       expect.objectContaining({
         cwd: projectRoot,
+        shell: false,
         env: expect.objectContaining({
           SMRT_WORKBENCH_CWD: projectRoot,
           SMRT_WORKBENCH_PROJECT_ROOT: projectRoot,
@@ -134,6 +146,205 @@ describe('workbench commands', () => {
     ).rejects.toThrow('Refusing to expose the workbench');
 
     expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '0',
+    '65536',
+    '1.5',
+    '5570 & calc',
+  ])('rejects invalid workbench port %s', async (port) => {
+    await expect(
+      (await loadCommands())['workbench:dev'].handler([], { port }),
+    ).rejects.toThrow('Expected an integer from 1 to 65535');
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the Windows command shim without enabling a shell', async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      'platform',
+    );
+    const execPathDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      'execPath',
+    );
+    const originalNpmExecPath = process.env.npm_execpath;
+    const windowsNode = join(projectRoot, 'node.exe');
+    const corepackEntry = join(
+      projectRoot,
+      'node_modules',
+      'corepack',
+      'dist',
+      'pnpm.js',
+    );
+    mkdirSync(join(projectRoot, 'node_modules', 'corepack', 'dist'), {
+      recursive: true,
+    });
+    writeFileSync(windowsNode, '');
+    writeFileSync(corepackEntry, '');
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: 'win32',
+    });
+    Object.defineProperty(process, 'execPath', {
+      configurable: true,
+      value: windowsNode,
+    });
+    delete process.env.npm_execpath;
+
+    try {
+      await (await loadCommands())['workbench:dev'].handler([], {
+        port: '5570',
+      });
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor);
+      }
+      if (execPathDescriptor) {
+        Object.defineProperty(process, 'execPath', execPathDescriptor);
+      }
+      if (originalNpmExecPath === undefined) {
+        delete process.env.npm_execpath;
+      } else {
+        process.env.npm_execpath = originalNpmExecPath;
+      }
+    }
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      windowsNode,
+      expect.arrayContaining([corepackEntry, '--port', '5570']),
+      expect.objectContaining({ shell: false }),
+    );
+  });
+
+  it('resolves a global pnpm cmd shim without enabling a shell', async () => {
+    const platformDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      'platform',
+    );
+    const execPathDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      'execPath',
+    );
+    const originalNpmExecPath = process.env.npm_execpath;
+    const windowsNode = join(projectRoot, 'node.exe');
+    const pnpmShim = join(projectRoot, 'pnpm.cmd');
+    const pnpmCli = join(
+      projectRoot,
+      'node_modules',
+      'pnpm',
+      'bin',
+      'pnpm.cjs',
+    );
+    mkdirSync(join(projectRoot, 'node_modules', 'pnpm', 'bin'), {
+      recursive: true,
+    });
+    writeFileSync(windowsNode, '');
+    writeFileSync(pnpmCli, '');
+    writeFileSync(
+      pnpmShim,
+      '@"%dp0%\\node.exe" "%dp0%\\node_modules\\pnpm\\bin\\pnpm.cjs" %*\n',
+    );
+    execFileSyncMock.mockReturnValue(`${pnpmShim}\r\n`);
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: 'win32',
+    });
+    Object.defineProperty(process, 'execPath', {
+      configurable: true,
+      value: windowsNode,
+    });
+    delete process.env.npm_execpath;
+
+    try {
+      await (await loadCommands())['workbench:dev'].handler([], {
+        port: '5570',
+      });
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor);
+      }
+      if (execPathDescriptor) {
+        Object.defineProperty(process, 'execPath', execPathDescriptor);
+      }
+      if (originalNpmExecPath === undefined) {
+        delete process.env.npm_execpath;
+      } else {
+        process.env.npm_execpath = originalNpmExecPath;
+      }
+    }
+
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      'where.exe',
+      ['pnpm.cmd'],
+      expect.objectContaining({ windowsHide: true }),
+    );
+    expect(spawnMock).toHaveBeenCalledWith(
+      windowsNode,
+      expect.arrayContaining([pnpmCli, '--port', '5570']),
+      expect.objectContaining({ shell: false }),
+    );
+
+    spawnMock.mockClear();
+    const attackerRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), 'smrt-workbench-attacker-')),
+    );
+    const attackerCli = join(attackerRoot, 'pnpm.cjs');
+    writeFileSync(attackerCli, '');
+    writeFileSync(
+      pnpmShim,
+      `@"%dp0%\\node.exe" "%dp0%\\..\\${basename(attackerRoot)}\\pnpm.cjs" %*\n`,
+    );
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: 'win32',
+    });
+    Object.defineProperty(process, 'execPath', {
+      configurable: true,
+      value: windowsNode,
+    });
+    try {
+      await (await loadCommands())['workbench:dev'].handler([], {
+        port: '5571',
+      });
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor);
+      }
+      if (execPathDescriptor) {
+        Object.defineProperty(process, 'execPath', execPathDescriptor);
+      }
+      rmSync(attackerRoot, { recursive: true, force: true });
+    }
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'pnpm.exe',
+      expect.arrayContaining(['--port', '5571']),
+      expect.objectContaining({ shell: false }),
+    );
+    expect(spawnMock).not.toHaveBeenCalledWith(
+      windowsNode,
+      expect.arrayContaining([attackerCli]),
+      expect.anything(),
+    );
+  });
+
+  it('formats an IPv6 loopback address as a valid display URL', async () => {
+    await (await loadCommands())['workbench:dev'].handler([], {
+      host: '::1',
+      port: '5570',
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('http://[::1]:5570/'),
+    );
+    expect(spawnMock).toHaveBeenCalledWith(
+      'pnpm',
+      expect.arrayContaining(['--host', '::1']),
+      expect.objectContaining({ shell: false }),
+    );
   });
 
   it('explains the node-modules requirement for Yarn Plug’n’Play', async () => {
@@ -210,6 +421,77 @@ describe('workbench commands', () => {
           SMRT_WORKBENCH_PROJECT_ROOT: projectRoot,
         }),
       }),
+    );
+
+    spawnMock.mockClear();
+    const platformDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      'platform',
+    );
+    const execPathDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      'execPath',
+    );
+    const originalNpmExecPath = process.env.npm_execpath;
+    const windowsNode = join(projectRoot, 'node.exe');
+    const npmCli = join(
+      projectRoot,
+      'node_modules',
+      'npm',
+      'bin',
+      'npm-cli.js',
+    );
+    mkdirSync(join(projectRoot, 'node_modules', 'npm', 'bin'), {
+      recursive: true,
+    });
+    writeFileSync(windowsNode, '');
+    writeFileSync(npmCli, '');
+    const unrelatedPnpmExecPath = join(projectRoot, 'pnpm.cjs');
+    writeFileSync(unrelatedPnpmExecPath, '');
+    Object.defineProperty(process, 'platform', {
+      configurable: true,
+      value: 'win32',
+    });
+    Object.defineProperty(process, 'execPath', {
+      configurable: true,
+      value: windowsNode,
+    });
+    process.env.npm_execpath = unrelatedPnpmExecPath;
+
+    try {
+      await commands['workbench:dev'].handler([], {
+        host: '127.0.0.1',
+        port: '5573',
+      });
+    } finally {
+      if (platformDescriptor) {
+        Object.defineProperty(process, 'platform', platformDescriptor);
+      }
+      if (execPathDescriptor) {
+        Object.defineProperty(process, 'execPath', execPathDescriptor);
+      }
+      if (originalNpmExecPath === undefined) {
+        delete process.env.npm_execpath;
+      } else {
+        process.env.npm_execpath = originalNpmExecPath;
+      }
+    }
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      windowsNode,
+      [
+        npmCli,
+        '--prefix',
+        join(installedRoot, 'host'),
+        'run',
+        'dev',
+        '--',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '5573',
+      ],
+      expect.objectContaining({ cwd: projectRoot, shell: false }),
     );
 
     spawnMock.mockClear();
