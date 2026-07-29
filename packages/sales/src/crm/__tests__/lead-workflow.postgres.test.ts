@@ -22,6 +22,15 @@ interface TransactionDatabase extends DatabaseInterface {
   transaction<T>(fn: (tx: DatabaseInterface) => Promise<T>): Promise<T>;
 }
 
+function rowsOf(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result as Record<string, unknown>[];
+  if (result && typeof result === 'object' && 'rows' in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows as Record<string, unknown>[];
+  }
+  return [];
+}
+
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
 describePostgres('LeadWorkflowService on PostgreSQL', () => {
@@ -115,7 +124,7 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
     await db.query('DROP FUNCTION fail_lead_assignment_audit()');
   });
 
-  it('locks concurrent completion to one effective task-completion audit and one exact replay', async () => {
+  it('blocks a second completion session until the first row lock commits', async () => {
     const tenantId = randomUUID();
     const actorProfileId = randomUUID();
     const lead = await createLead(tenantId);
@@ -130,21 +139,59 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
     );
 
     // PostgreSQL transaction callback views intentionally omit the pool's
-    // `acquireSession` capability. Record their queries to prove the workflow
-    // retains the outer adapter classification and still locks both rows.
+    // `acquireSession` capability. Pause the first session after it acquires
+    // the Lead row lock, then prove the second session is blocked by that
+    // backend before allowing the first transaction to continue.
     const originalTransaction = db.transaction.bind(db);
-    const transactionQueries: string[] = [];
-    db.transaction = async (callback) =>
-      await originalTransaction(async (tx) => {
+    let transactionIndex = 0;
+    let firstBackendPid = 0;
+    let secondBackendPid = 0;
+    let releaseFirstLock!: () => void;
+    const holdFirstLock = new Promise<void>((resolve) => {
+      releaseFirstLock = resolve;
+    });
+    let markFirstLockAcquired!: () => void;
+    const firstLockAcquired = new Promise<void>((resolve) => {
+      markFirstLockAcquired = resolve;
+    });
+    let markSecondLockAttempted!: () => void;
+    const secondLockAttempted = new Promise<void>((resolve) => {
+      markSecondLockAttempted = resolve;
+    });
+
+    db.transaction = async (callback) => {
+      const currentTransaction = transactionIndex;
+      transactionIndex += 1;
+      return await originalTransaction(async (tx) => {
         const query = tx.query.bind(tx);
+        const backendPid = Number(
+          rowsOf(await query('SELECT pg_backend_pid() AS backend_pid'))[0]
+            ?.backend_pid,
+        );
+        if (!Number.isInteger(backendPid) || backendPid <= 0) {
+          throw new Error('Expected a PostgreSQL backend pid');
+        }
+        if (currentTransaction === 0) firstBackendPid = backendPid;
+        if (currentTransaction === 1) secondBackendPid = backendPid;
+
+        let firstLockPaused = false;
         const tracked = new Proxy(tx, {
           get(target, property, receiver) {
             if (property === 'query') {
               return async (
                 ...args: Parameters<DatabaseInterface['query']>
               ) => {
-                transactionQueries.push(String(args[0]));
-                return await query(...args);
+                const isRowLock = /FOR UPDATE/u.test(String(args[0]));
+                if (currentTransaction === 1 && isRowLock) {
+                  markSecondLockAttempted();
+                }
+                const result = await query(...args);
+                if (currentTransaction === 0 && isRowLock && !firstLockPaused) {
+                  firstLockPaused = true;
+                  markFirstLockAcquired();
+                  await holdFirstLock;
+                }
+                return result;
               };
             }
             return Reflect.get(target, property, receiver);
@@ -152,16 +199,9 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
         }) as DatabaseInterface;
         return await callback(tracked);
       });
+    };
 
-    let ready = 0;
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
     const complete = async () => {
-      ready += 1;
-      if (ready === 2) release();
-      await gate;
       const workflow = await LeadWorkflowService.create({ db });
       return await withTenant({ tenantId }, () =>
         workflow.completeNextAction({
@@ -173,15 +213,47 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
       );
     };
 
-    const results = await Promise.all([complete(), complete()]);
+    let barrierTimedOut = false;
+    const barrierTimeout = setTimeout(() => {
+      barrierTimedOut = true;
+      markFirstLockAcquired();
+      markSecondLockAttempted();
+      releaseFirstLock();
+    }, 5_000);
+    const firstCompletion = complete();
+    await firstLockAcquired;
+    const secondCompletion = complete();
+    await secondLockAttempted;
+
+    let blockingPids: number[] = [];
+    const waitDeadline = Date.now() + 3_000;
+    while (blockingPids.length === 0 && Date.now() < waitDeadline) {
+      const blockingRows = rowsOf(
+        await db.query(
+          'SELECT pg_blocking_pids($1::integer) AS blocking_pids',
+          secondBackendPid,
+        ),
+      );
+      const value = blockingRows[0]?.blocking_pids;
+      blockingPids = Array.isArray(value) ? value.map(Number) : [];
+      if (blockingPids.length === 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      }
+    }
+
+    releaseFirstLock();
+    clearTimeout(barrierTimeout);
+    const results = await Promise.all([firstCompletion, secondCompletion]);
+    expect(barrierTimedOut).toBe(false);
+    expect(firstBackendPid).toBeGreaterThan(0);
+    expect(secondBackendPid).toBeGreaterThan(0);
+    expect(secondBackendPid).not.toBe(firstBackendPid);
+    expect(blockingPids).toContain(firstBackendPid);
     expect(results.map((result) => result.completed).sort()).toEqual([
       false,
       true,
     ]);
     expect(results[0].task.id).toBe(results[1].task.id);
-    expect(
-      transactionQueries.filter((query) => /FOR UPDATE/u.test(query)),
-    ).toHaveLength(4);
     await withTenant({ tenantId }, async () => {
       const timeline = await activities.findBySubject(
         'lead',
