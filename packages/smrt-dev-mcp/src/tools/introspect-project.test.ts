@@ -47,6 +47,7 @@ export class Product extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
         includeRelationships: true,
@@ -76,6 +77,7 @@ export class Product extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
         includeRelationships: true,
@@ -102,6 +104,7 @@ export class FakePackage extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -124,6 +127,7 @@ export class FakePackage extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -153,6 +157,7 @@ export class ProductSpec extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -172,6 +177,7 @@ export class Types extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -197,6 +203,7 @@ export class Model extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
       });
@@ -241,6 +248,7 @@ export class TectumTask extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
         includeRelationships: true,
@@ -287,6 +295,7 @@ export class TenantProject extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
       });
@@ -331,6 +340,7 @@ export class Model extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: false,
       });
@@ -355,6 +365,7 @@ export class Model extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
       });
@@ -389,6 +400,7 @@ export class Model extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -415,6 +427,7 @@ export class Model extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -441,6 +454,7 @@ export class Order extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeRelationships: true,
       });
@@ -464,6 +478,7 @@ export class Author extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeRelationships: true,
       });
@@ -487,6 +502,7 @@ export class Student extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeRelationships: true,
       });
@@ -510,6 +526,7 @@ export class Order extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeRelationships: false,
       });
@@ -532,6 +549,7 @@ export class Model extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -551,6 +569,7 @@ export class MyCollection extends SmrtCollection {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -569,6 +588,7 @@ export class RegularClass {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -593,6 +613,7 @@ export class Configured extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -641,7 +662,10 @@ export class Configured extends SmrtObject {
         ),
       );
 
-      const result = await introspectProject({ directory: tmpDir });
+      const result = await introspectProject({
+        detail: 'full',
+        directory: tmpDir,
+      });
       const parsed = JSON.parse(result);
 
       expect(parsed.manifestSource).toBe('manifest');
@@ -667,6 +691,7 @@ export class EmptyDecorator extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -698,6 +723,7 @@ export class Category extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -715,6 +741,7 @@ export class Category extends SmrtObject {
       const nonexistent = join(tmpDir, 'nonexistent');
 
       const result = await introspectProject({
+        detail: 'full',
         directory: nonexistent,
       });
 
@@ -743,6 +770,7 @@ export class Valid extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -766,6 +794,7 @@ export class Model extends SmrtObject {
       );
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -774,6 +803,7 @@ export class Model extends SmrtObject {
 
     it('should include project path in output', async () => {
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -783,6 +813,7 @@ export class Model extends SmrtObject {
 
     it('should include object count in output', async () => {
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -790,5 +821,119 @@ export class Model extends SmrtObject {
       expect(parsed).toHaveProperty('objectCount');
       expect(typeof parsed.objectCount).toBe('number');
     });
+  });
+});
+
+/**
+ * Budget regressions for #2143. A 42-object project returned 338,462 characters
+ * across 12,742 lines in the only mode that used to exist, so every call blew
+ * past tool-result budgets and became write-to-file plus `jq`.
+ */
+describe('introspectProject response budget', () => {
+  const OBJECT_COUNT = 42;
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = join(tmpdir(), `smrt-introspect-budget-${Date.now()}`);
+    await mkdir(join(tmpDir, 'src'), { recursive: true });
+    await writeFile(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({ name: '@acme/budget', version: '1.0.0' }, null, 2),
+    );
+
+    const classes = Array.from({ length: OBJECT_COUNT }, (_, index) =>
+      [
+        `@smrt({ tableName: 'thing_${index}s' })`,
+        `export class Thing${index} extends SmrtObject {`,
+        `  @foreignKey('Owner')`,
+        `  ownerId: string = '';`,
+        `  @crossPackageRef('@happyvertical/smrt-profiles:Profile')`,
+        `  profileId: string | null = null;`,
+        `  name: string = '';`,
+        `  count: number = 0;`,
+        `  price: number = 0.0;`,
+        `  active: boolean = false;`,
+        `  describe() {`,
+        `    return this.name;`,
+        `  }`,
+        '}',
+      ].join('\n'),
+    );
+
+    await writeFile(
+      join(tmpDir, 'src', 'models.ts'),
+      [
+        "import { crossPackageRef, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        '',
+        ...classes,
+      ].join('\n'),
+    );
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns every object of a 42-object project inside the default budget', async () => {
+    const result = await introspectProject({ directory: tmpDir });
+    const parsed = JSON.parse(result);
+
+    expect(parsed.detail).toBe('summary');
+    expect(parsed.objectCount).toBe(OBJECT_COUNT);
+    expect(parsed.objects).toHaveLength(OBJECT_COUNT);
+    expect(parsed.truncated).toBeUndefined();
+    expect(result.length).toBeLessThan(50_000);
+
+    const first = parsed.objects[0];
+    expect(first.className).toBe('Thing0');
+    expect(first.fieldCount).toBeGreaterThan(0);
+    expect(first.relationships).toContain('(foreignKey)');
+    expect(first.mcpOperations).toEqual([
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
+    ]);
+    // Summary mode must not carry the verbose payloads.
+    expect(first.fieldDetails).toBeUndefined();
+    expect(first.schema).toBeUndefined();
+    expect(first.methodDetails).toBeUndefined();
+  });
+
+  it('is far smaller than the same project in full detail', async () => {
+    const summary = await introspectProject({ directory: tmpDir });
+    const full = await introspectProject({
+      directory: tmpDir,
+      detail: 'full',
+      maxChars: Number.MAX_SAFE_INTEGER,
+    });
+
+    expect(summary.length).toBeLessThan(full.length / 5);
+  });
+
+  it('marks a truncated response instead of silently dropping objects', async () => {
+    const result = await introspectProject({
+      directory: tmpDir,
+      maxChars: 2_000,
+    });
+    const parsed = JSON.parse(result);
+
+    expect(parsed.objectCount).toBe(OBJECT_COUNT);
+    expect(parsed.objects.length).toBeLessThan(OBJECT_COUNT);
+    expect(parsed.objects.length).toBeGreaterThan(0);
+    expect(parsed.truncated.omittedObjectCount).toBe(
+      OBJECT_COUNT - parsed.objects.length,
+    );
+    expect(parsed.truncated.budgetChars).toBe(2_000);
+    expect(parsed.truncated.guidance).toContain('maxChars');
+  });
+
+  it('keeps at least one object when a single object exceeds the budget', async () => {
+    const result = await introspectProject({ directory: tmpDir, maxChars: 1 });
+    const parsed = JSON.parse(result);
+
+    expect(parsed.objects).toHaveLength(1);
+    expect(parsed.truncated.omittedObjectCount).toBe(OBJECT_COUNT - 1);
   });
 });

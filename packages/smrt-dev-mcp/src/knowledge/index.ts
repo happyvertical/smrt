@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import type { Dirent } from 'node:fs';
 import {
   existsSync,
   lstatSync,
@@ -7,11 +8,12 @@ import {
   readFileSync,
   realpathSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import {
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
 } from '@happyvertical/smrt-core/knowledge';
+import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import type {
   DomainKnowledgeManifest,
   DomainKnowledgeModuleDoc,
@@ -20,6 +22,30 @@ import type {
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'error' | 'warning';
 export type KnowledgeScope = 'project' | 'local' | 'package' | 'sdk';
+
+/**
+ * Where a package's objects actually came from (#2143). Recording provenance is
+ * what makes an empty answer distinguishable from an unseen one: `none` means
+ * discovery failed or the package has no SMRT model, and only the recorded
+ * reason says which.
+ */
+export type KnowledgeObjectSource =
+  | 'domain-artifact'
+  | 'manifest'
+  | 'scanner'
+  | 'none';
+
+/**
+ * `summary` keeps prompt bundles inside tool-result budgets by listing authored
+ * docs by path instead of embedding them; `full` restores embedding (#2143).
+ */
+export type KnowledgeDetail = 'summary' | 'full';
+
+/** Where the workspace package globs were read from. */
+export type WorkspaceGlobSource =
+  | 'pnpm-workspace.yaml'
+  | 'package.json#workspaces'
+  | 'fallback';
 
 export interface KnowledgeField {
   name: string;
@@ -90,10 +116,56 @@ export interface KnowledgePackage {
   prompts: KnowledgePrompt[];
   mcpTools: KnowledgeMcpTool[];
   relationshipFeatures: string[];
+  /** True for the workspace root itself, which is not a publishable package. */
+  isWorkspaceRoot: boolean;
+  /** `private: true` packages publish nothing, so packaging rules do not apply. */
+  isPrivate: boolean;
+  objectSource: KnowledgeObjectSource;
+  /**
+   * Machine-readable reason a package produced no objects, or a note about
+   * objects rejected during ownership validation.
+   */
+  objectSourceReason?: string;
+  /** Artifact paths consulted while resolving objects, relative to the root. */
+  checkedObjectPaths: string[];
+}
+
+/** A package the index looked at but got no objects from, and why (#2143). */
+export interface KnowledgeCoverageGap {
+  name: string;
+  reason: string;
+  checkedPaths: string[];
+  remedy: string;
+}
+
+/**
+ * What the index actually saw. Without this, a caller cannot tell "this project
+ * has no relationships" from "I could not see this project" (#2143).
+ */
+export interface KnowledgeCoverage {
+  workspaceGlobs: string[];
+  workspaceGlobSource: WorkspaceGlobSource;
+  packageDirs: string[];
+  packagesWithObjects: string[];
+  packagesWithoutObjects: KnowledgeCoverageGap[];
+}
+
+/**
+ * A discovery-quality signal, kept separate from `KnowledgeIssue` so coverage
+ * reporting never feeds the `dev:knowledge-check` freshness gate.
+ */
+export interface KnowledgeDiagnostic {
+  severity: KnowledgeIssueSeverity;
+  code: string;
+  message: string;
+  packageName?: string;
+  checkedPaths?: string[];
+  remedy?: string;
 }
 
 export interface SmrtKnowledgeIndex {
-  schemaVersion: 1;
+  /** 2 adds `coverage` and `diagnostics` (additive, #2143). */
+  schemaVersion: 2;
   generatedAt: string;
   rootDir: string;
   packages: KnowledgePackage[];
@@ -107,6 +179,8 @@ export interface SmrtKnowledgeIndex {
     polymorphicAssociations: number;
     uuidColumns: number;
   };
+  coverage: KnowledgeCoverage;
+  diagnostics: KnowledgeDiagnostic[];
 }
 
 export interface KnowledgeIssue {
@@ -141,12 +215,16 @@ export interface ReviewContextResult {
   selectedSdkPackages: KnowledgePackage[];
   deterministicFindings: KnowledgeIssue[];
   promptBundle: KnowledgePromptBundle;
+  coverage: KnowledgeCoverage;
+  diagnostics: KnowledgeDiagnostic[];
 }
 
 export interface ArchitectureContextResult {
   selectedPackages: KnowledgePackage[];
   selectedSdkPackages: KnowledgePackage[];
   promptBundle: KnowledgePromptBundle;
+  coverage: KnowledgeCoverage;
+  diagnostics: KnowledgeDiagnostic[];
 }
 
 export interface SmrtReviewResult {
@@ -155,6 +233,8 @@ export interface SmrtReviewResult {
   selectedSdkPackages: KnowledgePackage[];
   deterministicFindings?: KnowledgeIssue[];
   promptBundle?: KnowledgePromptBundle;
+  coverage: KnowledgeCoverage;
+  diagnostics: KnowledgeDiagnostic[];
 }
 
 export interface SmrtArchitectureResult extends ArchitectureContextResult {
@@ -199,6 +279,11 @@ interface ContextSelectorOptions {
   scope?: KnowledgeScope;
   package?: string;
   packageName?: string;
+  /**
+   * Defaults to `summary` so MCP callers stay inside tool-result budgets. CLI
+   * consumers pass `full` to keep the #2108 module-doc embedding contract.
+   */
+  detail?: KnowledgeDetail;
 }
 
 const SDK_PACKAGE_NAMES = new Set([
@@ -240,6 +325,30 @@ const WALK_SKIP_DIRS = new Set([
   'node_modules',
 ]);
 
+/** Used only when neither pnpm-workspace.yaml nor package.json#workspaces exists. */
+const WORKSPACE_GLOB_FALLBACK = ['packages/*'];
+
+/** Bounds `**` expansion so a stray glob cannot walk an entire disk. */
+const MAX_GLOB_DEPTH = 6;
+
+/** Caps the downstream package fallback so a large product stays in budget. */
+const MAX_FALLBACK_PACKAGES = 8;
+
+/** Kept in sync with `tools/introspect-project.ts` so both paths see one corpus. */
+const SCAN_INCLUDE = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'];
+
+const SCAN_EXCLUDE = [
+  '**/node_modules/**',
+  '**/dist/**',
+  '**/build/**',
+  '**/.git/**',
+  '**/.smrt/**',
+  '**/*.d.ts',
+  '**/*.test.ts',
+  '**/*.spec.ts',
+  '**/__tests__/**',
+];
+
 const STALE_PATTERNS: Array<{
   code: string;
   pattern: RegExp;
@@ -275,9 +384,29 @@ export async function buildKnowledgeIndex(
 ): Promise<SmrtKnowledgeIndex> {
   const rootDir = findProjectRoot(options.rootDir ?? process.cwd());
   const includeDocs = options.includeDocs ?? true;
-  const packageDirs = discoverProjectPackageDirs(rootDir);
+  const {
+    globs,
+    globSource,
+    dirs: packageDirs,
+  } = discoverProjectPackageDirs(rootDir);
   const packages = packageDirs.map((dir) =>
     readKnowledgePackage(rootDir, dir, includeDocs),
+  );
+
+  // A monorepo root would otherwise scan every member package and claim all of
+  // their objects as its own; members resolve themselves below.
+  const rootDelegates = packageDirs.length > 1;
+  await Promise.all(
+    packages.map((pkg) => {
+      if (pkg.isWorkspaceRoot && rootDelegates) {
+        if (pkg.objectSource === 'none') {
+          pkg.objectSourceReason =
+            'workspace-root-delegates-to-member-packages';
+        }
+        return Promise.resolve();
+      }
+      return applyScannerFallback(pkg);
+    }),
   );
 
   packages.push(
@@ -288,16 +417,188 @@ export async function buildKnowledgeIndex(
   const scopedPackages = filterKnowledgePackages(uniquePackages, options);
   const smrtPackages = scopedPackages.filter((pkg) => pkg.kind === 'smrt');
   const sdkPackages = scopedPackages.filter((pkg) => pkg.kind === 'sdk');
+  const coverage = buildCoverage({
+    rootDir,
+    globs,
+    globSource,
+    packageDirs,
+    packages: scopedPackages,
+  });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     rootDir,
     packages: scopedPackages,
     smrtPackages,
     sdkPackages,
     relationshipsV2: summarizeRelationshipsV2(scopedPackages),
+    coverage,
+    diagnostics: buildIndexDiagnostics(rootDir, scopedPackages, coverage),
   };
+}
+
+function buildCoverage(options: {
+  rootDir: string;
+  globs: string[];
+  globSource: WorkspaceGlobSource;
+  packageDirs: string[];
+  packages: KnowledgePackage[];
+}): KnowledgeCoverage {
+  return {
+    workspaceGlobs: options.globs,
+    workspaceGlobSource: options.globSource,
+    packageDirs: options.packageDirs.map(
+      (dir) => relative(options.rootDir, dir) || '.',
+    ),
+    packagesWithObjects: options.packages
+      .filter((pkg) => pkg.objects.length > 0)
+      .map((pkg) => `${pkg.name} (${pkg.objects.length}, ${pkg.objectSource})`),
+    packagesWithoutObjects: options.packages
+      .filter((pkg) => pkg.objects.length === 0)
+      .map((pkg) => ({
+        name: pkg.name,
+        reason: pkg.objectSourceReason ?? pkg.objectSource,
+        checkedPaths: pkg.checkedObjectPaths,
+        remedy: remedyForReason(pkg),
+      })),
+  };
+}
+
+function remedyForReason(pkg: KnowledgePackage): string {
+  const reason = pkg.objectSourceReason ?? '';
+  if (reason.startsWith('manifest-objects-owned-by-other-packages')) {
+    return `${pkg.relativeDirectory || '.'} has an aggregate or stale manifest owned by other packages. Regenerate it (pnpm build in that package) so it declares this package's own objects.`;
+  }
+  if (reason.startsWith('scanner-failed')) {
+    return `Source scanning failed for ${pkg.relativeDirectory || '.'}; fix the parse error or generate a manifest with pnpm build.`;
+  }
+  if (reason === 'no-smrt-objects-in-sources') {
+    return 'No @smrt() classes were found in this package. Expected if it is a UI, contract, or tooling package.';
+  }
+  if (reason === 'workspace-root-delegates-to-member-packages') {
+    return 'Expected: the workspace root delegates object discovery to its member packages.';
+  }
+  return `Add @smrt() classes, or run pnpm build in ${pkg.relativeDirectory || '.'} to emit .smrt/manifest.json.`;
+}
+
+/**
+ * Turns a discovery failure into an explicit signal.
+ *
+ * A zero-object index used to be indistinguishable from a project with no
+ * relationships, so callers acted on empty context as if it were an answer
+ * (#2143). The zero case is therefore error-grade and names what was checked.
+ */
+function buildIndexDiagnostics(
+  rootDir: string,
+  packages: KnowledgePackage[],
+  coverage: KnowledgeCoverage,
+): KnowledgeDiagnostic[] {
+  const diagnostics: KnowledgeDiagnostic[] = [];
+  const totalObjects = packages.reduce(
+    (total, pkg) => total + pkg.objects.length,
+    0,
+  );
+
+  if (totalObjects === 0) {
+    diagnostics.push({
+      severity: 'error',
+      code: 'no-smrt-objects-discovered',
+      message: [
+        `No SMRT objects were discovered under ${rootDir}.`,
+        `Workspace globs (${coverage.workspaceGlobSource}): ${coverage.workspaceGlobs.join(', ') || '(none)'}.`,
+        `Package directories checked (${coverage.packageDirs.length}): ${coverage.packageDirs.join(', ') || '(none)'}.`,
+        'Treat this as a discovery failure, not as evidence that the project has no SMRT model.',
+      ].join(' '),
+      checkedPaths: [
+        ...new Set(packages.flatMap((pkg) => pkg.checkedObjectPaths)),
+      ],
+      remedy: [
+        'Confirm rootDir is the workspace root;',
+        'confirm pnpm-workspace.yaml `packages:` covers the directories that hold @smrt() classes (for example apps/*);',
+        'run `pnpm build` in the owning package to emit .smrt/manifest.json;',
+        'then re-run. Cross-check with introspect-project on the same root.',
+      ].join(' '),
+    });
+  }
+
+  for (const pkg of packages) {
+    const reason = pkg.objectSourceReason ?? '';
+    if (reason.startsWith('manifest-objects-owned-by-other-packages')) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'foreign-manifest-objects',
+        message: `${pkg.name}: every object in the discovered manifest is owned by another package (${reason}); it was rejected instead of being counted as this package's.`,
+        packageName: pkg.name,
+        checkedPaths: pkg.checkedObjectPaths,
+        remedy: remedyForReason(pkg),
+      });
+      continue;
+    }
+    if (reason.startsWith('rejected ')) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'partial-foreign-manifest-objects',
+        message: `${pkg.name}: ${reason}.`,
+        packageName: pkg.name,
+        checkedPaths: pkg.checkedObjectPaths,
+        remedy: remedyForReason(pkg),
+      });
+      continue;
+    }
+    if (reason.startsWith('scanner-failed')) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'scanner-fallback-failed',
+        message: `${pkg.name}: ${reason}`,
+        packageName: pkg.name,
+        checkedPaths: pkg.checkedObjectPaths,
+        remedy: remedyForReason(pkg),
+      });
+    }
+  }
+
+  diagnostics.push(...buildDuplicateIdentityDiagnostics(packages));
+  return diagnostics;
+}
+
+/**
+ * Reports one table claimed by more than one package. Relationships-v2 already
+ * counts it once, but the duplication itself usually means a stale or
+ * re-qualified generated artifact, which the caller should know about (#2143).
+ */
+function buildDuplicateIdentityDiagnostics(
+  packages: KnowledgePackage[],
+): KnowledgeDiagnostic[] {
+  const owners = new Map<string, string[]>();
+  for (const pkg of packages) {
+    for (const object of pkg.objects) {
+      const identity = objectIdentity(object);
+      const current = owners.get(identity) ?? [];
+      if (!current.includes(pkg.name)) current.push(pkg.name);
+      owners.set(identity, current);
+    }
+  }
+
+  const duplicates = [...owners.entries()].filter(
+    ([, names]) => names.length > 1,
+  );
+  if (duplicates.length === 0) return [];
+
+  const sample = duplicates
+    .slice(0, 5)
+    .map(([identity, names]) => `${identity} (${names.join(' + ')})`)
+    .join('; ');
+
+  return [
+    {
+      severity: 'warning',
+      code: 'duplicate-object-identity',
+      message: `${duplicates.length} object identit${duplicates.length === 1 ? 'y is' : 'ies are'} reported by more than one package: ${sample}${duplicates.length > 5 ? '; …' : ''}. Relationships-v2 counts each once.`,
+      remedy:
+        "Usually a stale or aggregate generated artifact in a consuming package that re-qualifies its dependencies' objects. Regenerate it (pnpm build) so each package reports only the objects it declares.",
+    },
+  ];
 }
 
 export async function checkKnowledgeFreshness(
@@ -318,7 +619,12 @@ export async function checkKnowledgeFreshnessFromIndex(
 
   // Keep these structured MCP/CLI checks in sync with
   // scripts/check-standards.mjs, which enforces the same package docs rules.
-  for (const pkg of index.packages.filter((item) => item.kind !== 'sdk')) {
+  // The workspace root is not a publishable package, so the packaging rules
+  // (files allowlist, shipped docs) do not apply to it — it only became visible
+  // to this loop when discovery stopped gating root inclusion (#2143).
+  for (const pkg of index.packages.filter(
+    (item) => item.kind !== 'sdk' && !item.isWorkspaceRoot,
+  )) {
     const packageJsonPath = join(pkg.directory, 'package.json');
 
     if (!pkg.hasAgentsMd) {
@@ -368,6 +674,11 @@ export async function checkKnowledgeFreshnessFromIndex(
         });
       }
     }
+
+    // The `files` allowlist governs what ships to npm, so it is meaningless for
+    // a `private: true` package. Authored docs are still required above —
+    // agents read those regardless of publishing.
+    if (pkg.isPrivate) continue;
 
     if (!pkg.files.includes('AGENTS.md')) {
       issues.push({
@@ -602,11 +913,14 @@ export async function buildReviewContext(
       sdkPackages: selectedSdkPackages,
       sourceFiles: changedFiles,
       extraContext: options.focus,
+      detail: options.detail,
       moduleDocHints: {
         changedFiles,
         text: [options.focus, options.documentation].filter(Boolean).join('\n'),
       },
     }),
+    coverage: index.coverage,
+    diagnostics: index.diagnostics,
   };
 }
 
@@ -625,6 +939,8 @@ export async function smrtReview(
       ? { deterministicFindings: context.deterministicFindings }
       : {}),
     ...(mode !== 'findings' ? { promptBundle: context.promptBundle } : {}),
+    coverage: context.coverage,
+    diagnostics: context.diagnostics,
   };
 }
 
@@ -661,11 +977,14 @@ export async function buildArchitectureContext(
       sdkPackages: selectedSdkPackages,
       sourceFiles: [],
       extraContext: text,
+      detail: options.detail,
       // `--package @happyvertical/smrt-sales` alone must NOT narrow: the package
       // selector is not a module selector, so a bare package request still gets
       // every module doc. Only idea/focus text narrows.
       moduleDocHints: { text },
     }),
+    coverage: index.coverage,
+    diagnostics: index.diagnostics,
   };
 }
 
@@ -702,6 +1021,9 @@ export function renderKnowledgeIndexMarkdown(
     `- polymorphic associations: ${index.relationshipsV2.polymorphicAssociations}`,
     `- UUID columns: ${index.relationshipsV2.uuidColumns}`,
     '',
+    // Only rendered when something is actually wrong, so healthy output is
+    // byte-for-byte unchanged for existing CLI consumers.
+    ...renderDiagnosticsSection(index.diagnostics),
     '## Packages',
     '',
   ];
@@ -758,51 +1080,230 @@ export function renderFreshnessResult(
   return lines.join('\n');
 }
 
+/**
+ * Nearest ancestor that declares a workspace (#2143).
+ *
+ * The old rule also required a literal `packages/` directory, which silently
+ * mis-rooted every `apps/*`-shaped product. A workspace declaration is the
+ * actual signal; `startDir` is the fallback so single-package repos still work.
+ */
 function findProjectRoot(startDir: string): string {
   let current = resolve(startDir);
   for (;;) {
-    if (
-      existsSync(join(current, 'pnpm-workspace.yaml')) &&
-      existsSync(join(current, 'packages'))
-    ) {
-      return current;
-    }
+    if (existsSync(join(current, 'pnpm-workspace.yaml'))) return current;
+    if (readPackageJsonWorkspaceGlobs(current).length > 0) return current;
     const parent = dirname(current);
     if (parent === current) return resolve(startDir);
     current = parent;
   }
 }
 
-function discoverWorkspacePackageDirs(rootDir: string): string[] {
-  const packagesDir = join(rootDir, 'packages');
-  if (!existsSync(packagesDir)) return [];
-  return readdirSync(packagesDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join(packagesDir, entry.name))
+function readPackageJsonWorkspaceGlobs(dir: string): string[] {
+  const packageJson = objectRecord(readJson(join(dir, 'package.json')));
+  const workspaces = packageJson.workspaces;
+  return Array.isArray(workspaces)
+    ? stringArray(workspaces)
+    : stringArray(objectRecord(workspaces).packages);
+}
+
+function readWorkspaceGlobs(rootDir: string): {
+  globs: string[];
+  source: WorkspaceGlobSource;
+} {
+  const pnpmWorkspacePath = join(rootDir, 'pnpm-workspace.yaml');
+  if (existsSync(pnpmWorkspacePath)) {
+    const globs = parseYamlStringList(
+      readFileSync(pnpmWorkspacePath, 'utf8'),
+      'packages',
+    );
+    if (globs.length > 0) return { globs, source: 'pnpm-workspace.yaml' };
+  }
+
+  const packageJsonGlobs = readPackageJsonWorkspaceGlobs(rootDir);
+  if (packageJsonGlobs.length > 0) {
+    return { globs: packageJsonGlobs, source: 'package.json#workspaces' };
+  }
+
+  return { globs: [...WORKSPACE_GLOB_FALLBACK], source: 'fallback' };
+}
+
+/**
+ * Reads a top-level `key:` string list out of `pnpm-workspace.yaml`.
+ *
+ * Deliberately dependency-free: the shape consumed here is a fixed, tiny list
+ * of globs, and a read-only dev server should not pull in a YAML parser for it.
+ * Handles both block sequences and a single-line flow sequence.
+ */
+function parseYamlStringList(content: string, key: string): string[] {
+  const keyPattern = new RegExp(`^${escapeRegExp(key)}\\s*:\\s*(.*)$`);
+  const values: string[] = [];
+  let inBlock = false;
+
+  for (const line of content.split(/\r?\n/)) {
+    if (!inBlock) {
+      const match = line.match(keyPattern);
+      if (!match) continue;
+      const rest = (match[1] ?? '').trim();
+      if (rest.startsWith('[')) {
+        return rest
+          .replace(/^\[/, '')
+          .replace(/\]\s*$/, '')
+          .split(',')
+          .map((entry) => unquoteYamlScalar(entry))
+          .filter(Boolean);
+      }
+      // A scalar value on the key line is not a list; only an empty remainder
+      // (or a trailing comment) opens a block sequence.
+      if (rest !== '' && !rest.startsWith('#')) continue;
+      inBlock = true;
+      continue;
+    }
+
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
+    const item = line.match(/^\s+-\s*(.+?)\s*$/);
+    if (!item) break; // dedented back to the next top-level key
+    const value = unquoteYamlScalar(item[1] ?? '');
+    if (value) values.push(value);
+  }
+
+  return values;
+}
+
+function unquoteYamlScalar(value: string): string {
+  const trimmed = value.trim();
+  const quoted = trimmed.match(/^(['"])([\s\S]*?)\1/);
+  if (quoted) return (quoted[2] ?? '').trim();
+  return trimmed.replace(/\s+#.*$/, '').trim();
+}
+
+/**
+ * Expands workspace globs to package directories.
+ *
+ * Supports the shapes pnpm workspaces actually use in these repos: literals,
+ * single-star directory globs (`packages/*`, `apps/*`), recursive `**`, and `!`
+ * negations. Expansion walks the tree with `readdir` rather than adding a glob
+ * dependency.
+ */
+function expandWorkspaceGlobs(rootDir: string, globs: string[]): string[] {
+  const negations = globs
+    .filter((glob) => glob.trim().startsWith('!'))
+    .map((glob) => globToRegExp(normalizeGlob(glob.trim().slice(1))));
+  const matched = new Set<string>();
+
+  for (const glob of globs.filter((entry) => !entry.trim().startsWith('!'))) {
+    for (const dir of expandGlob(rootDir, normalizeGlob(glob))) {
+      matched.add(dir);
+    }
+  }
+
+  return [...matched]
     .filter((dir) => existsSync(join(dir, 'package.json')))
+    .filter((dir) => {
+      const rel = relative(rootDir, dir).replaceAll('\\', '/');
+      return rel !== '' && !negations.some((pattern) => pattern.test(rel));
+    })
     .sort();
 }
 
-function discoverProjectPackageDirs(rootDir: string): string[] {
-  const workspaceDirs = discoverWorkspacePackageDirs(rootDir);
-  if (
-    existsSync(join(rootDir, 'package.json')) &&
-    hasLocalDomainArtifact(rootDir)
-  ) {
-    return [rootDir, ...workspaceDirs.filter((dir) => dir !== rootDir)];
-  }
-  return workspaceDirs;
+function normalizeGlob(glob: string): string {
+  return glob
+    .trim()
+    .replaceAll('\\', '/')
+    .replace(/^\.\//, '')
+    .replace(/\/+$/, '');
 }
 
-function hasLocalDomainArtifact(rootDir: string): boolean {
-  return [
-    join(rootDir, '.smrt', 'smrt-knowledge.json'),
-    join(rootDir, '.smrt', 'manifest.json'),
-    join(rootDir, 'dist', 'smrt-knowledge.json'),
-    join(rootDir, 'dist', 'manifest.json'),
-    join(rootDir, 'src', 'manifest', 'smrt-knowledge.json'),
-    join(rootDir, 'src', 'manifest', 'manifest.json'),
-  ].some((path) => existsSync(path));
+function expandGlob(rootDir: string, glob: string): string[] {
+  const segments = glob.split('/').filter((segment) => segment !== '');
+  if (segments.length === 0) return [];
+
+  let current = [rootDir];
+  for (const segment of segments) {
+    const next: string[] = [];
+    for (const dir of current) {
+      if (segment === '**') {
+        next.push(...descendantDirs(dir, MAX_GLOB_DEPTH));
+        continue;
+      }
+      if (segment.includes('*')) {
+        const pattern = globToRegExp(segment);
+        next.push(
+          ...childDirs(dir).filter((child) => pattern.test(basename(child))),
+        );
+        continue;
+      }
+      const literal = join(dir, segment);
+      if (isDirectory(literal)) next.push(literal);
+    }
+    current = [...new Set(next)];
+    if (current.length === 0) break;
+  }
+
+  return current;
+}
+
+function childDirs(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !WALK_SKIP_DIRS.has(entry.name))
+      .map((entry) => join(dir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+function descendantDirs(dir: string, depth: number): string[] {
+  if (depth <= 0) return [];
+  const children = childDirs(dir);
+  return children.flatMap((child) => [
+    child,
+    ...descendantDirs(child, depth - 1),
+  ]);
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Translates a workspace glob into an anchored regular expression. `*` stays
+ * within one path segment; `**` spans any depth (and collapses so `a/**` also
+ * matches `a`).
+ */
+function globToRegExp(glob: string): RegExp {
+  // Tokenize before escaping so the escape pass cannot damage the placeholders.
+  const ANY_DEPTH = '\u0000';
+  const ANY_SEGMENT = '\u0001';
+  const tokenized = glob
+    .replace(/\*\*/g, ANY_DEPTH)
+    .replace(/\*/g, ANY_SEGMENT);
+  const escaped = tokenized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const source = escaped
+    .replaceAll(`/${ANY_DEPTH}`, '(?:/.*)?')
+    .replaceAll(`${ANY_DEPTH}/`, '(?:.*/)?')
+    .replaceAll(ANY_DEPTH, '.*')
+    .replaceAll(ANY_SEGMENT, '[^/]*');
+  return new RegExp(`^${source}$`);
+}
+
+function discoverProjectPackageDirs(rootDir: string): {
+  globs: string[];
+  globSource: WorkspaceGlobSource;
+  dirs: string[];
+} {
+  const { globs, source } = readWorkspaceGlobs(rootDir);
+  const workspaceDirs = expandWorkspaceGlobs(rootDir, globs);
+  // A single-package repo is its own package, and a workspace root can also own
+  // objects. Coverage reporting makes an empty root visible instead of hiding
+  // it behind the old "only if it already has an artifact" gate (#2143).
+  const dirs = existsSync(join(rootDir, 'package.json'))
+    ? [rootDir, ...workspaceDirs.filter((dir) => dir !== rootDir)]
+    : workspaceDirs;
+  return { globs, globSource: source, dirs };
 }
 
 function discoverInstalledSdkPackages(
@@ -899,11 +1400,14 @@ function readKnowledgePackage(
       ? 'CLAUDE.md'
       : null;
   const manifest = readManifest(directory);
-  const objects = domainKnowledge
-    ? readDomainKnowledgeObjects(domainKnowledge.content)
-    : manifest
-      ? readManifestObjects(manifest.content)
-      : [];
+  const resolvedObjects = resolvePackageObjects({
+    packageName: name,
+    directory,
+    rootDir,
+    domainKnowledge,
+    manifest,
+  });
+  const objects = resolvedObjects.objects;
   const prompts = domainKnowledge
     ? readDomainKnowledgePrompts(domainKnowledge.content, directory, rootDir)
     : readPrompts(directory, rootDir);
@@ -958,7 +1462,184 @@ function readKnowledgePackage(
       ? domainMcpTools(domainKnowledge.content)
       : mcpTools(objects),
     relationshipFeatures: relationshipFeatures(objects),
+    isWorkspaceRoot: resolve(directory) === resolve(rootDir),
+    isPrivate: packageJson.private === true,
+    objectSource: resolvedObjects.source,
+    objectSourceReason: resolvedObjects.reason,
+    checkedObjectPaths: resolvedObjects.checkedPaths,
   };
+}
+
+/** Artifact paths consulted for a package's objects, in precedence order. */
+function objectArtifactCandidates(directory: string): string[] {
+  return [
+    join(directory, '.smrt', 'smrt-knowledge.json'),
+    join(directory, 'dist', 'smrt-knowledge.json'),
+    join(directory, 'src', 'manifest', 'smrt-knowledge.json'),
+    join(directory, 'src', 'manifest', 'manifest.json'),
+    join(directory, '.smrt', 'manifest.json'),
+    join(directory, 'dist', 'manifest.json'),
+  ];
+}
+
+function resolvePackageObjects(options: {
+  packageName: string;
+  directory: string;
+  rootDir: string;
+  domainKnowledge: { path: string; content: DomainKnowledgeManifest } | null;
+  manifest: { path: string; content: Record<string, unknown> } | null;
+}): {
+  objects: KnowledgeObject[];
+  source: KnowledgeObjectSource;
+  reason?: string;
+  checkedPaths: string[];
+} {
+  const checkedPaths = objectArtifactCandidates(options.directory).map((path) =>
+    relativeOrAbsolute(options.rootDir, path),
+  );
+
+  if (options.domainKnowledge) {
+    return {
+      objects: readDomainKnowledgeObjects(options.domainKnowledge.content),
+      source: 'domain-artifact',
+      checkedPaths,
+    };
+  }
+
+  if (!options.manifest) {
+    return { objects: [], source: 'none', reason: 'no-artifact', checkedPaths };
+  }
+
+  const { owned, foreignCount } = partitionOwnedObjects(
+    options.manifest.content,
+    options.packageName,
+  );
+  const objects = readManifestObjects({ objects: owned });
+
+  if (objects.length === 0) {
+    return {
+      objects: [],
+      source: 'none',
+      reason:
+        foreignCount > 0
+          ? `manifest-objects-owned-by-other-packages (${foreignCount} rejected)`
+          : 'manifest-has-no-objects',
+      checkedPaths,
+    };
+  }
+
+  return {
+    objects,
+    source: 'manifest',
+    reason:
+      foreignCount > 0
+        ? `rejected ${foreignCount} manifest object(s) owned by other packages`
+        : undefined,
+    checkedPaths,
+  };
+}
+
+function relativeOrAbsolute(rootDir: string, path: string): string {
+  const rel = relative(rootDir, path);
+  return rel && !rel.startsWith('..') ? rel : path;
+}
+
+/**
+ * Resolves objects from source when no artifact could supply them (#2143).
+ *
+ * `introspect-project` already reports `manifestSource: "scanner"` and works on
+ * an unbuilt checkout. Without the same fallback here, an unbuilt package
+ * silently contributed nothing and the two tools disagreed about one root —
+ * which was the defect underneath every symptom in #2143.
+ *
+ * Mutates in place because `mcpTools` and `relationshipFeatures` are derived
+ * from `objects` and have to be recomputed together.
+ */
+async function applyScannerFallback(pkg: KnowledgePackage): Promise<void> {
+  if (pkg.objectSource !== 'none') return;
+  if (!hasScannableSources(pkg.directory)) {
+    pkg.objectSourceReason = `${pkg.objectSourceReason ?? 'no-artifact'}; no-typescript-sources`;
+    return;
+  }
+
+  try {
+    const objects = await scanPackageObjects(pkg.directory, pkg.name);
+    if (objects.length === 0) {
+      pkg.objectSourceReason = 'no-smrt-objects-in-sources';
+      return;
+    }
+    pkg.objects = objects;
+    pkg.objectSource = 'scanner';
+    pkg.objectSourceReason = undefined;
+    pkg.mcpTools = mcpTools(objects);
+    pkg.relationshipFeatures = relationshipFeatures(objects);
+  } catch (error) {
+    pkg.objectSourceReason = `scanner-failed: ${messageFromError(error)}`;
+  }
+}
+
+/** Cheap bounded probe — stops at the first candidate instead of walking a whole tree. */
+function hasScannableSources(directory: string, depth = 4): boolean {
+  if (depth < 0) return false;
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(directory, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  const subdirectories: string[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      if (!WALK_SKIP_DIRS.has(entry.name)) {
+        subdirectories.push(join(directory, entry.name));
+      }
+      continue;
+    }
+    if (
+      entry.isFile() &&
+      /\.(tsx?|jsx?)$/.test(entry.name) &&
+      !entry.name.endsWith('.d.ts') &&
+      !entry.name.endsWith('.test.ts') &&
+      !entry.name.endsWith('.spec.ts')
+    ) {
+      return true;
+    }
+  }
+
+  return subdirectories.some((child) => hasScannableSources(child, depth - 1));
+}
+
+async function scanPackageObjects(
+  directory: string,
+  packageName: string,
+): Promise<KnowledgeObject[]> {
+  const scanner = new OxcScanner({
+    cwd: directory,
+    include: SCAN_INCLUDE,
+    exclude: SCAN_EXCLUDE,
+  });
+  const { results, resolved } = await scanner.scanAndResolve();
+  const decorated = resolved.filter((classDef) => classDef.hasSmartDecorator);
+  if (decorated.length === 0) return [];
+
+  const adapter = new ManifestAdapter();
+  const manifest = adapter.toManifest(decorated, {
+    packageName,
+    typeAliases: results.typeAliases,
+  }) as unknown as Record<string, unknown>;
+
+  // Deliberately no ManifestGenerator schema enrichment here. Fields and
+  // relationships are what this projection needs, and `generateSchemas` writes
+  // progress lines to stdout through the SDK logger — which is the MCP server's
+  // JSON-RPC channel, so invoking it here would corrupt the protocol stream.
+  // Consequence: scanner-provenance packages report no `columnType`, so they
+  // contribute 0 to the `uuidColumns` fact. `objectSource` makes that visible.
+  return readManifestObjects(manifest);
+}
+
+function messageFromError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function readDomainKnowledge(
@@ -999,6 +1680,55 @@ function readManifest(
     if (content) return { path, content: objectRecord(content) };
   }
   return null;
+}
+
+/**
+ * Rejects objects a manifest does not own (#2143).
+ *
+ * A runtime `.smrt/manifest.json` is frequently an *aggregate*: it registers
+ * every object reachable from the app, including its dependencies'. Counting
+ * those as the package's own doubles Relationships-v2 (a stale 759KB
+ * `packages/cli/.smrt/manifest.json` reported 200 foreignKey / 413 UUID against
+ * a real 89 / 206). Ownership is decided per object, so an aggregate still
+ * contributes the objects it genuinely owns.
+ */
+function partitionOwnedObjects(
+  manifest: Record<string, unknown>,
+  packageName: string,
+): { owned: Record<string, unknown>; foreignCount: number } {
+  const objects = objectRecord(manifest.objects);
+  const owned: Record<string, unknown> = {};
+  let foreignCount = 0;
+
+  for (const [key, raw] of Object.entries(objects)) {
+    if (manifestObjectIsOwned(objectRecord(raw), packageName)) {
+      owned[key] = raw;
+      continue;
+    }
+    foreignCount += 1;
+  }
+
+  return { owned, foreignCount };
+}
+
+function manifestObjectIsOwned(
+  object: Record<string, unknown>,
+  packageName: string,
+): boolean {
+  const declared =
+    typeof object.packageName === 'string' ? object.packageName : undefined;
+  if (declared) return declared === packageName;
+
+  const qualifiedName =
+    typeof object.qualifiedName === 'string' ? object.qualifiedName : undefined;
+  const qualifier = qualifiedName?.includes(':')
+    ? qualifiedName.slice(0, qualifiedName.lastIndexOf(':'))
+    : undefined;
+  if (qualifier) return qualifier === packageName;
+
+  // Neither marker present: a package-local manifest cannot be attributed
+  // elsewhere, so ownership is assumed rather than silently dropping objects.
+  return true;
 }
 
 function readManifestObjects(
@@ -1195,8 +1925,38 @@ function domainMcpTools(manifest: DomainKnowledgeManifest): KnowledgeMcpTool[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Identity of the table an object maps to, used to avoid counting one table
+ * twice (#2143).
+ *
+ * A consuming app's generated artifact can re-qualify a dependency's objects
+ * under the app's own package name (observed: 18 of `apps/work-web`'s 21
+ * artifact objects are classes declared in `packages/work`, same tables). Name
+ * prefixes cannot detect that, so corpus-level facts are keyed by class plus
+ * table instead.
+ */
+function objectIdentity(object: KnowledgeObject): string {
+  return `${object.className}::${object.tableName ?? object.collection ?? ''}`;
+}
+
+function dedupeObjectsByIdentity(
+  packages: KnowledgePackage[],
+): KnowledgeObject[] {
+  const seen = new Map<string, KnowledgeObject>();
+  for (const pkg of packages) {
+    for (const object of pkg.objects) {
+      const identity = objectIdentity(object);
+      // Keep the first (packages are name-sorted) so the count is stable.
+      if (!seen.has(identity)) seen.set(identity, object);
+    }
+  }
+  return [...seen.values()];
+}
+
 function summarizeRelationshipsV2(packages: KnowledgePackage[]) {
-  const objects = packages.flatMap((pkg) => pkg.objects);
+  // Relationships-v2 describes the project's model, so one table must
+  // contribute its fields once even when two packages both report it.
+  const objects = dedupeObjectsByIdentity(packages);
   const fields = objects.flatMap((object) => object.fields);
   return {
     foreignKeyFields: fields.filter((field) => field.type === 'foreignKey')
@@ -1449,7 +2209,10 @@ function buildArchitectureRecommendations(
 ): SmrtArchitectureResult['recommendations'] {
   const smrtPackages = context.selectedPackages.map((pkg) => pkg.name);
   const sdkPackages = context.selectedSdkPackages.map((pkg) => pkg.name);
-  const objectModelSketch = buildObjectModelSketch(context.selectedPackages);
+  const objectModelSketch = buildObjectModelSketch(
+    context.selectedPackages,
+    context.diagnostics,
+  );
   const risks = buildArchitectureRisks(context.selectedPackages, ideaText);
   const questions = buildArchitectureQuestions(
     context.selectedPackages,
@@ -1470,7 +2233,22 @@ function buildArchitectureRecommendations(
   };
 }
 
-function buildObjectModelSketch(packages: KnowledgePackage[]): string[] {
+function buildObjectModelSketch(
+  packages: KnowledgePackage[],
+  diagnostics: KnowledgeDiagnostic[] = [],
+): string[] {
+  // Never hand back a generic sketch when discovery failed: that is the exact
+  // confident-but-empty answer #2143 was filed about.
+  const blocking = diagnostics.find(
+    (diagnostic) => diagnostic.code === 'no-smrt-objects-discovered',
+  );
+  if (blocking) {
+    return [
+      `No object model could be derived: ${blocking.message}`,
+      `Remediation: ${blocking.remedy ?? 'verify workspace discovery.'}`,
+    ];
+  }
+
   const lines = packages.flatMap((pkg) => {
     const objects = pkg.objects
       .filter((object) => object.extends !== 'SmrtCollection')
@@ -1478,7 +2256,7 @@ function buildObjectModelSketch(packages: KnowledgePackage[]): string[] {
       .map((object) => object.className);
     if (objects.length === 0) {
       return [
-        `${pkg.name}: use package services or templates; no manifest objects indexed.`,
+        `${pkg.name}: use package services or templates; no manifest objects indexed (${pkg.objectSourceReason ?? pkg.objectSource}).`,
       ];
     }
     return [`${pkg.name}: start from ${objects.join(', ')}.`];
@@ -1663,6 +2441,23 @@ function selectPackages(
       const pkg = index.smrtPackages.find((item) => item.name === name);
       if (pkg) selected.add(pkg);
     }
+
+    // A downstream product has none of those framework packages in its
+    // workspace, so the list above selected nothing and the tool reported no
+    // packages even after discovery found the project's objects (#2143). Fall
+    // back to the local packages that actually carry a model, largest first.
+    if (selected.size === 0) {
+      const contributing = domainPackages(index)
+        .filter(
+          (pkg) =>
+            pkg.objects.length > 0 &&
+            scopeAllowsPackage(pkg, options.scope) &&
+            !pkg.relativeDirectory.includes('node_modules'),
+        )
+        .sort((a, b) => b.objects.length - a.objects.length)
+        .slice(0, MAX_FALLBACK_PACKAGES);
+      for (const pkg of contributing) selected.add(pkg);
+    }
   }
 
   return [...selected].sort((a, b) => a.name.localeCompare(b.name));
@@ -1753,15 +2548,20 @@ function buildPromptBundle(options: {
   sdkPackages: KnowledgePackage[];
   sourceFiles: string[];
   extraContext?: string;
+  detail?: KnowledgeDetail;
   moduleDocHints?: ModuleDocHints;
 }): KnowledgePromptBundle {
+  const detail = options.detail ?? 'summary';
   const render = (pkg: KnowledgePackage) =>
-    renderPackageContext(pkg, options.moduleDocHints);
+    renderPackageContext(pkg, options.moduleDocHints, detail);
   const contextMarkdown = [
     `# ${options.title}`,
     '',
     `Baseline root: ${options.index.rootDir}`,
     '',
+    // A caller must see a discovery failure before any of the context below,
+    // because zeroed metrics otherwise read as a real answer (#2143).
+    ...renderDiagnosticsSection(options.index.diagnostics),
     '## Task',
     '',
     options.task,
@@ -1783,13 +2583,37 @@ function buildPromptBundle(options: {
 
   return {
     title: options.title,
-    instructions:
+    instructions: [
       'Use the supplied SMRT knowledge context as source material. Return concrete findings or architecture guidance with package names and source references. Do not assume model-provider access.',
+      detail === 'summary'
+        ? 'Authored package docs are listed by path rather than embedded; read the ones you need, or re-request with detail: "full".'
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
     contextMarkdown: contextMarkdown.join('\n'),
     selectedPackages: options.packages.map((pkg) => pkg.name),
     selectedSdkPackages: options.sdkPackages.map((pkg) => pkg.name),
     sourceFiles: options.sourceFiles,
   };
+}
+
+function renderDiagnosticsSection(
+  diagnostics: KnowledgeDiagnostic[],
+): string[] {
+  if (diagnostics.length === 0) return [];
+  const lines = ['## Diagnostics', ''];
+  for (const diagnostic of diagnostics) {
+    lines.push(
+      `- [${diagnostic.severity.toUpperCase()}] ${diagnostic.code}: ${diagnostic.message}`,
+    );
+    if (diagnostic.checkedPaths && diagnostic.checkedPaths.length > 0) {
+      lines.push(`  - checked: ${diagnostic.checkedPaths.join(', ')}`);
+    }
+    if (diagnostic.remedy) lines.push(`  - remedy: ${diagnostic.remedy}`);
+  }
+  lines.push('');
+  return lines;
 }
 
 /**
@@ -1844,6 +2668,7 @@ function escapeRegExp(value: string): string {
 function renderPackageContext(
   pkg: KnowledgePackage,
   hints?: ModuleDocHints,
+  detail: KnowledgeDetail = 'full',
 ): string {
   const { embedded, scoped } = selectModuleDocs(pkg, hints);
   const lines = [
@@ -1853,6 +2678,7 @@ function renderPackageContext(
     `- kind: ${pkg.kind}`,
     `- directory: ${pkg.relativeDirectory}`,
     `- domain knowledge: ${pkg.domainKnowledgePath ?? '(manifest fallback)'}`,
+    `- object source: ${pkg.objectSource}${pkg.objectSourceReason ? ` (${pkg.objectSourceReason})` : ''}`,
     `- docs: ${[pkg.docSource ?? '(none)', ...pkg.moduleDocs.map((doc) => doc.path)].join(', ')}`,
     `- relationship features: ${pkg.relationshipFeatures.join(', ') || '(none)'}`,
     `- SDK deps: ${pkg.sdkDependencies.join(', ') || '(none)'}`,
@@ -1871,6 +2697,24 @@ function renderPackageContext(
   if (pkg.objects.length > 20) {
     lines.push(`- object count: ${pkg.objects.length}`);
   }
+
+  // Summary mode lists authored prose by path instead of embedding it, which is
+  // what keeps a large project's bundle inside tool-result budgets (#2143).
+  if (detail === 'summary') {
+    const docPaths = [
+      ...(pkg.docSource ? [`${pkg.relativeDirectory}/${pkg.docSource}`] : []),
+      ...pkg.moduleDocs.map((doc) => `${pkg.relativeDirectory}/${doc.path}`),
+    ];
+    if (docPaths.length > 0) {
+      lines.push(
+        '',
+        `> Authored docs not embedded (read on demand, or re-request with detail: "full"): ${docPaths.join(', ')}`,
+      );
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+
   if (pkg.agentDoc) {
     lines.push('', pkg.agentDoc.trim());
   }

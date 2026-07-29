@@ -102,6 +102,36 @@ describe('smrt-dev-mcp stdio server', () => {
     ).toContain('@happyvertical/smrt-content');
     expect(review.promptBundle.contextMarkdown).toContain('SMRT code review');
 
+    // #2143: the default MCP response is the budgeted summary — authored prose
+    // and full domain manifests are referenced by path, not inlined.
+    expect(review.detail).toBe('summary');
+    const summaryPackage = review.selectedPackages.find(
+      (pkg: { name: string }) => pkg.name === '@happyvertical/smrt-content',
+    );
+    expect(summaryPackage.agentDoc).toBeUndefined();
+    expect(summaryPackage.domainKnowledge).toBeUndefined();
+    expect(summaryPackage.objectCount).toBeGreaterThan(0);
+    expect(summaryPackage.docs).toEqual(
+      expect.arrayContaining(['packages/content/AGENTS.md']),
+    );
+
+    const fullReviewResult = await client.callTool({
+      name: 'build-review-context',
+      arguments: {
+        rootDir: repoRoot,
+        changedFiles: ['packages/content/src/models/Article.ts'],
+        detail: 'full',
+      },
+    });
+    const fullReview = JSON.parse(textContent(fullReviewResult));
+    const fullPackage = fullReview.selectedPackages.find(
+      (pkg: { name: string }) => pkg.name === '@happyvertical/smrt-content',
+    );
+    expect(fullPackage.agentDoc).toBeTruthy();
+    expect(textContent(fullReviewResult).length).toBeGreaterThan(
+      textContent(reviewResult).length,
+    );
+
     const domainReviewResult = await client.callTool({
       name: 'build-domain-review-context',
       arguments: {

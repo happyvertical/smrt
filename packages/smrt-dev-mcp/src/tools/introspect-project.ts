@@ -13,12 +13,26 @@ import {
 import type { ScanError } from '@happyvertical/smrt-scanner';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 
+/**
+ * `summary` (default) returns one compact record per object; `full` returns the
+ * verbose shape. A 42-object project produced 338,462 characters in the only
+ * mode that used to exist, which put every call over tool-result budgets and
+ * forced callers to write-to-file and `jq` (#2143).
+ */
+export type IntrospectDetail = 'summary' | 'full';
+
+/** Common shape both detail modes emit, so the two branches share a list. */
+type IntrospectedObject = Record<string, unknown> & { className: string };
+
 interface IntrospectProjectArgs {
   directory?: string;
   manifestPath?: string;
   includeFields?: boolean;
   includeRelationships?: boolean;
   includeMethods?: boolean;
+  detail?: IntrospectDetail;
+  /** Overrides the default response budget in characters. */
+  maxChars?: number;
 }
 
 type DiagnosticSeverity = 'error' | 'warning' | 'info';
@@ -130,6 +144,14 @@ const RELATIONSHIP_TYPES = new Set([
   'manyToMany',
 ]);
 
+/**
+ * Response budget in characters. Generous enough that a 42-object summary never
+ * truncates, while still capping a runaway payload instead of emitting one.
+ */
+const DEFAULT_MAX_CHARS = 50_000;
+
+const DEFAULT_MCP_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
+
 export async function introspectProject(
   args: IntrospectProjectArgs,
 ): Promise<string> {
@@ -138,6 +160,8 @@ export async function introspectProject(
     includeFields = true,
     includeRelationships = true,
     includeMethods = true,
+    detail = 'summary',
+    maxChars = DEFAULT_MAX_CHARS,
   } = args;
   const projectPath = resolve(directory);
 
@@ -167,19 +191,31 @@ export async function introspectProject(
     (await loadManifestArtifact(projectPath, args.manifestPath)) ??
     (await scanSourceManifest(projectPath, packageMetadata));
 
-  const objects = Object.entries(manifestResult.manifest.objects ?? {})
-    .map(([manifestKey, object]) =>
-      formatObject({
-        manifestKey,
-        object,
-        projectPath,
-        includeFields,
-        includeRelationships,
-        includeMethods,
-        tenantScope: tenantScopes.get(object.className),
-      }),
-    )
-    .sort((left, right) => left.className.localeCompare(right.className));
+  const entries = Object.entries(manifestResult.manifest.objects ?? {});
+  const objects: IntrospectedObject[] =
+    detail === 'summary'
+      ? entries.map(([manifestKey, object]) =>
+          summarizeObject({
+            manifestKey,
+            object,
+            projectPath,
+            tenantScope: tenantScopes.get(object.className),
+          }),
+        )
+      : entries.map(([manifestKey, object]) =>
+          formatObject({
+            manifestKey,
+            object,
+            projectPath,
+            includeFields,
+            includeRelationships,
+            includeMethods,
+            tenantScope: tenantScopes.get(object.className),
+          }),
+        );
+  objects.sort((left, right) => left.className.localeCompare(right.className));
+
+  const { kept, omitted } = applyObjectBudget(objects, maxChars);
 
   const output = {
     projectPath,
@@ -194,14 +230,112 @@ export async function introspectProject(
       manifestResult.manifest.packageVersion ??
       packageMetadata.version ??
       undefined,
+    detail,
     objectCount: objects.length,
     scannedFileCount: manifestResult.scannedFileCount,
     parseTimeMs: manifestResult.parseTimeMs,
-    objects,
+    ...(omitted > 0
+      ? {
+          truncated: {
+            returnedObjectCount: kept.length,
+            omittedObjectCount: omitted,
+            budgetChars: maxChars,
+            guidance:
+              'The response hit its character budget. Narrow the scan with `directory` (a single package), keep `detail: "summary"`, or raise `maxChars` deliberately. Object names are sorted alphabetically, so omitted objects are the alphabetical tail.',
+          },
+        }
+      : {}),
+    objects: kept,
     diagnostics: manifestResult.diagnostics,
   };
 
   return JSON.stringify(output, null, 2);
+}
+
+/**
+ * Trims the object list to the character budget, always keeping at least one so
+ * a caller sees the shape rather than an empty list.
+ */
+function applyObjectBudget<T>(
+  objects: T[],
+  maxChars: number,
+): { kept: T[]; omitted: number } {
+  const kept: T[] = [];
+  let used = 0;
+
+  for (const object of objects) {
+    const size = JSON.stringify(object, null, 2).length + 2;
+    if (used + size > maxChars && kept.length > 0) break;
+    used += size;
+    kept.push(object);
+  }
+
+  return { kept, omitted: objects.length - kept.length };
+}
+
+function summarizeObject({
+  manifestKey,
+  object,
+  projectPath,
+  tenantScope,
+}: {
+  manifestKey: string;
+  object: ManifestObject;
+  projectPath: string;
+  tenantScope?: Record<string, unknown>;
+}) {
+  const fields = Object.entries(object.fields ?? {});
+  const decoratorConfig = object.decoratorConfig ?? {};
+
+  return compactObject({
+    manifestKey,
+    className: object.className,
+    qualifiedName: object.qualifiedName,
+    filePath: sanitizePath(projectPath, object.filePath),
+    extends: object.extends,
+    collection: object.collection,
+    tableName:
+      object.schema?.tableName ??
+      stringFromConfig(decoratorConfig.tableName) ??
+      object.collection,
+    tenantScope:
+      tenantScope ?? normalizeTenantScopedConfig(decoratorConfig.tenantScoped),
+    fieldCount: fields.length,
+    relationships:
+      fields
+        .filter(([, field]) => RELATIONSHIP_TYPES.has(field.type))
+        .map(
+          ([name, field]) =>
+            `${name} -> ${field.related ?? ''} (${field.type})`,
+        )
+        .join(', ') || undefined,
+    mcpOperations: mcpOperationsFromConfig(decoratorConfig.mcp),
+  });
+}
+
+/**
+ * An omitted `mcp` config means full CRUD, not a closed surface — the same rule
+ * the knowledge index applies.
+ */
+function mcpOperationsFromConfig(config: unknown): string[] {
+  if (config === false) return [];
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    return [...DEFAULT_MCP_OPERATIONS];
+  }
+
+  const record = config as Record<string, unknown>;
+  const include = Array.isArray(record.include)
+    ? record.include.filter((item): item is string => typeof item === 'string')
+    : DEFAULT_MCP_OPERATIONS;
+  const exclude = new Set(
+    Array.isArray(record.exclude)
+      ? record.exclude.filter(
+          (item): item is string => typeof item === 'string',
+        )
+      : [],
+  );
+
+  return include.filter((operation) => !exclude.has(operation));
 }
 
 async function loadManifestArtifact(

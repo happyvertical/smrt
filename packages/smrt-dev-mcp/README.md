@@ -57,6 +57,54 @@ args = []
 
 Set `DEBUG=true` in the environment to enable diagnostic logging.
 
+## Workspace Discovery And Coverage
+
+Package discovery reads the workspace globs, so `apps/*` products are indexed
+the same as `packages/*` ones. Resolution order:
+
+1. `pnpm-workspace.yaml` `packages:` — literals, `dir/*`, `**`, and `!` negations
+2. `package.json#workspaces` (array or `{ packages: [...] }`)
+3. `packages/*` as a last-resort fallback
+
+The workspace root is also indexed when it has a `package.json`, which is how
+single-package repositories work. Per package, objects resolve from a domain
+artifact, then a package-local manifest, then a source scan
+(`@happyvertical/smrt-scanner`) — the same fallback `introspect-project` uses, so
+both paths agree on one root. Every package records `objectSource`
+(`domain-artifact | manifest | scanner | none`) plus a reason.
+
+Manifest objects that belong to another package are rejected rather than counted:
+a runtime `.smrt/manifest.json` is often an aggregate registering a package's
+dependencies too, and counting those inflates the relationship facts.
+
+The index therefore carries two extra blocks (`schemaVersion: 2`):
+
+- `coverage` — `workspaceGlobs`, `workspaceGlobSource`, `packageDirs`,
+  `packagesWithObjects`, and `packagesWithoutObjects` with a reason, the artifact
+  paths checked, and a remedy for each
+- `diagnostics` — discovery problems. Discovering **zero** objects is an
+  error-grade diagnostic naming the roots and artifact paths checked plus the
+  commands to fix it, so an unseen project is never reported as a project with no
+  model. `smrt-architecture`, `smrt-review`, and the `reflect-*` tools surface it.
+
+## Response Budgets
+
+Knowledge and introspection tools return a **summary** by default and accept
+`detail: "full"` for the complete payload.
+
+- `introspect-project` summary returns one compact record per object
+  (`className`, `qualifiedName`, `extends`, `tableName`, `tenantScope`,
+  `fieldCount`, compact relationship strings, `mcpOperations`). A response that
+  exceeds its character budget reports a `truncated` block with the omitted count
+  and filter guidance instead of being silently cut. `maxChars` overrides the
+  budget.
+- `smrt-architecture`, `smrt-review`, and the `build-*-context` tools list
+  authored `AGENTS.md` and module docs **by path** rather than embedding them,
+  and return compact package records.
+
+The `smrt dev:knowledge-*` CLI commands request `detail: "full"`, so their output
+is unchanged.
+
 ## Knowledge Boundary
 
 `smrt-dev-mcp` is model-agnostic. Its review and architecture tools do not call
@@ -157,9 +205,11 @@ available it falls back to `@happyvertical/smrt-scanner`.
 |-----------|------|----------|-------------|
 | `directory` | `string` | No | Project directory (default: cwd) |
 | `manifestPath` | `string` | No | Explicit manifest artifact path |
-| `includeFields` | `boolean` | No | Include field details |
-| `includeRelationships` | `boolean` | No | Analyze relationships |
-| `includeMethods` | `boolean` | No | Include public method details |
+| `detail` | `'summary' \| 'full'` | No | Default `summary`. `full` returns field, schema, and method detail |
+| `maxChars` | `number` | No | Response character budget; overflow is reported under `truncated` |
+| `includeFields` | `boolean` | No | Include field details (`detail: "full"` only) |
+| `includeRelationships` | `boolean` | No | Analyze relationships (`detail: "full"` only) |
+| `includeMethods` | `boolean` | No | Include public method details (`detail: "full"` only) |
 
 ### `review-smrt-project`
 
@@ -277,6 +327,7 @@ risks, questions, and the reusable architecture prompt bundle.
 | `idea` | `string` | No | Product or implementation idea |
 | `documentation` | `string` | No | Existing docs or requirements |
 | `focus` | `string` | No | Architecture concern to prioritize |
+| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
 
 ### `list-agent-skills`
 

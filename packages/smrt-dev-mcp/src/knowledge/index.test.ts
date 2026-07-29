@@ -430,6 +430,7 @@ describe('SMRT knowledge index', () => {
     const result = await buildArchitectureContext({
       rootDir,
       package: '@happyvertical/smrt-demo',
+      detail: 'full',
     });
     const markdown = result.promptBundle.contextMarkdown;
 
@@ -447,6 +448,7 @@ describe('SMRT knowledge index', () => {
     const result = await buildReviewContext({
       rootDir,
       changedFiles: ['packages/demo/src/payouts/claim.ts'],
+      detail: 'full',
     });
     const markdown = result.promptBundle.contextMarkdown;
 
@@ -464,6 +466,7 @@ describe('SMRT knowledge index', () => {
       rootDir,
       changedFiles: ['packages/demo/src/unrelated.ts'],
       focus: 'nothing here names a module',
+      detail: 'full',
     });
     const markdown = result.promptBundle.contextMarkdown;
 
@@ -589,5 +592,329 @@ async function writeModuleDocs(rootDir: string): Promise<void> {
       '| payouts | [agents/payouts.md](agents/payouts.md) |',
       '| crm | [agents/crm.md](agents/crm.md) |',
     ].join('\n'),
+  );
+}
+
+/**
+ * Discovery regressions for #2143: the index used to hardcode `<root>/packages`,
+ * so every SMRT object in an `apps/*` package was invisible and the planning
+ * tools returned confident all-zero context with no diagnostic.
+ */
+describe('workspace discovery', () => {
+  let rootDir: string;
+
+  beforeEach(async () => {
+    rootDir = join(tmpdir(), `smrt-discovery-${Date.now()}-${counter++}`);
+    await mkdir(rootDir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  it('discovers objects in an apps/*-only workspace', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/*'"]);
+    await writeManifestPackage(rootDir, 'apps/web', '@acme/web', ['Invoice']);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.coverage.workspaceGlobs).toEqual(['apps/*']);
+    expect(index.coverage.workspaceGlobSource).toBe('pnpm-workspace.yaml');
+    expect(index.coverage.packageDirs).toContain('apps/web');
+    expect(
+      index.packages.find((pkg) => pkg.name === '@acme/web')?.objects,
+    ).toHaveLength(1);
+    expect(index.relationshipsV2.foreignKeyFields).toBe(1);
+    expect(index.diagnostics).toHaveLength(0);
+  });
+
+  it('discovers objects across a mixed apps/* + packages/* workspace', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/*'", "'packages/*'"]);
+    await writeManifestPackage(rootDir, 'apps/web', '@acme/web', ['Invoice']);
+    await writeManifestPackage(rootDir, 'packages/core', '@acme/core', [
+      'Ledger',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.coverage.packageDirs).toEqual(
+      expect.arrayContaining(['apps/web', 'packages/core']),
+    );
+    expect(index.relationshipsV2.foreignKeyFields).toBe(2);
+    expect(index.coverage.packagesWithObjects).toEqual(
+      expect.arrayContaining([
+        '@acme/core (1, manifest)',
+        '@acme/web (1, manifest)',
+      ]),
+    );
+  });
+
+  it('honors negated globs and literal nested package paths', async () => {
+    await writeWorkspaceYaml(rootDir, [
+      "'packages/*'",
+      "'tools/build/host'",
+      "'!packages/fixtures'",
+    ]);
+    await writeManifestPackage(rootDir, 'packages/core', '@acme/core', [
+      'Ledger',
+    ]);
+    await writeManifestPackage(rootDir, 'packages/fixtures', '@acme/fixtures', [
+      'Fixture',
+    ]);
+    await writeManifestPackage(rootDir, 'tools/build/host', '@acme/host', [
+      'Host',
+    ]);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const names = index.packages.map((pkg) => pkg.name);
+
+    expect(names).toContain('@acme/core');
+    expect(names).toContain('@acme/host');
+    expect(names).not.toContain('@acme/fixtures');
+  });
+
+  it('reads workspace globs from package.json when pnpm-workspace.yaml is absent', async () => {
+    await writeFile(
+      join(rootDir, 'package.json'),
+      JSON.stringify({ name: 'acme-root', workspaces: ['apps/*'] }, null, 2),
+    );
+    await writeManifestPackage(rootDir, 'apps/web', '@acme/web', ['Invoice']);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.coverage.workspaceGlobSource).toBe('package.json#workspaces');
+    expect(index.coverage.packageDirs).toContain('apps/web');
+  });
+
+  it('indexes a single-package repository as its own package', async () => {
+    await writeManifestPackage(rootDir, '.', '@acme/solo', ['Invoice']);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const solo = index.packages.find((pkg) => pkg.name === '@acme/solo');
+
+    expect(solo?.isWorkspaceRoot).toBe(true);
+    expect(solo?.objects).toHaveLength(1);
+    expect(index.relationshipsV2.foreignKeyFields).toBe(1);
+  });
+
+  it('resolves objects from source when no artifact exists', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/*'"]);
+    const pkgDir = join(rootDir, 'apps', 'web');
+    await mkdir(join(pkgDir, 'src'), { recursive: true });
+    await writeFile(
+      join(pkgDir, 'package.json'),
+      JSON.stringify({ name: '@acme/web', version: '1.0.0' }, null, 2),
+    );
+    await writeFile(
+      join(pkgDir, 'src', 'models.ts'),
+      [
+        "import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        '',
+        "@smrt({ tableName: 'invoices' })",
+        'export class Invoice extends SmrtObject {',
+        "  @foreignKey('Customer')",
+        "  customerId: string = '';",
+        "  reference: string = '';",
+        '}',
+      ].join('\n'),
+    );
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const web = index.packages.find((pkg) => pkg.name === '@acme/web');
+
+    expect(web?.objectSource).toBe('scanner');
+    expect(web?.objects.map((object) => object.className)).toEqual(['Invoice']);
+    expect(index.relationshipsV2.foreignKeyFields).toBe(1);
+  });
+
+  it('rejects aggregate manifest objects owned by other packages', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    const pkgDir = join(rootDir, 'packages', 'cli');
+    await mkdir(join(pkgDir, '.smrt'), { recursive: true });
+    await writeFile(
+      join(pkgDir, 'package.json'),
+      JSON.stringify({ name: '@acme/cli', version: '1.0.0' }, null, 2),
+    );
+    await writeFile(
+      join(pkgDir, '.smrt', 'manifest.json'),
+      JSON.stringify({
+        version: '1',
+        objects: {
+          '@acme/cli:Own': {
+            className: 'Own',
+            qualifiedName: '@acme/cli:Own',
+            collection: 'owns',
+            fields: { ownerId: { type: 'foreignKey', related: 'Owner' } },
+          },
+          '@acme/other:Foreign': {
+            className: 'Foreign',
+            qualifiedName: '@acme/other:Foreign',
+            collection: 'foreigns',
+            fields: {
+              aId: { type: 'foreignKey', related: 'A' },
+              bId: { type: 'foreignKey', related: 'B' },
+            },
+          },
+          '@acme/third:AlsoForeign': {
+            className: 'AlsoForeign',
+            packageName: '@acme/third',
+            collection: 'also_foreigns',
+            fields: { cId: { type: 'foreignKey', related: 'C' } },
+          },
+        },
+      }),
+    );
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const cli = index.packages.find((pkg) => pkg.name === '@acme/cli');
+
+    // Only the owned object counts; the aggregate would otherwise report 4.
+    expect(cli?.objects.map((object) => object.className)).toEqual(['Own']);
+    expect(index.relationshipsV2.foreignKeyFields).toBe(1);
+    expect(cli?.objectSourceReason).toContain('rejected 2');
+    expect(index.diagnostics.map((entry) => entry.code)).toContain(
+      'partial-foreign-manifest-objects',
+    );
+  });
+
+  it('reports an error diagnostic instead of a zeroed bundle when nothing is discovered', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/*'"]);
+    await mkdir(join(rootDir, 'apps', 'web'), { recursive: true });
+    await writeFile(
+      join(rootDir, 'apps', 'web', 'package.json'),
+      JSON.stringify({ name: '@acme/web', version: '1.0.0' }, null, 2),
+    );
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const zero = index.diagnostics.find(
+      (entry) => entry.code === 'no-smrt-objects-discovered',
+    );
+
+    expect(zero?.severity).toBe('error');
+    expect(zero?.message).toContain(rootDir);
+    expect(zero?.message).toContain('apps/*');
+    expect(zero?.remedy).toContain('pnpm build');
+    expect(zero?.checkedPaths).toEqual(
+      expect.arrayContaining(['apps/web/.smrt/manifest.json']),
+    );
+
+    // The architecture tool must lead with the failure, not a generic sketch.
+    const architecture = await smrtArchitecture({ rootDir, idea: 'invoicing' });
+    expect(architecture.diagnostics.map((entry) => entry.code)).toContain(
+      'no-smrt-objects-discovered',
+    );
+    expect(architecture.recommendations.objectModelSketch.join('\n')).toContain(
+      'No object model could be derived',
+    );
+    expect(architecture.promptBundle.contextMarkdown).toContain(
+      '[ERROR] no-smrt-objects-discovered',
+    );
+
+    const review = await smrtReview({ rootDir, mode: 'both' });
+    expect(review.diagnostics.map((entry) => entry.code)).toContain(
+      'no-smrt-objects-discovered',
+    );
+  });
+
+  it('counts one table once when two packages both report it', async () => {
+    await writeWorkspaceYaml(rootDir, ["'apps/*'", "'packages/*'"]);
+    // A consuming app's stale artifact re-qualifies its dependency's objects
+    // under its own package name, which name-prefix ownership cannot detect.
+    await writeManifestPackage(rootDir, 'packages/work', '@acme/work', [
+      'Plan',
+    ]);
+    await writeManifestPackage(rootDir, 'apps/web', '@acme/web', ['Plan']);
+
+    const index = await buildKnowledgeIndex({ rootDir });
+
+    expect(index.relationshipsV2.foreignKeyFields).toBe(1);
+    expect(index.diagnostics.map((entry) => entry.code)).toContain(
+      'duplicate-object-identity',
+    );
+  });
+
+  it('keeps prompt bundles small by default and embeds docs only on request', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    await writeManifestPackage(rootDir, 'packages/core', '@acme/core', [
+      'Ledger',
+    ]);
+    await writeFile(
+      join(rootDir, 'packages', 'core', 'AGENTS.md'),
+      `# core\n\n${'Authored expertise prose. '.repeat(400)}`,
+    );
+
+    const summary = await buildArchitectureContext({ rootDir, idea: 'ledger' });
+    const full = await buildArchitectureContext({
+      rootDir,
+      idea: 'ledger',
+      detail: 'full',
+    });
+
+    expect(summary.promptBundle.contextMarkdown).not.toContain(
+      'Authored expertise prose.',
+    );
+    expect(summary.promptBundle.contextMarkdown).toContain(
+      'packages/core/AGENTS.md',
+    );
+    expect(full.promptBundle.contextMarkdown).toContain(
+      'Authored expertise prose.',
+    );
+    expect(summary.promptBundle.contextMarkdown.length).toBeLessThan(
+      full.promptBundle.contextMarkdown.length / 2,
+    );
+  });
+});
+
+let counter = 0;
+
+async function writeWorkspaceYaml(
+  rootDir: string,
+  globs: string[],
+): Promise<void> {
+  await writeFile(
+    join(rootDir, 'pnpm-workspace.yaml'),
+    [
+      'packages:',
+      ...globs.map((glob) => `  - ${glob}`),
+      '',
+      'overrides:',
+      "  '@types/node': 24.13.2",
+      '',
+    ].join('\n'),
+  );
+}
+
+/** A package whose objects come from a package-local generated manifest. */
+async function writeManifestPackage(
+  rootDir: string,
+  relativeDir: string,
+  packageName: string,
+  classNames: string[],
+): Promise<void> {
+  const pkgDir = join(rootDir, relativeDir);
+  await mkdir(join(pkgDir, '.smrt'), { recursive: true });
+  await writeFile(
+    join(pkgDir, 'package.json'),
+    JSON.stringify({ name: packageName, version: '1.0.0' }, null, 2),
+  );
+  await writeFile(
+    join(pkgDir, '.smrt', 'manifest.json'),
+    JSON.stringify({
+      version: '1',
+      packageName,
+      objects: Object.fromEntries(
+        classNames.map((className) => [
+          `${packageName}:${className}`,
+          {
+            className,
+            qualifiedName: `${packageName}:${className}`,
+            collection: `${className.toLowerCase()}s`,
+            extends: 'SmrtObject',
+            fields: { ownerId: { type: 'foreignKey', related: 'Owner' } },
+            schema: { tableName: `${className.toLowerCase()}s` },
+          },
+        ]),
+      ),
+    }),
   );
 }

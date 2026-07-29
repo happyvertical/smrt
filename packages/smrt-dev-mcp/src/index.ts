@@ -174,7 +174,8 @@ export const TOOLS = [
   // Project Introspection Tools
   {
     name: 'introspect-project',
-    description: 'Scan current directory for SMRT objects',
+    description:
+      'Scan a directory for SMRT objects. Returns a compact summary by default; pass detail: "full" for field, schema, and method details.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -187,17 +188,29 @@ export const TOOLS = [
           description:
             'Optional manifest path. Defaults to .smrt/manifest.json, dist/manifest.json, then source scanning.',
         },
+        detail: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          default: 'summary',
+          description:
+            'summary: one compact record per object. full: complete field/schema/method detail (large).',
+        },
+        maxChars: {
+          type: 'number',
+          description:
+            'Response character budget. Objects past the budget are omitted and reported under `truncated`.',
+        },
         includeFields: {
           type: 'boolean',
-          description: 'Include field details',
+          description: 'Include field details (detail: "full" only)',
         },
         includeRelationships: {
           type: 'boolean',
-          description: 'Analyze relationships',
+          description: 'Analyze relationships (detail: "full" only)',
         },
         includeMethods: {
           type: 'boolean',
-          description: 'Include public method details',
+          description: 'Include public method details (detail: "full" only)',
         },
       },
     },
@@ -308,6 +321,13 @@ export const TOOLS = [
         changedFiles: { type: 'array', items: { type: 'string' } },
         focus: { type: 'string' },
         documentation: { type: 'string' },
+        detail: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          default: 'summary',
+          description:
+            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+        },
       },
     },
   },
@@ -328,6 +348,13 @@ export const TOOLS = [
           default: 'project',
         },
         package: { type: 'string' },
+        detail: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          default: 'summary',
+          description:
+            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+        },
       },
     },
   },
@@ -347,6 +374,13 @@ export const TOOLS = [
           enum: ['findings', 'prompt-bundle', 'both'],
           default: 'both',
         },
+        detail: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          default: 'summary',
+          description:
+            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+        },
       },
     },
   },
@@ -361,6 +395,13 @@ export const TOOLS = [
         idea: { type: 'string' },
         documentation: { type: 'string' },
         focus: { type: 'string' },
+        detail: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          default: 'summary',
+          description:
+            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+        },
       },
     },
   },
@@ -381,6 +422,13 @@ export const TOOLS = [
           default: 'project',
         },
         package: { type: 'string' },
+        detail: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          default: 'summary',
+          description:
+            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+        },
       },
     },
   },
@@ -395,6 +443,13 @@ export const TOOLS = [
         idea: { type: 'string' },
         documentation: { type: 'string' },
         focus: { type: 'string' },
+        detail: {
+          type: 'string',
+          enum: ['summary', 'full'],
+          default: 'summary',
+          description:
+            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+        },
       },
     },
   },
@@ -740,6 +795,8 @@ async function main() {
               smrtPackageCount: index.smrtPackages.length,
               sdkPackageCount: index.sdkPackages.length,
               relationshipsV2: index.relationshipsV2,
+              coverage: index.coverage,
+              diagnostics: index.diagnostics,
               freshness,
             },
             null,
@@ -775,6 +832,8 @@ async function main() {
                 )
                 .map((pkg) => pkg.name),
               relationshipsV2: index.relationshipsV2,
+              coverage: index.coverage,
+              diagnostics: index.diagnostics,
               freshness,
             },
             null,
@@ -804,19 +863,13 @@ async function main() {
           break;
 
         case 'build-review-context':
-          result = JSON.stringify(
-            await buildReviewContext(
-              args as unknown as Parameters<typeof buildReviewContext>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
         case 'build-domain-review-context':
           result = JSON.stringify(
-            await buildReviewContext(
-              args as unknown as Parameters<typeof buildReviewContext>[0],
+            compactContextResult(
+              await buildReviewContext(
+                args as unknown as Parameters<typeof buildReviewContext>[0],
+              ),
+              detailArg(args),
             ),
             null,
             2,
@@ -825,8 +878,11 @@ async function main() {
 
         case 'smrt-review':
           result = JSON.stringify(
-            await smrtReview(
-              args as unknown as Parameters<typeof smrtReview>[0],
+            compactContextResult(
+              await smrtReview(
+                args as unknown as Parameters<typeof smrtReview>[0],
+              ),
+              detailArg(args),
             ),
             null,
             2,
@@ -834,19 +890,15 @@ async function main() {
           break;
 
         case 'build-architecture-context':
-          result = JSON.stringify(
-            await buildArchitectureContext(
-              args as unknown as Parameters<typeof buildArchitectureContext>[0],
-            ),
-            null,
-            2,
-          );
-          break;
-
         case 'build-domain-architecture-context':
           result = JSON.stringify(
-            await buildArchitectureContext(
-              args as unknown as Parameters<typeof buildArchitectureContext>[0],
+            compactContextResult(
+              await buildArchitectureContext(
+                args as unknown as Parameters<
+                  typeof buildArchitectureContext
+                >[0],
+              ),
+              detailArg(args),
             ),
             null,
             2,
@@ -855,8 +907,11 @@ async function main() {
 
         case 'smrt-architecture':
           result = JSON.stringify(
-            await smrtArchitecture(
-              args as unknown as Parameters<typeof smrtArchitecture>[0],
+            compactContextResult(
+              await smrtArchitecture(
+                args as unknown as Parameters<typeof smrtArchitecture>[0],
+              ),
+              detailArg(args),
             ),
             null,
             2,
@@ -1026,10 +1081,76 @@ function sanitizeKnowledgeIndex(index: KnowledgeIndexResult) {
   };
 }
 
+/**
+ * Compact projection of a context result for MCP callers (#2143).
+ *
+ * `selectedPackages` carries each package's whole authored `agentDoc`, its
+ * module-doc contents, and its full domain manifest. A three-package downstream
+ * product serialized to 329,003 characters that way, which is what made these
+ * tools unusable as planning aids. `detail: "full"` returns the whole shape.
+ */
+function compactContextResult(
+  result: object,
+  detail: string | undefined,
+): Record<string, unknown> {
+  const source = result as Record<string, unknown>;
+  if (detail === 'full') return source;
+
+  const compact: Record<string, unknown> = { ...source, detail: 'summary' };
+  for (const key of ['selectedPackages', 'selectedSdkPackages']) {
+    const packages = source[key];
+    if (!Array.isArray(packages)) continue;
+    compact[key] = (packages as KnowledgePackageResult[]).map(
+      compactKnowledgePackage,
+    );
+  }
+  return compact;
+}
+
+function compactKnowledgePackage(pkg: KnowledgePackageResult) {
+  return {
+    name: pkg.name,
+    version: pkg.version,
+    kind: pkg.kind,
+    directory: pkg.relativeDirectory,
+    objectSource: pkg.objectSource,
+    ...(pkg.objectSourceReason
+      ? { objectSourceReason: pkg.objectSourceReason }
+      : {}),
+    // Paths, not prose: the caller reads what it needs.
+    docs: [
+      ...(pkg.docSource ? [`${pkg.relativeDirectory}/${pkg.docSource}`] : []),
+      ...pkg.moduleDocs.map((doc) => `${pkg.relativeDirectory}/${doc.path}`),
+    ],
+    domainKnowledgePath: pkg.domainKnowledgePath,
+    relationshipFeatures: pkg.relationshipFeatures,
+    smrtDependencies: pkg.smrtDependencies,
+    sdkDependencies: pkg.sdkDependencies,
+    exportKeys: pkg.exportKeys,
+    objectCount: pkg.objects.length,
+    objects: pkg.objects.map((object) =>
+      object.tableName
+        ? `${object.qualifiedName ?? object.className} (${object.tableName})`
+        : (object.qualifiedName ?? object.className),
+    ),
+    mcpToolCount: pkg.mcpTools.length,
+  };
+}
+
+function detailArg(args: unknown): string | undefined {
+  const detail = (args as Record<string, unknown> | undefined)?.detail;
+  return typeof detail === 'string' ? detail : undefined;
+}
+
 function sanitizeKnowledgePackage(pkg: KnowledgePackageResult) {
-  const { directory: _directory, objects, ...rest } = pkg;
+  const { directory: _directory, objects, checkedObjectPaths, ...rest } = pkg;
   return {
     ...rest,
+    // Paths outside the workspace root stay absolute in the index; redact them
+    // here the same way object file paths are redacted.
+    checkedObjectPaths: checkedObjectPaths.map(
+      (path) => sanitizePath(path) ?? path,
+    ),
     objects: objects.map((object) => ({
       ...object,
       filePath: sanitizePath(object.filePath),
