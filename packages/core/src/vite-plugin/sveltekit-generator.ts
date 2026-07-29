@@ -29,7 +29,12 @@ import { generateChangesRoute } from './changes-route.js';
 import { generateEventsRoute } from './events-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateSyncApplyRoute } from './sync-apply-route.js';
-import { computeWebManifestHash } from './web-collections.js';
+import {
+  computeWebManifestHash,
+  isCollectionManifestClass,
+  resolveCollectionItemObject,
+  resolveCollectionItemTypeName,
+} from './web-collections.js';
 
 export interface SvelteKitOptions {
   enabled: boolean;
@@ -1072,22 +1077,15 @@ function findItemClassRegistryKey(
   objectDef: SmartObjectDefinition,
   manifest: SmartObjectManifest,
 ): string {
-  const itemClassName =
-    objectDef.extendsTypeArg ||
-    (className.endsWith('Collection')
-      ? className.slice(0, -'Collection'.length)
-      : undefined);
-
-  if (!itemClassName) {
-    return className;
+  const itemObject = resolveCollectionItemObject(manifest, objectDef);
+  if (!itemObject) {
+    return resolveCollectionItemTypeName(manifest, objectDef) || className;
   }
 
   const manifestMatch = Object.entries(manifest.objects).find(
-    ([manifestKey, candidate]) =>
-      manifestKey === itemClassName || candidate.className === itemClassName,
+    ([, manifestObject]) => manifestObject === itemObject,
   );
-
-  return manifestMatch?.[0] || itemClassName;
+  return manifestMatch?.[0] || itemObject.className;
 }
 
 function groupCustomActionRoutes(
@@ -1139,7 +1137,7 @@ export async function generateSvelteKitRoutes(
   let generatedCount = 0;
   let skippedCollections = 0;
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
-    if (isCollectionClass(objectDef)) {
+    if (isCollectionManifestClass(manifest, objectDef)) {
       const generatedCollectionRoutes = await generateCollectionRoutesForObject(
         projectRoot,
         className,
@@ -1322,7 +1320,7 @@ async function generateRegistrationFile(
         hasCollectionImport: false,
       };
 
-      if (isCollectionClass(objectDef)) {
+      if (isCollectionManifestClass(manifest, objectDef)) {
         packageEntry.hasCollectionImport = true;
       } else {
         packageEntry.classNames.push(className);
@@ -1362,7 +1360,7 @@ async function generateRegistrationFile(
       );
     }
 
-    if (isCollectionClass(objectDef)) {
+    if (isCollectionManifestClass(manifest, objectDef)) {
       localSideEffectImports.add(importPath);
       continue;
     }
@@ -1412,7 +1410,7 @@ async function generateRegistrationFile(
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
   const registrations = Object.entries(manifest.objects)
     .map(([className, objectDef]) => {
-      if (isCollectionClass(objectDef)) {
+      if (isCollectionManifestClass(manifest, objectDef)) {
         // Importing the collection class is enough to trigger its decorator.
         // Explicit package-qualified re-registration only applies to object
         // classes, because ObjectRegistry.register() is object-only.
@@ -1898,12 +1896,17 @@ function shouldIncludeInApi(actionName: string, apiConfig: unknown): boolean {
  */
 export function resolveApiActionSet(
   objectDef: SmartObjectDefinition,
+  manifest?: SmartObjectManifest,
 ): Set<string> {
   const apiConfig = objectDef.decoratorConfig?.api;
   if (apiConfig === false) return new Set();
 
-  const actions = new Set<string>(resolveStandardCrudActions(apiConfig));
-  const objectIsCollectionClass = isCollectionClass(objectDef);
+  const objectIsCollectionClass = manifest
+    ? isCollectionManifestClass(manifest, objectDef)
+    : isCollectionClass(objectDef);
+  const actions = objectIsCollectionClass
+    ? new Set<string>()
+    : new Set<string>(resolveStandardCrudActions(apiConfig));
   const config = getApiConfigObject(apiConfig);
 
   // Custom (non-CRUD, public) methods. We mirror BOTH the include/exclude
@@ -1978,7 +1981,7 @@ export function findCliApiCoherenceViolations(
     );
     if (effectiveCliCommands.length === 0) continue;
 
-    const apiActionSet = resolveApiActionSet(objectDef);
+    const apiActionSet = resolveApiActionSet(objectDef, manifest);
     const unreachable = effectiveCliCommands.filter(
       (action: string) => !apiActionSet.has(action),
     );

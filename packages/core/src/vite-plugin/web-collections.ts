@@ -114,6 +114,7 @@ interface ManifestObjectIndex {
   byExactName: Map<string, SmartObjectDefinition>;
   byPackageAndClass: Map<string, SmartObjectDefinition>;
   bySimpleName: Map<string, SmartObjectDefinition>;
+  packageByObject: WeakMap<SmartObjectDefinition, string>;
 }
 
 const manifestObjectIndexes = new WeakMap<
@@ -142,6 +143,7 @@ function getManifestObjectIndex(
     byExactName: new Map(),
     byPackageAndClass: new Map(),
     bySimpleName: new Map(),
+    packageByObject: new WeakMap(),
   };
 
   for (const [manifestKey, candidate] of entries) {
@@ -160,6 +162,9 @@ function getManifestObjectIndex(
 
     const packageName = manifestObjectPackage(manifestKey, candidate);
     if (packageName) {
+      if (!index.packageByObject.has(candidate)) {
+        index.packageByObject.set(candidate, packageName);
+      }
       const packageKey = packageAndClassKey(packageName, candidate.className);
       if (!index.byPackageAndClass.has(packageKey)) {
         index.byPackageAndClass.set(packageKey, candidate);
@@ -169,6 +174,16 @@ function getManifestObjectIndex(
 
   manifestObjectIndexes.set(manifest.objects, index);
   return index;
+}
+
+function indexedManifestObjectPackage(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): string | undefined {
+  const index = getManifestObjectIndex(manifest);
+  return (
+    index.packageByObject.get(obj) || manifestObjectPackage(undefined, obj)
+  );
 }
 
 /**
@@ -189,7 +204,7 @@ export function findManifestObjectByName(
   if (exact) return exact;
 
   const ownerPackage = owner
-    ? manifestObjectPackage(undefined, owner)
+    ? indexedManifestObjectPackage(manifest, owner)
     : undefined;
   const packageLocal = ownerPackage
     ? index.byPackageAndClass.get(packageAndClassKey(ownerPackage, name))
@@ -245,6 +260,113 @@ export function isCollectionManifestClass(
   seen.add(parentName);
   const parent = findManifestObjectByName(manifest, parentName, obj);
   return parent ? isCollectionManifestClass(manifest, parent, seen) : false;
+}
+
+/**
+ * Resolve the row model carried by a collection class.
+ *
+ * An explicit generic on any ancestor is authoritative. Conventional
+ * `FooCollection` → `Foo` lookup is only a fallback after the full ancestry
+ * has been checked, so an unrelated `SpecialFoo` cannot override an inherited
+ * `FooCollection<Foo>` contract.
+ */
+function collectionAncestry(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): SmartObjectDefinition[] {
+  const ancestry: SmartObjectDefinition[] = [];
+  const seen = new Set<string>();
+  let candidate: SmartObjectDefinition | undefined = obj;
+
+  while (candidate) {
+    ancestry.push(candidate);
+    const parentName = candidate.extendsQualified || candidate.extends;
+    if (!parentName || seen.has(parentName)) break;
+    seen.add(parentName);
+    candidate = findManifestObjectByName(manifest, parentName, candidate);
+  }
+  return ancestry;
+}
+
+/**
+ * Resolve the authoritative collection item type name even when a partial
+ * manifest omits the item definition itself.
+ */
+interface CollectionItemReference {
+  name: string;
+  owner: SmartObjectDefinition;
+  object?: SmartObjectDefinition;
+}
+
+function resolveCollectionItemCandidate(
+  manifest: SmartObjectManifest,
+  name: string,
+  owner: SmartObjectDefinition,
+): CollectionItemReference {
+  const object = findManifestObjectByName(manifest, name, owner);
+  const ownerPackage = indexedManifestObjectPackage(manifest, owner);
+
+  if (!name.includes(':') && ownerPackage) {
+    const objectPackage = object
+      ? indexedManifestObjectPackage(manifest, object)
+      : undefined;
+    if (objectPackage !== ownerPackage) {
+      return {
+        name: `${ownerPackage}:${name}`,
+        owner,
+      };
+    }
+  }
+
+  return { name, owner, object };
+}
+
+function resolveCollectionItemReference(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): CollectionItemReference | undefined {
+  const ancestry = collectionAncestry(manifest, obj);
+  for (const collectionClass of ancestry) {
+    if (collectionClass.extendsTypeArg) {
+      return resolveCollectionItemCandidate(
+        manifest,
+        collectionClass.extendsTypeArg,
+        collectionClass,
+      );
+    }
+  }
+
+  let fallback: CollectionItemReference | undefined;
+  for (const collectionClass of ancestry) {
+    if (!collectionClass.className.endsWith('Collection')) continue;
+    const conventionalName = collectionClass.className.slice(
+      0,
+      -'Collection'.length,
+    );
+    const candidate = resolveCollectionItemCandidate(
+      manifest,
+      conventionalName,
+      collectionClass,
+    );
+    if (candidate.object) return candidate;
+    fallback ??= candidate;
+  }
+
+  return fallback;
+}
+
+export function resolveCollectionItemTypeName(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): string | undefined {
+  return resolveCollectionItemReference(manifest, obj)?.name;
+}
+
+export function resolveCollectionItemObject(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): SmartObjectDefinition | undefined {
+  return resolveCollectionItemReference(manifest, obj)?.object;
 }
 
 /**

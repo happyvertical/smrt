@@ -42,6 +42,8 @@ const h = vi.hoisted(() => {
     generateSchema: vi.fn(async () => 'CREATE TABLE t ()'),
     schemaComparerOptions: vi.fn(),
     schemaCompare: vi.fn(async () => ({ added_tables: [], changes: [] })),
+    migratePostgresSystemTimestamps: vi.fn(async () => {}),
+    planPostgresSystemTimestampMigrations: vi.fn(async () => []),
     manifestGenerate: vi.fn(async () => ({
       objects: { '@app:Article': {} },
     })),
@@ -69,6 +71,9 @@ const {
   generateSchema,
   schemaComparerOptions,
   schemaCompare,
+  migratePostgresSystemTimestamps,
+  planPostgresSystemTimestampMigrations,
+  trackerInitialize,
   manifestGenerate,
   discoverBaseClasses,
   rlQuestion,
@@ -100,6 +105,10 @@ vi.mock('@happyvertical/smrt-core', () => ({
     indexes: [],
     triggers: [],
   })),
+  migratePostgresSystemTimestamps: (...args: unknown[]) =>
+    h.migratePostgresSystemTimestamps(...args),
+  planPostgresSystemTimestampMigrations: (...args: unknown[]) =>
+    h.planPostgresSystemTimestampMigrations(...args),
   isQualifiedName: vi.fn((s: string) => s.includes(':')),
   getClassName: vi.fn((s: string) => (s.includes(':') ? s.split(':')[1] : s)),
 }));
@@ -211,6 +220,7 @@ describe('utility command handlers', () => {
     });
     getDatabase.mockResolvedValue({ close: vi.fn() });
     schemaCompare.mockResolvedValue({ added_tables: [], changes: [] });
+    planPostgresSystemTimestampMigrations.mockResolvedValue([]);
     trackerApplyAll.mockResolvedValue([]);
   });
 
@@ -445,13 +455,21 @@ describe('utility command handlers', () => {
     expect(logged()).toContain('Database schema is up to date');
   });
 
-  it('db:migrate forwards only the exact UTC timestamp confirmation to the schema comparer', async () => {
+  it('db:migrate upgrades SMRT system timestamps before tracker bootstrap and forwards the exact UTC confirmation', async () => {
     configureMigrate();
 
     await utilityCommands['db:migrate'].handler([], {
       'postgres-timestamp-legacy-timezone': 'UTC',
     });
 
+    expect(migratePostgresSystemTimestamps).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.any(Function) }),
+      { legacyTimezone: 'UTC' },
+      'sqlite',
+    );
+    expect(
+      migratePostgresSystemTimestamps.mock.invocationCallOrder[0],
+    ).toBeLessThan(trackerInitialize.mock.invocationCallOrder[0]);
     expect(schemaComparerOptions).toHaveBeenCalledWith(
       expect.objectContaining({
         postgresTimestampMigration: { legacyTimezone: 'UTC' },
@@ -466,6 +484,47 @@ describe('utility command handlers', () => {
 
     expect(errored()).toContain('must be exactly UTC');
     expect(process.exitCode).toBe(1);
+  });
+
+  it('db:migrate keeps UTC timestamp preview strictly read-only', async () => {
+    configureMigrate();
+    planPostgresSystemTimestampMigrations.mockResolvedValue([
+      {
+        kind: 'column',
+        tableName: '_smrt_changes',
+        columnName: 'created_at',
+        sql: `ALTER TABLE "_smrt_changes" ALTER COLUMN "created_at" TYPE TIMESTAMPTZ USING "created_at" AT TIME ZONE 'UTC'`,
+      },
+      {
+        kind: 'change-feed-function',
+        tableName: '_smrt_changes',
+        sql: 'DROP FUNCTION legacy();\nCREATE FUNCTION current() RETURNS void AS $$ BEGIN END $$;',
+      },
+    ]);
+
+    await utilityCommands['db:migrate'].handler([], {
+      'dry-run': true,
+      'postgres-timestamp-legacy-timezone': 'UTC',
+    });
+
+    expect(migratePostgresSystemTimestamps).not.toHaveBeenCalled();
+    expect(trackerInitialize).not.toHaveBeenCalled();
+    expect(planPostgresSystemTimestampMigrations).toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.any(Function) }),
+      { legacyTimezone: 'UTC' },
+      'sqlite',
+    );
+    expect(schemaComparerOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        postgresTimestampMigration: { legacyTimezone: 'UTC' },
+      }),
+    );
+    expect(logged()).toContain('_smrt_changes.created_at');
+    expect(logged()).toContain(
+      `ALTER TABLE "_smrt_changes" ALTER COLUMN "created_at" TYPE TIMESTAMPTZ`,
+    );
+    expect(logged()).not.toContain('$$;;');
+    expect(logged()).not.toContain('Database schema is up to date');
   });
 
   it('db:migrate previews changes in --dry-run mode', async () => {

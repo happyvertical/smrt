@@ -222,6 +222,11 @@ export interface ClaimForgeDeliveryOptions {
  * is the sole cross-tenant worker scan and returns the captured tenant so the
  * runtime can restore it before normalization or projection.
  */
+@smrt({
+  api: false,
+  cli: false,
+  mcp: false,
+})
 export class ForgeDeliveryCollection extends SmrtCollection<ForgeDelivery> {
   static readonly _itemClass = ForgeDelivery;
 

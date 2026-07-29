@@ -6,9 +6,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin } from 'vite';
-import { CLIENT_FETCH_RUNTIME } from '../generated-client-runtime.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { generateClientModule } from '../vite-plugin/generated-client.js';
 
 /**
  * Loosely-typed view of an object definition as carried by an external
@@ -71,6 +71,11 @@ export interface SmrtConsumerOptions {
   projectRoot?: string;
   /** SvelteKit integration mode */
   svelteKit?: boolean;
+  /**
+   * Apply kebab-case to generated custom-method URL segments. This must match
+   * the producer plugin's `svelteKit.kebabRoutes` setting.
+   */
+  kebabRoutes?: boolean;
   /** Use static types only (for federation builds) */
   staticTypes?: boolean;
   /** Disable file scanning */
@@ -102,6 +107,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     typesDir = 'src/types/smrt-generated',
     projectRoot = process.cwd(),
     disableScanning = false,
+    kebabRoutes = false,
   } = options;
 
   let smrtPackages: string[] = [];
@@ -176,7 +182,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
           return generateFallbackRoutesModule();
 
         case 'smrt-consumer:client':
-          return generateFallbackClientModule(typeManifest);
+          return generateFallbackClientModule(typeManifest, { kebabRoutes });
 
         case 'smrt-consumer:mcp':
           return generateFallbackMcpModule();
@@ -684,7 +690,10 @@ export default setupRoutes;
 `;
 }
 
-function generateFallbackClientModule(manifest: ConsumerManifest): string {
+function generateFallbackClientModule(
+  manifest: ConsumerManifest,
+  options: { kebabRoutes?: boolean } = {},
+): string {
   const objects = Object.entries(manifest?.objects || {});
   if (objects.length === 0) {
     return `
@@ -697,49 +706,9 @@ export default createClient;
 `;
   }
 
-  // Generate basic client from manifest.
-  //
-  // Object keys are QUOTED via JSON.stringify (#1795): a manifest key can be a
-  // package-qualified name like `@happyvertical/smrt-assets:AssetAssociation`,
-  // which is not a valid bare object-literal key and produced a build-breaking
-  // syntax error in the emitted module. Fetchers reject on !response.ok (#1796)
-  // via the shared __smrtFetchJson/__smrtFetchOk runtime.
-  const clientMethods = objects
-    .map(([name, obj]) => {
-      const { collection } = obj;
-      return `
-  ${JSON.stringify(name)}: {
-    list: () => __smrtFetchJson(basePath + '/${collection}', { method: 'GET' }),
-    get: (id) => __smrtFetchJson(basePath + '/${collection}/' + id, { method: 'GET' }),
-    create: (data) => __smrtFetchJson(basePath + '/${collection}', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }),
-    update: (id, data) => __smrtFetchJson(basePath + '/${collection}/' + id, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }),
-    delete: (id) => __smrtFetchOk(basePath + '/${collection}/' + id, {
-      method: 'DELETE'
-    }),
-    search: (query) => __smrtFetchJson(basePath + '/${collection}/search?q=' + encodeURIComponent(query), { method: 'GET' })
-  }`;
-    })
-    .join(',');
-
-  return `
-// Auto-generated API client from SMRT consumer
-
-${CLIENT_FETCH_RUNTIME}
-
-export function createClient(basePath = '/api/v1') {
-  return {${clientMethods}
-  };
-}
-export default createClient;
-`;
+  return generateClientModule(manifest as unknown as SmartObjectManifest, {
+    kebabRoutes: options.kebabRoutes,
+  });
 }
 
 function generateFallbackMcpModule(): string {
