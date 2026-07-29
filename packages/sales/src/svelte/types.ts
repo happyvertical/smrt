@@ -23,7 +23,11 @@ import type {
   EarnerBalance,
   PayoutMethod,
 } from '../commissions/index.js';
-import type { LeadStatus, OpportunityStatus } from '../crm/index.js';
+import type {
+  LeadHumanActivityKind,
+  LeadStatus,
+  OpportunityStatus,
+} from '../crm/index.js';
 import type {
   AttributionAward,
   AttributionExceptionStatus,
@@ -86,6 +90,34 @@ export interface LeadListItemView {
   nextAction?: NextActionView | null;
 }
 
+/** Header/facts view for the follow-up-focused {@link LeadDetail} surface. */
+export interface LeadDetailView {
+  id: string;
+  name: string;
+  status: LeadStatus;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  organizationName?: string;
+  ownerRepId?: string;
+  ownerName?: string;
+  /** Set when the Lead was folded into a surviving Lead. */
+  mergedIntoId?: string;
+}
+
+/** Draft passed by {@link LeadDetail}'s human-activity form. */
+export interface LeadHumanActivityDraft {
+  activityKind: LeadHumanActivityKind;
+  summary: string;
+}
+
+/** Draft passed by {@link LeadDetail}'s next-action form. */
+export interface LeadNextActionDraft {
+  summary: string;
+  /** ISO calendar date from the native date input; hosts select a clock/time. */
+  dueAt: string;
+}
+
 /** Pipeline stage (ordered) for board columns and stage pickers. */
 export interface PipelineStageView {
   id: string;
@@ -117,6 +149,8 @@ export interface SalesActivityView {
   /** Open-string kind (`note`, `call`, `stage_change`, …). */
   activityKind: string;
   summary: string;
+  /** Event creation time, used to render a complete chronological timeline. */
+  createdAt?: DateInput;
   dueAt?: DateInput;
   completedAt?: DateInput;
   actorName?: string;
@@ -455,6 +489,37 @@ export function agreementStatusBadgeVariant(
  */
 export function canQualifyLead(status: LeadStatus): boolean {
   return status === 'new' || status === 'working';
+}
+
+/** Callback action gates for the generic Lead follow-up detail surface. */
+export interface LeadWorkflowActions {
+  canAssign: boolean;
+  canStartWorking: boolean;
+  canDisqualify: boolean;
+  canRecordActivity: boolean;
+  canScheduleNextAction: boolean;
+  canCompleteNextAction: boolean;
+  canQualify: boolean;
+}
+
+/**
+ * Render-time action gates mirroring the workflow service: `new` and
+ * `working` are active follow-up states; `disqualified` can be reopened;
+ * qualified and merged Leads receive no ordinary follow-up actions.
+ */
+export function leadWorkflowActionsFor(
+  status: LeadStatus,
+): LeadWorkflowActions {
+  const active = status === 'new' || status === 'working';
+  return {
+    canAssign: active,
+    canStartWorking: status === 'new' || status === 'disqualified',
+    canDisqualify: active,
+    canRecordActivity: active,
+    canScheduleNextAction: active,
+    canCompleteNextAction: active,
+    canQualify: canQualifyLead(status),
+  };
 }
 
 /** Whether a next action is overdue relative to `now` (default: current time). */

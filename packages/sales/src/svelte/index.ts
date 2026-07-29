@@ -22,6 +22,7 @@ import AttributionConflictQueue from './components/AttributionConflictQueue.svel
 import CommissionBreakdown from './components/CommissionBreakdown.svelte';
 import CommissionExpenseSummary from './components/CommissionExpenseSummary.svelte';
 import ExecutedAgreementsList from './components/ExecutedAgreementsList.svelte';
+import LeadDetail from './components/LeadDetail.svelte';
 import LeadList from './components/LeadList.svelte';
 import OpportunityBoard from './components/OpportunityBoard.svelte';
 import OpportunityDetail from './components/OpportunityDetail.svelte';
@@ -38,6 +39,7 @@ export {
   CommissionBreakdown,
   CommissionExpenseSummary,
   ExecutedAgreementsList,
+  LeadDetail,
   LeadList,
   OpportunityBoard,
   OpportunityDetail,
@@ -62,6 +64,7 @@ export type CommissionExpenseSummaryProps = ComponentProps<
 export type ExecutedAgreementsListProps = ComponentProps<
   typeof ExecutedAgreementsList
 >;
+export type LeadDetailProps = ComponentProps<typeof LeadDetail>;
 export type LeadListProps = ComponentProps<typeof LeadList>;
 export type OpportunityBoardProps = ComponentProps<typeof OpportunityBoard>;
 export type OpportunityDetailProps = ComponentProps<typeof OpportunityDetail>;
@@ -102,7 +105,11 @@ export type {
   CurrencyAmount,
   DateInput,
   EarnerBalance,
+  LeadDetailView,
+  LeadHumanActivityDraft,
   LeadListItemView,
+  LeadNextActionDraft,
+  LeadWorkflowActions,
   NextActionView,
   OpportunityCardView,
   OpportunityDetailView,
@@ -134,6 +141,7 @@ export {
   isHttpUrl,
   isOverdue,
   leadStatusBadgeVariant,
+  leadWorkflowActionsFor,
   openOpportunityCount,
   openPipelineTotals,
   opportunityStatusBadgeVariant,

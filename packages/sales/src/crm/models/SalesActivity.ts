@@ -15,6 +15,22 @@ import type {
   SalesActivitySubjectKind,
 } from '../types.js';
 
+/** Internal one-save permit consumed by the Lead workflow completion path. */
+const workflowCompletionPermits = new WeakSet<SalesActivity>();
+
+/**
+ * Permit one monotonic `completedAt` stamp on a hydrated task.
+ *
+ * This intentionally stays out of the CRM barrel: generated CRUD exposes no
+ * activity update route, and the public `LeadWorkflowService` is the only
+ * supported completion surface that may acquire this internal capability.
+ */
+export function permitSalesActivityWorkflowCompletion(
+  activity: SalesActivity,
+): void {
+  workflowCompletionPermits.add(activity);
+}
+
 /**
  * SalesActivity is the shared trail for Leads and Opportunities: human
  * touchpoints (`note`, `call`, `email`, `meeting`), next actions (`task`
@@ -136,6 +152,61 @@ export class SalesActivity extends SmrtObject {
   setMetadata(metadata: Record<string, unknown>): void {
     this.metadata = JSON.stringify(metadata);
   }
+
+  /**
+   * Keep task completion monotonic and service-owned even for direct model
+   * callers. Immutable activities have no generated update endpoint; this
+   * guard also closes the direct `model.completedAt = …; save()` escape hatch.
+   */
+  override async save(): Promise<this> {
+    const priorCompletedAt = await this.resolvePersistedCompletedAt();
+    const requestedCompletedAt = this.completedAt;
+    const isNewCompletion =
+      requestedCompletedAt !== null &&
+      (priorCompletedAt === null || priorCompletedAt === undefined);
+
+    if (
+      priorCompletedAt &&
+      !sameInstant(priorCompletedAt, requestedCompletedAt)
+    ) {
+      throw new Error(
+        'SalesActivity.completedAt is monotonic and cannot be changed once set.',
+      );
+    }
+    if (isNewCompletion && !workflowCompletionPermits.has(this)) {
+      throw new Error(
+        'SalesActivity.completedAt may only be set through LeadWorkflowService.',
+      );
+    }
+
+    const result = (await super.save()) as this;
+    workflowCompletionPermits.delete(this);
+    return result;
+  }
+
+  /** `undefined` means this id has not been persisted yet. */
+  private async resolvePersistedCompletedAt(): Promise<
+    Date | null | undefined
+  > {
+    if (!this.id) return undefined;
+    try {
+      const row = await this.db.get(this.tableName, { id: this.id });
+      if (!row) return undefined;
+      const value = row.completed_at;
+      if (value === null || value === undefined) return null;
+      const completedAt =
+        value instanceof Date ? value : new Date(String(value));
+      return Number.isFinite(completedAt.getTime()) ? completedAt : null;
+    } catch {
+      // A fresh collection can construct its first object before the table is
+      // verified. Let the normal save path create storage, then persist it.
+      return undefined;
+    }
+  }
+}
+
+function sameInstant(expected: Date, actual: Date | null): actual is Date {
+  return actual !== null && expected.getTime() === actual.getTime();
 }
 
 export default SalesActivity;

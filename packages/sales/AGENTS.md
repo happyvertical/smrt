@@ -30,7 +30,7 @@ you are editing. This file keeps what holds in every module.
 |---|---|---|
 | `agreements` | verified execution evidence — private orchestration state, append-only provider events, immutable executed agreements, and the provider-neutral execution service | [agents/agreements.md](agents/agreements.md) |
 | `commissions` | the neutral financial core — earners, versioned plans, earning events, commissions, adjustments, balances, and payout settlement | [agents/commissions.md](agents/commissions.md) |
-| `crm` | leads, configurable pipelines, opportunities, activity trail, and idempotent conversion links | [agents/crm.md](agents/crm.md) |
+| `crm` | leads, configurable pipelines, opportunities, tenant-safe Lead follow-up, activity trail, and idempotent conversion links | [agents/crm.md](agents/crm.md) |
 | `referrals` | referrers, programs, versioned attribution policies, links/touches, referrals, exception review, and term snapshots | [agents/referrals.md](agents/referrals.md) |
 | `svelte` | props-driven presentational surfaces for CRM, the referrer portal, and operator review | [agents/svelte.md](agents/svelte.md) |
 
@@ -61,6 +61,7 @@ Business/domain models are generally `@TenantScoped({ mode: 'optional' })` with 
 - **CommissionPayout, not Payout**: avoids the pre-existing global table-name collision between commerce `Payout` and legacy affiliates `Payout` (`payouts`).
 - **Table names are global**: new models were named to avoid collisions across packages (`commission_payouts`, `sales_activities`, `attribution_policies`, …).
 - **Svelte module is svelte-check-gated**: no runtime component tests; `typecheck` runs `svelte-check` via `scripts/svelte-check-a11y.mjs`. Ship raw `.svelte` via `svelte-package`.
+- **Lead follow-up stays generic**: call `LeadWorkflowService` for audited Lead assignment/status/activity/task mutations under ambient tenancy; it locks rows, rejects cross-tenant identifiers, and has no authorization, SLA, automatic-owner, reminder, website-contact, or conversion policy. `LeadDetail` is props/callback only; host applications map state and call the service.
 - **Model transition methods don't save**: `markEarned()/approve()/markPayable()/markPaid()` (Commission) and the payout transitions mutate + stamp timestamps only — callers save; the settlement/payout services do both.
 - **`reject()` alone strands rows**: the model method only flips status — always reject through `transitionPayoutForSource`, which releases the batch's membership in the same transaction; stamped rows on a rejected payout would be unsettleable forever.
 - **The payout source stamp is derived data, never authorization**: `sourceKind`/`sourceId` on CommissionPayout index the history listing; both the listing and the lifecycle service re-verify actual membership and fail closed when the stamp cannot be proven.
