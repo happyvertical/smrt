@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  crossPackageRef,
   field,
   getTestDatabase,
   meta,
@@ -62,6 +63,12 @@ class PolicyModelDoc extends SmrtObject {
 
   @meta()
   legacyNotes: string = '';
+
+  @crossPackageRef('@happyvertical/smrt-users:User')
+  reviewerId: string = '';
+
+  @crossPackageRef('@happyvertical/smrt-users:User', { idType: 'text' })
+  externalRef: string = '';
 }
 
 function fixtureRef(): string {
@@ -70,6 +77,23 @@ function fixtureRef(): string {
     throw new Error('PolicyModelDoc is not registered with a qualified name');
   }
   return registered.qualifiedName;
+}
+
+/**
+ * Seed tenant/user-scope rows the way real ops flows do: under a super-admin
+ * bypass context. Without any ambient identity such rows are rejected
+ * outright (the context-absent fail-closed rule), so bare-context seeding is
+ * reserved for app-scope rows.
+ */
+function seedPolicies<T>(fn: () => Promise<T>): Promise<T> {
+  return withTenant(
+    {
+      tenantId: randomUUID(),
+      permissions: new Set<string>(),
+      superAdminBypass: true,
+    },
+    fn,
+  );
 }
 
 describe('FieldPolicy write-time validation', () => {
@@ -388,13 +412,15 @@ describe('FieldPolicy write-time validation', () => {
     expect(viaCodeDefault.visibility).toBe('advanced');
 
     // A tenant demotion may rely on the app row's stored default.
-    const tenantRow = await policies.create({
-      objectRef,
-      fieldName: 'title',
-      scopeType: 'tenant',
-      tenantId: randomUUID(),
-      visibility: 'hidden',
-    });
+    const tenantRow = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'title',
+        scopeType: 'tenant',
+        tenantId: randomUUID(),
+        visibility: 'hidden',
+      }),
+    );
     expect(tenantRow.visibility).toBe('hidden');
 
     // Optional fields demote freely.
@@ -408,26 +434,28 @@ describe('FieldPolicy write-time validation', () => {
   });
 
   it('restricts locked to org rows and enforces the lock against user writes', async () => {
-    await expect(
-      policies.create({
-        objectRef,
-        fieldName: 'summary',
-        scopeType: 'user',
-        userId: randomUUID(),
-        locked: true,
-      }),
-    ).rejects.toThrow(/locked may only be set on org rows/);
+    await seedPolicies(async () => {
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'user',
+          userId: randomUUID(),
+          locked: true,
+        }),
+      ).rejects.toThrow(/locked may only be set on org rows/);
 
-    // Code-seeded lock (ui.locked) blocks user-scope writes outright.
-    await expect(
-      policies.create({
-        objectRef,
-        fieldName: 'lockedByCode',
-        scopeType: 'user',
-        userId: randomUUID(),
-        help: 'mine',
-      }),
-    ).rejects.toThrow(/locked by org policy/);
+      // Code-seeded lock (ui.locked) blocks user-scope writes outright.
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'lockedByCode',
+          scopeType: 'user',
+          userId: randomUUID(),
+          help: 'mine',
+        }),
+      ).rejects.toThrow(/locked by org policy/);
+    });
 
     // App-row lock blocks user writes on an otherwise-open field.
     await policies.create({
@@ -436,15 +464,17 @@ describe('FieldPolicy write-time validation', () => {
       scopeType: 'app',
       locked: true,
     });
-    await expect(
-      policies.create({
-        objectRef,
-        fieldName: 'summary',
-        scopeType: 'user',
-        userId: randomUUID(),
-        help: 'mine',
-      }),
-    ).rejects.toThrow(/locked by org policy/);
+    await seedPolicies(async () => {
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'user',
+          userId: randomUUID(),
+          help: 'mine',
+        }),
+      ).rejects.toThrow(/locked by org policy/);
+    });
 
     // An explicit org unlock on a code-locked field re-opens the user tier.
     await policies.create({
@@ -453,13 +483,15 @@ describe('FieldPolicy write-time validation', () => {
       scopeType: 'app',
       locked: false,
     });
-    const userRow = await policies.create({
-      objectRef,
-      fieldName: 'lockedByCode',
-      scopeType: 'user',
-      userId: randomUUID(),
-      help: 'mine',
-    });
+    const userRow = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'lockedByCode',
+        scopeType: 'user',
+        userId: randomUUID(),
+        help: 'mine',
+      }),
+    );
     expect(userRow.help).toBe('mine');
   });
 
@@ -486,13 +518,15 @@ describe('FieldPolicy write-time validation', () => {
 
     // Distinct scopes coexist for the same field.
     const tenantId = randomUUID();
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId,
-      help: 'tenant help',
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        help: 'tenant help',
+      }),
+    );
     const allRows = await policies.list({
       where: { objectRef, fieldName: 'summary' },
     });
@@ -610,34 +644,38 @@ describe('FieldPolicy write-time validation', () => {
     const contextUser = randomUUID();
     const foreignUser = randomUUID();
 
-    // Rows created outside any context (platform admin flow).
+    // App row seeded bare (allowed without ambient identity); tenant/user
+    // rows seeded under bypass like real ops flows.
     const appRow = await policies.create({
       objectRef,
       fieldName: 'summary',
       scopeType: 'app',
       help: 'app row',
     });
-    const foreignTenantRow = await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: foreignTenant,
-      help: 'foreign tenant row',
-    });
-    const foreignUserRow = await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'user',
-      userId: foreignUser,
-      help: 'foreign user row',
-    });
-    const ownTenantRow = await policies.create({
-      objectRef,
-      fieldName: 'category',
-      scopeType: 'tenant',
-      tenantId: contextTenant,
-      help: 'own tenant row',
-    });
+    const { foreignTenantRow, foreignUserRow, ownTenantRow } =
+      await seedPolicies(async () => ({
+        foreignTenantRow: await policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'tenant',
+          tenantId: foreignTenant,
+          help: 'foreign tenant row',
+        }),
+        foreignUserRow: await policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'user',
+          userId: foreignUser,
+          help: 'foreign user row',
+        }),
+        ownTenantRow: await policies.create({
+          objectRef,
+          fieldName: 'category',
+          scopeType: 'tenant',
+          tenantId: contextTenant,
+          help: 'own tenant row',
+        }),
+      }));
 
     await withTenant(
       {
@@ -689,20 +727,24 @@ describe('FieldPolicy write-time validation', () => {
     const contextUser = randomUUID();
     const foreignUser = randomUUID();
 
-    const foreignTenantRow = await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: foreignTenant,
-      help: 'foreign tenant policy',
-    });
-    const foreignUserRow = await policies.create({
-      objectRef,
-      fieldName: 'category',
-      scopeType: 'user',
-      userId: foreignUser,
-      help: 'foreign user policy',
-    });
+    const { foreignTenantRow, foreignUserRow } = await seedPolicies(
+      async () => ({
+        foreignTenantRow: await policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'tenant',
+          tenantId: foreignTenant,
+          help: 'foreign tenant policy',
+        }),
+        foreignUserRow: await policies.create({
+          objectRef,
+          fieldName: 'category',
+          scopeType: 'user',
+          userId: foreignUser,
+          help: 'foreign user policy',
+        }),
+      }),
+    );
 
     await withTenant(
       {
@@ -759,13 +801,15 @@ describe('FieldPolicy write-time validation', () => {
     });
 
     // The parent tenant locks the field; no direct child row exists.
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: String(root.id),
-      locked: true,
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId: String(root.id),
+        locked: true,
+      }),
+    );
 
     const userId = randomUUID();
     await withTenant(
@@ -798,23 +842,29 @@ describe('FieldPolicy write-time validation', () => {
     });
 
     // The only usable default for required `title` lives on the ROOT tenant.
-    await policies.create({
-      objectRef,
-      fieldName: 'title',
-      scopeType: 'tenant',
-      tenantId: String(root.id),
-      defaultValue: JSON.stringify('Root seeded title'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'title',
+        scopeType: 'tenant',
+        tenantId: String(root.id),
+        defaultValue: JSON.stringify('Root seeded title'),
+      }),
+    );
 
     // A child-tenant demotion resolves that ancestor default through the
     // hierarchy walk and is accepted.
-    const childDemotion = await policies.create({
-      objectRef,
-      fieldName: 'title',
-      scopeType: 'tenant',
-      tenantId: String(child.id),
-      visibility: 'hidden',
-    });
+    const childDemotion = await withTenant(
+      { tenantId: String(child.id), permissions: new Set<string>() },
+      () =>
+        policies.create({
+          objectRef,
+          fieldName: 'title',
+          scopeType: 'tenant',
+          tenantId: String(child.id),
+          visibility: 'hidden',
+        }),
+    );
     expect(childDemotion.visibility).toBe('hidden');
 
     // A user demotion under the child tenant's context resolves it too.
@@ -838,14 +888,95 @@ describe('FieldPolicy write-time validation', () => {
     );
 
     // An unrelated tenant with no ancestor default is still rejected.
+    await seedPolicies(async () => {
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'title',
+          scopeType: 'tenant',
+          tenantId: randomUUID(),
+          visibility: 'hidden',
+        }),
+      ).rejects.toThrow(/no resolved default/);
+    });
+  });
+
+  it('fails closed without any ambient identity: app-scope writes only', async () => {
+    // No tenant context is active: tenant- and user-scope rows are
+    // unattributable and rejected outright (a runtime API deployment whose
+    // middleware never enters the tenancy ALS must not accept them).
     await expect(
       policies.create({
         objectRef,
-        fieldName: 'title',
+        fieldName: 'summary',
         scopeType: 'tenant',
         tenantId: randomUUID(),
-        visibility: 'hidden',
+        help: 'x',
       }),
-    ).rejects.toThrow(/no resolved default/);
+    ).rejects.toThrow(TenantIsolationError);
+
+    await expect(
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        userId: randomUUID(),
+        help: 'x',
+      }),
+    ).rejects.toThrow(TenantIsolationError);
+
+    // App-scope rows remain the legitimate server-side/ops path.
+    const appRow = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'app',
+      help: 'app ok',
+    });
+    expect(appRow.help).toBe('app ok');
+
+    // Deletes obey the same rule: a seeded tenant row cannot be deleted
+    // without an ambient identity, while app rows can.
+    const seededTenantRow = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'category',
+        scopeType: 'tenant',
+        tenantId: randomUUID(),
+        help: 'seeded',
+      }),
+    );
+    await expect(seededTenantRow.delete()).rejects.toThrow(
+      TenantIsolationError,
+    );
+    await appRow.delete();
+  });
+
+  it('validates reference-field defaults as UUIDs unless the field stores text ids', async () => {
+    await expect(
+      policies.create({
+        objectRef,
+        fieldName: 'reviewerId',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('not-a-uuid'),
+      }),
+    ).rejects.toThrow(/must be a UUID string/);
+
+    const uuidDefault = randomUUID();
+    const uuidRow = await policies.create({
+      objectRef,
+      fieldName: 'reviewerId',
+      scopeType: 'app',
+      defaultValue: JSON.stringify(uuidDefault),
+    });
+    expect(uuidRow.getDefaultValue()).toBe(uuidDefault);
+
+    // idType 'text' references accept arbitrary string ids.
+    const textRow = await policies.create({
+      objectRef,
+      fieldName: 'externalRef',
+      scopeType: 'app',
+      defaultValue: JSON.stringify('legacy-id-42'),
+    });
+    expect(textRow.getDefaultValue()).toBe('legacy-id-42');
   });
 });

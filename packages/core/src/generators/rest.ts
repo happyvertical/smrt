@@ -14,6 +14,7 @@ import {
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type {
+  ApiCustomRouteConfig,
   RegisteredClass,
   RegisteredField,
   SmrtObjectConstructor,
@@ -556,6 +557,22 @@ export class APIGenerator {
     objectName?: string,
   ): Promise<Response> {
     try {
+      // Decorator-declared custom collection actions dispatch BEFORE CRUD
+      // routing: without this, `POST /<collection>/<action>` would fall into
+      // `handleCreate` with the action segment silently discarded (#2047).
+      if (objectId && objectName) {
+        const customResponse = await this.dispatchCustomCollectionAction(
+          req,
+          collection,
+          objectId,
+          url,
+          objectName,
+        );
+        if (customResponse) {
+          return customResponse;
+        }
+      }
+
       const action = this.getCrudAction(req.method, objectId);
       if (action && !this.isApiActionEnabled(objectName, action)) {
         return this.createErrorResponse(405, 'Method not allowed');
@@ -697,6 +714,157 @@ export class APIGenerator {
 
     const registered = ObjectRegistry.getClassByConstructor(itemClass);
     return registered?.qualifiedName || registered?.name || itemClass.name;
+  }
+
+  /**
+   * Dispatch a decorator-declared custom COLLECTION-scoped action —
+   * `@smrt({ api: { include: [...], routes: { action: { scope: 'collection',
+   * method, path } } } })` — on the runtime transport (#2047). The generated
+   * SvelteKit transport already dispatches these routes; this keeps the two
+   * transports coherent for the same decorator metadata.
+   *
+   * Deliberately narrow, matching this router's URL shape: single-segment
+   * collection-scoped paths only (multi-segment custom paths remain a
+   * SvelteKit-transport feature), the action must be exposed by `api.include`
+   * (and not excluded), and the HTTP method must match the route metadata.
+   * Non-matching requests fall through to CRUD handling unchanged. A matched
+   * route whose implementation cannot be resolved returns 501 rather than
+   * falling through — the request must never degrade into a malformed CRUD
+   * write.
+   *
+   * The single-options-parameter convention mirrors the generated SvelteKit
+   * action routes: non-GET bodies parse as the options object, GET query
+   * params become the options object, and the response wraps the sanitized
+   * result as `{ action, result }`.
+   */
+  private async dispatchCustomCollectionAction(
+    req: Request,
+    collection: SmrtCollection<SmrtObject>,
+    pathSegment: string,
+    url: URL,
+    objectName: string,
+  ): Promise<Response | null> {
+    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+    if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+      return null;
+    }
+
+    for (const [actionName, routeConfig] of Object.entries(
+      apiConfig.routes as Record<string, ApiCustomRouteConfig>,
+    )) {
+      if (routeConfig?.scope !== 'collection') {
+        continue;
+      }
+      const routePath = routeConfig.path || actionName;
+      if (routePath.includes('/') || routePath !== pathSegment) {
+        continue;
+      }
+      const routeMethod = (routeConfig.method || 'POST').toUpperCase();
+      if (routeMethod !== req.method.toUpperCase()) {
+        continue;
+      }
+      // Explicit exposure only: same include/exclude gating as the SvelteKit
+      // generator applies to custom actions.
+      if (apiConfig.include && !apiConfig.include.includes(actionName)) {
+        continue;
+      }
+      if (apiConfig.exclude?.includes(actionName)) {
+        continue;
+      }
+
+      // Receiver: an instance method on the registered collection, or a
+      // static on the item class (the two hosts the generators support).
+      const collectionMethod = (
+        collection as unknown as Record<string, unknown>
+      )[actionName];
+      const itemConstructor = ObjectRegistry.getClass(objectName)
+        ?.constructor as unknown as Record<string, unknown> | undefined;
+      const staticMethod = itemConstructor?.[actionName];
+
+      const invoke =
+        typeof collectionMethod === 'function'
+          ? (options: unknown) =>
+              (collectionMethod as (o: unknown) => unknown).call(
+                collection,
+                options,
+              )
+          : typeof staticMethod === 'function'
+            ? (options: unknown) =>
+                (staticMethod as (o: unknown) => unknown).call(
+                  itemConstructor,
+                  options,
+                )
+            : null;
+
+      if (!invoke) {
+        return this.createErrorResponse(
+          501,
+          `Custom action '${actionName}' is declared but not implemented`,
+        );
+      }
+
+      let options: unknown;
+      if (routeMethod === 'GET') {
+        options = Object.fromEntries(url.searchParams.entries());
+      } else {
+        try {
+          options = await req.json();
+        } catch {
+          return this.createErrorResponse(400, 'Invalid JSON body');
+        }
+      }
+
+      const result = await invoke(options);
+      return this.createJsonResponse({
+        action: actionName,
+        result: this.sanitizeActionResult(result),
+      });
+    }
+
+    return null;
+  }
+
+  /**
+   * Public-safe projection for custom-action results, mirroring the generated
+   * SvelteKit routes' `toPublicResult`: a `SmrtObject` (anything exposing
+   * `toPublicJSON`) becomes its public projection with the caller's
+   * permissions, arrays and plain objects are walked, non-plain instances and
+   * primitives pass through, and a cycle guard breaks reference loops.
+   */
+  private sanitizeActionResult(
+    value: unknown,
+    seen: WeakSet<object> = new WeakSet(),
+  ): unknown {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (seen.has(value)) {
+      return null;
+    }
+    const serializable = value as {
+      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
+    };
+    if (typeof serializable.toPublicJSON === 'function') {
+      seen.add(value);
+      return this.sanitizeActionResult(
+        serializable.toPublicJSON(this.getPublicJsonOptions()),
+        seen,
+      );
+    }
+    if (Array.isArray(value)) {
+      seen.add(value);
+      return value.map((entry) => this.sanitizeActionResult(entry, seen));
+    }
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    seen.add(value);
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      out[key] = this.sanitizeActionResult(entry, seen);
+    }
+    return out;
   }
 
   /**

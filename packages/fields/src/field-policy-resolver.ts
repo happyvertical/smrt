@@ -386,43 +386,56 @@ async function defaultTenantHierarchyLoader(
   }
 }
 
+/** Node's missing-module message shapes, capturing the quoted specifier. */
+const MISSING_MODULE_TARGET_PATTERN =
+  /Cannot find (?:package|module) '([^']+)'/;
+
+/** Whether a missing-module TARGET specifier is smrt-users (or a subpath). */
+function isUsersSpecifier(target: string): boolean {
+  return (
+    target === '@happyvertical/smrt-users' ||
+    target.startsWith('@happyvertical/smrt-users/')
+  );
+}
+
 /**
  * Whether an import failure means `@happyvertical/smrt-users` is simply not
  * installed (→ flat-tenant fallback) rather than installed-but-broken
- * (→ rethrow). Node reports a missing bare specifier as
- * `ERR_MODULE_NOT_FOUND` with the message `Cannot find package '...'`, so
- * both the error `code` (across the whole `cause` chain) and that message
- * text are matched alongside the wrapper texts `importWorkspaceModule`
- * produces. A transitive `ERR_MODULE_NOT_FOUND` raised INSIDE smrt-users
- * names the other package, fails the smrt-users text check, and rethrows.
+ * (→ rethrow, surfacing the problem instead of silently losing ancestor
+ * locks/defaults).
+ *
+ * The decision is made on the missing-module TARGET parsed from Node's
+ * `Cannot find package/module '<specifier>'` message (walking the full
+ * `cause` chain): only a target that IS smrt-users (or one of its subpaths)
+ * counts. A transitive failure INSIDE an installed smrt-users names the
+ * other package as the target — with the users path merely appearing as the
+ * importer — and therefore rethrows. `importWorkspaceModule`'s own
+ * source-fallback wrapper ("Failed to load @happyvertical/smrt-users for
+ * ...") is also accepted: it is thrown only when the users package itself
+ * cannot be located.
  *
  * Exported for direct testing; not re-exported from the package index.
  */
 export function isMissingUsersDependency(error: unknown): boolean {
-  let sawModuleNotFound = false;
-  let text = '';
   let current: unknown = error;
   const seen = new Set<unknown>();
 
   while (current instanceof Error && !seen.has(current)) {
     seen.add(current);
-    text += ` ${current.message}`;
-    const code = (current as { code?: unknown }).code;
-    if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
-      sawModuleNotFound = true;
+
+    const match = current.message.match(MISSING_MODULE_TARGET_PATTERN);
+    if (match && isUsersSpecifier(match[1])) {
+      return true;
     }
+
+    if (
+      current.message.includes('Failed to load @happyvertical/smrt-users for')
+    ) {
+      return true;
+    }
+
     current = current.cause;
   }
 
-  if (!text.includes('@happyvertical/smrt-users')) {
-    return false;
-  }
-
-  return (
-    sawModuleNotFound ||
-    text.includes('Cannot find package') ||
-    text.includes('Cannot find module') ||
-    text.includes('Failed to load') ||
-    text.includes('could not find')
-  );
+  return false;
 }

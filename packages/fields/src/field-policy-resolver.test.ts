@@ -71,6 +71,21 @@ function fixtureRef(): string {
 const flatLoader: FieldPolicyTenantHierarchyLoader = async () => null;
 
 /**
+ * Seed tenant/user-scope rows under a super-admin bypass context (the
+ * context-absent fail-closed rule rejects them without any ambient identity).
+ */
+function seedPolicies<T>(fn: () => Promise<T>): Promise<T> {
+  return withTenant(
+    {
+      tenantId: randomUUID(),
+      permissions: new Set<string>(),
+      superAdminBypass: true,
+    },
+    fn,
+  );
+}
+
+/**
  * Sequentially replay the explained layer deltas (plus the required-field
  * safety net) and assert the result reproduces the merged policy for every
  * field — the contract that lets #2049/#2050 UIs trust the layer lists.
@@ -197,20 +212,22 @@ describe('resolveFieldPolicy', () => {
       defaultValue: JSON.stringify('app default'),
       help: 'app help',
     });
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId,
-      defaultValue: JSON.stringify('tenant default'),
-    });
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'user',
-      userId,
-      defaultValue: JSON.stringify('user default'),
-      visibility: 'hidden',
+    await seedPolicies(async () => {
+      await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        defaultValue: JSON.stringify('tenant default'),
+      });
+      await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        userId,
+        defaultValue: JSON.stringify('user default'),
+        visibility: 'hidden',
+      });
     });
 
     const appOnly = await resolveFieldPolicy(objectRef, { db });
@@ -252,13 +269,15 @@ describe('resolveFieldPolicy', () => {
       scopeType: 'app',
       defaultValue: JSON.stringify('app default'),
     });
-    const tenantRow = await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId,
-      defaultValue: JSON.stringify('tenant default'),
-    });
+    const tenantRow = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        defaultValue: JSON.stringify('tenant default'),
+      }),
+    );
 
     const before = await resolveFieldPolicy(objectRef, {
       db,
@@ -267,8 +286,12 @@ describe('resolveFieldPolicy', () => {
     });
     expect(before.fields.summary.defaultValue).toBe('tenant default');
 
-    // Reset = row delete; the delete also invalidates the cache.
-    await tenantRow.delete();
+    // Reset = row delete (inside the row's own tenant context; the
+    // context-absent rule rejects bare tenant-row deletes). The delete also
+    // invalidates the cache.
+    await withTenant({ tenantId, permissions: new Set<string>() }, async () => {
+      await tenantRow.delete();
+    });
 
     const after = await resolveFieldPolicy(objectRef, {
       db,
@@ -282,13 +305,15 @@ describe('resolveFieldPolicy', () => {
     const tenantA = randomUUID();
     const tenantB = randomUUID();
 
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: tenantA,
-      defaultValue: JSON.stringify('tenant A'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId: tenantA,
+        defaultValue: JSON.stringify('tenant A'),
+      }),
+    );
 
     const forA = await resolveFieldPolicy(objectRef, {
       db,
@@ -371,14 +396,16 @@ describe('resolveFieldPolicy', () => {
       },
     });
 
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: rootTenant,
-      defaultValue: JSON.stringify('root default'),
-      help: 'root help',
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId: rootTenant,
+        defaultValue: JSON.stringify('root default'),
+        help: 'root help',
+      }),
+    );
 
     // The ancestor's policy cascades to the child.
     const inherited = await resolveFieldPolicy(objectRef, {
@@ -389,13 +416,15 @@ describe('resolveFieldPolicy', () => {
     expect(inherited.fields.summary.defaultValue).toBe('root default');
 
     // A child row overrides the ancestor sparsely.
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: childTenant,
-      defaultValue: JSON.stringify('child default'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId: childTenant,
+        defaultValue: JSON.stringify('child default'),
+      }),
+    );
     clearFieldPolicyCache();
     const overridden = await resolveFieldPolicy(objectRef, {
       db,
@@ -434,22 +463,24 @@ describe('resolveFieldPolicy', () => {
       scopeType: 'app',
       defaultValue: JSON.stringify('app default'),
     });
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: rootTenant,
-      defaultValue: JSON.stringify('root default'),
-      help: 'root help',
-    });
-    // The child's own sparse row survives the break and applies over the
-    // app layer (NOT over the discarded root layer).
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: detachedChild,
-      help: 'child help',
+    await seedPolicies(async () => {
+      await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId: rootTenant,
+        defaultValue: JSON.stringify('root default'),
+        help: 'root help',
+      });
+      // The child's own sparse row survives the break and applies over the
+      // app layer (NOT over the discarded root layer).
+      await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId: detachedChild,
+        help: 'child help',
+      });
     });
 
     const explained = await resolveFieldPolicyExplained(objectRef, {
@@ -485,13 +516,15 @@ describe('resolveFieldPolicy', () => {
       inheritPermissions: true,
     });
 
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId: String(root.id),
-      defaultValue: JSON.stringify('root via users'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId: String(root.id),
+        defaultValue: JSON.stringify('root via users'),
+      }),
+    );
 
     const resolved = await resolveFieldPolicy(objectRef, {
       db,
@@ -502,13 +535,15 @@ describe('resolveFieldPolicy', () => {
 
   it('falls back to a flat tenant chain without a hierarchy provider', async () => {
     const tenantId = randomUUID();
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId,
-      defaultValue: JSON.stringify('flat default'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        defaultValue: JSON.stringify('flat default'),
+      }),
+    );
 
     const resolved = await resolveFieldPolicy(objectRef, {
       db,
@@ -522,13 +557,15 @@ describe('resolveFieldPolicy', () => {
     const userId = randomUUID();
 
     // User personalizes summary while it is unlocked.
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'user',
-      userId,
-      defaultValue: JSON.stringify('user default'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        userId,
+        defaultValue: JSON.stringify('user default'),
+      }),
+    );
     const beforeLock = await resolveFieldPolicy(objectRef, { db, userId });
     expect(beforeLock.fields.summary.defaultValue).toBe('user default');
 
@@ -563,13 +600,15 @@ describe('resolveFieldPolicy', () => {
       scopeType: 'app',
       defaultValue: JSON.stringify('Seeded title'),
     });
-    await policies.create({
-      objectRef,
-      fieldName: 'title',
-      scopeType: 'tenant',
-      tenantId,
-      visibility: 'hidden',
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'title',
+        scopeType: 'tenant',
+        tenantId,
+        visibility: 'hidden',
+      }),
+    );
 
     const withDefault = await resolveFieldPolicy(objectRef, {
       db,
@@ -594,13 +633,15 @@ describe('resolveFieldPolicy', () => {
 
   it('caches per (db, objectRef, tenant, user) and invalidates on save/delete', async () => {
     const tenantId = randomUUID();
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId,
-      defaultValue: JSON.stringify('cached value'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        defaultValue: JSON.stringify('cached value'),
+      }),
+    );
 
     const first = await resolveFieldPolicy(objectRef, {
       db,
@@ -632,13 +673,15 @@ describe('resolveFieldPolicy', () => {
 
     // Model-layer writes invalidate: an upsert through the collection is
     // visible immediately.
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId,
-      defaultValue: JSON.stringify('written value'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        defaultValue: JSON.stringify('written value'),
+      }),
+    );
     const afterWrite = await resolveFieldPolicy(objectRef, {
       db,
       tenantId,
@@ -658,19 +701,21 @@ describe('resolveFieldPolicy', () => {
       defaultValue: JSON.stringify('app default'),
       help: 'app help',
     });
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'tenant',
-      tenantId,
-      defaultValue: JSON.stringify('tenant default'),
-    });
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'user',
-      userId,
-      visibility: 'advanced',
+    await seedPolicies(async () => {
+      await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        defaultValue: JSON.stringify('tenant default'),
+      });
+      await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        userId,
+        visibility: 'advanced',
+      });
     });
 
     const explained = await resolveFieldPolicyExplained(objectRef, {
@@ -728,13 +773,15 @@ describe('isMissingUsersDependency', () => {
     );
     expect(isMissingUsersDependency(wrapped)).toBe(true);
 
-    // A cause-only code (wrapper without one of the known texts).
-    const inner = new Error(
-      'some loader failure for @happyvertical/smrt-users',
-    );
-    const carrier = new Error('import failed', { cause: inner });
-    (inner as { code?: string }).code = 'ERR_MODULE_NOT_FOUND';
-    expect(isMissingUsersDependency(carrier)).toBe(true);
+    // A missing users SUBPATH specifier counts as missing users too.
+    expect(
+      isMissingUsersDependency(
+        new Error(
+          "Cannot find module '@happyvertical/smrt-users/collections' " +
+            'imported from /app/server.js',
+        ),
+      ),
+    ).toBe(true);
 
     // importWorkspaceModule's own source-fallback message.
     expect(
@@ -748,14 +795,40 @@ describe('isMissingUsersDependency', () => {
   });
 
   it('rethrows installed-but-broken failures instead of falling back', () => {
-    // A transitive missing dependency INSIDE smrt-users names the other
-    // package — that is a broken install, not an absent one.
+    // A transitive missing dependency INSIDE an installed smrt-users names
+    // the OTHER package as the target — the users path appears only as the
+    // importer. That is a broken install and must surface, not silently
+    // degrade to the flat-tenant fallback.
     const transitive = new Error(
       "Cannot find package 'left-pad' imported from " +
-        '/workspace/packages/users/dist/index.js',
+        '/app/node_modules/@happyvertical/smrt-users/dist/index.js',
     );
     (transitive as { code?: string }).code = 'ERR_MODULE_NOT_FOUND';
     expect(isMissingUsersDependency(transitive)).toBe(false);
+
+    // Same shape arriving through a wrapper's cause chain.
+    expect(
+      isMissingUsersDependency(
+        new Error('import failed', { cause: transitive }),
+      ),
+    ).toBe(false);
+
+    // A users install whose dist is missing resolves to a FILE PATH target,
+    // not the bare specifier — broken install, rethrow.
+    const brokenDist = new Error(
+      'Cannot find module ' +
+        "'/app/node_modules/@happyvertical/smrt-users/dist/index.js'",
+    );
+    (brokenDist as { code?: string }).code = 'ERR_MODULE_NOT_FOUND';
+    expect(isMissingUsersDependency(brokenDist)).toBe(false);
+
+    // ERR_MODULE_NOT_FOUND without a parseable quoted target is ambiguous —
+    // fail toward surfacing the error.
+    const unparseable = new Error(
+      'some loader failure for @happyvertical/smrt-users',
+    );
+    (unparseable as { code?: string }).code = 'ERR_MODULE_NOT_FOUND';
+    expect(isMissingUsersDependency(unparseable)).toBe(false);
 
     // An unrelated runtime error mentioning the package is not a missing
     // module either.

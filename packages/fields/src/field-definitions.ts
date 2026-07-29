@@ -189,6 +189,14 @@ export function getCodeSeedGroup(field: RegisteredFieldInfo): string | null {
   return sanitizeFieldUIHints(field._meta?.ui)?.group ?? null;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Whether a reference field stores text ids instead of native UUIDs. */
+function usesTextIdStorage(field: RegisteredFieldInfo): boolean {
+  return field.idType === 'text' || field._meta?.idType === 'text';
+}
+
 /**
  * Type-check a parsed default value against the manifest field type.
  *
@@ -252,6 +260,16 @@ export function assertDefaultValueMatchesFieldType(
       if (typeof value !== 'string') {
         throw new Error(
           `${label} must be a string id (field type "${field.type}")`,
+        );
+      }
+      // Reference columns are native UUID on PostgreSQL/DuckDB unless the
+      // field explicitly opts into text ids — a non-UUID default would
+      // validate here but fail at insert time on those dialects.
+      if (!usesTextIdStorage(field) && !UUID_PATTERN.test(value)) {
+        throw new Error(
+          `${label} must be a UUID string (the reference column stores ` +
+            `native UUIDs; declare idType 'text' on the field to store ` +
+            `arbitrary ids)`,
         );
       }
       return;

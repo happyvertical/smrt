@@ -24,6 +24,9 @@ class PolicySurfaceDoc extends SmrtObject {
 
   @field({ ui: { basic: true } })
   tagline: string = '';
+
+  @field({ sensitive: true })
+  apiToken: string = '';
 }
 
 function fixtureRef(): string {
@@ -113,6 +116,56 @@ describe('smrt-fields generated surfaces', () => {
       }),
     );
     expect(deleteResponse.status).toBe(204);
+  });
+
+  it('dispatches the batch resolve action on the runtime REST transport', async () => {
+    const objectRef = fixtureRef();
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldpolicy', policies);
+    const handler = api.generateHandler();
+
+    // POST /<collection>/resolve dispatches the decorator-declared custom
+    // action rather than degrading into a malformed create.
+    const response = await handler(
+      new Request('http://localhost/api/v1/fieldpolicy/resolve', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ objectRefs: [objectRef] }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      action: string;
+      result: {
+        policies: Record<
+          string,
+          { fields: Record<string, { visibility: string }> }
+        >;
+      };
+    };
+    expect(payload.action).toBe('resolveBatch');
+    const fields = payload.result.policies[objectRef].fields;
+    expect(fields.headline).toBeDefined();
+    // Field gating holds on this transport too: sensitive fields absent.
+    expect(fields.apiToken).toBeUndefined();
+
+    // Wrong method for the action path falls through to CRUD handling,
+    // where reads are closed.
+    const wrongMethod = await handler(
+      new Request('http://localhost/api/v1/fieldpolicy/resolve'),
+    );
+    expect(wrongMethod.status).toBe(405);
+
+    // A matched action with an unparseable body is a client error, never a
+    // CRUD write.
+    const badJson = await handler(
+      new Request('http://localhost/api/v1/fieldpolicy/resolve', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{not json',
+      }),
+    );
+    expect(badJson.status).toBe(400);
   });
 
   it('exposes nothing over MCP or the runtime CLI', async () => {

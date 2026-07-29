@@ -19,7 +19,11 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   precedent). Reads go through `resolveBatch` (context-scoped) or the
   server-side resolver. Keep the api include lists in lockstep: a decorated
   collection's config is the RUNTIME registry authority for its item class,
-  while build-time generation reads each manifest object's own config.
+  while build-time generation reads each manifest object's own config. Both
+  transports dispatch the action: generated SvelteKit routes natively, and
+  core's runtime `APIGenerator` via its decorator-route dispatch
+  (single-segment collection-scoped paths; multi-segment custom paths remain
+  SvelteKit-only).
 - `resolveFieldPolicy(objectRef, { tenantId, userId, db })` — merged policy
 - `resolveFieldPolicyExplained(...)` — merged policy plus ordered per-layer
   contributions (code/app/tenant/user) for gear/admin UIs (#2049/#2050)
@@ -55,8 +59,12 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   never apply).
 - **Security rail**: defaults are refused on `transient`, `sensitive`, and
   `readPermission`-gated fields (both top-level and `_meta` flags checked).
-  `resolveBatch` responses omit sensitive/read-permission-gated fields for
-  every caller (fail closed) and transient fields (client-emission parity).
+  Reference-field (`foreignKey`/`crossPackageRef`) defaults must be UUID
+  strings unless the field declares `idType: 'text'` — the columns are
+  native UUID on PostgreSQL/DuckDB and a non-UUID default would fail at
+  insert time. `resolveBatch` responses omit sensitive/read-permission-gated
+  fields for every caller (fail closed) and transient fields
+  (client-emission parity).
 - **Required-field invariant**: demoting a required field to
   advanced/hidden requires a usable resolved default (not null/empty) —
   enforced at write time AND re-enforced at resolution (a required field with
@@ -72,12 +80,18 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   remains the authoritative enforcement at read time.
 - **Isolation**: a non-bypass tenant context may only resolve/write its own
   tenant (and own user when the context carries one); app-scope writes inside
-  a tenant context require super-admin bypass. `save()` and `delete()` on an
-  EXISTING row additionally authorize the caller against the row's PERSISTED
-  scope before accepting anything — a foreign row cannot be re-scoped into
-  the caller's tenant/user or deleted by id from another tenant's context.
-  `resolveBatch` takes identity exclusively from the ambient tenant context —
-  the request body cannot select another tenant or user.
+  a tenant context require super-admin bypass. With NO ambient identity at
+  all (tenancy ALS never entered — e.g. a runtime API deployment without the
+  smrt-users session hook), only app-scope writes/deletes are accepted:
+  tenant- and user-scope rows are unattributable without a context and are
+  rejected outright. Residual: such ALS-less deployments can still write APP
+  rows with any authenticated principal until the #2049 permission layer
+  adds `fields:policy:manage`. `save()` and `delete()` on an EXISTING row
+  additionally authorize the caller against the row's PERSISTED scope before
+  accepting anything — a foreign row cannot be re-scoped into the caller's
+  tenant/user or deleted by id from another tenant's context. `resolveBatch`
+  takes identity exclusively from the ambient tenant context — the request
+  body cannot select another tenant or user.
 
 ## Caching and invalidation
 

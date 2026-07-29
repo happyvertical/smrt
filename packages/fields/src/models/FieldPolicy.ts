@@ -494,12 +494,18 @@ export class FieldPolicy extends SmrtObject {
   }
 
   /**
-   * Fail-closed write boundary against the ambient tenant context: a
-   * non-bypass tenant-scoped caller may only touch rows for its own tenant
-   * (and, when the context carries a user id, only user rows for itself);
-   * app-wide rows require no tenant context or super-admin bypass. Applied to
+   * Fail-closed write boundary against the ambient tenant context, applied to
    * the NEW scope on save and to the PERSISTED scope on save/delete of an
    * existing row.
+   *
+   * With NO ambient identity at all (no tenant context entered — e.g. a
+   * runtime API deployment whose auth middleware never enters the tenancy
+   * ALS), only app-scope rows are accepted: tenant- and user-scope rows are
+   * unattributable without a context, so they are rejected outright rather
+   * than allowed by default. Inside a non-bypass context, a caller may only
+   * touch rows for its own tenant (and, when the context carries a user id,
+   * only user rows for itself); app-wide rows then require super-admin
+   * bypass (or a context-less/system caller).
    */
   private assertScopeOwnedByAmbientContext(
     scope: {
@@ -510,7 +516,20 @@ export class FieldPolicy extends SmrtObject {
     operation: 'save' | 'delete',
   ): void {
     const context = getCurrentTenant();
-    if (!context || isSuperAdminBypass()) {
+
+    if (!context) {
+      if (scope.scopeType === 'tenant' || scope.scopeType === 'user') {
+        throw new TenantIsolationError(
+          `${scope.scopeType === 'tenant' ? 'Tenant' : 'User'}-scope field ` +
+            `policy ${operation}s require an ambient tenant context (or ` +
+            `super-admin bypass); without one the caller identity is ` +
+            `unattributable`,
+        );
+      }
+      return;
+    }
+
+    if (isSuperAdminBypass()) {
       return;
     }
 
