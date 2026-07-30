@@ -31,7 +31,14 @@ interface IntrospectProjectArgs {
   includeRelationships?: boolean;
   includeMethods?: boolean;
   detail?: IntrospectDetail;
-  /** Overrides the default response budget in characters. */
+  /**
+   * Overrides the default character budget for the serialized `objects` array.
+   *
+   * Project metadata and diagnostics are deliberately exempt: a diagnostic is
+   * how discovery reports that it found nothing (#2143), so budgeting it away
+   * would hide the very failure the caller needs to see. The full response is
+   * therefore somewhat larger than this budget.
+   */
   maxChars?: number;
 }
 
@@ -241,7 +248,7 @@ export async function introspectProject(
             omittedObjectCount: omitted,
             budgetChars: maxChars,
             guidance:
-              'The response hit its character budget. Narrow the scan with `directory` (a single package), keep `detail: "summary"`, or raise `maxChars` deliberately. Object names are sorted alphabetically, so omitted objects are the alphabetical tail.',
+              'The object list hit its character budget; metadata and diagnostics are still complete. Narrow the scan with `directory` (a single package), keep `detail: "summary"`, or raise `maxChars` deliberately. Object names are sorted alphabetically, so omitted objects are the alphabetical tail.',
           },
         }
       : {}),

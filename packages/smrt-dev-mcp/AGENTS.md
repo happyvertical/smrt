@@ -57,6 +57,12 @@ discovered objects is an **error-grade** diagnostic that names the roots and
 artifact paths checked plus the fix, and it propagates into
 `smrt-architecture`/`smrt-review`/`reflect-*` results and prompt bundles.
 
+A workspace-root package has an empty `relativeDirectory`, so package paths are
+built with `packageRelativePath`/`packageDocPaths` rather than interpolation —
+otherwise emitted docs read `/AGENTS.md` and changed-file matching compares
+against a leading `/` and selects nothing. The root owns any changed path no
+member package owns, mirroring the member-excluded scan.
+
 ## Agent Skills
 
 Bundled skills live under `agent-skills/`. They are plain Markdown procedures
@@ -141,6 +147,16 @@ launcher or a small wrapper script with an absolute Node path.
   packages exist**. In a single-package repo the root is the published package,
   so exempting every root would make the freshness gate a no-op for exactly the
   layout #2143 added support for.
+- **Nested workspace members own no canonical docs**: instruction chains are
+  additive, so a package nested inside another workspace package (
+  `packages/smrt-playground/host`) must not carry `AGENTS.md`/`CLAUDE.md` — an
+  agent would load the parent's and its own. Those two checks are skipped for it
+  and a `nested-agents-md` error fires if one reappears; the expertise belongs in
+  the parent's linked `agents/<module>.md`.
+- **`maxChars` budgets the objects payload, not the whole response**: project
+  metadata and diagnostics are always returned in full, because a diagnostic is
+  how discovery reports that it found nothing (#2143). Budgeting it away would
+  hide the failure the caller needs to see.
 - **Coverage and diagnostics are computed before scope filtering**: they answer
   "did discovery work", which is a whole-workspace property. Deriving them from
   the scoped subset made `scope: 'sdk'` report a false discovery failure.

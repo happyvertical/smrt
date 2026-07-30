@@ -1217,6 +1217,121 @@ describe('workspace discovery', () => {
       full.promptBundle.contextMarkdown.length / 2,
     );
   });
+
+  it('keeps root-package doc paths project-relative', async () => {
+    // The root's relativeDirectory is '', so naive interpolation emitted
+    // `/AGENTS.md` — an absolute filesystem path — and sent summary callers to
+    // the filesystem root instead of the project (#2143).
+    await writeManifestPackage(rootDir, '.', '@acme/solo', ['Ledger']);
+    await writeFile(
+      join(rootDir, 'AGENTS.md'),
+      `# solo\n\n${'Authored expertise prose. '.repeat(400)}`,
+    );
+    await mkdir(join(rootDir, 'agents'), { recursive: true });
+    await writeFile(join(rootDir, 'agents', 'billing.md'), '# billing\n');
+
+    const summary = await buildArchitectureContext({ rootDir, idea: 'ledger' });
+    const markdown = summary.promptBundle.contextMarkdown;
+
+    expect(markdown).toContain('AGENTS.md');
+    expect(markdown).not.toContain('/AGENTS.md');
+    expect(markdown).not.toContain('/agents/billing.md');
+  });
+
+  it('selects the root package for its own changed files', async () => {
+    // A root package matched nothing, because every changed path was compared
+    // against a leading '/'. That returned the silently empty context #2143 is
+    // about, for exactly the single-package layout it added.
+    await writeManifestPackage(rootDir, '.', '@acme/solo', ['Ledger']);
+    await writeFile(join(rootDir, 'AGENTS.md'), '# solo\n');
+
+    const review = await buildReviewContext({
+      rootDir,
+      changedFiles: ['src/models/Ledger.ts'],
+    });
+
+    expect(review.selectedPackages.map((pkg) => pkg.name)).toContain(
+      '@acme/solo',
+    );
+  });
+
+  it('does not let a workspace root absorb a member package file', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'"]);
+    await writeFile(
+      join(rootDir, 'package.json'),
+      JSON.stringify({ name: '@acme/root', version: '1.0.0' }, null, 2),
+    );
+    await writeManifestPackage(rootDir, 'packages/core', '@acme/core', [
+      'Ledger',
+    ]);
+
+    const review = await buildReviewContext({
+      rootDir,
+      changedFiles: ['packages/core/src/Ledger.ts'],
+    });
+
+    expect(review.selectedPackages.map((pkg) => pkg.name)).toEqual([
+      '@acme/core',
+    ]);
+  });
+
+  it('exempts a nested workspace member from canonical doc rules', async () => {
+    // Instruction chains are additive, so a nested AGENTS.md is prohibited —
+    // demanding one here would require exactly the forbidden file.
+    await writeWorkspaceYaml(rootDir, ["'packages/*'", "'packages/ui/host'"]);
+    await writeManifestPackage(rootDir, 'packages/ui', '@acme/ui', ['Widget']);
+    await writeFile(join(rootDir, 'packages', 'ui', 'AGENTS.md'), '# ui\n');
+    await writeFile(
+      join(rootDir, 'packages', 'ui', 'CLAUDE.md'),
+      '@AGENTS.md\n',
+    );
+    await mkdir(join(rootDir, 'packages', 'ui', 'host'), { recursive: true });
+    await writeFile(
+      join(rootDir, 'packages', 'ui', 'host', 'package.json'),
+      JSON.stringify(
+        { name: '@acme/ui-host', version: '0.0.0', private: true },
+        null,
+        2,
+      ),
+    );
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+
+    expect(
+      result.issues.filter((issue) => issue.packageName === '@acme/ui-host'),
+    ).toEqual([]);
+  });
+
+  it('reports a nested AGENTS.md instead of accepting it', async () => {
+    await writeWorkspaceYaml(rootDir, ["'packages/*'", "'packages/ui/host'"]);
+    await writeManifestPackage(rootDir, 'packages/ui', '@acme/ui', ['Widget']);
+    await writeFile(join(rootDir, 'packages', 'ui', 'AGENTS.md'), '# ui\n');
+    await writeFile(
+      join(rootDir, 'packages', 'ui', 'CLAUDE.md'),
+      '@AGENTS.md\n',
+    );
+    await mkdir(join(rootDir, 'packages', 'ui', 'host'), { recursive: true });
+    await writeFile(
+      join(rootDir, 'packages', 'ui', 'host', 'package.json'),
+      JSON.stringify(
+        { name: '@acme/ui-host', version: '0.0.0', private: true },
+        null,
+        2,
+      ),
+    );
+    await writeFile(
+      join(rootDir, 'packages', 'ui', 'host', 'AGENTS.md'),
+      '# host\n',
+    );
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+
+    expect(
+      result.issues
+        .filter((issue) => issue.packageName === '@acme/ui-host')
+        .map((issue) => issue.code),
+    ).toEqual(['nested-agents-md']);
+  });
 });
 
 let counter = 0;

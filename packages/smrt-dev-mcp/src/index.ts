@@ -27,6 +27,7 @@ import {
   buildReviewContext,
   checkKnowledgeFreshness,
   checkKnowledgeFreshnessFromIndex,
+  packageDocPaths,
   smrtArchitecture,
   smrtReview,
 } from './knowledge/index.js';
@@ -198,7 +199,7 @@ export const TOOLS = [
         maxChars: {
           type: 'number',
           description:
-            'Response character budget. Objects past the budget are omitted and reported under `truncated`.',
+            'Character budget for the `objects` payload. Objects past the budget are omitted and reported under `truncated`. Project metadata and diagnostics are always returned in full, so the serialized response is somewhat larger than this budget.',
         },
         includeFields: {
           type: 'boolean',
@@ -1118,10 +1119,7 @@ function compactKnowledgePackage(pkg: KnowledgePackageResult) {
       ? { objectSourceReason: pkg.objectSourceReason }
       : {}),
     // Paths, not prose: the caller reads what it needs.
-    docs: [
-      ...(pkg.docSource ? [`${pkg.relativeDirectory}/${pkg.docSource}`] : []),
-      ...pkg.moduleDocs.map((doc) => `${pkg.relativeDirectory}/${doc.path}`),
-    ],
+    docs: packageDocPaths(pkg),
     domainKnowledgePath: pkg.domainKnowledgePath,
     relationshipFeatures: pkg.relationshipFeatures,
     smrtDependencies: pkg.smrtDependencies,

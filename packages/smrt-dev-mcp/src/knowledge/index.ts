@@ -659,13 +659,33 @@ export async function checkKnowledgeFreshnessFromIndex(
   const hasMemberPackages = index.packages.some(
     (item) => item.kind !== 'sdk' && !item.isWorkspaceRoot,
   );
+  const memberDirectories = index.packages
+    .filter(
+      (item) =>
+        item.kind !== 'sdk' && !item.isWorkspaceRoot && item.relativeDirectory,
+    )
+    .map((item) => item.relativeDirectory);
+  // Instruction chains are ADDITIVE, so the kernel forbids nesting AGENTS.md:
+  // an agent editing `packages/x/host/**` would load the parent's file and this
+  // one. A workspace package nested inside another workspace package therefore
+  // cannot own canonical docs at all — its expertise belongs in the parent's
+  // linked module doc (`packages/x/agents/host.md`). Demanding an AGENTS.md
+  // here would require exactly the file the kernel prohibits.
+  const isNestedMember = (pkg: KnowledgePackage): boolean =>
+    Boolean(pkg.relativeDirectory) &&
+    memberDirectories.some(
+      (directory) =>
+        directory !== pkg.relativeDirectory &&
+        pkg.relativeDirectory.startsWith(`${directory}/`),
+    );
   for (const pkg of index.packages.filter(
     (item) =>
       item.kind !== 'sdk' && !(item.isWorkspaceRoot && hasMemberPackages),
   )) {
     const packageJsonPath = join(pkg.directory, 'package.json');
+    const nested = isNestedMember(pkg);
 
-    if (!pkg.hasAgentsMd) {
+    if (!pkg.hasAgentsMd && !nested) {
       issues.push({
         severity: 'error',
         code: 'missing-agents-md',
@@ -675,7 +695,18 @@ export async function checkKnowledgeFreshnessFromIndex(
       });
     }
 
-    if (!pkg.hasClaudeMd) {
+    if (nested && pkg.hasAgentsMd) {
+      issues.push({
+        severity: 'error',
+        code: 'nested-agents-md',
+        message:
+          'Nested workspace package must not define AGENTS.md; move it to the parent package as a linked agents/<module>.md',
+        file: relative(index.rootDir, join(pkg.directory, 'AGENTS.md')),
+        packageName: pkg.name,
+      });
+    }
+
+    if (!pkg.hasClaudeMd && !nested) {
       issues.push({
         severity: 'error',
         code: 'missing-claude-shim',
@@ -683,7 +714,7 @@ export async function checkKnowledgeFreshnessFromIndex(
         file: relative(index.rootDir, join(pkg.directory, 'CLAUDE.md')),
         packageName: pkg.name,
       });
-    } else if (!pkg.hasClaudeShim) {
+    } else if (pkg.hasClaudeMd && !pkg.hasClaudeShim) {
       issues.push({
         severity: 'error',
         code: 'claude-not-shim',
@@ -2432,10 +2463,8 @@ function buildReviewFindings(
   const issues: KnowledgeIssue[] = [];
 
   for (const pkg of selectedPackages) {
-    const changedPackageFiles = changedFiles.filter(
-      (file) =>
-        file === pkg.relativeDirectory ||
-        file.startsWith(`${pkg.relativeDirectory}/`),
+    const changedPackageFiles = changedFiles.filter((file) =>
+      packageOwnsFile(pkg, file, index.packages),
     );
 
     if (!pkg.agentDoc && pkg.kind === 'smrt') {
@@ -2532,22 +2561,74 @@ function buildReviewFindings(
   return issues;
 }
 
+/**
+ * Joins a package-relative path onto a package's workspace-relative directory.
+ *
+ * The workspace root can itself be an indexed package — including the
+ * single-package layout #2143 added — and its `relativeDirectory` is the empty
+ * string. Naive interpolation emits `/AGENTS.md`, an absolute filesystem path,
+ * instead of the project-relative path callers are told to read.
+ */
+function packageRelativePath(pkg: KnowledgePackage, path: string): string {
+  return pkg.relativeDirectory ? `${pkg.relativeDirectory}/${path}` : path;
+}
+
+/**
+ * Workspace-relative paths of a package's authored documentation.
+ *
+ * Shared with the MCP transport layer so the summary projection and the
+ * Markdown bundle can never disagree about where a doc lives.
+ */
+export function packageDocPaths(pkg: KnowledgePackage): string[] {
+  return [
+    ...(pkg.docSource ? [packageRelativePath(pkg, pkg.docSource)] : []),
+    ...pkg.moduleDocs.map((doc) => packageRelativePath(pkg, doc.path)),
+  ];
+}
+
+/**
+ * True when a workspace-relative changed file belongs to `pkg`.
+ *
+ * A workspace-root package has an empty `relativeDirectory`, so the nested-path
+ * test would compare against a leading `/` and never match — which silently
+ * selected no packages for exactly the single-package layout #2143 added. The
+ * root instead owns any path no member package owns, mirroring the
+ * member-excluded scan in `applyScannerFallbacks`.
+ */
+function packageOwnsFile(
+  pkg: KnowledgePackage,
+  file: string,
+  siblings: readonly KnowledgePackage[],
+): boolean {
+  if (pkg.relativeDirectory) {
+    return (
+      file === pkg.relativeDirectory ||
+      file.startsWith(`${pkg.relativeDirectory}/`)
+    );
+  }
+  return !siblings.some(
+    (member) =>
+      member !== pkg &&
+      member.relativeDirectory &&
+      (file === member.relativeDirectory ||
+        file.startsWith(`${member.relativeDirectory}/`)),
+  );
+}
+
 function isPackageManifestFile(pkg: KnowledgePackage, file: string): boolean {
-  return file === `${pkg.relativeDirectory}/package.json`;
+  return file === packageRelativePath(pkg, 'package.json');
 }
 
 function isPackageAgentDocFile(pkg: KnowledgePackage, file: string): boolean {
   return (
-    file === `${pkg.relativeDirectory}/AGENTS.md` ||
+    file === packageRelativePath(pkg, 'AGENTS.md') ||
     // A linked module doc carries the same authored expertise (#2108).
-    pkg.moduleDocs.some(
-      (doc) => file === `${pkg.relativeDirectory}/${doc.path}`,
-    )
+    pkg.moduleDocs.some((doc) => file === packageRelativePath(pkg, doc.path))
   );
 }
 
 function isPublicEntrypointFile(pkg: KnowledgePackage, file: string): boolean {
-  const sourcePrefix = `${pkg.relativeDirectory}/src/`;
+  const sourcePrefix = packageRelativePath(pkg, 'src/');
   if (!file.startsWith(sourcePrefix)) return false;
   const sourcePath = file.slice(sourcePrefix.length);
   return (
@@ -2727,12 +2808,10 @@ function selectPackagesForFiles(
   changedFiles: string[],
 ): KnowledgePackage[] {
   const selected = new Set<KnowledgePackage>();
+  const candidates = domainPackages(index);
   for (const file of changedFiles) {
-    for (const pkg of domainPackages(index)) {
-      if (
-        file === pkg.relativeDirectory ||
-        file.startsWith(`${pkg.relativeDirectory}/`)
-      ) {
+    for (const pkg of candidates) {
+      if (packageOwnsFile(pkg, file, index.packages)) {
         selected.add(pkg);
       }
     }
@@ -2990,10 +3069,11 @@ function selectModuleDocs(
   const all = pkg.moduleDocs;
   if (all.length === 0) return { embedded: [], scoped: false };
 
+  // A workspace-root package has no directory prefix, so every changed path is
+  // already package-relative (#2143).
+  const prefix = pkg.relativeDirectory ? `${pkg.relativeDirectory}/` : '';
   const packageFiles = (hints?.changedFiles ?? []).filter(
-    (file) =>
-      file === pkg.relativeDirectory ||
-      file.startsWith(`${pkg.relativeDirectory}/`),
+    (file) => file === pkg.relativeDirectory || file.startsWith(prefix),
   );
   const text = hints?.text ?? '';
   if (packageFiles.length === 0 && text.trim() === '') {
@@ -3008,8 +3088,8 @@ function selectModuleDocs(
     return (
       packageFiles.some(
         (file) =>
-          segment.test(file.slice(pkg.relativeDirectory.length + 1)) ||
-          file === `${pkg.relativeDirectory}/${doc.path}`,
+          segment.test(file.slice(prefix.length)) ||
+          file === packageRelativePath(pkg, doc.path),
       ) || includesToken(text, doc.module)
     );
   });
@@ -3059,10 +3139,7 @@ function renderPackageContext(
   // Summary mode lists authored prose by path instead of embedding it, which is
   // what keeps a large project's bundle inside tool-result budgets (#2143).
   if (detail === 'summary') {
-    const docPaths = [
-      ...(pkg.docSource ? [`${pkg.relativeDirectory}/${pkg.docSource}`] : []),
-      ...pkg.moduleDocs.map((doc) => `${pkg.relativeDirectory}/${doc.path}`),
-    ];
+    const docPaths = packageDocPaths(pkg);
     if (docPaths.length > 0) {
       lines.push(
         '',
@@ -3077,7 +3154,7 @@ function renderPackageContext(
     lines.push('', pkg.agentDoc.trim());
   }
   for (const doc of embedded) {
-    lines.push('', `#### ${pkg.relativeDirectory}/${doc.path}`, '');
+    lines.push('', `#### ${packageRelativePath(pkg, doc.path)}`, '');
     lines.push(doc.content.trim());
   }
   if (scoped) {
@@ -3086,7 +3163,7 @@ function renderPackageContext(
       lines.push(
         '',
         `> Module docs not loaded for this request (read on demand): ${omitted
-          .map((doc) => `${pkg.relativeDirectory}/${doc.path}`)
+          .map((doc) => packageRelativePath(pkg, doc.path))
           .join(', ')}`,
       );
     }

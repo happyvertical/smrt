@@ -50,7 +50,15 @@ afterEach(async () => {
 });
 
 describe('smrt-dev-mcp stdio server', () => {
-  it('lists and calls knowledge tools over MCP stdio', async () => {
+  // This smoke spawns a real server and drives ~11 whole-workspace tool calls
+  // against the smrt monorepo. Discovery now reaches every workspace member
+  // (#2143), and a member without build artifacts falls back to an OXC source
+  // scan — seconds per package on a cold CI runner, versus a fast artifact read
+  // locally. The cost therefore tracks how much of the repo is prebuilt, so this
+  // needs a budget well above the 30s default rather than a flaky margin.
+  it('lists and calls knowledge tools over MCP stdio', {
+    timeout: 300_000,
+  }, async () => {
     const client = await createMcpClient();
 
     const listResult = await client.listTools();
