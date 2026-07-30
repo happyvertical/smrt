@@ -40,7 +40,12 @@ permissions:
 
 concurrency:
   group: mobile-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded pull-request runs only. The nightly `schedule` lane and a
+  # `workflow_dispatch` both resolve to refs/heads/main, so they share one
+  # group; an unconditional `true` let a manual dispatch cancel an in-flight
+  # nightly full lane (the long macOS Kotlin/Native + Xcode run). Only
+  # pull-request runs have a newer run worth deferring to.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   gradle-linux:
