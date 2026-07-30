@@ -1,5 +1,49 @@
 # @happyvertical/smrt-core
 
+## 0.40.37
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: retire the unserved arc-happyvertical-node selector (#2164)
+  - @happyvertical/smrt-config@0.40.37
+  - @happyvertical/smrt-types@0.40.37
+  - @happyvertical/smrt-scanner@0.40.37
+
+## 0.40.36
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - extend full-suite typecheck timeout (#2161) (ci)
+  - @happyvertical/smrt-config@0.40.36
+  - @happyvertical/smrt-types@0.40.36
+  - @happyvertical/smrt-scanner@0.40.36
+
+## 0.40.35
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - raise full-suite typecheck timeout (#2160) (ci)
+  - @happyvertical/smrt-config@0.40.35
+  - @happyvertical/smrt-types@0.40.35
+  - @happyvertical/smrt-scanner@0.40.35
+
+## 0.40.34
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: refresh generation 20 kernel (#2141) (policy)
+  - @happyvertical/smrt-config@0.40.34
+  - @happyvertical/smrt-types@0.40.34
+  - @happyvertical/smrt-scanner@0.40.34
+
 ## 0.40.33
 
 ### Patch Changes

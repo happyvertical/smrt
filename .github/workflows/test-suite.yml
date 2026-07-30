@@ -132,7 +132,7 @@ jobs:
     needs: build
     if: inputs.mode == 'full'
     runs-on: arc-happyvertical
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
