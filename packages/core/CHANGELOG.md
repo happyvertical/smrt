@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.34
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: refresh generation 20 kernel (#2141) (policy)
+  - @happyvertical/smrt-config@0.40.34
+  - @happyvertical/smrt-types@0.40.34
+  - @happyvertical/smrt-scanner@0.40.34
+
 ## 0.40.33
 
 ### Patch Changes
