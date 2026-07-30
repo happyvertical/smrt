@@ -1,6 +1,13 @@
 self-hosted-runner:
+  # arc-happyvertical-node is deliberately absent. Nothing registers it: iac
+  # quiesced the scale set to minRunners/maxRunners 0, which is GitHub's
+  # queue-drain mode, so a job selecting it is still assigned and then queues
+  # until it times out instead of failing. It is also excluded on purpose from
+  # the broker's externallyServedLabels (happyvertical/iac#1248). Keeping the
+  # name out of this list makes a workflow that names it fail lint rather than
+  # fail silently at runtime, matching how iac treats ci-linux-x64 and
+  # pxe-happyvertical.
   labels:
     - arc-happyvertical
-    - arc-happyvertical-node
 
 config-variables: null

@@ -25,9 +25,12 @@ never prevent the tests from running.
 - `arc-happyvertical` is the default selector for general Linux work. It is the
   workflow-facing broker alias; only runner-pool policy chooses its backing
   capacity.
-- `arc-happyvertical-node` is reserved for the runner-image smoke test and
-  PostgreSQL shadow validation. Those jobs depend on its cluster-local database
-  URL mount and intentionally do not join the general pool.
+- `arc-happyvertical-node` is retired and must not be selected. Nothing
+  registers it, and because iac quiesced the scale set to `minRunners`/
+  `maxRunners` 0 — GitHub's queue-drain mode — a job naming it is still assigned
+  and then queues until it times out rather than failing. `.github/actionlint.yaml`
+  omits the label so lint rejects it instead. If a node capability lane is ever
+  activated again it needs a fresh, served label.
 - Lightweight lifecycle, policy, aggregation, stale-management, and mobile
   jobs remain GitHub-hosted when they do not benefit from a self-hosted cache.
 
@@ -70,8 +73,8 @@ representative code-changing PR run.
 After that canary run:
 
 1. Verify the `arc-happyvertical` broker canary and one representative SMRT run.
-2. Set `CI_POSTGRES_ENABLED=true` after the disposable cluster and runner URL
-   mount pass the manual shadow workflow.
+2. Set `CI_POSTGRES_ENABLED=true` after a manual `postgres-tests.yml` dispatch
+   passes on `arc-happyvertical`.
 3. Set `CI_MERGE_QUEUE_ENABLED=true`.
 4. Replace the existing required status list with `Required CI`.
 5. Add a repository merge queue using merge commits, concurrency one, group
@@ -88,19 +91,19 @@ disposable URL from `CI_POSTGRES_BASE_URL` or the read-only file named by
 `CI_POSTGRES_BASE_URL_FILE`, creates a uniquely named database, exports all
 supported PostgreSQL test URL variables plus libpq's `PG*` connection
 variables, including supported URI query parameters, and drops the database
-afterward. IAC
-stores the same credential in SOPS-encrypted Secrets in the database and runner
-namespaces; the node runner mounts only the URL copy. It has no production
-database secret access.
+afterward.
+
+`postgres-tests.yml` runs on `arc-happyvertical` and supplies its own PostgreSQL
+service container, passing `CI_POSTGRES_BASE_URL`. The general lane does not
+mount the cluster-local URL that `CI_POSTGRES_BASE_URL_FILE` names, and its
+runner image already provides the libpq client binaries the wrapper needs for
+`createdb`/`dropdb`. The wrapper stays on its managed path, so each package
+still gets its own database under `--concurrency=2`; no job depends on a
+cluster-local credential, and there is no production database secret access.
 
 Scheduled and PR PostgreSQL lanes remain skipped until the repository variable
-`CI_POSTGRES_ENABLED` is `true`. Manual dispatch remains available for shadow
+`CI_POSTGRES_ENABLED` is `true`. Manual dispatch remains available for
 validation before the lane is required.
-
-Rotate both encrypted copies in one IAC commit, reconcile the database Secret
-first, and wait for CloudNativePG to report the managed role reconciled before
-restarting the node runner scale set. Existing jobs keep their mounted Secret;
-new jobs receive the rotated URL.
 
 Interrupted jobs are cleaned hourly after six hours. Tests must never use a
 fixed shared database name or remove the wrapper from their package script.
