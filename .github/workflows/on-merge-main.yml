@@ -13,7 +13,14 @@ on:
         type: boolean
         default: false
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+# Spelled out rather than left to the string shorthand, which silently defaults
+# cancel-in-progress to false. Queueing is the behaviour this workflow wants —
+# it orchestrates test -> build -> publish, so cancelling could abort a release
+# mid-flight and discard the CI record for an already-merged commit — but that
+# should be stated, not inferred. No behaviour change.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
