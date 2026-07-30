@@ -57,28 +57,38 @@ fallback.
 
 ## Pull requests and merge groups
 
-`CI_MERGE_QUEUE_ENABLED` controls the staged rollout:
+`CI_MERGE_QUEUE_ENABLED` selects which validation shape a pull request gets. It
+is `true` on this repository; the unset/false branch is retained only as a
+reversal lever.
 
-- Unset/false: PRs run the historical full suite and publish dry-run. This
-  preserves the existing required status contexts during observation.
-- `true`: PRs run affected build, typecheck, tests, touched coverage, relevant
-  knowledge checks, and affected PostgreSQL coverage. The complete suite and
-  publish dry-run run for `merge_group`.
+- Unset/false: PRs run the historical full suite.
+- `true`: PRs run lint, affected typecheck and tests across the changed
+  packages and everything that depends on them, touched coverage, and — only
+  when knowledge-sensitive paths change — affected knowledge freshness. The
+  complete suite runs for `merge_group`.
+
+Publish dry-run sits outside that split: it runs for same-repository PRs and for
+`merge_group` in both modes. No lane in `on-pull-request.yml` or
+`test-suite.yml` runs PostgreSQL in either mode; PostgreSQL lives only in
+`postgres-tests.yml`, described below.
 
 `Required CI` is the sole required repository-validation status. Its aggregator
-explicitly checks different expected job sets for PR and merge-group events. Do
-not change the ruleset until this context has completed successfully on a
-representative code-changing PR run.
+requires the same eight jobs to succeed for both PR and merge-group events; what
+differs between the two is the mode `test-suite.yml` runs in, not the set of
+jobs the aggregator checks.
 
-After that canary run:
+Rollout status:
 
-1. Verify the `arc-happyvertical` broker canary and one representative SMRT run.
-2. Set `CI_POSTGRES_ENABLED=true` after a manual `postgres-tests.yml` dispatch
-   passes on `arc-happyvertical`.
-3. Set `CI_MERGE_QUEUE_ENABLED=true`.
-4. Replace the existing required status list with `Required CI`.
-5. Add a repository merge queue using merge commits, concurrency one, group
-   size one, zero wait, all-green behavior, and a 60-minute timeout.
+1. Done. The `arc-happyvertical` broker landed in #2124, and every self-hosted
+   job selects it.
+2. Pending. `CI_POSTGRES_ENABLED` is still unset, so the scheduled PostgreSQL
+   lane stays skipped. Set it to `true` after a manual `postgres-tests.yml`
+   dispatch passes on `arc-happyvertical`.
+3. Done. `CI_MERGE_QUEUE_ENABLED` is `true`.
+4. Done. The required status list is exactly `Required CI`.
+5. Done. The repository merge queue uses squash merges, up to five entries
+   building concurrently, one entry merged at a time, zero wait, all-green
+   behavior, and a 60-minute timeout.
 
 When merge queue mode is enabled, the main workflow skips duplicate tests and
 the standalone build. The versioned release build, exact-artifact publication,
@@ -101,9 +111,12 @@ runner image already provides the libpq client binaries the wrapper needs for
 still gets its own database under `--concurrency=2`; no job depends on a
 cluster-local credential, and there is no production database secret access.
 
-Scheduled and PR PostgreSQL lanes remain skipped until the repository variable
-`CI_POSTGRES_ENABLED` is `true`. Manual dispatch remains available for
-validation before the lane is required.
+There is no PR-triggered PostgreSQL lane. `postgres-tests.yml` triggers on
+`workflow_call`, `workflow_dispatch`, and a nightly `schedule`, and its only
+caller, `on-demand-validation.yml`, is dispatch-only. The scheduled run stays
+skipped until the repository variable `CI_POSTGRES_ENABLED` is `true`, which it
+currently is not. Manual dispatch bypasses that variable and remains available
+for validation before the lane is required.
 
 Interrupted jobs are cleaned hourly after six hours. Tests must never use a
 fixed shared database name or remove the wrapper from their package script.
@@ -144,9 +157,12 @@ policy explicitly allows the `core-js` and `sharp` install scripts required by
 the locked Docusaurus dependency graph; CI must not bypass or interactively
 approve that policy.
 
-The manual `publish-mode=changesets` option is an emergency fallback for the
-first two successful artifact-based releases. Remove the option after both
-releases complete and downstream consumers install the published packages.
+The manual `publish-mode=changesets` option is a standing emergency fallback,
+not a time-boxed one. Both trigger paths default to `artifacts` and
+`on-merge-main.yml` never passes the input, so the fallback is reachable only
+through manual dispatch. Its versioning half is not dormant: `prepare-release`
+runs `changeset:auto` and `changeset:version` on every release regardless of
+mode, so only the publication step differs between the two.
 
 ## Acceptance and rollback
 
@@ -159,6 +175,6 @@ Runner placement remains brokered through `arc-happyvertical`; change backing
 capacity only in runner-pool policy, not workflow labels. Merge-queue rollout
 can be reversed independently by clearing `CI_MERGE_QUEUE_ENABLED`, restoring
 the previous required status list, and removing the merge-queue rule.
-PostgreSQL can be removed from the required aggregator without altering SQLite
-coverage. The artifact publisher can temporarily fall back to Changesets
-through manual dispatch.
+PostgreSQL is not part of the required aggregator, so toggling
+`CI_POSTGRES_ENABLED` never alters SQLite coverage. The artifact publisher can
+temporarily fall back to Changesets through manual dispatch.
