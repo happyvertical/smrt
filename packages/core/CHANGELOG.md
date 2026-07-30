@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.35
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - raise full-suite typecheck timeout (#2160) (ci)
+  - @happyvertical/smrt-config@0.40.35
+  - @happyvertical/smrt-types@0.40.35
+  - @happyvertical/smrt-scanner@0.40.35
+
 ## 0.40.34
 
 ### Patch Changes
