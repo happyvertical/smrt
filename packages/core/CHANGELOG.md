@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.37
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: retire the unserved arc-happyvertical-node selector (#2164)
+  - @happyvertical/smrt-config@0.40.37
+  - @happyvertical/smrt-types@0.40.37
+  - @happyvertical/smrt-scanner@0.40.37
+
 ## 0.40.36
 
 ### Patch Changes
