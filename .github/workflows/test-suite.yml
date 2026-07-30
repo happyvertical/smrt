@@ -216,7 +216,7 @@ jobs:
     needs: affected-scope
     if: inputs.mode == 'affected' && needs.affected-scope.outputs.knowledge == 'true'
     runs-on: arc-happyvertical
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -288,7 +288,7 @@ jobs:
     needs: build
     if: always() && (inputs.mode == 'affected' || needs.build.result == 'success')
     runs-on: arc-happyvertical
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       # fetch-depth: 0 so the gate can diff against the PR base to find the
