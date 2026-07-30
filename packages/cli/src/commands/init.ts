@@ -393,7 +393,7 @@ export const initCommands: Record<string, CLICommand> = {
        sveltekit(),
        smrtPlugin({
          include: ['src/lib/objects/**/*.ts'],
-         exclude: ['**/*.test.ts'],
+         exclude: ['**/*.test.ts', '**/*.spec.ts', '**/__tests__/**'],
          generateTypes: true,
          svelteKit: {
            enabled: true,

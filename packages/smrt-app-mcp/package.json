@@ -56,9 +56,11 @@
   "author": "HappyVertical",
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.25.2"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   },
   "devDependencies": {
+    "@happyvertical/smrt-app-cli": "workspace:*",
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.10",
     "@types/node": "24.13.2",
     "typescript": "5.9.3",
     "vite": "8.1.4",

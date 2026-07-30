@@ -1,0 +1,33 @@
+{
+  "name": "@happyvertical/smrt-mcp-conformance-fixture",
+  "version": "0.0.0",
+  "description": "MCP conformance gate for the generated Tier-1 runtime server template",
+  "type": "module",
+  "private": true,
+  "author": "HappyVertical",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/mcp-conformance-fixture"
+  },
+  "files": [
+    "dist",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@modelcontextprotocol/conformance": "0.2.0-alpha.10",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/node": "24.13.2",
+    "typescript": "5.9.3",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
+  }
+}

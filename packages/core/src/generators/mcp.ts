@@ -1603,7 +1603,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { config } from '@happyvertical/smrt-config';
+import { loadConfig } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { getAI } from '@happyvertical/ai';
 
@@ -1622,7 +1622,7 @@ async function main() {
     }
 
     // Load configuration from environment and .smrt.config files
-    const appConfig = await config.load();
+    const appConfig = await loadConfig();
     const aiConfig = appConfig?.ai || {};
 
     // Create MCP server

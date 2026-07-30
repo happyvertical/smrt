@@ -20,3 +20,4 @@ Application-scoped MCP server wrapper for SMRT apps.
 - Public tool patterns are still constrained by read-only detection.
 - Workflow assertions run before generated tool dispatch and should be deterministic.
 - This package is runtime app infrastructure, not the development MCP. Use `@happyvertical/smrt-dev-mcp` for agentic development knowledge, review, and architecture tooling.
+- The HTTP surface here is a custom GET/POST tool API, not an MCP protocol transport; real MCP clients connect through the `@happyvertical/smrt-app-cli` stdio bridge today. `src/__tests__/mcp-conformance.spec.ts` runs the official MCP conformance suite against that full composition (`conformance-baseline.yml` holds expected failures; stale entries fail too). A native stateless Streamable HTTP endpoint is #2147.

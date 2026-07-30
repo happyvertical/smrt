@@ -159,7 +159,7 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "@modelcontextprotocol/sdk": "^1.25.2",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@oxc-project/runtime": "^0.138.0",
     "cheerio": "^1.2.0",
     "fast-glob": "3.3.3",

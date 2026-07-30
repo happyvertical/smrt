@@ -35,7 +35,9 @@ for package-specific architecture and validation.
   properties, tags, social, marketing, and secrets.
 - Client/tooling packages include `smrt-web`, `smrt-svelte`, mobile packages,
   templates, and `smrt-dev-mcp`. The private `bundle-gate` package is the CI
-  consumer bundle reachability/size gate (#1980).
+  consumer bundle reachability/size gate (#1980); the private
+  `mcp-conformance-fixture` package is the CI MCP conformance gate for the
+  generated runtime template (#2146).
 - Package versions are coordinated with changesets. Do not create changesets
   manually; release automation generates them on merge.
 

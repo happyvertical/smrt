@@ -241,7 +241,7 @@ import {
   type ListToolsRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
-import { config } from '@happyvertical/smrt-config';
+import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
 const SERVER_NAME = ${JSON.stringify(name)};
@@ -349,7 +349,7 @@ ${
     : ''
 }
     // Load configuration from environment and .smrt.config files
-    const appConfig = await config.load();
+    const appConfig = await loadConfig();
     const aiConfig = appConfig?.ai || {};
 
     if (DEBUG) {

@@ -1,0 +1,44 @@
+# Expected-failure baseline for the official MCP conformance suite run in
+# src/mcp-conformance.spec.ts (#2146). Every entry is a scenario that cannot
+# pass for a product server at spec revision 2025-11-25: it either requires
+# the suite's fixture tools/prompts/resources (test_simple_text, fixture
+# prompt names, test:// URIs), or an optional capability (logging,
+# completions, subscriptions, sampling, elicitation) smrt-dev-mcp
+# intentionally does not declare. The conformance CLI fails on any scenario
+# NOT listed here that fails, and on any scenario listed here that passes
+# (stale baseline), so regressions and silent fixes both break CI. Remove
+# entries as capabilities land (#2145 children).
+server:
+  # SEP-1699 concurrent POST SSE streams assume the stateful session
+  # lifecycle; against this stateless per-request harness the scenario
+  # alternates between skipping (0 checks) and failing, so it is baselined
+  # (a baselined scenario that skips is tolerated, one that fully passes
+  # flags the entry as stale).
+  - server-sse-multiple-streams
+  # Optional capabilities smrt-dev-mcp does not declare.
+  - logging-set-level
+  - completion-complete
+  - resources-subscribe
+  - resources-unsubscribe
+  # Suite fixture tools (test_image_content, test_audio_content, …) that a
+  # product server does not implement.
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-with-logging
+  - tools-call-with-progress
+  # Server-initiated sampling/elicitation fixtures — requires Sampling and
+  # Elicitation client-capability flows the server does not initiate.
+  - tools-call-sampling
+  - tools-call-elicitation
+  - elicitation-sep1034-defaults
+  - elicitation-sep1330-enums
+  # Suite fixture resources/prompts (test:// URIs, fixture prompt names).
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image

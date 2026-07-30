@@ -1,0 +1,39 @@
+# Expected-failure baseline for the bridge-composition conformance run in
+# src/__tests__/mcp-conformance.spec.ts (#2146). Every entry is a scenario
+# the tools-only bridge composition cannot pass at spec revision 2025-11-25:
+# the bridge declares only the `tools` capability, and the tools-call
+# fixtures require suite-defined tool names (test_image_content, …) no
+# product server implements. Unexpected failures and stale entries (a
+# baselined scenario that starts passing) both fail CI. Re-derive when the
+# native stateless Streamable HTTP endpoint lands (#2147).
+server:
+  # SEP-1699 concurrent POST SSE streams assume the stateful session
+  # lifecycle; against the stateless per-request harness the scenario
+  # alternates between skipping (0 checks, tolerated) and failing.
+  - server-sse-multiple-streams
+  # Capabilities the bridge composition does not declare (tools only).
+  - logging-set-level
+  - completion-complete
+  - resources-list
+  - resources-read-text
+  - resources-read-binary
+  - resources-templates-read
+  - resources-subscribe
+  - resources-unsubscribe
+  - prompts-list
+  - prompts-get-simple
+  - prompts-get-with-args
+  - prompts-get-embedded-resource
+  - prompts-get-with-image
+  # Suite fixture tools (test_image_content, test_audio_content, …).
+  - tools-call-image
+  - tools-call-audio
+  - tools-call-embedded-resource
+  - tools-call-mixed-content
+  - tools-call-with-logging
+  - tools-call-with-progress
+  # Server-initiated sampling/elicitation fixtures.
+  - tools-call-sampling
+  - tools-call-elicitation
+  - elicitation-sep1034-defaults
+  - elicitation-sep1330-enums

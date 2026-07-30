@@ -7,6 +7,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
-    testTimeout: 15000,
+    // The conformance spec generates a server, spawns it over stdio, and runs
+    // the official suite against a forwarding HTTP harness.
+    testTimeout: 300_000,
+    hookTimeout: 120_000,
+    fileParallelism: false,
   },
 });

@@ -205,6 +205,20 @@ pre-push:
         <input>/<textarea>/<select>/<form> → @happyvertical/smrt-svelte.
         Run: node scripts/check-raw-primitives.mjs
 
+    mcp-protocol-hygiene:
+      # Bans removed/deprecated MCP 2026-07-28 protocol features (ping,
+      # logging/setLevel, roots list_changed, Roots/Sampling/Logging
+      # capabilities, Mcp-Session-Id, HTTP+SSE transport) in packages/*/src,
+      # generated runtime templates included (#2146).
+      run: node scripts/check-mcp-protocol-hygiene.mjs
+      fail_text: |
+        ❌ Removed/deprecated MCP protocol feature reintroduced!
+
+        The MCP 2026-07-28 spec removed ping, logging/setLevel, roots
+        list_changed, and Mcp-Session-Id, and deprecated the Roots/Sampling/
+        Logging capabilities and the HTTP+SSE transport.
+        Run: pnpm check:mcp-protocol-hygiene
+
     svelte-tokens:
       # Repo-wide: every consumed --smrt-* token must be emitted by a theme path
       # (or defined inline). Catches dangling/malformed refs in any package.

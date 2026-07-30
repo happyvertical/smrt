@@ -198,10 +198,26 @@ export function generateInlineRegisterModule(
   ].join('\n');
 }
 
+/**
+ * Default exclude globs for the build-time manifest scan. Test-located
+ * `@smrt()` classes must never reach a published `dist/manifest.json` /
+ * `dist/smrt-knowledge.json` — downstream manifest discovery would treat
+ * them as real package objects (#2146). Mirrors the scanner package's
+ * `DEFAULT_IGNORE_PATTERNS` for test paths; the smrt-vitest plugin
+ * intentionally scans WITH test files so fixture classes keep field
+ * metadata during tests.
+ */
+export const DEFAULT_SCAN_EXCLUDE = [
+  '**/*.test.ts',
+  '**/*.spec.ts',
+  '**/__tests__/**',
+  '**/node_modules/**',
+];
+
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
     include = ['src/**/*.ts', 'src/**/*.js'],
-    exclude = ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
+    exclude = DEFAULT_SCAN_EXCLUDE,
     hmr = true,
     watch = true,
     generateTypes = true,

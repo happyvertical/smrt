@@ -324,7 +324,7 @@ export default {
   plugins: [
     smrtPlugin({
       include: ['src/**/*.ts'],
-      exclude: ['**/*.test.ts'],
+      exclude: ['**/*.test.ts', '**/*.spec.ts', '**/__tests__/**'],
       generateTypes: true,
       hmr: true
     })

@@ -486,11 +486,13 @@ export const TOOLS = [
   },
 ];
 
-async function main() {
-  if (DEBUG) {
-    console.error(`[${SERVER_NAME}] Starting server v${SERVER_VERSION}`);
-  }
-
+/**
+ * Build the smrt-dev-mcp Server with every tool, prompt, and resource handler
+ * registered but no transport connected. `main()` connects it to stdio; the
+ * MCP conformance spec connects the same construction to a Streamable HTTP
+ * transport so the official suite can exercise it.
+ */
+export function createServer(): Server {
   const server = new Server(
     {
       name: SERVER_NAME,
@@ -961,6 +963,16 @@ async function main() {
       };
     }
   });
+
+  return server;
+}
+
+async function main() {
+  if (DEBUG) {
+    console.error(`[${SERVER_NAME}] Starting server v${SERVER_VERSION}`);
+  }
+
+  const server = createServer();
 
   // Setup stdio transport
   const transport = new StdioServerTransport();

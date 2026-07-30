@@ -428,7 +428,11 @@ export function createPackageConfig(
           ? [
               smrtPlugin({
                 include: ['src/**/*.ts'],
-                exclude: ['**/*.test.ts', '**/*.spec.ts'],
+                // Keep in sync with DEFAULT_SCAN_EXCLUDE in
+                // packages/core/src/vite-plugin/index.ts: test-located
+                // @smrt() classes must never reach a published
+                // dist/manifest.json as phantom package objects (#2146).
+                exclude: ['**/*.test.ts', '**/*.spec.ts', '**/__tests__/**'],
                 generateTypes: true,
                 hmr: false, // Disable HMR for library builds
               }),

@@ -180,6 +180,7 @@ Status legend:
 | [`smrt-dev-mcp`](./packages/smrt-dev-mcp/README.md) | Stable | Development MCP server and repository knowledge tools. |
 | [`smrt-app-mcp`](./packages/smrt-app-mcp/README.md) | Preview | App-runtime MCP server and transport adapters. |
 | [`smrt-bundle-gate`](./packages/bundle-gate/README.md) | Internal | Consumer bundle reachability and size regression gate. |
+| [`smrt-mcp-conformance-fixture`](./packages/mcp-conformance-fixture/README.md) | Internal | MCP conformance gate for the generated Tier-1 runtime server template. |
 
 ### Agents, identity, and operations
 

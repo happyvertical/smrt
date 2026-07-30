@@ -94,7 +94,12 @@ launcher or a small wrapper script with an absolute Node path.
 
 ## Key Files
 
-- `src/index.ts` — MCP server setup, tool registration
+- `src/index.ts` — MCP server setup, tool registration; `createServer()` builds
+  the transport-less server `main()` connects to stdio
+- `src/mcp-conformance.spec.ts` — official MCP conformance suite over a
+  stateless Streamable HTTP harness; `conformance-baseline.yml` lists the
+  expected failures (fixture-tool and undeclared-capability scenarios), and
+  the CLI fails on unexpected failures AND on stale baseline entries (#2146)
 - `src/knowledge/index.ts` — deterministic SMRT, SDK, and downstream domain knowledge discovery; workspace-glob expansion, provenance, coverage, and diagnostics
 - `src/agent-skills.ts` — bundled skill registry and file loader
 - `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure

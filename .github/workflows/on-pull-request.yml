@@ -318,6 +318,14 @@ jobs:
       - name: Check hardcoded UI strings
         run: node scripts/check-hardcoded-strings.mjs
 
+      # Bans removed/deprecated MCP 2026-07-28 protocol features (ping,
+      # logging/setLevel, roots list_changed, Roots/Sampling/Logging
+      # capabilities, Mcp-Session-Id, HTTP+SSE transport) across
+      # packages/*/src, generated runtime templates included (#2146).
+      # Node-only, no deps.
+      - name: Check MCP protocol hygiene
+        run: node scripts/check-mcp-protocol-hygiene.mjs
+
   dependency-audit:
     name: Dependency Vulnerability Audit
     if: >-

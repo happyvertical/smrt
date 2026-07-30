@@ -112,7 +112,8 @@
         "**/*.spec.ts",
         "package.json",
         "vitest.config.ts",
-        "vitest.config.js"
+        "vitest.config.js",
+        "conformance-baseline.yml"
       ],
       "outputs": [
         "coverage/**"
