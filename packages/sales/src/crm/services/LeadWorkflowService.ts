@@ -766,12 +766,13 @@ export class LeadWorkflowService {
 
   private requireIdentifier(value: string, field: string): string {
     const normalized = typeof value === 'string' ? value.trim() : '';
-    if (!normalized || (field === 'ownerRepId' && !UUID_RE.test(normalized))) {
+    const requiresUuid = field === 'ownerRepId' || field === 'actorProfileId';
+    if (!normalized || (requiresUuid && !UUID_RE.test(normalized))) {
       throw this.refusal(
         field === 'ownerRepId'
           ? 'representative_unavailable'
           : 'invalid_metadata',
-        `Lead workflow ${field} is required`,
+        `Lead workflow ${field} must be a UUID`,
       );
     }
     return normalized;

@@ -293,6 +293,44 @@ describe('LeadWorkflowService', () => {
       'may only be set through LeadWorkflowService',
     );
 
+    const retypedTask = await workflow(() =>
+      activities.get({ id: first.id }, { cache: false }),
+    );
+    if (!retypedTask) throw new Error('Expected scheduled task to be readable');
+    retypedTask.activityKind = 'note';
+    await expect(retypedTask.save()).rejects.toThrow(
+      'Lead task identity cannot be changed once persisted',
+    );
+
+    const completedRetypedTask = await workflow(() =>
+      activities.get({ id: first.id }, { cache: false }),
+    );
+    if (!completedRetypedTask)
+      throw new Error('Expected scheduled task to be readable');
+    completedRetypedTask.activityKind = 'note';
+    completedRetypedTask.completedAt = new Date('2026-09-01T17:00:00Z');
+    await expect(completedRetypedTask.save()).rejects.toThrow(
+      'Lead task identity cannot be changed once persisted',
+    );
+
+    const reassignedTask = await workflow(() =>
+      activities.get({ id: first.id }, { cache: false }),
+    );
+    if (!reassignedTask)
+      throw new Error('Expected scheduled task to be readable');
+    reassignedTask.subjectKind = 'opportunity';
+    reassignedTask.completedAt = new Date('2026-09-01T17:00:00Z');
+    await expect(reassignedTask.save()).rejects.toThrow(
+      'Lead task identity cannot be changed once persisted',
+    );
+    await expect(
+      workflow(() => activities.get({ id: first.id }, { cache: false })),
+    ).resolves.toMatchObject({
+      subjectKind: 'lead',
+      activityKind: 'task',
+      completedAt: null,
+    });
+
     const opportunityTask = await workflow(() =>
       activities.create({
         tenantId,

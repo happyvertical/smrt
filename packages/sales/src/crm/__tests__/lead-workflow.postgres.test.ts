@@ -321,6 +321,7 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
   it('fails closed on malformed workflow UUIDs before PostgreSQL casts', async () => {
     const tenantId = randomUUID();
     const lead = await createLead(tenantId);
+    const representative = await createRepresentative(tenantId);
     const workflow = await LeadWorkflowService.create({ db });
     const actorProfileId = randomUUID();
     const task = await withTenant({ tenantId }, () =>
@@ -367,7 +368,26 @@ describePostgres('LeadWorkflowService on PostgreSQL', () => {
         }),
       ),
     ).rejects.toMatchObject({ reason: 'representative_unavailable' });
+    await withTenant({ tenantId }, () =>
+      workflow.assignLead({
+        leadId: lead.id as string,
+        ownerRepId: representative.id as string,
+        actorProfileId,
+      }),
+    );
+    await expect(
+      withTenant({ tenantId }, () =>
+        workflow.assignLead({
+          leadId: lead.id as string,
+          ownerRepId: representative.id as string,
+          actorProfileId: 'not-a-uuid',
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: 'invalid_metadata' });
     await withTenant({ tenantId }, async () => {
+      expect((await leads.get({ id: lead.id }))?.ownerRepId).toBe(
+        representative.id,
+      );
       expect(
         await activities.findOpenTasks('lead', lead.id as string),
       ).toHaveLength(1);

@@ -160,7 +160,8 @@ export class SalesActivity extends SmrtObject {
    * follow-up workflow owns its task completion transition.
    */
   override async save(): Promise<this> {
-    const priorCompletedAt = await this.resolvePersistedCompletedAt();
+    const persisted = await this.resolvePersistedState();
+    const priorCompletedAt = persisted?.completedAt;
     const requestedCompletedAt = this.completedAt;
     const isNewCompletion =
       requestedCompletedAt !== null &&
@@ -174,8 +175,13 @@ export class SalesActivity extends SmrtObject {
         'SalesActivity.completedAt is monotonic and cannot be changed once set.',
       );
     }
+    if (persisted?.isLeadTask && !isLeadTask(this)) {
+      throw new Error(
+        'SalesActivity Lead task identity cannot be changed once persisted.',
+      );
+    }
     if (
-      isLeadTask(this) &&
+      (persisted?.isLeadTask === true || isLeadTask(this)) &&
       isNewCompletion &&
       !workflowCompletionPermits.has(this)
     ) {
@@ -190,18 +196,27 @@ export class SalesActivity extends SmrtObject {
   }
 
   /** `undefined` means this id has not been persisted yet. */
-  private async resolvePersistedCompletedAt(): Promise<
-    Date | null | undefined
+  private async resolvePersistedState(): Promise<
+    { completedAt: Date | null; isLeadTask: boolean } | undefined
   > {
     if (!this.id) return undefined;
     try {
       const row = await this.db.get(this.tableName, { id: this.id });
       if (!row) return undefined;
       const value = row.completed_at;
-      if (value === null || value === undefined) return null;
       const completedAt =
-        value instanceof Date ? value : new Date(String(value));
-      return Number.isFinite(completedAt.getTime()) ? completedAt : null;
+        value === null || value === undefined
+          ? null
+          : value instanceof Date
+            ? value
+            : new Date(String(value));
+      return {
+        completedAt:
+          completedAt === null || Number.isFinite(completedAt.getTime())
+            ? completedAt
+            : null,
+        isLeadTask: row.subject_kind === 'lead' && row.activity_kind === 'task',
+      };
     } catch {
       // A fresh collection can construct its first object before the table is
       // verified. Let the normal save path create storage, then persist it.
