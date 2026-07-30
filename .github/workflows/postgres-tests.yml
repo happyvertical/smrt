@@ -18,7 +18,7 @@ jobs:
     name: Registered PostgreSQL Suites
     if: github.event_name == 'workflow_dispatch' || vars.CI_POSTGRES_ENABLED == 'true'
     runs-on: arc-happyvertical
-    timeout-minutes: 30
+    timeout-minutes: 45
     # The general lane does not mount the cluster-local database URL that
     # arc-happyvertical-node provided, so the suite brings its own PostgreSQL.
     # CI_POSTGRES_BASE_URL keeps scripts/run-with-ci-postgres.mjs on its managed

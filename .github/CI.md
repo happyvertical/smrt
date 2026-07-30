@@ -31,8 +31,11 @@ never prevent the tests from running.
   and then queues until it times out rather than failing. `.github/actionlint.yaml`
   omits the label so lint rejects it instead. If a node capability lane is ever
   activated again it needs a fresh, served label.
-- Lightweight lifecycle, policy, aggregation, stale-management, and mobile
-  jobs remain GitHub-hosted when they do not benefit from a self-hosted cache.
+- Lightweight lifecycle, policy, stale-management, and mobile jobs remain
+  GitHub-hosted when they do not benefit from a self-hosted cache. Aggregation
+  is not uniform: `required-ci` is hosted, but `test-packages-result` runs on
+  `arc-happyvertical` even though it only reads `needs.*.result`. It is capped
+  at the standard rather than moved, because it backs a required status.
 
 The PR caller uses `pull_request_target`, so GitHub loads runner selection from
 the trusted base branch rather than contributor-controlled merge YAML. It passes
@@ -43,8 +46,9 @@ check, while the self-hosted validation and publish-dry-run calls are skipped
 and `Required CI` rejects the run. Broker admission must also deny those fork
 events before making a reservation.
 
-The retired `CI_NODE_RUNNER_ENABLED` switch no longer controls job placement
-and can be removed from the repository after this workflow migration is live.
+`CI_NODE_RUNNER_ENABLED` is gone from this tree — nothing reads it, and the
+migration it was conditioned on is live. If the repository still defines the
+variable it is inert and can be deleted.
 
 The pnpm store and runner workspace must remain on the same node-local
 filesystem so pnpm can hardlink packages. Do not restore RAM-backed split
@@ -54,6 +58,58 @@ SQLite fixtures and other temporary test files bypass the container overlay
 filesystem. Self-hosted runners can provide `CI_TEST_TMPDIR` to route those
 files to a bounded, test-only tmpfs; other runners retain the workspace-backed
 fallback.
+
+## Job timeouts
+
+Validation jobs on `arc-happyvertical` use `timeout-minutes: 45`. The value
+is a standard, not a per-job estimate: the previous spread ran from 5 to 45,
+mostly unexplained, and the low end was close to the pool's own queue wait
+(p90 1483-1933s measured over 180 jobs, against a median execution of 39-50s).
+A ceiling near that scale is fragile — it leaves nothing for a cold Turbo cache
+or a slow checkout, and it invites cancelling healthy work.
+
+`timeout-minutes` is measured from the moment a job starts executing, not from
+when it is queued, so this ceiling does not govern queue wait and raising it
+does not fix a job that is requeued while waiting. That behaviour is tracked
+separately in happyvertical/iac#1282. Do not treat a change here as a fix for
+requeueing.
+
+These jobs deliberately sit below the standard, with the reason recorded next
+to the setting or here:
+
+- GitHub-hosted jobs that set a timeout (`dependency-audit` at 10,
+  `mobile.yml`'s two Linux Gradle jobs at 30). Hosted runners never enter the
+  self-hosted queue, so the fragility above does not apply and their values can
+  track observed runtime.
+- `required-ci`, which only reads `needs.*.result`. It finishes in seconds, so
+  failing fast is correct for a job that just reports other jobs' results.
+
+`postgres-tests` is at the standard 45. #2164 retired the unserved
+`arc-happyvertical-node` label, deleted the `node-runner-smoke` workflow that
+ran only there, and moved this job onto the general `arc-happyvertical` pool —
+the pool the 45 was measured on — so the standard applies to it for the same
+reason it applies to every other job there. Its earlier 30 was inherited from a
+label whose scale set was quiesced to zero runners, where `timeout-minutes`
+never governed anything.
+
+`publish-release` is at the standard 45 but that value is load-bearing
+independently of it: 45 is the documented sequential-registry recovery window
+below, and `scripts/publish-workflow-policy.test.mjs` asserts the exact number.
+Moving the standard later does not by itself license moving that job.
+
+Two related constraints are deliberately not per-job settings:
+
+- Several GitHub-hosted jobs set no `timeout-minutes` at all and inherit
+  GitHub's 360-minute default. That is a separate gap from this standard; it is
+  not a licence to leave a self-hosted job uncapped.
+- A merge queue configured with a 60-minute timeout measures wall time, which
+  includes queue wait; a chain of 45-minute jobs can exceed it. Tune the queue
+  timeout at the queue, not by shrinking job ceilings back toward the queue
+  wait.
+
+`agent-policy.yml` is synced from the shared policy source rather than authored
+here; its timeout belongs to the policy control plane, so it is not changed in
+this repository.
 
 ## Pull requests and merge groups
 

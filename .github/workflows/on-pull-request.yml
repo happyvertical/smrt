@@ -325,6 +325,11 @@ jobs:
       (github.event_name == 'pull_request_target' &&
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     runs-on: ubuntu-latest
+    # Deliberately below the 45-minute standard: this is GitHub-hosted, so it
+    # is not exposed to the self-hosted queue wait that makes low ceilings
+    # fragile there. Setup plus the audit and its policy check are bounded work
+    # against the registry, so ten minutes is a hang guard against an
+    # unresponsive registry rather than a capacity budget.
     timeout-minutes: 10
     steps:
       - name: Checkout PR branch
@@ -401,6 +406,11 @@ jobs:
       - test
       - publish-dry-run
     runs-on: ubuntu-latest
+    # Deliberately below the 45-minute standard. This aggregator does no
+    # checkout and no work beyond reading `needs.*.result`, and it is
+    # GitHub-hosted, so it never waits in the self-hosted queue. It runs in
+    # seconds; if it has not finished in five minutes it is stuck, and failing
+    # fast is correct for a job that only reports other jobs' results.
     timeout-minutes: 5
     steps:
       - name: Require full validation success
