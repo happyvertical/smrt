@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.41
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - replace dead singleFork option with Vitest 4 fork controls (#2144) (#2170) (test)
+  - @happyvertical/smrt-config@0.40.41
+  - @happyvertical/smrt-types@0.40.41
+  - @happyvertical/smrt-scanner@0.40.41
+
 ## 0.40.40
 
 ### Patch Changes
