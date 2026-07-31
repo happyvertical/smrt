@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.42
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stop non-PR Mobile runs cancelling each other; spell out main queueing (#2166) (ci)
+  - @happyvertical/smrt-config@0.40.42
+  - @happyvertical/smrt-types@0.40.42
+  - @happyvertical/smrt-scanner@0.40.42
+
 ## 0.40.41
 
 ### Patch Changes
