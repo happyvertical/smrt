@@ -16,6 +16,5 @@ export default defineConfig({
     },
     fileParallelism: false,
     pool: 'forks',
-    singleFork: true,
   },
 });

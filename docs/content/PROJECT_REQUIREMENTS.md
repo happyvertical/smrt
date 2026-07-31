@@ -16,15 +16,25 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     testTimeout: 60000,
+    fileParallelism: false,
     pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: true, isolate: true }
-    },
   },
 });
 ```
 
 **Why**: The vitest plugin automatically generates manifests and loads cross-package dependencies. Without it, tests will fail with "unregistered class" or "No field metadata found" errors.
+
+**Note**: do not add `maxWorkers` — `fileParallelism: false` already pins the
+pool to a single worker and Vitest overrides any user-supplied value. Do not add
+`singleFork` either: it was `poolOptions.forks.singleFork` in Vitest 3 and does
+not exist in Vitest 4, and unknown keys are ignored rather than rejected.
+
+Keep the default `isolate: true`. Disabling isolation shares one module registry
+across test files and makes them order-dependent, which is only worth it for
+unusually heavy packages and only after verifying that suite under randomized
+file order (`--sequence.shuffle.files --sequence.seed=N`). If a heavy package
+needs relief but depends on per-file isolation, keep `isolate: true` and raise
+the per-fork heap with `NODE_OPTIONS=--max-old-space-size=...` instead.
 
 ### 2. package.json Dependencies
 

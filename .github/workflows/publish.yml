@@ -45,7 +45,7 @@ jobs:
   prepare-release:
     name: Prepare Release
     runs-on: arc-happyvertical
-    timeout-minutes: 20
+    timeout-minutes: 45
     outputs:
       previous-version: ${{ steps.prepare.outputs.previous_version }}
       should-publish: ${{ steps.prepare.outputs.should_publish }}
@@ -224,7 +224,7 @@ jobs:
     needs: prepare-release
     if: needs.prepare-release.outputs.should-publish == 'true'
     runs-on: arc-happyvertical
-    timeout-minutes: 20
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -446,7 +446,7 @@ jobs:
   deploy-docs:
     name: Deploy Documentation
     runs-on: arc-happyvertical
-    timeout-minutes: 15
+    timeout-minutes: 45
     permissions:
       contents: read
       pages: write
