@@ -481,6 +481,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
           VITEST_MAX_WORKERS: '1'
+          # Node sizes its default old-space from HOST memory, and this runner
+          # exposes the whole host (see the CPU note below), so V8 will happily
+          # grow a fork past the container's own limit and the kernel kills it —
+          # surfacing as Vitest's silent `Worker exited unexpectedly` with no
+          # `JavaScript heap out of memory`. Cap the heap so V8 collects instead
+          # of ballooning. This BOUNDS the fork; it does not give it more room.
+          NODE_OPTIONS: --max-old-space-size=4096
 
       # Each shard runs ~1/3 of the remaining non-core packages
       # (scripts/test-packages-shard.mjs round-robins by name), keeping
@@ -498,6 +505,10 @@ jobs:
           # The node runner exposes all 32 host CPUs. Cap each of the two
           # concurrent Turbo tasks so Vitest cannot fan out to dozens of workers.
           VITEST_MAX_WORKERS: '2'
+          # Same host-vs-container heap mismatch as the video step above, halved
+          # because two Turbo tasks run concurrently here. smrt-voice pulls the
+          # heavy AI/SQL graph and has been dying the same silent way.
+          NODE_OPTIONS: --max-old-space-size=2048
 
       - name: Upload test results
         if: always()
