@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.40
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: correct stale PostgreSQL-lane and merge-queue-rollout claims (#2169) (ci)
+  - @happyvertical/smrt-config@0.40.40
+  - @happyvertical/smrt-types@0.40.40
+  - @happyvertical/smrt-scanner@0.40.40
+
 ## 0.40.39
 
 ### Patch Changes
