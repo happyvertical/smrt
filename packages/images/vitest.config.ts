@@ -27,7 +27,6 @@ export default defineConfig({
     hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
-    singleFork: true,
     coverage: {
       // Exclude @smrt/core-generated code from the coverage denominator: the
       // SvelteKit route handlers (gitignored, "Auto-generated … DO NOT EDIT")
