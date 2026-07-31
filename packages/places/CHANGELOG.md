@@ -1,5 +1,14 @@
 # @happyvertical/smrt-places
 
+## 0.40.42
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.42
+  - @happyvertical/smrt-assets@0.40.42
+  - @happyvertical/smrt-tenancy@0.40.42
+
 ## 0.40.41
 
 ### Patch Changes
