@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.38
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - honor workspace globs and fail loudly in knowledge discovery (#2154) (smrt-dev-mcp)
+  - @happyvertical/smrt-config@0.40.38
+  - @happyvertical/smrt-types@0.40.38
+  - @happyvertical/smrt-scanner@0.40.38
+
 ## 0.40.37
 
 ### Patch Changes
