@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.39
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: standardize job timeouts on 45 minutes for arc-happyvertical (#2167) (ci)
+  - @happyvertical/smrt-config@0.40.39
+  - @happyvertical/smrt-types@0.40.39
+  - @happyvertical/smrt-scanner@0.40.39
+
 ## 0.40.38
 
 ### Patch Changes
