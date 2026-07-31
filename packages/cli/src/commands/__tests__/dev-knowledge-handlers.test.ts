@@ -174,6 +174,8 @@ describe('dev:knowledge-* handlers', () => {
         focus: 'focus area',
         scope: undefined,
         package: undefined,
+        // CLI keeps the full module-doc embedding contract (#2108, #2143).
+        detail: 'full',
       });
       const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(printed).toContain('# SMRT Domain Context');
@@ -195,6 +197,7 @@ describe('dev:knowledge-* handlers', () => {
         focus: 'opt-focus',
         scope: undefined,
         package: undefined,
+        detail: 'full',
       });
       const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(printed).toContain('"promptBundle"');
@@ -212,6 +215,7 @@ describe('dev:knowledge-* handlers', () => {
         focus: 'extra',
         scope: undefined,
         package: undefined,
+        detail: 'full',
       });
       const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
       expect(printed).toContain('# SMRT Domain Context');
@@ -227,6 +231,7 @@ describe('dev:knowledge-* handlers', () => {
         focus: undefined,
         scope: undefined,
         package: undefined,
+        detail: 'full',
       });
     });
 

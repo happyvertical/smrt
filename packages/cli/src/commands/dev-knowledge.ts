@@ -207,6 +207,9 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         focus: args.join(' ') || options.focus,
         scope: options.scope,
         package: options.package,
+        // CLI consumers keep the #2108 module-doc embedding contract; only MCP
+        // callers default to the budgeted summary bundle (#2143).
+        detail: 'full',
       });
       const format = options.json ? 'json' : options.format;
       if (format === 'json') {
@@ -229,6 +232,8 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         focus: options.focus,
         scope: options.scope,
         package: options.package,
+        // See above: byte-for-byte unchanged CLI output (#2108, #2143).
+        detail: 'full',
       });
       const format = options.json ? 'json' : options.format;
       if (format === 'json') {

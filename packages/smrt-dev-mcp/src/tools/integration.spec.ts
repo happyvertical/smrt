@@ -47,6 +47,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Step 3: Introspect the project
       const introspectionResult = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
         includeRelationships: true,
@@ -86,6 +87,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Introspect
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
       });
@@ -131,6 +133,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Introspect
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
       });
@@ -176,6 +179,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Introspect with relationships
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
         includeRelationships: true,
@@ -212,6 +216,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Introspect
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -233,6 +238,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
       await writeFile(join(tmpDir, 'collection.ts'), collectionCode);
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -259,6 +265,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Introspect should find the valid one
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
       });
 
@@ -282,6 +289,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
       await writeFile(join(tmpDir, 'all-types.ts'), allTypesCode);
 
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
       });
@@ -338,6 +346,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Read back via introspection
       const result = await introspectProject({
+        detail: 'full',
         directory: tmpDir,
         includeFields: true,
       });
@@ -370,6 +379,7 @@ describe('SMRT Dev MCP Tools - Integration', () => {
 
       // Simulate: smrt-dev-mcp introspect-project my-project/
       const introspection = await introspectProject({
+        detail: 'full',
         directory: join(tmpDir, 'my-project'),
       });
 

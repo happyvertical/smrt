@@ -50,7 +50,15 @@ afterEach(async () => {
 });
 
 describe('smrt-dev-mcp stdio server', () => {
-  it('lists and calls knowledge tools over MCP stdio', async () => {
+  // This smoke spawns a real server and drives ~11 whole-workspace tool calls
+  // against the smrt monorepo. Discovery now reaches every workspace member
+  // (#2143), and a member without build artifacts falls back to an OXC source
+  // scan — seconds per package on a cold CI runner, versus a fast artifact read
+  // locally. The cost therefore tracks how much of the repo is prebuilt, so this
+  // needs a budget well above the 30s default rather than a flaky margin.
+  it('lists and calls knowledge tools over MCP stdio', {
+    timeout: 300_000,
+  }, async () => {
     const client = await createMcpClient();
 
     const listResult = await client.listTools();
@@ -101,6 +109,36 @@ describe('smrt-dev-mcp stdio server', () => {
       review.selectedPackages.map((pkg: { name: string }) => pkg.name),
     ).toContain('@happyvertical/smrt-content');
     expect(review.promptBundle.contextMarkdown).toContain('SMRT code review');
+
+    // #2143: the default MCP response is the budgeted summary — authored prose
+    // and full domain manifests are referenced by path, not inlined.
+    expect(review.detail).toBe('summary');
+    const summaryPackage = review.selectedPackages.find(
+      (pkg: { name: string }) => pkg.name === '@happyvertical/smrt-content',
+    );
+    expect(summaryPackage.agentDoc).toBeUndefined();
+    expect(summaryPackage.domainKnowledge).toBeUndefined();
+    expect(summaryPackage.objectCount).toBeGreaterThan(0);
+    expect(summaryPackage.docs).toEqual(
+      expect.arrayContaining(['packages/content/AGENTS.md']),
+    );
+
+    const fullReviewResult = await client.callTool({
+      name: 'build-review-context',
+      arguments: {
+        rootDir: repoRoot,
+        changedFiles: ['packages/content/src/models/Article.ts'],
+        detail: 'full',
+      },
+    });
+    const fullReview = JSON.parse(textContent(fullReviewResult));
+    const fullPackage = fullReview.selectedPackages.find(
+      (pkg: { name: string }) => pkg.name === '@happyvertical/smrt-content',
+    );
+    expect(fullPackage.agentDoc).toBeTruthy();
+    expect(textContent(fullReviewResult).length).toBeGreaterThan(
+      textContent(reviewResult).length,
+    );
 
     const domainReviewResult = await client.callTool({
       name: 'build-domain-review-context',
