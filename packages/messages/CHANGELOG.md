@@ -1,5 +1,77 @@
 # @happyvertical/smrt-messages
 
+## 0.40.41
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.41
+  - @happyvertical/smrt-secrets@0.40.41
+  - @happyvertical/smrt-tenancy@0.40.41
+  - @happyvertical/smrt-users@0.40.41
+  - @happyvertical/smrt-types@0.40.41
+  - @happyvertical/smrt-ui@0.40.41
+
+## 0.40.40
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.40
+  - @happyvertical/smrt-secrets@0.40.40
+  - @happyvertical/smrt-tenancy@0.40.40
+  - @happyvertical/smrt-users@0.40.40
+  - @happyvertical/smrt-types@0.40.40
+  - @happyvertical/smrt-ui@0.40.40
+
+## 0.40.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.39
+  - @happyvertical/smrt-secrets@0.40.39
+  - @happyvertical/smrt-tenancy@0.40.39
+  - @happyvertical/smrt-users@0.40.39
+  - @happyvertical/smrt-types@0.40.39
+  - @happyvertical/smrt-ui@0.40.39
+
+## 0.40.38
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.38
+  - @happyvertical/smrt-secrets@0.40.38
+  - @happyvertical/smrt-tenancy@0.40.38
+  - @happyvertical/smrt-users@0.40.38
+  - @happyvertical/smrt-types@0.40.38
+  - @happyvertical/smrt-ui@0.40.38
+
+## 0.40.37
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.37
+  - @happyvertical/smrt-secrets@0.40.37
+  - @happyvertical/smrt-tenancy@0.40.37
+  - @happyvertical/smrt-users@0.40.37
+  - @happyvertical/smrt-types@0.40.37
+  - @happyvertical/smrt-ui@0.40.37
+
+## 0.40.36
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.36
+  - @happyvertical/smrt-secrets@0.40.36
+  - @happyvertical/smrt-tenancy@0.40.36
+  - @happyvertical/smrt-users@0.40.36
+  - @happyvertical/smrt-types@0.40.36
+  - @happyvertical/smrt-ui@0.40.36
+
 ## 0.40.35
 
 ### Patch Changes

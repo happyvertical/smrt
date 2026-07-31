@@ -23,7 +23,7 @@ jobs:
   prepare-publish:
     name: Prepare Publish Validation
     runs-on: arc-happyvertical
-    timeout-minutes: 30
+    timeout-minutes: 45
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
 
@@ -143,7 +143,7 @@ jobs:
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
     runs-on: arc-happyvertical
-    timeout-minutes: 20
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -159,9 +159,12 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ env.CHECKOUT_REF }}
-          # Preparation already produced the versioned workspace artifact.
-          # Pack shards only need workflow actions and scripts from this ref;
-          # fetching full history here can exhaust the 20-minute ARC timeout.
+          # Preparation already produced the versioned workspace artifact, so
+          # pack shards only need workflow actions and scripts from this ref.
+          # This was originally a workaround for a 20-minute job ceiling that
+          # a full-history fetch could exhaust; that ceiling is now 45 minutes
+          # (see .github/CI.md, "Job timeouts"), but the shallow fetch stays on
+          # its own merits — full history is work this job never reads.
           fetch-depth: 1
 
       - name: Restore versioned workspace and build outputs
@@ -207,7 +210,7 @@ jobs:
       - validate-publish-shards
     if: always()
     runs-on: arc-happyvertical
-    timeout-minutes: 5
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository

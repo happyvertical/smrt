@@ -36,9 +36,11 @@ The `smrt playground` commands (`init`, `dev`, `list`) consume this package. The
 
 `smrt-playground` does not own component code or theming — it only discovers and renders. UI components themselves come from individual packages (`smrt-content/svelte`, `smrt-jobs/svelte`, etc.), from `smrt-ui` for shared domain-agnostic primitives, or from `smrt-svelte` for the top-level integration components.
 
-## Internal `host/` directory
+## Modules
 
-The `host/` directory is a private SvelteKit app used for Playwright e2e testing of `PlaygroundHost.svelte`. It is registered as `smrt-playground-host` in the workspace but is not published.
+| Module | Scope | Module doc |
+|---|---|---|
+| `host` | the private SvelteKit app used for Playwright e2e testing of `PlaygroundHost.svelte`; registered as the `smrt-playground-host` workspace package but not published | [agents/host.md](agents/host.md) |
 
 ## Docs
 

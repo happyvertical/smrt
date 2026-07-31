@@ -23,7 +23,6 @@ export default defineConfig({
     fileParallelism: false,
     // Vitest 4.x: pool options are now top-level
     pool: 'forks',
-    singleFork: true,
     // Multi-adapter test projects (Vitest 4.x)
     projects: [
       {

@@ -27,7 +27,6 @@ export default defineConfig({
     fileParallelism: false,
     // Use single-threaded pool to avoid database contention
     pool: 'forks',
-    singleFork: true,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

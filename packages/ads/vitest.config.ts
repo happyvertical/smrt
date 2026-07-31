@@ -11,6 +11,5 @@ export default defineConfig({
     hookTimeout: 30000, // Allow longer setup time in CI
     fileParallelism: false,
     pool: 'forks',
-    singleFork: true,
   },
 });

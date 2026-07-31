@@ -31,7 +31,6 @@ export default defineConfig({
     hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
-    singleFork: true,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

@@ -219,14 +219,39 @@ export default defineConfig({
     testTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
   },
 });
 ```
+
+> **Note**: `fileParallelism: false` already pins the pool to a single worker —
+> Vitest overrides any user-supplied `maxWorkers` in that case, so do not add
+> `maxWorkers`. The `poolOptions.forks.singleFork` option was removed in
+> Vitest 4, and a flat `test.singleFork` was never valid at any version; a
+> stray `singleFork` key is silently ignored rather than rejected.
+
+#### `isolate: false` is an opt-in exception, not the default
+
+Files still run one at a time under `fileParallelism: false`, but `isolate`
+defaults to `true`, so each test file gets a fresh fork that reloads the whole
+SMRT manifest and base-class graph. Setting `isolate: false` reuses one fork and
+loads that graph once, which is worth it for the heaviest packages —
+`packages/video` uses it and drops from four worker forks to one.
+
+**Do not apply it by default.** It shares one module registry across test files,
+which makes execution order significant, and Vitest reorders files between runs
+from its cached durations. Measured on this repo, 3 of 14 packages broke under
+it: `agents` and `assets` raised `Class '...' is not registered` because the
+`ObjectRegistry` `globalThis` singleton carried mutated state across files, and
+`content` leaked module-level Svelte mocks. Before enabling it for a package,
+run that suite under randomized file order
+(`vitest run --sequence.shuffle.files --sequence.seed=N`) across several seeds
+and keep per-file isolation if any of them fail.
+
+If a package needs the memory relief but its suite depends on per-file
+isolation, keep `isolate: true` and raise the per-fork heap instead
+(`NODE_OPTIONS=--max-old-space-size=...` on that package's `test` script).
+Correctness beats uniformity: never disable isolation to make a package match
+its siblings.
 
 > **Note**: Inside this monorepo, packages import `smrtVitestPlugin` directly from the workspace source (`../vitest/src/index.ts`) rather than from the published `@happyvertical/smrt-vitest`. This avoids a circular workspace build dependency. Consumer projects (outside the monorepo) should import from the package name.
 

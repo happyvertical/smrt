@@ -17,8 +17,27 @@ jobs:
   postgres:
     name: Registered PostgreSQL Suites
     if: github.event_name == 'workflow_dispatch' || vars.CI_POSTGRES_ENABLED == 'true'
-    runs-on: arc-happyvertical-node
-    timeout-minutes: 30
+    runs-on: arc-happyvertical
+    timeout-minutes: 45
+    # The general lane does not mount the cluster-local database URL that
+    # arc-happyvertical-node provided, so the suite brings its own PostgreSQL.
+    # CI_POSTGRES_BASE_URL keeps scripts/run-with-ci-postgres.mjs on its managed
+    # path, so each package still gets a uniquely named database that is dropped
+    # afterwards rather than sharing one under `--concurrency=2`.
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:e013e867e712fec275706a6c51c966f0bb0c93cfa8f51000f85a15f9865a28cb
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -35,5 +54,6 @@ jobs:
       - name: Run registered PostgreSQL suites
         run: pnpm turbo run test:postgres --concurrency=2
         env:
+          CI_POSTGRES_BASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test

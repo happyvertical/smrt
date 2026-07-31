@@ -10,6 +10,8 @@ export default defineConfig({
     testTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
-    singleFork: true,
+    // Reuse one fork per package so the SMRT manifest and base-class
+    // graph load once instead of once per test file.
+    isolate: false,
   },
 });

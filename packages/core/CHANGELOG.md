@@ -1,5 +1,71 @@
 # @happyvertical/smrt-core
 
+## 0.40.41
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - replace dead singleFork option with Vitest 4 fork controls (#2144) (#2170) (test)
+  - @happyvertical/smrt-config@0.40.41
+  - @happyvertical/smrt-types@0.40.41
+  - @happyvertical/smrt-scanner@0.40.41
+
+## 0.40.40
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: correct stale PostgreSQL-lane and merge-queue-rollout claims (#2169) (ci)
+  - @happyvertical/smrt-config@0.40.40
+  - @happyvertical/smrt-types@0.40.40
+  - @happyvertical/smrt-scanner@0.40.40
+
+## 0.40.39
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: standardize job timeouts on 45 minutes for arc-happyvertical (#2167) (ci)
+  - @happyvertical/smrt-config@0.40.39
+  - @happyvertical/smrt-types@0.40.39
+  - @happyvertical/smrt-scanner@0.40.39
+
+## 0.40.38
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - honor workspace globs and fail loudly in knowledge discovery (#2154) (smrt-dev-mcp)
+  - @happyvertical/smrt-config@0.40.38
+  - @happyvertical/smrt-types@0.40.38
+  - @happyvertical/smrt-scanner@0.40.38
+
+## 0.40.37
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: retire the unserved arc-happyvertical-node selector (#2164)
+  - @happyvertical/smrt-config@0.40.37
+  - @happyvertical/smrt-types@0.40.37
+  - @happyvertical/smrt-scanner@0.40.37
+
+## 0.40.36
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - extend full-suite typecheck timeout (#2161) (ci)
+  - @happyvertical/smrt-config@0.40.36
+  - @happyvertical/smrt-types@0.40.36
+  - @happyvertical/smrt-scanner@0.40.36
+
 ## 0.40.35
 
 ### Patch Changes
