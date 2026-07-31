@@ -219,14 +219,18 @@ export default defineConfig({
     testTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
+    // Reuse one fork per package so the SMRT manifest and base-class
+    // graph load once instead of once per test file.
+    isolate: false,
   },
 });
 ```
+
+> **Note**: `fileParallelism: false` already pins the pool to a single worker —
+> Vitest overrides any user-supplied `maxWorkers` in that case — so `isolate`
+> is the only knob left that controls how often the module graph is reloaded.
+> The `poolOptions.forks.singleFork` option was removed in Vitest 4; a stray
+> `singleFork` key is silently ignored rather than rejected.
 
 > **Note**: Inside this monorepo, packages import `smrtVitestPlugin` directly from the workspace source (`../vitest/src/index.ts`) rather than from the published `@happyvertical/smrt-vitest`. This avoids a circular workspace build dependency. Consumer projects (outside the monorepo) should import from the package name.
 

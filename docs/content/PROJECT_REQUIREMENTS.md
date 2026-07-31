@@ -16,10 +16,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     testTimeout: 60000,
+    fileParallelism: false,
     pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: true, isolate: true }
-    },
+    isolate: false,
   },
 });
 ```
