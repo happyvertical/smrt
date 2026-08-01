@@ -12,11 +12,6 @@ For public deployments, follow the
 This package trusts the principal supplied by the application adapter; it does
 not implement an OAuth authorization server or validate bearer tokens itself.
 
-For public deployments, follow the
-[remote MCP authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).
-This package trusts the principal supplied by the application adapter; it does
-not implement an OAuth authorization server or validate bearer tokens itself.
-
 ```ts
 // src/lib/server/mcp.ts
 import { createMcpAppServer, McpAccessError } from '@happyvertical/smrt-app-mcp';
@@ -59,6 +54,7 @@ import { mountMcpCallRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
 import { mcpServer } from '$lib/server/mcp';
 export const POST = mountMcpCallRoute(mcpServer);
 ```
+
 `toolPolicy` is evaluated for every tool eligible under the allow-list and
 base public/authenticated rule, on both discovery and a direct call. Return
 `false` to hide the tool from discovery and deny a direct call with the safe,

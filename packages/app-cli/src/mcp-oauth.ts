@@ -19,7 +19,8 @@ export interface OAuthAuthorizationServerMetadata {
 
 export interface McpClientRegistrationOptions {
   applicationType: OAuthApplicationType;
-  clientId: string;
+  /** HTTPS metadata-document URL. Required only when CIMD is advertised. */
+  clientId?: string;
   clientName: string;
   redirectUris: string[];
 }
@@ -43,10 +44,36 @@ export interface McpRegisteredClient {
   registrationResponse?: Record<string, unknown>;
 }
 
+type McpRegistrationRequest = Omit<McpClientIdMetadataDocument, 'client_id'>;
+
+function createMcpRegistrationRequest(
+  options: McpClientRegistrationOptions,
+): McpRegistrationRequest {
+  if (!options.clientName.trim()) {
+    throw new Error('MCP client_name must not be empty.');
+  }
+  if (options.redirectUris.length === 0) {
+    throw new Error('MCP client metadata requires at least one redirect URI.');
+  }
+  for (const redirectUri of options.redirectUris) new URL(redirectUri);
+
+  return {
+    application_type: options.applicationType,
+    client_name: options.clientName,
+    grant_types: ['authorization_code'],
+    redirect_uris: [...options.redirectUris],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+  };
+}
+
 /** Build and validate the document hosted at an HTTPS URL used as client_id. */
 export function createMcpClientIdMetadataDocument(
   options: McpClientRegistrationOptions,
 ): McpClientIdMetadataDocument {
+  if (!options.clientId) {
+    throw new Error('MCP client_id metadata URL is required for CIMD.');
+  }
   const clientId = new URL(options.clientId);
   if (clientId.protocol !== 'https:' || clientId.pathname === '/') {
     throw new Error(
@@ -58,22 +85,9 @@ export function createMcpClientIdMetadataDocument(
       'MCP client_id metadata URL must not include query or fragment.',
     );
   }
-  if (!options.clientName.trim()) {
-    throw new Error('MCP client_name must not be empty.');
-  }
-  if (options.redirectUris.length === 0) {
-    throw new Error('MCP client metadata requires at least one redirect URI.');
-  }
-  for (const redirectUri of options.redirectUris) new URL(redirectUri);
-
   return {
-    application_type: options.applicationType,
+    ...createMcpRegistrationRequest(options),
     client_id: options.clientId,
-    client_name: options.clientName,
-    grant_types: ['authorization_code'],
-    redirect_uris: [...options.redirectUris],
-    response_types: ['code'],
-    token_endpoint_auth_method: 'none',
   };
 }
 
@@ -85,8 +99,8 @@ export function resolveMcpClientRegistration(
   authorizationServer: OAuthAuthorizationServerMetadata,
   options: McpClientRegistrationOptions,
 ): McpClientRegistration {
-  const metadataDocument = createMcpClientIdMetadataDocument(options);
   if (authorizationServer.client_id_metadata_document_supported === true) {
+    const metadataDocument = createMcpClientIdMetadataDocument(options);
     return {
       clientId: metadataDocument.client_id,
       kind: 'client_id_metadata_document',
@@ -95,11 +109,10 @@ export function resolveMcpClientRegistration(
   }
 
   if (authorizationServer.registration_endpoint) {
-    const { client_id: _clientId, ...request } = metadataDocument;
     return {
       endpoint: authorizationServer.registration_endpoint,
       kind: 'dynamic_client_registration',
-      request,
+      request: createMcpRegistrationRequest(options),
     };
   }
 

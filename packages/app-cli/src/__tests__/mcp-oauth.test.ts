@@ -161,7 +161,11 @@ describe('MCP OAuth client registration', () => {
 
     const dcr = await registerMcpClient(
       { registration_endpoint: registrationEndpoint },
-      client,
+      {
+        applicationType: client.applicationType,
+        clientName: client.clientName,
+        redirectUris: client.redirectUris,
+      },
     );
     expect(dcr).toMatchObject({
       clientId: 'reference-dcr-client',
