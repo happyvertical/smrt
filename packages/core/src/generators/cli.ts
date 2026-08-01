@@ -27,6 +27,7 @@ import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
 import {
   buildCustomActionInvocationArgs,
+  customActionParameterInputName,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
 } from './custom-action.js';
@@ -452,7 +453,6 @@ export class CLIGenerator {
     flags: Record<string, string | boolean>,
   ): Promise<unknown> {
     const id = positional ?? this.flagString(flags.id);
-    const args = this.customOptions(flags);
     const methodDef = (await ObjectRegistry.getAllMethods(objectName)).get(
       action,
     );
@@ -464,10 +464,13 @@ export class CLIGenerator {
         ? { defaultScope: 'collection' as const }
         : {}),
     });
+    const args = this.customOptions(flags, metadata);
     const invocationArgs =
       metadata.parameters?.length === 1 &&
       metadata.parameters[0]?.name === 'options'
-        ? { options: args }
+        ? Object.keys(args).length > 0
+          ? { options: args }
+          : {}
         : args;
     const methodArgs = buildCustomActionInvocationArgs(
       metadata,
@@ -562,13 +565,31 @@ export class CLIGenerator {
     return data;
   }
 
-  /** Collect non-reserved flags as custom-action options. */
+  /**
+   * Collect custom-action flags. Typed action parameters may deliberately use
+   * standard CLI names such as `limit`, `offset`, `where`, or `format`; retain
+   * those rather than silently dropping them as CRUD flags. Item actions keep
+   * `--id` for their receiver and accept an action parameter named `id` as
+   * `--action-id` to preserve separate namespaces.
+   */
   private customOptions(
     flags: Record<string, string | boolean>,
+    metadata?: { parameters?: Array<{ name: string }>; idRequired: boolean },
   ): Record<string, unknown> {
+    const declaredInputs = new Set(
+      (metadata?.parameters ?? []).map((parameter) =>
+        customActionParameterInputName(
+          metadata ?? { idRequired: false },
+          parameter.name,
+        ),
+      ),
+    );
     const options: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(flags)) {
-      if (RESERVED_FLAGS.has(key)) continue;
+    for (const [rawKey, value] of Object.entries(flags)) {
+      const key = rawKey === 'action-id' ? 'actionId' : rawKey;
+      if (rawKey === 'id') continue;
+      if (RESERVED_FLAGS.has(rawKey) && !declaredInputs.has(key)) continue;
+      if (rawKey === 'action-id' && !declaredInputs.has(key)) continue;
       options[key] = this.coerceValue(value);
     }
     return options;

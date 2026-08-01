@@ -27,6 +27,7 @@ export {
   type CustomActionFailure,
   type CustomActionMetadata,
   type CustomActionScope,
+  customActionParameterInputName,
   normalizeCustomActionFailure,
   type ResolveCustomActionMetadataOptions,
   resolveCustomActionMetadata,

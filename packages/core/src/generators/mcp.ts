@@ -16,6 +16,7 @@ import {
   buildCustomActionInvocationArgs,
   type CustomActionFailure,
   type CustomActionMetadata,
+  customActionParameterInputName,
   normalizeCustomActionFailure,
   resolveCustomActionMetadata,
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
@@ -1596,18 +1597,23 @@ ${indent}}`;
                 this.hasCollectionReceiver(classInfo),
               );
               const methodArgs = !metadata.parameters
-                ? 'Object.keys(options).length > 0 ? options : directArgs'
+                ? 'Object.keys(options ?? {}).length > 0 ? options : directArgs'
                 : metadata.parameters.length === 1 &&
                     metadata.parameters[0]?.name === 'options'
                   ? 'options'
                   : `[${metadata.parameters
                       .map(
                         (parameter) =>
-                          `args[${JSON.stringify(parameter.name)}]`,
+                          `args[${JSON.stringify(
+                            customActionParameterInputName(
+                              metadata,
+                              parameter.name,
+                            ),
+                          )}]`,
                       )
                       .join(', ')}]`;
               return `${indent}case '${tool.name}': {
-${indent}  const { id, options = {}, ...directArgs } = args;
+${indent}  const { id, options, ...directArgs } = args;
 
 ${indent}  if (${JSON.stringify(metadata.scope)} === 'item' && !id) {
 ${indent}    throw new Error('ID is required for custom action ${action}');

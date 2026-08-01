@@ -36,6 +36,25 @@ class CliCmdWidget extends SmrtObject {
     return { kind: 'instance', name: this.name, options };
   }
 
+  async window(
+    limit: number,
+    offset: number,
+    where: string,
+    format: string,
+  ): Promise<any> {
+    return { kind: 'window', limit, offset, where, format };
+  }
+
+  async move(id: string): Promise<any> {
+    return { kind: 'move', destinationId: id };
+  }
+
+  async withDefaults(
+    options: any = { source: 'method-default' },
+  ): Promise<any> {
+    return { kind: 'defaults', options };
+  }
+
   // A model static action is collection-targeted and accepts no item id.
   static async tally(options: any = {}): Promise<any> {
     return { kind: 'collection', options };
@@ -70,6 +89,35 @@ describe('CLI generator parsing + dispatch (#1500)', () => {
     isStatic: true,
     returnType: 'Promise<any>',
     parameters: [{ name: 'options', type: 'any', optional: true, default: {} }],
+  });
+  ObjectRegistry.getMethods('CliCmdWidget').set('window', {
+    name: 'window',
+    async: true,
+    isPublic: true,
+    isStatic: false,
+    returnType: 'Promise<any>',
+    parameters: [
+      { name: 'limit', type: 'number', optional: false },
+      { name: 'offset', type: 'number', optional: false },
+      { name: 'where', type: 'string', optional: false },
+      { name: 'format', type: 'string', optional: false },
+    ],
+  });
+  ObjectRegistry.getMethods('CliCmdWidget').set('move', {
+    name: 'move',
+    async: true,
+    isPublic: true,
+    isStatic: false,
+    returnType: 'Promise<any>',
+    parameters: [{ name: 'id', type: 'string', optional: false }],
+  });
+  ObjectRegistry.getMethods('CliCmdWidget').set('withDefaults', {
+    name: 'withDefaults',
+    async: true,
+    isPublic: true,
+    isStatic: false,
+    returnType: 'Promise<any>',
+    parameters: [{ name: 'options', type: 'any', optional: true }],
   });
   ObjectRegistry.invalidateAllInheritanceCaches();
 
@@ -285,6 +333,54 @@ describe('CLI generator parsing + dispatch (#1500)', () => {
       );
       expect(out).toContain('"kind": "collection"');
       expect(out).toContain('"scope": "all"');
+    });
+
+    it('preserves typed parameters that share standard CLI flag names', async () => {
+      const collection = await CliCmdWidgetCollection.create({ db });
+      const created = await collection.create({ name: 'WindowTarget', qty: 1 });
+      await created.save();
+      const gen = new CLIGenerator({}, { db });
+
+      const { out } = await captureLog(() =>
+        gen.run([
+          'clicmdwidget:window',
+          created.id as string,
+          '--limit',
+          '5',
+          '--offset',
+          '2',
+          '--where',
+          'status=active',
+          '--format',
+          'json',
+        ]),
+      );
+      expect(out).toContain('"limit": 5');
+      expect(out).toContain('"offset": 2');
+      expect(out).toContain('"where": "status=active"');
+      expect(out).toContain('"format": "json"');
+    });
+
+    it('keeps item receiver ids separate and preserves omitted options defaults', async () => {
+      const collection = await CliCmdWidgetCollection.create({ db });
+      const created = await collection.create({ name: 'MoveTarget', qty: 1 });
+      await created.save();
+      const gen = new CLIGenerator({}, { db });
+
+      const moved = await captureLog(() =>
+        gen.run([
+          'clicmdwidget:move',
+          created.id as string,
+          '--action-id',
+          'destination-2',
+        ]),
+      );
+      expect(moved.out).toContain('"destinationId": "destination-2"');
+
+      const defaults = await captureLog(() =>
+        gen.run(['clicmdwidget:withDefaults', created.id as string]),
+      );
+      expect(defaults.out).toContain('"source": "method-default"');
     });
   });
 
