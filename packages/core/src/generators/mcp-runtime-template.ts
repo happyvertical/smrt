@@ -205,7 +205,7 @@ ${indent}}`;
             // from TOOLS so MCP clients receive only protocol-defined fields.
             return `${indent}case '${tool.name}': {
 ${indent}  const actionMeta = CUSTOM_ACTIONS['${tool.name}'] || { scope: 'item', isStatic: false, legacyOptions: true };
-${indent}  const { id, options = {}, ...directArgs } = args;
+${indent}  const { id, options, ...directArgs } = args;
 
 ${indent}  if (actionMeta.scope === 'item' && !id) {
 ${indent}    throw new Error('ID is required for custom action ${action}');
@@ -233,10 +233,14 @@ ${indent}    throw new Error('Method ${action} not found on custom action target
 ${indent}  }
 
 ${indent}  const methodArgs = actionMeta.legacyOptions
-${indent}    ? [Object.keys(options).length > 0 ? options : directArgs]
+${indent}    ? [Object.keys(options ?? {}).length > 0 ? options : directArgs]
 ${indent}    : actionMeta.optionsParameter
 ${indent}      ? [options]
-${indent}      : (actionMeta.parameterNames || []).map((parameterName) => args[parameterName]);
+${indent}      : (actionMeta.parameterNames || []).map((parameterName) => args[
+${indent}          actionMeta.scope === 'item' && parameterName === 'id'
+${indent}            ? 'actionId'
+${indent}            : parameterName
+${indent}        ]);
 ${indent}  const result = await actionMethod.call(target, ...methodArgs);
 ${indent}  const failure = normalizeCustomActionFailure(result);
 ${indent}  if (failure) {

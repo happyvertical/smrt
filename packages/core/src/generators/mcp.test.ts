@@ -165,7 +165,14 @@ class MCPUnderscoreMethodAgent extends SmrtObject {
 
 @smrt({
   mcp: {
-    include: ['apply', 'rebalance', 'restoreIntoContent', 'fail', 'opaque'],
+    include: [
+      'apply',
+      'rebalance',
+      'restoreIntoContent',
+      'move',
+      'fail',
+      'opaque',
+    ],
   },
   api: { routes: { apply: { scope: 'collection' } } },
 })
@@ -183,6 +190,10 @@ class MCPConformanceAgent extends SmrtObject {
 
   async restoreIntoContent(idempotencyKey: string): Promise<any> {
     return { receiver: 'camelCase', idempotencyKey };
+  }
+
+  async move(id: string): Promise<any> {
+    return { receiver: 'item', actionId: id };
   }
 
   async fail(): Promise<any> {
@@ -245,6 +256,14 @@ describe('MCPGenerator with Custom Actions', () => {
       isStatic: false,
       returnType: 'Promise<any>',
       parameters: [{ name: 'idempotencyKey', type: 'string', optional: false }],
+    });
+    ObjectRegistry.getMethods('MCPConformanceAgent').set('move', {
+      name: 'move',
+      async: true,
+      isPublic: true,
+      isStatic: false,
+      returnType: 'Promise<any>',
+      parameters: [{ name: 'id', type: 'string', optional: false }],
     });
     for (const name of ['fail', 'opaque']) {
       ObjectRegistry.getMethods('MCPConformanceAgent').set(name, {
@@ -338,6 +357,13 @@ describe('MCPGenerator with Custom Actions', () => {
           idempotencyKey: { type: 'string' },
         },
         required: ['id', 'idempotencyKey'],
+      });
+      expect(inputSchema('mcpconformanceagent_move')).toMatchObject({
+        properties: {
+          id: { type: 'string' },
+          actionId: { type: 'string' },
+        },
+        required: ['id', 'actionId'],
       });
       // A collection-class method has a real collection receiver, so it is
       // collection-scoped even though it is not static.
@@ -577,6 +603,18 @@ describe('MCPGenerator with Custom Actions', () => {
         idempotencyKey: 'camel-case',
       });
 
+      const moveResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_move',
+          arguments: { id: 'item-1', actionId: 'destination-2' },
+        },
+      });
+      expect(JSON.parse(moveResponse.content[0].text)).toMatchObject({
+        receiver: 'item',
+        actionId: 'destination-2',
+      });
+
       const staticResponse = await generator.handleToolCall({
         method: 'tools/call',
         params: {
@@ -678,6 +716,7 @@ describe('MCPGenerator with Custom Actions', () => {
         expect(handlers).toContain(
           "case 'mcpconformanceagent_restoreintocontent'",
         );
+        expect(handlers).toContain("case 'mcpconformanceagent_move'");
         expect(handlers).toContain("case 'mcpconformancecollection_fanout'");
         expect(handlers).toContain(
           'Custom action rebalance is collection-scoped and does not accept an ID',
@@ -686,6 +725,7 @@ describe('MCPGenerator with Custom Actions', () => {
           'ObjectRegistry.getClass("MCPConformanceAgent")?.constructor',
         );
         expect(handlers).toContain('args["idempotencyKey"]');
+        expect(handlers).toContain('args["actionId"]');
         expect(handlers).toContain('target["restoreIntoContent"]');
         expect(handlers).toContain('actionMethod.call(target, ...methodArgs)');
         expect(handlers).toContain('normalizeCustomActionFailure(result)');

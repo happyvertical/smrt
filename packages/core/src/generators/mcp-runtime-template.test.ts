@@ -61,8 +61,9 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       "? ObjectRegistry.getClass('Document')?.constructor",
     );
     expect(source).toContain(
-      '(actionMeta.parameterNames || []).map((parameterName) => args[parameterName])',
+      "actionMeta.scope === 'item' && parameterName === 'id'",
     );
+    expect(source).toContain("? 'actionId'");
     expect(source).toMatch(/actionMeta\.optionsParameter\s+\? \[options\]/);
     expect(source).toContain('actionMethod.call(target, ...methodArgs)');
     expect(source).toContain("target[actionMeta.methodName || 'apply']");

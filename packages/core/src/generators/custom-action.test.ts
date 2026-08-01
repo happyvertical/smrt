@@ -92,6 +92,50 @@ describe('custom action conformance', () => {
     ).toEqual([{ colour: 'blue' }]);
   });
 
+  it('keeps an item receiver id distinct from an action id parameter', () => {
+    const metadata = resolveCustomActionMetadata({
+      actionName: 'move',
+      method: {
+        isStatic: false,
+        parameters: [{ name: 'id', type: 'string', optional: false }],
+      },
+    });
+
+    expect(buildCustomActionInputSchema(metadata)).toMatchObject({
+      properties: {
+        id: { type: 'string' },
+        actionId: { type: 'string' },
+      },
+      required: ['id', 'actionId'],
+    });
+    expect(
+      buildCustomActionInvocationArgs(metadata, {
+        id: 'receiver-1',
+        actionId: 'destination-2',
+      }),
+    ).toEqual(['destination-2']);
+  });
+
+  it('leaves an omitted typed options parameter undefined for method defaults', () => {
+    const metadata = resolveCustomActionMetadata({
+      actionName: 'configure',
+      method: {
+        isStatic: false,
+        parameters: [{ name: 'options', type: 'object', optional: true }],
+      },
+    });
+
+    expect(buildCustomActionInvocationArgs(metadata, { id: 'item-1' })).toEqual(
+      [undefined],
+    );
+    expect(
+      buildCustomActionInvocationArgs(metadata, {
+        id: 'item-1',
+        options: null,
+      }),
+    ).toEqual([null]);
+  });
+
   it('requires an explicit failure marker and redacts conventional failures', () => {
     expect(
       normalizeCustomActionFailure({ code: 'opaque', message: 'a success' }),

@@ -22,6 +22,21 @@ export interface CustomActionMetadata {
   isStatic: boolean;
 }
 
+/**
+ * Return the transport field for a method parameter. Item tools reserve `id`
+ * for the receiver, so an action parameter named `id` is exposed as
+ * `actionId`. REST already has separate path/body namespaces; flat tool and
+ * CLI inputs use this alias to avoid silently passing the receiver ID twice.
+ */
+export function customActionParameterInputName(
+  metadata: Pick<CustomActionMetadata, 'idRequired'>,
+  parameterName: string,
+): string {
+  return metadata.idRequired && parameterName === 'id'
+    ? 'actionId'
+    : parameterName;
+}
+
 export interface ResolveCustomActionMetadataOptions {
   actionName: string;
   method?: {
@@ -105,13 +120,17 @@ export function buildCustomActionInputSchema(
     if (!parameter.optional) required.push('options');
   } else {
     for (const parameter of metadata.parameters) {
-      properties[parameter.name] = {
+      const inputName = customActionParameterInputName(
+        metadata,
+        parameter.name,
+      );
+      properties[inputName] = {
         ...convertTypeToJsonSchema(parameter.type),
         ...(parameter.default !== undefined
           ? { default: parameter.default }
           : {}),
       };
-      if (!parameter.optional) required.push(parameter.name);
+      if (!parameter.optional) required.push(inputName);
     }
   }
 
@@ -145,9 +164,15 @@ export function buildCustomActionInvocationArgs(
     metadata.parameters.length === 1 &&
     metadata.parameters[0]?.name === 'options'
   ) {
-    return [options ?? {}];
+    // Preserve `undefined` (and an explicit `null`) so JavaScript default
+    // parameter initializers and intentional null handling retain their native
+    // semantics. Legacy options bags still receive an empty object below.
+    return [options];
   }
-  return metadata.parameters.map((parameter) => args[parameter.name]);
+  return metadata.parameters.map(
+    (parameter) =>
+      args[customActionParameterInputName(metadata, parameter.name)],
+  );
 }
 
 /**
