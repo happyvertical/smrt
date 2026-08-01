@@ -350,6 +350,29 @@ describe('OidcLoginService', () => {
     expect(server.tokenRequests).toHaveLength(0);
   });
 
+  it('rejects an invalid callback envelope before OIDC discovery', async () => {
+    const fetchMock = vi.fn();
+    const service = new OidcLoginService({
+      db: { type: 'sqlite', url: ':memory:' },
+      fetch: fetchMock,
+      provider: {
+        clientId: 'smrt-client',
+        issuer: 'https://issuer.example',
+        redirectUri: 'https://app.example/auth/dex/callback',
+      },
+      providerName: 'dex',
+    });
+    const transaction = service.createTransaction();
+    const callback = new URL(
+      `https://app.example/auth/dex/callback?code=code&state=attacker-state`,
+    );
+
+    await expect(
+      service.exchangeCallback(callback, transaction),
+    ).rejects.toThrow('state validation failed');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('validates RFC 9207 iss before trusting an authorization error', async () => {
     const server = await startOidcServer({
       authorizationResponseIssuerSupported: true,

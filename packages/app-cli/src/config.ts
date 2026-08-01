@@ -187,7 +187,7 @@ export async function clearStoredToken(
   await saveCliConfig(context, config);
 }
 
-/** Persist a login: writes both serverUrl and token to the config file. */
+/** Persist a login with the bearer token keyed by its exact issuer. */
 export async function saveAuth(
   context: CliConfigContext,
   serverUrl: string,

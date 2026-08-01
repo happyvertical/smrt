@@ -614,6 +614,7 @@ export class OidcLoginService {
     callbackUrl: string | URL,
     transaction: OidcTransaction,
   ): Promise<OidcCallbackResult> {
+    this.validateCallbackEnvelope(callbackUrl, transaction);
     const metadata = await this.getMetadata();
     const code = this.validateCallback(callbackUrl, transaction, metadata);
     const tokens = await this.exchangeCode(code, transaction);
@@ -649,18 +650,10 @@ export class OidcLoginService {
 
   private validateCallback(
     callbackUrl: string | URL,
-    transaction: OidcTransaction,
+    _transaction: OidcTransaction,
     metadata: OidcProviderMetadata,
   ): string {
-    if (transaction.provider !== this.providerName) {
-      throw new OidcLoginError('OIDC login transaction provider mismatch.');
-    }
-
     const url = callbackUrl instanceof URL ? callbackUrl : new URL(callbackUrl);
-    const state = url.searchParams.get('state');
-    if (!state || state !== transaction.state) {
-      throw new OidcLoginError('OIDC state validation failed.');
-    }
 
     const responseIssuer = url.searchParams.get('iss');
     if (
@@ -691,6 +684,21 @@ export class OidcLoginService {
     }
 
     return code;
+  }
+
+  private validateCallbackEnvelope(
+    callbackUrl: string | URL,
+    transaction: OidcTransaction,
+  ): void {
+    if (transaction.provider !== this.providerName) {
+      throw new OidcLoginError('OIDC login transaction provider mismatch.');
+    }
+
+    const url = callbackUrl instanceof URL ? callbackUrl : new URL(callbackUrl);
+    const state = url.searchParams.get('state');
+    if (!state || state !== transaction.state) {
+      throw new OidcLoginError('OIDC state validation failed.');
+    }
   }
 
   private async exchangeCode(
