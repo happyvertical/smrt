@@ -23,18 +23,16 @@ export interface CustomActionMetadata {
 }
 
 /**
- * Return the transport field for a method parameter. Item tools reserve `id`
- * for the receiver, so an action parameter named `id` is exposed as
- * `actionId`. REST already has separate path/body namespaces; flat tool and
- * CLI inputs use this alias to avoid silently passing the receiver ID twice.
+ * Return the transport field for a method parameter. Flat tool and CLI
+ * transports reserve `id` for receiver parsing even when a collection action
+ * rejects it, so every action parameter named `id` is exposed as `actionId`.
+ * REST already has separate path/body namespaces.
  */
 export function customActionParameterInputName(
-  metadata: Pick<CustomActionMetadata, 'idRequired'>,
+  _metadata: Pick<CustomActionMetadata, 'idRequired'>,
   parameterName: string,
 ): string {
-  return metadata.idRequired && parameterName === 'id'
-    ? 'actionId'
-    : parameterName;
+  return parameterName === 'id' ? 'actionId' : parameterName;
 }
 
 export interface ResolveCustomActionMetadataOptions {

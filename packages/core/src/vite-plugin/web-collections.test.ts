@@ -210,7 +210,6 @@ describe('buildWebToolDescriptors', () => {
   });
 
   it('threads @field descriptions into the generated tool input schemas (#2046)', () => {
-  it('threads @field descriptions into the generated tool input schemas (#2046)', () => {
     const entry = selectWebCollectionEntries(
       manifest(
         obj({
@@ -245,7 +244,7 @@ describe('buildWebToolDescriptors', () => {
         obj({
           className: 'Product',
           collection: 'products',
-           fields: { name: field({ type: 'text' }) },
+          fields: { name: field({ type: 'text' }) },
           methods: {
             apply: {
               name: 'apply',
@@ -288,8 +287,8 @@ describe('buildWebToolDescriptors', () => {
         idempotencyKey: { type: 'string' },
         expectedVersion: { type: 'number' },
       },
-       required: ['id', 'idempotencyKey'],
-     });
+      required: ['id', 'idempotencyKey'],
+    });
   });
 
   it('stays OUT of buildWebCollectionDefinition, so the #1764 shape digest never covers it', () => {

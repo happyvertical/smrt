@@ -168,6 +168,7 @@ class MCPUnderscoreMethodAgent extends SmrtObject {
     include: [
       'apply',
       'rebalance',
+      'archive',
       'restoreIntoContent',
       'move',
       'fail',
@@ -186,6 +187,10 @@ class MCPConformanceAgent extends SmrtObject {
     expectedVersion?: number,
   ): Promise<any> {
     return { receiver: 'static', idempotencyKey, expectedVersion };
+  }
+
+  static async archive(id: string): Promise<any> {
+    return { receiver: 'static', actionId: id };
   }
 
   async restoreIntoContent(idempotencyKey: string): Promise<any> {
@@ -248,6 +253,14 @@ describe('MCPGenerator with Custom Actions', () => {
         { name: 'idempotencyKey', type: 'string', optional: false },
         { name: 'expectedVersion', type: 'number', optional: true },
       ],
+    });
+    ObjectRegistry.getMethods('MCPConformanceAgent').set('archive', {
+      name: 'archive',
+      async: true,
+      isPublic: true,
+      isStatic: true,
+      returnType: 'Promise<any>',
+      parameters: [{ name: 'id', type: 'string', optional: false }],
     });
     ObjectRegistry.getMethods('MCPConformanceAgent').set('restoreIntoContent', {
       name: 'restoreIntoContent',
@@ -346,6 +359,10 @@ describe('MCPGenerator with Custom Actions', () => {
           expectedVersion: { type: 'number' },
         },
         required: ['idempotencyKey'],
+      });
+      expect(inputSchema('mcpconformanceagent_archive')).toMatchObject({
+        properties: { actionId: { type: 'string' } },
+        required: ['actionId'],
       });
       // Tool IDs are lowercased protocol aliases, but the handler resolves the
       // declared camelCase method name before invocation.
@@ -628,6 +645,18 @@ describe('MCPGenerator with Custom Actions', () => {
         expectedVersion: 4,
       });
 
+      const archiveResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_archive',
+          arguments: { actionId: 'archive-2' },
+        },
+      });
+      expect(JSON.parse(archiveResponse.content[0].text)).toMatchObject({
+        receiver: 'static',
+        actionId: 'archive-2',
+      });
+
       const collectionReceiver = {
         fanout: vi.fn(function (
           idempotencyKey: string,
@@ -713,6 +742,7 @@ describe('MCPGenerator with Custom Actions', () => {
 
         expect(handlers).toContain("case 'mcpconformanceagent_apply'");
         expect(handlers).toContain("case 'mcpconformanceagent_rebalance'");
+        expect(handlers).toContain("case 'mcpconformanceagent_archive'");
         expect(handlers).toContain(
           "case 'mcpconformanceagent_restoreintocontent'",
         );

@@ -237,7 +237,7 @@ ${indent}    ? [Object.keys(options ?? {}).length > 0 ? options : directArgs]
 ${indent}    : actionMeta.optionsParameter
 ${indent}      ? [options]
 ${indent}      : (actionMeta.parameterNames || []).map((parameterName) => args[
-${indent}          actionMeta.scope === 'item' && parameterName === 'id'
+${indent}          parameterName === 'id'
 ${indent}            ? 'actionId'
 ${indent}            : parameterName
 ${indent}        ]);
