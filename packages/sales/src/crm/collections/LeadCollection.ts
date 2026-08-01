@@ -381,7 +381,7 @@ export class LeadCollection extends SmrtCollection<Lead> {
     const activities = await this.getActivityCollection();
     return await activities.list({
       where: { subjectKind: 'lead', 'subjectId in': Array.from(visited) },
-      orderBy: 'created_at ASC',
+      orderBy: ['createdAt ASC', 'id ASC'],
     });
   }
 }

@@ -27,9 +27,9 @@ export class SalesActivityCollection extends SmrtCollection<SalesActivity> {
   }
 
   /**
-   * Open next actions for one subject: activities with a due date
+   * Open next actions for one subject: `task` activities with a due date
    * (`dueAt` set) that have not been completed (`completedAt` null),
-   * soonest due first.
+   * soonest due first with a deterministic id tie-breaker.
    *
    * @param subjectKind - `'lead'` or `'opportunity'`
    * @param subjectId - Subject row id
@@ -42,10 +42,11 @@ export class SalesActivityCollection extends SmrtCollection<SalesActivity> {
       where: {
         subjectKind,
         subjectId,
+        activityKind: 'task',
         'dueAt !=': null,
         completedAt: null,
       },
-      orderBy: 'due_at ASC',
+      orderBy: ['dueAt ASC', 'id ASC'],
     });
   }
 }

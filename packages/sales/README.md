@@ -86,6 +86,33 @@ decimals from `0` to `1`; rounding occurs through the exported money helpers.
   agreement execution, and attribution have service-owned invariants that raw
   generated CRUD must not bypass.
 
+## Lead follow-up workflow
+
+`LeadWorkflowService` is the tenant-safe, application-facing seam for generic
+pre-qualification follow-up. Construct it with the host database inside an
+active `withTenant()` context; the host supplies authorization, actor/profile
+ids, and view-model mapping.
+
+```ts
+import { LeadWorkflowService } from '@happyvertical/smrt-sales/crm';
+
+const workflow = await LeadWorkflowService.create({ db });
+await workflow.startWorking({ leadId, actorProfileId });
+await workflow.scheduleNextAction({
+  leadId,
+  actorProfileId,
+  summary: 'Call after product review',
+  dueAt: new Date('2026-10-01T16:00:00Z'),
+});
+```
+
+The service atomically records assignment and status audit events, human
+activities, scheduled next actions, and monotonic task completion. Qualification
+and duplicate merge ownership remain respectively with `LeadCollection.qualify()`
+and `LeadCollection.mergeLeads()`. `LeadDetail` from the `/svelte` subpath is
+props- and callback-driven; it never fetches data or applies authorization/SLA
+policy.
+
 ## Agreement boundary
 
 The agreements module accepts the provider-neutral
