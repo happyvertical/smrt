@@ -23,8 +23,13 @@ import { dirname, join } from 'node:path';
 
 /** Shape stored on disk in the app's CLI config file. */
 export interface CliConfig {
+  /** Issuer selected for the currently configured server. */
+  credentialIssuer?: string;
   serverUrl?: string;
+  /** Legacy single-token field. Read only when its stored server still matches. */
   token?: string;
+  /** Bearer credentials keyed by their exact issuer identifier. */
+  tokensByIssuer?: Record<string, string>;
 }
 
 /**
@@ -136,13 +141,34 @@ export async function getServerUrl(
   return url.replace(/\/+$/u, '');
 }
 
-/** Resolve the stored bearer token (env var wins over config). */
+/** Resolve a bearer token only when it is bound to the exact target server. */
 export async function getStoredToken(
   context: CliConfigContext,
   config?: CliConfig,
+  serverUrl?: string,
 ): Promise<string | undefined> {
   const resolved = config ?? (await loadCliConfig(context));
-  return process.env[`${context.envPrefix}_TOKEN`] ?? resolved.token;
+  const targetServer = (
+    serverUrl ?? (await getServerUrl(context, resolved))
+  ).replace(/\/+$/u, '');
+  const environmentToken = process.env[`${context.envPrefix}_TOKEN`];
+  const environmentServer = process.env[
+    `${context.envPrefix}_SERVER_URL`
+  ]?.replace(/\/+$/u, '');
+  if (environmentToken) {
+    return environmentServer === targetServer ? environmentToken : undefined;
+  }
+
+  const configuredServer = resolved.serverUrl?.replace(/\/+$/u, '');
+  if (!configuredServer || configuredServer !== targetServer) return undefined;
+
+  if (resolved.credentialIssuer) {
+    return resolved.tokensByIssuer?.[resolved.credentialIssuer];
+  }
+
+  // Legacy configs predate issuer-keyed storage. They remain usable only for
+  // the exact server saved alongside the token and migrate on the next login.
+  return resolved.token;
 }
 
 /** Remove the token from the config file (e.g. on logout). */
@@ -150,6 +176,13 @@ export async function clearStoredToken(
   context: CliConfigContext,
 ): Promise<void> {
   const config = await loadCliConfig(context);
+  if (config.credentialIssuer && config.tokensByIssuer) {
+    delete config.tokensByIssuer[config.credentialIssuer];
+    if (Object.keys(config.tokensByIssuer).length === 0) {
+      delete config.tokensByIssuer;
+    }
+  }
+  delete config.credentialIssuer;
   delete config.token;
   await saveCliConfig(context, config);
 }
@@ -159,12 +192,20 @@ export async function saveAuth(
   context: CliConfigContext,
   serverUrl: string,
   token: string,
+  issuer = serverUrl,
 ): Promise<void> {
   const config = await loadCliConfig(context);
+  const normalizedServerUrl = serverUrl.replace(/\/+$/u, '');
+  if (!issuer.trim()) throw new Error('Credential issuer must not be empty.');
+  const exactIssuer = issuer;
   await saveCliConfig(context, {
     ...config,
-    serverUrl: serverUrl.replace(/\/+$/u, ''),
-    token,
+    credentialIssuer: exactIssuer,
+    serverUrl: normalizedServerUrl,
+    token: undefined,
+    tokensByIssuer: {
+      [exactIssuer]: token,
+    },
   });
 }
 
@@ -221,7 +262,7 @@ export async function requestJson<T = unknown>(
   const serverUrl = (
     options.serverUrl ?? (await getServerUrl(context, config))
   ).replace(/\/+$/u, '');
-  const token = await getStoredToken(context, config);
+  const token = await getStoredToken(context, config, serverUrl);
   const headers = new Headers(init.headers);
 
   if (options.requireAuth && options.auth !== false && !token) {

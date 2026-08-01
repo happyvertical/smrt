@@ -20,6 +20,7 @@ interface AuthStartResponse {
   deviceCode: string;
   expiresAt: string;
   interval?: number;
+  issuer?: string;
   userCode: string;
   verificationUrl: string;
 }
@@ -90,7 +91,12 @@ export async function runAuthLogin(
       );
 
       if (token.status === 'approved' && token.accessToken) {
-        await saveAuth(options.context, targetServer, token.accessToken);
+        await saveAuth(
+          options.context,
+          targetServer,
+          token.accessToken,
+          start.issuer ?? targetServer,
+        );
         stdout.write(`Authenticated to ${targetServer}\n`);
         return;
       }

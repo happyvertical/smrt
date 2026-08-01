@@ -90,6 +90,13 @@ surface is typically mounted with
 - Device-code login distinguishes pending approval, expiry, transient network
   failure, and hard rejection.
 - Tokens and server configuration stay in the app-specific local config path.
+- Device-flow responses identify their issuer. Tokens are keyed by that exact
+  issuer and are not reused when the configured server changes.
+
+For standards-based remote MCP OAuth registration, use
+`registerMcpClient()` (Client ID Metadata Document first, executable RFC 7591
+DCR fallback with `application_type`) and follow the
+[remote MCP authorization guide](../../docs/content/architecture/remote-mcp-authorization.md).
 
 ## Public API
 
@@ -101,6 +108,8 @@ surface is typically mounted with
 | `invokeCommand()` | Invoke one generated resource command |
 | `buildFlagParser()` | Convert supported JSON Schema to flags |
 | `loadCliConfig()` / `saveCliConfig()` | Read and write namespaced CLI config |
+| `resolveMcpClientRegistration()` | Inspect the selected Client ID Metadata or DCR path |
+| `registerMcpClient()` | Use Client ID Metadata or execute the DCR fallback |
 
 ## Development
 
