@@ -1735,13 +1735,24 @@ declare module '@happyvertical/smrt-virt-web' {
     | 'datetime'
     | 'json'
     | 'foreignKey'
-    | 'crossPackageRef'
-    | 'meta';
+    | 'crossPackageRef';
+
+  /** Static \`@field({ ui })\` hints (#2046) — the field-policy rail seed. */
+  export interface SmrtWebFieldUIHints {
+    basic?: boolean;
+    group?: string;
+    order?: number;
+    locked?: boolean;
+  }
 
   export interface SmrtWebFieldDefinition {
     type: SmrtWebFieldType;
     required?: boolean;
     default?: unknown;
+    /** Developer-authored \`@field({ description })\` (#2046) — end-user help seed. */
+    description?: string;
+    /** Static \`@field({ ui })\` hints (#2046). */
+    ui?: SmrtWebFieldUIHints;
   }
 
   export type SmrtWebRelationshipKind =
@@ -1798,8 +1809,9 @@ ${webCollectionInterface}
    * replica-stable hash of the emitted collection definitions; a change means
    * old persisted client rows may mis-hydrate. Consumers fold it into the
    * durable persistence namespace and the version-awareness updateAvailable
-   * contract signal. One of three emission sites that must not drift — the
-   * runtime value, this ambient d.ts, and the physical @smrt/web d.ts.
+   * contract signal. One of the co-managed emission sites that must not drift —
+   * the runtime value, this ambient d.ts, the physical @smrt/web d.ts, and the
+   * hand-written @happyvertical/smrt-web type mirror.
    */
   export const manifestHash: string;
   export default collectionDefinitions;

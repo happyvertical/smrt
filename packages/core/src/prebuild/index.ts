@@ -314,10 +314,32 @@ ${objectImports}
  * Auto-generated web collection-definition module declaration (#1761)
  */
 declare module '@smrt/web' {
+  export type SmrtWebFieldType =
+    | 'text'
+    | 'decimal'
+    | 'boolean'
+    | 'integer'
+    | 'datetime'
+    | 'json'
+    | 'foreignKey'
+    | 'crossPackageRef';
+
+  /** Static \`@field({ ui })\` hints (#2046) — the field-policy rail seed. */
+  export interface SmrtWebFieldUIHints {
+    basic?: boolean;
+    group?: string;
+    order?: number;
+    locked?: boolean;
+  }
+
   export interface SmrtWebFieldDefinition {
-    type: string;
+    type: SmrtWebFieldType;
     required?: boolean;
     default?: unknown;
+    /** Developer-authored \`@field({ description })\` (#2046) — end-user help seed. */
+    description?: string;
+    /** Static \`@field({ ui })\` hints (#2046). */
+    ui?: SmrtWebFieldUIHints;
   }
 
   export type SmrtWebRelationshipKind =

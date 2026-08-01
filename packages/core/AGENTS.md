@@ -72,9 +72,20 @@ Two persistence primitives every `SmrtObject`/`SmrtCollection` inherits — load
 
 ## @smrt() Decorator Options
 
-Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`.
+Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`, `ui` (`{ icon, label, description }` — nav/help hints round-tripped through the manifest as plain data; `description` is the object-level seed for form-level help, #2046).
 
 Registration sets `SMRT_TABLE_NAME` static property (survives minification).
+
+## @field() UI hints (#2046)
+
+`@field({ ui: { basic, group, order, locked } })` — a static, presentation-only
+seed for the field-policy rail (epic #2045). Carried in the manifest under the
+field's `_meta.ui` (never a top-level `FieldDefinition` key), readable at
+runtime via `getAllFields()` at `field._meta.ui`, and emitted (sanitized) with
+`description` into generated web-collection definitions and browser MCP tool
+schemas. No schema/persistence/security effect — `sensitive`/`readPermission`
+stay the security rail, and `sensitive`/`transient` fields never emit to the
+client at all.
 
 ## Domain Knowledge Artifacts
 
