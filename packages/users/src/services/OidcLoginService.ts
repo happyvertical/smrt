@@ -92,6 +92,7 @@ export interface ResolvedOidcProviderConfig extends OidcProviderConfig {
 }
 
 export interface OidcProviderMetadata {
+  authorization_response_iss_parameter_supported?: boolean;
   authorization_endpoint: string;
   end_session_endpoint?: string;
   issuer: string;
@@ -613,7 +614,8 @@ export class OidcLoginService {
     callbackUrl: string | URL,
     transaction: OidcTransaction,
   ): Promise<OidcCallbackResult> {
-    const code = this.validateCallback(callbackUrl, transaction);
+    const metadata = await this.getMetadata();
+    const code = this.validateCallback(callbackUrl, transaction, metadata);
     const tokens = await this.exchangeCode(code, transaction);
     const idTokenClaims = await this.verifyIdToken(
       tokens.idToken,
@@ -648,12 +650,31 @@ export class OidcLoginService {
   private validateCallback(
     callbackUrl: string | URL,
     transaction: OidcTransaction,
+    metadata: OidcProviderMetadata,
   ): string {
     if (transaction.provider !== this.providerName) {
       throw new OidcLoginError('OIDC login transaction provider mismatch.');
     }
 
     const url = callbackUrl instanceof URL ? callbackUrl : new URL(callbackUrl);
+    const state = url.searchParams.get('state');
+    if (!state || state !== transaction.state) {
+      throw new OidcLoginError('OIDC state validation failed.');
+    }
+
+    const responseIssuer = url.searchParams.get('iss');
+    if (
+      !responseIssuer &&
+      metadata.authorization_response_iss_parameter_supported === true
+    ) {
+      throw new OidcLoginError(
+        'OIDC callback missing authorization response issuer.',
+      );
+    }
+    if (responseIssuer && responseIssuer !== metadata.issuer) {
+      throw new OidcLoginError('OIDC response issuer validation failed.');
+    }
+
     const error = url.searchParams.get('error');
     if (error) {
       const description = url.searchParams.get('error_description');
@@ -662,19 +683,6 @@ export class OidcLoginService {
           ? `OIDC provider returned "${error}": ${description}`
           : `OIDC provider returned "${error}".`,
       );
-    }
-
-    const state = url.searchParams.get('state');
-    if (!state || state !== transaction.state) {
-      throw new OidcLoginError('OIDC state validation failed.');
-    }
-
-    const responseIssuer = url.searchParams.get('iss');
-    if (
-      responseIssuer &&
-      normalizeIssuer(responseIssuer) !== this.provider.issuer
-    ) {
-      throw new OidcLoginError('OIDC response issuer validation failed.');
     }
 
     const code = url.searchParams.get('code');

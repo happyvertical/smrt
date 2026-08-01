@@ -57,6 +57,17 @@ export {
   type ResourceListResponse,
 } from './discovery.js';
 export { buildUrl, invokeCommand } from './invoke.js';
+export {
+  createMcpClientIdMetadataDocument,
+  type McpClientIdMetadataDocument,
+  type McpClientRegistration,
+  type McpClientRegistrationOptions,
+  type McpRegisteredClient,
+  type OAuthApplicationType,
+  type OAuthAuthorizationServerMetadata,
+  registerMcpClient,
+  resolveMcpClientRegistration,
+} from './mcp-oauth.js';
 export { type RenderResult, renderResponse } from './output.js';
 export {
   type BuildParserResult,
