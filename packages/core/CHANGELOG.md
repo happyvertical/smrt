@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.43
+
+### Patch Changes
+
+- ### Features
+
+  - add tenant-safe lead follow-up workflow (#2131) (sales)
+  - @happyvertical/smrt-config@0.40.43
+  - @happyvertical/smrt-types@0.40.43
+  - @happyvertical/smrt-scanner@0.40.43
+
 ## 0.40.42
 
 ### Patch Changes
