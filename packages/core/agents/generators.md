@@ -44,9 +44,9 @@ order. The legacy single `options` bag remains compatible when metadata is
 absent (or the declared method takes `options`). Do not infer this from runtime
 function arity. An omitted typed `options` parameter remains `undefined`, so a
 method's JavaScript default initializer continues to apply; an explicit `null`
-remains `null`. Flat tool inputs reserve `id` for an item receiver. If an
-item action itself declares an `id` parameter, its flat MCP/WebMCP field is
-`actionId` (and CLI uses `--action-id`); REST keeps its independent path/body
+remains `null`. Flat tool and CLI inputs reserve `id` for receiver parsing. If
+an action declares an `id` parameter, its flat MCP/WebMCP field is `actionId`
+(and CLI uses `--action-id`); REST keeps its independent path/body
 namespaces. Typed CLI actions may use standard flag names such as `limit`,
 `offset`, `where`, and `format` without those values being stripped as CRUD
 flags.

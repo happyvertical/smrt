@@ -59,6 +59,10 @@ class CliCmdWidget extends SmrtObject {
   static async tally(options: any = {}): Promise<any> {
     return { kind: 'collection', options };
   }
+
+  static async archive(id: string): Promise<any> {
+    return { kind: 'archive', actionId: id };
+  }
 }
 
 class CliCmdWidgetCollection extends SmrtCollection<CliCmdWidget> {
@@ -102,6 +106,14 @@ describe('CLI generator parsing + dispatch (#1500)', () => {
       { name: 'where', type: 'string', optional: false },
       { name: 'format', type: 'string', optional: false },
     ],
+  });
+  ObjectRegistry.getMethods('CliCmdWidget').set('archive', {
+    name: 'archive',
+    async: true,
+    isPublic: true,
+    isStatic: true,
+    returnType: 'Promise<any>',
+    parameters: [{ name: 'id', type: 'string', optional: false }],
   });
   ObjectRegistry.getMethods('CliCmdWidget').set('move', {
     name: 'move',
@@ -376,6 +388,11 @@ describe('CLI generator parsing + dispatch (#1500)', () => {
         ]),
       );
       expect(moved.out).toContain('"destinationId": "destination-2"');
+
+      const archived = await captureLog(() =>
+        gen.run(['clicmdwidget:archive', '--action-id', 'archive-3']),
+      );
+      expect(archived.out).toContain('"actionId": "archive-3"');
 
       const defaults = await captureLog(() =>
         gen.run(['clicmdwidget:withDefaults', created.id as string]),

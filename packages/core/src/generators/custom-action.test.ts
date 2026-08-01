@@ -116,6 +116,25 @@ describe('custom action conformance', () => {
     ).toEqual(['destination-2']);
   });
 
+  it('aliases an id parameter for collection actions too', () => {
+    const metadata = resolveCustomActionMetadata({
+      actionName: 'archive',
+      method: {
+        isStatic: true,
+        parameters: [{ name: 'id', type: 'string', optional: false }],
+      },
+    });
+
+    expect(metadata).toMatchObject({ scope: 'collection', idRequired: false });
+    expect(buildCustomActionInputSchema(metadata)).toMatchObject({
+      properties: { actionId: { type: 'string' } },
+      required: ['actionId'],
+    });
+    expect(
+      buildCustomActionInvocationArgs(metadata, { actionId: 'archive-1' }),
+    ).toEqual(['archive-1']);
+  });
+
   it('leaves an omitted typed options parameter undefined for method defaults', () => {
     const metadata = resolveCustomActionMetadata({
       actionName: 'configure',
