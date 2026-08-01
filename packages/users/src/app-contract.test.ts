@@ -130,5 +130,29 @@ describe('SMRT discovery conformance artifact', () => {
       idempotencyKey: { field: 'idempotencyKey', required: true },
       expectedVersion: { field: 'expectedVersion', required: false },
     });
+
+    const expectedVersionOnly = deriveCommandRequirements({
+      type: 'object',
+      properties: { expectedVersion: {} },
+    });
+    expect(expectedVersionOnly).toEqual({
+      expectedVersion: { field: 'expectedVersion', required: false },
+    });
+    expect(Object.keys(expectedVersionOnly ?? {})).toEqual(['expectedVersion']);
+
+    const resource = discovery.resources[0];
+    if (!resource) throw new Error('test discovery requires one resource');
+    const command = resource.commands[0];
+    if (!command) throw new Error('test resource requires one command');
+    const artifact = createDiscoveryConformanceArtifact({
+      ...discovery,
+      resources: [
+        {
+          ...resource,
+          commands: [{ ...command, requirements: expectedVersionOnly }],
+        },
+      ],
+    });
+    expect(validateDiscoveryConformanceArtifact(artifact)).toEqual(artifact);
   });
 });

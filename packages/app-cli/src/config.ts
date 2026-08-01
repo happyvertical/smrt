@@ -361,6 +361,15 @@ export async function requestJsonResult<T = unknown>(
   try {
     text = await readBodyWithCap(response, maxBytes);
   } catch (error) {
+    if (!(error instanceof ResponseTooLargeError)) {
+      return failure(0, {
+        code: 'network_error',
+        message: redactMessage(
+          error instanceof Error ? error.message : String(error),
+        ),
+        retryable: true,
+      });
+    }
     return failure(response.status, {
       code: 'response_too_large',
       message: redactMessage(
@@ -520,6 +529,13 @@ function redactMessage(message: string): string {
     );
 }
 
+class ResponseTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ResponseTooLargeError';
+  }
+}
+
 /**
  * Read the response body into a UTF-8 string, capping at `maxBytes`. On
  * overflow, throw with a clear message — better than OOM-ing the CLI
@@ -540,7 +556,7 @@ async function readBodyWithCap(
     } catch {
       // Stream may already be locked/closed.
     }
-    throw new Error(
+    throw new ResponseTooLargeError(
       `Response too large: ${cl} bytes exceeds ${maxBytes}-byte cap`,
     );
   }
@@ -555,7 +571,7 @@ async function readBodyWithCap(
       if (!value) continue;
       size += value.byteLength;
       if (size > maxBytes) {
-        throw new Error(
+        throw new ResponseTooLargeError(
           `Response too large: exceeded ${maxBytes}-byte cap mid-stream`,
         );
       }

@@ -14,7 +14,7 @@ import type {
   CliResource,
   CommandDefinition,
   ResourceListResponseBody,
-} from './sveltekit/resource-list-handler.js';
+} from './sveltekit.js';
 
 /** Immutable selector for this discovery artifact family. */
 export const SMRT_DISCOVERY_CONFORMANCE_SCHEMA =
@@ -178,13 +178,13 @@ export function deriveCommandRequirements(
     return field ? { field, required: required.has(field) } : undefined;
   };
 
-  const requirements: CommandRequirements = {
-    idempotencyKey: findField(['idempotencyKey', 'idempotency_key']),
-    expectedVersion: findField(['expectedVersion', 'expected_version']),
+  const idempotencyKey = findField(['idempotencyKey', 'idempotency_key']);
+  const expectedVersion = findField(['expectedVersion', 'expected_version']);
+  if (!idempotencyKey && !expectedVersion) return undefined;
+  return {
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+    ...(expectedVersion ? { expectedVersion } : {}),
   };
-  return requirements.idempotencyKey || requirements.expectedVersion
-    ? requirements
-    : undefined;
 }
 
 /** Produce a deterministically ordered artifact with a SHA-256 integrity pin. */
@@ -294,6 +294,9 @@ function normalizeResource(resource: CliResource): CliResource {
 }
 
 function normalizeCommand(command: CommandDefinition): CommandDefinition {
+  const requirements = command.requirements
+    ? normalizeRequirements(command.requirements)
+    : undefined;
   return {
     methodName: command.methodName,
     commandName: command.commandName,
@@ -310,7 +313,7 @@ function normalizeCommand(command: CommandDefinition): CommandDefinition {
           >,
         }
       : {}),
-    ...(command.requirements ? { requirements: command.requirements } : {}),
+    ...(requirements ? { requirements } : {}),
   };
 }
 
@@ -444,13 +447,21 @@ function validateRequirements(value: unknown): CommandRequirements | undefined {
     }
     return { field: candidate.field, required: candidate.required };
   };
-  const requirements: CommandRequirements = {
+  return normalizeRequirements({
     idempotencyKey: parseField(value.idempotencyKey, 'idempotencyKey'),
     expectedVersion: parseField(value.expectedVersion, 'expectedVersion'),
+  });
+}
+
+function normalizeRequirements(
+  requirements: CommandRequirements,
+): CommandRequirements | undefined {
+  const { idempotencyKey, expectedVersion } = requirements;
+  if (!idempotencyKey && !expectedVersion) return undefined;
+  return {
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+    ...(expectedVersion ? { expectedVersion } : {}),
   };
-  return requirements.idempotencyKey || requirements.expectedVersion
-    ? requirements
-    : undefined;
 }
 
 function validateResultContract(value: unknown): void {

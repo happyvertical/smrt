@@ -407,6 +407,36 @@ describe('requestJson', () => {
     ).rejects.toThrow(/Response too large/);
   });
 
+  it('normalizes a response-stream failure as a retryable network error', async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.error(new Error('Bearer read-secret connection reset'));
+      },
+    });
+    const result = await requestJsonResult(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: async () =>
+          new Response(body, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 0,
+      error: {
+        code: 'network_error',
+        message: 'Bearer [REDACTED] connection reset',
+        retryable: true,
+      },
+    });
+  });
+
   it('honors custom maxResponseBytes opt-out (Infinity) — #1311 round-4 A4', async () => {
     const fetchMock = vi.fn(
       async () =>
