@@ -74,6 +74,9 @@ The result contract embedded in the artifact names the common `code`,
 `expectedVersion` metadata. `mcp tools` and `mcp call` print this as a JSON
 success/error envelope. HTTP failures may use either a conventional top-level
 metadata object or `{ error: metadata }`; both normalize to that same shape.
+Generated action failures use the latter form with
+`{ error: { ok: false, code, message, status, ... } }`; the CLI reports the
+HTTP status beside that normalized metadata.
 The stdio bridge carries it in MCP `_meta` under
 `io.happyvertical/smrt`. It deliberately does not synthesize MCP
 `structuredContent`.

@@ -259,8 +259,10 @@ describe('requestJson', () => {
           new Response(
             JSON.stringify({
               error: {
+                ok: false,
                 code: 'upstream_timeout',
                 message: 'Bearer top-secret-token failed',
+                status: 503,
                 details: {
                   accessToken: 'top-secret-token',
                   retryAfter: 5,
