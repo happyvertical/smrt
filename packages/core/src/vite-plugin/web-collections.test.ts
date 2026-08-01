@@ -210,6 +210,7 @@ describe('buildWebToolDescriptors', () => {
   });
 
   it('threads @field descriptions into the generated tool input schemas (#2046)', () => {
+  it('threads @field descriptions into the generated tool input schemas (#2046)', () => {
     const entry = selectWebCollectionEntries(
       manifest(
         obj({
@@ -236,6 +237,59 @@ describe('buildWebToolDescriptors', () => {
     expect(props.name?.description).toBe('Display name shown on invoices');
     // No authored description → the type-derived fallback, not an empty string.
     expect(props.price?.description).toBeTruthy();
+  });
+
+  it('uses the same item receiver and typed custom arguments as Node MCP', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+           fields: { name: field({ type: 'text' }) },
+          methods: {
+            apply: {
+              name: 'apply',
+              isPublic: true,
+              isStatic: false,
+              async: true,
+              returnType: 'Promise<void>',
+              parameters: [
+                {
+                  name: 'idempotencyKey',
+                  type: 'string',
+                  optional: false,
+                },
+                {
+                  name: 'expectedVersion',
+                  type: 'number',
+                  optional: true,
+                },
+              ],
+            },
+          },
+          decoratorConfig: {
+            api: {
+              include: ['list', 'apply'],
+              // A config-only collection override cannot change this instance
+              // method's receiver.
+              routes: { apply: { scope: 'collection' } },
+            },
+          } as SmartObjectDefinition['decoratorConfig'],
+        }),
+      ),
+    )[0];
+
+    const descriptor = buildWebToolDescriptors(entry).find(
+      (tool) => tool.action === 'apply',
+    );
+    expect(descriptor?.inputSchema).toMatchObject({
+      properties: {
+        id: { type: 'string' },
+        idempotencyKey: { type: 'string' },
+        expectedVersion: { type: 'number' },
+      },
+       required: ['id', 'idempotencyKey'],
+     });
   });
 
   it('stays OUT of buildWebCollectionDefinition, so the #1764 shape digest never covers it', () => {

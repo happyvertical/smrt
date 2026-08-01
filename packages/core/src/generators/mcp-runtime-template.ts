@@ -10,6 +10,7 @@
  * - Graceful shutdown
  */
 
+import type { CustomActionScope } from './custom-action.js';
 import type { MCPConfig, MCPContext } from './mcp.js';
 
 /**
@@ -44,6 +45,19 @@ export interface RuntimeOptions {
     description: string;
     inputSchema: Record<string, unknown>;
   }>;
+  /** Internal invocation metadata; never exposed by the MCP tools/list result. */
+  customActions?: Record<
+    string,
+    {
+      scope: CustomActionScope;
+      isStatic: boolean;
+      /** Declared method name; tool IDs are lowercased protocol aliases. */
+      methodName?: string;
+      parameterNames?: string[];
+      optionsParameter?: boolean;
+      legacyOptions: boolean;
+    }
+  >;
 
   /**
    * Lowercased simple names of objects that are `@TenantScoped` (#1554). When
@@ -68,6 +82,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     description = 'Auto-generated MCP server from SMRT objects',
     debug = false,
     tools = [],
+    customActions = {},
     tenantScopedObjects = [],
   } = options;
 
@@ -86,7 +101,9 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
   const generateSwitchCases = (indent: string) => {
     return tools
       .map((tool) => {
-        const [objectName, action] = tool.name.split('_');
+        const separator = tool.name.indexOf('_');
+        const objectName = tool.name.slice(0, separator);
+        const action = tool.name.slice(separator + 1);
 
         switch (action) {
           case 'list':
@@ -184,12 +201,17 @@ ${indent}  return { content: [{ type: 'text', text: JSON.stringify({ success: tr
 ${indent}}`;
 
           default:
-            // Custom action
+            // Custom action. Its descriptor is deliberately kept separate
+            // from TOOLS so MCP clients receive only protocol-defined fields.
             return `${indent}case '${tool.name}': {
+${indent}  const actionMeta = CUSTOM_ACTIONS['${tool.name}'] || { scope: 'item', isStatic: false, legacyOptions: true };
 ${indent}  const { id, options = {}, ...directArgs } = args;
 
-${indent}  if (!id) {
+${indent}  if (actionMeta.scope === 'item' && !id) {
 ${indent}    throw new Error('ID is required for custom action ${action}');
+${indent}  }
+${indent}  if (actionMeta.scope === 'collection' && id) {
+${indent}    throw new Error('Custom action ${action} is collection-scoped and does not accept an ID');
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
@@ -197,17 +219,33 @@ ${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memo
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const object = await collection.get(id);
-${indent}  if (!object) {
-${indent}    throw new Error('Object not found');
+${indent}  const target = actionMeta.scope === 'item'
+${indent}    ? await collection.get(id)
+${indent}    : actionMeta.isStatic
+${indent}      ? ObjectRegistry.getClass('${capitalize(objectName)}')?.constructor
+${indent}      : collection;
+${indent}  if (!target) {
+${indent}    throw new Error(actionMeta.scope === 'item' ? 'Object not found' : 'Custom action target not found');
+${indent}  }
+${indent}  const actionMethod = target[actionMeta.methodName || '${action}'];
+${indent}  if (typeof actionMethod !== 'function') {
+${indent}    throw new Error('Method ${action} not found on custom action target');
 ${indent}  }
 
-${indent}  if (typeof object['${action}'] !== 'function') {
-${indent}    throw new Error('Method ${action} not found on object');
+${indent}  const methodArgs = actionMeta.legacyOptions
+${indent}    ? [Object.keys(options).length > 0 ? options : directArgs]
+${indent}    : actionMeta.optionsParameter
+${indent}      ? [options]
+${indent}      : (actionMeta.parameterNames || []).map((parameterName) => args[parameterName]);
+${indent}  const result = await actionMethod.call(target, ...methodArgs);
+${indent}  const failure = normalizeCustomActionFailure(result);
+${indent}  if (failure) {
+${indent}    return {
+${indent}      content: [{ type: 'text', text: JSON.stringify({ error: failure }) }],
+${indent}      isError: true,
+${indent}      _meta: { [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure },
+${indent}    };
 ${indent}  }
-
-${indent}  const methodArgs = Object.keys(options).length > 0 ? options : directArgs;
-${indent}  const result = await object['${action}'](methodArgs);
 
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(toPublicResult(result)) }] };
 ${indent}}`;
@@ -241,6 +279,7 @@ import {
   type ListToolsRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { config } from '@happyvertical/smrt-config';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
@@ -251,6 +290,7 @@ const DEBUG = ${debug};
 
 // Static tool definitions (generated at build time)
 const TOOLS = ${toolsCode};
+const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 ${
   hasTenantScoped
     ? `

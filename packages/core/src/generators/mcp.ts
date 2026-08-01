@@ -10,7 +10,16 @@ import { SmrtCollection } from '../collection';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
-import type { FieldDefinition } from '../scanner/types.js';
+import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
+import {
+  buildCustomActionInputSchema,
+  buildCustomActionInvocationArgs,
+  type CustomActionFailure,
+  type CustomActionMetadata,
+  normalizeCustomActionFailure,
+  resolveCustomActionMetadata,
+  SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
+} from './custom-action.js';
 import {
   generateClaudeConfig,
   generateMCPDocumentation,
@@ -97,6 +106,35 @@ export interface MCPResponse {
     type: 'text';
     text: string;
   }>;
+  isError?: boolean;
+  _meta?: Record<string, unknown>;
+}
+
+class CustomActionFailureError extends Error {
+  constructor(readonly failure: CustomActionFailure) {
+    super(failure.message);
+    this.name = 'CustomActionFailureError';
+  }
+}
+
+/**
+ * MCP tool identifiers are lowercase for stable protocol vocabulary, while
+ * JavaScript method names retain their declared casing. Resolve a tool suffix
+ * back to the registry's canonical method name before inspecting metadata or
+ * invoking it.
+ */
+function resolveCustomActionMethod(
+  methods: Map<string, MethodDefinition>,
+  toolAction: string,
+): [methodName: string, method: MethodDefinition | undefined] {
+  const direct = methods.get(toolAction);
+  if (direct) return [toolAction, direct];
+  for (const [methodName, method] of methods) {
+    if (methodName.toLowerCase() === toolAction.toLowerCase()) {
+      return [methodName, method];
+    }
+  }
+  return [toolAction, undefined];
 }
 
 /**
@@ -385,27 +423,15 @@ export class MCPGenerator {
           const methodDef = methods.get(methodName);
           if (methodDef && !methodDef.isPublic) continue;
 
-          // Generate tool for this method
-          const toolName = `${lowerName}_${methodName}`.toLowerCase();
-          tools.push({
-            name: toolName,
-            description: `Execute ${methodName} action on ${objectName}`,
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: 'string',
-                  description: 'ID of the object to execute action on',
-                },
-                options: {
-                  type: 'object',
-                  description: 'Additional options for the custom action',
-                  additionalProperties: true,
-                },
-              },
-              required: ['id'],
-            },
-          });
+          tools.push(
+            this.buildCustomActionTool(
+              objectName,
+              lowerName,
+              methodName,
+              methodDef,
+              this.hasCollectionReceiver(classInfo),
+            ),
+          );
         }
       } else {
         // No custom methods in include = show all discovered methods by default
@@ -416,32 +442,62 @@ export class MCPGenerator {
           // Always respect exclude list
           if (excluded.includes(methodName)) continue;
 
-          // Generate MCP tool for this custom method
-          const toolName = `${lowerName}_${methodName}`.toLowerCase();
-          tools.push({
-            name: toolName,
-            description: `Execute ${methodName} action on ${objectName}`,
-            inputSchema: {
-              type: 'object',
-              properties: {
-                id: {
-                  type: 'string',
-                  description: 'ID of the object to execute action on',
-                },
-                options: {
-                  type: 'object',
-                  description: 'Additional options for the custom action',
-                  additionalProperties: true,
-                },
-              },
-              required: ['id'],
-            },
-          });
+          tools.push(
+            this.buildCustomActionTool(
+              objectName,
+              lowerName,
+              methodName,
+              methodDef,
+              this.hasCollectionReceiver(classInfo),
+            ),
+          );
         }
       }
     }
 
     return tools;
+  }
+
+  private buildCustomActionTool(
+    objectName: string,
+    lowerName: string,
+    methodName: string,
+    methodDef?: MethodDefinition,
+    collectionReceiver = false,
+  ): MCPTool {
+    const metadata = this.resolveCustomActionMetadata(
+      objectName,
+      methodName,
+      methodDef,
+      collectionReceiver,
+    );
+    return {
+      name: `${lowerName}_${methodName}`.toLowerCase(),
+      description: `Execute ${methodName} action on ${objectName}`,
+      inputSchema: buildCustomActionInputSchema(
+        metadata,
+      ) as MCPTool['inputSchema'],
+    };
+  }
+
+  private resolveCustomActionMetadata(
+    objectName: string,
+    action: string,
+    method?: MethodDefinition,
+    collectionReceiver = false,
+  ): CustomActionMetadata {
+    return resolveCustomActionMetadata({
+      actionName: action,
+      method,
+      apiConfig: ObjectRegistry.getConfig(objectName).api,
+      ...(collectionReceiver ? { defaultScope: 'collection' } : {}),
+    });
+  }
+
+  private hasCollectionReceiver(classInfo?: RegisteredClass): boolean {
+    return (
+      !!classInfo && classInfo.constructor.prototype instanceof SmrtCollection
+    );
   }
 
   /**
@@ -606,6 +662,20 @@ export class MCPGenerator {
         ],
       };
     } catch (error) {
+      if (error instanceof CustomActionFailureError) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: error.failure }),
+            },
+          ],
+          isError: true,
+          _meta: {
+            [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: error.failure,
+          },
+        };
+      }
       return {
         content: [
           {
@@ -983,7 +1053,12 @@ export class MCPGenerator {
       default: {
         // Handle custom actions. The method may return a SmrtObject (or array),
         // so serialize through toPublicData to strip sensitive fields (#1540).
-        const result = await this.executeCustomAction(collection, action, args);
+        const result = await this.executeCustomAction(
+          collection,
+          action,
+          args,
+          objectName,
+        );
         return this.toPublicData(result);
       }
     }
@@ -996,12 +1071,35 @@ export class MCPGenerator {
     collection: SmrtCollection<SmrtObject>,
     action: string,
     args: ToolArgs,
+    objectName?: string,
   ): Promise<unknown> {
-    const { id, options: rawOptions = {}, ...directArgs } = args;
-    // Args arrive as untyped JSON; `options` is a nested object bag.
-    const options = rawOptions as Record<string, unknown>;
+    const id = args.id;
+    const [methodName, methodDef] = objectName
+      ? resolveCustomActionMethod(
+          await ObjectRegistry.getAllMethods(objectName),
+          action,
+        )
+      : [action, undefined];
+    const metadata = this.resolveCustomActionMetadata(
+      objectName ?? '',
+      methodName,
+      methodDef,
+      objectName
+        ? this.hasCollectionReceiver(ObjectRegistry.getClass(objectName))
+        : false,
+    );
+    const methodArgs = buildCustomActionInvocationArgs(metadata, args);
 
     try {
+      if (methodDef && metadata.idRequired && !id) {
+        throw new Error(`ID is required for custom action '${action}'`);
+      }
+      if (!metadata.idRequired && id && methodDef) {
+        throw new Error(
+          `Custom action '${action}' is collection-scoped and does not accept an ID`,
+        );
+      }
+
       // If an ID is provided, get the specific object and call the method on it
       if (id) {
         const object = await collection.get(id as string);
@@ -1013,44 +1111,64 @@ export class MCPGenerator {
         // through a record view and narrow the value to a callable after the
         // `typeof === 'function'` guard.
         const objectWithMethods = object as unknown as Record<string, unknown>;
-        const objectMethod = objectWithMethods[action];
+        const objectMethod = objectWithMethods[methodName];
         if (typeof objectMethod === 'function') {
-          // Call the method with the provided options
-          // If options is provided, use it; otherwise use directArgs
-          const methodArgs =
-            Object.keys(options).length > 0 ? options : directArgs;
           // `.call(object, …)` preserves the receiver binding of the original
           // member call (`object[action](…)`) — the method relies on `this`.
           const result = await (objectMethod as InstanceCallable).call(
             object,
-            methodArgs,
+            ...methodArgs,
           );
+          const failure = normalizeCustomActionFailure(result);
+          if (failure) throw new CustomActionFailureError(failure);
           return result;
         } else {
-          throw new Error(`Method '${action}' not found on object instance`);
+          throw new Error(
+            `Method '${methodName}' not found on object instance`,
+          );
         }
+      } else if (metadata.isStatic && objectName) {
+        const classInfo = ObjectRegistry.getClass(objectName);
+        const classMethod = (
+          classInfo?.constructor as unknown as
+            | Record<string, unknown>
+            | undefined
+        )?.[methodName];
+        if (typeof classMethod !== 'function') {
+          throw new Error(
+            `Static method '${methodName}' not found on ${objectName}`,
+          );
+        }
+        const result = await (classMethod as InstanceCallable).call(
+          classInfo?.constructor,
+          ...methodArgs,
+        );
+        const failure = normalizeCustomActionFailure(result);
+        if (failure) throw new CustomActionFailureError(failure);
+        return result;
       } else {
         // No ID provided, try to call the method on the collection
         const collectionMethod = (
           collection as unknown as Record<string, unknown>
-        )[action];
+        )[methodName];
         if (typeof collectionMethod === 'function') {
-          const methodArgs =
-            Object.keys(options).length > 0 ? options : directArgs;
           // `.call(collection, …)` preserves the receiver binding of the
           // original member call (`collection[action](…)`).
           const result = await (collectionMethod as InstanceCallable).call(
             collection,
-            methodArgs,
+            ...methodArgs,
           );
+          const failure = normalizeCustomActionFailure(result);
+          if (failure) throw new CustomActionFailureError(failure);
           return result;
         } else {
           throw new Error(
-            `Method '${action}' not found on collection. For object-specific actions, provide an 'id' parameter.`,
+            `Method '${methodName}' not found on collection. For object-specific actions, provide an 'id' parameter.`,
           );
         }
       }
     } catch (error) {
+      if (error instanceof CustomActionFailureError) throw error;
       throw new Error(
         `Failed to execute custom action '${action}': ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -1156,6 +1274,7 @@ export class MCPGenerator {
         context: this.context,
         debug,
         tools,
+        customActions: await this.runtimeCustomActions(tools),
         tenantScopedObjects: await this.tenantScopedObjectNames(tools),
       };
 
@@ -1190,6 +1309,55 @@ export class MCPGenerator {
     const mcpScript = generateMCPScript(outputPath);
     console.log(`\n📝 Add this to your package.json scripts:`);
     console.log(`   "mcp": "${mcpScript}"\n`);
+  }
+
+  private async runtimeCustomActions(
+    tools: MCPTool[],
+  ): Promise<NonNullable<RuntimeOptions['customActions']>> {
+    const metadata: NonNullable<RuntimeOptions['customActions']> = {};
+    const crudActions = new Set(['list', 'get', 'create', 'update', 'delete']);
+    const classes = ObjectRegistry.getAllClasses();
+
+    for (const tool of tools) {
+      const separator = tool.name.indexOf('_');
+      if (separator === -1) continue;
+      const objectPrefix = tool.name.slice(0, separator);
+      const action = tool.name.slice(separator + 1);
+      if (crudActions.has(action)) continue;
+      const matched = Array.from(classes.entries()).find(
+        ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
+      );
+      if (!matched) continue;
+      const [key, classInfo] = matched;
+      const objectName = classInfo.name || key;
+      const [methodName, method] = resolveCustomActionMethod(
+        await ObjectRegistry.getAllMethods(objectName),
+        action,
+      );
+      const resolved = this.resolveCustomActionMetadata(
+        objectName,
+        methodName,
+        method,
+        this.hasCollectionReceiver(classInfo),
+      );
+      metadata[tool.name] = {
+        scope: resolved.scope,
+        isStatic: resolved.isStatic,
+        methodName,
+        ...(resolved.parameters
+          ? {
+              parameterNames: resolved.parameters.map(
+                (parameter) => parameter.name,
+              ),
+              optionsParameter:
+                resolved.parameters.length === 1 &&
+                resolved.parameters[0]?.name === 'options',
+            }
+          : {}),
+        legacyOptions: !resolved.parameters,
+      };
+    }
+    return metadata;
   }
 
   /**
@@ -1298,13 +1466,16 @@ export const tools: Array<{
     const capitalize = (str: string) =>
       str.charAt(0).toUpperCase() + str.slice(1);
 
-    const switchCases = tools
-      .map((tool) => {
-        const [objectName, action] = tool.name.split('_');
+    const switchCases = (
+      await Promise.all(
+        tools.map(async (tool) => {
+          const separator = tool.name.indexOf('_');
+          const objectName = tool.name.slice(0, separator);
+          const action = tool.name.slice(separator + 1);
 
-        switch (action) {
-          case 'list':
-            return `${indent}case '${tool.name}': {
+          switch (action) {
+            case 'list':
+              return `${indent}case '${tool.name}': {
 ${indent}  const limit = args.limit ?? 50;
 ${indent}  const offset = args.offset ?? 0;
 ${indent}  const where = args.where ?? {};
@@ -1319,8 +1490,8 @@ ${indent}  const itemsPublic = items.map((item) => item.toPublicJSON(PUBLIC_JSON
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(itemsPublic) }] };
 ${indent}}`;
 
-          case 'get':
-            return `${indent}case '${tool.name}': {
+            case 'get':
+              return `${indent}case '${tool.name}': {
 ${indent}  if (!args.id && !args.slug) {
 ${indent}    throw new Error('Either id or slug is required');
 ${indent}  }
@@ -1340,8 +1511,8 @@ ${indent}  }
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(item.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
 ${indent}}`;
 
-          case 'create':
-            return `${indent}case '${tool.name}': {
+            case 'create':
+              return `${indent}case '${tool.name}': {
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
 ${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
@@ -1353,8 +1524,8 @@ ${indent}  await newItem.save();
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
 ${indent}}`;
 
-          case 'update':
-            return `${indent}case '${tool.name}': {
+            case 'update':
+              return `${indent}case '${tool.name}': {
 ${indent}  const { id, ...updateData } = args;
 ${indent}  if (!id) {
 ${indent}    throw new Error('ID is required for update');
@@ -1376,8 +1547,8 @@ ${indent}  await existing.save();
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
 ${indent}}`;
 
-          case 'delete':
-            return `${indent}case '${tool.name}': {
+            case 'delete':
+              return `${indent}case '${tool.name}': {
 ${indent}  if (!args.id) {
 ${indent}    throw new Error('ID is required for delete');
 ${indent}  }
@@ -1397,37 +1568,95 @@ ${indent}  await toDelete.delete();
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Object deleted successfully' }) }] };
 ${indent}}`;
 
-          default:
-            // Custom action
-            return `${indent}case '${tool.name}': {
+            default: {
+              // Custom actions use the same canonical receiver/argument contract
+              // as the in-process and standalone MCP runtimes. In particular,
+              // a route config cannot turn an instance method into a static one.
+              const matched = Array.from(
+                ObjectRegistry.getAllClasses().entries(),
+              ).find(
+                ([key, info]) =>
+                  (info.name || key).toLowerCase() === objectName.toLowerCase(),
+              );
+              if (!matched) {
+                throw new Error(
+                  `Unable to resolve custom-action target for tool '${tool.name}'`,
+                );
+              }
+              const [classKey, classInfo] = matched;
+              const registeredName = classInfo.name || classKey;
+              const [methodName, method] = resolveCustomActionMethod(
+                await ObjectRegistry.getAllMethods(registeredName),
+                action,
+              );
+              const metadata = this.resolveCustomActionMetadata(
+                registeredName,
+                methodName,
+                method,
+                this.hasCollectionReceiver(classInfo),
+              );
+              const methodArgs = !metadata.parameters
+                ? 'Object.keys(options).length > 0 ? options : directArgs'
+                : metadata.parameters.length === 1 &&
+                    metadata.parameters[0]?.name === 'options'
+                  ? 'options'
+                  : `[${metadata.parameters
+                      .map(
+                        (parameter) =>
+                          `args[${JSON.stringify(parameter.name)}]`,
+                      )
+                      .join(', ')}]`;
+              return `${indent}case '${tool.name}': {
 ${indent}  const { id, options = {}, ...directArgs } = args;
 
-${indent}  if (!id) {
+${indent}  if (${JSON.stringify(metadata.scope)} === 'item' && !id) {
 ${indent}    throw new Error('ID is required for custom action ${action}');
 ${indent}  }
+${indent}  if (${JSON.stringify(metadata.scope)} === 'collection' && id) {
+${indent}    throw new Error('Custom action ${action} is collection-scoped and does not accept an ID');
+${indent}  }
 
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
+${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(registeredName)}, {
 ${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const object = await collection.get(id);
-${indent}  if (!object) {
-${indent}    throw new Error('Object not found');
+${indent}  const target = ${JSON.stringify(metadata.scope)} === 'item'
+${indent}    ? await collection.get(id)
+${indent}    : ${metadata.isStatic}
+${indent}      ? ObjectRegistry.getClass(${JSON.stringify(registeredName)})?.constructor
+${indent}      : collection;
+${indent}  if (!target) {
+${indent}    throw new Error(${JSON.stringify(
+                metadata.scope === 'item'
+                  ? 'Object not found'
+                  : 'Custom action target not found',
+              )});
 ${indent}  }
 
-${indent}  if (typeof object['${action}'] !== 'function') {
-${indent}    throw new Error('Method ${action} not found on object');
+${indent}  const actionMethod = target[${JSON.stringify(methodName)}];
+${indent}  if (typeof actionMethod !== 'function') {
+${indent}    throw new Error('Method ${methodName} not found on custom action target');
 ${indent}  }
 
-${indent}  const methodArgs = Object.keys(options).length > 0 ? options : directArgs;
-${indent}  const result = await object['${action}'](methodArgs);
+${indent}  const methodArgs = ${methodArgs.startsWith('[') ? methodArgs : `[${methodArgs}]`};
+${indent}  const result = await actionMethod.call(target, ...methodArgs);
+${indent}  const failure = normalizeCustomActionFailure(result);
+${indent}  if (failure) {
+${indent}    return {
+${indent}      content: [{ type: 'text', text: JSON.stringify({ error: failure }) }],
+${indent}      isError: true,
+${indent}      _meta: { [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure },
+${indent}    };
+${indent}  }
 
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(toPublicResult(result)) }] };
 ${indent}}`;
-        }
-      })
-      .join('\n\n');
+            }
+          }
+        }),
+      )
+    ).join('\n\n');
 
     return switchCases;
   }
@@ -1459,7 +1688,7 @@ ${indent}}`;
  * principal) and tenancy is enabled so the interceptor enforces filtering.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
     ? `

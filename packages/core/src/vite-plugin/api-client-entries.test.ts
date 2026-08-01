@@ -5,6 +5,7 @@ import type {
 } from '../scanner/types.js';
 import {
   type ApiClientCrudMethod,
+  renderApiClientCustomMethodParameters,
   selectApiClientEntries,
 } from './api-client-entries.js';
 
@@ -74,6 +75,33 @@ function permutations<T>(values: T[]): T[][] {
 }
 
 describe('selectApiClientEntries', () => {
+  it('renders required typed custom-action parameters as required client options', () => {
+    expect(
+      renderApiClientCustomMethodParameters(
+        {
+          name: 'apply',
+          scope: 'item',
+          pathParamNames: [],
+          parameters: [
+            {
+              name: 'idempotencyKey',
+              type: 'string',
+              optional: false,
+            },
+            {
+              name: 'expectedVersion',
+              type: 'number',
+              optional: true,
+            },
+          ],
+        },
+        (type) => type,
+      ),
+    ).toBe(
+      'id: string, options: { idempotencyKey: string; expectedVersion?: number }',
+    );
+  });
+
   it('selects populated model payloads and stable secondary keys independent of manifest order', () => {
     const collectionFirst = selectApiClientEntries(buildManifest(false));
     const modelFirst = selectApiClientEntries(buildManifest(true));
@@ -204,34 +232,36 @@ describe('selectApiClientEntries', () => {
       customMethods: [{ name: 'reveal', scope: 'collection' }],
     });
 
-    expect(
-      selectApiClientEntries({
-        ...implicitManifest,
-        objects: {
-          ...implicitManifest.objects,
-          SecretCollection: {
-            ...implicitCollection,
-            methods: {
-              reveal: {
-                name: 'reveal',
-                async: true,
-                parameters: [],
-                returnType: 'string',
-                isStatic: false,
-                isPublic: true,
-              },
+    const overrideEntry = selectApiClientEntries({
+      ...implicitManifest,
+      objects: {
+        ...implicitManifest.objects,
+        SecretCollection: {
+          ...implicitCollection,
+          methods: {
+            reveal: {
+              name: 'reveal',
+              async: true,
+              parameters: [],
+              returnType: 'string',
+              isStatic: false,
+              isPublic: true,
             },
-            decoratorConfig: {
-              api: {
-                routes: {
-                  reveal: { scope: 'item' },
-                },
+          },
+          decoratorConfig: {
+            api: {
+              routes: {
+                reveal: { scope: 'item' },
               },
             },
           },
         },
-      }),
-    ).toEqual([]);
+      },
+    })[0];
+    expect(overrideEntry).toMatchObject({
+      crudMethods: [],
+      customMethods: [{ name: 'reveal', scope: 'collection' }],
+    });
 
     expect(
       selectApiClientEntries({
