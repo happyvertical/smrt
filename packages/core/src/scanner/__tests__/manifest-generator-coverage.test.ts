@@ -475,6 +475,19 @@ describe('ManifestGenerator coverage', () => {
       expect(code).not.toContain("app.delete('/notes/:id'");
     });
 
+    it('keeps custom-action endpoint discovery aligned with its item receiver', () => {
+      const gen = new ManifestGenerator();
+      const m = baseManifest();
+      m.objects.Note.decoratorConfig.api = {
+        include: ['summarize'],
+        // This cannot turn the non-static method into a collection receiver.
+        routes: { summarize: { scope: 'collection' } },
+      };
+
+      const endpoints = gen.generateRestEndpoints(m);
+      expect(endpoints).toBe('POST /notes/:id/summarize');
+    });
+
     it('generates MCP tool names and JSON tool definitions', () => {
       const gen = new ManifestGenerator();
       const names = gen.generateMCPTools(baseManifest());

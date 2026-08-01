@@ -20,11 +20,16 @@
  */
 
 import type { AIClient, AIClientOptions } from '@happyvertical/ai';
-import type { SmrtCollection } from '../collection';
+import { SmrtCollection } from '../collection';
 import type { DatabaseConfig } from '../database.js';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
+import {
+  buildCustomActionInvocationArgs,
+  normalizeCustomActionFailure,
+  resolveCustomActionMetadata,
+} from './custom-action.js';
 import { runWithTenantGate } from './tenant-gate.js';
 
 /**
@@ -42,7 +47,7 @@ interface PublicSerializable {
  */
 type DynamicallyCallable = Record<
   string,
-  ((options: Record<string, unknown>) => unknown) | unknown
+  ((...args: unknown[]) => unknown) | unknown
 >;
 
 /**
@@ -424,22 +429,59 @@ export class CLIGenerator {
       }
 
       default:
-        return this.executeCustomAction(collection, action, positional, flags);
+        return this.executeCustomAction(
+          objectName,
+          collection,
+          action,
+          positional,
+          flags,
+        );
     }
   }
 
   /**
-   * Execute a custom method on an instance (when an id is given) or on the
-   * collection (singleton actions). Mirrors the MCP custom-action path.
+   * Execute a custom method against its manifest-declared item/collection
+   * target. The legacy collection fallback remains only for unavailable
+   * metadata, where target scope cannot be established safely.
    */
   private async executeCustomAction(
+    objectName: string,
     collection: SmrtCollection<SmrtObject>,
     action: string,
     positional: string | undefined,
     flags: Record<string, string | boolean>,
   ): Promise<unknown> {
-    const options = this.customOptions(flags);
     const id = positional ?? this.flagString(flags.id);
+    const args = this.customOptions(flags);
+    const methodDef = (await ObjectRegistry.getAllMethods(objectName)).get(
+      action,
+    );
+    const metadata = resolveCustomActionMetadata({
+      actionName: action,
+      method: methodDef,
+      apiConfig: ObjectRegistry.getConfig(objectName).api,
+      ...(this.hasCollectionReceiver(ObjectRegistry.getClass(objectName))
+        ? { defaultScope: 'collection' as const }
+        : {}),
+    });
+    const invocationArgs =
+      metadata.parameters?.length === 1 &&
+      metadata.parameters[0]?.name === 'options'
+        ? { options: args }
+        : args;
+    const methodArgs = buildCustomActionInvocationArgs(
+      metadata,
+      invocationArgs,
+    );
+
+    if (methodDef && metadata.idRequired && !id) {
+      throw new Error(`An id is required for custom action '${action}'`);
+    }
+    if (methodDef && !metadata.idRequired && id) {
+      throw new Error(
+        `Custom action '${action}' is collection-scoped and does not accept an id`,
+      );
+    }
 
     if (id) {
       const object = await collection.get(id);
@@ -450,17 +492,46 @@ export class CLIGenerator {
       if (typeof candidate !== 'function') {
         throw new Error(`Method '${action}' not found on object instance`);
       }
-      return candidate.call(object, options);
+      const result = await candidate.call(object, ...methodArgs);
+      const failure = normalizeCustomActionFailure(result);
+      if (failure) throw new Error(JSON.stringify({ error: failure }));
+      return result;
+    }
+
+    if (methodDef?.isStatic) {
+      const classInfo = ObjectRegistry.getClass(objectName);
+      const candidate = (
+        classInfo?.constructor as unknown as DynamicallyCallable | undefined
+      )?.[action];
+      if (typeof candidate !== 'function') {
+        throw new Error(`Static method '${action}' not found on ${objectName}`);
+      }
+      const result = await candidate.call(
+        classInfo?.constructor,
+        ...methodArgs,
+      );
+      const failure = normalizeCustomActionFailure(result);
+      if (failure) throw new Error(JSON.stringify({ error: failure }));
+      return result;
     }
 
     const collectionCandidate = (collection as unknown as DynamicallyCallable)[
       action
     ];
     if (typeof collectionCandidate === 'function') {
-      return collectionCandidate.call(collection, options);
+      const result = await collectionCandidate.call(collection, ...methodArgs);
+      const failure = normalizeCustomActionFailure(result);
+      if (failure) throw new Error(JSON.stringify({ error: failure }));
+      return result;
     }
     throw new Error(
       `Method '${action}' not found on collection. Provide an id for object-specific actions.`,
+    );
+  }
+
+  private hasCollectionReceiver(classInfo?: RegisteredClass): boolean {
+    return (
+      !!classInfo && classInfo.constructor.prototype instanceof SmrtCollection
     );
   }
 

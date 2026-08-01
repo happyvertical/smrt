@@ -24,6 +24,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { resolveCustomActionMetadata } from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
   type ToolDescriptor,
@@ -702,6 +703,16 @@ export function buildWebToolDescriptors(
     className: entry.obj.className,
     fields,
     actions: entry.actions,
+    customActions: Object.fromEntries(
+      entry.actions.map((action) => [
+        action,
+        resolveCustomActionMetadata({
+          actionName: action,
+          method: entry.obj.methods?.[action],
+          apiConfig: entry.obj.decoratorConfig?.api,
+        }),
+      ]),
+    ),
   });
 }
 

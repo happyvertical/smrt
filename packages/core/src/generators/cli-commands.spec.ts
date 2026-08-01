@@ -36,22 +36,14 @@ class CliCmdWidget extends SmrtObject {
     return { kind: 'instance', name: this.name, options };
   }
 
-  // Public on the object too (so command exposure passes), but when invoked
-  // without an id the collection's same-named method runs instead.
-  async tally(options: any = {}): Promise<any> {
-    return { kind: 'instance-tally', options };
+  // A model static action is collection-targeted and accepts no item id.
+  static async tally(options: any = {}): Promise<any> {
+    return { kind: 'collection', options };
   }
 }
 
 class CliCmdWidgetCollection extends SmrtCollection<CliCmdWidget> {
   static readonly _itemClass = CliCmdWidget;
-
-  // Collection-level custom action (invoked when no id is provided). The CLI
-  // exposure gate validates against the object's methods, so `tally` is also
-  // declared on the object above.
-  async tally(options: any = {}): Promise<any> {
-    return { kind: 'collection', options };
-  }
 }
 
 function captureLog<T>(
@@ -71,6 +63,15 @@ function captureLog<T>(
 
 describe('CLI generator parsing + dispatch (#1500)', () => {
   ObjectRegistry.registerCollection('CliCmdWidget', CliCmdWidgetCollection);
+  ObjectRegistry.getMethods('CliCmdWidget').set('tally', {
+    name: 'tally',
+    async: true,
+    isPublic: true,
+    isStatic: true,
+    returnType: 'Promise<any>',
+    parameters: [{ name: 'options', type: 'any', optional: true, default: {} }],
+  });
+  ObjectRegistry.invalidateAllInheritanceCaches();
 
   let db: any;
 

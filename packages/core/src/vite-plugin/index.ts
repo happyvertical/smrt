@@ -49,6 +49,7 @@ export {
   findCliApiCoherenceViolations,
   generateSvelteKitRoutes,
   methodNameToKebab,
+  resolveApiActionRouteConfig,
   resolveApiActionSet,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
