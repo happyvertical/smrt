@@ -13,6 +13,7 @@ import {
   getStoredToken,
   loadCliConfig,
   requestJson,
+  requestJsonResult,
   saveAuth,
 } from '../config.js';
 
@@ -246,6 +247,110 @@ describe('requestJson', () => {
         { fetch: fetchMock as any },
       ),
     ).rejects.toThrow(/unauthenticated/);
+  });
+
+  it('preserves a redacted structured error envelope', async () => {
+    const result = await requestJsonResult(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'upstream_timeout',
+                message: 'Bearer top-secret-token failed',
+                details: {
+                  accessToken: 'top-secret-token',
+                  retryAfter: 5,
+                },
+                retryable: true,
+                correlationId: 'corr-42',
+                idempotencyKey: { field: 'idempotencyKey', required: true },
+                expectedVersion: { field: 'expectedVersion', required: false },
+              },
+            }),
+            {
+              status: 503,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 503,
+      error: {
+        code: 'upstream_timeout',
+        message: 'Bearer [REDACTED] failed',
+        details: { accessToken: '[REDACTED]', retryAfter: 5 },
+        retryable: true,
+        correlationId: 'corr-42',
+        idempotencyKey: { field: 'idempotencyKey', required: true },
+        expectedVersion: { field: 'expectedVersion', required: false },
+      },
+    });
+  });
+
+  it('normalizes a conventional top-level HTTP failure envelope', async () => {
+    const result = await requestJsonResult(
+      context,
+      '/test',
+      { method: 'POST' },
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              code: 'version_conflict',
+              message: 'Expected version is stale.',
+              details: { currentVersion: 4 },
+              retryable: false,
+              correlationId: 'corr-version',
+              expectedVersion: { field: 'expectedVersion', required: true },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 409,
+      error: {
+        code: 'version_conflict',
+        message: 'Expected version is stale.',
+        details: { currentVersion: 4 },
+        retryable: false,
+        correlationId: 'corr-version',
+        expectedVersion: { field: 'expectedVersion', required: true },
+      },
+    });
+  });
+
+  it('leaves opaque successful domain values untouched', async () => {
+    const result = await requestJsonResult<{ token: string; value: string }>(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              token: 'domain-token-value',
+              value: 'preserve me',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      result: { token: 'domain-token-value', value: 'preserve me' },
+      metadata: { code: 'ok', retryable: false },
+    });
   });
 
   it('rejects responses with Content-Length above maxResponseBytes — #1311 round-4 A4', async () => {

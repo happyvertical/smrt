@@ -55,6 +55,28 @@ import {
   type TerminalAuthServiceOptions,
 } from '../services/TerminalAuthService.js';
 
+export {
+  type AppResultContract,
+  type AppResultMetadata,
+  type CommandRequirements,
+  canonicalizeDiscoveryArtifact,
+  createDiscoveryConformanceArtifact,
+  type DeclaredActionField,
+  type DiscoveryArtifactIntegrity,
+  DiscoveryArtifactValidationError,
+  type DiscoveryConformanceArtifact,
+  type DiscoveryPayload,
+  deriveCommandRequirements,
+  type JsonValue,
+  SMRT_APP_RESULT_CONTRACT,
+  SMRT_APP_RESULT_SCHEMA,
+  SMRT_APP_RESULT_VERSION,
+  SMRT_DISCOVERY_CONFORMANCE_ARTIFACT_SCHEMA,
+  SMRT_DISCOVERY_CONFORMANCE_SCHEMA,
+  SMRT_DISCOVERY_CONFORMANCE_VERSION,
+  SMRT_MCP_RESULT_METADATA_KEY,
+  validateDiscoveryConformanceArtifact,
+} from '../app-contract.js';
 export type {
   NormalizedOidcClaims,
   OidcProfileOwnerAuthorization,

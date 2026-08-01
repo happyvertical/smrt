@@ -27,6 +27,8 @@ import {
 } from './config.js';
 
 export {
+  AppCliRequestError,
+  type AppCliResultMetadata,
   type CliConfig,
   type CliConfigContext,
   clearStoredToken,
@@ -34,7 +36,10 @@ export {
   getStoredToken,
   loadCliConfig,
   type RequestJsonOptions,
+  type RequestJsonResult,
+  redactTransportValue,
   requestJson,
+  requestJsonResult,
   saveAuth,
   saveCliConfig,
 } from './config.js';
@@ -84,6 +89,7 @@ import { invokeCommand } from './invoke.js';
 import { renderResponse } from './output.js';
 import { buildFlagParser } from './parser.js';
 
+export { SMRT_MCP_RESULT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
 export {
   createMcpStdioBridge,
   type McpStdioBridgeOptions,
@@ -263,7 +269,9 @@ async function dispatchCli(
   }
 
   if (command === 'mcp') {
-    return runMcpCommand({ context, stdout }, rest);
+    const succeeded = await runMcpCommand({ context, stdout, stderr }, rest);
+    if (!succeeded) process.exitCode = 1;
+    return;
   }
 
   if (command === 'resources') {

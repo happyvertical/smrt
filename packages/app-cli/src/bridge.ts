@@ -21,17 +21,29 @@
  * @packageDocumentation
  */
 
+import { SMRT_MCP_RESULT_METADATA_KEY as APP_CONTRACT_MCP_RESULT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   type CallToolRequest,
   CallToolRequestSchema,
   type CallToolResult,
+  ErrorCode,
   type ListToolsRequest,
   ListToolsRequestSchema,
   type ListToolsResult,
+  McpError,
 } from '@modelcontextprotocol/sdk/types.js';
-import { type CliConfigContext, requestJson } from './config.js';
+import {
+  type AppCliResultMetadata,
+  type CliConfigContext,
+  type RequestJsonResult,
+  redactTransportValue,
+  requestJsonResult,
+} from './config.js';
+
+/** Namespace shared with the published SMRT app-result contract. */
+export { SMRT_MCP_RESULT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
 
 /**
  * Configuration for the bridge.
@@ -73,12 +85,14 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
   server.setRequestHandler(
     ListToolsRequestSchema,
     async (_request: ListToolsRequest): Promise<ListToolsResult> => {
-      return requestJson<ListToolsResult>(
+      const outcome = await requestJsonResult<ListToolsResult>(
         options,
         toolsPath,
         { method: 'GET' },
         { fetch: options.fetch },
       );
+      if (!outcome.ok) throw toMcpTransportError(outcome.error);
+      return withMcpMetadata(outcome.result, outcome.metadata);
     },
   );
 
@@ -86,30 +100,16 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
     CallToolRequestSchema,
     async (request: CallToolRequest): Promise<CallToolResult> => {
       const { name, arguments: args = {} } = request.params;
-      try {
-        return await requestJson<CallToolResult>(
-          options,
-          callPath,
-          {
-            body: JSON.stringify({ arguments: args, name }),
-            method: 'POST',
-          },
-          { fetch: options.fetch },
-        );
-      } catch (error) {
-        return {
-          content: [
-            {
-              text:
-                error instanceof Error
-                  ? error.message
-                  : 'MCP tool call failed.',
-              type: 'text',
-            },
-          ],
-          isError: true,
-        };
-      }
+      const outcome = await requestJsonResult<CallToolResult>(
+        options,
+        callPath,
+        {
+          body: JSON.stringify({ arguments: args, name }),
+          method: 'POST',
+        },
+        { fetch: options.fetch },
+      );
+      return formatMcpCallResult(outcome);
     },
   );
 
@@ -117,6 +117,126 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
     server,
     connect: () => server.connect(new StdioServerTransport()),
   };
+}
+
+/**
+ * Preserve the HTTP result/error envelope in protocol-permitted MCP metadata.
+ * This deliberately does not create `structuredContent`; #2149 owns declared
+ * output schema semantics for generated tools.
+ */
+export function formatMcpCallResult(
+  outcome: RequestJsonResult<CallToolResult>,
+): CallToolResult {
+  if (!outcome.ok) {
+    const error = sanitizeMetadata(outcome.error);
+    return withMcpMetadata(
+      {
+        content: [
+          {
+            text: error.message ?? error.code,
+            type: 'text',
+          },
+        ],
+        isError: true,
+      },
+      error,
+    );
+  }
+
+  const metadata = isMcpErrorResult(outcome.result)
+    ? {
+        ...outcome.metadata,
+        code:
+          outcome.metadata.code === 'ok'
+            ? 'mcp_tool_error'
+            : outcome.metadata.code,
+        message: outcome.metadata.message ?? resultText(outcome.result),
+      }
+    : outcome.metadata;
+  return withMcpMetadata(
+    isMcpErrorResult(outcome.result)
+      ? redactMcpErrorContent(outcome.result)
+      : outcome.result,
+    metadata,
+  );
+}
+
+function withMcpMetadata<T extends object>(
+  result: T,
+  metadata: AppCliResultMetadata,
+): T {
+  const existing = isRecord((result as { _meta?: unknown })._meta)
+    ? (result as { _meta: Record<string, unknown> })._meta
+    : {};
+  return {
+    ...result,
+    _meta: {
+      ...existing,
+      [APP_CONTRACT_MCP_RESULT_METADATA_KEY]: sanitizeMetadata(metadata),
+    },
+  } as T;
+}
+
+function sanitizeMetadata(
+  metadata: AppCliResultMetadata,
+): AppCliResultMetadata {
+  return {
+    ...metadata,
+    ...(metadata.message
+      ? { message: String(redactTransportValue(metadata.message)) }
+      : {}),
+    ...(metadata.details !== undefined
+      ? {
+          details: redactTransportValue(
+            metadata.details,
+          ) as AppCliResultMetadata['details'],
+        }
+      : {}),
+    ...(metadata.correlationId
+      ? { correlationId: String(redactTransportValue(metadata.correlationId)) }
+      : {}),
+  };
+}
+
+/** Convert an HTTP transport failure into an MCP JSON-RPC error safely. */
+export function toMcpTransportError(metadata: AppCliResultMetadata): McpError {
+  const sanitized = sanitizeMetadata(metadata);
+  return new McpError(
+    ErrorCode.InternalError,
+    sanitized.message ?? sanitized.code,
+    { [APP_CONTRACT_MCP_RESULT_METADATA_KEY]: sanitized },
+  );
+}
+
+function isMcpErrorResult(result: CallToolResult): boolean {
+  return (result as { isError?: unknown }).isError === true;
+}
+
+function resultText(result: CallToolResult): string | undefined {
+  const content = (result as { content?: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content.find(
+    (entry): entry is { text: string } =>
+      isRecord(entry) && typeof entry.text === 'string',
+  );
+  return text?.text;
+}
+
+function redactMcpErrorContent(result: CallToolResult): CallToolResult {
+  const content = (result as { content?: unknown }).content;
+  if (!Array.isArray(content)) return result;
+  return {
+    ...result,
+    content: content.map((entry) =>
+      isRecord(entry) && typeof entry.text === 'string'
+        ? { ...entry, text: String(redactTransportValue(entry.text)) }
+        : entry,
+    ),
+  } as CallToolResult;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

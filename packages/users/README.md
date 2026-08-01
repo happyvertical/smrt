@@ -10,6 +10,16 @@ pnpm add @happyvertical/smrt-users
 
 ## Usage
 
+### Application discovery conformance
+
+The SvelteKit `createResourceListHandler()` export produces the app CLI
+discovery response and now includes a deterministic `artifact`. Consumers can
+import the published `@happyvertical/smrt-users/app-contract` entrypoint to
+validate the schema/version selector and SHA-256 integrity digest before using
+the embedded resource catalog. See
+[`@happyvertical/smrt-app-cli`](../app-cli/README.md#discovery-conformance-artifact)
+for the exact packaged-runtime pinning workflow.
+
 ### Roles and permissions
 
 ```typescript
