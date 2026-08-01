@@ -259,13 +259,16 @@ describe('generated SvelteKit helper runtime', () => {
     expect(gitignore).toContain('# Application-owned output');
     expect(gitignore).toContain('coverage/');
     expect(gitignore).toContain(generatedCollectionRoute);
-    expect(gitignore).toContain('src/routes/api/widgets/[id]/+server.ts');
+    expect(gitignore).toContain('src/routes/api/widgets/\\[id\\]/+server.ts');
     expect(gitignore).not.toContain('src/routes/api/**/+server.ts');
     expect(readFileSync(handwrittenRoute, 'utf-8')).toContain('handwritten');
     expect(
       readFileSync(join(projectRoot, generatedCollectionRoute), 'utf-8'),
     ).toContain('export const GET');
     expect(isIgnoredByGit(projectRoot, generatedCollectionRoute)).toBe(true);
+    expect(
+      isIgnoredByGit(projectRoot, 'src/routes/api/widgets/[id]/+server.ts'),
+    ).toBe(true);
     expect(
       isIgnoredByGit(projectRoot, 'src/routes/api/_resources/+server.ts'),
     ).toBe(false);

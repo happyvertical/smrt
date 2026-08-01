@@ -1546,7 +1546,9 @@ describe('SvelteKit Route Generator', () => {
         '# BEGIN SMRT auto-generated routes (Vite plugin)',
       );
       expect(content).toContain('src/routes/api/testobjects/+server.ts');
-      expect(content).toContain('src/routes/api/testobjects/[id]/+server.ts');
+      expect(content).toContain(
+        'src/routes/api/testobjects/\\[id\\]/+server.ts',
+      );
       expect(content).not.toContain('src/routes/api/**/+server.ts');
       expect(content).toContain('node_modules/');
       expect(content).toContain('.env');

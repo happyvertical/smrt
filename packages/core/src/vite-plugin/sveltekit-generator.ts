@@ -2833,7 +2833,7 @@ function updateGitignore(
   const generatedPaths = [
     ...new Set(
       generatedRoutePaths.map((path) =>
-        relative(projectRoot, path).replaceAll('\\', '/'),
+        gitignorePatternForPath(relative(projectRoot, path)),
       ),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -2847,6 +2847,13 @@ function updateGitignore(
     writeFileSync(gitignorePath, updatedContent, 'utf-8');
     console.log('[smrt] Updated .gitignore with generated route paths');
   }
+}
+
+function gitignorePatternForPath(path: string): string {
+  // Generated SvelteKit item routes include literal `[id]` segments. Escape
+  // every Git pattern metacharacter so the managed block ignores files, not
+  // glob expressions that happen to resemble their paths.
+  return path.replaceAll('\\', '/').replaceAll(/([*?[\]\\!#])/g, '\\$1');
 }
 
 function updateGeneratedRouteIgnoreBlock(
