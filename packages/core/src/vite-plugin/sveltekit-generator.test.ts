@@ -1506,7 +1506,7 @@ describe('SvelteKit Route Generator', () => {
   });
 
   describe('.gitignore Updates', () => {
-    it('should add generated routes pattern to .gitignore', async () => {
+    it('should add exact generated route paths to .gitignore', async () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue('node_modules/\n.env\n');
 
@@ -1542,16 +1542,29 @@ describe('SvelteKit Route Generator', () => {
       expect(gitignoreWrite).toBeDefined();
       const content = gitignoreWrite?.[1] as string;
 
-      expect(content).toContain('# SMRT auto-generated routes');
-      expect(content).toContain('src/routes/api/**/+server.ts');
+      expect(content).toContain(
+        '# BEGIN SMRT auto-generated routes (Vite plugin)',
+      );
+      expect(content).toContain('src/routes/api/testobjects/+server.ts');
+      expect(content).toContain('src/routes/api/testobjects/[id]/+server.ts');
+      expect(content).not.toContain('src/routes/api/**/+server.ts');
       expect(content).toContain('node_modules/');
       expect(content).toContain('.env');
     });
 
-    it('should not duplicate .gitignore entries', async () => {
+    it('should migrate only the legacy SMRT broad route entry', async () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue(
-        'node_modules/\n# SMRT auto-generated routes (from Vite plugin)\nsrc/routes/api/**/+server.ts\n',
+        [
+          'node_modules/',
+          '# Application-owned broad rule',
+          'src/routes/api/**/+server.ts',
+          '# SMRT auto-generated routes (from Vite plugin)',
+          'src/routes/api/**/+server.ts',
+          '# Application-owned rule',
+          'src/routes/api/_resources/+server.ts',
+          '',
+        ].join('\n'),
       );
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -1574,12 +1587,21 @@ describe('SvelteKit Route Generator', () => {
         objectsDir: 'src/lib/objects',
       });
 
-      // Should not write to .gitignore since patterns already exist
-      const gitignoreWrites = vi
+      const gitignoreWrite = vi
         .mocked(writeFileSync)
-        .mock.calls.filter((call) => call[0].toString().endsWith('.gitignore'));
+        .mock.calls.find((call) => call[0].toString().endsWith('.gitignore'));
+      const content = gitignoreWrite?.[1] as string;
 
-      expect(gitignoreWrites).toHaveLength(0);
+      expect(gitignoreWrite).toBeDefined();
+      expect(
+        content
+          .split('\n')
+          .filter((line) => line === 'src/routes/api/**/+server.ts'),
+      ).toHaveLength(1);
+      expect(content).toContain('src/routes/api/testobjects/+server.ts');
+      expect(content).toContain('# Application-owned broad rule');
+      expect(content).toContain('# Application-owned rule');
+      expect(content).toContain('src/routes/api/_resources/+server.ts');
 
       consoleSpy.mockRestore();
     });
@@ -1616,8 +1638,11 @@ describe('SvelteKit Route Generator', () => {
       expect(gitignoreWrite).toBeDefined();
       const content = gitignoreWrite?.[1] as string;
 
-      expect(content).toContain('# SMRT auto-generated routes');
-      expect(content).toContain('src/routes/api/**/+server.ts');
+      expect(content).toContain(
+        '# BEGIN SMRT auto-generated routes (Vite plugin)',
+      );
+      expect(content).toContain('src/routes/api/testobjects/+server.ts');
+      expect(content).not.toContain('src/routes/api/**/+server.ts');
     });
   });
 

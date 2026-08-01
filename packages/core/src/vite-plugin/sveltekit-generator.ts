@@ -81,6 +81,12 @@ export interface SvelteKitOptions {
 // Keep this aligned with biome.json formatter.lineWidth.
 const BIOME_LINE_WIDTH = 80;
 const STANDARD_API_ACTIONS = ['list', 'get', 'create', 'update', 'delete'];
+const GITIGNORE_MANAGED_BLOCK_START =
+  '# BEGIN SMRT auto-generated routes (Vite plugin)';
+const GITIGNORE_MANAGED_BLOCK_END =
+  '# END SMRT auto-generated routes (Vite plugin)';
+const LEGACY_GITIGNORE_HEADER =
+  '# SMRT auto-generated routes (from Vite plugin)';
 
 export interface ResolvedApiActionRouteConfig {
   scope: 'item' | 'collection';
@@ -1134,18 +1140,20 @@ export async function generateSvelteKitRoutes(
   // Generate centralized configuration file first (if it doesn't exist)
   await generateSmrtConfigFile(projectRoot, manifest, options);
 
+  const generatedRoutePaths: string[] = [];
   let generatedCount = 0;
   let skippedCollections = 0;
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     if (isCollectionManifestClass(manifest, objectDef)) {
-      const generatedCollectionRoutes = await generateCollectionRoutesForObject(
+      const collectionRoutePaths = await generateCollectionRoutesForObject(
         projectRoot,
         className,
         objectDef,
         manifest,
         options,
       );
-      if (generatedCollectionRoutes) {
+      generatedRoutePaths.push(...collectionRoutePaths);
+      if (collectionRoutePaths.length > 0) {
         generatedCount++;
       } else {
         console.log(
@@ -1155,34 +1163,51 @@ export async function generateSvelteKitRoutes(
       }
       continue;
     }
-    await generateRoutesForObject(
-      projectRoot,
-      className,
-      objectDef,
-      manifest,
-      options,
+    generatedRoutePaths.push(
+      ...(await generateRoutesForObject(
+        projectRoot,
+        className,
+        objectDef,
+        manifest,
+        options,
+      )),
     );
     generatedCount++;
   }
 
   if (options.knowledge?.api?.enabled) {
-    generateKnowledgeRoute(projectRoot, options);
+    generatedRoutePaths.push(generateKnowledgeRoute(projectRoot, options));
   }
 
   // Batch write contract route (#1759): {routesDir}/sync/apply/+server.ts.
-  generateSyncApplyRoute(projectRoot, manifest, options);
+  if (generateSyncApplyRoute(projectRoot, manifest, options)) {
+    generatedRoutePaths.push(
+      join(projectRoot, options.routesDir, 'sync', 'apply', '+server.ts'),
+    );
+  }
   // Change-feed route (#1758) — cleanup rides clearGeneratedRouteFiles above.
-  generateChangesRoute(projectRoot, manifest, options);
+  if (generateChangesRoute(projectRoot, manifest, options)) {
+    generatedRoutePaths.push(
+      join(projectRoot, options.routesDir, '_changes', '+server.ts'),
+    );
+  }
   // Live change-signal SSE route (#1763) — cleanup rides the sweep above.
-  generateEventsRoute(
-    projectRoot,
-    manifest,
-    options,
-    computeWebManifestHash(manifest),
-  );
+  if (
+    generateEventsRoute(
+      projectRoot,
+      manifest,
+      options,
+      computeWebManifestHash(manifest),
+    )
+  ) {
+    generatedRoutePaths.push(
+      join(projectRoot, options.routesDir, '_events', '+server.ts'),
+    );
+  }
 
-  // Update .gitignore to exclude generated routes
-  updateGitignore(projectRoot, options);
+  // Ignore only the concrete route files generated in this pass. This keeps
+  // handwritten handlers below routesDir visible to Git.
+  updateGitignore(projectRoot, options, generatedRoutePaths);
 
   const skippedMsg =
     skippedCollections > 0
@@ -1261,13 +1286,13 @@ function clearGeneratedKnowledgeRoute(
 function generateKnowledgeRoute(
   projectRoot: string,
   options: SvelteKitOptions,
-): void {
+): string {
   const routeDir = knowledgeRouteDir(projectRoot, options);
   const route = generateKnowledgeRouteTemplate(
     options.knowledge ?? {},
     readKnowledgeRouteArtifact(projectRoot),
   );
-  writeRoute(routeDir, '+server.ts', route);
+  return writeRoute(routeDir, '+server.ts', route);
 }
 
 function readKnowledgeRouteArtifact(
@@ -1647,15 +1672,16 @@ async function generateRoutesForObject(
   objectDef: SmartObjectDefinition,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
-): Promise<void> {
+): Promise<string[]> {
   const collectionName = objectDef.collection;
   const routeDir = join(projectRoot, options.routesDir, collectionName);
+  const generatedRoutePaths: string[] = [];
 
   // Check if API is enabled for this object
   const apiConfig = objectDef.decoratorConfig?.api;
   if (apiConfig === false) {
     console.log(`[smrt] Skipping ${className} - API disabled`);
-    return;
+    return generatedRoutePaths;
   }
 
   // Determine which CRUD actions to include via the shared resolver.
@@ -1672,7 +1698,9 @@ async function generateRoutesForObject(
       options,
       routeDir,
     );
-    writeRoute(routeDir, '+server.ts', collectionRoute);
+    generatedRoutePaths.push(
+      writeRoute(routeDir, '+server.ts', collectionRoute),
+    );
   }
 
   // Generate item route (get, update, delete)
@@ -1690,7 +1718,9 @@ async function generateRoutesForObject(
       options,
       join(routeDir, '[id]'),
     );
-    writeRoute(join(routeDir, '[id]'), '+server.ts', itemRoute);
+    generatedRoutePaths.push(
+      writeRoute(join(routeDir, '[id]'), '+server.ts', itemRoute),
+    );
   }
 
   // Generate custom action routes
@@ -1748,8 +1778,12 @@ async function generateRoutesForObject(
       manifest,
       options,
     );
-    writeRoute(actionRouteDir, '+server.ts', actionRoute);
+    generatedRoutePaths.push(
+      writeRoute(actionRouteDir, '+server.ts', actionRoute),
+    );
   }
+
+  return generatedRoutePaths;
 }
 
 async function generateCollectionRoutesForObject(
@@ -1758,11 +1792,12 @@ async function generateCollectionRoutesForObject(
   objectDef: SmartObjectDefinition,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
-): Promise<boolean> {
+): Promise<string[]> {
+  const generatedRoutePaths: string[] = [];
   const apiConfig = objectDef.decoratorConfig?.api;
   if (apiConfig === false) {
     console.log(`[smrt] Skipping ${className} - API disabled`);
-    return false;
+    return generatedRoutePaths;
   }
 
   const routeDir = join(projectRoot, options.routesDir, objectDef.collection);
@@ -1781,10 +1816,8 @@ async function generateCollectionRoutesForObject(
   );
 
   if (customActions.length === 0) {
-    return false;
+    return generatedRoutePaths;
   }
-
-  let generatedAnyRoutes = false;
   const actionSpecs: Array<{
     routeDir: string;
     spec: GeneratedActionRouteSpec;
@@ -1831,11 +1864,12 @@ async function generateCollectionRoutesForObject(
       manifest,
       options,
     );
-    writeRoute(actionRouteDir, '+server.ts', actionRoute);
-    generatedAnyRoutes = true;
+    generatedRoutePaths.push(
+      writeRoute(actionRouteDir, '+server.ts', actionRoute),
+    );
   }
 
-  return generatedAnyRoutes;
+  return generatedRoutePaths;
 }
 
 /**
@@ -2025,7 +2059,7 @@ export function validateCliIncludeAgainstApi(
 /**
  * Writes a route file, creating directories as needed
  */
-function writeRoute(dir: string, filename: string, content: string): void {
+function writeRoute(dir: string, filename: string, content: string): string {
   try {
     // Create directory if needed
     if (!existsSync(dir)) {
@@ -2036,6 +2070,7 @@ function writeRoute(dir: string, filename: string, content: string): void {
     const filePath = join(dir, filename);
     writeFileSync(filePath, content, 'utf-8');
     console.log(`[smrt] Generated: ${filePath}`);
+    return filePath;
   } catch (error) {
     console.error(`[smrt] [ERROR] Failed to write route file:`);
     console.error(`[smrt] [ERROR]   Directory: ${dir}`);
@@ -2782,21 +2817,12 @@ function rolesFrom(value: unknown): string[] {
 /**
  * Updates .gitignore to exclude auto-generated routes
  */
-function updateGitignore(projectRoot: string, options: SvelteKitOptions): void {
+function updateGitignore(
+  projectRoot: string,
+  options: SvelteKitOptions,
+  generatedRoutePaths: readonly string[],
+): void {
   const gitignorePath = join(projectRoot, '.gitignore');
-
-  // Patterns to add
-  const patternsToAdd = [
-    '# SMRT auto-generated routes (from Vite plugin)',
-    `${options.routesDir}/**/+server.ts`,
-  ];
-  if (options.knowledge?.api?.enabled) {
-    const knowledgeRoute = relative(
-      projectRoot,
-      join(knowledgeRouteDir(projectRoot, options), '+server.ts'),
-    ).replaceAll('\\', '/');
-    patternsToAdd.push(knowledgeRoute);
-  }
 
   // Read existing .gitignore or create empty string
   let gitignoreContent = '';
@@ -2804,33 +2830,77 @@ function updateGitignore(projectRoot: string, options: SvelteKitOptions): void {
     gitignoreContent = readFileSync(gitignorePath, 'utf-8');
   }
 
-  // Check if patterns already exist
-  let needsUpdate = false;
-  const linesToAdd: string[] = [];
+  const generatedPaths = [
+    ...new Set(
+      generatedRoutePaths.map((path) =>
+        relative(projectRoot, path).replaceAll('\\', '/'),
+      ),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+  const updatedContent = updateGeneratedRouteIgnoreBlock(
+    gitignoreContent,
+    options.routesDir,
+    generatedPaths,
+  );
 
-  for (const pattern of patternsToAdd) {
-    // Skip if pattern already exists (check for exact match or similar)
-    if (!gitignoreContent.includes(pattern)) {
-      linesToAdd.push(pattern);
-      needsUpdate = true;
+  if (updatedContent !== gitignoreContent) {
+    writeFileSync(gitignorePath, updatedContent, 'utf-8');
+    console.log('[smrt] Updated .gitignore with generated route paths');
+  }
+}
+
+function updateGeneratedRouteIgnoreBlock(
+  gitignoreContent: string,
+  routesDir: string,
+  generatedPaths: readonly string[],
+): string {
+  const lines = gitignoreContent.split('\n');
+  const startIndex = lines.indexOf(GITIGNORE_MANAGED_BLOCK_START);
+  const endIndex = lines.indexOf(GITIGNORE_MANAGED_BLOCK_END);
+  const managedBlock = [
+    GITIGNORE_MANAGED_BLOCK_START,
+    ...generatedPaths,
+    GITIGNORE_MANAGED_BLOCK_END,
+  ];
+
+  if (startIndex !== -1 || endIndex !== -1) {
+    if (startIndex === -1 || endIndex < startIndex) {
+      // An incomplete marker pair may have been authored by a consumer. Do
+      // not guess at its boundary or remove any user-managed ignore rules.
+      return gitignoreContent;
     }
+
+    lines.splice(
+      startIndex,
+      endIndex - startIndex + 1,
+      ...(generatedPaths.length > 0 ? managedBlock : []),
+    );
+    return lines.join('\n');
   }
 
-  if (needsUpdate) {
-    // Ensure file ends with newline before adding
-    if (gitignoreContent.length > 0 && !gitignoreContent.endsWith('\n')) {
-      gitignoreContent += '\n';
-    }
-
-    // Add a blank line before our section if file has content
-    if (gitignoreContent.length > 0 && !gitignoreContent.endsWith('\n\n')) {
-      gitignoreContent += '\n';
-    }
-
-    // Add our patterns
-    gitignoreContent += `${linesToAdd.join('\n')}\n`;
-
-    writeFileSync(gitignorePath, gitignoreContent, 'utf-8');
-    console.log('[smrt] Updated .gitignore with generated route patterns');
+  // Versions before #2185 wrote exactly this header followed by a recursive
+  // wildcard. Remove only that adjacent, generator-owned pair; an equivalent
+  // user rule elsewhere is intentionally preserved.
+  const legacyPattern = `${routesDir.replaceAll('\\', '/')}/**/+server.ts`;
+  const legacyIndex = lines.findIndex(
+    (line, index) =>
+      line === LEGACY_GITIGNORE_HEADER && lines[index + 1] === legacyPattern,
+  );
+  if (legacyIndex !== -1) {
+    lines.splice(legacyIndex, 2);
   }
+
+  if (generatedPaths.length === 0) {
+    return lines.join('\n');
+  }
+
+  let updatedContent = lines.join('\n');
+  if (updatedContent.length > 0 && !updatedContent.endsWith('\n')) {
+    updatedContent += '\n';
+  }
+  if (updatedContent.length > 0 && !updatedContent.endsWith('\n\n')) {
+    updatedContent += '\n';
+  }
+
+  return `${updatedContent}${managedBlock.join('\n')}\n`;
 }
