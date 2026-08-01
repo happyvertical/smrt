@@ -64,4 +64,7 @@ routes. Use `resolvePrincipal` when your app stores a human or scoped-service
 principal elsewhere; `resolveUser` remains a legacy compatibility alias.
 `resolveAuthenticated` is also retained as a deprecated legacy gate; when a
 new `resolvePrincipal` is not supplied, it makes that same route principal
-unauthenticated for both discovery and calls.
+unauthenticated for both discovery and calls. If an older mount supplies only
+`resolveAuthenticated: () => true` and no principal, discovery keeps its old
+boolean behavior while calls remain user-less as before; migrate that mount to
+`resolvePrincipal` for one identity across both routes.

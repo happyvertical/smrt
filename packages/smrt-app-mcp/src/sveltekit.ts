@@ -26,6 +26,12 @@ type SvelteKitRequestEvent = {
 
 type SvelteKitHandler = (event: SvelteKitRequestEvent) => Promise<Response>;
 
+type ResolvedRequestPrincipal = {
+  principal: McpAppPrincipal | null;
+  /** Defined only for the legacy discovery-only authentication adapter. */
+  legacyAuthenticated?: boolean;
+};
+
 /** Locals reader used to pull the request principal out of `event.locals`. */
 export type McpPrincipalResolver = (
   event: SvelteKitRequestEvent,
@@ -40,7 +46,7 @@ const defaultResolvePrincipal: McpPrincipalResolver = (event) =>
 function resolveRequestPrincipal(
   event: SvelteKitRequestEvent,
   options: MountMcpRouteOptions,
-): McpAppPrincipal | null {
+): ResolvedRequestPrincipal {
   const resolvePrincipal =
     options.resolvePrincipal ?? options.resolveUser ?? defaultResolvePrincipal;
   const principal = resolvePrincipal(event) ?? null;
@@ -51,9 +57,25 @@ function resolveRequestPrincipal(
     options.resolveAuthenticated &&
     !options.resolveAuthenticated(event)
   ) {
-    return null;
+    return { principal: null, legacyAuthenticated: false };
   }
-  return principal;
+  return {
+    principal,
+    ...(options.resolvePrincipal || !options.resolveAuthenticated
+      ? {}
+      : { legacyAuthenticated: true }),
+  };
+}
+
+function listToolsInput(resolved: ResolvedRequestPrincipal) {
+  // Before principal-aware routes, `resolveAuthenticated` affected discovery
+  // independently of `resolveUser`. Preserve a true legacy result only when
+  // there is no principal to pass; new routes should use `resolvePrincipal`
+  // for a single identity on both discovery and calls.
+  if (!resolved.principal && resolved.legacyAuthenticated) {
+    return { authenticated: true };
+  }
+  return { principal: resolved.principal };
 }
 
 /** Options shared by both route mounts. */
@@ -84,9 +106,9 @@ export function mountMcpToolsRoute(
 ): SvelteKitHandler {
   return async (event) => {
     try {
-      const tools = await server.listTools({
-        principal: resolveRequestPrincipal(event, options),
-      });
+      const tools = await server.listTools(
+        listToolsInput(resolveRequestPrincipal(event, options)),
+      );
       return jsonResponse({ tools });
     } catch (error) {
       if (error instanceof McpAccessError) {
@@ -118,7 +140,7 @@ export function mountMcpCallRoute(
     const input: CallToolInput = {
       arguments: body.arguments ?? {},
       name: body.name,
-      principal: resolveRequestPrincipal(event, options),
+      principal: resolveRequestPrincipal(event, options).principal,
     };
 
     try {

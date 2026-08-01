@@ -99,6 +99,36 @@ describe('mountMcpToolsRoute', () => {
     expect(calledPrincipal).toBeNull();
   });
 
+  it('preserves a positive legacy discovery marker when no principal is available', async () => {
+    let discoveryInput: unknown;
+    let callInput: unknown;
+    const server = makeServer({
+      listTools: async (input) => {
+        discoveryInput = input;
+        return [];
+      },
+      callTool: async (input) => {
+        callInput = input;
+        return { content: [] };
+      },
+    });
+    const options = {
+      resolveAuthenticated: () => true,
+      resolveUser: () => null,
+    };
+
+    await mountMcpToolsRoute(server, options)(makeEvent({}));
+    await mountMcpCallRoute(
+      server,
+      options,
+    )(makeEvent({ body: { name: 'x' } }));
+
+    // This was the previous tools-route input. Calls remain user-less, as
+    // before; apps should migrate to resolvePrincipal for shared identity.
+    expect(discoveryInput).toEqual({ authenticated: true });
+    expect(callInput).toEqual({ arguments: {}, name: 'x', principal: null });
+  });
+
   it('maps McpAccessError onto the right status code', async () => {
     const server = makeServer({
       listTools: async () => {

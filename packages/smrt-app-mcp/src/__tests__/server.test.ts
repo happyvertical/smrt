@@ -265,20 +265,26 @@ describe('createMcpAppServer', () => {
   });
 
   it('reads public patterns lazily so env stubbing in tests works', async () => {
-    generateToolsMock.mockResolvedValue([tool('opportunity_list')]);
+    generateToolsMock.mockResolvedValue([
+      tool('opportunity_list'),
+      tool('opportunity_get'),
+    ]);
     const patternRef = { value: [] as string[] };
+    const publicToolPatterns = vi.fn(() => patternRef.value);
     const server = createMcpAppServer({
       smrtOptions: () => ({}),
       serverInfo: { name: 'app', version: '0.1.0' },
       allowedClassNames: ['Opportunity'],
-      publicToolPatterns: () => patternRef.value,
+      publicToolPatterns,
     });
 
     expect((await server.listTools({ authenticated: false })).length).toBe(0);
+    expect(publicToolPatterns).toHaveBeenCalledTimes(1);
 
     patternRef.value = ['opportunity_*'];
     expect(
       (await server.listTools({ authenticated: false })).map((t) => t.name),
-    ).toEqual(['opportunity_list']);
+    ).toEqual(['opportunity_list', 'opportunity_get']);
+    expect(publicToolPatterns).toHaveBeenCalledTimes(2);
   });
 });

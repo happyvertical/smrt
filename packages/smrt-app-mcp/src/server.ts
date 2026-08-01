@@ -203,10 +203,10 @@ export function createMcpAppServer(
   function passesBasePolicy(
     tool: MCPTool,
     principal: McpAppPrincipal | null,
+    publicPatterns?: readonly string[],
   ): boolean {
-    return (
-      Boolean(principal) || isPublicToolName(tool.name, getPublicPatterns())
-    );
+    if (principal) return true;
+    return isPublicToolName(tool.name, publicPatterns ?? []);
   }
 
   async function passesToolPolicy(
@@ -225,9 +225,13 @@ export function createMcpAppServer(
   async function listTools(input: ListToolsInput): Promise<MCPTool[]> {
     const principal = principalForList(input);
     const tools = await allowedTools();
+    // Keep the lazy thunk per request, not per tool. Besides avoiding repeated
+    // work, this gives one consistent public surface when a thunk reads a
+    // dynamic source such as an environment-backed configuration.
+    const publicPatterns = principal ? undefined : getPublicPatterns();
     const visible = await Promise.all(
       tools.map(async (tool) => {
-        if (!passesBasePolicy(tool, principal)) return false;
+        if (!passesBasePolicy(tool, principal, publicPatterns)) return false;
         return passesToolPolicy(tool, principal);
       }),
     );
@@ -243,7 +247,8 @@ export function createMcpAppServer(
       throw new McpAccessError(404, `Unknown MCP tool: ${input.name}`);
     }
 
-    if (!passesBasePolicy(tool, principal)) {
+    const publicPatterns = principal ? undefined : getPublicPatterns();
+    if (!passesBasePolicy(tool, principal, publicPatterns)) {
       throw new McpAccessError(
         401,
         `Authentication is required for MCP tool: ${input.name}`,
