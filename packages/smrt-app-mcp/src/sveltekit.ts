@@ -15,7 +15,7 @@
  */
 
 import { McpAccessError } from './errors.js';
-import type { CallToolInput, McpAppServer, McpAppUser } from './server.js';
+import type { CallToolInput, McpAppPrincipal, McpAppServer } from './server.js';
 
 /** Minimal subset of a SvelteKit RequestEvent we actually touch. */
 type SvelteKitRequestEvent = {
@@ -26,27 +26,50 @@ type SvelteKitRequestEvent = {
 
 type SvelteKitHandler = (event: SvelteKitRequestEvent) => Promise<Response>;
 
-/** Locals reader used to pull the authenticated user out of `event.locals`. */
-export type McpUserResolver = (
+/** Locals reader used to pull the request principal out of `event.locals`. */
+export type McpPrincipalResolver = (
   event: SvelteKitRequestEvent,
-) => McpAppUser | null | undefined;
+) => McpAppPrincipal | null | undefined;
 
-const defaultResolveUser: McpUserResolver = (event) =>
-  (event.locals?.user ?? null) as McpAppUser | null;
+/** Backwards-compatible alias for callers that name the principal a user. */
+export type McpUserResolver = McpPrincipalResolver;
 
-const defaultResolveAuthenticated = (event: SvelteKitRequestEvent): boolean =>
-  Boolean(event.locals?.user);
+const defaultResolvePrincipal: McpPrincipalResolver = (event) =>
+  (event.locals?.user ?? null) as McpAppPrincipal | null;
+
+function resolveRequestPrincipal(
+  event: SvelteKitRequestEvent,
+  options: MountMcpRouteOptions,
+): McpAppPrincipal | null {
+  const resolvePrincipal =
+    options.resolvePrincipal ?? options.resolveUser ?? defaultResolvePrincipal;
+  const principal = resolvePrincipal(event) ?? null;
+  // Keep the legacy boolean gate for existing apps, but apply it to the same
+  // principal that both routes receive. A new principal resolver supersedes it.
+  if (
+    !options.resolvePrincipal &&
+    options.resolveAuthenticated &&
+    !options.resolveAuthenticated(event)
+  ) {
+    return null;
+  }
+  return principal;
+}
 
 /** Options shared by both route mounts. */
 export interface MountMcpRouteOptions {
   /**
-   * Resolve the authenticated user from `event.locals`. Defaults to
-   * `event.locals.user`.
+   * Resolve the request principal once for both discovery and direct calls.
+   * Defaults to `event.locals.user`.
+   */
+  resolvePrincipal?: McpPrincipalResolver;
+  /**
+   * Backwards-compatible alias for `resolvePrincipal`.
    */
   resolveUser?: McpUserResolver;
   /**
-   * Resolve whether the request is authenticated. Defaults to
-   * `Boolean(event.locals.user)`.
+   * Deprecated legacy authentication gate. When `resolvePrincipal` is not
+   * supplied, a false result makes the principal null for both routes.
    */
   resolveAuthenticated?: (event: SvelteKitRequestEvent) => boolean;
 }
@@ -59,18 +82,15 @@ export function mountMcpToolsRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
 ): SvelteKitHandler {
-  const resolveAuthenticated =
-    options.resolveAuthenticated ?? defaultResolveAuthenticated;
-
   return async (event) => {
     try {
       const tools = await server.listTools({
-        authenticated: resolveAuthenticated(event),
+        principal: resolveRequestPrincipal(event, options),
       });
       return jsonResponse({ tools });
     } catch (error) {
       if (error instanceof McpAccessError) {
-        return jsonResponse({ error: error.message }, error.status);
+        return jsonResponse(mcpAccessErrorBody(error), error.status);
       }
       throw error;
     }
@@ -85,8 +105,6 @@ export function mountMcpCallRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
 ): SvelteKitHandler {
-  const resolveUser = options.resolveUser ?? defaultResolveUser;
-
   return async (event) => {
     const body = (await event.request.json().catch(() => null)) as {
       arguments?: Record<string, unknown>;
@@ -100,17 +118,33 @@ export function mountMcpCallRoute(
     const input: CallToolInput = {
       arguments: body.arguments ?? {},
       name: body.name,
-      user: resolveUser(event) ?? null,
+      principal: resolveRequestPrincipal(event, options),
     };
 
     try {
       return jsonResponse(await server.callTool(input));
     } catch (error) {
       if (error instanceof McpAccessError) {
-        return jsonResponse({ error: error.message }, error.status);
+        return jsonResponse(mcpAccessErrorBody(error), error.status);
       }
       throw error;
     }
+  };
+}
+
+function mcpAccessErrorBody(error: McpAccessError): unknown {
+  const { code, retryable } = error.metadata;
+  // Preserve the legacy shape unless an error deliberately opts into the
+  // shared structured failure contract.
+  if (!code) return { error: error.message };
+  return {
+    error: {
+      ok: false,
+      code,
+      message: error.message,
+      status: error.status,
+      ...(retryable === undefined ? {} : { retryable }),
+    },
   };
 }
 
@@ -122,4 +156,4 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 export { McpAccessError } from './errors.js';
-export type { McpAppServer } from './server.js';
+export type { McpAppPrincipal, McpAppServer } from './server.js';

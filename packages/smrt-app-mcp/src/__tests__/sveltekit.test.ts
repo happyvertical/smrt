@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { McpAccessError } from '../errors.js';
+import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from '../errors.js';
 import type { McpAppServer } from '../server.js';
 import { mountMcpCallRoute, mountMcpToolsRoute } from '../sveltekit.js';
 
@@ -37,11 +37,11 @@ function makeServer(overrides: Partial<McpAppServer> = {}): McpAppServer {
 }
 
 describe('mountMcpToolsRoute', () => {
-  it('returns the wrapped tools shape and honours resolveAuthenticated', async () => {
-    let received: boolean | null = null;
+  it('returns the wrapped tools shape and resolves a principal', async () => {
+    let received: unknown = null;
     const server = makeServer({
-      listTools: async ({ authenticated }) => {
-        received = authenticated;
+      listTools: async ({ principal }) => {
+        received = principal;
         return [
           {
             name: 'a',
@@ -52,11 +52,13 @@ describe('mountMcpToolsRoute', () => {
       },
     });
     const handler = mountMcpToolsRoute(server, {
-      resolveAuthenticated: (event) => event.locals?.flag === true,
+      resolvePrincipal: (event) =>
+        event.locals?.principal as { id: string; kind: string },
     });
-    const response = await handler(makeEvent({ locals: { flag: true } }));
+    const principal = { id: 'service-1', kind: 'service' };
+    const response = await handler(makeEvent({ locals: { principal } }));
     expect(response.status).toBe(200);
-    expect(received).toBe(true);
+    expect(received).toBe(principal);
     expect(await response.json()).toEqual({
       tools: [
         {
@@ -66,6 +68,35 @@ describe('mountMcpToolsRoute', () => {
         },
       ],
     });
+  });
+
+  it('keeps the legacy authentication gate without splitting route principals', async () => {
+    let discoveredPrincipal: unknown;
+    let calledPrincipal: unknown;
+    const principal = { id: 'u-1', kind: 'human' };
+    const server = makeServer({
+      listTools: async ({ principal: received }) => {
+        discoveredPrincipal = received;
+        return [];
+      },
+      callTool: async ({ principal: received }) => {
+        calledPrincipal = received;
+        return { content: [] };
+      },
+    });
+    const options = {
+      resolveAuthenticated: () => false,
+      resolveUser: () => principal,
+    };
+
+    await mountMcpToolsRoute(server, options)(makeEvent({}));
+    await mountMcpCallRoute(
+      server,
+      options,
+    )(makeEvent({ body: { name: 'x' } }));
+
+    expect(discoveredPrincipal).toBeNull();
+    expect(calledPrincipal).toBeNull();
   });
 
   it('maps McpAccessError onto the right status code', async () => {
@@ -106,8 +137,40 @@ describe('mountMcpCallRoute', () => {
     expect(received).toEqual({
       arguments: { foo: 1 },
       name: 'x',
-      user: { id: 'u-1' },
+      principal: { id: 'u-1' },
     });
+  });
+
+  it('uses the same resolved principal shape for discovery and direct calls', async () => {
+    let discoveredPrincipal: unknown = null;
+    let calledPrincipal: unknown = null;
+    const principal = {
+      id: 'service-1',
+      kind: 'service',
+      scopes: ['mcp:opportunities:write'],
+    };
+    const server = makeServer({
+      listTools: async ({ principal: received }) => {
+        discoveredPrincipal = received;
+        return [];
+      },
+      callTool: async ({ principal: received }) => {
+        calledPrincipal = received;
+        return { content: [] };
+      },
+    });
+    const options = {
+      resolvePrincipal: () => principal,
+    };
+
+    await mountMcpToolsRoute(server, options)(makeEvent({}));
+    await mountMcpCallRoute(
+      server,
+      options,
+    )(makeEvent({ body: { name: 'x' } }));
+
+    expect(discoveredPrincipal).toBe(principal);
+    expect(calledPrincipal).toBe(principal);
   });
 
   it('translates McpAccessError thrown from callTool', async () => {
@@ -121,5 +184,30 @@ describe('mountMcpCallRoute', () => {
     );
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'auth required' });
+  });
+
+  it('returns the shared safe failure envelope for policy denials', async () => {
+    const server = makeServer({
+      callTool: async () => {
+        throw new McpAccessError(403, 'MCP tool access is not permitted.', {
+          code: MCP_TOOL_ACCESS_DENIED_CODE,
+          retryable: false,
+        });
+      },
+    });
+
+    const response = await mountMcpCallRoute(server)(
+      makeEvent({ body: { name: 'x' } }),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: {
+        ok: false,
+        code: MCP_TOOL_ACCESS_DENIED_CODE,
+        message: 'MCP tool access is not permitted.',
+        status: 403,
+        retryable: false,
+      },
+    });
   });
 });

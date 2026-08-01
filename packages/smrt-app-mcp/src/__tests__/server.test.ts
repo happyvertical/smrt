@@ -5,8 +5,8 @@
  * workflow-assertion paths in isolation.
  */
 
-import { describe, expect, it, vi } from 'vitest';
-import { McpAccessError } from '../errors.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from '../errors.js';
 import { createMcpAppServer } from '../server.js';
 
 const generateToolsMock = vi.fn();
@@ -33,6 +33,11 @@ function tool(name: string) {
 }
 
 describe('createMcpAppServer', () => {
+  beforeEach(() => {
+    generateToolsMock.mockReset();
+    handleToolCallMock.mockReset();
+  });
+
   it('filters tools to the allow-listed class prefixes', async () => {
     generateToolsMock.mockResolvedValue([
       tool('opportunity_list'),
@@ -73,6 +78,69 @@ describe('createMcpAppServer', () => {
     ]);
   });
 
+  it('applies one principal policy to unauthenticated, human, and scoped-service discovery', async () => {
+    generateToolsMock.mockResolvedValue([
+      tool('opportunity_get'),
+      tool('opportunity_create'),
+    ]);
+    const policyCalls = vi.fn(({ tool: candidate, principal }) => {
+      if (!principal) return candidate.name === 'opportunity_get';
+      if (principal.kind === 'human') {
+        return principal.roles?.includes('operator') ?? false;
+      }
+      return (
+        principal.kind === 'service' &&
+        principal.scopes?.includes('mcp:opportunities:write') === true
+      );
+    });
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+      publicToolPatterns: () => ['opportunity_get'],
+      toolPolicy: policyCalls,
+    });
+
+    await expect(server.listTools({ principal: null })).resolves.toMatchObject([
+      { name: 'opportunity_get' },
+    ]);
+    await expect(
+      server.listTools({
+        principal: { id: 'human-1', kind: 'human', roles: ['operator'] },
+      }),
+    ).resolves.toMatchObject([
+      { name: 'opportunity_get' },
+      { name: 'opportunity_create' },
+    ]);
+    await expect(
+      server.listTools({
+        principal: {
+          id: 'service-1',
+          kind: 'service',
+          scopes: ['mcp:opportunities:read'],
+        },
+      }),
+    ).resolves.toMatchObject([]);
+    await expect(
+      server.listTools({
+        principal: {
+          id: 'service-2',
+          kind: 'service',
+          scopes: ['mcp:opportunities:write'],
+        },
+      }),
+    ).resolves.toMatchObject([
+      { name: 'opportunity_get' },
+      { name: 'opportunity_create' },
+    ]);
+    expect(policyCalls).toHaveBeenCalledWith(
+      expect.objectContaining({
+        principal: null,
+        tool: expect.objectContaining({ name: 'opportunity_get' }),
+      }),
+    );
+  });
+
   it('rejects calls to tools outside the allow-list with 404', async () => {
     generateToolsMock.mockResolvedValue([tool('opportunity_list')]);
     const server = createMcpAppServer({
@@ -99,6 +167,57 @@ describe('createMcpAppServer', () => {
     await expect(
       server.callTool({ name: 'opportunity_create', user: null }),
     ).rejects.toBeInstanceOf(McpAccessError);
+  });
+
+  it('denies a direct call hidden by the principal policy without dispatching it', async () => {
+    generateToolsMock.mockResolvedValue([tool('opportunity_create')]);
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+      toolPolicy: ({ principal }) =>
+        principal?.kind === 'service' &&
+        principal.scopes?.includes('mcp:opportunities:write') === true,
+    });
+
+    await expect(
+      server.callTool({
+        name: 'opportunity_create',
+        principal: {
+          id: 'service-1',
+          kind: 'service',
+          scopes: ['mcp:opportunities:read'],
+        },
+      }),
+    ).rejects.toMatchObject({
+      metadata: {
+        code: MCP_TOOL_ACCESS_DENIED_CODE,
+        retryable: false,
+      },
+      status: 403,
+    });
+    expect(handleToolCallMock).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without exposing a thrown policy error', async () => {
+    generateToolsMock.mockResolvedValue([tool('opportunity_get')]);
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+      publicToolPatterns: () => ['opportunity_get'],
+      toolPolicy: () => {
+        throw new Error('service credential was unavailable');
+      },
+    });
+
+    await expect(
+      server.callTool({ name: 'opportunity_get', principal: null }),
+    ).rejects.toMatchObject({
+      message: 'MCP tool access is not permitted.',
+      metadata: { code: MCP_TOOL_ACCESS_DENIED_CODE, retryable: false },
+      status: 403,
+    });
   });
 
   it('runs workflow assertions and lets them inject server-trusted args', async () => {
