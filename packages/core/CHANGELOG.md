@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.40.44
+
+### Patch Changes
+
+- ### Features
+
+  - add per-field ui metadata channel and widen client emission (#2046) (#2153) (core)
+
+  ### Bug Fixes
+
+  - narrow SvelteKit generated route ignores (#2188) (core)
+  - @happyvertical/smrt-config@0.40.44
+  - @happyvertical/smrt-types@0.40.44
+  - @happyvertical/smrt-scanner@0.40.44
+
+## 0.40.43
+
+### Patch Changes
+
+- ### Features
+
+  - add tenant-safe lead follow-up workflow (#2131) (sales)
+  - @happyvertical/smrt-config@0.40.43
+  - @happyvertical/smrt-types@0.40.43
+  - @happyvertical/smrt-scanner@0.40.43
+
 ## 0.40.42
 
 ### Patch Changes

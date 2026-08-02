@@ -98,6 +98,30 @@ pnpm smrt db:migrate
 Runtime verifies application tables but does not create them. Rebuild the
 manifest and rerun the migration after changing persisted object fields.
 
+### Generated SvelteKit routes
+
+Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its
+default output directory is `src/routes/api`; set `svelteKit.routesDir` when
+your application uses a different route root.
+
+The plugin records only the concrete `+server.ts` files it generated in a
+bounded `.gitignore` block. Handwritten handlers below `routesDir` remain
+visible to Git, including routes that live beside generated resource handlers.
+Generation refreshes that block, so stale generated paths stop being ignored
+when the generator no longer owns them.
+
+**Migration note:** the first generation after this release replaces the
+legacy adjacent pair below with the bounded exact-path block:
+
+```gitignore
+# SMRT auto-generated routes (from Vite plugin)
+src/routes/api/**/+server.ts
+```
+
+Only that recognized SMRT pair is migrated. A broad rule that you added or
+moved yourself is left unchanged; remove or narrow it manually if it hides a
+handwritten route.
+
 ### AI operations
 
 With an AI provider configured, every object can use the inherited `is()` and

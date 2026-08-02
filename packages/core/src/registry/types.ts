@@ -696,6 +696,12 @@ export interface SmartObjectConfig {
      * (e.g. `Article` → "Articles"). Leave undefined to use the default.
      */
     label?: string;
+    /**
+     * Object-level description for human surfaces (#2046): the seed for
+     * form-level help in the field-policy rail (epic #2045). Round-trips
+     * through the manifest as plain data like `icon`/`label`.
+     */
+    description?: string;
   };
 
   /**

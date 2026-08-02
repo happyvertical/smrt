@@ -1,5 +1,31 @@
 # @happyvertical/smrt-social
 
+## 0.40.44
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.44
+  - @happyvertical/smrt-content@0.40.44
+  - @happyvertical/smrt-secrets@0.40.44
+  - @happyvertical/smrt-tenancy@0.40.44
+  - @happyvertical/smrt-video@0.40.44
+  - @happyvertical/smrt-config@0.40.44
+  - @happyvertical/smrt-ui@0.40.44
+
+## 0.40.43
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.43
+  - @happyvertical/smrt-content@0.40.43
+  - @happyvertical/smrt-secrets@0.40.43
+  - @happyvertical/smrt-tenancy@0.40.43
+  - @happyvertical/smrt-video@0.40.43
+  - @happyvertical/smrt-config@0.40.43
+  - @happyvertical/smrt-ui@0.40.43
+
 ## 0.40.42
 
 ### Patch Changes

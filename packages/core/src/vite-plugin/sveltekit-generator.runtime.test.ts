@@ -1,4 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -68,6 +75,24 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
   );
 }
 
+function isIgnoredByGit(projectRoot: string, relativePath: string): boolean {
+  const result = spawnSync(
+    'git',
+    ['check-ignore', '--no-index', '--quiet', relativePath],
+    { cwd: projectRoot },
+  );
+  if (result.error) throw result.error;
+  return result.status === 0;
+}
+
+function initializeGitRepository(projectRoot: string): void {
+  const result = spawnSync('git', ['init', '--quiet'], { cwd: projectRoot });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`git init failed with status ${result.status}`);
+  }
+}
+
 describe('generated SvelteKit helper runtime', () => {
   const originalScopedDbGetter = globalThis.__smrtGetRequestScopedDatabase;
   let projectRoot = '';
@@ -97,6 +122,7 @@ describe('generated SvelteKit helper runtime', () => {
       'export class Widget {}\n',
     );
     writeWorkspaceCoreShim(projectRoot);
+    initializeGitRepository(projectRoot);
   });
 
   afterEach(() => {
@@ -187,5 +213,106 @@ describe('generated SvelteKit helper runtime', () => {
         }),
       ],
     ]);
+  });
+
+  it('migrates the default route directory without ignoring handwritten handlers', async () => {
+    const handwrittenRoute = join(
+      projectRoot,
+      'src/routes/api/_resources/+server.ts',
+    );
+    mkdirSync(join(projectRoot, 'src/routes/api/_resources'), {
+      recursive: true,
+    });
+    writeFileSync(
+      handwrittenRoute,
+      'export const GET = () => new Response("handwritten");\n',
+    );
+    writeFileSync(
+      join(projectRoot, '.gitignore'),
+      [
+        'node_modules/',
+        '# SMRT auto-generated routes (from Vite plugin)',
+        'src/routes/api/**/+server.ts',
+        '# Application-owned output',
+        'coverage/',
+        '',
+      ].join('\n'),
+    );
+
+    const manifest = createManifest(
+      projectRoot,
+      join(projectRoot, 'src/lib/objects/Widget.ts'),
+    );
+    const options = {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    };
+
+    await generateSvelteKitRoutes(projectRoot, manifest, options);
+    await generateSvelteKitRoutes(projectRoot, manifest, options);
+
+    const gitignore = readFileSync(join(projectRoot, '.gitignore'), 'utf-8');
+    const generatedCollectionRoute = 'src/routes/api/widgets/+server.ts';
+    expect(gitignore).toContain('# Application-owned output');
+    expect(gitignore).toContain('coverage/');
+    expect(gitignore).toContain(generatedCollectionRoute);
+    expect(gitignore).toContain('src/routes/api/widgets/\\[id\\]/+server.ts');
+    expect(gitignore).not.toContain('src/routes/api/**/+server.ts');
+    expect(readFileSync(handwrittenRoute, 'utf-8')).toContain('handwritten');
+    expect(
+      readFileSync(join(projectRoot, generatedCollectionRoute), 'utf-8'),
+    ).toContain('export const GET');
+    expect(isIgnoredByGit(projectRoot, generatedCollectionRoute)).toBe(true);
+    expect(
+      isIgnoredByGit(projectRoot, 'src/routes/api/widgets/[id]/+server.ts'),
+    ).toBe(true);
+    expect(
+      isIgnoredByGit(projectRoot, 'src/routes/api/_resources/+server.ts'),
+    ).toBe(false);
+  });
+
+  it('uses the configured routesDir for exact generated ignores', async () => {
+    const handwrittenRoute = join(
+      projectRoot,
+      'src/routes/generated-api/manual/+server.ts',
+    );
+    mkdirSync(join(projectRoot, 'src/routes/generated-api/manual'), {
+      recursive: true,
+    });
+    writeFileSync(
+      handwrittenRoute,
+      'export const GET = () => new Response("manual");\n',
+    );
+
+    await generateSvelteKitRoutes(
+      projectRoot,
+      createManifest(
+        projectRoot,
+        join(projectRoot, 'src/lib/objects/Widget.ts'),
+      ),
+      {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/generated-api',
+      },
+    );
+
+    const gitignore = readFileSync(join(projectRoot, '.gitignore'), 'utf-8');
+    expect(gitignore).toContain('src/routes/generated-api/widgets/+server.ts');
+    expect(gitignore).not.toContain('src/routes/api/**/+server.ts');
+    expect(
+      isIgnoredByGit(
+        projectRoot,
+        'src/routes/generated-api/widgets/+server.ts',
+      ),
+    ).toBe(true);
+    expect(
+      isIgnoredByGit(projectRoot, 'src/routes/generated-api/manual/+server.ts'),
+    ).toBe(false);
   });
 });

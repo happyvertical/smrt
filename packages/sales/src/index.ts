@@ -7,8 +7,8 @@
  * - `agreements` (`@happyvertical/smrt-sales/agreements`): provider-neutral
  *   e-signature lifecycle, verified events, and immutable executed evidence.
  * - `crm` (`@happyvertical/smrt-sales/crm`): Leads, Opportunities,
- *   configurable Pipelines, sales activity, ownership, and idempotent
- *   conversion links.
+ *   configurable Pipelines, tenant-safe Lead follow-up, sales activity,
+ *   ownership, and idempotent conversion links.
  * - `referrals` (`@happyvertical/smrt-sales/referrals`): Referrers, Referral
  *   Programs, links/codes, attribution evidence, versioned attribution
  *   policies, referral agreements, and qualification term snapshots.

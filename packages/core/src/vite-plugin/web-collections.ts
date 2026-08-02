@@ -11,7 +11,11 @@
  *  - the physical `@smrt/web` d.ts (prebuild, for `tsc`-only consumers)
  *
  * All three import {@link selectWebCollectionEntries} from here so the value
- * emission and the type emission can never disagree. The per-collection SHAPE
+ * emission and the type emission can never disagree. A fourth, hand-written
+ * mirror of the field/collection definition types lives in
+ * `@happyvertical/smrt-web` (`packages/smrt-web/src/index.ts`) — that package
+ * is deliberately smrt-dependency-free, so its copy cannot import these types;
+ * keep it textually in sync when the shape here changes. The per-collection SHAPE
  * (name/className/endpoint/idField/actions/fields/relationships) is built by the
  * ONE {@link buildWebCollectionDefinition}, shared by the runtime emission AND
  * the #1764 {@link computeWebManifestHash} shape digest — so the emitted shape
@@ -27,6 +31,7 @@ import {
 } from '../generators/tool-schema.js';
 import type {
   FieldDefinition,
+  FieldUIHints,
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
@@ -54,11 +59,35 @@ const RELATIONSHIP_EDGE_TYPES: ReadonlySet<FieldDefinition['type']> = new Set([
   'manyToMany',
 ]);
 
+/**
+ * The field types that actually reach an emitted web collection definition:
+ * everything {@link buildWebFieldDefinitions} does not skip. Relationship
+ * pseudo-columns (`oneToMany`/`manyToMany`) and STI `meta` internals never
+ * appear on the wire, so they are excluded from the union — keeping the
+ * declared type honest about what a client can observe. Co-managed with the
+ * `SmrtWebFieldType` unions in the ambient `@happyvertical/smrt-virt-web`
+ * d.ts, the physical `@smrt/web` d.ts, and the hand-written
+ * `@happyvertical/smrt-web` mirror.
+ */
+export type WebFieldType = Exclude<
+  FieldDefinition['type'],
+  'meta' | 'oneToMany' | 'manyToMany'
+>;
+
 /** Informational per-column metadata carried by a collection definition. */
 export interface WebFieldDefinition {
-  type: FieldDefinition['type'];
+  type: WebFieldType;
   required?: boolean;
   default?: unknown;
+  /**
+   * The developer-authored `@field({ description })` (#2046) — the same text
+   * that feeds OpenAPI and MCP schemas, now available to browser UIs as the
+   * seed for end-user field help. Sensitive/transient fields are excluded
+   * from emission entirely, so their descriptions never ship to the client.
+   */
+  description?: string;
+  /** Static `@field({ ui })` hints (#2046) — the field-policy rail seed. */
+  ui?: FieldUIHints;
 }
 
 /** The relationship kinds a web collection edge can describe. */
@@ -515,13 +544,61 @@ export function buildWebFieldDefinitions(
     if (field.type === 'meta') continue;
     if (field.transient) continue;
     if (field.sensitive) continue;
+    const ui = sanitizeFieldUIHints(field._meta?.ui);
+    // Scanner manifests expose `description` top-level; runtime-registry
+    // manifests (computeRuntimeWebManifestHash → registeredFieldsToManifest)
+    // keep it under `_meta` only. Read both so the build-time and runtime
+    // shape digests agree — otherwise every described field would latch a
+    // false `updateAvailable.contract` signal on APIGenerator SSE connects.
+    const description = readFieldDescription(field);
     fields[fieldName] = {
-      type: field.type,
+      // Safe: the three skips above are exactly the types WebFieldType excludes.
+      type: field.type as WebFieldType,
       ...(field.required !== undefined ? { required: field.required } : {}),
       ...(field.default !== undefined ? { default: field.default } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(ui ? { ui } : {}),
     };
   }
   return fields;
+}
+
+/** Top-level `description` with `_meta.description` fallback (see call site). */
+function readFieldDescription(field: FieldDefinition): string | undefined {
+  if (typeof field.description === 'string' && field.description !== '') {
+    return field.description;
+  }
+  const metaDescription = field._meta?.description;
+  if (typeof metaDescription === 'string' && metaDescription !== '') {
+    return metaDescription;
+  }
+  return undefined;
+}
+
+/**
+ * Narrow a manifest `_meta.ui` bag to the known {@link FieldUIHints} keys with
+ * per-key type guards. `_meta` is an open bag, so authored junk (wrong-typed
+ * values, arbitrary extra keys) must not reach the emitted client module — the
+ * emitted value also feeds the #1764 shape digest, so unknown unstable keys
+ * would churn the hash. Returns undefined when nothing valid remains, so
+ * hint-less fields emit no `ui` key at all (existing shapes stay byte-stable).
+ */
+function sanitizeFieldUIHints(value: unknown): FieldUIHints | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const ui: FieldUIHints = {
+    ...(typeof raw.basic === 'boolean' ? { basic: raw.basic } : {}),
+    ...(typeof raw.group === 'string' && raw.group !== ''
+      ? { group: raw.group }
+      : {}),
+    ...(typeof raw.order === 'number' && Number.isFinite(raw.order)
+      ? { order: raw.order }
+      : {}),
+    ...(typeof raw.locked === 'boolean' ? { locked: raw.locked } : {}),
+  };
+  return Object.keys(ui).length > 0 ? ui : undefined;
 }
 
 /**
@@ -613,6 +690,12 @@ export function buildWebToolDescriptors(
       type: def.type,
       ...(def.required !== undefined ? { required: def.required } : {}),
       ...(def.default !== undefined ? { default: def.default } : {}),
+      // #2046: the authored field description flows into the generated JSON
+      // Schema (`fieldTypeToJsonSchema` prefers it over the type-derived
+      // fallback), so browser-side WebMCP tools document their arguments.
+      ...(def.description !== undefined
+        ? { description: def.description }
+        : {}),
     }),
   );
   return buildToolDescriptors({

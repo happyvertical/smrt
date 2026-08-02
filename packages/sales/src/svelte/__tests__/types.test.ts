@@ -21,6 +21,7 @@ import {
   groupOpportunitiesByStage,
   isHttpUrl,
   isOverdue,
+  leadWorkflowActionsFor,
   openOpportunityCount,
   openPipelineTotals,
   payoutActionsFor,
@@ -159,6 +160,36 @@ describe('lead helpers', () => {
     expect(isOverdue(null, now)).toBe(false);
     expect(isOverdue(undefined, now)).toBe(false);
     expect(isOverdue('not-a-date', now)).toBe(false);
+  });
+
+  it('gates generic workflow callbacks without importing CRM models', () => {
+    expect(leadWorkflowActionsFor('new')).toMatchObject({
+      canAssign: true,
+      canStartWorking: true,
+      canDisqualify: true,
+      canRecordActivity: true,
+      canScheduleNextAction: true,
+      canCompleteNextAction: true,
+      canQualify: true,
+    });
+    expect(leadWorkflowActionsFor('disqualified')).toMatchObject({
+      canAssign: false,
+      canStartWorking: true,
+      canDisqualify: false,
+      canRecordActivity: false,
+      canScheduleNextAction: false,
+      canCompleteNextAction: false,
+      canQualify: false,
+    });
+    expect(leadWorkflowActionsFor('qualified')).toEqual({
+      canAssign: false,
+      canStartWorking: false,
+      canDisqualify: false,
+      canRecordActivity: false,
+      canScheduleNextAction: false,
+      canCompleteNextAction: false,
+      canQualify: false,
+    });
   });
 });
 

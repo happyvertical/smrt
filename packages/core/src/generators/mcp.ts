@@ -519,7 +519,11 @@ export class MCPGenerator {
         break;
       case 'foreignKey':
         schema.type = 'string';
-        schema.description = `ID of related ${field.related || 'object'}`;
+        // Lockstep with tool-schema.ts fieldTypeToJsonSchema: the generic
+        // relation hint is a fallback — an authored description wins (#2046).
+        if (!field._meta?.description) {
+          schema.description = `ID of related ${field.related || 'object'}`;
+        }
         break;
       default:
         schema.type = 'string';

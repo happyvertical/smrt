@@ -26,5 +26,30 @@ export { PipelineDefinition } from './models/PipelineDefinition.js';
 export { PipelineStage } from './models/PipelineStage.js';
 export { SalesActivity } from './models/SalesActivity.js';
 export { SalesRepresentative } from './models/SalesRepresentative.js';
+export type {
+  AssignLeadInput,
+  AssignLeadResult,
+  CompleteLeadNextActionInput,
+  CompleteLeadNextActionResult,
+  DisqualifyLeadInput,
+  GetLeadWorkStateInput,
+  LeadHumanActivityKind,
+  LeadWorkflowValidationReason,
+  LeadWorkQueueInput,
+  LeadWorkQueueProjection,
+  LeadWorkQueueState,
+  LeadWorkState,
+  RecordLeadActivityInput,
+  ScheduleLeadNextActionInput,
+  StartWorkingInput,
+} from './services/LeadWorkflowService.js';
+// Services
+export {
+  LEAD_HUMAN_ACTIVITY_KINDS,
+  LeadWorkflowService,
+  LeadWorkflowValidationError,
+  MAX_LEAD_WORKFLOW_TEXT_LENGTH,
+  projectLeadWorkQueue,
+} from './services/LeadWorkflowService.js';
 // Types, status unions, and operation contracts
 export * from './types.js';

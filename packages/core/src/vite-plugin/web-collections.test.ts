@@ -209,6 +209,35 @@ describe('buildWebToolDescriptors', () => {
     expect(create?.inputSchema.required).toContain('name');
   });
 
+  it('threads @field descriptions into the generated tool input schemas (#2046)', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: field({
+              type: 'text',
+              required: true,
+              description: 'Display name shown on invoices',
+            }),
+            price: field({ type: 'decimal' }),
+          },
+        }),
+      ),
+    )[0];
+    const create = buildWebToolDescriptors(entry).find(
+      (d) => d.action === 'create',
+    );
+    const props = (create?.inputSchema.properties ?? {}) as Record<
+      string,
+      { description?: string }
+    >;
+    expect(props.name?.description).toBe('Display name shown on invoices');
+    // No authored description → the type-derived fallback, not an empty string.
+    expect(props.price?.description).toBeTruthy();
+  });
+
   it('stays OUT of buildWebCollectionDefinition, so the #1764 shape digest never covers it', () => {
     const m = manifest(
       obj({
@@ -441,6 +470,126 @@ describe('buildWebFieldDefinitions', () => {
           _meta_type: field({ type: 'meta' }),
           computed: field({ type: 'text', transient: true }),
           apiKey: field({ type: 'text', sensitive: true }),
+        },
+      }),
+    );
+    expect(fields).toEqual({ name: { type: 'text' } });
+  });
+
+  it('carries @field description and _meta.ui hints through (#2046)', () => {
+    const fields = buildWebFieldDefinitions(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        fields: {
+          name: field({
+            type: 'text',
+            required: true,
+            description: 'Display name shown on invoices',
+            _meta: { ui: { basic: true, group: 'identity', order: 1 } },
+          }),
+          taxClass: field({
+            type: 'text',
+            _meta: { ui: { locked: true } },
+          }),
+          plain: field({ type: 'text' }),
+        },
+      }),
+    );
+    expect(fields).toEqual({
+      name: {
+        type: 'text',
+        required: true,
+        description: 'Display name shown on invoices',
+        ui: { basic: true, group: 'identity', order: 1 },
+      },
+      taxClass: { type: 'text', ui: { locked: true } },
+      plain: { type: 'text' },
+    });
+  });
+
+  it('falls back to _meta.description when the top-level key is absent (runtime-registry manifests)', () => {
+    // registeredFieldsToManifest (computeRuntimeWebManifestHash) hoists only
+    // `default` out of `_meta` — description stays nested. The emission must
+    // read both places or build-time and runtime shape digests diverge and
+    // smrt-web latches a false contract-update signal on SSE connect.
+    const fields = buildWebFieldDefinitions(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        fields: {
+          nested: field({
+            type: 'text',
+            _meta: { description: 'From runtime registration' },
+          }),
+          topWins: field({
+            type: 'text',
+            description: 'Top-level wins',
+            _meta: { description: 'Shadowed' },
+          }),
+          junk: field({ type: 'text', _meta: { description: 42 } }),
+        },
+      }),
+    );
+    expect(fields).toEqual({
+      nested: { type: 'text', description: 'From runtime registration' },
+      topWins: { type: 'text', description: 'Top-level wins' },
+      junk: { type: 'text' },
+    });
+  });
+
+  it('sanitizes _meta.ui: wrong-typed and unknown keys are dropped, empty bags emit no ui', () => {
+    const fields = buildWebFieldDefinitions(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        fields: {
+          a: field({
+            type: 'text',
+            // basic wrong type, order non-finite, group empty, junk extra key —
+            // only the valid `locked` survives.
+            _meta: {
+              ui: {
+                basic: 'yes',
+                order: Number.NaN,
+                group: '',
+                locked: false,
+                rogue: { deep: 'junk' },
+              },
+            },
+          }),
+          b: field({ type: 'text', _meta: { ui: { basic: 'yes' } } }),
+          c: field({ type: 'text', _meta: { ui: 'not-an-object' } }),
+          d: field({ type: 'text', _meta: { ui: ['array'] } }),
+        },
+      }),
+    );
+    expect(fields).toEqual({
+      a: { type: 'text', ui: { locked: false } },
+      b: { type: 'text' },
+      c: { type: 'text' },
+      d: { type: 'text' },
+    });
+  });
+
+  it('never leaks a sensitive or transient field even when it carries description/ui', () => {
+    const fields = buildWebFieldDefinitions(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        fields: {
+          name: field({ type: 'text' }),
+          apiKey: field({
+            type: 'text',
+            sensitive: true,
+            description: 'Secret integration key — must never ship',
+            _meta: { ui: { basic: true } },
+          }),
+          scratch: field({
+            type: 'text',
+            transient: true,
+            description: 'Computed only',
+          }),
         },
       }),
     );
@@ -744,6 +893,53 @@ describe('computeWebManifestHash (#1764)', () => {
       ),
     );
     expect(after).not.toBe(before);
+  });
+
+  it('CHANGES when a description or ui hint is added (#2046 — deliberate over-invalidation)', () => {
+    const bare = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: { name: field({ type: 'text' }) },
+        }),
+      ),
+    );
+    const withDescription = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: { name: field({ type: 'text', description: 'Shown name' }) },
+        }),
+      ),
+    );
+    const withUi = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: field({ type: 'text', _meta: { ui: { basic: true } } }),
+          },
+        }),
+      ),
+    );
+    expect(withDescription).not.toBe(bare);
+    expect(withUi).not.toBe(bare);
+    // Junk-only ui bags sanitize away, so they do NOT churn the hash.
+    const withJunkUi = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: field({ type: 'text', _meta: { ui: { rogue: 'junk' } } }),
+          },
+        }),
+      ),
+    );
+    expect(withJunkUi).toBe(bare);
   });
 
   it('CHANGES when a field type changes (a shape-only difference)', () => {

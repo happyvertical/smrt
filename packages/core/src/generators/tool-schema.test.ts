@@ -57,6 +57,19 @@ describe('fieldTypeToJsonSchema', () => {
     });
   });
 
+  it('keeps an authored description on a foreign key instead of the generic hint (#2046)', () => {
+    const schema = fieldTypeToJsonSchema({
+      name: 'categoryId',
+      type: 'foreignKey',
+      related: 'Category',
+      description: 'The catalogue category this product ships under',
+    });
+    expect(schema).toMatchObject({
+      type: 'string',
+      description: 'The catalogue category this product ships under',
+    });
+  });
+
   it('carries min/max and default through onto the schema', () => {
     const schema = fieldTypeToJsonSchema({
       name: 'stock',
