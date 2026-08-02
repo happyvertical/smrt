@@ -767,7 +767,11 @@ describe('OIDC Account Linking', () => {
     it.each([
       getOidcProvisioningDecisionScenario('duckdb-caller-owned-transaction'),
     ])('$id — $title (Profiles manual transaction)', async (scenario) => {
-      const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+      const db = await getDatabase({
+        type: 'duckdb',
+        url: ':memory:',
+        __smrtSkipVitestSchemaPreparation: true,
+      });
       await syncSchema({ db, schema: OIDC_PROFILES_DUCKDB_TEST_SCHEMA });
       const before = await profileMatrixRowCounts(db);
       if (!db.beginTransaction) {
@@ -811,7 +815,11 @@ describe('OIDC Account Linking', () => {
     it.each([
       getOidcProvisioningDecisionScenario('duckdb-caller-owned-transaction'),
     ])('$id — $title (Profiles callback transaction)', async (scenario) => {
-      const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+      const db = await getDatabase({
+        type: 'duckdb',
+        url: ':memory:',
+        __smrtSkipVitestSchemaPreparation: true,
+      });
       await syncSchema({ db, schema: OIDC_PROFILES_DUCKDB_TEST_SCHEMA });
       const before = await profileMatrixRowCounts(db);
       if (!db.transaction) {
@@ -1208,10 +1216,10 @@ async function profileMatrixIdentityBindings(
 async function profileMatrixRowCounts(
   db: DatabaseInterface,
 ): Promise<{ profile: number; oidcIdentity: number }> {
-  const [profile, oidcIdentity] = await Promise.all([
-    countRows(db, 'profiles'),
-    countRows(db, 'oidc_identities'),
-  ]);
+  // A caller-owned DuckDB transaction has one native connection. Keep the
+  // observation queries ordered so assertions do not contend with each other.
+  const profile = await countRows(db, 'profiles');
+  const oidcIdentity = await countRows(db, 'oidc_identities');
   return { profile, oidcIdentity };
 }
 
