@@ -22,16 +22,23 @@
  * @packageDocumentation
  */
 
-export { McpAccessError } from './errors.js';
+export {
+  MCP_TOOL_ACCESS_DENIED_CODE,
+  McpAccessError,
+  type McpAccessErrorMetadata,
+} from './errors.js';
 export {
   type CallToolInput,
   type CreateMcpAppServerOptions,
   createMcpAppServer,
   type ListToolsInput,
+  type McpAppPrincipal,
   type McpAppServer,
   type McpAppUser,
   type McpPublicToolPatternsThunk,
   type McpSmrtOptionsThunk,
+  type McpToolPolicy,
+  type McpToolPolicyContext,
   type McpWorkflowAssertion,
 } from './server.js';
 export {
