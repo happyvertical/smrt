@@ -1216,8 +1216,8 @@ async function profileMatrixIdentityBindings(
 async function profileMatrixRowCounts(
   db: DatabaseInterface,
 ): Promise<{ profile: number; oidcIdentity: number }> {
-  // A caller-owned DuckDB transaction has one native connection. Keep the
-  // observation queries ordered so assertions do not contend with each other.
+  // Caller-owned transactions share a connection. Keep observation queries
+  // ordered; DuckDB must not contend with its native connection.
   const profile = await countRows(db, 'profiles');
   const oidcIdentity = await countRows(db, 'oidc_identities');
   return { profile, oidcIdentity };

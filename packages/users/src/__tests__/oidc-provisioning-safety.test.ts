@@ -1776,8 +1776,8 @@ function assertSelectedProfile(options: {
 async function provisioningRowCounts(
   db: DatabaseInterface,
 ): Promise<ProvisioningRowCounts> {
-  // A caller-owned DuckDB transaction has one native connection. Keep the
-  // observation queries ordered so assertions do not contend with each other.
+  // Caller-owned transactions share a connection. Keep observation queries
+  // ordered; DuckDB must not contend with its native connection.
   const profile = await countRows(db, 'profiles');
   const oidcIdentity = await countRows(db, 'oidc_identities');
   const user = await countRows(db, 'users');
