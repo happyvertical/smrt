@@ -1,5 +1,13 @@
 # @happyvertical/smrt-inventory
 
+## 0.40.49
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.49
+  - @happyvertical/smrt-tenancy@0.40.49
+
 ## 0.40.48
 
 ### Patch Changes

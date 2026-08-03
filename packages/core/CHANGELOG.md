@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.49
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: unblock the merge queue and harden pipeline survivability (#2210)
+  - @happyvertical/smrt-config@0.40.49
+  - @happyvertical/smrt-types@0.40.49
+  - @happyvertical/smrt-scanner@0.40.49
+
 ## 0.40.48
 
 ### Patch Changes
