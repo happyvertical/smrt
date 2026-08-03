@@ -1,0 +1,60 @@
+name: Merge Queue Cleanup
+
+# GitHub keeps dispatching queued jobs for merge-group branches that the
+# queue has already deleted — on 2026-08-03, 25 of 103 self-hosted dispatches
+# went to dead gh-readonly-queue/* groups, starving live queue validations on
+# a 5-7 slot fleet. This sweep cancels every non-completed merge_group run
+# whose head branch no longer exists. It runs on branch deletion for
+# immediacy, on a schedule as the guarantee (bot-driven deletions do not
+# reliably trigger the delete event), and on manual dispatch.
+on:
+  delete:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  sweep:
+    name: Cancel runs of deleted merge-group branches
+    # For delete events, only branch deletions in the queue namespace are
+    # interesting; schedule and dispatch always sweep.
+    if: >-
+      github.event_name != 'delete' ||
+      (github.event.ref_type == 'branch' &&
+      startsWith(github.event.ref, 'gh-readonly-queue/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sweep dead merge-group runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          swept=0
+          for status in queued in_progress; do
+            ids=$(gh api "repos/$REPO/actions/runs?event=merge_group&status=$status&per_page=100" \
+              | jq -r '.workflow_runs[] | [.id, .head_branch] | @tsv')
+            [ -n "$ids" ] || continue
+            while IFS=$'\t' read -r rid branch; do
+              if [ -z "$rid" ] || [ -z "$branch" ]; then continue; fi
+              # URL-encode the branch name for the existence probe.
+              encoded=$(printf '%s' "$branch" | jq -sRr @uri)
+              if probe=$(gh api "repos/$REPO/branches/$encoded" 2>&1); then
+                continue  # branch alive: run is a live queue entry, leave it
+              fi
+              # Fail safe: only an explicit 404 marks the branch dead. A rate
+              # limit or transient error must never cancel a live run.
+              case "$probe" in
+                *"HTTP 404"*) ;;
+                *) echo "skipping run $rid: branch probe failed non-404"; continue ;;
+              esac
+              echo "cancelling $status run $rid for deleted branch $branch"
+              gh api -X POST "repos/$REPO/actions/runs/$rid/cancel" --silent || true
+              swept=$((swept + 1))
+            done <<< "$ids"
+          done
+          echo "swept $swept dead run(s)"
