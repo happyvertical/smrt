@@ -19,14 +19,14 @@ overrides:
   '@happyvertical/json': ^0.84.0
   '@happyvertical/logger': ^0.84.0
   '@happyvertical/messages': ^0.84.0
-  '@happyvertical/ocr': ^0.60.55
-  '@happyvertical/pdf': ^0.65.3
+  '@happyvertical/ocr': ^0.61.4
+  '@happyvertical/pdf': ^0.65.9
   '@happyvertical/projects': ^0.84.0
   '@happyvertical/repos': ^0.84.0
   '@happyvertical/secrets': ^0.84.0
   '@happyvertical/signatures': ^0.84.0
   '@happyvertical/speech': ^0.84.0
-  '@happyvertical/spider': ^1.1.10
+  '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.84.0
   '@happyvertical/utils': ^0.84.0
   '@grpc/grpc-js@>=1.14.0 <1.14.4': 1.14.4
@@ -128,14 +128,14 @@ catalog:
   '@happyvertical/json': ^0.84.0
   '@happyvertical/logger': ^0.84.0
   '@happyvertical/messages': ^0.84.0
-  '@happyvertical/ocr': ^0.60.55
-  '@happyvertical/pdf': ^0.65.3
+  '@happyvertical/ocr': ^0.61.4
+  '@happyvertical/pdf': ^0.65.9
   '@happyvertical/projects': ^0.84.0
   '@happyvertical/repos': ^0.84.0
   '@happyvertical/secrets': ^0.84.0
   '@happyvertical/signatures': ^0.84.0
   '@happyvertical/speech': ^0.84.0
-  '@happyvertical/spider': ^1.1.10
+  '@happyvertical/spider': ^1.1.13
   '@happyvertical/sql': ^0.84.0
   '@happyvertical/utils': ^0.84.0
   '@sentry/node': ^10.63.0
