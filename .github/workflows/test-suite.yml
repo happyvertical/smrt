@@ -23,7 +23,7 @@ jobs:
     name: Detect Affected Validation Scope
     if: inputs.mode == 'affected'
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
     outputs:
       knowledge: ${{ steps.filter.outputs.knowledge }}
     steps:
@@ -53,7 +53,7 @@ jobs:
     name: Build
     if: inputs.mode == 'full'
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -133,7 +133,7 @@ jobs:
     needs: build
     if: inputs.mode == 'full'
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -162,7 +162,7 @@ jobs:
   lint:
     name: Lint
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -183,7 +183,7 @@ jobs:
     needs: affected-scope
     if: inputs.mode == 'affected'
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -217,7 +217,7 @@ jobs:
     needs: affected-scope
     if: inputs.mode == 'affected' && needs.affected-scope.outputs.knowledge == 'true'
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -248,7 +248,7 @@ jobs:
     needs: build
     if: inputs.mode == 'full'
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -289,7 +289,7 @@ jobs:
     needs: build
     if: always() && (inputs.mode == 'affected' || needs.build.result == 'success')
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       # fetch-depth: 0 so the gate can diff against the PR base to find the
@@ -354,7 +354,7 @@ jobs:
     # A remote-cache outage can add several minutes of cold setup and build
     # time, so this shard stays on the standard ceiling rather than a tighter
     # one; cache misses must not cancel an otherwise healthy core suite.
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -408,7 +408,7 @@ jobs:
     needs: build
     if: inputs.mode == 'full'
     runs-on: arc-happyvertical
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -447,7 +447,7 @@ jobs:
     # Each shard runs ~1/3 of package tests and lets Turbo build only their
     # dependency closures. Runner-pool contention still applies, so this keeps
     # the standard ceiling rather than a shard-specific one.
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       max-parallel: 2
@@ -543,7 +543,7 @@ jobs:
     needs: test-packages
     runs-on: arc-happyvertical
     if: always() && inputs.mode == 'full'
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Verify all Test Packages shards passed
         run: |
