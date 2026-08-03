@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.47
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - bump @happyvertical/pdf to 0.65.9 for the AVX2 guard (#2196) (deps)
+  - @happyvertical/smrt-config@0.40.47
+  - @happyvertical/smrt-types@0.40.47
+  - @happyvertical/smrt-scanner@0.40.47
+
 ## 0.40.46
 
 ### Patch Changes
