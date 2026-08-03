@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.48
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - widen the brace-expansion override to the advisory range (#2203) (deps)
+  - @happyvertical/smrt-config@0.40.48
+  - @happyvertical/smrt-types@0.40.48
+  - @happyvertical/smrt-scanner@0.40.48
+
 ## 0.40.47
 
 ### Patch Changes
