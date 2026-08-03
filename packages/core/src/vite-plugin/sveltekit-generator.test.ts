@@ -1646,6 +1646,170 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('src/routes/api/testobjects/+server.ts');
       expect(content).not.toContain('src/routes/api/**/+server.ts');
     });
+
+    it('should migrate a legacy pair written under an earlier routesDir', async () => {
+      // #2198: `@happyvertical/smrt-content` adopted the plugin at
+      // `src/routes/api` and later moved to `src/routes/api/v1`, so the legacy
+      // pair never matched a routesDir-derived pattern and survived every
+      // regeneration.
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        [
+          'node_modules/',
+          '# SMRT auto-generated routes (from Vite plugin)',
+          'src/routes/api/**/+server.ts',
+          '!src/routes/api/v1/**/+server.ts',
+          '',
+        ].join('\n'),
+      );
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          TestObject: {
+            className: 'TestObject',
+            collection: 'testobjects',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api/v1',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const gitignoreWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString().endsWith('.gitignore'));
+      const content = gitignoreWrite?.[1] as string;
+
+      expect(gitignoreWrite).toBeDefined();
+      expect(content).not.toContain(
+        '# SMRT auto-generated routes (from Vite plugin)',
+      );
+      expect(content).not.toContain('src/routes/api/**/+server.ts');
+      // The negation is generator-owned idiom directly under the generator's
+      // own header, and leaving it re-includes whatever the bounded block
+      // stops listing.
+      expect(content).not.toContain('!src/routes/api/v1/**/+server.ts');
+      expect(content).toContain('src/routes/api/v1/testobjects/+server.ts');
+      expect(content).toContain('node_modules/');
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should migrate a surviving legacy pair alongside an existing bounded block', async () => {
+      // #2198: the first #2185 release appended its bounded block without
+      // migrating an unmatched legacy pair, leaving both shapes in the file.
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        [
+          '# SMRT auto-generated routes (from Vite plugin)',
+          'src/routes/api/**/+server.ts',
+          '!src/routes/api/v1/**/+server.ts',
+          '',
+          '# BEGIN SMRT auto-generated routes (Vite plugin)',
+          'src/routes/api/v1/stale/+server.ts',
+          '# END SMRT auto-generated routes (Vite plugin)',
+          '',
+        ].join('\n'),
+      );
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          TestObject: {
+            className: 'TestObject',
+            collection: 'testobjects',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api/v1',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const gitignoreWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString().endsWith('.gitignore'));
+      const content = gitignoreWrite?.[1] as string;
+
+      expect(gitignoreWrite).toBeDefined();
+      expect(content).not.toContain(
+        '# SMRT auto-generated routes (from Vite plugin)',
+      );
+      expect(content).not.toContain('!src/routes/api/v1/**/+server.ts');
+      expect(content).not.toContain('src/routes/api/v1/stale/+server.ts');
+      expect(content).toContain('src/routes/api/v1/testobjects/+server.ts');
+      expect(
+        content
+          .split('\n')
+          .filter(
+            (line) =>
+              line === '# BEGIN SMRT auto-generated routes (Vite plugin)',
+          ),
+      ).toHaveLength(1);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should leave a legacy header with no recognizable pattern beneath it', async () => {
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFileSync).mockReturnValue(
+        [
+          '# SMRT auto-generated routes (from Vite plugin)',
+          '# the project rewrote this block by hand',
+          'src/routes/api/legacy-handwritten/+server.ts',
+          '',
+        ].join('\n'),
+      );
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          TestObject: {
+            className: 'TestObject',
+            collection: 'testobjects',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const gitignoreWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) => call[0].toString().endsWith('.gitignore'));
+      const content = gitignoreWrite?.[1] as string;
+
+      expect(gitignoreWrite).toBeDefined();
+      expect(content).toContain(
+        '# SMRT auto-generated routes (from Vite plugin)',
+      );
+      expect(content).toContain('# the project rewrote this block by hand');
+      expect(content).toContain('src/routes/api/legacy-handwritten/+server.ts');
+      expect(content).toContain('src/routes/api/testobjects/+server.ts');
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe('Main Generation Flow', () => {
