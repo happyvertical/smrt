@@ -547,6 +547,7 @@ describe('safe OIDC provisioning', () => {
     const duckDb = (await getDatabase({
       type: 'duckdb',
       url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
     })) as DatabaseInterface;
     await syncSchema({ db: duckDb, schema: OIDC_USERS_TEST_SCHEMA });
     await prepareOidcEmailKeyBackfills(duckDb);
@@ -600,6 +601,7 @@ describe('safe OIDC provisioning', () => {
     const duckDb = (await getDatabase({
       type: 'duckdb',
       url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
     })) as DatabaseInterface;
     await syncSchema({ db: duckDb, schema: OIDC_USERS_TEST_SCHEMA });
     await prepareOidcEmailKeyBackfills(duckDb);
@@ -1182,6 +1184,7 @@ describe('safe OIDC provisioning', () => {
     const duckDb = (await getDatabase({
       type: 'duckdb',
       url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
     })) as DatabaseInterface;
     await syncSchema({ db: duckDb, schema: OIDC_USERS_TEST_SCHEMA });
     const before = await provisioningRowCounts(duckDb);
@@ -1221,6 +1224,7 @@ describe('safe OIDC provisioning', () => {
     const duckDb = (await getDatabase({
       type: 'duckdb',
       url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
     })) as DatabaseInterface;
     await syncSchema({ db: duckDb, schema: OIDC_USERS_TEST_SCHEMA });
     const before = await provisioningRowCounts(duckDb);
@@ -1772,12 +1776,12 @@ function assertSelectedProfile(options: {
 async function provisioningRowCounts(
   db: DatabaseInterface,
 ): Promise<ProvisioningRowCounts> {
-  const [profile, oidcIdentity, user, session] = await Promise.all([
-    countRows(db, 'profiles'),
-    countRows(db, 'oidc_identities'),
-    countRows(db, 'users'),
-    countRows(db, 'sessions'),
-  ]);
+  // Caller-owned transactions share a connection. Keep observation queries
+  // ordered; DuckDB must not contend with its native connection.
+  const profile = await countRows(db, 'profiles');
+  const oidcIdentity = await countRows(db, 'oidc_identities');
+  const user = await countRows(db, 'users');
+  const session = await countRows(db, 'sessions');
   return { profile, oidcIdentity, user, session };
 }
 

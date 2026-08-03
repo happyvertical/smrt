@@ -1,5 +1,23 @@
 # @happyvertical/smrt-marketing
 
+## 0.40.46
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.46
+  - @happyvertical/smrt-tenancy@0.40.46
+  - @happyvertical/smrt-ui@0.40.46
+
+## 0.40.45
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.45
+  - @happyvertical/smrt-tenancy@0.40.45
+  - @happyvertical/smrt-ui@0.40.45
+
 ## 0.40.44
 
 ### Patch Changes

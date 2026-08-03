@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.40.46
+
+### Patch Changes
+
+- ### Other Changes
+
+  - test: stabilize DuckDB transaction fixtures (#2191) (oidc)
+  - @happyvertical/smrt-config@0.40.46
+  - @happyvertical/smrt-types@0.40.46
+  - @happyvertical/smrt-scanner@0.40.46
+
+## 0.40.45
+
+### Patch Changes
+
+- ### Features
+
+  - add principal-aware MCP tool policy (#2186) (smrt-app-mcp)
+  - @happyvertical/smrt-config@0.40.45
+  - @happyvertical/smrt-types@0.40.45
+  - @happyvertical/smrt-scanner@0.40.45
+
 ## 0.40.44
 
 ### Patch Changes
