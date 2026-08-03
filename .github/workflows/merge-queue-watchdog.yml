@@ -1,0 +1,76 @@
+name: Merge Queue Watchdog
+
+# The merge queue removes entries silently: a `removed_from_merge_queue`
+# timeline event with no visible reason. During the 2026-08-02/03 queue stall
+# three distinct causes (red required check, check_response_timeout expiry,
+# a lost runner cancelling one shard) were indistinguishable for two days.
+# This workflow comments the dequeue reason on the ejected pull request so
+# every ejection is self-explaining. Normal dequeues on merge are skipped.
+#
+# pull_request_target, not pull_request: MERGE_CONFLICT ejections happen at
+# the exact moment the pull request becomes conflicted with base, and
+# pull_request runs are suppressed on conflicted PRs — the one ejection this
+# watchdog exists for would stay silent. pull_request_target also keeps the
+# declared write token for fork PRs. SECURITY INVARIANT: because this trigger
+# grants a write token in the base context, this workflow must never check
+# out or execute pull-request code — it only reads the event payload.
+on:
+  pull_request_target:
+    types: [dequeued]
+
+permissions:
+  pull-requests: write
+  actions: read
+
+jobs:
+  report-dequeue:
+    name: Report Dequeue Reason
+    if: github.event.reason != 'MERGE'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment removal reason on the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REASON: ${{ github.event.reason }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          REASON="${REASON:-UNKNOWN_REMOVAL_REASON}"
+          case "$REASON" in
+            CI_FAILURE)
+              detail='A required status check went red on the merge-group head. Open the linked run and read the failing leaf job (shard), not the rollup — the rollup only mirrors it.' ;;
+            CI_TIMEOUT)
+              detail='Required checks did not report within the merge queue check_response_timeout window. The validation run can still finish green after this — that result is discarded, so the ejection is silent without this comment.' ;;
+            MERGE_CONFLICT)
+              detail='The entry could not be built cleanly — a conflict with main or with an entry ahead in the queue. Rebase the branch and re-queue.' ;;
+            BRANCH_PROTECTIONS)
+              detail='A branch protection or ruleset requirement was not satisfied for the merge-group commit.' ;;
+            MANUAL)
+              detail='Someone removed this entry. Removal also restarts validation for every entry that was queued behind it.' ;;
+            QUEUE_CLEARED)
+              detail='The whole merge queue was cleared.' ;;
+            ROLL_BACK)
+              detail='The queue rolled this entry back.' ;;
+            ALREADY_MERGED)
+              detail='The pull request was already merged outside this queue entry.' ;;
+            GIT_TREE_INVALID)
+              detail='The merge-group git tree was invalid.' ;;
+            INVALID_MERGE_COMMIT)
+              detail='The queue could not create a valid merge commit for this entry.' ;;
+            *)
+              detail='Unrecognized removal reason; see the run list for this pull request and the merge queue documentation.' ;;
+          esac
+          run_url=$(gh api "repos/$REPO/actions/runs?event=merge_group&per_page=50" \
+            | NEEDLE="/pr-$PR_NUMBER-" jq -r \
+              '[.workflow_runs[] | select(.name == "Pull Request Validation") | select(.head_branch | contains(env.NEEDLE))] | first | .html_url // empty' \
+            || true)
+          {
+            printf 'Removed from the merge queue — reason: **%s**\n\n%s\n' "$REASON" "$detail"
+            if [ -n "$run_url" ]; then
+              printf '\nLatest merge-group validation run for this PR: %s\n' "$run_url"
+            fi
+            printf '\n<sub>merge-queue-watchdog: dequeue events are otherwise invisible; this comment makes queue ejections diagnosable (#2197).</sub>\n'
+          } > comment.md
+          gh api "repos/$REPO/issues/$PR_NUMBER/comments" -F body=@comment.md --silent
+          echo "commented on #$PR_NUMBER: reason=$REASON"
