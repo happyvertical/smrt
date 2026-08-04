@@ -99,6 +99,57 @@ export function getLocalSqliteFilePath(
   return isAbsolute(url) ? url : resolve(url);
 }
 
+const speedPragmasApplied = new WeakSet<object>();
+
+/**
+ * Strip durability from local file-backed SQLite test databases.
+ *
+ * Test databases are created fresh per test and discarded afterwards, so
+ * crash durability buys nothing — but SQLite's defaults (`synchronous=FULL`,
+ * DELETE journal) cost 2-3 fsyncs per transaction. On runners with slow
+ * fsync that dominates wall time: 9.5 ms/fsync measured on the metal CI
+ * fleet turned the users package's catalog-seeding tests (~41k fsyncs) into
+ * 200-400 s timeouts (#2221). `synchronous=OFF` removes fsync entirely,
+ * `journal_mode=MEMORY` removes journal-file I/O (per-connection, safe for
+ * the single-connection chains test databases use), and `temp_store=MEMORY`
+ * keeps sort/temp b-trees off disk.
+ *
+ * Only file-backed local SQLite is touched: PostgreSQL and DuckDB reject
+ * these pragmas, in-memory SQLite never fsyncs, and a thrown pragma must
+ * never fail a test, so everything is guarded and best-effort. Applied by
+ * the setup file's `getDatabase` mock and by the isolated test-db factories;
+ * a test that needs real durability semantics must open its database with
+ * `getDatabase` and `__smrtSkipVitestSchemaPreparation` directly.
+ */
+export async function applySqliteSpeedPragmas(
+  db: unknown,
+  options: { type?: string; url?: string } | undefined,
+): Promise<void> {
+  if (!db || typeof db !== 'object' || speedPragmasApplied.has(db)) {
+    return;
+  }
+  const isConfigObject =
+    options && typeof options === 'object' && !('query' in options);
+  if (!isConfigObject || !getLocalSqliteFilePath(options)) {
+    return;
+  }
+  const query = (db as { query?: (sql: string) => Promise<unknown> }).query;
+  if (typeof query !== 'function') {
+    return;
+  }
+  // Marked before execution on purpose: a handle whose pragmas failed once
+  // (e.g. transient SQLITE_BUSY) stays best-effort-configured rather than
+  // retrying on every getDatabase call.
+  speedPragmasApplied.add(db);
+  try {
+    await query.call(db, 'PRAGMA synchronous = OFF');
+    await query.call(db, 'PRAGMA journal_mode = MEMORY');
+    await query.call(db, 'PRAGMA temp_store = MEMORY');
+  } catch {
+    // Best-effort: an adapter that rejects pragmas keeps its defaults.
+  }
+}
+
 /**
  * Open a fresh local SQLite database using an immutable schema-only template.
  *
