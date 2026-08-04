@@ -298,7 +298,16 @@ jobs:
   coverage-gate:
     name: Coverage Gate
     needs: build
-    if: always() && (inputs.mode == 'affected' || needs.build.result == 'success')
+    # Full-mode only (#2214 item 8). This used to run in both lanes, and in
+    # affected mode the seed `build` job is skipped, so it paid a cold full
+    # build before it could measure anything — 26-45 min against 4-5 min on a
+    # warm cache. The merge group re-ran it in full immediately afterwards, so
+    # the affected copy bought nothing but occupancy. check-coverage.mjs
+    # resolves its base as `BASE_REF || 'main'` plus merge-base, which is
+    # correct for the merge_group synthetic head, so the gate keeps its full
+    # meaning here. Authors keep the local pre-check:
+    #   node scripts/check-coverage.mjs --packages <list>
+    if: inputs.mode == 'full'
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
@@ -339,10 +348,9 @@ jobs:
       # PR #2102. Measured turbo selections from that base:
       #   [sha]     -> 2 packages      ...[sha] -> 53 packages
       #   [sha]...  -> 2 packages      scanner... -> 1 package
-      # setup-environment restores the build job's per-SHA Turbo cache, so in
-      # full mode this is a cache hit. In affected mode the `build` job is
-      # skipped (`build.if: mode == full`), so this can be a cold build; that
-      # cost is accepted because correctness of the gate comes first.
+      # setup-environment restores the build job's per-SHA Turbo cache, and this
+      # job runs only after `build` has seeded it, so this is a cache hit rather
+      # than a rebuild.
       - name: Build packages
         run: pnpm run build
         env:
