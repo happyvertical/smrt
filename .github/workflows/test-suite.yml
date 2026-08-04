@@ -480,60 +480,35 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # smrt-video loads the full SMRT manifest graph. When it runs near the end
-      # of shard 2 beside another Turbo task, constrained ARC runners can kill
-      # its otherwise passing Vitest fork. Run it first through Turbo so a fresh
-      # runner builds its dependency closure, then exclude it from the general
-      # batch so coverage remains exactly once.
-      - name: Run video package tests in isolation
-        if: matrix.shard == '2/3'
-        run: pnpm turbo run test --concurrency=1 --filter='@happyvertical/smrt-video'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_ENV: test
-          VITEST_MAX_WORKERS: '1'
-          # Node sizes its default old-space from HOST memory, and this runner
-          # exposes the whole host (see the CPU note below), so V8 will happily
-          # grow a fork past the container's own limit and the kernel kills it —
-          # surfacing as Vitest's silent `Worker exited unexpectedly` with no
-          # `JavaScript heap out of memory`. Cap the heap so V8 collects instead
-          # of ballooning. This BOUNDS the fork; it does not give it more room.
-          NODE_OPTIONS: --max-old-space-size=4096
-
-      # smrt-voice pulls the same heavy AI/SQL graph as smrt-video and dies the
-      # same way inside the concurrent batch, where it shares the runner with a
-      # second Turbo task. Give it the treatment already proven for video: run
-      # it first, alone, with a dedicated heap, then exclude it below so
-      # coverage still happens exactly once.
-      - name: Run voice package tests in isolation
-        if: matrix.shard == '1/3'
-        run: pnpm turbo run test --concurrency=1 --filter='@happyvertical/smrt-voice'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_ENV: test
-          VITEST_MAX_WORKERS: '1'
-          NODE_OPTIONS: --max-old-space-size=4096
-
-      # Each shard runs ~1/3 of the remaining non-core packages
+      # Each shard runs ~1/3 of the non-core packages
       # (scripts/test-packages-shard.mjs round-robins by name), keeping
-      # per-runner load low so transient resource-pressure timing flakes stay
-      # rare.
-      - name: Run package tests (shard ${{ matrix.shard }}, excluding core, video and voice)
+      # per-runner load low.
+      #
+      # smrt-video and smrt-voice used to run here as isolated pre-steps with a
+      # dedicated heap, then were excluded from this batch. That was a
+      # workaround for silent `Worker exited unexpectedly` deaths attributed to
+      # memory pressure. The attribution was wrong: the failing shards recorded
+      # cgroup `oom_kill = 0`, and the real cause was an AVX2 SIGILL in
+      # @happyvertical/pdf on x86-64-v2 metal, fixed by the 0.65.9 guard
+      # (#2195/#2196). The isolation is removed with the cause (#2214 item 6);
+      # the shard script already round-robins both packages onto these same two
+      # runners (voice -> 1/3, video -> 2/3), so placement is unchanged.
+      - name: Run package tests (shard ${{ matrix.shard }}, excluding core)
         run: |
           set -o pipefail
           node scripts/test-packages-shard.mjs '${{ matrix.shard }}' |
-            xargs -r pnpm turbo run test --concurrency=2 \
-              --filter='!@happyvertical/smrt-video' \
-              --filter='!@happyvertical/smrt-voice'
+            xargs -r pnpm turbo run test --concurrency=2
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
-          # The node runner exposes all 32 host CPUs. Cap each of the two
-          # concurrent Turbo tasks so Vitest cannot fan out to dozens of workers.
+          # The node runner exposes all 32 host CPUs while the pod holds a
+          # 4-CPU quota, so uncapped Vitest over-fans. Cap each of the two
+          # concurrent Turbo tasks.
           VITEST_MAX_WORKERS: '2'
-          # Same host-vs-container heap mismatch as the video step above, halved
-          # because two Turbo tasks run concurrently here. smrt-voice pulls the
-          # heavy AI/SQL graph and has been dying the same silent way.
+          # Node likewise sizes its default old-space from host memory, so bound
+          # the heap explicitly rather than letting a fork grow against the
+          # pod's limit. Halved from a single-task budget because two Turbo
+          # tasks run concurrently here.
           NODE_OPTIONS: --max-old-space-size=2048
 
       - name: Upload test results
