@@ -75,9 +75,9 @@ the trusted base branch rather than contributor-controlled merge YAML. It passes
 a PR head SHA to reusable general-CI workflows only when the head repository
 equals `github.repository`; merge-group and trusted push workflows use the
 broker normally. External fork PRs keep a base-revision hosted control-plane
-check, while the self-hosted validation and publish-dry-run calls are skipped
-and `Required CI` rejects the run. Broker admission must also deny those fork
-events before making a reservation.
+check, while the self-hosted validation call is skipped and `Required CI`
+rejects the run on that skipped result. Broker admission must also deny those
+fork events before making a reservation.
 
 `CI_NODE_RUNNER_ENABLED` is gone from this tree — nothing reads it, and the
 migration it was conditioned on is live. If the repository still defines the
@@ -222,19 +222,34 @@ reversal lever.
 
 - Unset/false: PRs run the historical full suite.
 - `true`: PRs run lint, affected typecheck and tests across the changed
-  packages and everything that depends on them, touched coverage, and — only
-  when knowledge-sensitive paths change — affected knowledge freshness. The
+  packages and everything that depends on them, and — only when
+  knowledge-sensitive paths change — affected knowledge freshness. The
   complete suite runs for `merge_group`.
 
-Publish dry-run sits outside that split: it runs for same-repository PRs and for
-`merge_group` in both modes. No lane in `on-pull-request.yml` or
-`test-suite.yml` runs PostgreSQL in either mode; PostgreSQL lives only in
-`postgres-tests.yml`, described below.
+Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
+Both used to run in both lanes while the merge group re-ran them in full
+regardless, so the PR copies were duplicate fleet occupancy rather than the
+binding gate — and Coverage Gate additionally paid a cold full build on PRs,
+because the seed `build` job is full-mode only. Neither loses meaning in the
+merge group: `check-coverage.mjs` resolves its diff base as `BASE_REF || 'main'`
+plus `merge-base`, which is correct for the synthetic merge-group head. The
+trade is that a coverage or packaging regression now ejects from the queue
+instead of reddening the PR; authors can pre-check coverage locally with
+`node scripts/check-coverage.mjs --packages <list>`.
 
-`Required CI` is the sole required repository-validation status. Its aggregator
-requires the same eight jobs to succeed for both PR and merge-group events; what
-differs between the two is the mode `test-suite.yml` runs in, not the set of
-jobs the aggregator checks.
+Publish Dry Run's gate lives inside `publish-dry-run.yml`, not on its caller.
+Every reusable or self-hosted job in `on-pull-request.yml` must carry the
+canonical trusted-base admission expression byte-for-byte, so narrowing a lane
+from the caller's `if:` is not available — gate the called workflow instead.
+
+No lane in `on-pull-request.yml` or `test-suite.yml` runs PostgreSQL in either
+mode; PostgreSQL lives only in `postgres-tests.yml`, described below.
+
+`Required CI` is the sole required repository-validation status. Seven jobs must
+succeed for both PR and merge-group events; Publish Dry Run is required only for
+`merge_group`, where it runs. The aggregator still fails if it reports anything
+other than `skipped` or `success` on a PR, so re-enabling it there cannot
+silently leave it un-gated.
 
 Rollout status:
 
