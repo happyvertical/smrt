@@ -79,6 +79,17 @@ build, and every test still receives its own database file and transaction.
 Existing non-empty database files are never replaced. PostgreSQL, DuckDB, JSON,
 remote libSQL, and in-memory SQLite retain their normal preparation paths.
 
+The setup file also strips durability from local file-backed SQLite handles
+(`synchronous=OFF`, `journal_mode=MEMORY`, `temp_store=MEMORY`, #2221): test
+databases are throwaway, and SQLite's default 2-3 fsyncs per transaction
+turned fsync-heavy suites into 60s-timeout failures on CI runners with slow
+disks (9.5 ms/fsync measured on the metal fleet). Applied best-effort at
+every `getDatabase` return path, once per handle; other engines and the
+explicit opt-out paths (`__smrtSkipVitestSchemaPreparation`,
+`SMRT_VITEST_AUTO_SCHEMA=0`) are untouched. Do not "fix" a durability-shaped
+test by removing this — a test that needs real fsync semantics should create
+its own database with `__smrtSkipVitestSchemaPreparation`.
+
 ```typescript
 let db, cleanup;
 beforeEach(async () => {
