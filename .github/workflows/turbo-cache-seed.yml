@@ -1,0 +1,104 @@
+name: Turbo Cache Seed
+
+# Keeps the GitHub-hosted Turborepo cache pool warm so hosted runners are a
+# viable fallback lane when the self-hosted fleet is saturated or down. The
+# pool is GitHub Actions cache entries (key prefix turbogha_) written through
+# the caching-for-turbo shim in setup-environment; the self-hosted lanes use
+# the internal Turbo cache server instead and never read or write this pool.
+#
+# GitHub Actions cache is branch-scoped: a run can only restore entries
+# written by its own branch or by main, so PR and merge-group runs cannot
+# warm each other. Entries seeded from main are the only cross-branch
+# warmth, which is why this workflow exists.
+#
+# Standalone on purpose: on-merge-main.yml gates its build and test jobs off
+# while CI_MERGE_QUEUE_ENABLED is true, so a seed job added there would
+# never run.
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Backstop against GitHub's 7-day idle eviction during quiet weeks.
+    # Offset from the postgres-tests schedule (08:00) and the mobile
+    # nightly (09:17).
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+permissions:
+  contents: read
+  packages: read
+  # For the cache-usage report step only; cache save/restore inside the job
+  # uses the Actions runtime token and needs no permission grant.
+  actions: read
+
+# Spelled out because the string shorthand silently defaults
+# cancel-in-progress to false. Cancelling is correct here: a newer main
+# commit's task hashes supersede an in-flight seed's anyway.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  seed:
+    name: Seed Hosted Turbo Cache
+    # Dispatch bypasses the variable so the lane can be validated before it
+    # is enabled, mirroring postgres-tests.yml.
+    if: github.event_name == 'workflow_dispatch' || vars.CI_HOSTED_TURBO_CACHE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    # Hosted job: the value tracks observed runtime rather than the
+    # self-hosted queue-wait standard. 45 covers a fully cold build;
+    # tighten after ten runs.
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          setup-playwright: 'false'
+          # Auth matches the sibling self-hosted call sites. The lockfile
+          # currently resolves entirely from public npmjs, but passing the
+          # token keeps the seed robust if GitHub Packages dependencies
+          # return.
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          # 'auto' already resolves to on for hosted runners; explicit so a
+          # grep for the shim finds its one deliberate consumer.
+          turbo-cache-shim: 'auto'
+
+      # No TURBO_FORCE: this lane exists to reuse and refresh cached results,
+      # so trusting restored outputs for unchanged packages is correct and
+      # keeps incremental seeds cheap. Forcing would not harden anything
+      # either: GitHub Actions cache entries are immutable — a save for an
+      # existing turbogha_ key fails, first write wins per task hash — so a
+      # forced re-execution cannot replace an entry whose inputs Turbo did
+      # not hash (see the stale-helper caveat in CI.md's Hosted Turbo cache
+      # section; the remediation there is pruning, not forcing).
+      - name: Seed build outputs
+        shell: bash
+        run: pnpm run build
+
+      # typecheck depends on build and generate:test, so this single
+      # invocation seeds the remaining task types that test-suite.yml
+      # restores. The test tasks themselves are environment-sensitive and
+      # deliberately not seeded.
+      - name: Seed typecheck and test manifests
+        shell: bash
+        run: pnpm turbo run typecheck
+
+      # Cheap observability: the turbogha_ pool shares the repository's
+      # 10 GiB Actions cache quota with mobile.yml's Gradle entries under
+      # LRU eviction. Watch this before trusting the fallback lane.
+      - name: Report Actions cache usage
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" || true
+          echo
+          gh cache list --key turbogha_ --limit 20 --sort size_in_bytes --order desc || true
