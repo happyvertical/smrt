@@ -22,7 +22,12 @@ permissions:
 jobs:
   prepare-publish:
     name: Prepare Publish Validation
-    runs-on: arc-happyvertical-nodocker
+    # Emergency lane selector: publish dry run backs the required aggregator,
+    # so it must move with the CI_HOSTED_FALLBACK_ENABLED lever or a fleet
+    # outage would keep Required CI blocked despite the fallback. See the
+    # selector comment in test-suite.yml and the Hosted Turbo cache section
+    # of CI.md.
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 45
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
@@ -142,7 +147,7 @@ jobs:
   validate-publish-shards:
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
-    runs-on: arc-happyvertical-nodocker
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -209,7 +214,7 @@ jobs:
       - prepare-publish
       - validate-publish-shards
     if: always()
-    runs-on: arc-happyvertical-nodocker
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 45
 
     steps:
