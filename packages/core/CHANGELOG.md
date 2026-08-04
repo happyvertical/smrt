@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.40.51
+
+### Patch Changes
+
+- ### Features
+
+  - hosted Turbo cache shim, seed workflow, and manual fallback lever (#2219) (ci)
+
+  ### Other Changes
+
+  - perf: disable fsync durability on file-backed SQLite test databases (#2222) (vitest)
+  - @happyvertical/smrt-config@0.40.51
+  - @happyvertical/smrt-types@0.40.51
+  - @happyvertical/smrt-scanner@0.40.51
+
 ## 0.40.50
 
 ### Patch Changes
