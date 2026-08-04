@@ -1,5 +1,13 @@
 # @happyvertical/smrt-template-site-static-json
 
+## 0.40.52
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.52
+  - @happyvertical/smrt-config@0.40.52
+
 ## 0.40.51
 
 ### Patch Changes
