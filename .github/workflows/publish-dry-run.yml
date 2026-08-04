@@ -27,9 +27,19 @@ jobs:
     # it in full regardless, so the per-PR copy was duplicate occupancy rather
     # than the binding gate. The gate lives here rather than on the caller's
     # `if:`, which must stay byte-identical to the canonical trusted-base
-    # admission expression. Negating pull_request_target (rather than testing
-    # for merge_group) keeps the workflow_dispatch escape hatch working.
-    if: github.event_name != 'pull_request_target'
+    # admission expression.
+    #
+    # Skip ONLY when the merge queue will re-run it. Clearing
+    # CI_MERGE_QUEUE_ENABLED is the documented rollback lever, and it stops
+    # GitHub producing merge_group events entirely — gating on the event alone
+    # would leave packaging unvalidated all the way into publish.yml, since
+    # on-merge-main.yml runs test and build but never a pack validation. This
+    # mirrors the caller's `mode` expression, which falls back to full
+    # validation on the same lever. Testing the event rather than merge_group
+    # also keeps the workflow_dispatch escape hatch working.
+    if: >-
+      github.event_name != 'pull_request_target' ||
+      vars.CI_MERGE_QUEUE_ENABLED != 'true'
     # Emergency lane selector: publish dry run backs the required aggregator in
     # the merge queue, so it must move with the CI_HOSTED_FALLBACK_ENABLED lever
     # or a fleet outage would keep Required CI blocked despite the fallback. See
@@ -224,7 +234,10 @@ jobs:
     # `always()` alone would keep this summary running — and failing on the
     # missing artifacts — after the two jobs above skip on a pull request, so it
     # carries the same lane guard (#2214 item 4).
-    if: always() && github.event_name != 'pull_request_target'
+    if: >-
+      always() &&
+      (github.event_name != 'pull_request_target' ||
+      vars.CI_MERGE_QUEUE_ENABLED != 'true')
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 45
 

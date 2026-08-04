@@ -242,6 +242,14 @@ Every reusable or self-hosted job in `on-pull-request.yml` must carry the
 canonical trusted-base admission expression byte-for-byte, so narrowing a lane
 from the caller's `if:` is not available — gate the called workflow instead.
 
+Both gates key off `CI_MERGE_QUEUE_ENABLED`, not off the event alone, because
+clearing that variable is the documented rollback lever and it stops GitHub
+producing `merge_group` events at all. Coverage Gate gets this for free: the
+caller's `mode` expression falls back to `full` on the same lever, so it runs on
+PRs again. Publish Dry Run tests the lever explicitly — without it, a rollback
+would leave packaging unvalidated all the way into `publish.yml`, since
+`on-merge-main.yml` runs test and build but never a pack validation.
+
 No lane in `on-pull-request.yml` or `test-suite.yml` runs PostgreSQL in either
 mode; PostgreSQL lives only in `postgres-tests.yml`, described below.
 
