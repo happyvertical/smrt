@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.50
+
+### Patch Changes
+
+- ### Features
+
+  - retire legacy MCP advisor, harden remote auth, conform action discovery (#2211) (core)
+  - @happyvertical/smrt-config@0.40.50
+  - @happyvertical/smrt-types@0.40.50
+  - @happyvertical/smrt-scanner@0.40.50
+
 ## 0.40.49
 
 ### Patch Changes
