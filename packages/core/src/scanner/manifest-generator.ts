@@ -5,6 +5,7 @@
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createLogger } from '@happyvertical/logger';
+import { resolveCustomActionMetadata } from '../generators/custom-action.js';
 import {
   loadExternalManifestSync,
   lookupInManifest,
@@ -2016,10 +2017,16 @@ ${fields}
     const isCollectionClass =
       obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg;
 
+    const defaultScope =
+      isCollectionClass || actionDef.isStatic ? 'collection' : 'item';
+
     return {
-      scope:
-        routeConfig?.scope ||
-        (isCollectionClass || actionDef.isStatic ? 'collection' : 'item'),
+      scope: resolveCustomActionMetadata({
+        actionName,
+        method: actionDef,
+        apiConfig: config,
+        defaultScope,
+      }).scope,
       method:
         routeConfig?.method?.toUpperCase() === 'GET' ||
         routeConfig?.method?.toUpperCase() === 'POST' ||

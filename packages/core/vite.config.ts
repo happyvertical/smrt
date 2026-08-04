@@ -161,7 +161,6 @@ export default defineConfig({
         '@google-cloud/translate',
         'deepl-node',
         'redis',
-        '@modelcontextprotocol/sdk',
         /^@modelcontextprotocol\//,
         'undici',
         'unpdf',

@@ -151,6 +151,13 @@ export class GenClientProductCollection extends SmrtCollection<GenClientProduct>
   async invalidItemScope(): Promise<GenClientProduct[]> {
     return this.list();
   }
+
+  async bulkReindex(
+    idempotencyKey: string,
+    expectedVersion?: number,
+  ): Promise<GenClientProduct[]> {
+    return this.list();
+  }
 }
 
 @smrt({
@@ -268,8 +275,10 @@ export class GenClientReadonly extends SmrtObject {
     expect(clientSource).toContain('findFeatured: (options)');
     expect(clientSource).not.toContain('findFeatured: (id, options)');
     expect(clientSource).not.toContain('list: (id, options)');
-    expect(clientSource).not.toContain('invalidItemScope: (');
-    expect(clientSource).not.toContain('invalidCollectionScope: (');
+    expect(clientSource).toContain('invalidItemScope: (options)');
+    expect(clientSource).not.toContain('invalidItemScope: (id, options)');
+    expect(clientSource).toContain('invalidCollectionScope: (id, options)');
+    expect(clientSource).not.toContain('invalidCollectionScope: (options)');
     expect(clientSource).toContain('describe: (id, options)');
     expect(clientSource).not.toContain('describe: (options)');
     expect(clientSource).toContain('featured: (options)');
@@ -296,7 +305,7 @@ export class GenClientReadonly extends SmrtObject {
       'utf-8',
     );
     expect(declarationSource).toContain(
-      '"genclientproducts": CrudOperations<GenClientProductData>;',
+      '"genclientproducts": CrudOperations<GenClientProductData> & {\n      invalidCollectionScope(id: string, options?: Record<string, never>): Promise<any>;',
     );
     expect(declarationSource).not.toContain(
       '"genclientproducts": CrudOperations<GenClientProductCollectionData>;',
@@ -307,10 +316,17 @@ export class GenClientReadonly extends SmrtObject {
     expect(declarationSource).toMatch(
       /export interface GenClientProductData \{[\s\S]*?name: string;[\s\S]*?price: number;[\s\S]*?\n {2}\}/,
     );
-    expect(declarationSource).not.toContain('invalidItemScope(');
-    expect(declarationSource).not.toContain('invalidCollectionScope(');
+    expect(declarationSource).toContain(
+      'invalidItemScope(options?: Record<string, never>): Promise<any>;',
+    );
+    expect(declarationSource).toContain(
+      'invalidCollectionScope(id: string, options?: Record<string, never>): Promise<any>;',
+    );
     expect(declarationSource).toContain(
       'findFeatured(options?: Record<string, any>): Promise<any>;',
+    );
+    expect(declarationSource).toContain(
+      'bulkReindex(options: { idempotencyKey: string; expectedVersion?: number }): Promise<any>;',
     );
     expect(declarationSource).toContain(
       'describe(id: string, options: { tone: string }): Promise<any>;',
