@@ -374,6 +374,14 @@ can pass `transactionCookieSecret` to the route helpers. On success it creates
 or reuses a s-m-r-t `Profile`, links an `OidcIdentity`, creates or reuses a `User`,
 records `lastLoginAt`, and sets the standard s-m-r-t session cookie.
 
+RFC 9207 authorization-response issuer validation uses exact string comparison
+against the discovered issuer before an authorization code or provider error is
+trusted. When discovery advertises
+`authorization_response_iss_parameter_supported: true`, a missing `iss` is also
+rejected. Remote MCP deployments must require their external authorization
+server to advertise and emit `iss`; see the
+[remote MCP authorization guide](../../docs/content/architecture/remote-mcp-authorization.md).
+
 The typed [OIDC provisioning decision matrix](../profiles/src/testing/oidcProvisioningDecisionMatrix.ts)
 is the canonical behavior contract shared with Profiles. Its executable rows
 declare exact reuse and new-identity outcomes, resolver invocation and

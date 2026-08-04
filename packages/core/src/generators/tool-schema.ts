@@ -1,3 +1,8 @@
+import {
+  buildCustomActionInputSchema,
+  type CustomActionMetadata,
+} from './custom-action.js';
+
 /**
  * Transport-agnostic tool-descriptor builder (#1812, tracer).
  *
@@ -125,6 +130,7 @@ export function fieldTypeToJsonSchema(field: ToolFieldMeta): ToolJsonSchema {
 export function buildToolInputSchema(
   action: string,
   fields: ToolFieldMeta[],
+  customAction?: CustomActionMetadata,
 ): ToolJsonSchema {
   switch (action) {
     case 'list':
@@ -206,22 +212,13 @@ export function buildToolInputSchema(
       };
 
     default:
-      // Custom method: mirrors mcp.ts's custom-action tool shape.
-      return {
-        type: 'object',
-        properties: {
-          id: {
-            type: 'string',
-            description: 'ID of the object to execute action on',
-          },
-          options: {
-            type: 'object',
-            description: 'Additional options for the custom action',
-            additionalProperties: true,
-          },
+      return buildCustomActionInputSchema(
+        customAction ?? {
+          scope: 'item',
+          idRequired: true,
+          isStatic: false,
         },
-        required: ['id'],
-      };
+      );
   }
 }
 
@@ -256,6 +253,7 @@ export function buildToolDescriptors(opts: {
   className: string;
   fields: ToolFieldMeta[];
   actions: string[];
+  customActions?: Record<string, CustomActionMetadata>;
   toolPrefix?: string;
 }): ToolDescriptor[] {
   const { className, fields, actions } = opts;
@@ -267,7 +265,11 @@ export function buildToolDescriptors(opts: {
     // FIRST underscore only (mcp.ts #1378), so a lowercased join is safe here.
     name: `${prefix}_${action}`.toLowerCase(),
     description: describeAction(action, className),
-    inputSchema: buildToolInputSchema(action, fields),
+    inputSchema: buildToolInputSchema(
+      action,
+      fields,
+      opts.customActions?.[action],
+    ),
     readOnly: action === 'list' || action === 'get',
   }));
 }

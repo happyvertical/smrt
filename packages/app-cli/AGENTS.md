@@ -13,6 +13,8 @@ Application CLI support for SMRT-based apps.
 - Keep commands app-agnostic; pass app identity through `CliConfigContext`.
 - Treat transient auth polling failures as recoverable until the server-issued expiration window closes.
 - Do not persist tokens, server URLs, or app slugs outside the configured local CLI config path.
+- Bind persisted bearer tokens to the exact issuer emitted by the device flow
+  and to the server selected during login. Never reuse them after either changes.
 - Keep command output stream-injectable so tests can assert behavior without writing to the real terminal.
 
 ## Gotchas

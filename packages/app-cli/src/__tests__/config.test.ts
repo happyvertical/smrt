@@ -47,11 +47,15 @@ describe('config persistence', () => {
     expect(s.mode & 0o777).toBe(0o600);
     const raw = JSON.parse(await readFile(path, 'utf8'));
     expect(raw.serverUrl).toBe('https://example.test');
-    expect(raw.token).toBe('tok_abc');
+    expect(raw.credentialIssuer).toBe('https://example.test');
+    expect(raw.tokensByIssuer).toEqual({
+      'https://example.test': 'tok_abc',
+    });
     const loaded = await loadCliConfig(context);
     expect(loaded).toEqual({
+      credentialIssuer: 'https://example.test',
       serverUrl: 'https://example.test',
-      token: 'tok_abc',
+      tokensByIssuer: { 'https://example.test': 'tok_abc' },
     });
   });
 
@@ -125,7 +129,60 @@ describe('env var precedence', () => {
   it('env token wins over config token', async () => {
     await saveAuth(context, 'https://x', 'tok_cfg');
     process.env.TESTCFG_TOKEN = 'tok_env';
+    process.env.TESTCFG_SERVER_URL = 'https://x';
     expect(await getStoredToken(context)).toBe('tok_env');
+  });
+
+  it('requires an environment token to be bound to the exact environment server', async () => {
+    process.env.TESTCFG_TOKEN = 'tok_env';
+    process.env.TESTCFG_SERVER_URL = 'https://issuer-a.example';
+
+    expect(
+      await getStoredToken(context, undefined, 'https://issuer-a.example'),
+    ).toBe('tok_env');
+    expect(
+      await getStoredToken(context, undefined, 'https://issuer-b.example'),
+    ).toBeUndefined();
+
+    delete process.env.TESTCFG_SERVER_URL;
+    expect(
+      await getStoredToken(context, undefined, 'https://issuer-a.example'),
+    ).toBeUndefined();
+  });
+
+  it('does not reuse an issuer-bound token when the target server changes', async () => {
+    await saveAuth(
+      context,
+      'https://resource.example',
+      'tok_issuer_a',
+      'https://issuer-a.example',
+    );
+
+    expect(await getStoredToken(context)).toBe('tok_issuer_a');
+    process.env.TESTCFG_SERVER_URL = 'https://other-resource.example';
+    expect(await getStoredToken(context)).toBeUndefined();
+  });
+
+  it('replaces rather than reuses credentials when an issuer changes', async () => {
+    await saveAuth(
+      context,
+      'https://resource.example',
+      'tok_issuer_a',
+      'https://issuer-a.example',
+    );
+    await saveAuth(
+      context,
+      'https://resource.example',
+      'tok_issuer_b',
+      'https://issuer-b.example',
+    );
+
+    const config = await loadCliConfig(context);
+    expect(config.credentialIssuer).toBe('https://issuer-b.example');
+    expect(config.tokensByIssuer).toEqual({
+      'https://issuer-b.example': 'tok_issuer_b',
+    });
+    expect(await getStoredToken(context, config)).toBe('tok_issuer_b');
   });
 });
 
@@ -148,6 +205,28 @@ describe('requestJson', () => {
       { fetch: fetchMock as any },
     );
     expect(r).toEqual({ ok: true });
+  });
+
+  it('does not send an environment bearer token to a request-level server override', async () => {
+    process.env.TESTCFG_TOKEN = 'tok_issuer_a';
+    process.env.TESTCFG_SERVER_URL = 'https://issuer-a.example';
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      expect((init.headers as Headers).has('authorization')).toBe(false);
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    await requestJson(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: fetchMock as any,
+        serverUrl: 'https://issuer-b.example',
+      },
+    );
   });
 
   it('throws on 401 with server error message', async () => {

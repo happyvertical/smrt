@@ -94,7 +94,7 @@ export function renderApiClientCustomMethodParameters(
     const parameterNames = new Set(params.map((param) => param.name));
     const properties = params.map(
       (param) =>
-        `${param.name}${pathParamNames.has(param.name) ? '' : '?'}: ${mapType(param.type)}`,
+        `${param.name}${pathParamNames.has(param.name) || !param.optional ? '' : '?'}: ${mapType(param.type)}`,
     );
     for (const pathParamName of method.pathParamNames) {
       if (!parameterNames.has(pathParamName)) {
@@ -107,7 +107,12 @@ export function renderApiClientCustomMethodParameters(
         : 'Record<string, never>';
   }
 
-  const optionsParameter = `${method.pathParamNames.length > 0 ? 'options' : 'options?'}: ${optionsType}`;
+  const hasRequiredOptions = hasSingleOptionsParameter
+    ? !params[0]?.optional
+    : params.some(
+        (param) => !pathParamNames.has(param.name) && !param.optional,
+      );
+  const optionsParameter = `${method.pathParamNames.length > 0 || hasRequiredOptions ? 'options' : 'options?'}: ${optionsType}`;
   return method.scope === 'collection'
     ? optionsParameter
     : `id: string, ${optionsParameter}`;
@@ -191,12 +196,6 @@ function resolveGeneratedClientCustomMethods(
     if (included && !included.includes(name)) return [];
     if (excluded?.includes(name)) return [];
 
-    const scope =
-      config?.routes?.[name]?.scope ??
-      (isCollection || method.isStatic ? 'collection' : 'item');
-    if (isCollection && scope !== 'collection') return [];
-    if (!isCollection && scope === 'collection' && !method.isStatic) return [];
-
     const routeConfig = resolveApiActionRouteConfig(
       name,
       method,
@@ -208,7 +207,7 @@ function resolveGeneratedClientCustomMethods(
     return [
       {
         name,
-        scope,
+        scope: routeConfig.scope,
         pathParamNames: routeConfig.pathParamNames,
         parameters: method.parameters ?? [],
       },

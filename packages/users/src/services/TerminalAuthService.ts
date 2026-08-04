@@ -92,6 +92,8 @@ export interface CliAuthStartResult {
   deviceCode: string;
   expiresAt: string;
   interval: number;
+  /** Stable issuer used by clients to bind the resulting bearer credential. */
+  issuer: string;
   userCode: string;
   verificationUrl: string;
 }
@@ -242,6 +244,7 @@ export class TerminalAuthService {
       deviceCode,
       expiresAt: expiresAt.toISOString(),
       interval: this.pollIntervalSeconds,
+      issuer: trimmedOrigin,
       userCode,
       verificationUrl: `${trimmedOrigin}${this.verificationPath}?code=${encodeURIComponent(userCode)}`,
     };

@@ -22,6 +22,7 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { USER_EMAIL_KEY_BACKFILL_NAME } from '../../migrations/backfillUserEmailKeys.js';
 
 export interface OidcTestServerOptions {
+  authorizationResponseIssuerSupported?: boolean;
   audience?: string | string[];
   authorizedParty?: string;
   idTokenEmailVerified?: boolean;
@@ -226,6 +227,12 @@ export async function startOidcServer(
 
     if (url.pathname === '/.well-known/openid-configuration') {
       sendJson(response, 200, {
+        ...(options.authorizationResponseIssuerSupported === undefined
+          ? {}
+          : {
+              authorization_response_iss_parameter_supported:
+                options.authorizationResponseIssuerSupported,
+            }),
         authorization_endpoint: `${issuer}/authorize`,
         issuer,
         jwks_uri: `${issuer}/jwks`,
