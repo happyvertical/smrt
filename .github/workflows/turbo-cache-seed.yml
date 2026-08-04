@@ -60,6 +60,12 @@ jobs:
         uses: ./.github/actions/setup-environment
         with:
           setup-playwright: 'false'
+          # Auth matches the sibling self-hosted call sites. The lockfile
+          # currently resolves entirely from public npmjs, but passing the
+          # token keeps the seed robust if GitHub Packages dependencies
+          # return.
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
           # 'auto' already resolves to on for hosted runners; explicit so a
           # grep for the shim finds its one deliberate consumer.
           turbo-cache-shim: 'auto'
