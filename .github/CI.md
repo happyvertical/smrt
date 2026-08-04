@@ -50,7 +50,11 @@ never prevent the tests from running.
   hosted fallback is tracked separately. Publish, build, and postgres jobs
   stay on the self-hosted label and queue instead. actionlint does not
   validate labels inside expressions, so the allowlist in
-  `.github/actionlint.yaml` is unaffected.
+  `.github/actionlint.yaml` is unaffected. The variable selects only the
+  runner: on `pull_request_target` events the Turbo shim stays off (see
+  Hosted Turbo cache), so fallback PR validation builds cold while
+  merge-group fallback runs stay warm — the merge queue, not PR validation,
+  is the gate that decides what lands.
 
 The PR caller uses `pull_request_target`, so GitHub loads runner selection from
 the trusted base branch rather than contributor-controlled merge YAML. It passes
@@ -85,7 +89,25 @@ variables are runner process env, which the `env` context in a step `if:`
 cannot see. Self-hosted pods therefore never start the shim and keep the
 internal server. The `turbo-cache-shim` input (`auto`/`on`/`off`) is the
 per-call kill switch; `on` is debug-only because the shim's `GITHUB_ENV`
-exports would shadow the pod-injected internal cache env.
+exports would shadow the pod-injected internal cache env. The step also
+refuses `pull_request_target` events — those runs carry main's cache write
+scope while executing PR-head code, so the shim there would hand unreviewed
+code a write path into entries every other run restores — and it sets
+`continue-on-error` so a shim that fails to start degrades the job to a cold
+build instead of failing it.
+
+Two properties of this pool differ from the internal server and matter for
+trust in it. Entries are immutable: a save against an existing `turbogha_`
+key fails, so the first write for a task hash wins until the entry expires
+or is pruned. And Turbo only re-executes when a hashed input changes: a main
+commit that changes a helper script outside a task's declared inputs keeps
+the old hash, so the stale entry keeps winning — forcing the seed would not
+replace it. The exposure is bounded (it requires a helper-only change, the
+lane is emergency-only, and idle entries expire in seven days), and the
+remediation is pruning `turbogha_` entries when activating the fallback
+after a suspect change, not forcing builds. The durable fix for a recurring
+case is declaring the helper in the task's `inputs` in `turbo.json`, which
+benefits the internal cache equally.
 
 GitHub Actions cache is branch-scoped: runs restore only entries written by
 their own branch or by main. PR and merge-group runs cannot warm each other,

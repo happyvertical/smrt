@@ -242,13 +242,25 @@ runs:
     # on those pods and leaves the internal cache untouched. On hosted
     # runners the shim starts a localhost server speaking the Vercel
     # remote-cache API over GitHub Actions cache entries (key prefix
-    # turbogha_) and exports the TURBO_* env itself. Turbo treats a failing
-    # remote cache as a warning and builds cold, so this step can degrade a
-    # job but never fail it.
+    # turbogha_) and exports the TURBO_* env itself.
+    #
+    # pull_request_target is excluded: those runs use the base branch's cache
+    # write scope (main) while executing PR-head code, so enabling the shim
+    # there would let an unreviewed PR write task artifacts every other run
+    # restores. Hosted PR validation therefore builds cold; merge-group and
+    # main-push hosted runs keep the shim (their writes land in their own
+    # branch scope and only reads come from main).
+    #
+    # continue-on-error: if the shim fails to start (port in use, slow VM),
+    # no TURBO_* is exported and turbo simply builds cold — the step must
+    # degrade the job, never fail it, because the hosted lane exists for
+    # fleet-down emergencies.
     - name: Setup Turbo cache shim (GitHub-hosted runners)
       if: >-
         inputs.turbo-cache-shim != 'off' &&
+        github.event_name != 'pull_request_target' &&
         (inputs.turbo-cache-shim == 'on' || runner.environment == 'github-hosted')
+      continue-on-error: true
       uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
     # Check if ONNX deps are already installed or supplied by the runner image.

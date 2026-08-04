@@ -26,12 +26,13 @@ jobs:
     # flipping the repository variable CI_HOSTED_FALLBACK_ENABLED to 'true'
     # moves validation to GitHub-hosted runners without a workflow merge —
     # which would itself need the down fleet. Automated dispatch is a later
-    # issue; this is the manual lever. Repository variables are owner
-    # controlled, so pull_request_target trust is unchanged. Hosted runs are
-    # slower (4-core) but the Turbo cache shim in setup-environment restores
-    # build/generate:test/typecheck seeded from main by turbo-cache-seed.yml,
-    # keeping them inside the 90-minute ceilings. Rehearse before relying on
-    # it; see the Hosted Turbo cache section of CI.md.
+    # issue; this is the manual lever. The variable is owner controlled and
+    # selects only the runner; the Turbo cache shim in setup-environment
+    # additionally refuses pull_request_target events, so PR-head code never
+    # writes the main-scoped hosted cache pool. Fallback PR validation
+    # therefore builds cold, while merge-group and main runs restore
+    # build/generate:test/typecheck seeded by turbo-cache-seed.yml. Rehearse
+    # before relying on it; see the Hosted Turbo cache section of CI.md.
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical' }}
     timeout-minutes: 90
     outputs:

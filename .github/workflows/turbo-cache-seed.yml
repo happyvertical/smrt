@@ -64,9 +64,14 @@ jobs:
           # grep for the shim finds its one deliberate consumer.
           turbo-cache-shim: 'auto'
 
-      # No TURBO_FORCE: unlike the publish builds, this lane exists to reuse
-      # and refresh cached results, so trusting restored outputs for
-      # unchanged packages is correct and keeps incremental seeds cheap.
+      # No TURBO_FORCE: this lane exists to reuse and refresh cached results,
+      # so trusting restored outputs for unchanged packages is correct and
+      # keeps incremental seeds cheap. Forcing would not harden anything
+      # either: GitHub Actions cache entries are immutable — a save for an
+      # existing turbogha_ key fails, first write wins per task hash — so a
+      # forced re-execution cannot replace an entry whose inputs Turbo did
+      # not hash (see the stale-helper caveat in CI.md's Hosted Turbo cache
+      # section; the remediation there is pruning, not forcing).
       - name: Seed build outputs
         shell: bash
         run: pnpm run build
@@ -88,6 +93,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/cache/usage" || true
           echo
           gh cache list --key turbogha_ --limit 20 --sort size_in_bytes --order desc || true
