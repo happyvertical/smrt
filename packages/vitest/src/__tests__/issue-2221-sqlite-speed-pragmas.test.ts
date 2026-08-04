@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { applySqliteSpeedPragmas } from '../setup.js';
+import { applySqliteSpeedPragmas } from '../sqlite-schema-template.js';
 
 const testDir = join(tmpdir(), `smrt-vitest-issue-2221-${Date.now()}`);
 

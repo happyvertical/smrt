@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
 import {
+  applySqliteSpeedPragmas,
   getDatabaseFromSqliteSchemaTemplate,
   getLocalSqliteFilePath,
 } from './sqlite-schema-template.js';
@@ -62,55 +63,9 @@ interface SmrtCoreSchemaModule {
 
 const preparedSchemasByDb = new WeakMap<object, string>();
 const preparedSchemasByConfig = new Map<string, string>();
-const speedPragmasApplied = new WeakSet<object>();
-
-/**
- * Strip durability from local file-backed SQLite test databases.
- *
- * Test databases are created fresh per test and discarded afterwards, so
- * crash durability buys nothing — but SQLite's defaults (`synchronous=FULL`,
- * DELETE journal) cost 2-3 fsyncs per transaction. On runners with slow
- * fsync that dominates wall time: 9.5 ms/fsync measured on the metal CI
- * fleet turned the users package's catalog-seeding tests (~41k fsyncs) into
- * 200-400 s timeouts (#2221). `synchronous=OFF` removes fsync entirely,
- * `journal_mode=MEMORY` removes journal-file I/O (per-connection, safe for
- * the single-connection chains test databases use), and `temp_store=MEMORY`
- * keeps sort/temp b-trees off disk.
- *
- * Only file-backed local SQLite is touched: PostgreSQL and DuckDB reject
- * these pragmas, in-memory SQLite never fsyncs, and a thrown pragma must
- * never fail a test, so everything is guarded and best-effort.
- *
- * @internal exported for regression testing only (#2221)
- */
-export async function applySqliteSpeedPragmas(
-  db: unknown,
-  options: VitestDatabaseOptions,
-): Promise<void> {
-  if (!db || typeof db !== 'object' || speedPragmasApplied.has(db)) {
-    return;
-  }
-  const isConfigObject =
-    options && typeof options === 'object' && !('query' in options);
-  if (
-    !isConfigObject ||
-    !getLocalSqliteFilePath(options as { type?: string; url?: string })
-  ) {
-    return;
-  }
-  const query = (db as { query?: (sql: string) => Promise<unknown> }).query;
-  if (typeof query !== 'function') {
-    return;
-  }
-  speedPragmasApplied.add(db);
-  try {
-    await query.call(db, 'PRAGMA synchronous = OFF');
-    await query.call(db, 'PRAGMA journal_mode = MEMORY');
-    await query.call(db, 'PRAGMA temp_store = MEMORY');
-  } catch {
-    // Best-effort: an adapter that rejects pragmas keeps its defaults.
-  }
-}
+// applySqliteSpeedPragmas (#2221) lives in sqlite-schema-template.ts so the
+// isolated test-db factories can share it without importing this setup
+// file's vi.mock/beforeAll side effects.
 
 function findWorkspaceRoot(startDir: string): string | null {
   let current = startDir;
