@@ -1,7 +1,8 @@
 # Continuous integration architecture
 
 SMRT uses hosted runners for lightweight static and control-plane checks and
-the shared `arc-happyvertical` broker pool for general builds, tests, and publishing. The
+the shared `arc-happyvertical-nodocker` broker lane for general builds, tests,
+and publishing. The
 internal Turborepo server is the build-output cache; GitHub Actions cache
 archives are deliberately not used for `.turbo/cache`. If the remote cache is
 unavailable, Turbo performs a cold build.
@@ -22,9 +23,17 @@ never prevent the tests from running.
 
 ## Runner selection
 
-- `arc-happyvertical` is the default selector for general Linux work. It is the
-  workflow-facing broker alias; only runner-pool policy chooses its backing
-  capacity.
+- `arc-happyvertical-nodocker` is the default selector for general Linux work
+  (happyvertical/iac#1316, #2194). It is the workflow-facing broker lane alias;
+  only runner-pool policy chooses its backing capacity. Its Pods carry no
+  Docker daemon — that is the point: dropping the dind sidecar takes each Pod
+  from 26 GiB to 14 on a memory-bound fleet, and none of the jobs on it speak
+  to Docker.
+- `arc-happyvertical` remains the selector for jobs that need the dind
+  sidecar. Today that is only the dormant `postgres-tests.yml` (gated on
+  `vars.CI_POSTGRES_ENABLED`, unset), whose `services:` container needs a
+  Docker daemon until the node-level CI Postgres
+  (willgriffin/nixos-config#224) is adopted in its own change.
 - `arc-happyvertical-node` is retired and must not be selected. Nothing
   registers it, and because iac quiesced the scale set to `minRunners`/
   `maxRunners` 0 — GitHub's queue-drain mode — a job naming it is still assigned
@@ -34,8 +43,9 @@ never prevent the tests from running.
 - Lightweight lifecycle, policy, stale-management, and mobile jobs remain
   GitHub-hosted when they do not benefit from a self-hosted cache. Aggregation
   is not uniform: `required-ci` is hosted, but `test-packages-result` runs on
-  `arc-happyvertical` even though it only reads `needs.*.result`. It is capped
-  at the standard rather than moved, because it backs a required status.
+  `arc-happyvertical-nodocker` even though it only reads `needs.*.result`. It
+  is capped at the standard rather than moved, because it backs a required
+  status.
 
 The PR caller uses `pull_request_target`, so GitHub loads runner selection from
 the trusted base branch rather than contributor-controlled merge YAML. It passes
@@ -61,7 +71,7 @@ fallback.
 
 ## Job timeouts
 
-Validation jobs on `arc-happyvertical` use `timeout-minutes: 45`. The value
+Validation jobs on the self-hosted lanes use `timeout-minutes: 45`. The value
 is a standard, not a per-job estimate: the previous spread ran from 5 to 45,
 mostly unexplained, and the low end was close to the pool's own queue wait
 (p90 1483-1933s measured over 180 jobs, against a median execution of 39-50s).

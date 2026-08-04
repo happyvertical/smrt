@@ -22,7 +22,7 @@ permissions:
 jobs:
   prepare-publish:
     name: Prepare Publish Validation
-    runs-on: arc-happyvertical
+    runs-on: arc-happyvertical-nodocker
     timeout-minutes: 45
     outputs:
       should-validate: ${{ steps.prepare.outputs.should_validate }}
@@ -142,7 +142,7 @@ jobs:
   validate-publish-shards:
     needs: prepare-publish
     if: needs.prepare-publish.outputs.should-validate == 'true'
-    runs-on: arc-happyvertical
+    runs-on: arc-happyvertical-nodocker
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -209,7 +209,7 @@ jobs:
       - prepare-publish
       - validate-publish-shards
     if: always()
-    runs-on: arc-happyvertical
+    runs-on: arc-happyvertical-nodocker
     timeout-minutes: 45
 
     steps:
