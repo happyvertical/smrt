@@ -33,6 +33,16 @@ inputs:
     required: false
     default: ''
 
+  turbo-cache-shim:
+    description: >-
+      Turborepo remote-cache shim backed by GitHub Actions cache. 'auto'
+      enables it only on GitHub-hosted runners; self-hosted pods receive the
+      internal Turbo cache server env from iac and must not have it shadowed.
+      'on' forces the shim everywhere (debug only: its GITHUB_ENV exports
+      override pod-injected process env). 'off' disables it everywhere.
+    required: false
+    default: 'auto'
+
 outputs:
   pnpm-cache-hit:
     description: 'Whether pnpm cache was hit'
@@ -224,6 +234,22 @@ runs:
         key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
         restore-keys: |
           ${{ runner.os }}-playwright-
+
+    # Hosted-runner counterpart of the pod-injected internal Turbo cache.
+    # Self-hosted pods get TURBO_API/TURBO_TOKEN/TURBO_TEAM as runner process
+    # env from iac; process env is invisible to the `env` context in step
+    # `if:`, so the discriminator is runner.environment, which never matches
+    # on those pods and leaves the internal cache untouched. On hosted
+    # runners the shim starts a localhost server speaking the Vercel
+    # remote-cache API over GitHub Actions cache entries (key prefix
+    # turbogha_) and exports the TURBO_* env itself. Turbo treats a failing
+    # remote cache as a warning and builds cold, so this step can degrade a
+    # job but never fail it.
+    - name: Setup Turbo cache shim (GitHub-hosted runners)
+      if: >-
+        inputs.turbo-cache-shim != 'off' &&
+        (inputs.turbo-cache-shim == 'on' || runner.environment == 'github-hosted')
+      uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
     # Check if ONNX deps are already installed or supplied by the runner image.
     - name: Install system dependencies for ONNX Runtime

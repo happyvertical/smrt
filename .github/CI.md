@@ -1,10 +1,15 @@
 # Continuous integration architecture
 
 SMRT uses hosted runners for lightweight static and control-plane checks and
-the shared `arc-happyvertical` broker pool for general builds, tests, and publishing. The
-internal Turborepo server is the build-output cache; GitHub Actions cache
-archives are deliberately not used for `.turbo/cache`. If the remote cache is
-unavailable, Turbo performs a cold build.
+the shared `arc-happyvertical` broker pool for general builds, tests, and publishing.
+There are two build-output caches, split by lane: self-hosted runners use the
+internal Turborepo server, and GitHub-hosted runners use GitHub Actions cache
+entries written through the `caching-for-turbo` shim (key prefix `turbogha_`)
+described under Hosted Turbo cache below. Raw GitHub Actions cache archives of
+`.turbo/cache` remain deliberately unused — the archive model pays full
+upload/download for a mostly unchanged blob and races on save. If either
+remote cache is unavailable, Turbo performs a cold build; a cache outage
+never fails a job.
 
 ## Manifest generation
 
@@ -36,6 +41,16 @@ never prevent the tests from running.
   is not uniform: `required-ci` is hosted, but `test-packages-result` runs on
   `arc-happyvertical` even though it only reads `needs.*.result`. It is capped
   at the standard rather than moved, because it backs a required status.
+- Every self-hosted job in `test-suite.yml` selects its runner through the
+  emergency lane selector
+  `${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || '<label>' }}`.
+  Flipping that repository variable moves the merge-blocking validation path
+  onto GitHub-hosted runners without a workflow merge — which would itself
+  need the down fleet. It is a manual lever, not a dispatcher; automated
+  hosted fallback is tracked separately. Publish, build, and postgres jobs
+  stay on the self-hosted label and queue instead. actionlint does not
+  validate labels inside expressions, so the allowlist in
+  `.github/actionlint.yaml` is unaffected.
 
 The PR caller uses `pull_request_target`, so GitHub loads runner selection from
 the trusted base branch rather than contributor-controlled merge YAML. It passes
@@ -58,6 +73,39 @@ SQLite fixtures and other temporary test files bypass the container overlay
 filesystem. Self-hosted runners can provide `CI_TEST_TMPDIR` to route those
 files to a bounded, test-only tmpfs; other runners retain the workspace-backed
 fallback.
+
+## Hosted Turbo cache
+
+GitHub-hosted runners cannot reach the internal Turbo cache server, so the
+shared setup action starts the `rharkor/caching-for-turbo` shim on them: a
+localhost server speaking the Vercel remote-cache API that stores one GitHub
+Actions cache entry per Turbo task hash under the `turbogha_` key prefix. The
+gate is `runner.environment == 'github-hosted'` — the pod-injected `TURBO_*`
+variables are runner process env, which the `env` context in a step `if:`
+cannot see. Self-hosted pods therefore never start the shim and keep the
+internal server. The `turbo-cache-shim` input (`auto`/`on`/`off`) is the
+per-call kill switch; `on` is debug-only because the shim's `GITHUB_ENV`
+exports would shadow the pod-injected internal cache env.
+
+GitHub Actions cache is branch-scoped: runs restore only entries written by
+their own branch or by main. PR and merge-group runs cannot warm each other,
+so `turbo-cache-seed.yml` (push to main, daily schedule as a 7-day-idle
+eviction backstop, manual dispatch) seeds `build` and `typecheck` — the
+latter pulling `generate:test` through its task dependencies — which are
+exactly the task types `test-suite.yml` restores. `test` tasks are
+environment-sensitive and deliberately not seeded. The scheduled and push
+runs stay skipped until the repository variable
+`CI_HOSTED_TURBO_CACHE_ENABLED` is `true`; manual dispatch bypasses the
+variable so the lane can be validated first, mirroring the PostgreSQL lane.
+
+The `turbogha_` pool shares the repository's 10 GiB Actions cache quota with
+`mobile.yml`'s Gradle entries (about 3.8 GiB when this lane was added) under
+least-recently-used eviction. An unbounded Turbo pool degrades the mobile
+nightly to slower cold Gradle runs rather than breaking it, but watch the
+usage report the seed job prints. The shim's built-in cleanup options apply
+only to its S3 provider, so pruning here is manual:
+`gh cache list --key turbogha_` and `gh cache delete`. Entries idle for
+seven days expire on their own.
 
 ## Job timeouts
 
@@ -234,3 +282,11 @@ the previous required status list, and removing the merge-queue rule.
 PostgreSQL is not part of the required aggregator, so toggling
 `CI_POSTGRES_ENABLED` never alters SQLite coverage. The artifact publisher can
 temporarily fall back to Changesets through manual dispatch.
+
+The hosted Turbo cache lane has two independent clearable levers:
+`CI_HOSTED_TURBO_CACHE_ENABLED` stops scheduled and push seeding (entries then
+expire within seven days), and `CI_HOSTED_FALLBACK_ENABLED` returns
+`test-suite.yml` to the self-hosted label. The per-call `turbo-cache-shim:
+'off'` input disables the shim for a single caller. Rehearse the fallback
+lever on a scratch pull request in a quiet window before relying on it, and
+record the observed hosted timings here.
