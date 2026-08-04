@@ -41,20 +41,24 @@ never prevent the tests from running.
   is not uniform: `required-ci` is hosted, but `test-packages-result` runs on
   `arc-happyvertical` even though it only reads `needs.*.result`. It is capped
   at the standard rather than moved, because it backs a required status.
-- Every self-hosted job in `test-suite.yml` selects its runner through the
-  emergency lane selector
+- Every self-hosted job in `test-suite.yml` and `publish-dry-run.yml`
+  selects its runner through the emergency lane selector
   `${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || '<label>' }}`.
   Flipping that repository variable moves the merge-blocking validation path
   onto GitHub-hosted runners without a workflow merge — which would itself
-  need the down fleet. It is a manual lever, not a dispatcher; automated
-  hosted fallback is tracked separately. Publish, build, and postgres jobs
-  stay on the self-hosted label and queue instead. actionlint does not
-  validate labels inside expressions, so the allowlist in
-  `.github/actionlint.yaml` is unaffected. The variable selects only the
-  runner: on `pull_request_target` events the Turbo shim stays off (see
-  Hosted Turbo cache), so fallback PR validation builds cold while
-  merge-group fallback runs stay warm — the merge queue, not PR validation,
-  is the gate that decides what lands.
+  need the down fleet. Both files must carry it because `Required CI`
+  aggregates jobs from both; a lever that moved only the test suite would
+  leave the aggregator blocked on queued dry-run jobs. It is a manual
+  lever, not a dispatcher; automated hosted fallback is tracked separately.
+  The release publish path, standalone build, and postgres jobs stay on the
+  self-hosted label and queue instead. actionlint does not validate labels
+  inside expressions, so the allowlist in `.github/actionlint.yaml` is
+  unaffected. The variable selects only the runner: on `pull_request_target`
+  events both main-scoped cache write paths stay closed — the Turbo shim
+  refuses the event and the pnpm-store `actions/cache` step is skipped (see
+  Hosted Turbo cache) — so fallback PR validation builds and installs cold
+  while merge-group fallback runs stay warm. The merge queue, not PR
+  validation, is the gate that decides what lands.
 
 The PR caller uses `pull_request_target`, so GitHub loads runner selection from
 the trusted base branch rather than contributor-controlled merge YAML. It passes
@@ -94,7 +98,10 @@ refuses `pull_request_target` events — those runs carry main's cache write
 scope while executing PR-head code, so the shim there would hand unreviewed
 code a write path into entries every other run restores — and it sets
 `continue-on-error` so a shim that fails to start degrades the job to a cold
-build instead of failing it.
+build instead of failing it. The pnpm-store `actions/cache` step in the same
+action is skipped on `pull_request_target` for the same write-scope reason:
+`pnpm install` runs PR-head lifecycle scripts, and the saved store would be
+a main-scoped entry trusted runs restore.
 
 Two properties of this pool differ from the internal server and matter for
 trust in it. Entries are immutable: a save against an existing `turbogha_`

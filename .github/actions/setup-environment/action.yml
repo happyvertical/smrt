@@ -215,9 +215,16 @@ runs:
       run: |
         echo "path=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
 
+    # pull_request_target is excluded for the same reason as the Turbo shim
+    # below: those runs carry main's cache write scope while pnpm install
+    # executes PR-head lifecycle scripts, so saving the store there would
+    # give unreviewed code a main-scoped entry that trusted runs restore.
+    # Hosted fallback PR jobs install cold instead.
     - name: Setup pnpm cache
       id: pnpm-cache
-      if: steps.pnpm-store-strategy.outputs.use-actions-cache == 'true'
+      if: >-
+        steps.pnpm-store-strategy.outputs.use-actions-cache == 'true' &&
+        github.event_name != 'pull_request_target'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
