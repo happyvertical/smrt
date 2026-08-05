@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.54
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: record the hosted fallback rehearsal results (#2228) (ci)
+  - @happyvertical/smrt-config@0.40.54
+  - @happyvertical/smrt-types@0.40.54
+  - @happyvertical/smrt-scanner@0.40.54
+
 ## 0.40.53
 
 ### Patch Changes
