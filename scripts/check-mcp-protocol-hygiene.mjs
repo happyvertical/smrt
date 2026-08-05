@@ -5,7 +5,14 @@ import { extname, join, relative, resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
 const packagesDir = join(root, 'packages');
 const sourceExtensions = new Set(['.ts', '.mts', '.cts', '.js', '.mjs', '.cjs', '.svelte']);
-const skippedDirectories = new Set(['node_modules', 'dist', '.smrt', '.generated-tmp']);
+const skippedDirectories = new Set([
+  'node_modules',
+  'dist',
+  'coverage',
+  '.smrt',
+  '.svelte-kit',
+  '.generated-tmp',
+]);
 const banned = [
   ['PingRequestSchema', 'ping was removed'],
   ['logging/setLevel', 'logging/setLevel was removed'],
@@ -23,7 +30,13 @@ const findings = [];
 
 for (const packageName of readdirSync(packagesDir)) {
   const packageDir = join(packagesDir, packageName);
-  const manifestPath = join(packageDir, 'package.json');
+  try {
+    scan(packageDir);
+  } catch {}
+}
+
+function scan(directory) {
+  const manifestPath = join(directory, 'package.json');
   try {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     for (const section of ['dependencies', 'devDependencies', 'peerDependencies']) {
@@ -33,13 +46,6 @@ for (const packageName of readdirSync(packagesDir)) {
     }
   } catch {}
 
-  const sourceDir = join(packageDir, 'src');
-  try {
-    if (statSync(sourceDir).isDirectory()) scan(sourceDir);
-  } catch {}
-}
-
-function scan(directory) {
   for (const entry of readdirSync(directory)) {
     if (skippedDirectories.has(entry)) continue;
     const path = join(directory, entry);
