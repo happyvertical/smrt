@@ -179,6 +179,7 @@ Status legend:
 | [`smrt-app-cli`](./packages/app-cli/README.md) | Preview | Reusable branded application CLI and stdio MCP bridge. |
 | [`smrt-dev-mcp`](./packages/smrt-dev-mcp/README.md) | Stable | Development MCP server and repository knowledge tools. |
 | [`smrt-app-mcp`](./packages/smrt-app-mcp/README.md) | Preview | App-runtime MCP server and transport adapters. |
+| [`smrt-mcp-conformance-fixture`](./packages/mcp-conformance-fixture/README.md) | Internal | Generated Tier-1 MCP 2026-07-28 conformance gate. |
 | [`smrt-bundle-gate`](./packages/bundle-gate/README.md) | Internal | Consumer bundle reachability and size regression gate. |
 
 ### Agents, identity, and operations

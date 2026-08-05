@@ -3,7 +3,7 @@
  *
  * This template provides stdio transport integration for SMRT-generated MCP servers.
  * It handles:
- * - Server initialization with @modelcontextprotocol/sdk
+ * - Server initialization with @modelcontextprotocol/server v2
  * - Tool registration from MCPGenerator
  * - Stdio transport connection
  * - Error handling and logging
@@ -274,17 +274,16 @@ ${indent}}`;
  * with an authenticated gateway. Do not expose it directly to untrusted callers.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
   type CallToolRequest,
   type ListToolsRequest,
-} from '@modelcontextprotocol/sdk/types.js';
+  Server,
+} from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
-import { config } from '@happyvertical/smrt-config';
+import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
 const SERVER_NAME = ${JSON.stringify(name)};
@@ -375,8 +374,7 @@ function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any 
 /**
  * Main server startup function
  */
-async function main() {
-  try {
+export async function createServer(): Promise<Server> {
     if (DEBUG) {
       console.error(\`[MCP] Starting server: \${SERVER_NAME} v\${SERVER_VERSION}\`);
     }
@@ -393,7 +391,7 @@ ${
     : ''
 }
     // Load configuration from environment and .smrt.config files
-    const appConfig = await config.load();
+    const appConfig = await loadConfig();
     const aiConfig = appConfig?.ai || {};
 
     if (DEBUG) {
@@ -415,7 +413,7 @@ ${
     );
 
     // Register ListTools handler
-    server.setRequestHandler(ListToolsRequestSchema, async (_request: ListToolsRequest) => {
+    server.setRequestHandler('tools/list', async (_request: ListToolsRequest) => {
       if (DEBUG) {
         console.error(\`[MCP] ListTools request received\`);
       }
@@ -426,7 +424,7 @@ ${
     });
 
     // Register CallTool handler
-    server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
+    server.setRequestHandler('tools/call', async (request: CallToolRequest) => {
       const { name: toolName, arguments: args = {} } = request.params;
 
       if (DEBUG) {
@@ -481,44 +479,34 @@ ${
       }
     });
 
-    // Setup stdio transport
-    const transport = new StdioServerTransport();
+    return server;
+}
 
-    // Connect server to transport
-    await server.connect(transport);
-
-    if (DEBUG) {
-      console.error(\`[MCP] Server connected via stdio transport\`);
-      console.error(\`[MCP] Ready to receive requests\`);
-    }
-
-    // Handle graceful shutdown
-    process.on('SIGINT', async () => {
-      if (DEBUG) {
-        console.error(\`[MCP] Received SIGINT, shutting down gracefully\`);
-      }
-      await server.close();
-      process.exit(0);
+async function main() {
+  try {
+    const handle = serveStdio(() => createServer(), {
+      onerror: (error) => console.error('[MCP] Protocol error:', error),
     });
-
-    process.on('SIGTERM', async () => {
-      if (DEBUG) {
-        console.error(\`[MCP] Received SIGTERM, shutting down gracefully\`);
-      }
-      await server.close();
+    const shutdown = async () => {
+      if (DEBUG) console.error('[MCP] Shutting down gracefully');
+      await handle.close();
       process.exit(0);
-    });
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   } catch (error) {
     console.error('[MCP] Fatal error during server startup:', error);
     process.exit(1);
   }
 }
 
-// Start the server
-main().catch((error) => {
-  console.error('[MCP] Unhandled error:', error);
-  process.exit(1);
-});
+// Start only when executed, so adapters and tests may import the factory.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error('[MCP] Unhandled error:', error);
+    process.exit(1);
+  });
+}
 `;
 }
 

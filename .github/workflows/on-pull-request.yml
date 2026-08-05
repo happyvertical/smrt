@@ -281,6 +281,9 @@ jobs:
       - name: Check AGENTS.md instruction chains
         run: node scripts/check-agents-chain.mjs
 
+      - name: Check MCP 2026-07-28 protocol hygiene
+        run: node scripts/check-mcp-protocol-hygiene.mjs
+
       # Fails if any --smrt-* token consumed by smrt-svelte components is never
       # emitted by a theme-delivery path (issue #1431). Node-only, no deps.
       - name: Check smrt-svelte design tokens

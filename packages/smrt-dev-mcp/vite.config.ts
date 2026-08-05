@@ -28,7 +28,7 @@ export default defineConfig({
     },
     rollupOptions: {
       external: [
-        /^@modelcontextprotocol\/sdk/,
+        /^@modelcontextprotocol\//,
         /^@happyvertical\/smrt-core/,
         /^@happyvertical\/smrt-scanner/,
         /^node:/,

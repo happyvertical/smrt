@@ -31,10 +31,11 @@
   },
   "dependencies": {
     "@happyvertical/smrt-users": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.25.2"
+    "@modelcontextprotocol/server": "2.0.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
+    "@modelcontextprotocol/client": "2.0.0",
     "@types/node": "24.13.2",
     "typescript": "5.9.3",
     "vite": "8.1.4",

@@ -22,18 +22,19 @@
  */
 
 import { SMRT_MCP_RESULT_METADATA_KEY as APP_CONTRACT_MCP_RESULT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   type CallToolRequest,
-  CallToolRequestSchema,
   type CallToolResult,
-  ErrorCode,
   type ListToolsRequest,
-  ListToolsRequestSchema,
   type ListToolsResult,
-  McpError,
-} from '@modelcontextprotocol/sdk/types.js';
+  ProtocolError,
+  ProtocolErrorCode,
+  Server,
+} from '@modelcontextprotocol/server';
+import {
+  StdioServerTransport,
+  serveStdio,
+} from '@modelcontextprotocol/server/stdio';
 import {
   type AppCliResultMetadata,
   type CliConfigContext,
@@ -83,7 +84,7 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
   });
 
   server.setRequestHandler(
-    ListToolsRequestSchema,
+    'tools/list',
     async (_request: ListToolsRequest): Promise<ListToolsResult> => {
       const outcome = await requestJsonResult<ListToolsResult>(
         options,
@@ -97,7 +98,7 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
   );
 
   server.setRequestHandler(
-    CallToolRequestSchema,
+    'tools/call',
     async (request: CallToolRequest): Promise<CallToolResult> => {
       const { name, arguments: args = {} } = request.params;
       const outcome = await requestJsonResult<CallToolResult>(
@@ -199,10 +200,12 @@ function sanitizeMetadata(
 }
 
 /** Convert an HTTP transport failure into an MCP JSON-RPC error safely. */
-export function toMcpTransportError(metadata: AppCliResultMetadata): McpError {
+export function toMcpTransportError(
+  metadata: AppCliResultMetadata,
+): ProtocolError {
   const sanitized = sanitizeMetadata(metadata);
-  return new McpError(
-    ErrorCode.InternalError,
+  return new ProtocolError(
+    ProtocolErrorCode.InternalError,
     sanitized.message ?? sanitized.code,
     { [APP_CONTRACT_MCP_RESULT_METADATA_KEY]: sanitized },
   );
@@ -240,12 +243,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * One-call entry point — instantiate the bridge and connect stdio. Returns
- * a `Promise<void>` that resolves once the transport disconnects.
+ * One-call entry point — start the factory-owned stdio bridge. The returned
+ * promise resolves once the stdio listener is installed.
  */
 export async function runMcpStdioBridge(
   options: McpStdioBridgeOptions,
 ): Promise<void> {
-  const { connect } = createMcpStdioBridge(options);
-  await connect();
+  serveStdio(() => createMcpStdioBridge(options).server);
 }
