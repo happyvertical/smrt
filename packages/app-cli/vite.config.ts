@@ -30,8 +30,7 @@ export default defineConfig({
         'http',
         'https',
 
-        '@modelcontextprotocol/sdk',
-        /^@modelcontextprotocol\/sdk\//,
+        /^@modelcontextprotocol\//,
         '@happyvertical/smrt-users',
         /^@happyvertical\/smrt-users\//,
       ],

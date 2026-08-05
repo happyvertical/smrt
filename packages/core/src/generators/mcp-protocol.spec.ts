@@ -349,7 +349,7 @@ describe('MCP Protocol Compliance', () => {
     it('should use MCP SDK compatible types', async () => {
       const tools = await generator.generateTools();
 
-      // Tool structure matches @modelcontextprotocol/sdk types
+      // Tool structure matches @modelcontextprotocol/server types
       tools.forEach((tool) => {
         // Name: string
         expect(typeof tool.name).toBe('string');
