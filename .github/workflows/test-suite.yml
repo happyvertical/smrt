@@ -22,19 +22,23 @@ jobs:
   affected-scope:
     name: Detect Affected Validation Scope
     if: inputs.mode == 'affected'
-    # Emergency lane selector, used on every self-hosted job in this file:
-    # flipping the repository variable CI_HOSTED_FALLBACK_ENABLED to 'true'
-    # moves validation to GitHub-hosted runners without a workflow merge —
-    # which would itself need the down fleet. Automated dispatch is a later
-    # issue; this is the manual lever. The variable is owner controlled and
-    # selects only the runner; the Turbo cache shim in setup-environment
-    # additionally refuses pull_request_target events, so PR-head code never
-    # writes the main-scoped hosted cache pool. Fallback PR validation
-    # therefore builds cold, while merge-group and main runs restore
-    # build/generate:test/typecheck seeded by turbo-cache-seed.yml. Rehearse
-    # before relying on it; see the Hosted Turbo cache section of CI.md.
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
-    timeout-minutes: 90
+    # Permanently GitHub-hosted (#2236, happyvertical/iac#1349 phase 0). This
+    # job is a checkout plus a paths-filter — no Turbo task, no dependency
+    # install, no contact with either the internal cache or the hosted shim —
+    # so the metal fleet offers it nothing, while a cold node there can make it
+    # wait out a netboot of up to 780s. Measured at 6s hosted on the full
+    # rehearsal (run 30969467329).
+    #
+    # Deliberately a plain label rather than the CI_HOSTED_FALLBACK_ENABLED
+    # selector the metal jobs below carry: a lever that can only ever resolve
+    # to ubuntu-latest reads as a choice when there is none, and this job needs
+    # no fleet-outage escape hatch because it never depends on the fleet.
+    runs-on: ubuntu-latest
+    # Hosted jobs never enter the self-hosted queue, so the queue-wait
+    # fragility behind the 90-minute standard does not apply and the ceiling
+    # can track observed runtime (see Job timeouts in CI.md). Ten minutes is a
+    # hang guard against a stuck checkout, not a capacity budget.
+    timeout-minutes: 10
     outputs:
       knowledge: ${{ steps.filter.outputs.knowledge }}
     steps:
@@ -63,6 +67,21 @@ jobs:
   build:
     name: Build
     if: inputs.mode == 'full'
+    # Emergency lane selector, used on every job in this file that is still on
+    # the fleet: flipping the repository variable CI_HOSTED_FALLBACK_ENABLED to
+    # 'true' moves validation to GitHub-hosted runners without a workflow merge
+    # — which would itself need the down fleet. Automated dispatch is a later
+    # issue; this is the manual lever. The variable is owner controlled and
+    # selects only the runner; the Turbo cache shim in setup-environment
+    # additionally refuses pull_request_target events, so PR-head code never
+    # writes the main-scoped hosted cache pool. Fallback PR validation
+    # therefore builds cold, while merge-group and main runs restore
+    # build/generate:test/typecheck seeded by turbo-cache-seed.yml. Rehearse
+    # before relying on it; see the Hosted Turbo cache section of CI.md.
+    #
+    # The jobs pinned to a plain ubuntu-latest (affected-scope, lint,
+    # test-packages-result) are outside this lever by design — they are already
+    # hosted, so there is nothing for a fallback to move (#2236).
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
@@ -172,8 +191,16 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
-    timeout-minutes: 90
+    # Permanently GitHub-hosted (#2236, happyvertical/iac#1349 phase 0). Biome
+    # arrives through `npx` and the job deliberately never runs the workspace
+    # install, so there is no Turbo task and no pnpm store to warm — the metal
+    # fleet's memory and internal cache are both irrelevant here. Measured at
+    # 18s hosted on the full rehearsal (run 30969467329). See the note on the
+    # `build` job for why this carries no fallback lever.
+    runs-on: ubuntu-latest
+    # Hosted; ceiling tracks observed runtime rather than the self-hosted
+    # queue-wait standard (Job timeouts, CI.md).
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -535,9 +562,20 @@ jobs:
   test-packages-result:
     name: Test Packages
     needs: test-packages
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    # Permanently GitHub-hosted (#2236, happyvertical/iac#1349 phase 0). This
+    # job does no checkout and no setup — it reads needs.test-packages.result
+    # and exits — so holding a slot on an 8-slot fleet bought nothing, and a
+    # busy fleet could delay a required status by the length of a netboot.
+    # CI.md previously recorded this as an unresolved asymmetry against the
+    # already-hosted `required-ci`, which is structurally the same job; the two
+    # now match. Backing a required status is a reason to make it start
+    # promptly, not a reason to queue it. See the note on `build` for why this
+    # carries no fallback lever.
+    runs-on: ubuntu-latest
     if: always() && inputs.mode == 'full'
-    timeout-minutes: 90
+    # Same reasoning as required-ci: this finishes in seconds, so failing fast
+    # is correct for a job that only reports other jobs' results.
+    timeout-minutes: 5
     steps:
       - name: Verify all Test Packages shards passed
         run: |
