@@ -89,8 +89,24 @@ mounts without measuring runner memory and install latency. The shared setup
 action also points `TMPDIR` at the workspace-backed runner temp directory so
 SQLite fixtures and other temporary test files bypass the container overlay
 filesystem. Self-hosted runners can provide `CI_TEST_TMPDIR` to route those
-files to a bounded, test-only tmpfs; other runners retain the workspace-backed
-fallback.
+files to a bounded, test-only scratch volume; other runners retain the
+workspace-backed fallback.
+
+That volume is **disk-backed, not a tmpfs**. On the metal fleet it is a plain
+`emptyDir` with a size limit and no `medium: Memory`, so writes land on the
+node's state disk: 9.5 ms per synced write measured inside a runner Pod on
+`metal-782bcb5e4e67`, 3.8 ms on `pxe-runner`. That latency is why
+`packages/vitest` strips durability from file-backed SQLite test databases
+(#2221) — roughly 41k fsyncs of catalog seeding ran 200-400 s against a 60 s
+timeout before it did.
+
+Do not "fix" that by making the volume memory-backed. Memory-backed volumes
+were deliberately removed from this Pod shape because they are charged
+against the container memory limit, and the runner's current memory figure
+was settled only after a smaller shape measured an 18% merge-queue failure
+rate; the reasoning lives next to the shape in `willgriffin/nixos-config`.
+Making synced writes cheap belongs in the runner image instead
+(happyvertical/iac#1329).
 
 ## Hosted Turbo cache
 
