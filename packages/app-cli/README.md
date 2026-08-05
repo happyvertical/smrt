@@ -46,6 +46,41 @@ Resources and their commands are discovered from the app's `/_resources`
 surface. JSON Schema becomes CLI flags, while unsupported schema shapes are
 reported instead of silently guessed.
 
+## Discovery conformance artifact
+
+`createResourceListHandler()` includes an `artifact` beside the compatible
+`user`, `warnings`, and `resources` response fields. The artifact has a stable
+schema selector, version, canonical ordering, and a `sha256:<hex>` digest. The
+CLI validates it before using its embedded discovery payload.
+
+For a released downstream app, install the exact published
+`@happyvertical/smrt-users` version and pin a captured artifact like this:
+
+```ts
+import {
+  validateDiscoveryConformanceArtifact,
+} from '@happyvertical/smrt-users/app-contract';
+
+const response = await fetch('https://app.example/api/_resources');
+const body = await response.json();
+const artifact = validateDiscoveryConformanceArtifact(body.artifact);
+
+console.log(artifact.schema, artifact.version, artifact.integrity.digest);
+// Store all three selectors and the canonical JSON in your packaged-runtime test.
+```
+
+The result contract embedded in the artifact names the common `code`,
+`message`, `details`, `retryable`, `correlationId`, `idempotencyKey`, and
+`expectedVersion` metadata. `mcp tools` and `mcp call` print this as a JSON
+success/error envelope. HTTP failures may use either a conventional top-level
+metadata object or `{ error: metadata }`; both normalize to that same shape.
+Generated action failures use the latter form with
+`{ error: { ok: false, code, message, status, ... } }`; the CLI reports the
+HTTP status beside that normalized metadata.
+The stdio bridge carries it in MCP `_meta` under
+`io.happyvertical/smrt`. It deliberately does not synthesize MCP
+`structuredContent`.
+
 ## Add an app-specific command
 
 ```ts

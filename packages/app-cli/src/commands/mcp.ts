@@ -8,30 +8,34 @@
  */
 
 import type { CliConfigContext } from '../config.js';
-import { requestJson } from '../config.js';
+import { requestJsonResult } from '../config.js';
 
 export interface McpCommandOptions {
   context: CliConfigContext;
   stdout?: NodeJS.WriteStream;
+  stderr?: NodeJS.WriteStream;
   fetch?: typeof fetch;
 }
 
 export async function runMcpCommand(
   options: McpCommandOptions,
   args: string[],
-): Promise<void> {
+): Promise<boolean> {
   const stdout = options.stdout ?? process.stdout;
+  const stderr = options.stderr ?? process.stderr;
   const sub = args[0];
 
   if (sub === 'tools') {
-    const result = await requestJson(
+    const result = await requestJsonResult(
       options.context,
       '/api/mcp/tools',
       { method: 'GET' },
       { fetch: options.fetch },
     );
     stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
+    if (!result.ok)
+      stderr.write(`${result.error.message ?? result.error.code}\n`);
+    return result.ok;
   }
 
   if (sub === 'call') {
@@ -46,7 +50,7 @@ export async function runMcpCommand(
         `Could not parse mcp call payload: ${(error as Error).message}`,
       );
     }
-    const result = await requestJson(
+    const result = await requestJsonResult(
       options.context,
       '/api/mcp/call',
       {
@@ -56,7 +60,9 @@ export async function runMcpCommand(
       { fetch: options.fetch },
     );
     stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-    return;
+    if (!result.ok)
+      stderr.write(`${result.error.message ?? result.error.code}\n`);
+    return result.ok;
   }
 
   throw new Error('Usage: mcp tools | mcp call <tool> [<json>]');

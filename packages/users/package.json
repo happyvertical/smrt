@@ -11,6 +11,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./app-contract": {
+      "types": "./dist/app-contract.d.ts",
+      "import": "./dist/app-contract.js"
+    },
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",
       "import": "./dist/sveltekit.js"

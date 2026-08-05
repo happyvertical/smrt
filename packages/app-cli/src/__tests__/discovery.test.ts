@@ -5,6 +5,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createDiscoveryConformanceArtifact } from '@happyvertical/smrt-users/app-contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type CliConfigContext, saveAuth } from '../config.js';
 import {
@@ -71,6 +72,34 @@ describe('fetchResourceList', () => {
     await expect(
       fetchResourceList(context, { fetch: fetchMock as any }),
     ).rejects.toThrow(/auth login/);
+  });
+
+  it('rejects a malformed discovery artifact instead of consuming it', async () => {
+    const artifact = createDiscoveryConformanceArtifact({
+      user: { authenticated: true },
+      warnings: [],
+      resources: [],
+    });
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ...artifact.discovery,
+            artifact: {
+              ...artifact,
+              integrity: {
+                ...artifact.integrity,
+                digest: `sha256:${'0'.repeat(64)}`,
+              },
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+
+    await expect(
+      fetchResourceList(context, { fetch: fetchMock as any }),
+    ).rejects.toThrow(/digest/);
   });
 });
 
