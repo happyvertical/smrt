@@ -97,8 +97,8 @@ That volume is **disk-backed, not a tmpfs**. On the metal fleet it is a plain
 node's state disk: 9.5 ms per synced write measured inside a runner Pod on
 `metal-782bcb5e4e67`, 3.8 ms on `pxe-runner`. That latency is why
 `packages/vitest` strips durability from file-backed SQLite test databases
-(#2221) — roughly 41k fsyncs of catalog seeding ran 200-400 s against a 60 s
-timeout before it did.
+(#2221) — before it did, catalog-seeding tests issuing roughly 41k fsyncs
+took 200-400 s each against a 60 s timeout.
 
 Do not "fix" that by making the volume memory-backed. Memory-backed volumes
 were deliberately removed from this Pod shape because they are charged
