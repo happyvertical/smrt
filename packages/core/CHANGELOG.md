@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.55
+
+### Patch Changes
+
+- ### Features
+
+  - migrate shipped servers to scoped SDK v2 (#2229) (mcp)
+  - @happyvertical/smrt-config@0.40.55
+  - @happyvertical/smrt-types@0.40.55
+  - @happyvertical/smrt-scanner@0.40.55
+
 ## 0.40.54
 
 ### Patch Changes
