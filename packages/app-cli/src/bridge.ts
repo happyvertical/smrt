@@ -31,7 +31,10 @@ import {
   ProtocolErrorCode,
   Server,
 } from '@modelcontextprotocol/server';
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import {
+  StdioServerTransport,
+  serveStdio,
+} from '@modelcontextprotocol/server/stdio';
 import {
   type AppCliResultMetadata,
   type CliConfigContext,
@@ -240,12 +243,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * One-call entry point — instantiate the bridge and connect stdio. Returns
- * a `Promise<void>` that resolves once the transport disconnects.
+ * One-call entry point — start the factory-owned stdio bridge. The returned
+ * promise resolves once the stdio listener is installed.
  */
 export async function runMcpStdioBridge(
   options: McpStdioBridgeOptions,
 ): Promise<void> {
-  const { connect } = createMcpStdioBridge(options);
-  await connect();
+  serveStdio(() => createMcpStdioBridge(options).server);
 }

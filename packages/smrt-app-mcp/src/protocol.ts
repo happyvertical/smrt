@@ -58,12 +58,16 @@ export function createMcpProtocolServer(
       })) as CallToolResult;
     } catch (error) {
       if (error instanceof McpAccessError) {
+        const { code, retryable } = error.metadata;
         throw new ProtocolError(
           error.status === 404
             ? ProtocolErrorCode.InvalidParams
             : ProtocolErrorCode.InvalidRequest,
           error.message,
-          error.metadata,
+          {
+            ...(typeof code === 'string' ? { code } : {}),
+            ...(typeof retryable === 'boolean' ? { retryable } : {}),
+          },
         );
       }
       throw error;

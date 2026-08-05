@@ -13,6 +13,7 @@ import {
   SERVER_INFO_META_KEY,
 } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { McpAccessError } from '../errors.js';
 import { createMcpProtocolServer } from '../protocol.js';
 import type { McpAppServer } from '../server.js';
 
@@ -69,6 +70,32 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
     });
   });
 
+  it('allowlists access-error metadata before exposing it over MCP', async () => {
+    const accessErrorServer: McpAppServer = {
+      ...appServer,
+      async callTool() {
+        throw new McpAccessError(403, 'access denied', {
+          code: 'access_denied',
+          retryable: false,
+          secret: 'LEAK_ME',
+        } as { code: string; retryable: boolean; secret: string });
+      },
+    };
+    const accessErrorHandler = createMcpHandler(() =>
+      createMcpProtocolServer(accessErrorServer),
+    );
+
+    const response = await modernRequest(accessErrorHandler, 'tools/call', {
+      name: 'private-tool',
+      arguments: {},
+    });
+    expect(response.body.error.data).toEqual({
+      code: 'access_denied',
+      retryable: false,
+    });
+    expect(JSON.stringify(response.body)).not.toContain('LEAK_ME');
+  });
+
   it('passes the official server suite with the reviewed baseline', async () => {
     const result = await runConformance(mcpUrl);
     expect(result.code, result.output).toBe(0);
@@ -104,7 +131,11 @@ function runConformance(url: string) {
   );
 }
 
-async function modernRequest(target: McpHttpHandler, method: string) {
+async function modernRequest(
+  target: McpHttpHandler,
+  method: string,
+  params: Record<string, unknown> = {},
+) {
   const response = await target.fetch(
     new Request('http://localhost/mcp', {
       method: 'POST',
@@ -112,12 +143,14 @@ async function modernRequest(target: McpHttpHandler, method: string) {
         'content-type': 'application/json',
         'mcp-method': method,
         'mcp-protocol-version': '2026-07-28',
+        ...(typeof params.name === 'string' ? { 'mcp-name': params.name } : {}),
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method,
         params: {
+          ...params,
           _meta: {
             [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
             [CLIENT_INFO_META_KEY]: {
