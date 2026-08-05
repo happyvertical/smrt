@@ -83,8 +83,16 @@ async function generateManifest() {
         process.cwd(),
         'src/manifest/smrt-knowledge.json',
       );
-      const knowledge = preserveGeneratedAtIfUnchanged(
-        knowledgePath,
+      // src/manifest/smrt-knowledge.json is gitignored build output that the
+      // package build copies verbatim to dist/smrt-knowledge.json, so it must
+      // not carry the clock: a fresh checkout has no previous file for
+      // preserveGeneratedAtIfUnchanged to carry a value forward from, and
+      // every build would emit different bytes (#2232). Mirrors
+      // DETERMINISTIC_GENERATED_AT in src/scanner/types.ts, duplicated as a
+      // literal because this script runs before core is built.
+      const DeterministicGeneratedAt = '1970-01-01T00:00:00.000Z';
+      const knowledge = withDeterministicGeneratedAt(
+        DeterministicGeneratedAt,
         buildDomainKnowledgeManifest({
           manifest,
           rootDir: process.cwd(),
@@ -109,6 +117,10 @@ async function generateManifest() {
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   generateManifest();
+}
+
+function withDeterministicGeneratedAt(generatedAt, nextKnowledge) {
+  return { ...nextKnowledge, generatedAt };
 }
 
 function preserveGeneratedAtIfUnchanged(path, nextKnowledge) {

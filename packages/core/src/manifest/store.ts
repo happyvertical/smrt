@@ -24,6 +24,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import type { ColumnDefinition } from '../schema/types.js';
 import {
   createQualifiedName,
@@ -228,7 +229,7 @@ export function getLocalTestManifestCache():
 export function createEmptyStaticManifest(): SmartObjectManifest {
   return {
     version: '1.0.0',
-    timestamp: Date.now(),
+    timestamp: MANIFEST_TIMESTAMP,
     objects: {},
     packageName: '@happyvertical/smrt-core',
   };
