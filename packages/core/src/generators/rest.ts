@@ -856,14 +856,23 @@ export class APIGenerator {
         }
       }
 
-      const result = await invoke(
-        buildCustomActionInvocationArgs(metadata, {
-          ...(options && typeof options === 'object' && !Array.isArray(options)
-            ? (options as Record<string, unknown>)
-            : {}),
-          options,
-        }),
-      );
+      // Project declared parameters only when the registry actually knows
+      // them. Without metadata the historical single-options call is kept
+      // verbatim, so an opaque body (an array, or any non-record payload an
+      // existing action already accepts) still arrives unchanged rather than
+      // being silently normalized away.
+      const invocationArgs = metadata.parameters
+        ? buildCustomActionInvocationArgs(metadata, {
+            ...(options &&
+            typeof options === 'object' &&
+            !Array.isArray(options)
+              ? (options as Record<string, unknown>)
+              : {}),
+            options,
+          })
+        : [options];
+
+      const result = await invoke(invocationArgs);
 
       const failure = normalizeCustomActionFailure(result);
       if (failure) {

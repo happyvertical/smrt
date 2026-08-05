@@ -49,8 +49,29 @@ export interface FieldPolicyOptions extends SmrtObjectOptions {
   scopeType?: FieldPolicyScopeType;
   tenantId?: string | null;
   userId?: string | null;
-  /** JSON-encoded default value (string), or a plain value to be serialized. */
-  defaultValue?: unknown;
+  /**
+   * ENCODED channel: an already-JSON-encoded default, exactly as the column
+   * stores it (`'"Net 30"'`, `'42'`, `'null'`), or `null` to inherit.
+   *
+   * This is the wire contract: the generated write routes hand the request
+   * body straight to the constructor, and the #2049/#2050 gear posts
+   * `JSON.stringify(draft.defaultValue)`. It must therefore keep meaning
+   * "already encoded" — auto-serializing here would double-encode every gear
+   * write.
+   *
+   * Use {@link FieldPolicyOptions.defaultValueRaw} for a plain value. The two
+   * are mutually exclusive: `'"TBD"'` and `'TBD'` are indistinguishable once
+   * a single option carries both meanings, so the channel must be explicit
+   * rather than sniffed.
+   */
+  defaultValue?: string | null;
+  /**
+   * PLAIN channel: any value, always serialized — strings included. The
+   * constructor-option twin of {@link FieldPolicy.setDefaultValue}, so
+   * `{ defaultValueRaw: 'Net 30' }` stores `'"Net 30"'` rather than the
+   * unparseable literal `Net 30`.
+   */
+  defaultValueRaw?: unknown;
   visibility?: FieldPolicyVisibility | null;
   help?: string | null;
   label?: string | null;

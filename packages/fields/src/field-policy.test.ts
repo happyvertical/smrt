@@ -1012,6 +1012,69 @@ describe('FieldPolicy write-time validation', () => {
     expect(textRow.getDefaultValue()).toBe('legacy-id-42');
   });
 
+  it('round-trips a plain string default through defaultValueRaw', async () => {
+    // `defaultValue` is the ENCODED channel (the wire contract: generated
+    // write routes hand the request body straight to the constructor, and the
+    // #2049 gear posts `JSON.stringify(...)`), so a plain string sent through
+    // it is unparseable. `defaultValueRaw` is the plain channel — the option
+    // twin of setDefaultValue() — and strings go through it unchanged.
+    const row = await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'app',
+      defaultValueRaw: 'Net 30',
+    });
+    // Stored encoded, read back plain.
+    expect(row.defaultValue).toBe('"Net 30"');
+    expect(row.getDefaultValue()).toBe('Net 30');
+
+    // ...and it survives resolution as the plain value.
+    const resolved = await resolveFieldPolicy(objectRef, { db });
+    expect(resolved.fields.summary.hasDefault).toBe(true);
+    expect(resolved.fields.summary.defaultValue).toBe('Net 30');
+
+    // Strings that merely LOOK like JSON stay literal through the raw channel
+    // — the ambiguity the two-channel split exists to remove.
+    const literal = await policies.create({
+      objectRef,
+      fieldName: 'category',
+      scopeType: 'app',
+      defaultValueRaw: 'null',
+    });
+    expect(literal.getDefaultValue()).toBe('null');
+
+    // The encoded channel still means encoded (no double-encoding), which is
+    // what every generated write surface and the gear rely on.
+    const encoded = await policies.create({
+      objectRef,
+      fieldName: 'wordCount',
+      scopeType: 'app',
+      defaultValue: JSON.stringify(42),
+    });
+    expect(encoded.getDefaultValue()).toBe(42);
+
+    // A plain string in the encoded channel fails loudly, naming the fix.
+    await expect(
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        defaultValue: 'Net 30',
+      }),
+    ).rejects.toThrow(/defaultValueRaw/);
+
+    // Supplying both channels is rejected rather than silently resolved.
+    await expect(
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('a'),
+        defaultValueRaw: 'b',
+      }),
+    ).rejects.toThrow(/not both/);
+  });
+
   it('denies every user-tier write from a context that carries no user id', async () => {
     // Regression for the userless-context ownership bypass (#2047): the guard
     // used to read `context.userId !== undefined && scope.userId !== ...`, so

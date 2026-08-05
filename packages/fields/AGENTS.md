@@ -129,6 +129,15 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 
 ## Gotchas
 
+- Defaults have TWO explicit constructor channels, never sniffed:
+  `defaultValue` is ALREADY JSON-encoded (the wire contract — generated write
+  routes hand the request body straight to the constructor, and #2049's gear
+  posts `JSON.stringify(draft.defaultValue)`), while `defaultValueRaw` is a
+  plain value that is always serialized, strings included. Passing both throws.
+  One option cannot carry both meanings: `'"TBD"'` and `'TBD'` are
+  indistinguishable, so `{ defaultValue: 'Net 30' }` is a parse error that
+  names `defaultValueRaw` in its message. `setDefaultValue()` is the
+  method-level plain channel.
 - The sort-order column is `displayOrder` (resolved output exposes `order`):
   a column literally named `order` is an SQL keyword the runtime INSERT path
   does not quote.

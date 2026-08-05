@@ -152,15 +152,25 @@ export class FieldPolicy extends SmrtObject {
     if (options.scopeType !== undefined) this.scopeType = options.scopeType;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.userId !== undefined) this.userId = options.userId;
-    if (options.defaultValue !== undefined) {
-      if (
-        typeof options.defaultValue === 'string' ||
-        options.defaultValue === null
-      ) {
-        this.defaultValue = options.defaultValue;
-      } else {
-        this.defaultValue = JSON.stringify(options.defaultValue);
-      }
+    // Two explicit channels, never sniffed: `defaultValue` is already
+    // JSON-encoded (the wire contract — generated write routes pass the
+    // request body straight through, and the gear posts JSON.stringify'd
+    // values), `defaultValueRaw` is a plain value that is always serialized.
+    // One option carrying both meanings cannot distinguish `'"TBD"'` from
+    // `'TBD'`, so supplying both is rejected rather than silently resolved.
+    if (
+      options.defaultValue !== undefined &&
+      options.defaultValueRaw !== undefined
+    ) {
+      throw new Error(
+        'FieldPolicy accepts either defaultValue (already JSON-encoded) or ' +
+          'defaultValueRaw (a plain value to serialize), not both',
+      );
+    }
+    if (options.defaultValueRaw !== undefined) {
+      this.setDefaultValue(options.defaultValueRaw);
+    } else if (options.defaultValue !== undefined) {
+      this.defaultValue = options.defaultValue;
     }
     if (options.visibility !== undefined) this.visibility = options.visibility;
     if (options.help !== undefined) this.help = options.help;
@@ -675,11 +685,16 @@ export class FieldPolicy extends SmrtObject {
     try {
       return JSON.parse(this.defaultValue as string);
     } catch (error) {
+      // The overwhelmingly likely cause is a PLAIN string sent through the
+      // encoded channel (`{ defaultValue: 'Net 30' }`), which is also the most
+      // natural-looking call — so name the fix instead of only reporting the
+      // parse failure.
       throw new Error(
         `FieldPolicy default for "${this.objectRef}.${this.fieldName}" is ` +
           `not valid JSON: ${
             error instanceof Error ? error.message : String(error)
-          }`,
+          }. The "defaultValue" option is the already-encoded channel; pass a ` +
+          `plain value as "defaultValueRaw" (or call setDefaultValue()).`,
       );
     }
   }
