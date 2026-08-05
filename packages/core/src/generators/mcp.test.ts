@@ -2,8 +2,12 @@
  * Tests for MCP generator with custom action support
  */
 
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import { MCPGenerator } from './mcp';
@@ -159,6 +163,68 @@ class MCPUnderscoreMethodAgent extends SmrtObject {
   }
 }
 
+@smrt({
+  mcp: {
+    include: [
+      'apply',
+      'rebalance',
+      'archive',
+      'restoreIntoContent',
+      'move',
+      'fail',
+      'opaque',
+    ],
+  },
+  api: { routes: { apply: { scope: 'collection' } } },
+})
+class MCPConformanceAgent extends SmrtObject {
+  async apply(idempotencyKey: string, expectedVersion?: number): Promise<any> {
+    return { receiver: 'item', idempotencyKey, expectedVersion };
+  }
+
+  static async rebalance(
+    idempotencyKey: string,
+    expectedVersion?: number,
+  ): Promise<any> {
+    return { receiver: 'static', idempotencyKey, expectedVersion };
+  }
+
+  static async archive(id: string): Promise<any> {
+    return { receiver: 'static', actionId: id };
+  }
+
+  async restoreIntoContent(idempotencyKey: string): Promise<any> {
+    return { receiver: 'camelCase', idempotencyKey };
+  }
+
+  async move(id: string): Promise<any> {
+    return { receiver: 'item', actionId: id };
+  }
+
+  async fail(): Promise<any> {
+    return {
+      ok: false,
+      code: 'conflict',
+      message: 'Bearer private-token',
+      status: 409,
+      details: { authorization: 'private-token', safe: 'still-safe' },
+    };
+  }
+
+  async opaque(): Promise<any> {
+    return { code: 'opaque-success', message: 'leave me untouched' };
+  }
+}
+
+@smrt({ mcp: { include: ['fanout'] } })
+class MCPConformanceCollection extends SmrtCollection<MCPConformanceAgent> {
+  static readonly _itemClass = MCPConformanceAgent;
+
+  async fanout(idempotencyKey: string, expectedVersion?: number): Promise<any> {
+    return { receiver: 'collection', idempotencyKey, expectedVersion };
+  }
+}
+
 describe('MCPGenerator with Custom Actions', () => {
   let generator: MCPGenerator;
 
@@ -166,6 +232,74 @@ describe('MCPGenerator with Custom Actions', () => {
     // Authenticated context so the fail-closed tool-auth gate (#1540) allows
     // mutating custom actions; auth itself is covered by dedicated tests.
     generator = new MCPGenerator({}, { user: { id: 'test-user' } });
+    ObjectRegistry.getMethods('MCPConformanceAgent').set('apply', {
+      name: 'apply',
+      async: true,
+      isPublic: true,
+      isStatic: false,
+      returnType: 'Promise<any>',
+      parameters: [
+        { name: 'idempotencyKey', type: 'string', optional: false },
+        { name: 'expectedVersion', type: 'number', optional: true },
+      ],
+    });
+    ObjectRegistry.getMethods('MCPConformanceAgent').set('rebalance', {
+      name: 'rebalance',
+      async: true,
+      isPublic: true,
+      isStatic: true,
+      returnType: 'Promise<any>',
+      parameters: [
+        { name: 'idempotencyKey', type: 'string', optional: false },
+        { name: 'expectedVersion', type: 'number', optional: true },
+      ],
+    });
+    ObjectRegistry.getMethods('MCPConformanceAgent').set('archive', {
+      name: 'archive',
+      async: true,
+      isPublic: true,
+      isStatic: true,
+      returnType: 'Promise<any>',
+      parameters: [{ name: 'id', type: 'string', optional: false }],
+    });
+    ObjectRegistry.getMethods('MCPConformanceAgent').set('restoreIntoContent', {
+      name: 'restoreIntoContent',
+      async: true,
+      isPublic: true,
+      isStatic: false,
+      returnType: 'Promise<any>',
+      parameters: [{ name: 'idempotencyKey', type: 'string', optional: false }],
+    });
+    ObjectRegistry.getMethods('MCPConformanceAgent').set('move', {
+      name: 'move',
+      async: true,
+      isPublic: true,
+      isStatic: false,
+      returnType: 'Promise<any>',
+      parameters: [{ name: 'id', type: 'string', optional: false }],
+    });
+    for (const name of ['fail', 'opaque']) {
+      ObjectRegistry.getMethods('MCPConformanceAgent').set(name, {
+        name,
+        async: true,
+        isPublic: true,
+        isStatic: false,
+        returnType: 'Promise<any>',
+        parameters: [],
+      });
+    }
+    ObjectRegistry.getMethods('MCPConformanceCollection').set('fanout', {
+      name: 'fanout',
+      async: true,
+      isPublic: true,
+      isStatic: false,
+      returnType: 'Promise<any>',
+      parameters: [
+        { name: 'idempotencyKey', type: 'string', optional: false },
+        { name: 'expectedVersion', type: 'number', optional: true },
+      ],
+    });
+    ObjectRegistry.invalidateAllInheritanceCaches();
   });
 
   afterEach(() => {
@@ -204,6 +338,64 @@ describe('MCPGenerator with Custom Actions', () => {
       expect(researchTool?.inputSchema.type).toBe('object');
       expect(researchTool?.inputSchema.properties.id).toBeDefined();
       expect(researchTool?.inputSchema.properties.options).toBeDefined();
+    });
+
+    it('projects canonical custom-action receivers and typed parameters', async () => {
+      const tools = await generator.generateTools();
+      const inputSchema = (name: string) =>
+        tools.find((tool) => tool.name === name)?.inputSchema;
+
+      expect(inputSchema('mcpconformanceagent_apply')).toMatchObject({
+        properties: {
+          id: { type: 'string' },
+          idempotencyKey: { type: 'string' },
+          expectedVersion: { type: 'number' },
+        },
+        required: ['id', 'idempotencyKey'],
+      });
+      expect(inputSchema('mcpconformanceagent_rebalance')).toMatchObject({
+        properties: {
+          idempotencyKey: { type: 'string' },
+          expectedVersion: { type: 'number' },
+        },
+        required: ['idempotencyKey'],
+      });
+      expect(inputSchema('mcpconformanceagent_archive')).toMatchObject({
+        properties: { actionId: { type: 'string' } },
+        required: ['actionId'],
+      });
+      // Tool IDs are lowercased protocol aliases, but the handler resolves the
+      // declared camelCase method name before invocation.
+      expect(
+        inputSchema('mcpconformanceagent_restoreintocontent'),
+      ).toMatchObject({
+        properties: {
+          id: { type: 'string' },
+          idempotencyKey: { type: 'string' },
+        },
+        required: ['id', 'idempotencyKey'],
+      });
+      expect(inputSchema('mcpconformanceagent_move')).toMatchObject({
+        properties: {
+          id: { type: 'string' },
+          actionId: { type: 'string' },
+        },
+        required: ['id', 'actionId'],
+      });
+      // A collection-class method has a real collection receiver, so it is
+      // collection-scoped even though it is not static.
+      expect(inputSchema('mcpconformancecollection_fanout')).toMatchObject({
+        properties: {
+          idempotencyKey: { type: 'string' },
+          expectedVersion: { type: 'number' },
+        },
+        required: ['idempotencyKey'],
+      });
+      // Custom-action discovery never broadens an explicit MCP allowlist into
+      // generic mutation tools.
+      expect(tools.map((tool) => tool.name)).not.toContain(
+        'mcpconformanceagent_create',
+      );
     });
 
     it('should warn about invalid custom actions', async () => {
@@ -353,20 +545,21 @@ describe('MCPGenerator with Custom Actions', () => {
       expect(result.amount).toBe(42);
     });
 
-    it('should handle custom actions without ID (collection-level)', async () => {
-      // Mock collection with custom method
+    it('handles recognized collection actions without an ID', async () => {
+      // A collection-class method has an actual collection receiver.
       const mockCollection = {
-        research: vi
-          .fn()
-          .mockResolvedValue({ action: 'research', level: 'collection' }),
+        fanout: vi.fn().mockResolvedValue({
+          action: 'fanout',
+          level: 'collection',
+        }),
       };
 
       const request = {
         method: 'tools/call',
         params: {
-          name: 'mcptestagent_research',
+          name: 'mcpconformancecollection_fanout',
           arguments: {
-            options: { query: 'collection query' },
+            idempotencyKey: 'collection-query',
           },
         },
       };
@@ -383,8 +576,195 @@ describe('MCPGenerator with Custom Actions', () => {
 
       expect(response.content[0].type).toBe('text');
       const result = JSON.parse(response.content[0].text);
-      expect(result.action).toBe('research');
+      expect(result.action).toBe('fanout');
       expect(result.level).toBe('collection');
+      expect(mockCollection.fanout).toHaveBeenCalledWith(
+        'collection-query',
+        undefined,
+      );
+    });
+
+    it('uses item, static, and collection receivers with positional typed arguments', async () => {
+      const item = new MCPConformanceAgent({});
+      const collection = {
+        get: vi.fn().mockResolvedValue(item),
+      };
+      (generator as any).getCollection = vi.fn().mockReturnValue(collection);
+
+      const itemResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_apply',
+          arguments: {
+            id: 'item-1',
+            idempotencyKey: 'retry-item',
+            expectedVersion: 3,
+          },
+        },
+      });
+      expect(JSON.parse(itemResponse.content[0].text)).toMatchObject({
+        receiver: 'item',
+        idempotencyKey: 'retry-item',
+        expectedVersion: 3,
+      });
+
+      const camelCaseResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_restoreintocontent',
+          arguments: { id: 'item-1', idempotencyKey: 'camel-case' },
+        },
+      });
+      expect(JSON.parse(camelCaseResponse.content[0].text)).toMatchObject({
+        receiver: 'camelCase',
+        idempotencyKey: 'camel-case',
+      });
+
+      const moveResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_move',
+          arguments: { id: 'item-1', actionId: 'destination-2' },
+        },
+      });
+      expect(JSON.parse(moveResponse.content[0].text)).toMatchObject({
+        receiver: 'item',
+        actionId: 'destination-2',
+      });
+
+      const staticResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_rebalance',
+          arguments: { idempotencyKey: 'retry-static', expectedVersion: 4 },
+        },
+      });
+      expect(JSON.parse(staticResponse.content[0].text)).toMatchObject({
+        receiver: 'static',
+        idempotencyKey: 'retry-static',
+        expectedVersion: 4,
+      });
+
+      const archiveResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_archive',
+          arguments: { actionId: 'archive-2' },
+        },
+      });
+      expect(JSON.parse(archiveResponse.content[0].text)).toMatchObject({
+        receiver: 'static',
+        actionId: 'archive-2',
+      });
+
+      const collectionReceiver = {
+        fanout: vi.fn(function (
+          idempotencyKey: string,
+          expectedVersion?: number,
+        ) {
+          return {
+            receiver: this === collectionReceiver ? 'collection' : 'wrong',
+            idempotencyKey,
+            expectedVersion,
+          };
+        }),
+      };
+      (generator as any).getCollection = vi
+        .fn()
+        .mockReturnValue(collectionReceiver);
+      const collectionResponse = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformancecollection_fanout',
+          arguments: { idempotencyKey: 'retry-collection', expectedVersion: 5 },
+        },
+      });
+      expect(JSON.parse(collectionResponse.content[0].text)).toMatchObject({
+        receiver: 'collection',
+        idempotencyKey: 'retry-collection',
+        expectedVersion: 5,
+      });
+      expect(collectionReceiver.fanout).toHaveBeenCalledWith(
+        'retry-collection',
+        5,
+      );
+    });
+
+    it('returns redacted conventional failures as MCP errors without changing opaque successes', async () => {
+      const object = new MCPConformanceAgent({});
+      (generator as any).getCollection = vi
+        .fn()
+        .mockReturnValue({ get: vi.fn().mockResolvedValue(object) });
+
+      const failure = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_fail',
+          arguments: { id: 'item-1' },
+        },
+      });
+      expect(failure.isError).toBe(true);
+      expect(failure._meta).toMatchObject({
+        'io.happyvertical/smrt': {
+          code: 'conflict',
+          status: 409,
+          message: 'Bearer [REDACTED]',
+          details: { authorization: '[REDACTED]', safe: 'still-safe' },
+        },
+      });
+      expect(failure.content[0].text).not.toContain('private-token');
+
+      const opaque = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpconformanceagent_opaque',
+          arguments: { id: 'item-1' },
+        },
+      });
+      expect(opaque.isError).toBeUndefined();
+      expect(JSON.parse(opaque.content[0].text)).toEqual({
+        code: 'opaque-success',
+        message: 'leave me untouched',
+      });
+    });
+
+    it('emits the same custom-action receiver, positional arguments, and error contract for modular MCP servers', async () => {
+      const outputDir = await mkdtemp(join(tmpdir(), 'smrt-modular-mcp-'));
+      try {
+        await generator.generateServer({
+          outputPath: join(outputDir, 'index.js'),
+          modular: true,
+        });
+        const handlers = await readFile(
+          join(outputDir, 'handlers', 'index.ts'),
+          'utf-8',
+        );
+
+        expect(handlers).toContain("case 'mcpconformanceagent_apply'");
+        expect(handlers).toContain("case 'mcpconformanceagent_rebalance'");
+        expect(handlers).toContain("case 'mcpconformanceagent_archive'");
+        expect(handlers).toContain(
+          "case 'mcpconformanceagent_restoreintocontent'",
+        );
+        expect(handlers).toContain("case 'mcpconformanceagent_move'");
+        expect(handlers).toContain("case 'mcpconformancecollection_fanout'");
+        expect(handlers).toContain(
+          'Custom action rebalance is collection-scoped and does not accept an ID',
+        );
+        expect(handlers).toContain(
+          'ObjectRegistry.getClass("MCPConformanceAgent")?.constructor',
+        );
+        expect(handlers).toContain('args["idempotencyKey"]');
+        expect(handlers).toContain('args["actionId"]');
+        expect(handlers).toContain('target["restoreIntoContent"]');
+        expect(handlers).toContain('actionMethod.call(target, ...methodArgs)');
+        expect(handlers).toContain('normalizeCustomActionFailure(result)');
+        expect(handlers).toContain(
+          '[SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure',
+        );
+      } finally {
+        await rm(outputDir, { recursive: true, force: true });
+      }
     });
 
     it('should handle errors in custom action execution', async () => {

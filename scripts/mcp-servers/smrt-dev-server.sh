@@ -6,11 +6,11 @@
 set -euo pipefail
 
 # Configuration
-SERVER_NAME="SMRT Advisor MCP Server"
+SERVER_NAME="SMRT Development MCP Server"
 SMRT_ROOT="${SMRT_ROOT:-$(dirname "$0")/../..}"
-SERVER_SCRIPT="$SMRT_ROOT/packages/core/src/mcp-advisor/index.ts"
-LOG_FILE="/tmp/smrt-advisor-mcp-server.log"
-PID_FILE="/tmp/smrt-advisor-mcp-server.pid"
+SERVER_SCRIPT="$SMRT_ROOT/packages/smrt-dev-mcp/src/index.ts"
+LOG_FILE="/tmp/smrt-dev-mcp-server.log"
+PID_FILE="/tmp/smrt-dev-mcp-server.pid"
 DEBUG="${DEBUG:-false}"
 
 # Utility functions

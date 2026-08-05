@@ -13,6 +13,7 @@ import {
   getStoredToken,
   loadCliConfig,
   requestJson,
+  requestJsonResult,
   saveAuth,
 } from '../config.js';
 
@@ -47,11 +48,15 @@ describe('config persistence', () => {
     expect(s.mode & 0o777).toBe(0o600);
     const raw = JSON.parse(await readFile(path, 'utf8'));
     expect(raw.serverUrl).toBe('https://example.test');
-    expect(raw.token).toBe('tok_abc');
+    expect(raw.credentialIssuer).toBe('https://example.test');
+    expect(raw.tokensByIssuer).toEqual({
+      'https://example.test': 'tok_abc',
+    });
     const loaded = await loadCliConfig(context);
     expect(loaded).toEqual({
+      credentialIssuer: 'https://example.test',
       serverUrl: 'https://example.test',
-      token: 'tok_abc',
+      tokensByIssuer: { 'https://example.test': 'tok_abc' },
     });
   });
 
@@ -125,7 +130,60 @@ describe('env var precedence', () => {
   it('env token wins over config token', async () => {
     await saveAuth(context, 'https://x', 'tok_cfg');
     process.env.TESTCFG_TOKEN = 'tok_env';
+    process.env.TESTCFG_SERVER_URL = 'https://x';
     expect(await getStoredToken(context)).toBe('tok_env');
+  });
+
+  it('requires an environment token to be bound to the exact environment server', async () => {
+    process.env.TESTCFG_TOKEN = 'tok_env';
+    process.env.TESTCFG_SERVER_URL = 'https://issuer-a.example';
+
+    expect(
+      await getStoredToken(context, undefined, 'https://issuer-a.example'),
+    ).toBe('tok_env');
+    expect(
+      await getStoredToken(context, undefined, 'https://issuer-b.example'),
+    ).toBeUndefined();
+
+    delete process.env.TESTCFG_SERVER_URL;
+    expect(
+      await getStoredToken(context, undefined, 'https://issuer-a.example'),
+    ).toBeUndefined();
+  });
+
+  it('does not reuse an issuer-bound token when the target server changes', async () => {
+    await saveAuth(
+      context,
+      'https://resource.example',
+      'tok_issuer_a',
+      'https://issuer-a.example',
+    );
+
+    expect(await getStoredToken(context)).toBe('tok_issuer_a');
+    process.env.TESTCFG_SERVER_URL = 'https://other-resource.example';
+    expect(await getStoredToken(context)).toBeUndefined();
+  });
+
+  it('replaces rather than reuses credentials when an issuer changes', async () => {
+    await saveAuth(
+      context,
+      'https://resource.example',
+      'tok_issuer_a',
+      'https://issuer-a.example',
+    );
+    await saveAuth(
+      context,
+      'https://resource.example',
+      'tok_issuer_b',
+      'https://issuer-b.example',
+    );
+
+    const config = await loadCliConfig(context);
+    expect(config.credentialIssuer).toBe('https://issuer-b.example');
+    expect(config.tokensByIssuer).toEqual({
+      'https://issuer-b.example': 'tok_issuer_b',
+    });
+    expect(await getStoredToken(context, config)).toBe('tok_issuer_b');
   });
 });
 
@@ -150,6 +208,28 @@ describe('requestJson', () => {
     expect(r).toEqual({ ok: true });
   });
 
+  it('does not send an environment bearer token to a request-level server override', async () => {
+    process.env.TESTCFG_TOKEN = 'tok_issuer_a';
+    process.env.TESTCFG_SERVER_URL = 'https://issuer-a.example';
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      expect((init.headers as Headers).has('authorization')).toBe(false);
+      return new Response('{"ok":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    await requestJson(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: fetchMock as any,
+        serverUrl: 'https://issuer-b.example',
+      },
+    );
+  });
+
   it('throws on 401 with server error message', async () => {
     await saveAuth(context, 'https://api.example', 'tok_abc');
     const fetchMock = vi.fn(
@@ -167,6 +247,112 @@ describe('requestJson', () => {
         { fetch: fetchMock as any },
       ),
     ).rejects.toThrow(/unauthenticated/);
+  });
+
+  it('preserves a redacted structured error envelope', async () => {
+    const result = await requestJsonResult(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                ok: false,
+                code: 'upstream_timeout',
+                message: 'Bearer top-secret-token failed',
+                status: 503,
+                details: {
+                  accessToken: 'top-secret-token',
+                  retryAfter: 5,
+                },
+                retryable: true,
+                correlationId: 'corr-42',
+                idempotencyKey: { field: 'idempotencyKey', required: true },
+                expectedVersion: { field: 'expectedVersion', required: false },
+              },
+            }),
+            {
+              status: 503,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 503,
+      error: {
+        code: 'upstream_timeout',
+        message: 'Bearer [REDACTED] failed',
+        details: { accessToken: '[REDACTED]', retryAfter: 5 },
+        retryable: true,
+        correlationId: 'corr-42',
+        idempotencyKey: { field: 'idempotencyKey', required: true },
+        expectedVersion: { field: 'expectedVersion', required: false },
+      },
+    });
+  });
+
+  it('normalizes a conventional top-level HTTP failure envelope', async () => {
+    const result = await requestJsonResult(
+      context,
+      '/test',
+      { method: 'POST' },
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              code: 'version_conflict',
+              message: 'Expected version is stale.',
+              details: { currentVersion: 4 },
+              retryable: false,
+              correlationId: 'corr-version',
+              expectedVersion: { field: 'expectedVersion', required: true },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 409,
+      error: {
+        code: 'version_conflict',
+        message: 'Expected version is stale.',
+        details: { currentVersion: 4 },
+        retryable: false,
+        correlationId: 'corr-version',
+        expectedVersion: { field: 'expectedVersion', required: true },
+      },
+    });
+  });
+
+  it('leaves opaque successful domain values untouched', async () => {
+    const result = await requestJsonResult<{ token: string; value: string }>(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              token: 'domain-token-value',
+              value: 'preserve me',
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      result: { token: 'domain-token-value', value: 'preserve me' },
+      metadata: { code: 'ok', retryable: false },
+    });
   });
 
   it('rejects responses with Content-Length above maxResponseBytes — #1311 round-4 A4', async () => {
@@ -219,6 +405,36 @@ describe('requestJson', () => {
         },
       ),
     ).rejects.toThrow(/Response too large/);
+  });
+
+  it('normalizes a response-stream failure as a retryable network error', async () => {
+    const body = new ReadableStream({
+      start(controller) {
+        controller.error(new Error('Bearer read-secret connection reset'));
+      },
+    });
+    const result = await requestJsonResult(
+      context,
+      '/test',
+      { method: 'GET' },
+      {
+        fetch: async () =>
+          new Response(body, {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 0,
+      error: {
+        code: 'network_error',
+        message: 'Bearer [REDACTED] connection reset',
+        retryable: true,
+      },
+    });
   });
 
   it('honors custom maxResponseBytes opt-out (Infinity) — #1311 round-4 A4', async () => {

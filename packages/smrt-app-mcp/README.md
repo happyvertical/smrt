@@ -7,6 +7,11 @@ App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
 
 For piping a deployed app's MCP surface to a local stdio MCP client, see `@happyvertical/smrt-app-cli` — the client-side runtime CLI exposes a `startMcpBridge()` default and a generic `smrt-mcp-bridge` bin.
 
+For public deployments, follow the
+[remote MCP authorization contract](../../docs/content/architecture/remote-mcp-authorization.md).
+This package trusts the principal supplied by the application adapter; it does
+not implement an OAuth authorization server or validate bearer tokens itself.
+
 ```ts
 // src/lib/server/mcp.ts
 import { createMcpAppServer, McpAccessError } from '@happyvertical/smrt-app-mcp';

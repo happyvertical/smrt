@@ -46,7 +46,10 @@ import {
   materializeManifestDDLForEngine,
   tokenizeSQLDDLBody,
 } from '@happyvertical/smrt-core/schema/utils';
-import { getDatabaseFromSqliteSchemaTemplate } from './sqlite-schema-template.js';
+import {
+  applySqliteSpeedPragmas,
+  getDatabaseFromSqliteSchemaTemplate,
+} from './sqlite-schema-template.js';
 import type {
   DatabaseInterfaceWithTransaction,
   TransactionHandle,
@@ -489,6 +492,11 @@ export async function createIsolatedTestDb(
           ...config,
           __smrtSkipVitestSchemaPreparation: true,
         } as VitestDatabaseConnectionOptions)) as DatabaseInterfaceWithTransaction);
+
+  // Isolated test databases are throwaway, so strip fsync durability from
+  // local file-backed SQLite (#2221). The schema-preparation skip above also
+  // bypasses the setup file's pragma application, so it happens here.
+  await applySqliteSpeedPragmas(baseDb, config);
 
   // Sync schema if provided (must be done before transaction for DDL)
   if (schema && config.type !== 'sqlite') {

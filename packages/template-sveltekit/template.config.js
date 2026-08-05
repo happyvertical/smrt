@@ -19,16 +19,16 @@ export default {
 
   // Dependencies to add to generated project
   dependencies: {
-    '@happyvertical/smrt-core': '^0.40.49',
-    '@happyvertical/smrt-profiles': '^0.40.49',
-    '@happyvertical/smrt-svelte': '^0.40.49',
-    '@happyvertical/smrt-tenancy': '^0.40.49',
-    '@happyvertical/smrt-ui': '^0.40.49',
-    '@happyvertical/smrt-users': '^0.40.49',
+    '@happyvertical/smrt-core': '^0.40.53',
+    '@happyvertical/smrt-profiles': '^0.40.53',
+    '@happyvertical/smrt-svelte': '^0.40.53',
+    '@happyvertical/smrt-tenancy': '^0.40.53',
+    '@happyvertical/smrt-ui': '^0.40.53',
+    '@happyvertical/smrt-users': '^0.40.53',
   },
 
   devDependencies: {
-    '@happyvertical/smrt-cli': '^0.40.49',
+    '@happyvertical/smrt-cli': '^0.40.53',
     '@sveltejs/adapter-auto': '^7.0.1',
     '@sveltejs/kit': '^2.69.2',
     '@sveltejs/vite-plugin-svelte': '^7.2.0',

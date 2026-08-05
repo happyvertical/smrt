@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-users",
-  "version": "0.40.49",
+  "version": "0.40.53",
   "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./app-contract": {
+      "types": "./dist/app-contract.d.ts",
+      "import": "./dist/app-contract.js"
     },
     "./sveltekit": {
       "types": "./dist/sveltekit/index.d.ts",

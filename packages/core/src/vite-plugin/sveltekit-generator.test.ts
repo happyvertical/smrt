@@ -29,6 +29,7 @@ import {
   findCliApiCoherenceViolations,
   generateSvelteKitRoutes,
   methodNameToKebab,
+  resolveApiActionRouteConfig,
   resolveApiActionSet,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator';
@@ -46,6 +47,37 @@ describe('methodNameToKebab (#1305)', () => {
     ['parseHTML5Data', 'parse-html5-data'],
   ])('%s → %s', (input, expected) => {
     expect(methodNameToKebab(input)).toBe(expected);
+  });
+});
+
+describe('custom-action target resolution (#2182)', () => {
+  it('keeps a non-static model action on its item receiver despite route scope', () => {
+    expect(
+      resolveApiActionRouteConfig(
+        'apply',
+        { isStatic: false },
+        { routes: { apply: { scope: 'collection' } } },
+      ).scope,
+    ).toBe('item');
+  });
+
+  it('keeps static and collection-class actions on collection receivers', () => {
+    expect(
+      resolveApiActionRouteConfig(
+        'rebalance',
+        { isStatic: true },
+        { routes: { rebalance: { scope: 'item' } } },
+      ).scope,
+    ).toBe('collection');
+    expect(
+      resolveApiActionRouteConfig(
+        'fanout',
+        { isStatic: false },
+        { routes: { fanout: { scope: 'item' } } },
+        {},
+        'collection',
+      ).scope,
+    ).toBe('collection');
   });
 });
 
@@ -706,6 +738,12 @@ describe('SvelteKit Route Generator', () => {
       expect(analyzeContent).toContain('export const POST: RequestHandler');
       expect(analyzeContent).toContain('await item.analyze');
       expect(analyzeContent).toContain("action: 'analyze'");
+      expect(analyzeContent).toContain(
+        "import { normalizeCustomActionFailure } from '@happyvertical/smrt-core';",
+      );
+      expect(analyzeContent).toContain(
+        'return json({ error: failure }, { status: failure.status });',
+      );
 
       // Should write summarize action route
       const summarizeRoute = vi
@@ -1037,7 +1075,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('await item.syncFacts(options)');
     });
 
-    it('should skip collection-scoped custom routes for non-static methods', async () => {
+    it('keeps non-static custom routes item-scoped despite a collection override', async () => {
       const consoleWarnSpy = vi
         .spyOn(console, 'warn')
         .mockImplementation(() => {});
@@ -1079,16 +1117,15 @@ describe('SvelteKit Route Generator', () => {
         objectsDir: 'src/lib/objects',
       });
 
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        '[smrt] Skipping Document.browseFacts - collection API routes require a static method',
-      );
-
       const browseFactsRoute = vi
         .mocked(writeFileSync)
         .mock.calls.find((call) =>
-          call[0].toString().includes('documents/facts/+server.ts'),
+          call[0].toString().includes('documents/[id]/facts/+server.ts'),
         );
-      expect(browseFactsRoute).toBeUndefined();
+      expect(browseFactsRoute).toBeDefined();
+      const content = browseFactsRoute?.[1] as string;
+      expect(content).toContain('await item.browseFacts(options)');
+      expect(consoleWarnSpy).not.toHaveBeenCalled();
 
       consoleWarnSpy.mockRestore();
     });
@@ -2414,12 +2451,9 @@ describe('SvelteKit Route Generator', () => {
       expect(() => validateCliIncludeAgainstApi(manifest)).not.toThrow();
     });
 
-    // Regression: resolveApiActionSet must mirror the scope/static skip rules
-    // applied by route generation, otherwise the lint reports a false negative
-    // (passes a cli.include method that no route is actually emitted for).
-    it('excludes collection-scoped non-static methods on a non-collection class', () => {
-      // User wrote `routes[name].scope: 'collection'` for an instance method
-      // — the generator skips this with a warning. The lint must agree.
+    it('keeps config-only collection overrides item-scoped for non-static methods', () => {
+      // A route declaration cannot turn an instance action into a ClassRef
+      // call. REST discovery now agrees with MCP/WebMCP's item contract.
       const manifest: SmartObjectManifest = {
         objects: {
           Doc: {
@@ -2445,16 +2479,15 @@ describe('SvelteKit Route Generator', () => {
           },
         },
       };
-      expect(Array.from(resolveApiActionSet(manifest.objects.Doc))).toEqual([]);
-      expect(findCliApiCoherenceViolations(manifest)).toEqual([
-        { className: 'Doc', unreachable: ['broken'] },
+      expect(Array.from(resolveApiActionSet(manifest.objects.Doc))).toEqual([
+        'broken',
       ]);
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
     });
 
-    it('excludes scope=item methods on a SmrtCollection class', () => {
-      // Collection classes only emit collection-scoped custom routes; an
-      // explicit `routes[name].scope = 'item'` override on a collection class
-      // method is a misconfig the generator skips. The lint must agree.
+    it('keeps recognized collection-class methods collection-scoped', () => {
+      // A collection class has a collection receiver even when its action is
+      // not static, so a route-only item override cannot remove it.
       const manifest: SmartObjectManifest = {
         objects: {
           DocCollection: {
@@ -2489,14 +2522,10 @@ describe('SvelteKit Route Generator', () => {
           },
         },
       };
-      // misconfigured has explicit scope: 'item' on a collection class -> skipped.
-      // listSpecial defaults to 'collection' on collection class -> exposed.
       expect(
         Array.from(resolveApiActionSet(manifest.objects.DocCollection)).sort(),
-      ).toEqual(['listSpecial']);
-      expect(findCliApiCoherenceViolations(manifest)).toEqual([
-        { className: 'DocCollection', unreachable: ['misconfigured'] },
-      ]);
+      ).toEqual(['listSpecial', 'misconfigured']);
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
     });
 
     it('does not claim CRUD routes for collection classes', () => {
@@ -2585,13 +2614,8 @@ describe('SvelteKit Route Generator', () => {
         Array.from(
           resolveApiActionSet(manifest.objects.SpecialDocCollection, manifest),
         ),
-      ).toEqual(['collectionAction']);
-      expect(findCliApiCoherenceViolations(manifest)).toEqual([
-        {
-          className: 'SpecialDocCollection',
-          unreachable: ['itemAction'],
-        },
-      ]);
+      ).toEqual(['collectionAction', 'itemAction']);
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
     });
   });
 

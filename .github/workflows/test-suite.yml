@@ -22,7 +22,18 @@ jobs:
   affected-scope:
     name: Detect Affected Validation Scope
     if: inputs.mode == 'affected'
-    runs-on: arc-happyvertical
+    # Emergency lane selector, used on every self-hosted job in this file:
+    # flipping the repository variable CI_HOSTED_FALLBACK_ENABLED to 'true'
+    # moves validation to GitHub-hosted runners without a workflow merge —
+    # which would itself need the down fleet. Automated dispatch is a later
+    # issue; this is the manual lever. The variable is owner controlled and
+    # selects only the runner; the Turbo cache shim in setup-environment
+    # additionally refuses pull_request_target events, so PR-head code never
+    # writes the main-scoped hosted cache pool. Fallback PR validation
+    # therefore builds cold, while merge-group and main runs restore
+    # build/generate:test/typecheck seeded by turbo-cache-seed.yml. Rehearse
+    # before relying on it; see the Hosted Turbo cache section of CI.md.
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
     outputs:
       knowledge: ${{ steps.filter.outputs.knowledge }}
@@ -52,7 +63,7 @@ jobs:
   build:
     name: Build
     if: inputs.mode == 'full'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
     steps:
@@ -132,7 +143,7 @@ jobs:
     name: Typecheck
     needs: build
     if: inputs.mode == 'full'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
     steps:
@@ -161,7 +172,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
     steps:
@@ -182,7 +193,7 @@ jobs:
     name: Affected Build, Typecheck, and Tests
     needs: affected-scope
     if: inputs.mode == 'affected'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
     steps:
       - name: Checkout repository
@@ -216,7 +227,7 @@ jobs:
     name: Affected Knowledge Freshness
     needs: affected-scope
     if: inputs.mode == 'affected' && needs.affected-scope.outputs.knowledge == 'true'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
     steps:
       - name: Checkout repository
@@ -247,7 +258,7 @@ jobs:
     name: Knowledge Freshness
     needs: build
     if: inputs.mode == 'full'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
     steps:
@@ -288,7 +299,7 @@ jobs:
     name: Coverage Gate
     needs: build
     if: always() && (inputs.mode == 'affected' || needs.build.result == 'success')
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
     steps:
@@ -350,7 +361,7 @@ jobs:
   test-core:
     needs: build
     if: inputs.mode == 'full'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     # A remote-cache outage can add several minutes of cold setup and build
     # time, so this shard stays on the standard ceiling rather than a tighter
     # one; cache misses must not cancel an otherwise healthy core suite.
@@ -407,7 +418,7 @@ jobs:
     name: Test Integration
     needs: build
     if: inputs.mode == 'full'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
     steps:
@@ -443,7 +454,7 @@ jobs:
   test-packages:
     needs: build
     if: inputs.mode == 'full'
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     # Each shard runs ~1/3 of package tests and lets Turbo build only their
     # dependency closures. Runner-pool contention still applies, so this keeps
     # the standard ceiling rather than a shard-specific one.
@@ -541,7 +552,7 @@ jobs:
   test-packages-result:
     name: Test Packages
     needs: test-packages
-    runs-on: arc-happyvertical
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     if: always() && inputs.mode == 'full'
     timeout-minutes: 90
     steps:

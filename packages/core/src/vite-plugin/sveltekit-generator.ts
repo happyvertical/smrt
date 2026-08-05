@@ -14,6 +14,7 @@ import {
 import { join, relative } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
+import { resolveCustomActionMetadata } from '../generators/custom-action.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -820,8 +821,15 @@ export function resolveApiActionRouteConfig(
     routeOptions,
   );
 
+  const scope = resolveCustomActionMetadata({
+    actionName,
+    method: actionDef,
+    apiConfig,
+    defaultScope,
+  }).scope;
+
   return {
-    scope: routeConfig?.scope || defaultScope,
+    scope,
     method: normalizeApiHttpMethod(routeConfig?.method),
     pathSegments,
     pathParamNames: extractRoutePathParamNames(pathSegments),
@@ -1941,8 +1949,6 @@ export function resolveApiActionSet(
   const actions = objectIsCollectionClass
     ? new Set<string>()
     : new Set<string>(resolveStandardCrudActions(apiConfig));
-  const config = getApiConfigObject(apiConfig);
-
   // Custom (non-CRUD, public) methods. We mirror BOTH the include/exclude
   // filter AND the scope/static skip rules that the route generators apply
   // (sveltekit-generator.ts generateRoutesForObject and
@@ -1953,14 +1959,17 @@ export function resolveApiActionSet(
     if (!method.isPublic) continue;
     if (!shouldIncludeInApi(name, apiConfig)) continue;
 
-    const routeConfig: ApiCustomRouteConfig | undefined =
-      config?.routes?.[name];
     const defaultScope: 'item' | 'collection' = objectIsCollectionClass
       ? 'collection'
       : method.isStatic
         ? 'collection'
         : 'item';
-    const scope = routeConfig?.scope || defaultScope;
+    const scope = resolveCustomActionMetadata({
+      actionName: name,
+      method,
+      apiConfig,
+      defaultScope,
+    }).scope;
 
     if (objectIsCollectionClass) {
       // Collection classes only emit collection-scoped custom routes.
@@ -2507,6 +2516,7 @@ function generateActionRouteTemplate(
 
   const importBlock = [
     "import { error, json } from '@sveltejs/kit';",
+    "import { normalizeCustomActionFailure } from '@happyvertical/smrt-core';",
     hostType === 'collection' || routeConfig.scope !== 'collection'
       ? "import { getCollection } from '$lib/server/smrt';"
       : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
@@ -2611,6 +2621,11 @@ ${optionsLoad}${scopedOptions.source}  const result = ${buildActionInvocationExp
       invocationArgs,
     )};
 
+  const failure = normalizeCustomActionFailure(result);
+  if (failure) {
+    return json({ error: failure }, { status: failure.status });
+  }
+
   return json({
     action: '${actionName}',
     result: toPublicResult(result, publicJsonOptions),
@@ -2650,6 +2665,11 @@ ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor a
     invocationArgs,
   )};
 
+  const failure = normalizeCustomActionFailure(result);
+  if (failure) {
+    return json({ error: failure }, { status: failure.status });
+  }
+
   return json({
     action: '${actionName}',
     result: toPublicResult(result, publicJsonOptions),
@@ -2686,6 +2706,11 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
     actionName,
     invocationArgs,
   )};
+
+  const failure = normalizeCustomActionFailure(result);
+  if (failure) {
+    return json({ error: failure }, { status: failure.status });
+  }
 
   return json({
     action: '${actionName}',
