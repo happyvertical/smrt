@@ -342,6 +342,28 @@ The hosted Turbo cache lane has two independent clearable levers:
 `CI_HOSTED_TURBO_CACHE_ENABLED` stops scheduled and push seeding (entries then
 expire within seven days), and `CI_HOSTED_FALLBACK_ENABLED` returns
 `test-suite.yml` to the self-hosted label. The per-call `turbo-cache-shim:
-'off'` input disables the shim for a single caller. Rehearse the fallback
-lever on a scratch pull request in a quiet window before relying on it, and
-record the observed hosted timings here.
+'off'` input disables the shim for a single caller.
+
+The fallback lever has been rehearsed. With `CI_HOSTED_FALLBACK_ENABLED` set
+to `true`, PR validation re-resolved every job from the self-hosted label to
+`ubuntu-latest` and `Required CI` succeeded in 8.1 minutes of wall clock
+(run `30969467329`):
+
+| job | hosted | ceiling |
+| --- | --- | --- |
+| `publish-dry-run` prepare | 6.0 min | 45 |
+| Coverage Gate | 5.8 min | 90 |
+| `validate-publish-shards` (two) | 1.3 and 1.4 min | 45 |
+| Affected build, typecheck, tests | 1.1 min | 90 |
+| Lint | 0.3 min | 90 |
+
+Nothing approached a ceiling, and these are cold numbers: PR validation runs
+on `pull_request_target`, where the Turbo shim is refused, so no job restored
+from the hosted cache pool.
+
+Two limits on what that rehearsal proves. It exercised the pull-request path
+in `affected` mode, not a `merge_group` run in `full` mode, so the six
+`test-core` and `test-packages` shards remain unmeasured on hosted. And the
+lever is repository-wide: flipping it moves every open pull request, not only
+the one being tested. Re-measure with a full merge-group transit before
+treating hosted as an equivalent lane rather than an emergency one.
