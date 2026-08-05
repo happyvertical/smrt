@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import type { Plugin } from 'vite';
 import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 
 /**
@@ -148,7 +149,11 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
         }
       } else {
         console.log('[smrt:consumer] No SMRT packages found');
-        typeManifest = { version: '1.0.0', timestamp: Date.now(), objects: {} };
+        typeManifest = {
+          version: '1.0.0',
+          timestamp: MANIFEST_TIMESTAMP,
+          objects: {},
+        };
       }
     },
 
@@ -174,7 +179,11 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
       if (!typeManifest) {
-        typeManifest = { version: '1.0.0', timestamp: Date.now(), objects: {} };
+        typeManifest = {
+          version: '1.0.0',
+          timestamp: MANIFEST_TIMESTAMP,
+          objects: {},
+        };
       }
 
       switch (cleanId) {
@@ -275,7 +284,7 @@ async function aggregateTypeManifests(
 ): Promise<ConsumerManifest> {
   const aggregatedManifest: ConsumerManifest = {
     version: '1.0.0',
-    timestamp: Date.now(),
+    timestamp: MANIFEST_TIMESTAMP,
     objects: {},
   };
 

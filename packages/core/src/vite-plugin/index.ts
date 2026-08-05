@@ -14,6 +14,10 @@ import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import type { SmartObjectManifest } from '../scanner/types';
+import {
+  DETERMINISTIC_GENERATED_AT,
+  MANIFEST_TIMESTAMP,
+} from '../scanner/types.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
@@ -289,11 +293,21 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     }
   }
 
+  /**
+   * @param deterministic - Emit a fixed `generatedAt` instead of the clock.
+   *   Set for artifacts written into the build output directory: `dist/` is
+   *   compared byte-for-byte by downstream caches, and a fresh checkout has no
+   *   previous file for {@link preserveKnowledgeGeneratedAt} to carry a value
+   *   forward from, so every build would otherwise emit different bytes
+   *   (#2223). The working copy under `.smrt/` keeps a real timestamp, which
+   *   is where it is useful to a human and where preservation already works.
+   */
   async function writeDomainKnowledgeArtifact(
     m: SmartObjectManifest,
     rootDir: string,
     outputPath: string,
     manifestPath: string,
+    deterministic = false,
   ): Promise<void> {
     const resolvedKnowledge = await resolveKnowledgeConfig(rootDir, m);
     if (resolvedKnowledge.enabled === false) {
@@ -309,15 +323,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       manifestPath,
       config: resolvedKnowledge,
     });
-    writeFileSync(
-      outputPath,
-      JSON.stringify(
-        preserveKnowledgeGeneratedAt(outputPath, artifact),
-        null,
-        2,
-      ),
-      'utf-8',
-    );
+    const emitted = deterministic
+      ? { ...artifact, generatedAt: DETERMINISTIC_GENERATED_AT }
+      : preserveKnowledgeGeneratedAt(outputPath, artifact);
+    writeFileSync(outputPath, JSON.stringify(emitted, null, 2), 'utf-8');
   }
 
   async function resolveKnowledgeConfig(
@@ -947,6 +956,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           projectRoot,
           knowledgePath,
           manifestPath,
+          true,
         );
 
         const objectCount = Object.keys(manifest.objects).length;
@@ -2257,7 +2267,7 @@ async function generateSchemaModule(
     // Create JSON manifest for schemas
     const schemaManifest = {
       version: '1.0.0',
-      timestamp: Date.now(),
+      timestamp: MANIFEST_TIMESTAMP,
       packageName: manifest.packageName || 'unknown',
       schemas: schemas,
       dependencies: Array.from(

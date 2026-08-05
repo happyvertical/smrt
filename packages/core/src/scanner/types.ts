@@ -448,8 +448,43 @@ export interface SmartObjectDefinition {
   agent?: AgentManifest;
 }
 
+/**
+ * Fixed `timestamp` for every manifest that can reach build output.
+ *
+ * Manifests are inlined into bundles (`registerPackageManifest(JSON.parse(...))`),
+ * so a wall-clock value changes the emitted bytes on every build. That changes
+ * Vite's content hash, which changes `dist/`, which invalidates every
+ * downstream package through `dependsOn: ['^build']` — one rebuilt package
+ * churned 202 of 245 task hashes, and `typecheck` never reused a cache entry
+ * across runs (#2223).
+ *
+ * Nothing reads the field: `getManifestTimestampsHash` invalidates on
+ * filesystem mtimes, and `normalizeManifestForHash` deletes it before
+ * comparing. A fixed value therefore costs no information.
+ *
+ * Genuine runtime caches that expire on elapsed time — the discovery cache in
+ * `manifest/discover-smrt-packages.ts` — keep using the clock; they never
+ * reach build output.
+ */
+export const MANIFEST_TIMESTAMP = 0;
+
+/**
+ * Fixed `generatedAt` for knowledge artifacts emitted into `dist/`.
+ *
+ * Same reasoning as {@link MANIFEST_TIMESTAMP}: build output is compared
+ * byte-for-byte, so it cannot carry the clock. The Unix epoch is used rather
+ * than `0` because the field is an ISO-8601 string, and a parseable value
+ * keeps any consumer that formats it working.
+ *
+ * The working copy under `.smrt/` keeps a real timestamp — it is useful to a
+ * human there, and `preserveKnowledgeGeneratedAt` already stops it churning
+ * across incremental rebuilds.
+ */
+export const DETERMINISTIC_GENERATED_AT = '1970-01-01T00:00:00.000Z';
+
 export interface SmartObjectManifest {
   version: string;
+  /** Always {@link MANIFEST_TIMESTAMP} for build-output manifests. */
   timestamp: number;
   packageName?: string; // Root package name (should be set for all new manifests)
   packageVersion?: string; // Root package version
