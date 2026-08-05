@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MANIFEST_TIMESTAMP } from '../../scanner/types.js';
 import { ManifestBuilder } from '../generator.js';
 
 describe('ManifestBuilder', () => {
@@ -529,7 +530,9 @@ class TestClass extends SmrtObject {
         expect(manifest.version).toBe('1.0.0');
         expect(manifest.objects).toEqual({});
         expect(manifest.moduleType).toBe('smrt');
-        expect(manifest.timestamp).toBeGreaterThan(0);
+        // Fixed, not wall-clock: manifests reach build output, so a varying
+        // timestamp would make every build emit different bytes (#2223).
+        expect(manifest.timestamp).toBe(MANIFEST_TIMESTAMP);
       } finally {
         process.chdir(originalCwd);
       }

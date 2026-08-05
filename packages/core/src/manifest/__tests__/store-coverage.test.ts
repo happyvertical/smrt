@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../../scanner/types.js';
+import { MANIFEST_TIMESTAMP } from '../../scanner/types.js';
 import {
   cloneManifestSchemaColumns,
   createEmptyStaticManifest,
@@ -157,7 +158,8 @@ describe('manifest/store coverage', () => {
       const empty = createEmptyStaticManifest();
       expect(empty.packageName).toBe('@happyvertical/smrt-core');
       expect(empty.objects).toEqual({});
-      expect(empty.timestamp).toBeGreaterThan(0);
+      // Fixed, not wall-clock — see #2223.
+      expect(empty.timestamp).toBe(MANIFEST_TIMESTAMP);
     });
   });
 

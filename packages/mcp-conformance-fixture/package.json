@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-mcp-conformance-fixture",
-  "version": "0.0.0",
+  "version": "0.0.2",
   "private": true,
   "type": "module",
   "files": [
