@@ -222,7 +222,6 @@
         "packages/smrt-dev-mcp/src/**",
         "packages/app-cli/src/**",
         "packages/cli/src/commands/**",
-        "packages/core/src/mcp-advisor/**",
         "packages/core/src/schema/schema-aggregator.ts",
         "packages/cli/src/cli-generator.ts",
         "packages/cli/src/utils/generator.ts",

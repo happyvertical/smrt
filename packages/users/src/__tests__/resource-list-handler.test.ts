@@ -10,6 +10,11 @@
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  SMRT_DISCOVERY_CONFORMANCE_SCHEMA,
+  SMRT_DISCOVERY_CONFORMANCE_VERSION,
+  validateDiscoveryConformanceArtifact,
+} from '../app-contract.js';
+import {
   type CliResource,
   type CommandPolicyContext,
   createResourceListHandler,
@@ -112,6 +117,55 @@ describe('createResourceListHandler', () => {
     expect(res.body.user.authenticated).toBe(false);
     expect(res.body.resources).toEqual([]);
     expect(res.body.warnings).toEqual([]);
+    expect(validateDiscoveryConformanceArtifact(res.body.artifact)).toEqual(
+      res.body.artifact,
+    );
+    expect(res.body.artifact).toMatchObject({
+      schema: SMRT_DISCOVERY_CONFORMANCE_SCHEMA,
+      version: SMRT_DISCOVERY_CONFORMANCE_VERSION,
+    });
+  });
+
+  it('includes declared idempotency and expected-version fields in its artifact', async () => {
+    mockRegistry({
+      Job: makeRegistered(
+        'Job',
+        { api: { include: ['run'] }, cli: { mirror: 'api' } },
+        { run: { isStatic: true } },
+        {
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'run',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    expectedVersion: { type: 'integer' },
+                    idempotencyKey: { type: 'string' },
+                  },
+                  required: ['idempotencyKey'],
+                },
+              },
+            },
+          ],
+        },
+      ),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    const command = (res.body.resources[0] as CliResource).commands[0];
+    expect(command.requirements).toEqual({
+      idempotencyKey: { field: 'idempotencyKey', required: true },
+      expectedVersion: { field: 'expectedVersion', required: false },
+    });
+    expect(
+      res.body.artifact.discovery.resources[0].commands[0].requirements,
+    ).toEqual(command.requirements);
   });
 
   it('returns CRUD commands when cli: true and api: true', async () => {

@@ -543,102 +543,42 @@ await generator.generate();
 // Creates: ./mcp/documents-mcp-server.js for AI model integration
 ```
 
-## SMRT Advisor for Claude Code
+## SMRT Development MCP
 
-The SMRT Advisor is a development-time MCP server that integrates with Claude Code to help you write correct SMRT framework code. It provides 11 AI-callable tools for code generation, validation, preview, and discovery.
+Use `@happyvertical/smrt-dev-mcp` for development-time code generation,
+project introspection, ecosystem review, architecture context, and deterministic
+SMRT knowledge. Runtime tool generation remains available from
+`@happyvertical/smrt-core/generators/mcp`, while application-level MCP policy
+belongs to `@happyvertical/smrt-app-mcp`.
 
-### Features
-
-**Code Generation Tools (5)**:
-- `generate-smrt-class` - Generate complete SMRT classes with decorators and properties
-- `add-ai-methods` - Add AI-powered `is()`, `do()`, and `tool()` methods
-- `generate-field-definitions` - Generate field definitions with proper imports
-- `generate-collection` - Generate SmrtCollection subclasses
-- `configure-decorators` - Configure `@smrt()` decorator options
-
-**Validation Tool (1)**:
-- `validate-smrt-object` - Validate SMRT object structure and configuration
-
-**Preview Tools (2)**:
-- `preview-api-endpoints` - Preview auto-generated REST API endpoints
-- `preview-mcp-tools` - Preview auto-generated MCP tools
-
-**Discovery Tools (3)**:
-- `list-registered-objects` - List all registered SMRT objects
-- `get-object-schema` - Get field schemas (JSON/TypeScript/table formats)
-- `get-object-config` - Get decorator configuration (JSON/YAML)
-
-### Setup
-
-The advisor server is configured in your `.mcp.json` file:
+Configure the development server in your `.mcp.json` file:
 
 ```json
 {
   "mcpServers": {
-    "smrt-advisor": {
+    "smrt-dev-mcp": {
       "type": "stdio",
-      "command": "pnpm",
+      "command": "npx",
       "args": [
-        "exec",
-        "tsx",
-        "/path/to/sdk/packages/core/smrt/src/mcp-advisor/index.ts"
+        "-y",
+        "@happyvertical/smrt-dev-mcp"
       ],
       "env": {
         "DEBUG": "false"
-      },
-      "cwd": "/path/to/sdk"
+      }
     }
   }
 }
 ```
 
-After restarting Claude Code, you can use the advisor tools directly in your development workflow.
+After restarting your MCP client, use `generate-smrt-class` for model
+scaffolding, `introspect-project` for object and schema discovery, and
+`smrt-review` for deterministic framework-alignment findings.
 
-### Example Usage
-
-```typescript
-// Ask Claude Code to generate a SMRT class
-"Generate a Book class with title, author, isbn, and price fields"
-
-// Claude Code uses generate-smrt-class tool to create:
-import { SmrtObject, type SmrtObjectOptions, field, smrt } from '@happyvertical/smrt-core';
-
-export interface BookOptions extends SmrtObjectOptions {
-  title?: string;
-  author?: string;
-  isbn?: string;
-  price?: number;
-}
-
-@smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get'] },
-  cli: true
-})
-export class Book extends SmrtObject {
-  @field({ required: true, description: "The title of the book" })
-  title: string = '';
-
-  @field({ required: true, description: "The author's name" })
-  author: string = '';
-
-  @field({ description: "International Standard Book Number" })
-  isbn: string = '';
-
-  @field({ description: "Price of the book" })
-  price: number = 0.0;
-
-  constructor(options: BookOptions = {}) {
-    super(options);
-    this.title = options.title || '';
-    this.author = options.author || '';
-    this.isbn = options.isbn || '';
-    this.price = options.price || 0;
-  }
-}
-```
-
-The advisor helps ensure your SMRT code follows best practices and generates correct configurations.
+Former source-checkout helper tool names are not exposed as compatibility
+aliases. When using `generate-smrt-class` to scaffold a collection, add its
+item import and required `_itemClass`; for curl examples, use the public REST
+or OpenAPI generator output.
 
 ## Vite Plugin Integration
 

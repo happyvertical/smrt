@@ -24,6 +24,7 @@ import { dirname, join } from 'node:path';
 import type { SchemaDefinition } from '@happyvertical/smrt-core';
 import { afterAll, beforeAll, vi } from 'vitest';
 import {
+  applySqliteSpeedPragmas,
   getDatabaseFromSqliteSchemaTemplate,
   getLocalSqliteFilePath,
 } from './sqlite-schema-template.js';
@@ -62,6 +63,9 @@ interface SmrtCoreSchemaModule {
 
 const preparedSchemasByDb = new WeakMap<object, string>();
 const preparedSchemasByConfig = new Map<string, string>();
+// applySqliteSpeedPragmas (#2221) lives in sqlite-schema-template.ts so the
+// isolated test-db factories can share it without importing this setup
+// file's vi.mock/beforeAll side effects.
 
 function findWorkspaceRoot(startDir: string): string | null {
   let current = startDir;
@@ -270,15 +274,20 @@ vi.mock('@happyvertical/sql', async () => {
           );
         }
       } catch {
-        return db ?? actual.getDatabase(options);
+        const fallbackDb = db ?? (await actual.getDatabase(options));
+        await applySqliteSpeedPragmas(fallbackDb, options);
+        return fallbackDb;
       }
 
       const schemaSql = schemaSqlBatches.filter(Boolean).join('\n-- smrt --\n');
       if (!schemaSql) {
-        return db ?? actual.getDatabase(options);
+        const bareDb = db ?? (await actual.getDatabase(options));
+        await applySqliteSpeedPragmas(bareDb, options);
+        return bareDb;
       }
 
       if (db && preparedSchemasByDb.get(db as object) === schemaSql) {
+        await applySqliteSpeedPragmas(db, options);
         return db;
       }
 
@@ -289,12 +298,14 @@ vi.mock('@happyvertical/sql', async () => {
       ) {
         db ??= await actual.getDatabase(options);
         preparedSchemasByDb.set(db as object, schemaSql);
+        await applySqliteSpeedPragmas(db, options);
         return db;
       }
 
       const prepareSchema = async (
         database: Awaited<ReturnType<typeof actual.getDatabase>>,
       ): Promise<void> => {
+        await applySqliteSpeedPragmas(database, options);
         for (const schemaBatch of schemaSqlBatches) {
           if (!schemaBatch) {
             continue;
@@ -323,6 +334,10 @@ vi.mock('@happyvertical/sql', async () => {
         preparedSchemasByConfig.set(preparationKey, schemaSql);
       }
 
+      // Template-cloned databases arrive on a fresh connection that never
+      // passed through prepareSchema, so the pragmas are (re)applied here;
+      // the WeakSet makes this a no-op for connections already configured.
+      await applySqliteSpeedPragmas(db, options);
       return db;
     },
   };

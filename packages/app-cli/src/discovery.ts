@@ -15,6 +15,7 @@
  * @packageDocumentation
  */
 
+import { validateDiscoveryConformanceArtifact } from '@happyvertical/smrt-users/app-contract';
 import type {
   CliResource as HandlerCliResource,
   CommandDefinition as HandlerCommandDefinition,
@@ -58,7 +59,7 @@ export async function fetchResourceList(
   options: FetchResourceListOptions = {},
 ): Promise<ResourceListResponse> {
   try {
-    return await requestJson<ResourceListResponse>(
+    const response = await requestJson<ResourceListResponse>(
       context,
       options.path ?? '/api/_resources',
       { method: 'GET' },
@@ -68,6 +69,9 @@ export async function fetchResourceList(
         loadedConfig: options.loadedConfig,
       },
     );
+    if (!response.artifact) return response;
+    const artifact = validateDiscoveryConformanceArtifact(response.artifact);
+    return { ...artifact.discovery, artifact };
   } catch (error) {
     if (error instanceof Error && /401|unauthor/i.test(error.message)) {
       throw new Error(

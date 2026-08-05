@@ -10,6 +10,16 @@ pnpm add @happyvertical/smrt-users
 
 ## Usage
 
+### Application discovery conformance
+
+The SvelteKit `createResourceListHandler()` export produces the app CLI
+discovery response and now includes a deterministic `artifact`. Consumers can
+import the published `@happyvertical/smrt-users/app-contract` entrypoint to
+validate the schema/version selector and SHA-256 integrity digest before using
+the embedded resource catalog. See
+[`@happyvertical/smrt-app-cli`](../app-cli/README.md#discovery-conformance-artifact)
+for the exact packaged-runtime pinning workflow.
+
 ### Roles and permissions
 
 ```typescript
@@ -373,6 +383,14 @@ are HMAC-signed with the provider `clientSecret` when present; public clients
 can pass `transactionCookieSecret` to the route helpers. On success it creates
 or reuses a s-m-r-t `Profile`, links an `OidcIdentity`, creates or reuses a `User`,
 records `lastLoginAt`, and sets the standard s-m-r-t session cookie.
+
+RFC 9207 authorization-response issuer validation uses exact string comparison
+against the discovered issuer before an authorization code or provider error is
+trusted. When discovery advertises
+`authorization_response_iss_parameter_supported: true`, a missing `iss` is also
+rejected. Remote MCP deployments must require their external authorization
+server to advertise and emit `iss`; see the
+[remote MCP authorization guide](../../docs/content/architecture/remote-mcp-authorization.md).
 
 The typed [OIDC provisioning decision matrix](../profiles/src/testing/oidcProvisioningDecisionMatrix.ts)
 is the canonical behavior contract shared with Profiles. Its executable rows

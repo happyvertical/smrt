@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-core",
-  "version": "0.40.47",
+  "version": "0.40.54",
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "HappyVertical",
   "type": "module",
@@ -159,7 +159,6 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "@modelcontextprotocol/sdk": "^1.25.2",
     "@oxc-project/runtime": "^0.138.0",
     "cheerio": "^1.2.0",
     "fast-glob": "3.3.3",

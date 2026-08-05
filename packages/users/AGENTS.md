@@ -240,6 +240,10 @@ the package root).
   refuses to provision a user when the IdP explicitly returns
   `email_verified: false` (opt out with `{ allowUnverifiedEmail: true }`). An
   absent claim makes no assertion and is not enforced.
+- **RFC 9207 response issuer is exact.** OIDC callbacks validate a supplied
+  `iss` against discovered metadata with exact string comparison before trusting
+  a code or error. If metadata advertises issuer-response support, `iss` is
+  required.
 - **Verified-email Profile reuse is fail-closed.** The typed canonical scenarios
   live in
   `packages/profiles/src/testing/oidcProvisioningDecisionMatrix.ts`; both

@@ -9,5 +9,11 @@ self-hosted-runner:
   # pxe-happyvertical.
   labels:
     - arc-happyvertical
+    # Routable since happyvertical/iac#1316: the broker's nodocker-linux-x64
+    # pool serves this label from the Patdown metal-nodocker profile (Pods
+    # without the dind sidecar). Jobs that never speak to Docker belong here;
+    # the one Docker user (postgres-tests.yml, dormant) stays on the general
+    # lane above.
+    - arc-happyvertical-nodocker
 
 config-variables: null

@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: arc-happyvertical
+    runs-on: arc-happyvertical-nodocker
     timeout-minutes: 45
     steps:
       - name: Checkout

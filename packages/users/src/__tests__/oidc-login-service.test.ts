@@ -263,7 +263,9 @@ describe('OidcLoginService', () => {
   });
 
   it('exchanges a Dex-compatible callback, verifies the ID token, and creates a SMRT user', async () => {
-    const server = await startOidcServer();
+    const server = await startOidcServer({
+      authorizationResponseIssuerSupported: true,
+    });
     cleanup.push(server.close);
     const isolated = await createOidcTestDb();
     cleanup.push(isolated.cleanup);
@@ -313,6 +315,89 @@ describe('OidcLoginService', () => {
 
     const fetchUrls = fetchSpy.mock.calls.map(([input]) => toFetchUrl(input));
     expect(fetchUrls).toContain(`${server.issuer}/jwks`);
+  });
+
+  it('requires and exactly matches RFC 9207 iss when the provider advertises support', async () => {
+    const server = await startOidcServer({
+      authorizationResponseIssuerSupported: true,
+    });
+    cleanup.push(server.close);
+    const service = new OidcLoginService({
+      db: { type: 'sqlite', url: ':memory:' },
+      provider: {
+        clientId: 'smrt-client',
+        issuer: server.issuer,
+        redirectUri: `${server.issuer}/auth/dex/callback`,
+        tokenEndpointAuthMethod: 'none',
+      },
+      providerName: 'dex',
+    });
+    const transaction = service.createTransaction();
+
+    const missingIssuer = new URL(
+      `${server.issuer}/auth/dex/callback?code=code&state=${transaction.state}`,
+    );
+    await expect(
+      service.exchangeCallback(missingIssuer, transaction),
+    ).rejects.toThrow('missing authorization response issuer');
+
+    const normalizedButNotExact = new URL(missingIssuer);
+    normalizedButNotExact.searchParams.set('iss', `${server.issuer}/`);
+    await expect(
+      service.exchangeCallback(normalizedButNotExact, transaction),
+    ).rejects.toThrow('issuer validation failed');
+
+    expect(server.tokenRequests).toHaveLength(0);
+  });
+
+  it('rejects an invalid callback envelope before OIDC discovery', async () => {
+    const fetchMock = vi.fn();
+    const service = new OidcLoginService({
+      db: { type: 'sqlite', url: ':memory:' },
+      fetch: fetchMock,
+      provider: {
+        clientId: 'smrt-client',
+        issuer: 'https://issuer.example',
+        redirectUri: 'https://app.example/auth/dex/callback',
+      },
+      providerName: 'dex',
+    });
+    const transaction = service.createTransaction();
+    const callback = new URL(
+      `https://app.example/auth/dex/callback?code=code&state=attacker-state`,
+    );
+
+    await expect(
+      service.exchangeCallback(callback, transaction),
+    ).rejects.toThrow('state validation failed');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('validates RFC 9207 iss before trusting an authorization error', async () => {
+    const server = await startOidcServer({
+      authorizationResponseIssuerSupported: true,
+    });
+    cleanup.push(server.close);
+    const service = new OidcLoginService({
+      db: { type: 'sqlite', url: ':memory:' },
+      provider: {
+        clientId: 'smrt-client',
+        issuer: server.issuer,
+        redirectUri: `${server.issuer}/auth/dex/callback`,
+        tokenEndpointAuthMethod: 'none',
+      },
+      providerName: 'dex',
+    });
+    const transaction = service.createTransaction();
+    const callback = new URL(`${server.issuer}/auth/dex/callback`);
+    callback.searchParams.set('error', 'access_denied');
+    callback.searchParams.set('error_description', 'untrusted description');
+    callback.searchParams.set('iss', 'https://attacker.example');
+    callback.searchParams.set('state', transaction.state);
+
+    await expect(
+      service.exchangeCallback(callback, transaction),
+    ).rejects.toThrow('issuer validation failed');
   });
 
   it('runs a pre-provision resolver inside the stock token-exchange flow', async () => {

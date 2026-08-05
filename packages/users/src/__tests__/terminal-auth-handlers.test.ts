@@ -96,6 +96,7 @@ describe('terminal-auth SvelteKit handlers', () => {
     const body = (await response.json()) as Record<string, unknown>;
     expect(body.userCode).toMatch(/^WG-[0-9A-F]{8}$/u);
     expect(typeof body.deviceCode).toBe('string');
+    expect(body.issuer).toBe('https://example.com');
     expect(body.verificationUrl).toBe(
       `https://example.com/terminal-login?code=${encodeURIComponent(String(body.userCode))}`,
     );

@@ -1,5 +1,90 @@
 # @happyvertical/smrt-core
 
+## 0.40.54
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: record the hosted fallback rehearsal results (#2228) (ci)
+  - @happyvertical/smrt-config@0.40.54
+  - @happyvertical/smrt-types@0.40.54
+  - @happyvertical/smrt-scanner@0.40.54
+
+## 0.40.53
+
+### Patch Changes
+
+- ### Features
+
+  - add discovery conformance contract (#2183) (app-cli)
+
+  ### Other Changes
+
+  - docs: correct the CI_TEST_TMPDIR volume description (#2225) (ci)
+  - @happyvertical/smrt-config@0.40.53
+  - @happyvertical/smrt-types@0.40.53
+  - @happyvertical/smrt-scanner@0.40.53
+
+## 0.40.52
+
+### Patch Changes
+
+- ### Other Changes
+
+  - perf: move general jobs to the arc-happyvertical-nodocker lane (#2215) (ci)
+  - @happyvertical/smrt-config@0.40.52
+  - @happyvertical/smrt-types@0.40.52
+  - @happyvertical/smrt-scanner@0.40.52
+
+## 0.40.51
+
+### Patch Changes
+
+- ### Features
+
+  - hosted Turbo cache shim, seed workflow, and manual fallback lever (#2219) (ci)
+
+  ### Other Changes
+
+  - perf: disable fsync durability on file-backed SQLite test databases (#2222) (vitest)
+  - @happyvertical/smrt-config@0.40.51
+  - @happyvertical/smrt-types@0.40.51
+  - @happyvertical/smrt-scanner@0.40.51
+
+## 0.40.50
+
+### Patch Changes
+
+- ### Features
+
+  - retire legacy MCP advisor, harden remote auth, conform action discovery (#2211) (core)
+  - @happyvertical/smrt-config@0.40.50
+  - @happyvertical/smrt-types@0.40.50
+  - @happyvertical/smrt-scanner@0.40.50
+
+## 0.40.49
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: unblock the merge queue and harden pipeline survivability (#2210)
+  - @happyvertical/smrt-config@0.40.49
+  - @happyvertical/smrt-types@0.40.49
+  - @happyvertical/smrt-scanner@0.40.49
+
+## 0.40.48
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - widen the brace-expansion override to the advisory range (#2203) (deps)
+  - @happyvertical/smrt-config@0.40.48
+  - @happyvertical/smrt-types@0.40.48
+  - @happyvertical/smrt-scanner@0.40.48
+
 ## 0.40.47
 
 ### Patch Changes

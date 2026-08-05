@@ -91,6 +91,23 @@ jobs:
           npx --yes --package @commitlint/cli@^20 --package @commitlint/config-conventional@^20 -- \
             commitlint --from="$FROM_SHA" --to=HEAD --verbose
 
+      # The merge queue squashes with a header built from the PR title plus
+      # " (#N)", and the merge-group commitlint run validates that synthetic
+      # header. Lint the derived header here too, so an over-long or
+      # non-conventional PR title fails in the cheap PR run instead of hours
+      # later inside the merge group (#2210 was ejected exactly this way:
+      # derived header 121 > 100).
+      - name: Validate squash-derived header (PR title)
+        if: github.event_name == 'pull_request_target'
+        env:
+          # PR titles are user-authored text; env-inject, never inline.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          printf '%s (#%s)\n' "$PR_TITLE" "$PR_NUMBER" | \
+            npx --yes --package @commitlint/cli@^20 --package @commitlint/config-conventional@^20 -- \
+            commitlint --verbose
+
   validate-workflows:
     name: Validate Workflow Files
     if: >-

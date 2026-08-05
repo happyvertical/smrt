@@ -37,6 +37,12 @@ import {
   methodNameToKebab,
   resolveApiActionSet,
 } from '@happyvertical/smrt-core/vite-plugin';
+import {
+  type CommandRequirements,
+  createDiscoveryConformanceArtifact,
+  type DiscoveryConformanceArtifact,
+  deriveCommandRequirements,
+} from '../app-contract.js';
 import type { TerminalAuthServiceOptions } from '../services/TerminalAuthService.js';
 import { loadBearerSessionContext, parseBearerToken } from './index.js';
 import type { SessionLocals } from './types.js';
@@ -101,6 +107,8 @@ export interface CommandDefinition {
   description?: string;
   /** JSONSchema describing the command's argv-flag surface. */
   parameters?: Record<string, unknown>;
+  /** Retry and optimistic-concurrency fields declared by the action schema. */
+  requirements?: CommandRequirements;
 }
 
 export interface CliResource {
@@ -143,6 +151,8 @@ export interface ResourceListResponseBody {
   user: { authenticated: boolean; id?: string };
   warnings: string[];
   resources: CliResource[];
+  /** Versioned deterministic artifact for consumers that integrity-pin discovery. */
+  artifact?: DiscoveryConformanceArtifact;
 }
 
 /**
@@ -406,12 +416,17 @@ export function createResourceListHandler(
       .filter((_, i) => warnResults[i])
       .map((w) => `${w.ref}: ${w.reason}`);
 
-    const body: ResourceListResponseBody = {
+    const discovery: Omit<ResourceListResponseBody, 'artifact'> = {
       user: session.user
         ? { authenticated: true, id: String(session.user.id ?? '') }
         : { authenticated: false },
       warnings: visibleWarnings,
       resources,
+    };
+    const artifact = createDiscoveryConformanceArtifact(discovery);
+    const body: ResourceListResponseBody = {
+      ...discovery,
+      artifact,
     };
 
     return jsonResponse(body, 200, {
@@ -749,6 +764,7 @@ function buildCustomCommand(
   }
 
   const parameters = resolveParametersSchema(def, methodName, methodDef);
+  const requirements = deriveCommandRequirements(parameters);
 
   return {
     methodName,
@@ -759,6 +775,7 @@ function buildCustomCommand(
     pathSegments,
     description: methodDef?.description,
     parameters,
+    ...(requirements ? { requirements } : {}),
   };
 }
 

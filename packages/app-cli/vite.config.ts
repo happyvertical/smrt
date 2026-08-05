@@ -32,6 +32,8 @@ export default defineConfig({
 
         '@modelcontextprotocol/sdk',
         /^@modelcontextprotocol\/sdk\//,
+        '@happyvertical/smrt-users',
+        /^@happyvertical\/smrt-users\//,
       ],
       output: {
         entryFileNames: '[name].js',

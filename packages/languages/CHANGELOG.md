@@ -1,5 +1,89 @@
 # @happyvertical/smrt-languages
 
+## 0.40.54
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.54
+  - @happyvertical/smrt-features@0.40.54
+  - @happyvertical/smrt-jobs@0.40.54
+  - @happyvertical/smrt-prompts@0.40.54
+  - @happyvertical/smrt-tenancy@0.40.54
+  - @happyvertical/smrt-config@0.40.54
+
+## 0.40.53
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.53
+  - @happyvertical/smrt-features@0.40.53
+  - @happyvertical/smrt-jobs@0.40.53
+  - @happyvertical/smrt-prompts@0.40.53
+  - @happyvertical/smrt-tenancy@0.40.53
+  - @happyvertical/smrt-config@0.40.53
+
+## 0.40.52
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.52
+  - @happyvertical/smrt-features@0.40.52
+  - @happyvertical/smrt-jobs@0.40.52
+  - @happyvertical/smrt-prompts@0.40.52
+  - @happyvertical/smrt-tenancy@0.40.52
+  - @happyvertical/smrt-config@0.40.52
+
+## 0.40.51
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.51
+  - @happyvertical/smrt-features@0.40.51
+  - @happyvertical/smrt-jobs@0.40.51
+  - @happyvertical/smrt-prompts@0.40.51
+  - @happyvertical/smrt-tenancy@0.40.51
+  - @happyvertical/smrt-config@0.40.51
+
+## 0.40.50
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.50
+  - @happyvertical/smrt-features@0.40.50
+  - @happyvertical/smrt-jobs@0.40.50
+  - @happyvertical/smrt-prompts@0.40.50
+  - @happyvertical/smrt-tenancy@0.40.50
+  - @happyvertical/smrt-config@0.40.50
+
+## 0.40.49
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.49
+  - @happyvertical/smrt-features@0.40.49
+  - @happyvertical/smrt-jobs@0.40.49
+  - @happyvertical/smrt-prompts@0.40.49
+  - @happyvertical/smrt-tenancy@0.40.49
+  - @happyvertical/smrt-config@0.40.49
+
+## 0.40.48
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.48
+  - @happyvertical/smrt-features@0.40.48
+  - @happyvertical/smrt-jobs@0.40.48
+  - @happyvertical/smrt-prompts@0.40.48
+  - @happyvertical/smrt-tenancy@0.40.48
+  - @happyvertical/smrt-config@0.40.48
+
 ## 0.40.47
 
 ### Patch Changes

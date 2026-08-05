@@ -20,11 +20,22 @@ import {
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type {
+  AppResultMetadata,
+  DeclaredActionField,
+  JsonValue,
+} from '@happyvertical/smrt-users/app-contract';
+import { SMRT_MCP_RESULT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
 
 /** Shape stored on disk in the app's CLI config file. */
 export interface CliConfig {
+  /** Issuer selected for the currently configured server. */
+  credentialIssuer?: string;
   serverUrl?: string;
+  /** Legacy single-token field. Read only when its stored server still matches. */
   token?: string;
+  /** Bearer credentials keyed by their exact issuer identifier. */
+  tokensByIssuer?: Record<string, string>;
 }
 
 /**
@@ -136,13 +147,34 @@ export async function getServerUrl(
   return url.replace(/\/+$/u, '');
 }
 
-/** Resolve the stored bearer token (env var wins over config). */
+/** Resolve a bearer token only when it is bound to the exact target server. */
 export async function getStoredToken(
   context: CliConfigContext,
   config?: CliConfig,
+  serverUrl?: string,
 ): Promise<string | undefined> {
   const resolved = config ?? (await loadCliConfig(context));
-  return process.env[`${context.envPrefix}_TOKEN`] ?? resolved.token;
+  const targetServer = (
+    serverUrl ?? (await getServerUrl(context, resolved))
+  ).replace(/\/+$/u, '');
+  const environmentToken = process.env[`${context.envPrefix}_TOKEN`];
+  const environmentServer = process.env[
+    `${context.envPrefix}_SERVER_URL`
+  ]?.replace(/\/+$/u, '');
+  if (environmentToken) {
+    return environmentServer === targetServer ? environmentToken : undefined;
+  }
+
+  const configuredServer = resolved.serverUrl?.replace(/\/+$/u, '');
+  if (!configuredServer || configuredServer !== targetServer) return undefined;
+
+  if (resolved.credentialIssuer) {
+    return resolved.tokensByIssuer?.[resolved.credentialIssuer];
+  }
+
+  // Legacy configs predate issuer-keyed storage. They remain usable only for
+  // the exact server saved alongside the token and migrate on the next login.
+  return resolved.token;
 }
 
 /** Remove the token from the config file (e.g. on logout). */
@@ -150,21 +182,36 @@ export async function clearStoredToken(
   context: CliConfigContext,
 ): Promise<void> {
   const config = await loadCliConfig(context);
+  if (config.credentialIssuer && config.tokensByIssuer) {
+    delete config.tokensByIssuer[config.credentialIssuer];
+    if (Object.keys(config.tokensByIssuer).length === 0) {
+      delete config.tokensByIssuer;
+    }
+  }
+  delete config.credentialIssuer;
   delete config.token;
   await saveCliConfig(context, config);
 }
 
-/** Persist a login: writes both serverUrl and token to the config file. */
+/** Persist a login with the bearer token keyed by its exact issuer. */
 export async function saveAuth(
   context: CliConfigContext,
   serverUrl: string,
   token: string,
+  issuer = serverUrl,
 ): Promise<void> {
   const config = await loadCliConfig(context);
+  const normalizedServerUrl = serverUrl.replace(/\/+$/u, '');
+  if (!issuer.trim()) throw new Error('Credential issuer must not be empty.');
+  const exactIssuer = issuer;
   await saveCliConfig(context, {
     ...config,
-    serverUrl: serverUrl.replace(/\/+$/u, ''),
-    token,
+    credentialIssuer: exactIssuer,
+    serverUrl: normalizedServerUrl,
+    token: undefined,
+    tokensByIssuer: {
+      [exactIssuer]: token,
+    },
   });
 }
 
@@ -204,6 +251,38 @@ export interface RequestJsonOptions {
 
 const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10 MB
 
+/** Structured metadata preserved for CLI JSON and MCP bridge consumers. */
+export type AppCliResultMetadata = AppResultMetadata;
+export type { DeclaredActionField };
+
+export interface RequestJsonSuccess<T> {
+  ok: true;
+  result: T;
+  metadata: AppCliResultMetadata;
+}
+
+export interface RequestJsonFailure {
+  ok: false;
+  status: number;
+  error: AppCliResultMetadata;
+}
+
+/** Generic result/error envelope for a JSON request. */
+export type RequestJsonResult<T> = RequestJsonSuccess<T> | RequestJsonFailure;
+
+/** Error compatibility wrapper returned by the legacy throwing helper. */
+export class AppCliRequestError extends Error {
+  readonly status: number;
+  readonly metadata: AppCliResultMetadata;
+
+  constructor(status: number, metadata: AppCliResultMetadata) {
+    super(metadata.message ?? `HTTP ${status}`);
+    this.name = 'AppCliRequestError';
+    this.status = status;
+    this.metadata = metadata;
+  }
+}
+
 /**
  * JSON request helper that injects the stored bearer token. Returns the
  * parsed JSON body on success; throws an `Error` with the server's `error`
@@ -215,19 +294,41 @@ export async function requestJson<T = unknown>(
   init: RequestInit = {},
   options: RequestJsonOptions = {},
 ): Promise<T> {
+  const outcome = await requestJsonResult<T>(context, path, init, options);
+  if (!outcome.ok) {
+    throw new AppCliRequestError(outcome.status, outcome.error);
+  }
+  return outcome.result;
+}
+
+/**
+ * Issue a JSON request without flattening a failure to an Error message.
+ *
+ * Metadata is deliberately copied only from conventional result/error fields
+ * and response headers. Every value crossing this boundary is redacted before
+ * a CLI or MCP client can observe it.
+ */
+export async function requestJsonResult<T = unknown>(
+  context: CliConfigContext,
+  path: string,
+  init: RequestInit = {},
+  options: RequestJsonOptions = {},
+): Promise<RequestJsonResult<T>> {
   // Reuse the caller's pre-loaded config when supplied, otherwise read
   // from disk. (#1311 review P2.)
   const config = options.loadedConfig ?? (await loadCliConfig(context));
   const serverUrl = (
     options.serverUrl ?? (await getServerUrl(context, config))
   ).replace(/\/+$/u, '');
-  const token = await getStoredToken(context, config);
+  const token = await getStoredToken(context, config, serverUrl);
   const headers = new Headers(init.headers);
 
   if (options.requireAuth && options.auth !== false && !token) {
-    throw new Error(
-      `Not authenticated. Run \`${context.envPrefix.toLowerCase()} auth login\` first.`,
-    );
+    return failure(401, {
+      code: 'not_authenticated',
+      message: `Not authenticated. Run \`${context.envPrefix.toLowerCase()} auth login\` first.`,
+      retryable: false,
+    });
   }
 
   if (!headers.has('content-type') && init.body) {
@@ -238,33 +339,201 @@ export async function requestJson<T = unknown>(
   }
 
   const fetchImpl = options.fetch ?? fetch;
-  const response = await fetchImpl(`${serverUrl}${path}`, {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetchImpl(`${serverUrl}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    return failure(0, {
+      code: 'network_error',
+      message: redactMessage(
+        error instanceof Error ? error.message : String(error),
+      ),
+      retryable: true,
+    });
+  }
 
   const contentType = response.headers.get('content-type') ?? '';
   const maxBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
-  const text = await readBodyWithCap(response, maxBytes);
-  const parsed =
-    contentType.includes('application/json') && text
-      ? (JSON.parse(text) as unknown)
-      : (text as unknown);
-
-  if (!response.ok) {
-    const message =
-      parsed && typeof parsed === 'object' && 'error' in parsed
-        ? String((parsed as { error: unknown }).error)
-        : `HTTP ${response.status}: ${response.statusText}`;
-    // Attach the HTTP status as a property so downstream callers (e.g.
-    // the auth-login polling loop) can distinguish transient 5xx from
-    // terminal 4xx without parsing the message string. Server-supplied
-    // `error` fields stay verbatim in `.message` for the user-facing
-    // CLI output. (#1311 review #2.)
-    throw Object.assign(new Error(message), { status: response.status });
+  let text: string;
+  try {
+    text = await readBodyWithCap(response, maxBytes);
+  } catch (error) {
+    if (!(error instanceof ResponseTooLargeError)) {
+      return failure(0, {
+        code: 'network_error',
+        message: redactMessage(
+          error instanceof Error ? error.message : String(error),
+        ),
+        retryable: true,
+      });
+    }
+    return failure(response.status, {
+      code: 'response_too_large',
+      message: redactMessage(
+        error instanceof Error ? error.message : String(error),
+      ),
+      retryable: response.status >= 500,
+    });
+  }
+  let parsed: unknown = text;
+  if (contentType.includes('application/json') && text) {
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch {
+      return failure(response.status, {
+        code: 'invalid_json_response',
+        message: 'Server returned invalid JSON.',
+        retryable: response.status >= 500,
+      });
+    }
   }
 
-  return parsed as T;
+  if (!response.ok) {
+    return failure(
+      response.status,
+      metadataFromResponse(
+        parsed,
+        response.headers,
+        `http_${response.status}`,
+        response.status >= 500 ||
+          response.status === 408 ||
+          response.status === 429,
+        `HTTP ${response.status}: ${response.statusText}`,
+      ),
+    );
+  }
+
+  return {
+    ok: true,
+    result: parsed as T,
+    metadata: metadataFromResponse(parsed, response.headers, 'ok', false),
+  };
+}
+
+/** Redact conventional credential fields before emitting transport metadata. */
+export function redactTransportValue(value: unknown): unknown {
+  if (typeof value === 'string') return redactMessage(value);
+  if (Array.isArray(value)) return value.map(redactTransportValue);
+  if (!isRecord(value)) return value;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    redacted[key] = isSensitiveKey(key)
+      ? '[REDACTED]'
+      : redactTransportValue(nested);
+  }
+  return redacted;
+}
+
+function failure(
+  status: number,
+  error: AppCliResultMetadata,
+): RequestJsonFailure {
+  return { ok: false, status, error };
+}
+
+function metadataFromResponse(
+  payload: unknown,
+  headers: Headers,
+  fallbackCode: string,
+  fallbackRetryable: boolean,
+  fallbackMessage?: string,
+): AppCliResultMetadata {
+  const record = isRecord(payload) ? payload : undefined;
+  const error = record && isRecord(record.error) ? record.error : undefined;
+  const meta = firstRecord(
+    error,
+    record && isRecord(record.metadata) ? record.metadata : undefined,
+    record && isRecord(record.meta) ? record.meta : undefined,
+    getMcpMetadata(record),
+    record,
+  );
+  const message = firstString(
+    meta?.message,
+    error?.message,
+    typeof record?.error === 'string' ? record.error : undefined,
+    fallbackMessage,
+  );
+  const details = meta?.details ?? error?.details;
+  const correlationId = firstString(
+    meta?.correlationId,
+    error?.correlationId,
+    headers.get('x-correlation-id') ?? undefined,
+    headers.get('x-request-id') ?? undefined,
+  );
+  const idempotencyKey = declaredActionField(
+    meta?.idempotencyKey ?? meta?.idempotency,
+  );
+  const expectedVersion = declaredActionField(meta?.expectedVersion);
+  return {
+    code: firstString(meta?.code, error?.code) ?? fallbackCode,
+    ...(message ? { message: redactMessage(message) } : {}),
+    ...(details !== undefined
+      ? { details: redactTransportValue(details) as JsonValue }
+      : {}),
+    retryable:
+      typeof meta?.retryable === 'boolean'
+        ? meta.retryable
+        : typeof error?.retryable === 'boolean'
+          ? error.retryable
+          : fallbackRetryable,
+    ...(correlationId ? { correlationId: redactMessage(correlationId) } : {}),
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+    ...(expectedVersion ? { expectedVersion } : {}),
+  };
+}
+
+function getMcpMetadata(
+  record: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!record || !isRecord(record._meta)) return undefined;
+  const meta = record._meta[SMRT_MCP_RESULT_METADATA_KEY];
+  return isRecord(meta) ? meta : undefined;
+}
+
+function declaredActionField(value: unknown): DeclaredActionField | undefined {
+  if (!isRecord(value) || typeof value.field !== 'string') return undefined;
+  return { field: value.field, required: value.required === true };
+}
+
+function firstRecord(
+  ...values: Array<Record<string, unknown> | undefined>
+): Record<string, unknown> | undefined {
+  return values.find((value) => value !== undefined);
+}
+
+function firstString(...values: Array<unknown>): string | undefined {
+  return values.find(
+    (value): value is string => typeof value === 'string' && value !== '',
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSensitiveKey(key: string): boolean {
+  return /(?:authorization|token|secret|password|cookie|credential|api[-_]?key)/iu.test(
+    key,
+  );
+}
+
+function redactMessage(message: string): string {
+  return message
+    .replace(/bearer\s+[a-z0-9._~+/=-]+/giu, 'Bearer [REDACTED]')
+    .replace(
+      /((?:token|secret|password|api[-_]?key|authorization)=)[^&\s,]+/giu,
+      '$1[REDACTED]',
+    );
+}
+
+class ResponseTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ResponseTooLargeError';
+  }
 }
 
 /**
@@ -287,7 +556,7 @@ async function readBodyWithCap(
     } catch {
       // Stream may already be locked/closed.
     }
-    throw new Error(
+    throw new ResponseTooLargeError(
       `Response too large: ${cl} bytes exceeds ${maxBytes}-byte cap`,
     );
   }
@@ -302,7 +571,7 @@ async function readBodyWithCap(
       if (!value) continue;
       size += value.byteLength;
       if (size > maxBytes) {
-        throw new Error(
+        throw new ResponseTooLargeError(
           `Response too large: exceeded ${maxBytes}-byte cap mid-stream`,
         );
       }

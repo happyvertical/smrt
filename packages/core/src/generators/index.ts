@@ -21,6 +21,18 @@ export {
   versionConditionalResponse,
   warnIfSharedCacheNeutralized,
 } from './conditional-get';
+export {
+  buildCustomActionInputSchema,
+  buildCustomActionInvocationArgs,
+  type CustomActionFailure,
+  type CustomActionMetadata,
+  type CustomActionScope,
+  customActionParameterInputName,
+  normalizeCustomActionFailure,
+  type ResolveCustomActionMetadataOptions,
+  resolveCustomActionMetadata,
+  SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
+} from './custom-action';
 // Live `_events` SSE route (#1763). The generated SvelteKit route imports
 // `buildChangeEventStream` from the package root, so the stream lifecycle is
 // written and tested once in core. `handleEventsRoute` stays internal (rest.ts
