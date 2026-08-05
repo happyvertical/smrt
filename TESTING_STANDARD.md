@@ -138,6 +138,31 @@ No field metadata found for 'Document'.
 
 **Note on watch mode**: The manifest is generated once at vitest startup. If you add new classes or fields while vitest is running in watch mode, restart vitest to pick up the changes.
 
+### ⚠️ Never raise `testTimeout` without raising `hookTimeout`
+
+`testTimeout` and `hookTimeout` are independent. Raising only `testTimeout`
+leaves every `beforeAll`/`beforeEach`/`afterAll`/`afterEach` on vitest's **10s
+default**, so a slow hook fails the whole file while the test bodies report as
+*skipped* — a failure mode that looks nothing like a timeout in the test you
+were budgeting for.
+
+```typescript
+test: {
+  testTimeout: 30000,
+  hookTimeout: 30000, // match testTimeout; hooks do not inherit it
+}
+```
+
+This has bitten the repo repeatedly: smrt-svelte's teardown hook (#1426), and
+`mcp-conformance-fixture`, whose `beforeAll` generates a server and spawns two
+`tsx` children — it measured 10,022ms against the 10,000ms default and ejected
+a PR from the merge queue (#2238). Packages run in shared CI shards, so a hook
+that overruns takes unrelated PRs down with it.
+
+Budget by **where the work happens**, not by where the assertions are: if setup
+does the expensive work (spawning processes, generating code, building
+bundles), `hookTimeout` is the limit that matters.
+
 ### Watch Mode
 
 ```bash

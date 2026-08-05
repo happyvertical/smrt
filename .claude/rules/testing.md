@@ -3,6 +3,9 @@
 ### Required Setup
 `vitest.config.ts` MUST include `smrtVitestPlugin()` in plugins array. Without it: "No field metadata" errors.
 
+### Timeouts
+Never set `testTimeout` without also setting `hookTimeout` — hooks do NOT inherit it and stay on vitest's 10s default. Symptom: the file fails with "Hook timed out in 10000ms" while every test reports *skipped*. Budget for where the work happens: setup that spawns processes or generates code is bounded by `hookTimeout`, not `testTimeout`.
+
 ### Database
 - Use real in-memory SQLite for SmrtObject/SmrtCollection tests
 - `createIsolatedTestDb()` for transaction-isolated tests (rolls back on cleanup)
