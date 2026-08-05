@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.40.53
+
+### Patch Changes
+
+- ### Features
+
+  - add discovery conformance contract (#2183) (app-cli)
+
+  ### Other Changes
+
+  - docs: correct the CI_TEST_TMPDIR volume description (#2225) (ci)
+  - @happyvertical/smrt-config@0.40.53
+  - @happyvertical/smrt-types@0.40.53
+  - @happyvertical/smrt-scanner@0.40.53
+
 ## 0.40.52
 
 ### Patch Changes
