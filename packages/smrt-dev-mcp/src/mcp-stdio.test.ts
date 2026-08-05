@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -24,7 +24,10 @@ async function createMcpClient() {
   });
   const client = new Client(
     { name: 'smrt-dev-mcp-smoke-test', version: '1.0.0' },
-    { capabilities: {} },
+    {
+      capabilities: {},
+      versionNegotiation: { mode: { pin: '2026-07-28' } },
+    },
   );
 
   activeClient = client;

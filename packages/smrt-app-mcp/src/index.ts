@@ -28,6 +28,10 @@ export {
   type McpAccessErrorMetadata,
 } from './errors.js';
 export {
+  createMcpProtocolServer,
+  type McpProtocolServerOptions,
+} from './protocol.js';
+export {
   type CallToolInput,
   type CreateMcpAppServerOptions,
   createMcpAppServer,

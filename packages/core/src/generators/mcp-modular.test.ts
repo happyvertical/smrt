@@ -56,7 +56,7 @@ describe('MCPGenerator - Modular Generation', () => {
       const content = await readFile(outputPath, 'utf-8');
       expect(content).toContain('#!/usr/bin/env node');
       expect(content).toContain('test-server');
-      expect(content).toContain('@modelcontextprotocol/sdk');
+      expect(content).toContain('@modelcontextprotocol/server');
     });
 
     it('should use @happyvertical/smrt-config for configuration loading', async () => {
@@ -71,9 +71,9 @@ describe('MCPGenerator - Modular Generation', () => {
 
       const content = await readFile(outputPath, 'utf-8');
       expect(content).toContain(
-        "import { config } from '@happyvertical/smrt-config'",
+        "import { loadConfig } from '@happyvertical/smrt-config'",
       );
-      expect(content).toContain('await config.load()');
+      expect(content).toContain('await loadConfig()');
       expect(content).toContain('appConfig?.ai || {}');
       expect(content).not.toContain('loadEnvConfig'); // Old approach
     });

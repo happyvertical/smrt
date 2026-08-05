@@ -7,18 +7,13 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
-  CallToolRequestSchema,
-  ErrorCode,
-  GetPromptRequestSchema,
-  ListPromptsRequestSchema,
-  ListResourcesRequestSchema,
-  ListToolsRequestSchema,
-  McpError,
-  ReadResourceRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
+  ProtocolError,
+  ProtocolErrorCode,
+  Server,
+  type Tool,
+} from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 
 import { getAgentSkill, listAgentSkills } from './agent-skills.js';
 import {
@@ -486,7 +481,7 @@ export const TOOLS = [
   },
 ];
 
-async function main() {
+export function createServer(): Server {
   if (DEBUG) {
     console.error(`[${SERVER_NAME}] Starting server v${SERVER_VERSION}`);
   }
@@ -506,14 +501,14 @@ async function main() {
   );
 
   // List tools handler
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
+  server.setRequestHandler('tools/list', async () => {
     if (DEBUG) {
       console.error(`[${SERVER_NAME}] ListTools request`);
     }
-    return { tools: TOOLS };
+    return { tools: TOOLS as Tool[] };
   });
 
-  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  server.setRequestHandler('prompts/list', async () => {
     return {
       prompts: [
         {
@@ -603,7 +598,7 @@ async function main() {
     };
   });
 
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  server.setRequestHandler('prompts/get', async (request) => {
     const { name } = request.params;
     if (name === REVIEW_SKILL_NAME) {
       return {
@@ -657,10 +652,13 @@ async function main() {
       };
     }
 
-    throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${name}`);
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      `Unknown prompt: ${name}`,
+    );
   });
 
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  server.setRequestHandler('resources/list', async () => {
     const index = await buildKnowledgeIndex();
     return {
       resources: [
@@ -692,7 +690,7 @@ async function main() {
     };
   });
 
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  server.setRequestHandler('resources/read', async (request) => {
     const { uri } = request.params;
     if (uri === REVIEW_SKILL_URI) {
       return {
@@ -726,8 +724,8 @@ async function main() {
       const index = await buildKnowledgeIndex();
       const pkg = index.packages.find((item) => item.name === packageName);
       if (!pkg) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Unknown knowledge package: ${packageName}`,
         );
       }
@@ -742,11 +740,14 @@ async function main() {
       };
     }
 
-    throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+    throw new ProtocolError(
+      ProtocolErrorCode.InvalidParams,
+      `Unknown resource: ${uri}`,
+    );
   });
 
   // Call tool handler
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler('tools/call', async (request) => {
     const { name, arguments: args } = request.params;
 
     if (DEBUG) {
@@ -962,9 +963,14 @@ async function main() {
     }
   });
 
-  // Setup stdio transport
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  return server;
+}
+
+async function main() {
+  const handle = serveStdio(() => createServer(), {
+    onerror: (error) =>
+      console.error(`[${SERVER_NAME}] Protocol error:`, error),
+  });
 
   if (DEBUG) {
     console.error(`[${SERVER_NAME}] Server connected via stdio`);
@@ -975,7 +981,7 @@ async function main() {
     if (DEBUG) {
       console.error(`[${SERVER_NAME}] Shutting down...`);
     }
-    await server.close();
+    await handle.close();
     process.exit(0);
   });
 
@@ -983,7 +989,7 @@ async function main() {
     if (DEBUG) {
       console.error(`[${SERVER_NAME}] Shutting down...`);
     }
-    await server.close();
+    await handle.close();
     process.exit(0);
   });
 }

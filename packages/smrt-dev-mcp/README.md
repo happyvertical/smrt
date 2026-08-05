@@ -381,7 +381,7 @@ Prompts:
 
 ## Dependencies
 
-- `@modelcontextprotocol/sdk` -- MCP server protocol
+- `@modelcontextprotocol/server` -- MCP server protocol
 - `@happyvertical/smrt-core` -- manifest and object registry
 - `@happyvertical/smrt-types` -- shared domain knowledge contract
 
