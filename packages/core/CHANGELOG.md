@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.56
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - make build output reproducible (#2231) (core,scanner)
+  - @happyvertical/smrt-config@0.40.56
+  - @happyvertical/smrt-types@0.40.56
+  - @happyvertical/smrt-scanner@0.40.56
+
 ## 0.40.55
 
 ### Patch Changes
