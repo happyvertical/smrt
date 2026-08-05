@@ -13,10 +13,10 @@ import type {
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
-import type { SmartObjectManifest } from '../scanner/types';
 import {
   DETERMINISTIC_GENERATED_AT,
   MANIFEST_TIMESTAMP,
+  type SmartObjectManifest,
 } from '../scanner/types.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
