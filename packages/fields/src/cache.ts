@@ -50,15 +50,44 @@ function getDbNamespace(db: unknown): string {
   return 'db:unknown';
 }
 
+const hierarchyLoaderIds = new WeakMap<object, string>();
+let nextLoaderId = 1;
+
+/**
+ * Namespace a cache key by tenant-hierarchy loader identity.
+ *
+ * An injected `tenantHierarchyLoader` can produce a completely different
+ * ancestor chain — and therefore different resolved defaults and locks — for
+ * the same `(db, objectRef, tenantId, userId)`. Without this component an
+ * injected loader would serve (or be served) the DEFAULT loader's cached
+ * result. Callers that pass no loader all share the `default` namespace.
+ */
+function getHierarchyLoaderNamespace(loader: unknown): string {
+  if (typeof loader !== 'function') {
+    return 'loader:default';
+  }
+
+  const key = loader as unknown as object;
+  if (!hierarchyLoaderIds.has(key)) {
+    hierarchyLoaderIds.set(key, `loader:${nextLoaderId++}`);
+  }
+  return hierarchyLoaderIds.get(key) ?? 'loader:unknown';
+}
+
+/**
+ * Loader namespace goes LAST so `invalidateFieldPolicyCache`'s
+ * `(db, objectRef)` prefix scan still clears every loader's entries.
+ */
 function buildCacheKey(
   objectRef: string,
   tenantId: string | null | undefined,
   userId: string | null | undefined,
   db: DatabaseInterface | unknown,
+  hierarchyLoader?: unknown,
 ): string {
   return `${getDbNamespace(db)}::${objectRef}::${tenantId ?? 'app'}::${
     userId ?? 'user:none'
-  }`;
+  }::${getHierarchyLoaderNamespace(hierarchyLoader)}`;
 }
 
 export function getFieldPolicyCacheTtlMs(): number {
@@ -70,8 +99,15 @@ export function getCachedFieldPolicy(
   tenantId: string | null | undefined,
   userId: string | null | undefined,
   db: DatabaseInterface | unknown,
+  hierarchyLoader?: unknown,
 ): ExplainedObjectFieldPolicy | null {
-  const cacheKey = buildCacheKey(objectRef, tenantId, userId, db);
+  const cacheKey = buildCacheKey(
+    objectRef,
+    tenantId,
+    userId,
+    db,
+    hierarchyLoader,
+  );
   const cached = fieldPolicyCache.get(cacheKey);
 
   if (!cached) {
@@ -92,11 +128,15 @@ export function setCachedFieldPolicy(
   userId: string | null | undefined,
   db: DatabaseInterface | unknown,
   value: ExplainedObjectFieldPolicy,
+  hierarchyLoader?: unknown,
 ): void {
-  fieldPolicyCache.set(buildCacheKey(objectRef, tenantId, userId, db), {
-    expiresAt: Date.now() + FIELD_POLICY_CACHE_TTL_MS,
-    value,
-  });
+  fieldPolicyCache.set(
+    buildCacheKey(objectRef, tenantId, userId, db, hierarchyLoader),
+    {
+      expiresAt: Date.now() + FIELD_POLICY_CACHE_TTL_MS,
+      value,
+    },
+  );
 }
 
 /**

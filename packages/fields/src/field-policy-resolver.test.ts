@@ -373,6 +373,133 @@ describe('resolveFieldPolicy', () => {
     );
   });
 
+  it('denies user-targeted resolution from a context carrying no user id', async () => {
+    // Read-side mirror of the write-side rule (#2047): a MISSING identity
+    // component denies, it never skips. Tenancy adapters populate
+    // `permissions` while leaving `userId` undefined whenever no
+    // `resolveUserId` hook is configured (API-key auth, service principals,
+    // background jobs) — such a context must not be able to read ANY user's
+    // resolved policy through the public `resolveFieldPolicy` export.
+    const contextTenant = randomUUID();
+    const foreignUser = randomUUID();
+
+    await withTenant(
+      { tenantId: contextTenant, permissions: new Set<string>() },
+      async () => {
+        await expect(
+          resolveFieldPolicy(objectRef, {
+            db,
+            tenantId: contextTenant,
+            userId: foreignUser,
+            tenantHierarchyLoader: flatLoader,
+          }),
+        ).rejects.toThrow(TenantIsolationError);
+
+        // App/tenant-only resolution is unaffected — no user is targeted.
+        const orgOnly = await resolveFieldPolicy(objectRef, {
+          db,
+          tenantId: contextTenant,
+          tenantHierarchyLoader: flatLoader,
+        });
+        expect(orgOnly.objectRef).toBe(objectRef);
+      },
+    );
+
+    // Context-LESS server-side callers stay allowed: `resolveFieldPolicy` is
+    // a trusted server API and the public batch route never lets a request
+    // body select a user.
+    const serverSide = await resolveFieldPolicy(objectRef, {
+      db,
+      tenantId: contextTenant,
+      userId: foreignUser,
+      tenantHierarchyLoader: flatLoader,
+    });
+    expect(serverSide.objectRef).toBe(objectRef);
+
+    // Super-admin bypass keeps its deliberate cross-user capability.
+    await withTenant(
+      {
+        tenantId: contextTenant,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => {
+        const bypassed = await resolveFieldPolicy(objectRef, {
+          db,
+          tenantId: contextTenant,
+          userId: foreignUser,
+          tenantHierarchyLoader: flatLoader,
+        });
+        expect(bypassed.objectRef).toBe(objectRef);
+      },
+    );
+  });
+
+  it('keys the cache by tenant-hierarchy loader identity', async () => {
+    // An injected loader produces a different ancestor chain — and therefore
+    // different resolved defaults/locks — for the same
+    // (db, objectRef, tenantId, userId). Without the loader in the cache key
+    // it would be served the DEFAULT loader's result (or poison it).
+    const rootTenant = randomUUID();
+    const leafTenant = randomUUID();
+
+    await withTenant(
+      {
+        tenantId: rootTenant,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      () =>
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'tenant',
+          tenantId: rootTenant,
+          help: 'from the root tenant',
+        }),
+    );
+
+    // Flat loader: the leaf tenant has no ancestors, so the root row misses.
+    const flat = await resolveFieldPolicy(objectRef, {
+      db,
+      tenantId: leafTenant,
+      tenantHierarchyLoader: flatLoader,
+    });
+    expect(flat.fields.summary.help).toBeNull();
+
+    // Hierarchy loader: the same (db, objectRef, tenant) now inherits it.
+    const hierarchyLoader: FieldPolicyTenantHierarchyLoader = async () => ({
+      async getChain() {
+        return [
+          {
+            id: rootTenant,
+            inheritPermissions: true,
+            cascadePermissions: true,
+          },
+          {
+            id: leafTenant,
+            inheritPermissions: true,
+            cascadePermissions: true,
+          },
+        ];
+      },
+    });
+    const nested = await resolveFieldPolicy(objectRef, {
+      db,
+      tenantId: leafTenant,
+      tenantHierarchyLoader: hierarchyLoader,
+    });
+    expect(nested.fields.summary.help).toBe('from the root tenant');
+
+    // Each loader keeps its own entry rather than overwriting the other's.
+    const flatAgain = await resolveFieldPolicy(objectRef, {
+      db,
+      tenantId: leafTenant,
+      tenantHierarchyLoader: flatLoader,
+    });
+    expect(flatAgain.fields.summary.help).toBeNull();
+  });
+
   it('walks an injected tenant hierarchy root → leaf', async () => {
     const rootTenant = randomUUID();
     const childTenant = randomUUID();

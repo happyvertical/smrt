@@ -190,6 +190,10 @@ export class FieldPolicy extends SmrtObject {
   }
 
   override async save(): Promise<this> {
+    // Runs BEFORE the persisted-identity lookup: that lookup falls back to
+    // the natural key, which includes the scope key derived from these
+    // columns.
+    this.attributeScopeToAmbientContext();
     const previousIdentity = await this.getPersistedIdentity();
     // The caller must own the row AS PERSISTED before any mutation is
     // accepted — otherwise a foreign row could be re-scoped into the caller's
@@ -198,11 +202,20 @@ export class FieldPolicy extends SmrtObject {
     if (previousIdentity) {
       this.assertScopeOwnedByAmbientContext(previousIdentity, 'save');
     }
+    // Audit attribution (#2050): inside an ambient context the SERVER stamps
+    // who wrote the row — a client-supplied `updatedBy` is overwritten, so
+    // attribution cannot be spoofed through the generated write routes. A
+    // context without a user id attributes to null; trusted context-less
+    // flows keep whatever explicit attribution they set.
+    const ambientContext = getCurrentTenant();
+    if (ambientContext) {
+      this.updatedBy = ambientContext.userId ?? null;
+    }
     this.normalizeDefaultValueForPersistence();
     await this.validateFieldPolicy();
     // scopeKey makes the conflict-column tuple total even though tenantId and
     // userId are nullable (nullable columns would allow duplicate NULL rows).
-    this.scopeKey = this.userId ?? this.tenantId ?? APP_FIELD_POLICY_SCOPE_KEY;
+    this.scopeKey = this.computeScopeKey();
 
     const identityChanged =
       previousIdentity &&
@@ -493,6 +506,45 @@ export class FieldPolicy extends SmrtObject {
     }
   }
 
+  /** `userId ?? tenantId ?? '__app__'` — the `conflictColumns` scope key. */
+  private computeScopeKey(): string {
+    return this.userId ?? this.tenantId ?? APP_FIELD_POLICY_SCOPE_KEY;
+  }
+
+  /**
+   * Derive a scope-owner column the transport could not carry (#2047).
+   *
+   * Core's mass-assignment guard treats `tenantId` as server-managed and
+   * strips it from EVERY generated create/update body, and `FieldPolicy` is
+   * deliberately not `@TenantScoped`, so the tenancy interceptor never
+   * repopulates it. A `POST {scopeType:'tenant', tenantId}` therefore always
+   * reached `validateScopeConsistency` with `tenantId === null`, making the
+   * org tier write-dead over every generated surface — the model, as the
+   * single validation authority for these rows, fills it in instead.
+   *
+   * This grants nothing: `assertScopeOwnedByAmbientContext` already requires
+   * a non-bypass caller's tenant/user rows to name exactly the ambient
+   * tenant/user, so the derived value is the ONLY value that could ever have
+   * been accepted. An explicit value is never overwritten (a super-admin
+   * bypass caller keeps naming other scopes), and with no ambient context
+   * nothing is derived — scope-shape validation rejects the row as before.
+   * Consequence: a bypass caller writing ANOTHER tenant's row must pass
+   * `tenantId` through a server-side model call, because the generated routes
+   * still strip it.
+   */
+  private attributeScopeToAmbientContext(): void {
+    const context = getCurrentTenant();
+    if (!context) {
+      return;
+    }
+    if (this.scopeType === 'tenant' && this.tenantId === null) {
+      this.tenantId = context.tenantId;
+    }
+    if (this.scopeType === 'user' && this.userId === null) {
+      this.userId = context.userId ?? null;
+    }
+  }
+
   /**
    * Fail-closed write boundary against the ambient tenant context, applied to
    * the NEW scope on save and to the PERSISTED scope on save/delete of an
@@ -503,9 +555,12 @@ export class FieldPolicy extends SmrtObject {
    * ALS), only app-scope rows are accepted: tenant- and user-scope rows are
    * unattributable without a context, so they are rejected outright rather
    * than allowed by default. Inside a non-bypass context, a caller may only
-   * touch rows for its own tenant (and, when the context carries a user id,
-   * only user rows for itself); app-wide rows then require super-admin
-   * bypass (or a context-less/system caller).
+   * touch rows for its own tenant, and user rows only for its own user id —
+   * a context that carries NO user id may not touch the user tier at all.
+   * App-wide rows then require super-admin bypass (or a context-less/system
+   * caller).
+   *
+   * Package rule: a missing identity component DENIES, it never skips.
    */
   private assertScopeOwnedByAmbientContext(
     scope: {
@@ -553,17 +608,31 @@ export class FieldPolicy extends SmrtObject {
       );
     }
 
-    if (
-      scope.scopeType === 'user' &&
-      context.userId !== undefined &&
-      scope.userId !== context.userId
-    ) {
-      throw new TenantIsolationError(
-        `Tenant isolation violation in FieldPolicy.${operation}: context ` +
-          `user is '${context.userId}' but the row belongs to ` +
-          `'${scope.userId}'`,
-        { tenantId: context.tenantId },
-      );
+    if (scope.scopeType === 'user') {
+      // A MISSING identity component denies, never skips. Tenancy adapters
+      // populate `permissions` while leaving `userId` undefined whenever no
+      // `resolveUserId` hook is configured (API-key auth, service principals,
+      // background jobs, a bare `withTenant({ tenantId })`), and user rows
+      // carry `tenantId: null` by design — so skipping the check here would
+      // let any such caller create, re-scope, or delete ANY user's rows in
+      // ANY tenant, with the generated PUT echoing the row back as a read
+      // primitive.
+      if (context.userId === undefined) {
+        throw new TenantIsolationError(
+          `User-scope field policy ${operation}s require an ambient context ` +
+            `that carries a user id; this context cannot attribute a ` +
+            `user-scope write`,
+          { tenantId: context.tenantId },
+        );
+      }
+      if (scope.userId !== context.userId) {
+        throw new TenantIsolationError(
+          `Tenant isolation violation in FieldPolicy.${operation}: context ` +
+            `user is '${context.userId}' but the row belongs to ` +
+            `'${scope.userId}'`,
+          { tenantId: context.tenantId },
+        );
+      }
     }
   }
 
@@ -615,17 +684,27 @@ export class FieldPolicy extends SmrtObject {
     }
   }
 
+  /**
+   * The persisted row this save/delete would replace, looked up by primary
+   * key and — when that misses — by the NATURAL key.
+   *
+   * The natural-key fallback is load-bearing for authorization: every
+   * generated create arrives with a freshly minted UUID, so a primary-key
+   * lookup always misses, yet the `conflictColumns` upsert still overwrites
+   * whatever row already occupies `(objectRef, fieldName, scopeType,
+   * scopeKey)`. Authorizing on the primary key alone therefore skipped the
+   * persisted-scope guard on exactly the path that can replace an existing
+   * row's contents.
+   */
   private async getPersistedIdentity(): Promise<FieldPolicyIdentity | null> {
-    if (!this.id) {
-      return null;
-    }
-
-    const existing = await this.db.get(this.tableName, { id: this.id });
+    const existing =
+      (await this.getPersistedRowById()) ??
+      (await this.getPersistedRowByNaturalKey());
     if (!existing) {
       return null;
     }
 
-    const row = existing as Record<string, unknown>;
+    const row = existing;
     const read = (camel: string, snake: string, fallback: string): string => {
       if (row[camel] !== undefined && row[camel] !== null) {
         return String(row[camel]);
@@ -648,6 +727,35 @@ export class FieldPolicy extends SmrtObject {
       tenantId: readNullable('tenantId', 'tenant_id'),
       userId: readNullable('userId', 'user_id'),
     };
+  }
+
+  private async getPersistedRowById(): Promise<Record<string, unknown> | null> {
+    if (!this.id) {
+      return null;
+    }
+    const row = await this.db.get(this.tableName, { id: this.id });
+    return (row as Record<string, unknown> | undefined) ?? null;
+  }
+
+  /**
+   * The row occupying this row's `conflictColumns` tuple, if any. Column
+   * names are the physical snake_case ones: this reads the driver directly
+   * rather than through a collection (the model has no collection handle).
+   */
+  private async getPersistedRowByNaturalKey(): Promise<Record<
+    string,
+    unknown
+  > | null> {
+    if (!this.objectRef || !this.fieldName) {
+      return null;
+    }
+    const row = await this.db.get(this.tableName, {
+      object_ref: this.objectRef,
+      field_name: this.fieldName,
+      scope_type: this.scopeType,
+      scope_key: this.computeScopeKey(),
+    });
+    return (row as Record<string, unknown> | undefined) ?? null;
   }
 
   private normalizeDefaultValueForPersistence(): void {

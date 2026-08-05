@@ -78,25 +78,47 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   locks are honored at save time too. On updates the resolver sees the row's
   persisted version (no self-exclusion), so the resolver-side safety net
   remains the authoritative enforcement at read time.
-- **Isolation**: a non-bypass tenant context may only resolve/write its own
-  tenant (and own user when the context carries one); app-scope writes inside
-  a tenant context require super-admin bypass. With NO ambient identity at
-  all (tenancy ALS never entered — e.g. a runtime API deployment without the
-  smrt-users session hook), only app-scope writes/deletes are accepted:
-  tenant- and user-scope rows are unattributable without a context and are
-  rejected outright. Residual: such ALS-less deployments can still write APP
-  rows with any authenticated principal until the #2049 permission layer
-  adds `fields:policy:manage`. `save()` and `delete()` on an EXISTING row
-  additionally authorize the caller against the row's PERSISTED scope before
-  accepting anything — a foreign row cannot be re-scoped into the caller's
-  tenant/user or deleted by id from another tenant's context. `resolveBatch`
-  takes identity exclusively from the ambient tenant context — the request
-  body cannot select another tenant or user.
+- **Isolation — a MISSING identity component DENIES, it never skips.** This
+  is the package rule; both the write guard
+  (`FieldPolicy.assertScopeOwnedByAmbientContext`) and the read guard
+  (`assertResolutionAllowedInContext`) obey it. A non-bypass tenant context
+  may only resolve/write its own tenant, and the user tier only for its own
+  user id — a context carrying permissions but NO `userId` (no `resolveUserId`
+  hook configured: API-key auth, service principals, background jobs, a bare
+  `withTenant({ tenantId })`) may not touch the user tier at all. Skipping
+  that check instead of denying it was a live ownership bypass: user rows are
+  `tenantId: null` by design, so nothing else contains such a write. App-scope
+  writes inside a tenant context require super-admin bypass. With NO ambient
+  identity at all (tenancy ALS never entered), only app-scope writes/deletes
+  are accepted; context-LESS *reads* stay allowed because
+  `resolveFieldPolicy` is a trusted server-side API. Residual: ALS-less
+  deployments can still write APP rows with any authenticated principal until
+  the #2049 permission layer adds `fields:policy:manage`. `save()`/`delete()`
+  on an existing row additionally authorize against the row's PERSISTED
+  scope, looked up by primary key AND — because a generated create always
+  mints a fresh UUID while the `conflictColumns` upsert still replaces the
+  occupant — by NATURAL key. `resolveBatch` takes identity exclusively from
+  the ambient context; the request body cannot select another tenant or user.
+- **Scope attribution**: inside an ambient context the model DERIVES a
+  missing `tenantId` (tenant rows) or `userId` (user rows) from that context,
+  and always stamps `updatedBy` from it. Core's mass-assignment guard treats
+  `tenantId` as server-managed and strips it from every generated write body
+  while `FieldPolicy` is deliberately not `@TenantScoped`, so without this the
+  org tier is write-dead over REST/SvelteKit (scope-shape validation throws).
+  Deriving grants nothing — the ownership guard already pinned the value to
+  the ambient one. An explicit value is never overwritten, so a super-admin
+  bypass caller writing ANOTHER tenant's row must go through a server-side
+  model call; the generated routes still strip it.
 
 ## Caching and invalidation
 
-- Resolver results cached per `(dbNamespace, objectRef, tenantId, userId)`
-  with a 30s TTL (`cache.ts` mirrors smrt-prompts' `getDbNamespace`).
+- Resolver results cached per
+  `(dbNamespace, objectRef, tenantId, userId, hierarchyLoader)` with a 30s TTL
+  (`cache.ts` mirrors smrt-prompts' `getDbNamespace`). The loader identity is
+  part of the key because an injected `tenantHierarchyLoader` yields a
+  different ancestor chain — and so different defaults/locks — for the same
+  `(db, objectRef, tenant, user)`; it goes LAST so the `(db, objectRef)`
+  prefix scan still invalidates every loader's entries.
 - `FieldPolicy.save()`/`.delete()` invalidate ALL entries for the row's
   `(db, objectRef)` — coarser than prompts because tenant hierarchy makes a
   parent-tenant row affect every descendant's resolution.
@@ -117,6 +139,19 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - Identity changes (objectRef/fieldName/scope) on a persisted row go through
   delete-then-insert (transactional when the driver supports it) because the
   natural-key upsert would otherwise collide with the primary key.
+- `withSystemContext()` does NOT unlock tenant/user-scope writes:
+  `getCurrentTenant()` returns undefined inside it, so the context-absent rule
+  rejects those tiers before any bypass check. Seeds and migrations that must
+  write org/user rows use a `superAdminBypass` context instead.
+- The MODEL's `cli`/`mcp` decorator config is dead at runtime: the registry
+  re-registers the item slot with the COLLECTION's config wholesale, so
+  `FieldPolicyCollection`'s `cli: false, mcp: false` is what actually closes
+  those surfaces. Keep both in lockstep anyway — build-time generation reads
+  the model's own config. Related: `ObjectRegistry.getTableName(
+  'FieldPolicyCollection')` resolves to the UNPREFIXED collection fallback
+  `field_policies`; persistence uses the item class
+  (`_smrt_field_policies`), and both are pinned in
+  `generated-surfaces.test.ts`.
 
 ## Related
 

@@ -92,9 +92,17 @@ export function isTransientField(field: RegisteredFieldInfo): boolean {
   return field.transient === true || field._meta?.transient === true;
 }
 
-/** A field is required when flagged required and not explicitly nullable. */
+/**
+ * A field is required when flagged required and not explicitly nullable.
+ *
+ * `nullable` is read from BOTH the top level and `_meta` for the same reason
+ * `sensitive`/`readPermission`/`transient` are: registrations reach the
+ * registry through several paths (decorator, manifest, STI merge) and land the
+ * flag in either place. Checking only one side made the pair asymmetric —
+ * `required` was read from both while `nullable` was read from one.
+ */
 export function isRequiredField(field: RegisteredFieldInfo): boolean {
-  if (field._meta?.nullable === true) {
+  if (field.nullable === true || field._meta?.nullable === true) {
     return false;
   }
   return field.required === true || field._meta?.required === true;

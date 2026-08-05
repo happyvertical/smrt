@@ -86,7 +86,13 @@ export async function resolveFieldPolicyExplained(
   // unknown refs throw before the cache is consulted.
   const fieldMap = await getObjectFieldMap(objectRef);
 
-  const cached = getCachedFieldPolicy(objectRef, tenantId, userId, cacheDb);
+  const cached = getCachedFieldPolicy(
+    objectRef,
+    tenantId,
+    userId,
+    cacheDb,
+    options.tenantHierarchyLoader,
+  );
   if (cached) {
     return cached;
   }
@@ -199,15 +205,29 @@ export async function resolveFieldPolicyExplained(
   }
 
   const explained: ExplainedObjectFieldPolicy = { objectRef, fields, layers };
-  setCachedFieldPolicy(objectRef, tenantId, userId, cacheDb, explained);
+  setCachedFieldPolicy(
+    objectRef,
+    tenantId,
+    userId,
+    cacheDb,
+    explained,
+    options.tenantHierarchyLoader,
+  );
   return explained;
 }
 
 /**
  * Fail-closed isolation guard: an active non-bypass tenant context may only
- * resolve its own tenant (and, when the context carries a user id, its own
- * user). App-only resolution (`tenantId` null) is always allowed — app rows
- * are global data.
+ * resolve its own tenant and its own user. App-only resolution (`tenantId`
+ * null) is always allowed — app rows are global data.
+ *
+ * Mirrors the write-side rule in `FieldPolicy`: a MISSING identity component
+ * denies, it never skips. A context that carries permissions but no user id
+ * (no `resolveUserId` hook configured — API-key auth, service principals,
+ * background jobs) must not be able to read any user's resolved policy.
+ * Context-LESS callers stay allowed: `resolveFieldPolicy` is a trusted
+ * server-side API, and the public `resolveBatch` route never lets a request
+ * body select a user — it takes identity from the ambient context alone.
  */
 function assertResolutionAllowedInContext(
   tenantId: string | null,
@@ -221,12 +241,18 @@ function assertResolutionAllowedInContext(
     return;
   }
   const context = getCurrentTenant();
-  if (
-    context &&
-    !isSuperAdminBypass() &&
-    context.userId !== undefined &&
-    context.userId !== userId
-  ) {
+  if (!context || isSuperAdminBypass()) {
+    return;
+  }
+  if (context.userId === undefined) {
+    throw new TenantIsolationError(
+      `Tenant isolation violation in resolveFieldPolicy: the ambient ` +
+        `context carries no user id, so user-scope resolution for ` +
+        `'${userId}' is not attributable`,
+      { tenantId: context.tenantId },
+    );
+  }
+  if (context.userId !== userId) {
     throw new TenantIsolationError(
       `Tenant isolation violation in resolveFieldPolicy: context user is ` +
         `'${context.userId}' but resolution requested '${userId}'`,

@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TenantCollection } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
+import { resolveFieldPolicy } from './field-policy-resolver.js';
 
 @smrt({
   packageName: '@test/smrt-fields-model',
@@ -94,6 +95,37 @@ function seedPolicies<T>(fn: () => Promise<T>): Promise<T> {
     },
     fn,
   );
+}
+
+/**
+ * Run inside a NON-bypass signed-in context (tenant + user), the shape a real
+ * request carries.
+ *
+ * `seedPolicies` uses super-admin bypass, which returns from the ownership
+ * guard before the user branch is ever reached — so bypass-seeded fixtures
+ * cannot exercise the user path at all. Tests that mean to cover it must use
+ * this instead.
+ */
+function asUser<T>(
+  identity: { userId: string; tenantId?: string },
+  fn: () => Promise<T>,
+): Promise<T> {
+  return withTenant(
+    {
+      tenantId: identity.tenantId ?? randomUUID(),
+      userId: identity.userId,
+      permissions: new Set<string>(),
+    },
+    fn,
+  );
+}
+
+/** A tenant-only context: permissions resolved, no `resolveUserId` hook. */
+function asUserlessTenant<T>(
+  fn: () => Promise<T>,
+  tenantId: string = randomUUID(),
+): Promise<T> {
+  return withTenant({ tenantId, permissions: new Set<string>() }, fn);
 }
 
 describe('FieldPolicy write-time validation', () => {
@@ -978,5 +1010,253 @@ describe('FieldPolicy write-time validation', () => {
       defaultValue: JSON.stringify('legacy-id-42'),
     });
     expect(textRow.getDefaultValue()).toBe('legacy-id-42');
+  });
+
+  it('denies every user-tier write from a context that carries no user id', async () => {
+    // Regression for the userless-context ownership bypass (#2047): the guard
+    // used to read `context.userId !== undefined && scope.userId !== ...`, so
+    // it VANISHED for any context without a user id. Tenancy adapters produce
+    // exactly that shape whenever no `resolveUserId` hook is configured
+    // (API-key auth, service principals, background jobs, a bare
+    // `withTenant({ tenantId })`), and user rows carry `tenantId: null` by
+    // design — so nothing else contained the write. Rule: a missing identity
+    // component DENIES, it never skips.
+    const victimUser = randomUUID();
+    const victimRow = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        userId: victimUser,
+        help: 'victim',
+      }),
+    );
+
+    await asUserlessTenant(async () => {
+      // Create a row owned by someone else.
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'category',
+          scopeType: 'user',
+          userId: victimUser,
+          help: 'forged',
+        }),
+      ).rejects.toThrow(TenantIsolationError);
+
+      // Overwrite an existing foreign row (the generated PUT echoes the saved
+      // row back, so this would double as a read primitive).
+      victimRow.help = 'tampered';
+      await expect(victimRow.save()).rejects.toThrow(TenantIsolationError);
+
+      // Delete an existing foreign row.
+      await expect(victimRow.delete()).rejects.toThrow(TenantIsolationError);
+
+      // A user row for "self" is refused too: the context supplies no owner,
+      // so the scope shape can never be completed.
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'category',
+          scopeType: 'user',
+          help: 'mine',
+        }),
+      ).rejects.toThrow(/must set userId/);
+    });
+
+    const survivors = await policies.list({
+      where: { objectRef, scopeType: 'user' },
+    });
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0].help).toBe('victim');
+    expect(survivors[0].userId).toBe(victimUser);
+  });
+
+  it('runs the non-bypass user path end to end', async () => {
+    // Every other user-tier fixture seeds under super-admin bypass, which
+    // short-circuits the ownership guard before the user branch — this drives
+    // the real signed-in path instead.
+    const userId = randomUUID();
+    const tenantId = randomUUID();
+
+    await asUser({ userId, tenantId }, async () => {
+      // The owner column is derived from the ambient context, not the body.
+      const row = await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        help: 'mine',
+      });
+      expect(row.userId).toBe(userId);
+      expect(row.tenantId).toBeNull();
+      expect(row.scopeKey).toBe(userId);
+
+      row.help = 'mine, edited';
+      await row.save();
+
+      const persisted = await policies.list({
+        where: { objectRef, fieldName: 'summary', scopeType: 'user' },
+      });
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0].help).toBe('mine, edited');
+
+      await row.delete();
+      expect(
+        await policies.list({
+          where: { objectRef, fieldName: 'summary', scopeType: 'user' },
+        }),
+      ).toHaveLength(0);
+    });
+  });
+
+  it('stamps updatedBy from the ambient context instead of the request body', async () => {
+    // Audit attribution (#2050/#2051) must not be forgeable through the open
+    // write routes: the server stamps it inside any ambient context.
+    const userId = randomUUID();
+    const spoofed = randomUUID();
+
+    const userRow = await asUser({ userId }, () =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        help: 'mine',
+        updatedBy: spoofed,
+      }),
+    );
+    expect(userRow.updatedBy).toBe(userId);
+
+    // A context with no user id attributes to null rather than keeping the
+    // client's claim.
+    const orgRow = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'category',
+        scopeType: 'app',
+        help: 'org',
+        updatedBy: spoofed,
+      }),
+    );
+    expect(orgRow.updatedBy).toBeNull();
+
+    // Context-less/system flows keep whatever attribution they set.
+    const systemRow = await policies.create({
+      objectRef,
+      fieldName: 'wordCount',
+      scopeType: 'app',
+      help: 'system',
+      updatedBy: spoofed,
+    });
+    expect(systemRow.updatedBy).toBe(spoofed);
+  });
+
+  it('authorizes an upsert against the row it would replace, not only by id', async () => {
+    // Every generated create arrives with a freshly minted UUID, so the
+    // primary-key lookup always misses — yet the `conflictColumns` upsert
+    // still replaces whatever row holds (objectRef, fieldName, scopeType,
+    // scopeKey). The persisted-scope guard therefore falls back to the
+    // NATURAL key. Defence in depth: the new-scope check also refuses this
+    // today (the scope key is derived from the caller's own owner id), but
+    // the guard is no longer contingent on the id matching.
+    const victimUser = randomUUID();
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        userId: victimUser,
+        help: 'victim',
+      }),
+    );
+
+    await asUser({ userId: randomUUID() }, async () => {
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'user',
+          userId: victimUser,
+          help: 'overwritten',
+        }),
+      ).rejects.toThrow(TenantIsolationError);
+    });
+
+    const rows = await policies.list({
+      where: { objectRef, fieldName: 'summary', scopeType: 'user' },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].help).toBe('victim');
+  });
+
+  it('lets a tenant row unlock an app-tier or code-seed lock (pinned semantics)', async () => {
+    // `locked` is an ordinary sparse delta, so the LAST org layer to set it
+    // wins: a tenant row with `locked: false` overrides the app tier's — and
+    // the code seed's — `locked: true`. That inverts the usual "higher tier
+    // only tightens" intuition and is deliberate: a tenant must be able to
+    // opt its own users back into personalizing a field. Pinned here because
+    // #2050's control panel surfaces the unlock as an org action.
+    const tenantId = randomUUID();
+    const siblingTenant = randomUUID();
+    const userId = randomUUID();
+
+    // App tier locks `summary`; the code seed locks `lockedByCode`.
+    await policies.create({
+      objectRef,
+      fieldName: 'summary',
+      scopeType: 'app',
+      locked: true,
+    });
+
+    await seedPolicies(async () => {
+      await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'tenant',
+        tenantId,
+        locked: false,
+      });
+      await policies.create({
+        objectRef,
+        fieldName: 'lockedByCode',
+        scopeType: 'tenant',
+        tenantId,
+        locked: false,
+      });
+    });
+
+    const unlocked = await resolveFieldPolicy(objectRef, { tenantId, db });
+    expect(unlocked.fields.summary.locked).toBe(false);
+    expect(unlocked.fields.lockedByCode.locked).toBe(false);
+
+    // The write side agrees: user rows are accepted inside that tenant.
+    await asUser({ userId, tenantId }, async () => {
+      const row = await policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'user',
+        help: 'mine',
+      });
+      expect(row.help).toBe('mine');
+    });
+
+    // The unlock is tenant-local: a sibling tenant still resolves locked and
+    // still refuses user writes.
+    const stillLocked = await resolveFieldPolicy(objectRef, {
+      tenantId: siblingTenant,
+      db,
+    });
+    expect(stillLocked.fields.summary.locked).toBe(true);
+    expect(stillLocked.fields.lockedByCode.locked).toBe(true);
+
+    await asUser({ userId, tenantId: siblingTenant }, async () => {
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'user',
+          help: 'mine',
+        }),
+      ).rejects.toThrow(/locked by org policy/);
+    });
   });
 });
