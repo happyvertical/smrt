@@ -347,9 +347,9 @@ expire within seven days), and `CI_HOSTED_FALLBACK_ENABLED` returns
 The fallback lever has been rehearsed. With `CI_HOSTED_FALLBACK_ENABLED` set
 to `true`, PR validation re-resolved every job from the self-hosted label to
 `ubuntu-latest` and `Required CI` succeeded in 8.1 minutes of wall clock
-(run `30969467329`):
+([run 30969467329](https://github.com/happyvertical/smrt/actions/runs/30969467329)):
 
-| job | hosted | ceiling |
+| job | hosted | ceiling (`timeout-minutes`) |
 | --- | --- | --- |
 | `publish-dry-run` prepare | 6.0 min | 45 |
 | Coverage Gate | 5.8 min | 90 |
