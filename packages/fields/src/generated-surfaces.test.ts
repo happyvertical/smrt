@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   APIGenerator,
   field,
@@ -335,6 +337,68 @@ describe('smrt-fields generated surfaces', () => {
     expect(ObjectRegistry.getTableName('FieldPolicyCollection')).toBe(
       'field_policies',
     );
+  });
+
+  it('declares the natural key on BOTH classes that map to the policy table', () => {
+    // The decorated collection emits its OWN manifest schema for
+    // `_smrt_field_policies`. Without `conflictColumns` that schema falls back
+    // to SmrtObject's default unique `(slug, context)` index, and
+    // manifest-driven migrations aggregate both schemas onto the one physical
+    // table — so the stray index would reject legitimate layered rows (every
+    // policy row has a NULL slug and context, and the app/tenant/user rows for
+    // one field differ only by the real natural key).
+    //
+    // The runtime registry cannot catch this: `getAllSchemas()` and
+    // `getAllSchemasAsDefinitions()` are both keyed by TABLE name, so the two
+    // schemas collapse into one entry and the divergence is invisible until a
+    // consumer runs migrations off the manifest. Pin it at the source instead.
+    const naturalKey = ['object_ref', 'field_name', 'scope_type', 'scope_key'];
+
+    // Read the manifest the SMRT vitest plugin regenerates at startup — it is
+    // the same artifact consumer migrations consume, and the only place the
+    // per-class schemas stay distinct.
+    const manifest = JSON.parse(
+      readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+    ) as {
+      objects?: Record<
+        string,
+        {
+          tableName?: string;
+          schema?: {
+            indexes?: Array<{ columns?: string[]; unique?: boolean }>;
+          };
+        }
+      >;
+    };
+    const policyEntries = Object.entries(manifest.objects ?? {}).filter(
+      ([name]) =>
+        name.endsWith(':FieldPolicy') ||
+        name.endsWith(':FieldPolicyCollection'),
+    );
+    // Both the model and its decorated collection emit a schema here.
+    expect(policyEntries).toHaveLength(2);
+
+    for (const [name, entry] of policyEntries) {
+      const uniqueIndexes = (entry.schema?.indexes ?? []).filter(
+        (index) => index?.unique === true,
+      );
+      expect({
+        name,
+        unique: uniqueIndexes.map((index) => index.columns),
+      }).toEqual({ name, unique: [naturalKey] });
+    }
+
+    // The effective (table-keyed) schema carries exactly that one unique
+    // index, and nothing keyed on slug.
+    const definitions = ObjectRegistry.getAllSchemasAsDefinitions();
+    const policySchema = Object.values(definitions).find(
+      (schema) => schema?.tableName === '_smrt_field_policies',
+    );
+    expect(policySchema).toBeDefined();
+    const uniqueIndexes = (policySchema?.indexes ?? []).filter(
+      (index) => index?.unique === true,
+    );
+    expect(uniqueIndexes.map((index) => index.columns)).toEqual([naturalKey]);
   });
 
   it('exposes nothing over MCP or the runtime CLI', async () => {

@@ -139,6 +139,15 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - Identity changes (objectRef/fieldName/scope) on a persisted row go through
   delete-then-insert (transactional when the driver supports it) because the
   natural-key upsert would otherwise collide with the primary key.
+- `FieldPolicyCollection` MUST repeat FieldPolicy's `conflictColumns`. A
+  decorated collection emits its OWN manifest schema for the item's table, and
+  without the natural key that schema falls back to SmrtObject's default unique
+  `(slug, context)` index; manifest-driven migrations aggregate both onto
+  `_smrt_field_policies`, where the stray index rejects legitimate layered rows
+  (all policy rows have NULL slug/context). The runtime registry cannot catch
+  this — `getAllSchemas()` is keyed by TABLE name, so the two schemas collapse
+  into one entry. Pinned against the generated manifest in
+  `generated-surfaces.test.ts`.
 - `withSystemContext()` does NOT unlock tenant/user-scope writes:
   `getCurrentTenant()` returns undefined inside it, so the context-absent rule
   rejects those tiers before any bypass check. Seeds and migrations that must

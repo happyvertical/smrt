@@ -34,7 +34,15 @@ const MAX_BATCH_OBJECT_REFS = 100;
  * coherence gate does not admit standard CRUD entries on a collection's
  * `cli.include`). Keep the api include lists in lockstep with FieldPolicy's.
  */
+// `conflictColumns` MUST mirror FieldPolicy's. A decorated collection emits
+// its OWN schema for the item's table (`_smrt_field_policies`), and without
+// the natural key that schema falls back to SmrtObject's default unique
+// `(slug, context)` index. Manifest-driven migrations aggregate both schemas
+// onto the one physical table, so the stray index would reject legitimate
+// layered rows — every policy row has a NULL slug and context, and the app,
+// tenant, and user rows for a field are distinct only by the real natural key.
 @smrt({
+  conflictColumns: ['object_ref', 'field_name', 'scope_type', 'scope_key'],
   api: {
     include: ['create', 'update', 'delete', 'resolveBatch'],
     routes: {
