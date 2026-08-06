@@ -526,8 +526,10 @@ jobs:
       # cgroup `oom_kill = 0`, and the real cause was an AVX2 SIGILL in
       # @happyvertical/pdf on x86-64-v2 metal, fixed by the 0.65.9 guard
       # (#2195/#2196). The isolation is removed with the cause (#2214 item 6);
-      # the shard script already round-robins both packages onto these same two
-      # runners (voice -> 1/3, video -> 2/3), so placement is unchanged.
+      # both packages now shard like every other one. Do not record which shard
+      # they land on: the script sorts all testable packages and assigns
+      # `index % n`, so every assignment shifts whenever a package is added or
+      # removed anywhere in the workspace.
       - name: Run package tests (shard ${{ matrix.shard }}, excluding core)
         run: |
           set -o pipefail
