@@ -110,17 +110,32 @@ visible to Git, including routes that live beside generated resource handlers.
 Generation refreshes that block, so stale generated paths stop being ignored
 when the generator no longer owns them.
 
-**Migration note:** the first generation after this release replaces the
-legacy adjacent pair below with the bounded exact-path block:
+**Migration note:** generation replaces the legacy block below with the bounded
+exact-path block:
 
 ```gitignore
 # SMRT auto-generated routes (from Vite plugin)
 src/routes/api/**/+server.ts
+!src/routes/api/v1/**/+server.ts
 ```
 
-Only that recognized SMRT pair is migrated. A broad rule that you added or
-moved yourself is left unchanged; remove or narrow it manually if it hides a
-handwritten route.
+Migration takes the recognized SMRT header plus the contiguous run of
+recursive `+server.ts` wildcards directly beneath it, negations included. The
+run is matched by shape rather than against your current `routesDir`, so a
+project that moved `routesDir` after adopting the plugin still migrates, and
+migration still runs once the bounded block exists — leaving a stale negation
+in place would silently re-include whatever the bounded block stops listing.
+
+The first line that is not a recursive `+server.ts` wildcard ends the run. A
+broad rule you added or moved yourself is left unchanged, including an
+identical pattern elsewhere in the file; remove or narrow it manually if it
+hides a handwritten route.
+
+Generated routes are build output and are not meant to be committed: they are
+regenerated on every dev-server start and are not formatted to your Biome or
+Prettier configuration, so tracking them makes a lint job fail on output no
+one edits. Track the handwritten handlers beside them — the bounded block
+lists only generator-owned paths, so they stay visible to Git.
 
 ### AI operations
 

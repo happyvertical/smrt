@@ -1,3 +1,115 @@
-# SMRT auto-generated routes (from Vite plugin)
+# Spillover guard (#2199). `svelte-check`, via `pnpm typecheck`, runs a second
+# route-generation pass using the plugin's DEFAULT routesDir, emitting a
+# duplicate API surface directly under src/routes/api/. This package's real
+# generated routes live under src/routes/api/v1 and are listed in the
+# generator-managed block below; the handwritten handlers there are re-included
+# by the negation, so they stay tracked and linted. Delete both lines when
+# #2199 removes the duplicate pass.
+#
+# Write handwritten handlers under src/routes/api/v1 only. One placed directly
+# under src/routes/api/ is indistinguishable from the duplicate surface and
+# would be ignored here without warning.
 src/routes/api/**/+server.ts
 !src/routes/api/v1/**/+server.ts
+
+# BEGIN SMRT auto-generated routes (Vite plugin)
+src/routes/api/v1/_changes/+server.ts
+src/routes/api/v1/_events/+server.ts
+src/routes/api/v1/contentcontributionattachments/\[id\]/+server.ts
+src/routes/api/v1/contentcontributionattachments/+server.ts
+src/routes/api/v1/contentcontributionattachments/listForContribution/+server.ts
+src/routes/api/v1/contentcontributionattachments/listForRevision/+server.ts
+src/routes/api/v1/contentcontributionrevisions/\[id\]/+server.ts
+src/routes/api/v1/contentcontributionrevisions/+server.ts
+src/routes/api/v1/contentcontributionrevisions/getLatestForContribution/+server.ts
+src/routes/api/v1/contentcontributionrevisions/listForContribution/+server.ts
+src/routes/api/v1/contentcontributions/\[id\]/+server.ts
+src/routes/api/v1/contentcontributions/\[id\]/approve/+server.ts
+src/routes/api/v1/contentcontributions/\[id\]/promote/+server.ts
+src/routes/api/v1/contentcontributions/\[id\]/reject/+server.ts
+src/routes/api/v1/contentcontributions/\[id\]/request-changes/+server.ts
+src/routes/api/v1/contentcontributions/\[id\]/revisions/+server.ts
+src/routes/api/v1/contentcontributions/\[id\]/withdraw/+server.ts
+src/routes/api/v1/contentcontributions/+server.ts
+src/routes/api/v1/contentcontributions/by-contributor/+server.ts
+src/routes/api/v1/contentcontributions/inbox/+server.ts
+src/routes/api/v1/contentcontributions/ingest-email/+server.ts
+src/routes/api/v1/contentcontributions/submit/+server.ts
+src/routes/api/v1/contentcontributions/types/+server.ts
+src/routes/api/v1/contentcontributiontypes/\[id\]/+server.ts
+src/routes/api/v1/contentcontributiontypes/+server.ts
+src/routes/api/v1/contentcontributiontypes/getByKey/+server.ts
+src/routes/api/v1/contentcontributors/\[id\]/+server.ts
+src/routes/api/v1/contentcontributors/+server.ts
+src/routes/api/v1/contentcontributors/findOrCreateByEmail/+server.ts
+src/routes/api/v1/contentcontributors/getByEmail/+server.ts
+src/routes/api/v1/contentcontributors/getByProfileId/+server.ts
+src/routes/api/v1/contentcorrections/\[id\]/+server.ts
+src/routes/api/v1/contentcorrections/+server.ts
+src/routes/api/v1/contentcorrections/getPublishedForContent/+server.ts
+src/routes/api/v1/contentcorrections/issue/+server.ts
+src/routes/api/v1/contentcorrections/listForContent/+server.ts
+src/routes/api/v1/contentfeedsources/\[id\]/+server.ts
+src/routes/api/v1/contentfeedsources/+server.ts
+src/routes/api/v1/contentfeedsources/findActive/+server.ts
+src/routes/api/v1/contentfeedsources/findByFeedUrl/+server.ts
+src/routes/api/v1/contentfeedsources/findByStatus/+server.ts
+src/routes/api/v1/contentgovernanceassignments/\[id\]/+server.ts
+src/routes/api/v1/contentgovernanceassignments/+server.ts
+src/routes/api/v1/contentgovernanceassignments/getByKey/+server.ts
+src/routes/api/v1/contentgovernanceassignments/resolveForContent/+server.ts
+src/routes/api/v1/contentgovernancepolicies/\[id\]/+server.ts
+src/routes/api/v1/contentgovernancepolicies/+server.ts
+src/routes/api/v1/contentgovernancepolicies/getByKey/+server.ts
+src/routes/api/v1/contentgovernanceprofiles/\[id\]/+server.ts
+src/routes/api/v1/contentgovernanceprofiles/+server.ts
+src/routes/api/v1/contentgovernanceprofiles/getByKey/+server.ts
+src/routes/api/v1/contentreferences/\[id\]/+server.ts
+src/routes/api/v1/contentreferences/+server.ts
+src/routes/api/v1/contentreferences/attach/+server.ts
+src/routes/api/v1/contentreferences/byLeft/+server.ts
+src/routes/api/v1/contentreferences/byRight/+server.ts
+src/routes/api/v1/contentreferences/detach/+server.ts
+src/routes/api/v1/contentreferences/getForSource/+server.ts
+src/routes/api/v1/contentreferences/getForTarget/+server.ts
+src/routes/api/v1/contentreferences/setLinks/+server.ts
+src/routes/api/v1/contentreferences/unlink/+server.ts
+src/routes/api/v1/contentreviews/\[id\]/+server.ts
+src/routes/api/v1/contentreviews/+server.ts
+src/routes/api/v1/contentreviews/createFromResult/+server.ts
+src/routes/api/v1/contentreviews/getLatestForContent/+server.ts
+src/routes/api/v1/contentreviews/getLatestForPolicyKey/+server.ts
+src/routes/api/v1/contentreviews/listForContent/+server.ts
+src/routes/api/v1/contentreviews/listForContentByPolicyKey/+server.ts
+src/routes/api/v1/contents/\[id\]/+server.ts
+src/routes/api/v1/contents/\[id\]/corrections/+server.ts
+src/routes/api/v1/contents/\[id\]/fact-audit/+server.ts
+src/routes/api/v1/contents/\[id\]/fact-audit/claims/recheck/+server.ts
+src/routes/api/v1/contents/\[id\]/fact-audit/evidence/repair/+server.ts
+src/routes/api/v1/contents/\[id\]/fact-audit/evidence/status/+server.ts
+src/routes/api/v1/contents/\[id\]/fact-audit/repair/+server.ts
+src/routes/api/v1/contents/\[id\]/facts/+server.ts
+src/routes/api/v1/contents/\[id\]/governance/+server.ts
+src/routes/api/v1/contents/\[id\]/review-profiles/\[profileKey\]/+server.ts
+src/routes/api/v1/contents/\[id\]/review-profiles/+server.ts
+src/routes/api/v1/contents/\[id\]/reviews/+server.ts
+src/routes/api/v1/contents/\[id\]/transparency/+server.ts
+src/routes/api/v1/contents/\[id\]/transparency/preview/+server.ts
+src/routes/api/v1/contents/\[id\]/versions/+server.ts
+src/routes/api/v1/contents/+server.ts
+src/routes/api/v1/contents/by-slug/+server.ts
+src/routes/api/v1/contents/facts/+server.ts
+src/routes/api/v1/contents/governance/+server.ts
+src/routes/api/v1/contents/governance/resolve/+server.ts
+src/routes/api/v1/contentversions/\[id\]/+server.ts
+src/routes/api/v1/contentversions/\[id\]/transparency/+server.ts
+src/routes/api/v1/contentversions/+server.ts
+src/routes/api/v1/contentversions/createSnapshot/+server.ts
+src/routes/api/v1/contentversions/getLatestForContent/+server.ts
+src/routes/api/v1/contentversions/getLatestPublishedForContent/+server.ts
+src/routes/api/v1/contentversions/getNextVersionNumber/+server.ts
+src/routes/api/v1/contentversions/getVersion/+server.ts
+src/routes/api/v1/contentversions/listForContent/+server.ts
+src/routes/api/v1/contentversions/restoreIntoContent/+server.ts
+src/routes/api/v1/sync/apply/+server.ts
+# END SMRT auto-generated routes (Vite plugin)

@@ -1,2 +1,18 @@
-# SMRT auto-generated routes (from Vite plugin)
-src/routes/api/**/+server.ts
+# BEGIN SMRT auto-generated routes (Vite plugin)
+src/routes/api/_changes/+server.ts
+src/routes/api/_events/+server.ts
+src/routes/api/assets/\[id\]/+server.ts
+src/routes/api/assets/+server.ts
+src/routes/api/assets/findByTenant/+server.ts
+src/routes/api/assets/findGlobal/+server.ts
+src/routes/api/assets/findWithGlobals/+server.ts
+src/routes/api/assets/getByAspectRatio/+server.ts
+src/routes/api/assets/getByMaxDimensions/+server.ts
+src/routes/api/assets/getByMinDimensions/+server.ts
+src/routes/api/assets/getHighResolution/+server.ts
+src/routes/api/assets/getLandscape/+server.ts
+src/routes/api/assets/getMissingAltText/+server.ts
+src/routes/api/assets/getPortrait/+server.ts
+src/routes/api/assets/getSquare/+server.ts
+src/routes/api/sync/apply/+server.ts
+# END SMRT auto-generated routes (Vite plugin)

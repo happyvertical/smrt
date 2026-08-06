@@ -43,6 +43,7 @@
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
+    "generate:test": "svelte-kit sync",
     "test": "svelte-kit sync && vitest run",
     "test:watch": "svelte-kit sync && vitest",
     "test:e2e": "pnpm exec playwright test -c playwright.config.ts",
