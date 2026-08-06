@@ -14,6 +14,7 @@ import {
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import type {
+  ApiCustomRouteConfig,
   RegisteredClass,
   RegisteredField,
   SmrtObjectConstructor,
@@ -44,6 +45,11 @@ import {
   warnIfSharedCacheNeutralized,
   warnIfTenantScopedPublicRead,
 } from './conditional-get';
+import {
+  buildCustomActionInvocationArgs,
+  normalizeCustomActionFailure,
+  resolveCustomActionMetadata,
+} from './custom-action';
 import { handleEventsRoute } from './events-route';
 
 export interface APIConfig {
@@ -556,6 +562,22 @@ export class APIGenerator {
     objectName?: string,
   ): Promise<Response> {
     try {
+      // Decorator-declared custom collection actions dispatch BEFORE CRUD
+      // routing: without this, `POST /<collection>/<action>` would fall into
+      // `handleCreate` with the action segment silently discarded (#2047).
+      if (objectId && objectName) {
+        const customResponse = await this.dispatchCustomCollectionAction(
+          req,
+          collection,
+          objectId,
+          url,
+          objectName,
+        );
+        if (customResponse) {
+          return customResponse;
+        }
+      }
+
       const action = this.getCrudAction(req.method, objectId);
       if (action && !this.isApiActionEnabled(objectName, action)) {
         return this.createErrorResponse(405, 'Method not allowed');
@@ -697,6 +719,216 @@ export class APIGenerator {
 
     const registered = ObjectRegistry.getClassByConstructor(itemClass);
     return registered?.qualifiedName || registered?.name || itemClass.name;
+  }
+
+  /**
+   * Dispatch a decorator-declared custom COLLECTION-scoped action —
+   * `@smrt({ api: { include: [...], routes: { action: { scope: 'collection',
+   * method, path } } } })` — on the runtime transport (#2047). The generated
+   * SvelteKit transport already dispatches these routes; this keeps the two
+   * transports coherent for the same decorator metadata.
+   *
+   * Deliberately narrow, matching this router's URL shape: single-segment
+   * collection-scoped paths only (multi-segment custom paths remain a
+   * SvelteKit-transport feature), the action must be exposed by `api.include`
+   * (and not excluded), and the HTTP method must match the route metadata.
+   * Non-matching requests fall through to CRUD handling unchanged.
+   *
+   * Scope is resolved through the shared `resolveCustomActionMetadata`
+   * contract, not read off the route alone: `scope` is OPTIONAL and defaults
+   * to `collection` for statics and `item` for instance methods, so requiring
+   * a literal `scope: 'collection'` would skip a valid static action and let
+   * `POST /<collection>/<action>` fall through into `create`. The receiver
+   * decides — a route-only scope cannot manufacture one — so an action with no
+   * collection-hosted receiver falls through unless the route explicitly
+   * declared `scope: 'collection'`, in which case it is declared-but-missing
+   * and returns 501 rather than degrading into a malformed CRUD write.
+   *
+   * Arguments, failures, and result shaping all reuse the shared custom-action
+   * helpers so this transport matches generated REST/CLI/MCP exactly: declared
+   * parameters are projected (a zero-parameter action takes no body at all, an
+   * `options` bag is passed through, named parameters are read off the body),
+   * a returned `{ ok: false, ... }` failure becomes its requested non-2xx
+   * status with a redacted payload, and success wraps as `{ action, result }`.
+   */
+  private async dispatchCustomCollectionAction(
+    req: Request,
+    collection: SmrtCollection<SmrtObject>,
+    pathSegment: string,
+    url: URL,
+    objectName: string,
+  ): Promise<Response | null> {
+    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+    if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+      return null;
+    }
+
+    for (const [actionName, routeConfig] of Object.entries(
+      apiConfig.routes as Record<string, ApiCustomRouteConfig>,
+    )) {
+      const routePath = routeConfig?.path || actionName;
+      if (routePath.includes('/') || routePath !== pathSegment) {
+        continue;
+      }
+      const routeMethod = (routeConfig?.method || 'POST').toUpperCase();
+      if (routeMethod !== req.method.toUpperCase()) {
+        continue;
+      }
+      // Explicit exposure only: same include/exclude gating as the SvelteKit
+      // generator applies to custom actions.
+      if (apiConfig.include && !apiConfig.include.includes(actionName)) {
+        continue;
+      }
+      if (apiConfig.exclude?.includes(actionName)) {
+        continue;
+      }
+
+      // Receiver: an instance method on the registered collection, or a
+      // static on the item class (the two hosts the generators support).
+      const collectionMethod = (
+        collection as unknown as Record<string, unknown>
+      )[actionName];
+      const itemConstructor = ObjectRegistry.getClass(objectName)
+        ?.constructor as unknown as Record<string, unknown> | undefined;
+      const staticMethod = itemConstructor?.[actionName];
+      const isCollectionHosted = typeof collectionMethod === 'function';
+      const isStaticHosted =
+        !isCollectionHosted && typeof staticMethod === 'function';
+
+      if (!isCollectionHosted && !isStaticHosted) {
+        // Declared collection routes must not degrade into a CRUD write;
+        // anything else (an item-scoped action reached at the collection URL,
+        // or an unrelated segment) falls through unchanged.
+        if (routeConfig?.scope === 'collection') {
+          return this.createErrorResponse(
+            501,
+            `Custom action '${actionName}' is declared but not implemented`,
+          );
+        }
+        continue;
+      }
+
+      const metadata = resolveCustomActionMetadata({
+        actionName,
+        apiConfig,
+        method: ObjectRegistry.getMethods(objectName)?.get(actionName),
+        // A collection instance method is collection-hosted even when it is
+        // not static; a static on the item class already defaults the same
+        // way. Either receiver makes this route collection-targeted.
+        defaultScope: 'collection',
+      });
+      if (metadata.scope !== 'collection') {
+        continue;
+      }
+
+      const invoke = isCollectionHosted
+        ? (args: unknown[]) =>
+            (collectionMethod as (...a: unknown[]) => unknown).apply(
+              collection,
+              args,
+            )
+        : (args: unknown[]) =>
+            (staticMethod as (...a: unknown[]) => unknown).apply(
+              itemConstructor,
+              args,
+            );
+
+      // An ABSENT body is "no input", not a malformed one — a zero-parameter
+      // action is legitimately called with no body at all. A body that is
+      // present but unparseable stays a 400 rather than degrading into a CRUD
+      // write. GET reads the query string instead.
+      let options: unknown;
+      if (routeMethod === 'GET') {
+        options = Object.fromEntries(url.searchParams.entries());
+      } else {
+        let rawBody = '';
+        try {
+          rawBody = await req.text();
+        } catch {
+          rawBody = '';
+        }
+        if (rawBody.trim() !== '') {
+          try {
+            options = JSON.parse(rawBody);
+          } catch {
+            return this.createErrorResponse(400, 'Invalid JSON body');
+          }
+        }
+      }
+
+      // Project declared parameters only when the registry actually knows
+      // them. Without metadata the historical single-options call is kept
+      // verbatim, so an opaque body (an array, or any non-record payload an
+      // existing action already accepts) still arrives unchanged rather than
+      // being silently normalized away.
+      const invocationArgs = metadata.parameters
+        ? buildCustomActionInvocationArgs(metadata, {
+            ...(options &&
+            typeof options === 'object' &&
+            !Array.isArray(options)
+              ? (options as Record<string, unknown>)
+              : {}),
+            options,
+          })
+        : [options];
+
+      const result = await invoke(invocationArgs);
+
+      const failure = normalizeCustomActionFailure(result);
+      if (failure) {
+        return this.createJsonResponse({ error: failure }, failure.status);
+      }
+
+      return this.createJsonResponse({
+        action: actionName,
+        result: this.sanitizeActionResult(result),
+      });
+    }
+
+    return null;
+  }
+
+  /**
+   * Public-safe projection for custom-action results, mirroring the generated
+   * SvelteKit routes' `toPublicResult`: a `SmrtObject` (anything exposing
+   * `toPublicJSON`) becomes its public projection with the caller's
+   * permissions, arrays and plain objects are walked, non-plain instances and
+   * primitives pass through, and a cycle guard breaks reference loops.
+   */
+  private sanitizeActionResult(
+    value: unknown,
+    seen: WeakSet<object> = new WeakSet(),
+  ): unknown {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (seen.has(value)) {
+      return null;
+    }
+    const serializable = value as {
+      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
+    };
+    if (typeof serializable.toPublicJSON === 'function') {
+      seen.add(value);
+      return this.sanitizeActionResult(
+        serializable.toPublicJSON(this.getPublicJsonOptions()),
+        seen,
+      );
+    }
+    if (Array.isArray(value)) {
+      seen.add(value);
+      return value.map((entry) => this.sanitizeActionResult(entry, seen));
+    }
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    seen.add(value);
+    const out: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      out[key] = this.sanitizeActionResult(entry, seen);
+    }
+    return out;
   }
 
   /**
