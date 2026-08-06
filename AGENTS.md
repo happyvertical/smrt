@@ -30,7 +30,7 @@ for package-specific architecture and validation.
 ## Orientation
 
 - Foundation: `core`, `config`, `types`, `scanner`, `tenancy`, `vitest`, `cli`.
-- Runtime: `agents`, `jobs`, `users`, `profiles`, `personas`.
+- Runtime: `agents`, `jobs`, `users`, `profiles`, `personas`, `fields`.
 - Domain packages include content/media, commerce, events, places, facts, sites,
   properties, tags, social, marketing, and secrets.
 - Client/tooling packages include `smrt-web`, `smrt-svelte`, mobile packages,
