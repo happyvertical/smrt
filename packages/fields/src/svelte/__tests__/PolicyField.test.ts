@@ -26,6 +26,7 @@ import DomPrefillFixture from './fixtures/DomPrefillFixture.svelte';
 import GracefulDegradeFixture from './fixtures/GracefulDegradeFixture.svelte';
 import PrefillFixture from './fixtures/PrefillFixture.svelte';
 import ProviderFieldFixture from './fixtures/ProviderFieldFixture.svelte';
+import RevealPrefillFixture from './fixtures/RevealPrefillFixture.svelte';
 import SnippetFixture from './fixtures/SnippetFixture.svelte';
 import TooltipFixture from './fixtures/TooltipFixture.svelte';
 
@@ -311,6 +312,80 @@ describe('PolicyField default prefill (new records only)', () => {
       name: /SKU/,
     });
     expect(input.value).toBe('');
+  });
+});
+
+describe('PolicyField prefill on reveal (advanced-tier fields)', () => {
+  it('prefills an advanced field when the mode switch reveals it', async () => {
+    const policy = makePolicy();
+    render(RevealPrefillFixture, {
+      props: { policy, isNewRecord: true },
+    });
+    await tick();
+
+    // Hidden in basic mode: no input to prefill yet.
+    expect(
+      screen.queryByRole('spinbutton', { name: /Wholesale Price/ }),
+    ).not.toBeInTheDocument();
+
+    // Reveal the advanced tier.
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle Mode' }));
+    await tick();
+
+    // wholesalePrice resolves default 0 — a legitimate integer default that
+    // must survive the undefined/null guards.
+    const input = screen.getByRole<HTMLInputElement>('spinbutton', {
+      name: /Wholesale Price/,
+    });
+    expect(input.value).toBe('0');
+    // The bound state picked up the prefilled value via the dispatched event.
+    expect(screen.getByTestId('wholesale-state')).toHaveTextContent('0');
+  });
+
+  it('does NOT prefill a revealed advanced field when isNewRecord is false', async () => {
+    const policy = makePolicy();
+    render(RevealPrefillFixture, {
+      props: { policy, isNewRecord: false },
+    });
+    await tick();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle Mode' }));
+    await tick();
+
+    const input = screen.getByRole<HTMLInputElement>('spinbutton', {
+      name: /Wholesale Price/,
+    });
+    expect(input.value).toBe('');
+  });
+
+  it('prefills only once — a deliberately cleared input is never re-filled', async () => {
+    const policy = makePolicy();
+    render(RevealPrefillFixture, {
+      props: { policy, isNewRecord: true },
+    });
+    await tick();
+
+    // Reveal → prefill runs once.
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle Mode' }));
+    await tick();
+    const input = screen.getByRole<HTMLInputElement>('spinbutton', {
+      name: /Wholesale Price/,
+    });
+    expect(input.value).toBe('0');
+
+    // The user deliberately clears the field.
+    await userEvent.clear(input);
+    await tick();
+
+    // Hide and reveal again: the one-shot guard must prevent a re-prefill.
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle Mode' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Toggle Mode' }));
+    await tick();
+
+    const revealed = screen.getByRole<HTMLInputElement>('spinbutton', {
+      name: /Wholesale Price/,
+    });
+    expect(revealed.value).toBe('');
   });
 });
 

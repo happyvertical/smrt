@@ -22,7 +22,6 @@
  * forms can adopt it incrementally.
  */
 import type { Snippet } from 'svelte';
-import { onMount } from 'svelte';
 import { tryGetFieldPolicyContext } from '../context.svelte.js';
 import type { PolicyFieldSnippetProps } from '../types.js';
 
@@ -121,20 +120,26 @@ const snippetProps = $derived<PolicyFieldSnippetProps>({
 });
 
 // --- Default prefill (new records only) ---
-// On mount, if this is a new record and the field has a resolved default,
-// prefill the wrapped input's value — but ONLY when the input is currently
-// empty (a loaded record with an existing value is never clobbered). The
-// prefill is a one-shot DOM write inside onMount (client-only), mirroring the
-// "defaults only apply to new records" invariant from the resolver.
+// When this is a new record and the field has a resolved default, prefill the
+// wrapped input's value — but ONLY when the input is currently empty (a loaded
+// record with an existing value is never clobbered). Mirrors the "defaults
+// only apply to new records" invariant from the resolver.
+//
+// Runs via $effect rather than onMount so it also covers advanced-tier fields
+// that are hidden at mount and revealed later by the mode switch: the wrapper
+// div (and rootEl) only exist once the field is visible, and the effect re-runs
+// when visibility flips. A one-shot `prefilled` guard prevents re-filling an
+// input the user has deliberately cleared.
 //
 // After writing a value we dispatch the event the matching binding listens to
 // (`input` for text-like controls, `change` for select/checkbox/radio) so a
 // consumer's `bind:value` variable picks the prefilled value up instead of
 // staying stale.
 let rootEl = $state<HTMLDivElement | null>(null);
+let prefilled = false;
 
 function prefillInputs(): void {
-  if (!rootEl || !isNewRecord || !hasDefault || defaultValue === undefined) {
+  if (!rootEl) {
     return;
   }
 
@@ -144,7 +149,7 @@ function prefillInputs(): void {
 
   for (const input of inputs) {
     if (input instanceof HTMLSelectElement) {
-      if (input.value === '' || input.value === undefined) {
+      if (input.value === '') {
         input.value = String(defaultValue ?? '');
         input.dispatchEvent(new Event('change', { bubbles: true }));
       }
@@ -172,14 +177,31 @@ function prefillInputs(): void {
 
     // text / textarea / number / date / etc.
     const textInput = input as HTMLInputElement | HTMLTextAreaElement;
-    if (textInput.value === '' || textInput.value === undefined) {
+    if (textInput.value === '') {
       textInput.value = String(defaultValue ?? '');
       textInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
   }
 }
 
-onMount(() => {
+// Prefill is a one-shot per component instance: it runs the first time the
+// wrapper exists with a usable default (mount for visible fields, or first
+// reveal for advanced-tier fields hidden in basic mode). The `visible` read
+// makes the effect re-run when a hidden field becomes visible; the `prefilled`
+// guard keeps it one-shot so a user who clears the input is never re-filled.
+$effect(() => {
+  if (prefilled || !visible || !isNewRecord || !hasDefault) {
+    return;
+  }
+  if (defaultValue === undefined || defaultValue === null) {
+    return;
+  }
+  if (!rootEl) {
+    // Wrapper not mounted yet — rootEl is tracked $state, so the effect
+    // re-runs once the binding lands.
+    return;
+  }
+  prefilled = true;
   prefillInputs();
 });
 </script>
