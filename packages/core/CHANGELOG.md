@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.59
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stop generated SvelteKit routes dirtying the working tree (#2201) (core,content)
+  - @happyvertical/smrt-config@0.40.59
+  - @happyvertical/smrt-types@0.40.59
+  - @happyvertical/smrt-scanner@0.40.59
+
 ## 0.40.58
 
 ### Patch Changes
