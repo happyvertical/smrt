@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.58
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - advisory bound, SDK 0.85.5, Renovate androidx pin, app-cli timeouts (#2245) (deps,app-cli)
+  - @happyvertical/smrt-config@0.40.58
+  - @happyvertical/smrt-types@0.40.58
+  - @happyvertical/smrt-scanner@0.40.58
+
 ## 0.40.57
 
 ### Patch Changes

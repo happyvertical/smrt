@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-fields",
-  "version": "0.40.57",
+  "version": "0.40.58",
   "description": "Layered field policy store and resolver (defaults, visibility tiers, help text) for SMRT objects",
   "type": "module",
   "main": "./dist/index.js",
