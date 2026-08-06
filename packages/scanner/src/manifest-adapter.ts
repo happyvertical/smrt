@@ -157,8 +157,28 @@ interface SmartObjectDefinition {
   staticProperties?: Record<string, unknown>;
 }
 
+/**
+ * Fixed `timestamp` for generated manifests.
+ *
+ * The manifest this adapter returns is inlined verbatim into every package
+ * bundle by smrt-core's Vite plugin, so a wall-clock value changes the emitted
+ * bytes on every build. That changes Vite's content hash, which changes
+ * `dist/`, which invalidates every downstream package through Turbo's
+ * `dependsOn: ['^build']` — one rebuilt package churned 202 of 245 task
+ * hashes, and `typecheck` never reused a cache entry across runs (#2223).
+ *
+ * Nothing reads the field: manifest invalidation uses filesystem mtimes, and
+ * smrt-core's knowledge hashing deletes it before comparing.
+ *
+ * smrt-core declares the same constant as `MANIFEST_TIMESTAMP`; it is
+ * duplicated here rather than imported because this package deliberately does
+ * not depend on smrt-core.
+ */
+const MANIFEST_TIMESTAMP = 0;
+
 interface SmartObjectManifest {
   version: string;
+  /** Always {@link MANIFEST_TIMESTAMP}: build output must be reproducible. */
   timestamp: number;
   packageName?: string;
   packageVersion?: string;
@@ -355,7 +375,7 @@ export class ManifestAdapter {
 
     return {
       version: '1.0.0',
-      timestamp: Date.now(),
+      timestamp: MANIFEST_TIMESTAMP,
       packageName: options.packageName,
       packageVersion: options.packageVersion,
       objects,

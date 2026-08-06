@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { generateRuntimeBootstrap } from './mcp-runtime-template.js';
 
 describe('generated MCP custom-action runtime (#2182)', () => {
+  it('emits the SDK v2 stateless lifecycle', () => {
+    const source = generateRuntimeBootstrap({ tools: [], customActions: {} });
+
+    expect(source).toContain("from '@modelcontextprotocol/server'");
+    expect(source).toContain("from '@modelcontextprotocol/server/stdio'");
+    expect(source).toContain("setRequestHandler('tools/list'");
+    expect(source).toContain("setRequestHandler('tools/call'");
+    expect(source).toContain('serveStdio(() => createServer()');
+    expect(source).toContain('await loadConfig()');
+    expect(source).not.toContain('@modelcontextprotocol/sdk');
+    expect(source).not.toContain('initialize');
+  });
+
   it('carries canonical receivers and positional invocation metadata without exposing it as a tool field', () => {
     const source = generateRuntimeBootstrap({
       tools: [

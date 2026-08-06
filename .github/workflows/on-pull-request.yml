@@ -281,6 +281,9 @@ jobs:
       - name: Check AGENTS.md instruction chains
         run: node scripts/check-agents-chain.mjs
 
+      - name: Check MCP 2026-07-28 protocol hygiene
+        run: node scripts/check-mcp-protocol-hygiene.mjs
+
       # Fails if any --smrt-* token consumed by smrt-svelte components is never
       # emitted by a theme-delivery path (issue #1431). Node-only, no deps.
       - name: Check smrt-svelte design tokens
@@ -398,6 +401,10 @@ jobs:
 
   publish-dry-run:
     name: Publish Dry Run
+    # This gate is the canonical trusted-base self-hosted admission expression
+    # and must stay byte-identical — `hv-agent check-pr` requires every reusable
+    # or self-hosted job in this workflow to carry it, so the merge-queue-only
+    # narrowing for #2214 item 4 lives inside publish-dry-run.yml instead.
     if: >-
       github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request_target' &&
@@ -440,11 +447,29 @@ jobs:
           DEPENDENCY_AUDIT: ${{ needs.dependency-audit.result }}
           TEST_SUITE: ${{ needs.test.result }}
           PUBLISH_DRY_RUN: ${{ needs.publish-dry-run.result }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          for result in "$VALIDATE_COMMITS" "$VALIDATE_WORKFLOWS" "$CHECK_SDK" "$SECRET_SCAN" "$CHECK_STANDARDS" "$DEPENDENCY_AUDIT" "$TEST_SUITE" "$PUBLISH_DRY_RUN"; do
+          for result in \
+            "$VALIDATE_COMMITS" "$VALIDATE_WORKFLOWS" "$CHECK_SDK" \
+            "$SECRET_SCAN" "$CHECK_STANDARDS" "$DEPENDENCY_AUDIT" \
+            "$TEST_SUITE"; do
             if [ "$result" != success ]; then
               echo "::error::full validation did not succeed"
               exit 1
             fi
           done
+
+          # Publish Dry Run is merge-queue only (#2214 item 4), so it reports
+          # `skipped` on a pull request. Require success where it actually runs,
+          # and still fail here if it somehow ran and failed on a PR — accepting
+          # any result outright would silently un-gate it if it is re-enabled.
+          if [ "$EVENT_NAME" = merge_group ]; then
+            if [ "$PUBLISH_DRY_RUN" != success ]; then
+              echo "::error::publish dry run did not succeed in the merge group"
+              exit 1
+            fi
+          elif [ "$PUBLISH_DRY_RUN" != skipped ] && [ "$PUBLISH_DRY_RUN" != success ]; then
+            echo "::error::publish dry run reported '$PUBLISH_DRY_RUN' on a pull request"
+            exit 1
+          fi

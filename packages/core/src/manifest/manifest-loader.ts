@@ -33,6 +33,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { parse } from '../utils/json.js';
 import {
   createQualifiedName,
@@ -295,7 +296,7 @@ function getStaticManifest(): SmartObjectManifest {
       // Fallback to empty manifest if file doesn't exist yet (during build)
       setStaticManifestCache({
         version: '1.0.0',
-        timestamp: Date.now(),
+        timestamp: MANIFEST_TIMESTAMP,
         objects: {},
         packageName: '@happyvertical/smrt-core',
       });

@@ -110,6 +110,7 @@
         "test/**",
         "**/*.test.ts",
         "**/*.spec.ts",
+        "conformance-baseline.yml",
         "package.json",
         "vitest.config.ts",
         "vitest.config.js"

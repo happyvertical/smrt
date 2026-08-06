@@ -1,10 +1,23 @@
+import { existsSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SMRT_MCP_RESULT_METADATA_KEY as CONTRACT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { describe, expect, it } from 'vitest';
 import {
   formatMcpCallResult,
   SMRT_MCP_RESULT_METADATA_KEY,
   toMcpTransportError,
 } from '../bridge.js';
+
+const packageRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+);
+const repoRoot = resolve(packageRoot, '..', '..');
+const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx');
 
 function resultMetadata(result: object): unknown {
   return (result as { _meta?: Record<string, unknown> })._meta?.[
@@ -81,5 +94,74 @@ describe('formatMcpCallResult', () => {
       message: 'Bearer [REDACTED] failed',
       details: { authorization: '[REDACTED]' },
     });
+  });
+});
+
+describe('runMcpStdioBridge', () => {
+  it('negotiates MCP 2026-07-28 and preserves bridged error redaction', async () => {
+    expect(existsSync(tsxBin)).toBe(true);
+    const transport = new StdioClientTransport({
+      command: tsxBin,
+      args: ['src/__tests__/fixtures/mcp-stdio-bridge.ts'],
+      cwd: packageRoot,
+      stderr: 'pipe',
+    });
+    const client = new Client(
+      { name: 'smrt-app-cli-test-client', version: '1.0.0' },
+      {
+        capabilities: {},
+        versionNegotiation: { mode: { pin: '2026-07-28' } },
+      },
+    );
+
+    try {
+      await client.connect(transport);
+      expect(client.getNegotiatedProtocolVersion()).toBe('2026-07-28');
+      expect(client.getServerVersion()).toMatchObject({
+        name: 'smrt-app-cli-test',
+        version: '1.0.0',
+      });
+
+      const tools = await client.listTools();
+      expect(tools.tools.map((tool) => tool.name)).toEqual(['echo']);
+
+      const result = await client.callTool({
+        name: 'echo',
+        arguments: { text: 'hello' },
+      });
+      expect(result.content).toEqual([
+        { type: 'text', text: 'Bearer [REDACTED] echoed' },
+      ]);
+      expect(resultMetadata(result)).toMatchObject({
+        code: 'mcp_tool_error',
+        message: 'Bearer [REDACTED] echoed',
+      });
+    } finally {
+      await client.close();
+      await transport.close();
+    }
+  });
+
+  it('preserves legacy stdio negotiation through the same factory', async () => {
+    const transport = new StdioClientTransport({
+      command: tsxBin,
+      args: ['src/__tests__/fixtures/mcp-stdio-bridge.ts'],
+      cwd: packageRoot,
+      stderr: 'pipe',
+    });
+    const client = new Client(
+      { name: 'smrt-app-cli-legacy-test-client', version: '1.0.0' },
+      { capabilities: {} },
+    );
+
+    try {
+      await client.connect(transport);
+      expect(client.getNegotiatedProtocolVersion()).toBe('2025-11-25');
+      const tools = await client.listTools();
+      expect(tools.tools.map((tool) => tool.name)).toEqual(['echo']);
+    } finally {
+      await client.close();
+      await transport.close();
+    }
   });
 });

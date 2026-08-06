@@ -7,6 +7,18 @@
       "matchFileNames": ["packages/*/template/package.json"],
       "matchPackageNames": ["@happyvertical/smrt-*"],
       "enabled": false
+    },
+    {
+      "description": "androidx.core 1.18+ and androidx.lifecycle 2.11+ require compileSdk 37, and both seed apps are pinned to compileSdk 36 (packages/smrt-android/AGENTS.md, and android-compile-sdk in each gradle/libs.versions.toml). The catalogs record that coupling in comments, which Renovate cannot read, so every weekly update bumped straight past it and left :sample:checkDebugAarMetadata failing on the whole PR (#2234). Remove these two rules in the same change that moves the toolchain to compileSdk 37.",
+      "matchManagers": ["gradle"],
+      "matchPackageNames": ["androidx.core:core-ktx"],
+      "allowedVersions": "<1.18"
+    },
+    {
+      "description": "See the androidx.core rule above — same compileSdk 36 coupling, androidx.lifecycle side (#2234).",
+      "matchManagers": ["gradle"],
+      "matchPackageNames": ["androidx.lifecycle:lifecycle-runtime-compose"],
+      "allowedVersions": "<2.11"
     }
   ]
 }

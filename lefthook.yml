@@ -235,6 +235,12 @@ pre-push:
         them from a Modules table; keep invariants and Gotchas inline. Never add
         nested AGENTS.md files — chains are additive. Run: pnpm check:agents-chain
 
+    mcp-protocol-hygiene:
+      run: node scripts/check-mcp-protocol-hygiene.mjs
+      fail_text: |
+        ❌ Removed MCP protocol features or a monolithic SDK dependency found.
+        Run: pnpm check:mcp-protocol-hygiene
+
     deps-acyclic:
       # DAG guardrail (#1582): the smrt package graph (deps + peers) must stay
       # acyclic. Node-only; `pnpm deps:check` is the deeper source-import variant.

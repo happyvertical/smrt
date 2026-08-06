@@ -46,13 +46,23 @@ never prevent the tests from running.
   omits the label so lint rejects it instead. If a node capability lane is ever
   activated again it needs a fresh, served label.
 - Lightweight lifecycle, policy, stale-management, and mobile jobs remain
-  GitHub-hosted when they do not benefit from a self-hosted cache. Aggregation
-  is not uniform: `required-ci` is hosted, but `test-packages-result` runs on
-  `arc-happyvertical-nodocker` even though it only reads `needs.*.result`. It
-  is capped at the standard rather than moved, because it backs a required
-  status.
-- Every self-hosted job in `test-suite.yml` and `publish-dry-run.yml`
-  selects its runner through the emergency lane selector
+  GitHub-hosted when they do not benefit from a self-hosted cache.
+- Three `test-suite.yml` jobs are pinned to a plain `ubuntu-latest`
+  permanently (#2236, phase 0 of happyvertical/iac#1349): `affected-scope`
+  (checkout plus a paths-filter), `lint` (Biome via `npx`, no workspace
+  install), and `test-packages-result` (no checkout at all — it reads
+  `needs.*.result` and exits). None runs a Turbo task or `setup-environment`,
+  so none can restore from the internal cache or the hosted shim, and the
+  fleet's memory is irrelevant to all three. On the fleet they could instead
+  wait out a netboot of up to 780 s, or queue behind the heavy shards on an
+  8-slot pool. Hosted minutes are free and unmetered on this public
+  repository, so the move costs nothing and returns the slots. This resolves
+  the aggregation asymmetry previously recorded here: `test-packages-result`
+  and `required-ci` are the same shape of job and are now on the same lane.
+  Backing a required status argues for starting promptly, not for queueing.
+- Every job in `test-suite.yml` that is still on the fleet, and every
+  self-hosted job in `publish-dry-run.yml`, selects its runner through the
+  emergency lane selector
   `${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || '<label>' }}`.
   Flipping that repository variable moves the merge-blocking validation path
   onto GitHub-hosted runners without a workflow merge — which would itself
@@ -60,9 +70,12 @@ never prevent the tests from running.
   aggregates jobs from both; a lever that moved only the test suite would
   leave the aggregator blocked on queued dry-run jobs. It is a manual
   lever, not a dispatcher; automated hosted fallback is tracked separately.
-  The release publish path, standalone build, and postgres jobs stay on the
-  self-hosted label and queue instead. actionlint does not validate labels
-  inside expressions, so the allowlist in `.github/actionlint.yaml` is
+  The three pinned jobs above carry no lever, and must not be given one: they
+  are already hosted, so a fallback has nothing to move them to, and an
+  expression with one reachable branch invites a reader to believe the other
+  is live. The release publish path, standalone build, and postgres jobs stay
+  on the self-hosted label and queue instead. actionlint does not validate
+  labels inside expressions, so the allowlist in `.github/actionlint.yaml` is
   unaffected. The variable selects only the runner: on `pull_request_target`
   events both main-scoped cache write paths stay closed — the Turbo shim
   refuses the event and the pnpm-store `actions/cache` step is skipped (see
@@ -75,9 +88,9 @@ the trusted base branch rather than contributor-controlled merge YAML. It passes
 a PR head SHA to reusable general-CI workflows only when the head repository
 equals `github.repository`; merge-group and trusted push workflows use the
 broker normally. External fork PRs keep a base-revision hosted control-plane
-check, while the self-hosted validation and publish-dry-run calls are skipped
-and `Required CI` rejects the run. Broker admission must also deny those fork
-events before making a reservation.
+check, while the self-hosted validation call is skipped and `Required CI`
+rejects the run on that skipped result. Broker admission must also deny those
+fork events before making a reservation.
 
 `CI_NODE_RUNNER_ENABLED` is gone from this tree — nothing reads it, and the
 migration it was conditioned on is live. If the repository still defines the
@@ -181,11 +194,15 @@ These jobs deliberately sit below the standard, with the reason recorded next
 to the setting or here:
 
 - GitHub-hosted jobs that set a timeout (`dependency-audit` at 10,
-  `mobile.yml`'s two Linux Gradle jobs at 30). Hosted runners never enter the
+  `mobile.yml`'s two Linux Gradle jobs at 30, and `test-suite.yml`'s
+  `affected-scope` and `lint` at 10). Hosted runners never enter the
   self-hosted queue, so the fragility above does not apply and their values can
-  track observed runtime.
-- `required-ci`, which only reads `needs.*.result`. It finishes in seconds, so
-  failing fast is correct for a job that just reports other jobs' results.
+  track observed runtime. The last two came down from the 90-minute standard
+  when they were pinned to hosted (#2236); at 6 s and 18 s measured, ten
+  minutes is a hang guard rather than a capacity budget.
+- `required-ci` and `test-packages-result`, which only read `needs.*.result`.
+  Both finish in seconds, so failing fast is correct for a job that just
+  reports other jobs' results.
 
 `postgres-tests` is at the standard 45. #2164 retired the unserved
 `arc-happyvertical-node` label, deleted the `node-runner-smoke` workflow that
@@ -222,19 +239,42 @@ reversal lever.
 
 - Unset/false: PRs run the historical full suite.
 - `true`: PRs run lint, affected typecheck and tests across the changed
-  packages and everything that depends on them, touched coverage, and — only
-  when knowledge-sensitive paths change — affected knowledge freshness. The
+  packages and everything that depends on them, and — only when
+  knowledge-sensitive paths change — affected knowledge freshness. The
   complete suite runs for `merge_group`.
 
-Publish dry-run sits outside that split: it runs for same-repository PRs and for
-`merge_group` in both modes. No lane in `on-pull-request.yml` or
-`test-suite.yml` runs PostgreSQL in either mode; PostgreSQL lives only in
-`postgres-tests.yml`, described below.
+Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
+Both used to run in both lanes while the merge group re-ran them in full
+regardless, so the PR copies were duplicate fleet occupancy rather than the
+binding gate — and Coverage Gate additionally paid a cold full build on PRs,
+because the seed `build` job is full-mode only. Neither loses meaning in the
+merge group: `check-coverage.mjs` resolves its diff base as `BASE_REF || 'main'`
+plus `merge-base`, which is correct for the synthetic merge-group head. The
+trade is that a coverage or packaging regression now ejects from the queue
+instead of reddening the PR; authors can pre-check coverage locally with
+`node scripts/check-coverage.mjs --packages <list>`.
 
-`Required CI` is the sole required repository-validation status. Its aggregator
-requires the same eight jobs to succeed for both PR and merge-group events; what
-differs between the two is the mode `test-suite.yml` runs in, not the set of
-jobs the aggregator checks.
+Publish Dry Run's gate lives inside `publish-dry-run.yml`, not on its caller.
+Every reusable or self-hosted job in `on-pull-request.yml` must carry the
+canonical trusted-base admission expression byte-for-byte, so narrowing a lane
+from the caller's `if:` is not available — gate the called workflow instead.
+
+Both gates key off `CI_MERGE_QUEUE_ENABLED`, not off the event alone, because
+clearing that variable is the documented rollback lever and it stops GitHub
+producing `merge_group` events at all. Coverage Gate gets this for free: the
+caller's `mode` expression falls back to `full` on the same lever, so it runs on
+PRs again. Publish Dry Run tests the lever explicitly — without it, a rollback
+would leave packaging unvalidated all the way into `publish.yml`, since
+`on-merge-main.yml` runs test and build but never a pack validation.
+
+No lane in `on-pull-request.yml` or `test-suite.yml` runs PostgreSQL in either
+mode; PostgreSQL lives only in `postgres-tests.yml`, described below.
+
+`Required CI` is the sole required repository-validation status. Seven jobs must
+succeed for both PR and merge-group events; Publish Dry Run is required only for
+`merge_group`, where it runs. The aggregator still fails if it reports anything
+other than `skipped` or `success` on a PR, so re-enabling it there cannot
+silently leave it un-gated.
 
 Rollout status:
 
@@ -355,11 +395,13 @@ to `true`, PR validation re-resolved every job from the self-hosted label to
 | Coverage Gate | 5.8 min | 90 |
 | `validate-publish-shards` (two) | 1.3 and 1.4 min | 45 |
 | Affected build, typecheck, tests | 1.1 min | 90 |
-| Lint | 0.3 min | 90 |
+| Lint | 0.3 min | 10 |
+| `Detect Affected Validation Scope` | 0.1 min | 10 |
 
 Nothing approached a ceiling, and these are cold numbers: PR validation runs
 on `pull_request_target`, where the Turbo shim is refused, so no job restored
-from the hosted cache pool.
+from the hosted cache pool. The last two rows carry their post-#2236 ceilings;
+they were at the 90-minute standard when the rehearsal ran.
 
 Two limits on what that rehearsal proves. It exercised the pull-request path
 in `affected` mode, not a `merge_group` run in `full` mode, so the six
@@ -367,3 +409,32 @@ in `affected` mode, not a `merge_group` run in `full` mode, so the six
 lever is repository-wide: flipping it moves every open pull request, not only
 the one being tested. Re-measure with a full merge-group transit before
 treating hosted as an equivalent lane rather than an emergency one.
+
+### Phase 0 hosted pinning (#2236)
+
+Those rehearsal numbers are the baseline for pinning `affected-scope`, `lint`,
+and `test-packages-result` to hosted permanently (Runner selection, above).
+The rehearsal measured them as a *fallback*; the pinning makes the same
+placement the steady state, so the per-job durations should reproduce and are
+not the interesting result.
+
+The interesting result is the second-order one: three jobs per validation pass
+stop taking a slot on an 8-slot fleet, which should show up as reduced queue
+wait for the heavy shards rather than as faster light jobs. Record after
+merge, comparing ten runs either side:
+
+| measure | before | after |
+| --- | --- | --- |
+| `Lint` duration | 0.3 min hosted (rehearsal) / fleet baseline TBD | |
+| `Detect Affected Validation Scope` duration | 0.1 min hosted (rehearsal) / fleet baseline TBD | |
+| `test-packages-result` duration | fleet baseline TBD | |
+| `test-core` shard queue wait (p50/p95) | | |
+| `test-packages` shard queue wait (p50/p95) | | |
+| `Required CI` wall clock, `merge_group` | | |
+
+Queue wait is the gap between a job's `createdAt` and `startedAt`, which
+`timeout-minutes` never governs — see Job timeouts. If the heavy shards' wait
+does not improve, the freed slots were not the binding constraint and the
+capacity oracle in phases 1-2 of happyvertical/iac#1349 is the next lever, not
+a wider pinning. Rollback is per-job and independent: restore the lever
+expression and the 90-minute standard on any job that regresses.

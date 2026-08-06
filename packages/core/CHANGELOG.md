@@ -1,5 +1,42 @@
 # @happyvertical/smrt-core
 
+## 0.40.57
+
+### Patch Changes
+
+- ### Features
+
+  - add FieldPolicy model, layered resolver, and batch resolve action (#2230) (fields)
+
+  ### Other Changes
+
+  - perf: unblock the validation lane — occupancy, hosted light jobs, fixture hookTimeout (#2242) (ci)
+  - @happyvertical/smrt-config@0.40.57
+  - @happyvertical/smrt-types@0.40.57
+  - @happyvertical/smrt-scanner@0.40.57
+
+## 0.40.56
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - make build output reproducible (#2231) (core,scanner)
+  - @happyvertical/smrt-config@0.40.56
+  - @happyvertical/smrt-types@0.40.56
+  - @happyvertical/smrt-scanner@0.40.56
+
+## 0.40.55
+
+### Patch Changes
+
+- ### Features
+
+  - migrate shipped servers to scoped SDK v2 (#2229) (mcp)
+  - @happyvertical/smrt-config@0.40.55
+  - @happyvertical/smrt-types@0.40.55
+  - @happyvertical/smrt-scanner@0.40.55
+
 ## 0.40.54
 
 ### Patch Changes

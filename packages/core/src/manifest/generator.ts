@@ -9,6 +9,7 @@ import { createLogger } from '@happyvertical/logger';
 import fg from 'fast-glob';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
 import {
@@ -607,7 +608,7 @@ export default ${exportName};
   ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
-      timestamp: Date.now(),
+      timestamp: MANIFEST_TIMESTAMP,
       objects: {},
       moduleType: options.moduleType || 'smrt',
     };

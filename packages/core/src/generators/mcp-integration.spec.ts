@@ -287,9 +287,9 @@ describe('MCPGenerator - Integration Tests', () => {
 
       // Verify @happyvertical/smrt-config usage
       expect(content).toContain(
-        "import { config } from '@happyvertical/smrt-config'",
+        "import { loadConfig } from '@happyvertical/smrt-config'",
       );
-      expect(content).toContain('await config.load()');
+      expect(content).toContain('await loadConfig()');
       expect(content).toContain('appConfig?.ai || {}');
 
       // Verify ObjectRegistry integration

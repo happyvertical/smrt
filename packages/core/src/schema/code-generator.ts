@@ -4,6 +4,7 @@
  */
 
 import type { SmartObjectDefinition } from '../scanner/types.js';
+import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import type {
   ColumnDefinition,
   ForeignKeyDefinition,
@@ -175,7 +176,7 @@ ${fkStrings.join(',\n')}
   ): string {
     const manifest = {
       version: '1.0.0',
-      timestamp: Date.now(),
+      timestamp: MANIFEST_TIMESTAMP,
       packageName,
       schemas: Object.fromEntries(
         Object.entries(schemas).map(([className, schema]) => [

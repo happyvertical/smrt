@@ -39,6 +39,7 @@ import type {
   SmrtVisibility,
   ValidationRule,
 } from './types.js';
+import { MANIFEST_TIMESTAMP } from './types.js';
 
 /** Package.json shape consumed for import-path and component discovery. */
 interface PackageJsonLike {
@@ -155,7 +156,7 @@ export class ManifestGenerator {
   ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
       version: '1.0.0',
-      timestamp: Date.now(),
+      timestamp: MANIFEST_TIMESTAMP,
       objects: {},
     };
 

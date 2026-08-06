@@ -1836,13 +1836,10 @@ ${
  * This server exposes SMRT objects as MCP tools for AI integration.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import { config } from '@happyvertical/smrt-config';
+import { Server } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { pathToFileURL } from 'node:url';
+import { loadConfig } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { getAI } from '@happyvertical/ai';
 
@@ -1853,15 +1850,14 @@ import { handleToolCall } from './handlers/index.js';
 /**
  * Main server startup function
  */
-async function main() {
-  try {
+export async function createServer() {
     if (DEBUG) {
       console.error(\`[MCP] Starting server: \${SERVER_NAME} v\${SERVER_VERSION}\`);
       console.error(\`[MCP] Available tools:\`, tools.map(t => t.name).join(', '));
     }
 
     // Load configuration from environment and .smrt.config files
-    const appConfig = await config.load();
+    const appConfig = await loadConfig();
     const aiConfig = appConfig?.ai || {};
 
     // Create MCP server
@@ -1878,7 +1874,7 @@ async function main() {
     );
 
     // Register ListTools handler
-    server.setRequestHandler(ListToolsRequestSchema, async () => {
+    server.setRequestHandler('tools/list', async () => {
       if (DEBUG) {
         console.error(\`[MCP] ListTools request received\`);
       }
@@ -1893,7 +1889,7 @@ async function main() {
     });
 
     // Register CallTool handler
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    server.setRequestHandler('tools/call', async (request) => {
       const { name, arguments: args = {} } = request.params;
 
       if (DEBUG) {
@@ -1904,23 +1900,19 @@ async function main() {
       return await handleToolCall(name, args, aiConfig);
     });
 
-    // Setup stdio transport
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+    return server;
+}
 
-    if (DEBUG) {
-      console.error(\`[MCP] Server connected and ready\`);
-    }
-
-    // Handle graceful shutdown
+async function main() {
+  try {
+    const handle = serveStdio(() => createServer(), {
+      onerror: (error) => console.error('[MCP] Protocol error:', error),
+    });
     const shutdown = async () => {
-      if (DEBUG) {
-        console.error(\`[MCP] Shutting down gracefully\`);
-      }
-      await server.close();
+      if (DEBUG) console.error('[MCP] Shutting down gracefully');
+      await handle.close();
       process.exit(0);
     };
-
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
   } catch (error) {
@@ -1929,10 +1921,12 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('[MCP] Unhandled error:', error);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error('[MCP] Unhandled error:', error);
+    process.exit(1);
+  });
+}
 `;
   }
 }
