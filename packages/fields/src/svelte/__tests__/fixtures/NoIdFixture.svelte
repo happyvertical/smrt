@@ -1,19 +1,24 @@
 <script lang="ts">
+/**
+ * Test fixture: PolicyField wrapping a control with NO id attribute — the
+ * wrapper must assign one so the label's `for` never dangles.
+ */
+
 import type { ResolvedObjectFieldPolicy } from '../../../types.js';
 import FieldPolicyProvider from '../../components/FieldPolicyProvider.svelte';
-import FormHelp from '../../components/FormHelp.svelte';
+import PolicyField from '../../components/PolicyField.svelte';
 
 let {
   policy,
-  objectDescription,
   mode = 'basic',
 }: {
   policy: ResolvedObjectFieldPolicy;
-  objectDescription?: string;
   mode?: 'basic' | 'advanced';
 } = $props();
 </script>
 
 <FieldPolicyProvider {policy} {mode}>
-  <FormHelp {objectDescription} />
+  <PolicyField name="name">
+    <input type="text" />
+  </PolicyField>
 </FieldPolicyProvider>

@@ -4,8 +4,10 @@
  * glossary from the manifest (org-overridden text where present).
  *
  * Renders a button toggling a details/summary panel listing every visible
- * field's label and help text, plus the object description if provided. The
- * data comes entirely from the resolved policy — no separate fetch needed.
+ * field's label and help text — matching PolicyField visibility, so
+ * advanced-tier entries only appear while the provider mode is `advanced` —
+ * plus the object description if provided. The data comes entirely from the
+ * resolved policy — no separate fetch needed.
  *
  * Must be used inside a FieldPolicyProvider.
  */
@@ -31,8 +33,10 @@ let {
 
 const context = getFieldPolicyContext();
 
-// Build the glossary: one entry per field that has help text, ordered by the
-// resolved `order` when available, then by insertion order.
+// Build the glossary: one entry per field that has help text AND is visible
+// in the current mode (advanced-tier entries disappear in basic mode,
+// matching PolicyField visibility), ordered by the resolved `order` when
+// available, then by insertion order.
 const glossary = $derived.by(() => {
   const entries: Array<{
     label: string;
@@ -40,8 +44,10 @@ const glossary = $derived.by(() => {
     order: number;
   }> = [];
 
+  const mode = context.mode.current;
   for (const field of Object.values(context.policy.fields)) {
     if (field.visibility === 'hidden') continue;
+    if (field.visibility === 'advanced' && mode !== 'advanced') continue;
     const labelText = field.label ?? field.fieldName;
     if (field.help) {
       entries.push({

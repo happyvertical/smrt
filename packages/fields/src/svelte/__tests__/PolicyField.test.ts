@@ -24,6 +24,7 @@ import FieldPolicyProvider from '../components/FieldPolicyProvider.svelte';
 import PolicyField from '../components/PolicyField.svelte';
 import DomPrefillFixture from './fixtures/DomPrefillFixture.svelte';
 import GracefulDegradeFixture from './fixtures/GracefulDegradeFixture.svelte';
+import NoIdFixture from './fixtures/NoIdFixture.svelte';
 import PrefillFixture from './fixtures/PrefillFixture.svelte';
 import ProviderFieldFixture from './fixtures/ProviderFieldFixture.svelte';
 import RevealPrefillFixture from './fixtures/RevealPrefillFixture.svelte';
@@ -208,8 +209,9 @@ describe('FieldPolicyProvider + PolicyField', () => {
     expect(label?.getAttribute('title')).toBe('The widget name');
     // The help text is no longer rendered as visible text content
     expect(screen.queryByText('The widget name')).not.toBeInTheDocument();
-    // No visible hint paragraph
-    expect(screen.queryByRole('paragraph')).not.toBeInTheDocument();
+    // No visible hint element (query the component's stable class rather than
+    // a role — `<p>` has no ARIA role, so a role query is unreliable).
+    expect(document.querySelectorAll('.policy-field__hint').length).toBe(0);
   });
 
   it('links the help hint to the input via aria-describedby', async () => {
@@ -228,6 +230,35 @@ describe('FieldPolicyProvider + PolicyField', () => {
     // `sku` has no resolved help → no hint id, no dangling aria reference.
     const skuInput = screen.getByRole('textbox', { name: /SKU/ });
     expect(skuInput.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('associates the label with the wrapped control via for/id', async () => {
+    const policy = makePolicy();
+    render(ProviderFieldFixture, {
+      props: { policy, mode: 'basic' },
+    });
+    await tick();
+
+    // The fixture inputs carry id={name} — the label's `for` must match it so
+    // the accessible name comes from the rendered label.
+    const label = screen.getByText('Name').closest('label');
+    expect(label?.getAttribute('for')).toBe('name');
+    expect(document.getElementById('name')).not.toBeNull();
+
+    const skuLabel = screen.getByText('SKU').closest('label');
+    expect(skuLabel?.getAttribute('for')).toBe('sku');
+  });
+
+  it('assigns an id to a wrapped control that has none (for never dangles)', async () => {
+    const policy = makePolicy();
+    render(NoIdFixture, { props: { policy, mode: 'basic' } });
+    await tick();
+
+    const label = screen.getByText('Name').closest('label');
+    const forTarget = label?.getAttribute('for');
+    expect(forTarget).toBe('name');
+    // The wrapper must have given the id-less control an id the label hits.
+    expect(document.getElementById(forTarget as string)).not.toBeNull();
   });
 
   it('helpDensity tooltip falls back to a visible hint when there is no label', () => {

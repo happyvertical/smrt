@@ -7,10 +7,18 @@
  *   basic mode)
  * - Initial-value prefill from the resolved default (new records only —
  *   never clobbers loaded values)
- * - Label rendering (resolved label or fallback to field name)
+ * - Label rendering (the resolved label; when the policy has no label the
+ *   label element is omitted rather than fabricated from the raw field name,
+ *   and tooltip-density help falls back to a visible hint)
  * - Help hint rendered from resolved help (manifest description → org/user
  *   override)
  * - Required marker
+ *
+ * Label ↔ control association: the default wrapper renders
+ * `<label for={name}>`, so the wrapped control should carry an `id` equal to
+ * the field `name`. When the first wrapped control has a different `id`, the
+ * `for` attribute is re-pointed to it after mount; when it has no `id` at
+ * all, the wrapper assigns `id={name}` so the association is guaranteed.
  *
  * Headless escape hatch: pass a `render` snippet receiving
  * `{visible, label, help, defaultValue, required, tier}` for fully custom
@@ -214,6 +222,40 @@ $effect(() => {
   };
 });
 
+// --- Label ↔ control association (default wrapper only) ---
+// The wrapper renders `<label for={name}>`, which only associates with the
+// wrapped control when that control's `id` matches. Consumers normally give
+// the input `id={name}`; this effect repairs the association once the wrapper
+// exists (covering advanced-tier fields revealed later by the mode switch):
+// - control with its own id → re-point `for` at that id;
+// - control with no id → assign `id={name}` so the association holds;
+// - no wrapped control at all → omit `for` (a dangling reference is worse
+//   than none).
+//
+// `controlId` is undefined until the first effect pass (SSR and first paint
+// keep the documented `for={name}` convention); afterwards it is the repaired
+// target id, or null when there is no wrapped control.
+let controlId = $state<string | null | undefined>(undefined);
+
+$effect(() => {
+  if (!rootEl || label === null || !visible) {
+    return;
+  }
+  // Form controls only — buttons and contenteditable hosts are out of scope
+  // (same scope as the aria-describedby effect above).
+  const control = rootEl.querySelector<HTMLElement>('input, textarea, select');
+  if (!control) {
+    controlId = null;
+    return;
+  }
+  if (control.id) {
+    controlId = control.id;
+  } else {
+    control.setAttribute('id', name);
+    controlId = name;
+  }
+});
+
 // Prefill is a one-shot per component instance: it runs the first time the
 // wrapper exists with a usable default (mount for visible fields, or first
 // reveal for advanced-tier fields hidden in basic mode). The `visible` read
@@ -241,9 +283,13 @@ $effect(() => {
 {:else if visible}
   <div class="policy-field {className}" bind:this={rootEl}>
     {#if label !== null}
+      <!-- `for` tracks the repaired label↔control association: the `name`
+           convention before the first effect pass (SSR / first paint), the
+           repaired control id afterwards; Svelte omits the attribute entirely
+           when it resolves to null (no wrapped control). -->
       <label
         class="policy-field__label"
-        for={name}
+        for={controlId === undefined ? name : controlId}
         title={helpDensity === 'tooltip' && help !== null ? help : undefined}
       >
         {label}{#if required}<span class="policy-field__required" aria-hidden="true">*</span>{/if}

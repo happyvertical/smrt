@@ -42,6 +42,18 @@ function makePolicy(): ResolvedObjectFieldPolicy {
         locked: false,
         required: false,
       },
+      wholesalePrice: {
+        fieldName: 'wholesalePrice',
+        hasDefault: false,
+        defaultValue: undefined,
+        visibility: 'advanced',
+        help: 'Price for wholesale customers',
+        label: 'Wholesale Price',
+        order: 4,
+        group: null,
+        locked: false,
+        required: false,
+      },
       hidden: {
         fieldName: 'hidden',
         hasDefault: false,
@@ -91,6 +103,36 @@ describe('FormHelp', () => {
     expect(
       screen.queryByText('Should not appear in glossary'),
     ).not.toBeInTheDocument();
+  });
+
+  it('excludes advanced-tier fields from the glossary in basic mode', async () => {
+    // The glossary mirrors PolicyField visibility: advanced-tier fields are
+    // not visible in basic mode, so their help must not be listed either.
+    render(FormHelpFixture, {
+      props: { policy: makePolicy(), mode: 'basic' },
+    });
+
+    await userEvent.click(screen.getByText('Help'));
+
+    expect(
+      screen.queryByText('Price for wholesale customers'),
+    ).not.toBeInTheDocument();
+    // Basic-tier entries still present.
+    expect(
+      screen.getByText('The display name for this widget'),
+    ).toBeInTheDocument();
+  });
+
+  it('includes advanced-tier fields in the glossary in advanced mode', async () => {
+    render(FormHelpFixture, {
+      props: { policy: makePolicy(), mode: 'advanced' },
+    });
+
+    await userEvent.click(screen.getByText('Help'));
+
+    expect(
+      screen.getByText('Price for wholesale customers'),
+    ).toBeInTheDocument();
   });
 
   it('shows object description when provided', async () => {
