@@ -22,19 +22,23 @@ jobs:
   affected-scope:
     name: Detect Affected Validation Scope
     if: inputs.mode == 'affected'
-    # Emergency lane selector, used on every self-hosted job in this file:
-    # flipping the repository variable CI_HOSTED_FALLBACK_ENABLED to 'true'
-    # moves validation to GitHub-hosted runners without a workflow merge —
-    # which would itself need the down fleet. Automated dispatch is a later
-    # issue; this is the manual lever. The variable is owner controlled and
-    # selects only the runner; the Turbo cache shim in setup-environment
-    # additionally refuses pull_request_target events, so PR-head code never
-    # writes the main-scoped hosted cache pool. Fallback PR validation
-    # therefore builds cold, while merge-group and main runs restore
-    # build/generate:test/typecheck seeded by turbo-cache-seed.yml. Rehearse
-    # before relying on it; see the Hosted Turbo cache section of CI.md.
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
-    timeout-minutes: 90
+    # Permanently GitHub-hosted (#2236, happyvertical/iac#1349 phase 0). This
+    # job is a checkout plus a paths-filter — no Turbo task, no dependency
+    # install, no contact with either the internal cache or the hosted shim —
+    # so the metal fleet offers it nothing, while a cold node there can make it
+    # wait out a netboot of up to 780s. Measured at 6s hosted on the full
+    # rehearsal (run 30969467329).
+    #
+    # Deliberately a plain label rather than the CI_HOSTED_FALLBACK_ENABLED
+    # selector the metal jobs below carry: a lever that can only ever resolve
+    # to ubuntu-latest reads as a choice when there is none, and this job needs
+    # no fleet-outage escape hatch because it never depends on the fleet.
+    runs-on: ubuntu-latest
+    # Hosted jobs never enter the self-hosted queue, so the queue-wait
+    # fragility behind the 90-minute standard does not apply and the ceiling
+    # can track observed runtime (see Job timeouts in CI.md). Ten minutes is a
+    # hang guard against a stuck checkout, not a capacity budget.
+    timeout-minutes: 10
     outputs:
       knowledge: ${{ steps.filter.outputs.knowledge }}
     steps:
@@ -63,6 +67,21 @@ jobs:
   build:
     name: Build
     if: inputs.mode == 'full'
+    # Emergency lane selector, used on every job in this file that is still on
+    # the fleet: flipping the repository variable CI_HOSTED_FALLBACK_ENABLED to
+    # 'true' moves validation to GitHub-hosted runners without a workflow merge
+    # — which would itself need the down fleet. Automated dispatch is a later
+    # issue; this is the manual lever. The variable is owner controlled and
+    # selects only the runner; the Turbo cache shim in setup-environment
+    # additionally refuses pull_request_target events, so PR-head code never
+    # writes the main-scoped hosted cache pool. Fallback PR validation
+    # therefore builds cold, while merge-group and main runs restore
+    # build/generate:test/typecheck seeded by turbo-cache-seed.yml. Rehearse
+    # before relying on it; see the Hosted Turbo cache section of CI.md.
+    #
+    # The jobs pinned to a plain ubuntu-latest (affected-scope, lint,
+    # test-packages-result) are outside this lever by design — they are already
+    # hosted, so there is nothing for a fallback to move (#2236).
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
@@ -172,8 +191,16 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
-    timeout-minutes: 90
+    # Permanently GitHub-hosted (#2236, happyvertical/iac#1349 phase 0). Biome
+    # arrives through `npx` and the job deliberately never runs the workspace
+    # install, so there is no Turbo task and no pnpm store to warm — the metal
+    # fleet's memory and internal cache are both irrelevant here. Measured at
+    # 18s hosted on the full rehearsal (run 30969467329). See the note on the
+    # `build` job for why this carries no fallback lever.
+    runs-on: ubuntu-latest
+    # Hosted; ceiling tracks observed runtime rather than the self-hosted
+    # queue-wait standard (Job timeouts, CI.md).
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -298,7 +325,16 @@ jobs:
   coverage-gate:
     name: Coverage Gate
     needs: build
-    if: always() && (inputs.mode == 'affected' || needs.build.result == 'success')
+    # Full-mode only (#2214 item 8). This used to run in both lanes, and in
+    # affected mode the seed `build` job is skipped, so it paid a cold full
+    # build before it could measure anything — 26-45 min against 4-5 min on a
+    # warm cache. The merge group re-ran it in full immediately afterwards, so
+    # the affected copy bought nothing but occupancy. check-coverage.mjs
+    # resolves its base as `BASE_REF || 'main'` plus merge-base, which is
+    # correct for the merge_group synthetic head, so the gate keeps its full
+    # meaning here. Authors keep the local pre-check:
+    #   node scripts/check-coverage.mjs --packages <list>
+    if: inputs.mode == 'full'
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
 
@@ -339,10 +375,9 @@ jobs:
       # PR #2102. Measured turbo selections from that base:
       #   [sha]     -> 2 packages      ...[sha] -> 53 packages
       #   [sha]...  -> 2 packages      scanner... -> 1 package
-      # setup-environment restores the build job's per-SHA Turbo cache, so in
-      # full mode this is a cache hit. In affected mode the `build` job is
-      # skipped (`build.if: mode == full`), so this can be a cold build; that
-      # cost is accepted because correctness of the gate comes first.
+      # setup-environment restores the build job's per-SHA Turbo cache, and this
+      # job runs only after `build` has seeded it, so this is a cache hit rather
+      # than a rebuild.
       - name: Build packages
         run: pnpm run build
         env:
@@ -480,60 +515,37 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # smrt-video loads the full SMRT manifest graph. When it runs near the end
-      # of shard 2 beside another Turbo task, constrained ARC runners can kill
-      # its otherwise passing Vitest fork. Run it first through Turbo so a fresh
-      # runner builds its dependency closure, then exclude it from the general
-      # batch so coverage remains exactly once.
-      - name: Run video package tests in isolation
-        if: matrix.shard == '2/3'
-        run: pnpm turbo run test --concurrency=1 --filter='@happyvertical/smrt-video'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_ENV: test
-          VITEST_MAX_WORKERS: '1'
-          # Node sizes its default old-space from HOST memory, and this runner
-          # exposes the whole host (see the CPU note below), so V8 will happily
-          # grow a fork past the container's own limit and the kernel kills it —
-          # surfacing as Vitest's silent `Worker exited unexpectedly` with no
-          # `JavaScript heap out of memory`. Cap the heap so V8 collects instead
-          # of ballooning. This BOUNDS the fork; it does not give it more room.
-          NODE_OPTIONS: --max-old-space-size=4096
-
-      # smrt-voice pulls the same heavy AI/SQL graph as smrt-video and dies the
-      # same way inside the concurrent batch, where it shares the runner with a
-      # second Turbo task. Give it the treatment already proven for video: run
-      # it first, alone, with a dedicated heap, then exclude it below so
-      # coverage still happens exactly once.
-      - name: Run voice package tests in isolation
-        if: matrix.shard == '1/3'
-        run: pnpm turbo run test --concurrency=1 --filter='@happyvertical/smrt-voice'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_ENV: test
-          VITEST_MAX_WORKERS: '1'
-          NODE_OPTIONS: --max-old-space-size=4096
-
-      # Each shard runs ~1/3 of the remaining non-core packages
+      # Each shard runs ~1/3 of the non-core packages
       # (scripts/test-packages-shard.mjs round-robins by name), keeping
-      # per-runner load low so transient resource-pressure timing flakes stay
-      # rare.
-      - name: Run package tests (shard ${{ matrix.shard }}, excluding core, video and voice)
+      # per-runner load low.
+      #
+      # smrt-video and smrt-voice used to run here as isolated pre-steps with a
+      # dedicated heap, then were excluded from this batch. That was a
+      # workaround for silent `Worker exited unexpectedly` deaths attributed to
+      # memory pressure. The attribution was wrong: the failing shards recorded
+      # cgroup `oom_kill = 0`, and the real cause was an AVX2 SIGILL in
+      # @happyvertical/pdf on x86-64-v2 metal, fixed by the 0.65.9 guard
+      # (#2195/#2196). The isolation is removed with the cause (#2214 item 6);
+      # both packages now shard like every other one. Do not record which shard
+      # they land on: the script sorts all testable packages and assigns
+      # `index % n`, so every assignment shifts whenever a package is added or
+      # removed anywhere in the workspace.
+      - name: Run package tests (shard ${{ matrix.shard }}, excluding core)
         run: |
           set -o pipefail
           node scripts/test-packages-shard.mjs '${{ matrix.shard }}' |
-            xargs -r pnpm turbo run test --concurrency=2 \
-              --filter='!@happyvertical/smrt-video' \
-              --filter='!@happyvertical/smrt-voice'
+            xargs -r pnpm turbo run test --concurrency=2
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
-          # The node runner exposes all 32 host CPUs. Cap each of the two
-          # concurrent Turbo tasks so Vitest cannot fan out to dozens of workers.
+          # The node runner exposes all 32 host CPUs while the pod holds a
+          # 4-CPU quota, so uncapped Vitest over-fans. Cap each of the two
+          # concurrent Turbo tasks.
           VITEST_MAX_WORKERS: '2'
-          # Same host-vs-container heap mismatch as the video step above, halved
-          # because two Turbo tasks run concurrently here. smrt-voice pulls the
-          # heavy AI/SQL graph and has been dying the same silent way.
+          # Node likewise sizes its default old-space from host memory, so bound
+          # the heap explicitly rather than letting a fork grow against the
+          # pod's limit. Halved from a single-task budget because two Turbo
+          # tasks run concurrently here.
           NODE_OPTIONS: --max-old-space-size=2048
 
       - name: Upload test results
@@ -552,9 +564,20 @@ jobs:
   test-packages-result:
     name: Test Packages
     needs: test-packages
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    # Permanently GitHub-hosted (#2236, happyvertical/iac#1349 phase 0). This
+    # job does no checkout and no setup — it reads needs.test-packages.result
+    # and exits — so holding a slot on an 8-slot fleet bought nothing, and a
+    # busy fleet could delay a required status by the length of a netboot.
+    # CI.md previously recorded this as an unresolved asymmetry against the
+    # already-hosted `required-ci`, which is structurally the same job; the two
+    # now match. Backing a required status is a reason to make it start
+    # promptly, not a reason to queue it. See the note on `build` for why this
+    # carries no fallback lever.
+    runs-on: ubuntu-latest
     if: always() && inputs.mode == 'full'
-    timeout-minutes: 90
+    # Same reasoning as required-ci: this finishes in seconds, so failing fast
+    # is correct for a job that only reports other jobs' results.
+    timeout-minutes: 5
     steps:
       - name: Verify all Test Packages shards passed
         run: |
