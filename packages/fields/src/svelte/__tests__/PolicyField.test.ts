@@ -212,6 +212,24 @@ describe('FieldPolicyProvider + PolicyField', () => {
     expect(screen.queryByRole('paragraph')).not.toBeInTheDocument();
   });
 
+  it('links the help hint to the input via aria-describedby', async () => {
+    const policy = makePolicy();
+    render(ProviderFieldFixture, {
+      props: { policy, mode: 'basic' },
+    });
+    await tick();
+
+    // `name` has resolved help rendered as the hint paragraph #name-help —
+    // the input must reference it for screen readers.
+    const input = screen.getByRole('textbox', { name: /Name/ });
+    expect(input.getAttribute('aria-describedby')).toBe('name-help');
+    expect(document.getElementById('name-help')).not.toBeNull();
+
+    // `sku` has no resolved help → no hint id, no dangling aria reference.
+    const skuInput = screen.getByRole('textbox', { name: /SKU/ });
+    expect(skuInput.hasAttribute('aria-describedby')).toBe(false);
+  });
+
   it('helpDensity tooltip falls back to a visible hint when there is no label', () => {
     // Policy with no resolved label → label === null → help must still render
     const policy = makePolicy({

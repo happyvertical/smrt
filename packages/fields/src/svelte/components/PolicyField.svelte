@@ -184,6 +184,36 @@ function prefillInputs(): void {
   }
 }
 
+// Link the help hint to the first wrapped control programmatically. Only
+// when the hint is actually rendered as a paragraph (hint density, or tooltip
+// density with no label) — otherwise the aria-describedby target would not
+// exist. Respects a consumer-provided aria-describedby and only fills in the
+// missing association. Runs after the wrapper exists, so it also covers
+// advanced-tier fields revealed later by the mode switch.
+const hintRendered = $derived(
+  help !== null && (helpDensity === 'hint' || label === null),
+);
+
+$effect(() => {
+  if (!rootEl || !hintRendered) {
+    return;
+  }
+  const control = rootEl.querySelector<HTMLElement>('input, textarea, select');
+  if (!control) {
+    return;
+  }
+  if (control.hasAttribute('aria-describedby')) {
+    return; // Consumer owns the association — never overwrite it.
+  }
+  control.setAttribute('aria-describedby', `${name}-help`);
+  return () => {
+    // Hint no longer rendered (or wrapper torn down) — drop the link we added.
+    if (control.getAttribute('aria-describedby') === `${name}-help`) {
+      control.removeAttribute('aria-describedby');
+    }
+  };
+});
+
 // Prefill is a one-shot per component instance: it runs the first time the
 // wrapper exists with a usable default (mount for visible fields, or first
 // reveal for advanced-tier fields hidden in basic mode). The `visible` read

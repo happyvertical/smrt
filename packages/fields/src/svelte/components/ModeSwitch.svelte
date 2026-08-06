@@ -30,7 +30,11 @@ const options: SegmentedControlOption[] = [
 ];
 
 function onValueChange(value: string | number): void {
-  context.mode.set(value as 'basic' | 'advanced');
+  // Validate before setting — SegmentedControl hands back `string | number`,
+  // and a stray value must never corrupt the mode state.
+  if (value === 'basic' || value === 'advanced') {
+    context.mode.set(value);
+  }
 }
 </script>
 
