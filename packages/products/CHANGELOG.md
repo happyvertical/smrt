@@ -1,5 +1,18 @@
 # @happyvertical/smrt-products
 
+## 0.40.57
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.40.57
+  - @happyvertical/smrt-assets@0.40.57
+  - @happyvertical/smrt-tenancy@0.40.57
+  - @happyvertical/smrt-svelte@0.40.57
+  - @happyvertical/smrt-ui@0.40.57
+  - @happyvertical/smrt-scanner@0.40.57
+  - @happyvertical/smrt-web@0.40.57
+
 ## 0.40.56
 
 ### Patch Changes
