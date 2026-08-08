@@ -70,6 +70,8 @@
       ],
       "inputs": [
         "src/**",
+        "!src/manifest/test-manifest.json",
+        "!src/manifest/test-manifest-stub.ts",
         "package.json",
         "tsconfig*.json",
         "vite.config.ts",

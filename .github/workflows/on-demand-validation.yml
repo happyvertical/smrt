@@ -10,35 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  postgres-scope:
-    name: Detect PostgreSQL Test Scope
-    runs-on: ubuntu-latest
-    outputs:
-      required: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.postgres }}
-    steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-
-      - name: Detect PostgreSQL-sensitive changes
-        id: filter
-        if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
-        with:
-          filters: |
-            postgres:
-              - '.github/actions/**'
-              - '.github/workflows/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'turbo.json'
-              - 'packages/analytics/**'
-              - 'packages/cli/**'
-              - 'packages/core/**'
-              - 'packages/sales/**'
-              - 'packages/users/**'
-              - 'packages/vitest/**'
-              - 'scripts/run-with-ci-postgres.mjs'
-
   postgres-tests:
     name: PostgreSQL Tests
     uses: ./.github/workflows/postgres-tests.yml

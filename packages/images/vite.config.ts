@@ -10,6 +10,11 @@ import {
   workspaceAliasPackageNames,
 } from './workspace-aliases.js';
 
+// Vite can load this config while checking a dependent package. Keep every
+// configResolved side effect (manifests and generated routes) in this package,
+// rather than inheriting that dependent package's process.cwd() (#2199).
+const packageRoot = import.meta.dirname;
+
 /**
  * Dual-mode Vite config for smrt-images
  *
@@ -57,6 +62,7 @@ export default defineConfig(async ({ mode }) => {
   });
 
   return {
+    root: packageRoot,
     resolve: {
       alias: viteWorkspaceAliases,
     },
@@ -69,10 +75,11 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       sveltekit(),
       smrtConsumer({
-        projectRoot: process.cwd(),
+        projectRoot: packageRoot,
         svelteKit: true,
       }),
       smrtPlugin({
+        projectRoot: packageRoot,
         include: ['src/**/*.ts'],
         exclude: ['**/*.test.ts', '**/*.spec.ts', 'src/svelte/**/*', 'src/routes/**/*', '**/*.svelte'],
         generateTypes: false,

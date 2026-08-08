@@ -14,6 +14,11 @@ name: Publish
 on:
   workflow_call:  # Called by standard workflows
     inputs:
+      deploy-docs:
+        description: 'Whether to deploy documentation after publishing'
+        required: false
+        type: boolean
+        default: true
       publish-mode:
         description: 'Artifact publisher by default; changesets is an emergency fallback'
         required: false
@@ -21,6 +26,11 @@ on:
         default: artifacts
   workflow_dispatch:
     inputs:
+      deploy-docs:
+        description: 'Deploy documentation after publishing'
+        required: false
+        type: boolean
+        default: true
       publish-mode:
         description: 'Publishing implementation'
         required: true
@@ -456,6 +466,7 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
+    if: inputs.deploy-docs
     runs-on: arc-happyvertical-nodocker
     timeout-minutes: 45
     permissions:

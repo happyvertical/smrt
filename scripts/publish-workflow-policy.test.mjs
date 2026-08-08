@@ -39,14 +39,29 @@ test('routine releases batch instead of publishing after every main push', () =>
   assert.match(batchWorkflow, /^  schedule:\n    - cron: '17 7 \* \* \*'$/m);
   assert.match(batchWorkflow, /^  workflow_dispatch:$/m);
   assert.match(batchWorkflow, /^  queue-idle:$/m);
-  assert.match(batchWorkflow, /needs: \[queue-idle, test, build\]/);
+  assert.match(batchWorkflow, /needs: \[queue-idle, test, build, docs-scope\]/);
   assert.match(
     batchWorkflow,
     /needs\.queue-idle\.result == 'success'/,
   );
   assert.match(
     batchWorkflow,
+    /needs\.docs-scope\.result == 'success'/,
+  );
+  assert.match(
+    batchWorkflow,
     /run: node scripts\/check-merge-queue-idle\.mjs/,
+  );
+  assert.match(batchWorkflow, /^  docs-scope:$/m);
+  assert.match(batchWorkflow, /fetch-depth: 0/);
+  assert.match(batchWorkflow, /git tag --merged HEAD --list 'v\*'/);
+  assert.match(
+    batchWorkflow,
+    /base: \$\{\{ steps\.release-base\.outputs\.ref \}\}/,
+  );
+  assert.match(
+    batchWorkflow,
+    /github\.event_name == 'schedule' && needs\.docs-scope\.outputs\.docs == 'true'/,
   );
   assert.match(
     publisher,
