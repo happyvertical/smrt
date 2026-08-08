@@ -195,9 +195,9 @@ export function createMcpAppServer(
 
   async function allowedTools(): Promise<MCPTool[]> {
     const tools = await makeGenerator().generateTools();
-    return tools.filter((tool) =>
-      isAllowedCoreTool(tool.name, allowedPrefixes),
-    );
+    return tools
+      .filter((tool) => isAllowedCoreTool(tool.name, allowedPrefixes))
+      .sort((left, right) => left.name.localeCompare(right.name));
   }
 
   function passesBasePolicy(
@@ -244,7 +244,7 @@ export function createMcpAppServer(
     const tools = await allowedTools();
     const tool = tools.find((candidate) => candidate.name === input.name);
     if (!tool) {
-      throw new McpAccessError(404, `Unknown MCP tool: ${input.name}`);
+      throw new McpAccessError(404, 'Unknown MCP tool.');
     }
 
     const publicPatterns = principal ? undefined : getPublicPatterns();
