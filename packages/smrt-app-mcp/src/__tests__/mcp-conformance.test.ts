@@ -96,6 +96,29 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
     expect(JSON.stringify(response.body)).not.toContain('LEAK_ME');
   });
 
+  it('rejects missing and mismatched 2026 body-routing headers', async () => {
+    const responses = await Promise.all([
+      modernRequest(handler, 'tools/list', {}, { mcpMethod: null }),
+      modernRequest(
+        handler,
+        'tools/call',
+        { name: 'public_list', arguments: {} },
+        { mcpName: null },
+      ),
+      modernRequest(
+        handler,
+        'tools/call',
+        { name: 'public_list', arguments: {} },
+        { mcpName: 'private_list' },
+      ),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe(-32020);
+    }
+  });
+
   it('passes the official server suite with the reviewed baseline', async () => {
     const result = await runConformance(mcpUrl);
     expect(result.code, result.output).toBe(0);
@@ -135,15 +158,22 @@ async function modernRequest(
   target: McpHttpHandler,
   method: string,
   params: Record<string, unknown> = {},
+  headers: { mcpMethod?: string | null; mcpName?: string | null } = {},
 ) {
+  const mcpMethod =
+    headers.mcpMethod === undefined ? method : headers.mcpMethod;
+  const mcpName =
+    headers.mcpName === undefined && typeof params.name === 'string'
+      ? params.name
+      : headers.mcpName;
   const response = await target.fetch(
     new Request('http://localhost/mcp', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'mcp-method': method,
+        ...(mcpMethod === null ? {} : { 'mcp-method': mcpMethod }),
         'mcp-protocol-version': '2026-07-28',
-        ...(typeof params.name === 'string' ? { 'mcp-name': params.name } : {}),
+        ...(mcpName === null ? {} : { 'mcp-name': mcpName }),
       },
       body: JSON.stringify({
         jsonrpc: '2.0',

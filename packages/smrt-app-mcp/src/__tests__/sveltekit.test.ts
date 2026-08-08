@@ -3,10 +3,24 @@
  * decoupled from the smrt-core integration.
  */
 
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from '@modelcontextprotocol/client';
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  CLIENT_INFO_META_KEY,
+  PROTOCOL_VERSION_META_KEY,
+  SERVER_INFO_META_KEY,
+} from '@modelcontextprotocol/server';
 import { describe, expect, it } from 'vitest';
 import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from '../errors.js';
 import type { McpAppServer } from '../server.js';
-import { mountMcpCallRoute, mountMcpToolsRoute } from '../sveltekit.js';
+import {
+  mountMcpCallRoute,
+  mountMcpRoute,
+  mountMcpToolsRoute,
+} from '../sveltekit.js';
 
 function makeEvent(init: {
   body?: unknown;
@@ -34,6 +48,44 @@ function makeServer(overrides: Partial<McpAppServer> = {}): McpAppServer {
       overrides.callTool ??
       (async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })),
   };
+}
+
+function makeModernEvent(init: {
+  method: string;
+  params?: Record<string, unknown>;
+  locals?: Record<string, unknown>;
+  mcpMethod?: string | null;
+  mcpName?: string | null;
+}) {
+  const params = init.params ?? {};
+  const mcpMethod = init.mcpMethod === undefined ? init.method : init.mcpMethod;
+  const mcpName =
+    init.mcpName === undefined && typeof params.name === 'string'
+      ? params.name
+      : init.mcpName;
+  return makeEvent({
+    body: {
+      jsonrpc: '2.0',
+      id: 1,
+      method: init.method,
+      params: {
+        ...params,
+        _meta: {
+          [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
+          [CLIENT_INFO_META_KEY]: { name: 'sveltekit-test', version: '0.0.0' },
+          [CLIENT_CAPABILITIES_META_KEY]: {},
+        },
+      },
+    },
+    headers: {
+      'content-type': 'application/json',
+      'mcp-protocol-version': '2026-07-28',
+      ...(mcpMethod === null ? {} : { 'mcp-method': mcpMethod }),
+      ...(mcpName === null ? {} : { 'mcp-name': mcpName }),
+    },
+    locals: init.locals,
+    url: 'https://example.com/api/mcp',
+  });
 }
 
 describe('mountMcpToolsRoute', () => {
@@ -239,5 +291,278 @@ describe('mountMcpCallRoute', () => {
         retryable: false,
       },
     });
+  });
+});
+
+describe('mountMcpRoute', () => {
+  it('connects a stock Streamable HTTP client without a session', async () => {
+    let requestCount = 0;
+    const handler = mountMcpRoute(
+      makeServer({
+        listTools: async () => [
+          {
+            name: 'application_list',
+            description: 'List applications',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+        callTool: async () => ({
+          content: [{ type: 'text', text: 'ok' }],
+        }),
+      }),
+    );
+    const transport = new StreamableHTTPClientTransport(
+      new URL('https://example.com/api/mcp'),
+      {
+        fetch: async (input, init) => {
+          const request =
+            input instanceof Request ? input : new Request(input, init);
+          requestCount += 1;
+          return handler({
+            locals: {},
+            request,
+            url: new URL(request.url),
+          });
+        },
+      },
+    );
+    const client = new Client(
+      { name: 'stock-client', version: '0.0.0' },
+      {
+        capabilities: {},
+        versionNegotiation: { mode: { pin: '2026-07-28' } },
+      },
+    );
+
+    try {
+      await client.connect(transport);
+      expect(client.getNegotiatedProtocolVersion()).toBe('2026-07-28');
+      expect(client.getDiscoverResult()).toMatchObject({
+        capabilities: { tools: {} },
+      });
+      expect((await client.listTools()).tools).toMatchObject([
+        { name: 'application_list' },
+      ]);
+      expect(
+        await client.callTool({
+          name: 'application_list',
+          arguments: {},
+        }),
+      ).toMatchObject({ content: [{ type: 'text', text: 'ok' }] });
+      expect(requestCount).toBeGreaterThanOrEqual(3);
+    } finally {
+      await client.close();
+      await transport.close();
+    }
+  });
+
+  it('serves modern discovery, list, and call requests through the app policy core', async () => {
+    let callInput: unknown;
+    const handler = mountMcpRoute(
+      makeServer({
+        listTools: async () => [
+          {
+            name: 'application_list',
+            description: 'List applications',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ],
+        callTool: async (input) => {
+          callInput = input;
+          return { content: [{ type: 'text', text: 'ok' }] };
+        },
+      }),
+    );
+
+    const discover = await handler(
+      makeModernEvent({ method: 'server/discover' }),
+    );
+    expect(discover.status).toBe(200);
+    expect((await discover.json()).result).toMatchObject({
+      resultType: 'complete',
+      capabilities: { tools: {} },
+      _meta: { [SERVER_INFO_META_KEY]: { name: 'app', version: '0.1.0' } },
+    });
+
+    const list = await handler(makeModernEvent({ method: 'tools/list' }));
+    expect((await list.json()).result).toMatchObject({
+      resultType: 'complete',
+      tools: [expect.objectContaining({ name: 'application_list' })],
+    });
+
+    const call = await handler(
+      makeModernEvent({
+        method: 'tools/call',
+        params: { name: 'application_list', arguments: { limit: 1 } },
+      }),
+    );
+    expect((await call.json()).result).toMatchObject({
+      resultType: 'complete',
+      content: [{ type: 'text', text: 'ok' }],
+    });
+    expect(callInput).toEqual({
+      name: 'application_list',
+      arguments: { limit: 1 },
+      principal: null,
+    });
+  });
+
+  it('rejects missing and mismatched standard headers with HeaderMismatch', async () => {
+    const handler = mountMcpRoute(makeServer());
+    const requests = [
+      makeModernEvent({ method: 'tools/list', mcpMethod: null }),
+      makeModernEvent({
+        method: 'tools/call',
+        params: { name: 'application_list', arguments: {} },
+        mcpName: null,
+      }),
+      makeModernEvent({
+        method: 'tools/call',
+        params: { name: 'application_list', arguments: {} },
+        mcpName: 'different_tool',
+      }),
+      makeModernEvent({
+        method: 'tools/list',
+        mcpMethod: 'server/discover',
+      }),
+    ];
+
+    for (const request of requests) {
+      const response = await handler(request);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.code).toBe(-32020);
+    }
+  });
+
+  it('refuses subscriptions without opening an SSE response', async () => {
+    const handler = mountMcpRoute(makeServer());
+
+    const response = await handler(
+      makeModernEvent({
+        method: 'subscriptions/listen',
+        params: { notifications: { toolsListChanged: true } },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect((await response.json()).error).toEqual({
+      code: -32603,
+      message: 'Subscription limit reached',
+    });
+  });
+
+  it('uses each request principal for anonymous and authenticated policy decisions', async () => {
+    const handler = mountMcpRoute(
+      makeServer({
+        listTools: async ({ principal }) =>
+          principal
+            ? [
+                {
+                  name: 'application_list',
+                  description: 'List applications',
+                  inputSchema: { type: 'object', properties: {} },
+                },
+                {
+                  name: 'application_update',
+                  description: 'Update an application',
+                  inputSchema: { type: 'object', properties: {} },
+                },
+              ]
+            : [
+                {
+                  name: 'application_list',
+                  description: 'List applications',
+                  inputSchema: { type: 'object', properties: {} },
+                },
+              ],
+        callTool: async ({ name, principal }) => {
+          if (!principal && name === 'application_update') {
+            throw new McpAccessError(404, 'Unknown MCP tool.');
+          }
+          return { content: [{ type: 'text', text: principal?.id ?? 'anon' }] };
+        },
+      }),
+    );
+
+    const anonymousList = await handler(
+      makeModernEvent({ method: 'tools/list' }),
+    );
+    expect(
+      (await anonymousList.json()).result.tools.map(
+        (tool: { name: string }) => tool.name,
+      ),
+    ).toEqual(['application_list']);
+
+    const authenticatedList = await handler(
+      makeModernEvent({
+        method: 'tools/list',
+        locals: { user: { id: 'user-1', kind: 'human' } },
+      }),
+    );
+    expect(
+      (await authenticatedList.json()).result.tools.map(
+        (tool: { name: string }) => tool.name,
+      ),
+    ).toEqual(['application_list', 'application_update']);
+
+    const hiddenCall = await handler(
+      makeModernEvent({
+        method: 'tools/call',
+        params: { name: 'application_update', arguments: {} },
+      }),
+    );
+    const hiddenBody = await hiddenCall.json();
+    expect(hiddenCall.status).toBe(200);
+    expect(hiddenBody.error.code).toBe(-32602);
+    expect(JSON.stringify(hiddenBody)).not.toContain('application_update');
+
+    const authenticatedCall = await handler(
+      makeModernEvent({
+        method: 'tools/call',
+        params: { name: 'application_update', arguments: {} },
+        locals: { user: { id: 'user-1', kind: 'human' } },
+      }),
+    );
+    expect((await authenticatedCall.json()).result.content).toEqual([
+      { type: 'text', text: 'user-1' },
+    ]);
+  });
+
+  it('keeps repeated requests stateless and never emits an MCP session id', async () => {
+    const receivedPrincipals: unknown[] = [];
+    const handler = mountMcpRoute(
+      makeServer({
+        callTool: async ({ principal }) => {
+          receivedPrincipals.push(principal);
+          return { content: [{ type: 'text', text: principal?.id ?? 'anon' }] };
+        },
+      }),
+    );
+
+    const responses = await Promise.all(
+      ['first', 'second', 'first'].map((id) =>
+        handler(
+          makeModernEvent({
+            method: 'tools/call',
+            params: { name: 'application_list', arguments: {} },
+            locals: { user: { id } },
+          }),
+        ),
+      ),
+    );
+
+    expect(receivedPrincipals).toEqual([
+      { id: 'first' },
+      { id: 'second' },
+      { id: 'first' },
+    ]);
+    expect(
+      responses.map((response) =>
+        Array.from(response.headers.keys()).filter((header) =>
+          header.includes('session'),
+        ),
+      ),
+    ).toEqual([[], [], []]);
   });
 });
