@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertMcpJsonSchemaSafety,
   buildToolDescriptors,
   buildToolInputSchema,
   fieldTypeToJsonSchema,
   isCrudAction,
+  JSON_SCHEMA_2020_12,
+  MCP_SCHEMA_LIMITS,
   type ToolFieldMeta,
 } from './tool-schema.js';
 
@@ -80,6 +83,16 @@ describe('fieldTypeToJsonSchema', () => {
     });
     expect(schema).toMatchObject({ minimum: 0, maximum: 9999, default: 0 });
   });
+
+  it('uses a nullable type union when metadata permits null', () => {
+    expect(
+      fieldTypeToJsonSchema({
+        name: 'publishedAt',
+        type: 'datetime',
+        nullable: true,
+      }),
+    ).toMatchObject({ type: ['string', 'null'], format: 'date-time' });
+  });
 });
 
 describe('buildToolInputSchema', () => {
@@ -91,20 +104,46 @@ describe('buildToolInputSchema', () => {
     );
   });
 
-  it('accepts id OR slug for get (neither required at the schema level)', () => {
+  it('requires id OR slug for get', () => {
     const schema = buildToolInputSchema('get', PRODUCT_FIELDS);
     const props = schema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('id');
     expect(props).toHaveProperty('slug');
-    // Relaxed from the historical required:['id'] so a slug-only call is valid.
+    // A branch-level requirement preserves slug-only lookup support while
+    // rejecting an empty argument object before it reaches the handler.
     expect(schema.required).toBeUndefined();
+    expect(schema.anyOf).toEqual([
+      { required: ['id'] },
+      { required: ['slug'] },
+    ]);
+  });
+
+  it('omits UUID format for text-id CRUD objects', () => {
+    for (const action of ['get', 'update', 'delete']) {
+      const schema = buildToolInputSchema(
+        action,
+        PRODUCT_FIELDS,
+        undefined,
+        'text',
+      );
+      const properties = schema.properties as Record<string, unknown>;
+      expect(properties.id).toEqual(
+        expect.objectContaining({ type: 'string' }),
+      );
+      expect(properties.id).not.toEqual(
+        expect.objectContaining({ format: 'uuid' }),
+      );
+    }
   });
 
   it('promotes required model fields onto the create schema', () => {
     const schema = buildToolInputSchema('create', PRODUCT_FIELDS);
     expect(schema.required).toEqual(['name']);
+    expect(schema.$schema).toBe(JSON_SCHEMA_2020_12);
+    expect(schema.$defs).toBeDefined();
     const props = schema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('price');
+    expect(props.name).toEqual({ $ref: '#/$defs/field_0' });
     expect(props).not.toHaveProperty('id'); // server-assigned, never on create
   });
 
@@ -121,6 +160,34 @@ describe('buildToolInputSchema', () => {
     expect(schema.required).toEqual(['id']);
     const props = schema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('options');
+  });
+});
+
+describe('MCP JSON Schema safety bounds', () => {
+  it('rejects external refs without attempting to dereference them', () => {
+    expect(() =>
+      assertMcpJsonSchemaSafety({ $ref: 'https://example.test/schema.json' }),
+    ).toThrow('local #/$defs/ references');
+  });
+
+  it('rejects schemas whose composition exceeds the depth bound', () => {
+    const schema: Record<string, unknown> = {};
+    let cursor = schema;
+    for (let index = 0; index <= MCP_SCHEMA_LIMITS.maxDepth; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor.allOf = [next];
+      cursor = next;
+    }
+
+    expect(() => assertMcpJsonSchemaSafety(schema)).toThrow('levels of depth');
+  });
+
+  it('rejects schemas whose serialized size exceeds the transport budget', () => {
+    expect(() =>
+      assertMcpJsonSchemaSafety({
+        description: 'x'.repeat(MCP_SCHEMA_LIMITS.maxSerializedBytes),
+      }),
+    ).toThrow('serialized bytes');
   });
 });
 
@@ -163,6 +230,28 @@ describe('buildToolDescriptors', () => {
       toolPrefix: 'catalog_item',
     });
     expect(tool.name).toBe('catalog_item_list');
+  });
+
+  it('propagates text idType to every CRUD descriptor', () => {
+    const descriptors = buildToolDescriptors({
+      className: 'TextProduct',
+      fields: PRODUCT_FIELDS,
+      actions: ['get', 'update', 'delete'],
+      idType: 'text',
+    });
+
+    for (const descriptor of descriptors) {
+      const properties = descriptor.inputSchema.properties as Record<
+        string,
+        unknown
+      >;
+      expect(properties.id).toEqual(
+        expect.objectContaining({ type: 'string' }),
+      );
+      expect(properties.id).not.toEqual(
+        expect.objectContaining({ format: 'uuid' }),
+      );
+    }
   });
 });
 

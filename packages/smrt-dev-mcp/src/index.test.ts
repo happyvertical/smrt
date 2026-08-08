@@ -23,6 +23,16 @@ describe('smrt-dev-mcp tools', () => {
     expect(names).toContain('review-smrt-project');
     expect(names).toContain('list-agent-skills');
     expect(names).toContain('get-agent-skill');
+
+    for (const tool of TOOLS) {
+      expect(tool.inputSchema.$schema).toBe(
+        'https://json-schema.org/draft/2020-12/schema',
+      );
+      expect(tool.outputSchema).toMatchObject({
+        type: 'object',
+        required: ['ok', 'coverage', 'diagnostics', 'data'],
+      });
+    }
   });
 
   it('advertises the package version', () => {

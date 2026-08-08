@@ -3,6 +3,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
+import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import {
@@ -18,15 +19,25 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(packageRoot, '..', '..');
 const generatedDir = join(packageRoot, '.generated-tmp');
 const generatedPath = join(generatedDir, 'index.ts');
+const generatedDatabasePath = join(generatedDir, 'fixture.sqlite');
 const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx');
 const conformanceBin = join(packageRoot, 'node_modules', '.bin', 'conformance');
 const baselinePath = join(packageRoot, 'conformance-baseline.yml');
 let httpChild: ChildProcess | undefined;
 let mcpUrl: string;
+const originalDatabaseUrl = process.env.DATABASE_URL;
+const originalDatabaseType = process.env.DATABASE_TYPE;
 
 beforeAll(async () => {
   await rm(generatedDir, { force: true, recursive: true });
   await mkdir(generatedDir, { recursive: true });
+  await getTestDatabase({
+    type: 'sqlite',
+    url: generatedDatabasePath,
+    classes: ['ConformanceAnimal', 'ConformanceCat'],
+  });
+  process.env.DATABASE_TYPE = 'sqlite';
+  process.env.DATABASE_URL = generatedDatabasePath;
   const generator = new MCPGenerator({
     name: 'smrt-generated-conformance',
     version: '0.0.0',
@@ -60,8 +71,20 @@ beforeAll(async () => {
       expect.arrayContaining([
         'conformancewidget_list',
         'conformancegadget_create',
+        'conformanceanimal_create',
       ]),
     );
+    const listTool = tools.tools.find(
+      (tool) => tool.name === 'conformancewidget_list',
+    );
+    expect(listTool).toMatchObject({
+      inputSchema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+      },
+      outputSchema: {
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+      },
+    });
   } finally {
     await client.close();
     await transport.close();
@@ -72,12 +95,64 @@ beforeAll(async () => {
 
 afterAll(async () => {
   httpChild?.kill('SIGTERM');
+  if (originalDatabaseType === undefined) {
+    delete process.env.DATABASE_TYPE;
+  } else {
+    process.env.DATABASE_TYPE = originalDatabaseType;
+  }
+  if (originalDatabaseUrl === undefined) {
+    delete process.env.DATABASE_URL;
+  } else {
+    process.env.DATABASE_URL = originalDatabaseUrl;
+  }
   if (process.env.MCP_CONFORMANCE_KEEP_GENERATED !== 'true') {
     await rm(generatedDir, { force: true, recursive: true });
   }
 });
 
 describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
+  it('creates an advertised STI subtype through the generated runtime', async () => {
+    const transport = new StdioClientTransport({
+      command: tsxBin,
+      args: [generatedPath],
+      cwd: packageRoot,
+      stderr: 'pipe',
+      env: {
+        DATABASE_TYPE: 'sqlite',
+        DATABASE_URL: generatedDatabasePath,
+      },
+    });
+    const client = new Client(
+      { name: 'generated-sti-test', version: '0.0.0' },
+      {
+        capabilities: {},
+        versionNegotiation: { mode: { pin: '2026-07-28' } },
+      },
+    );
+    try {
+      await client.connect(transport);
+      const result = await client.callTool({
+        name: 'conformanceanimal_create',
+        arguments: {
+          name: 'Mittens',
+          lives: 7,
+          _meta_type:
+            '@happyvertical/smrt-mcp-conformance-fixture:ConformanceCat',
+        },
+      });
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        name: 'Mittens',
+        lives: 7,
+        _meta_type:
+          '@happyvertical/smrt-mcp-conformance-fixture:ConformanceCat',
+      });
+    } finally {
+      await client.close();
+      await transport.close();
+    }
+  });
+
   it('answers discover with SDK-stamped complete metadata', async () => {
     const response = await fetch(mcpUrl, {
       method: 'POST',
