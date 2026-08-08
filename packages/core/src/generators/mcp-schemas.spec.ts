@@ -116,6 +116,10 @@ describe('MCP tool input schemas (#1500)', () => {
   it('allows id or slug on the get tool, with UUID-format ids', () => {
     const get = tool('mcpschemawidget_get');
     expect(get?.inputSchema.required).toBeUndefined();
+    expect(get?.inputSchema.anyOf).toEqual([
+      { required: ['id'] },
+      { required: ['slug'] },
+    ]);
     const props = get?.inputSchema.properties as Record<string, any>;
     expect(props.id.type).toBe('string');
     expect(props.id.format).toBe('uuid');

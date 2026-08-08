@@ -287,12 +287,11 @@ export function buildToolInputSchema(
 
     case 'get':
       // Either `id` OR `slug` identifies the object (collection.get resolves
-      // both), so neither is required at the schema level — the handler validates
-      // that at least one is present. This intentionally relaxes mcp.ts's
-      // historical `required: ['id']`, which over-constrained slug-only lookups;
-      // when mcp.ts adopts this helper it inherits the fix.
+      // both). The schema must require one of them just as the handler does,
+      // while still allowing slug-only lookups.
       return finalizeMcpJsonSchema({
         type: 'object',
+        anyOf: [{ required: ['id'] }, { required: ['slug'] }],
         properties: {
           id: {
             type: 'string',
