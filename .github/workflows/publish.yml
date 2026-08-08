@@ -1,8 +1,9 @@
 # =============================================================================
 # EDITABLE WORKFLOW - Customize for this repository
 # =============================================================================
-# This workflow is called by .github/workflows/happyvertical/on-merge-main.yml
-# when code is merged to the main branch, after tests and build pass.
+# This workflow is called by .github/workflows/on-merge-main.yml for a
+# scheduled or manually dispatched batch, after tests and build pass when the
+# merge queue fallback requires them.
 #
 # Uses the shared direct publish workflow from SDK to version and publish
 # packages without creating intermediate "Version Packages" PRs.
@@ -34,6 +35,7 @@ env:
   PUBLISH_PACK_SHARD_COUNT: '2'
 
 permissions:
+  actions: read
   contents: write
   issues: write
   pull-requests: write
@@ -370,6 +372,15 @@ jobs:
 
       - name: Verify complete release artifact set
         run: node scripts/verify-publish-artifacts.mjs publish-pack-output
+
+      # Recheck immediately before the irreversible release phase. Once npm
+      # publication starts, the matching main/tag update must not be deferred:
+      # doing so would strand a registry release that the collision guard cannot
+      # safely reconstruct on a later run.
+      - name: Recheck merge queue before publication
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-merge-queue-idle.mjs
 
       - name: Publish validated release
         env:

@@ -6,6 +6,10 @@ const workflow = readFileSync(
   new URL('../.github/workflows/publish.yml', import.meta.url),
   'utf8',
 );
+const batchWorkflow = readFileSync(
+  new URL('../.github/workflows/on-merge-main.yml', import.meta.url),
+  'utf8',
+);
 
 function job(name) {
   const match = workflow.match(
@@ -25,5 +29,31 @@ test('final publisher skips workspace installation and allows recovery headroom'
   assert.match(
     publisher,
     /- name: Setup Environment[\s\S]*?install-deps: 'false'/,
+  );
+});
+
+test('routine releases batch instead of publishing after every main push', () => {
+  const publisher = job('publish-release');
+
+  assert.doesNotMatch(batchWorkflow, /^  push:/m);
+  assert.match(batchWorkflow, /^  schedule:\n    - cron: '17 7 \* \* \*'$/m);
+  assert.match(batchWorkflow, /^  workflow_dispatch:$/m);
+  assert.match(batchWorkflow, /^  queue-idle:$/m);
+  assert.match(batchWorkflow, /needs: \[queue-idle, test, build\]/);
+  assert.match(
+    batchWorkflow,
+    /needs\.queue-idle\.result == 'success'/,
+  );
+  assert.match(
+    batchWorkflow,
+    /run: node scripts\/check-merge-queue-idle\.mjs/,
+  );
+  assert.match(
+    publisher,
+    /- name: Recheck merge queue before publication[\s\S]*?run: node scripts\/check-merge-queue-idle\.mjs/,
+  );
+  assert.ok(
+    publisher.lastIndexOf('node scripts/check-merge-queue-idle.mjs') <
+      publisher.indexOf('node scripts/publish-validated-artifacts.mjs'),
   );
 });

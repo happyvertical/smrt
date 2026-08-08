@@ -159,6 +159,8 @@ export interface SmrtWebFieldUIHints {
 export interface SmrtWebFieldDefinition {
   type: SmrtWebFieldType;
   required?: boolean;
+  /** Whether the public field contract explicitly permits `null`. */
+  nullable?: boolean;
   default?: unknown;
   /** Developer-authored `@field({ description })` (#2046) — end-user help seed. */
   description?: string;

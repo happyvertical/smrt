@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.60
+
+### Patch Changes
+
+- ### Features
+
+  - declare MCP structured response schemas (#2250) (core)
+  - @happyvertical/smrt-config@0.40.60
+  - @happyvertical/smrt-types@0.40.60
+  - @happyvertical/smrt-scanner@0.40.60
+
 ## 0.40.59
 
 ### Patch Changes

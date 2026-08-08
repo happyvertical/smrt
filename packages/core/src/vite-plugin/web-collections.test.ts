@@ -229,13 +229,71 @@ describe('buildWebToolDescriptors', () => {
     const create = buildWebToolDescriptors(entry).find(
       (d) => d.action === 'create',
     );
-    const props = (create?.inputSchema.properties ?? {}) as Record<
-      string,
-      { description?: string }
-    >;
-    expect(props.name?.description).toBe('Display name shown on invoices');
+    const schema = create?.inputSchema as {
+      properties: Record<string, { $ref: string }>;
+      $defs: Record<string, { description?: string }>;
+    };
+    const definition = (name: string) =>
+      schema.$defs[schema.properties[name].$ref.slice('#/$defs/'.length)];
+    expect(definition('name').description).toBe(
+      'Display name shown on invoices',
+    );
     // No authored description → the type-derived fallback, not an empty string.
-    expect(props.price?.description).toBeTruthy();
+    expect(definition('price').description).toBeTruthy();
+  });
+
+  it('preserves nullable manifest fields in generated tool schemas', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            discontinuedAt: field({
+              type: 'datetime',
+              _meta: { nullable: true },
+            }),
+          },
+        }),
+      ),
+    )[0];
+    const create = buildWebToolDescriptors(entry).find(
+      (tool) => tool.action === 'create',
+    );
+    const schema = create?.inputSchema as {
+      properties: Record<string, { $ref: string }>;
+      $defs: Record<string, { type?: unknown }>;
+    };
+    const definition =
+      schema.$defs[
+        schema.properties.discontinuedAt.$ref.slice('#/$defs/'.length)
+      ];
+    expect(definition.type).toEqual(['string', 'null']);
+  });
+
+  it('does not advertise UUID-only identifiers for text-id objects', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'ExternalProduct',
+          collection: 'external-products',
+          decoratorConfig: { idType: 'text' },
+        }),
+      ),
+    )[0];
+
+    for (const action of ['get', 'update', 'delete']) {
+      const descriptor = buildWebToolDescriptors(entry).find(
+        (tool) => tool.action === action,
+      );
+      const properties = descriptor?.inputSchema.properties as Record<
+        string,
+        unknown
+      >;
+      expect(properties.id).not.toEqual(
+        expect.objectContaining({ format: 'uuid' }),
+      );
+    }
   });
 
   it('uses the same item receiver and typed custom arguments as Node MCP', () => {
@@ -530,6 +588,25 @@ describe('buildWebFieldDefinitions', () => {
       meta: { type: 'json' },
       ownerId: { type: 'foreignKey' },
       tenantRef: { type: 'crossPackageRef' },
+    });
+  });
+
+  it('carries nullable through as public field metadata', () => {
+    const fields = buildWebFieldDefinitions(
+      obj({
+        className: 'Product',
+        collection: 'products',
+        fields: {
+          discontinuedAt: field({
+            type: 'datetime',
+            _meta: { nullable: true },
+          }),
+        },
+      }),
+    );
+    expect(fields.discontinuedAt).toEqual({
+      type: 'datetime',
+      nullable: true,
     });
   });
 

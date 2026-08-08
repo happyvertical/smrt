@@ -44,6 +44,7 @@ export interface RuntimeOptions {
     name: string;
     description: string;
     inputSchema: Record<string, unknown>;
+    outputSchema?: Record<string, unknown>;
   }>;
   /** Internal invocation metadata; never exposed by the MCP tools/list result. */
   customActions?: Record<
@@ -67,6 +68,14 @@ export interface RuntimeOptions {
    * `SMRT_MCP_ALLOW_CROSS_TENANT` env vars (this server has no auth principal).
    */
   tenantScopedObjects?: string[];
+
+  /**
+   * Build-time approved STI discriminators, keyed by the lowercased MCP object
+   * prefix. The generated runtime uses this instead of searching an initially
+   * empty registry, then loads the approved qualified type through the public
+   * collection API.
+   */
+  stiTargets?: Record<string, Record<string, string>>;
 }
 
 /**
@@ -84,6 +93,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     tools = [],
     customActions = {},
     tenantScopedObjects = [],
+    stiTargets = {},
   } = options;
 
   // Generate static tool array as TypeScript code
@@ -113,13 +123,17 @@ ${indent}  const offset = args.offset ?? 0;
 ${indent}  const where = args.where ?? {};
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
 ${indent}  const items = await collection.list({ where, limit, offset });
 ${indent}  const itemsPublic = items.map((item) => item.toPublicJSON(PUBLIC_JSON_OPTIONS));
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(itemsPublic) }] };
+${indent}  const structuredContent = {
+${indent}    data: itemsPublic,
+${indent}    meta: { total: await collection.count({ where }), limit, offset, count: items.length },
+${indent}  };
+${indent}  return successResult(structuredContent, JSON.stringify(itemsPublic));
 ${indent}}`;
 
           case 'get':
@@ -129,7 +143,7 @@ ${indent}    throw new Error('Either id or slug is required');
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -140,20 +154,17 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(item.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
+${indent}  return successResult(item.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
           case 'create':
             return `${indent}case '${tool.name}': {
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
-${indent}    ai: aiConfig
-${indent}  });
+${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget('${objectName}', args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy('${capitalize(objectName)}', args));
+${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
 ${indent}  await newItem.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
+${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
           case 'update':
@@ -164,7 +175,7 @@ ${indent}    throw new Error('ID is required for update');
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -176,7 +187,7 @@ ${indent}  }
 ${indent}  Object.assign(existing, applyWritablePolicy('${capitalize(objectName)}', updateData));
 ${indent}  await existing.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
+${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
           case 'delete':
@@ -186,7 +197,7 @@ ${indent}    throw new Error('ID is required for delete');
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -197,7 +208,7 @@ ${indent}  }
 
 ${indent}  await toDelete.delete();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Object deleted successfully' }) }] };
+${indent}  return successResult({ success: true, message: 'Object deleted successfully' });
 ${indent}}`;
 
           default:
@@ -215,7 +226,7 @@ ${indent}    throw new Error('Custom action ${action} is collection-scoped and d
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -244,14 +255,15 @@ ${indent}        ]);
 ${indent}  const result = await actionMethod.call(target, ...methodArgs);
 ${indent}  const failure = normalizeCustomActionFailure(result);
 ${indent}  if (failure) {
-${indent}    return {
-${indent}      content: [{ type: 'text', text: JSON.stringify({ error: failure }) }],
-${indent}      isError: true,
-${indent}      _meta: { [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure },
-${indent}    };
+${indent}    return errorResult(
+${indent}      { error: failure },
+${indent}      JSON.stringify({ error: failure }),
+${indent}      { [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure },
+${indent}    );
 ${indent}  }
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(toPublicResult(result)) }] };
+${indent}  const publicResult = toPublicResult(result);
+${indent}  return successResult({ data: publicResult }, JSON.stringify(publicResult));
 ${indent}}`;
         }
       })
@@ -280,6 +292,8 @@ import {
   Server,
 } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
@@ -294,6 +308,7 @@ const DEBUG = ${debug};
 // Static tool definitions (generated at build time)
 const TOOLS = ${toolsCode};
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
+const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 ${
   hasTenantScoped
     ? `
@@ -347,6 +362,23 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
   return result;
 }
 
+/** Resolve an advertised STI discriminator to its registered subtype collection. */
+async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+  let objectName = baseObjectName;
+  const discriminator = args._meta_type;
+  const targets = STI_TARGETS[baseObjectName];
+  if (typeof discriminator === 'string' && targets) {
+    const target = targets[discriminator];
+    if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);
+    objectName = target;
+  }
+  const collection = await ObjectRegistry.getCollection(objectName, {
+    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
+    ai: aiConfig,
+  });
+  return { collection, objectName };
+}
+
 /**
  * Sensitive-field-safe serialization for custom-action results (#1540).
  * Recurses through arrays and plain objects so nested SmrtObjects are stripped
@@ -371,6 +403,22 @@ function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any 
   return out;
 }
 
+function successResult(structuredContent: any, text = JSON.stringify(structuredContent)) {
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent,
+  };
+}
+
+function errorResult(structuredContent: any, text: string, _meta?: Record<string, any>) {
+  return {
+    content: [{ type: 'text', text }],
+    isError: true,
+    structuredContent,
+    ...(_meta ? { _meta } : {}),
+  };
+}
+
 /**
  * Main server startup function
  */
@@ -390,6 +438,17 @@ ${
 `
     : ''
 }
+    // Register the application package manifest before resolving generated
+    // object names. Generated servers are commonly run from the application
+    // package itself, which is not a node_modules dependency of its process.
+    const localManifestPaths = [
+      resolve(process.cwd(), 'dist', 'manifest.json'),
+      resolve(process.cwd(), '.smrt', 'manifest.json'),
+    ].filter(existsSync);
+    if (localManifestPaths.length > 0) {
+      ObjectRegistry.loadAllManifests({ manifestPaths: localManifestPaths });
+    }
+
     // Load configuration from environment and .smrt.config files
     const appConfig = await loadConfig();
     const aiConfig = appConfig?.ai || {};
@@ -467,15 +526,10 @@ ${
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         console.error(\`[MCP] Tool execution failed: \${toolName}\`, error);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: \`Error executing tool \${toolName}: \${errorMessage}\`,
-            },
-          ],
-          isError: true,
-        };
+        return errorResult(
+          { error: { message: errorMessage } },
+          \`Error executing tool \${toolName}: \${errorMessage}\`,
+        );
       }
     });
 
