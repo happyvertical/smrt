@@ -70,6 +70,8 @@ interface PackageJsonShape {
 }
 
 export interface SmrtPluginOptions {
+  /** Root directory that owns generated manifests and SvelteKit routes. */
+  projectRoot?: string;
   /** Glob patterns for SMRT source files */
   include?: string[];
   /** Patterns to exclude */
@@ -205,6 +207,7 @@ export function generateInlineRegisterModule(
 
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
+    projectRoot: configuredProjectRoot,
     include = ['src/**/*.ts', 'src/**/*.js'],
     exclude = ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
     hmr = true,
@@ -510,6 +513,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     // Expose options for external access (e.g., test manifest generation)
     api: {
       options: {
+        projectRoot: configuredProjectRoot,
         baseClasses,
         followImports,
         include,
@@ -526,7 +530,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       );
 
       // Store project root for file scanning
-      projectRoot = resolvedConfig.root;
+      projectRoot = configuredProjectRoot ?? resolvedConfig.root;
 
       // Detect plugin mode based on build configuration
       if (mode === 'auto') {
@@ -560,7 +564,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       // Generate SvelteKit routes if enabled
       if (svelteKit.enabled && manifest) {
-        await generateSvelteKitRoutes(resolvedConfig.root, manifest, {
+        await generateSvelteKitRoutes(projectRoot, manifest, {
           enabled: svelteKit.enabled,
           routesDir: svelteKit.routesDir || 'src/routes/api',
           objectsDir: svelteKit.objectsDir || 'src/lib/objects',
@@ -569,10 +573,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           kebabRoutes: svelteKit.kebabRoutes ?? false,
           changesRoute: svelteKit.changesRoute,
           eventsRoute: svelteKit.eventsRoute,
-          knowledge: await resolveKnowledgeConfig(
-            resolvedConfig.root,
-            manifest,
-          ),
+          knowledge: await resolveKnowledgeConfig(projectRoot, manifest),
         });
       }
 
@@ -711,7 +712,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
               // Generate SvelteKit routes if enabled
               if (svelteKit.enabled && manifest && server) {
-                await generateSvelteKitRoutes(server.config.root, manifest, {
+                await generateSvelteKitRoutes(projectRoot, manifest, {
                   enabled: svelteKit.enabled,
                   routesDir: svelteKit.routesDir || 'src/routes/api',
                   objectsDir: svelteKit.objectsDir || 'src/lib/objects',
@@ -721,7 +722,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   changesRoute: svelteKit.changesRoute,
                   eventsRoute: svelteKit.eventsRoute,
                   knowledge: await resolveKnowledgeConfig(
-                    server.config.root,
+                    projectRoot,
                     manifest,
                   ),
                 });
@@ -757,7 +758,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
               // Generate SvelteKit routes if enabled
               if (svelteKit.enabled && manifest && server) {
-                await generateSvelteKitRoutes(server.config.root, manifest, {
+                await generateSvelteKitRoutes(projectRoot, manifest, {
                   enabled: svelteKit.enabled,
                   routesDir: svelteKit.routesDir || 'src/routes/api',
                   objectsDir: svelteKit.objectsDir || 'src/lib/objects',
@@ -767,7 +768,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   changesRoute: svelteKit.changesRoute,
                   eventsRoute: svelteKit.eventsRoute,
                   knowledge: await resolveKnowledgeConfig(
-                    server.config.root,
+                    projectRoot,
                     manifest,
                   ),
                 });
@@ -795,7 +796,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
               // Generate SvelteKit routes if enabled
               if (svelteKit.enabled && manifest && server) {
-                await generateSvelteKitRoutes(server.config.root, manifest, {
+                await generateSvelteKitRoutes(projectRoot, manifest, {
                   enabled: svelteKit.enabled,
                   routesDir: svelteKit.routesDir || 'src/routes/api',
                   objectsDir: svelteKit.objectsDir || 'src/lib/objects',
@@ -805,7 +806,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                   changesRoute: svelteKit.changesRoute,
                   eventsRoute: svelteKit.eventsRoute,
                   knowledge: await resolveKnowledgeConfig(
-                    server.config.root,
+                    projectRoot,
                     manifest,
                   ),
                 });
