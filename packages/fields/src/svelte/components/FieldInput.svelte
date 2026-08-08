@@ -44,12 +44,21 @@ function setText(event: Event): void {
 }
 
 function setNumber(event: Event, integer: boolean): void {
-  const raw = (event.currentTarget as HTMLInputElement).value;
+  const input = event.currentTarget as HTMLInputElement;
+  // Browsers report incomplete number text (for example a lone sign or an
+  // unfinished exponent) as `value === ''` plus `badInput`. That is not a
+  // deliberate clear, so leave the record untouched until the edit is valid.
+  if (input.validity.badInput) return;
+  const raw = input.value;
   if (raw === '') {
     onvaluechange(undefined);
     return;
   }
   const number = Number(raw);
+  // Number inputs can transiently contain incomplete exponent/sign text while
+  // editing. Keep the last valid record value until the browser supplies a
+  // finite number; never leak NaN/Infinity into a create or edit payload.
+  if (!Number.isFinite(number)) return;
   onvaluechange(integer ? Math.trunc(number) : number);
 }
 

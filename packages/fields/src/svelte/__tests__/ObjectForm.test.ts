@@ -363,6 +363,73 @@ describe('ObjectForm component', () => {
     expect(validity.at(-1)).toBe(true);
   });
 
+  it('does not emit NaN while a numeric control holds an invalid intermediate value', async () => {
+    const values: unknown[] = [];
+    render(FieldInput, {
+      props: {
+        id: 'price',
+        name: 'price',
+        field: {
+          name: 'price',
+          definition: { type: 'decimal' },
+          group: null,
+          order: null,
+        },
+        value: 12.5,
+        required: false,
+        disabled: false,
+        onvaluechange: (value) => values.push(value),
+      },
+    });
+    const input = screen.getByRole('spinbutton') as HTMLInputElement;
+    let raw = '1e';
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get: () => raw,
+      set: (next: string) => {
+        raw = next;
+      },
+    });
+
+    await fireEvent.input(input);
+    expect(values).toEqual([]);
+  });
+
+  it('does not treat a browser badInput empty number value as a deliberate clear', async () => {
+    const values: unknown[] = [];
+    render(FieldInput, {
+      props: {
+        id: 'quantity',
+        name: 'quantity',
+        field: {
+          name: 'quantity',
+          definition: { type: 'integer' },
+          group: null,
+          order: null,
+        },
+        value: 3,
+        required: false,
+        disabled: false,
+        onvaluechange: (value) => values.push(value),
+      },
+    });
+    const input = screen.getByRole('spinbutton') as HTMLInputElement;
+    let raw = '';
+    Object.defineProperty(input, 'value', {
+      configurable: true,
+      get: () => raw,
+      set: (next: string) => {
+        raw = next;
+      },
+    });
+    Object.defineProperty(input, 'validity', {
+      configurable: true,
+      value: { badInput: true } as ValidityState,
+    });
+    await fireEvent.input(input);
+    expect(values).toEqual([]);
+  });
+
   it('converts ISO datetimes for datetime-local editing and emits an ISO DTO', async () => {
     const values: unknown[] = [];
     render(FieldInput, {
