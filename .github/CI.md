@@ -322,6 +322,24 @@ fixed shared database name or remove the wrapper from their package script.
 
 ## Release artifacts
 
+Routine releases are batched to avoid repeatedly invalidating merge-queue work.
+Merging a pull request advances `main` once and does not invoke the publisher.
+`.github/workflows/on-merge-main.yml` runs daily at 07:17 UTC and can also be
+dispatched manually for an urgent release. Each run versions every eligible
+commit since the previous release, so a group of merged pull requests produces
+one release commit and tag. The workflow checks for active merge-group runs and
+queue refs before starting and again before the irreversible registry and Git
+release phase. An API error or non-idle queue fails closed and defers the
+release. Once registry publication begins, the matching `main` and tag update
+must complete so the registry and Git release cannot be stranded out of sync.
+To publish a specific cohort immediately, let every pull request in the cohort
+merge and the queue drain before dispatching `on-merge-main.yml`; do not enqueue
+new work while that release is publishing.
+
+Do not restore a `push` trigger on the batch workflow. A release commit changes
+the base of every speculative merge-group branch; publishing after each merge
+therefore cancels or restarts validation for entries still in the queue (#2174).
+
 Each package is packed once. Pack shards verify that exact tarball and emit a
 schema-versioned manifest containing package name, version, filename, and
 SHA-256. Profiles and Sales validation additionally install each exact tarball
