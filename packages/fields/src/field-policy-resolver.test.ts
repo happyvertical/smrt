@@ -205,13 +205,15 @@ describe('resolveFieldPolicy', () => {
     const tenantId = randomUUID();
     const userId = randomUUID();
 
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'app',
-      defaultValue: JSON.stringify('app default'),
-      help: 'app help',
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('app default'),
+        help: 'app help',
+      }),
+    );
     await seedPolicies(async () => {
       await policies.create({
         objectRef,
@@ -263,12 +265,14 @@ describe('resolveFieldPolicy', () => {
   it('flows lower layers through again when an override row is deleted', async () => {
     const tenantId = randomUUID();
 
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'app',
-      defaultValue: JSON.stringify('app default'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('app default'),
+      }),
+    );
     const tenantRow = await seedPolicies(() =>
       policies.create({
         objectRef,
@@ -289,9 +293,16 @@ describe('resolveFieldPolicy', () => {
     // Reset = row delete (inside the row's own tenant context; the
     // context-absent rule rejects bare tenant-row deletes). The delete also
     // invalidates the cache.
-    await withTenant({ tenantId, permissions: new Set<string>() }, async () => {
-      await tenantRow.delete();
-    });
+    await withTenant(
+      {
+        tenantId,
+        userId: randomUUID(),
+        permissions: new Set(['fields.policy.manage']),
+      },
+      async () => {
+        await tenantRow.delete();
+      },
+    );
 
     const after = await resolveFieldPolicy(objectRef, {
       db,
@@ -584,12 +595,14 @@ describe('resolveFieldPolicy', () => {
       },
     });
 
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'app',
-      defaultValue: JSON.stringify('app default'),
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('app default'),
+      }),
+    );
     await seedPolicies(async () => {
       await policies.create({
         objectRef,
@@ -697,13 +710,15 @@ describe('resolveFieldPolicy', () => {
     expect(beforeLock.fields.summary.defaultValue).toBe('user default');
 
     // The org later locks the field: the stale user row stops applying.
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'app',
-      defaultValue: JSON.stringify('org default'),
-      locked: true,
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('org default'),
+        locked: true,
+      }),
+    );
     const afterLock = await resolveFieldPolicy(objectRef, { db, userId });
     expect(afterLock.fields.summary.defaultValue).toBe('org default');
     expect(afterLock.fields.summary.locked).toBe(true);
@@ -721,12 +736,14 @@ describe('resolveFieldPolicy', () => {
     const tenantId = randomUUID();
 
     // The org seeds a usable default, then a tenant demotion relies on it.
-    const appDefault = await policies.create({
-      objectRef,
-      fieldName: 'title',
-      scopeType: 'app',
-      defaultValue: JSON.stringify('Seeded title'),
-    });
+    const appDefault = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'title',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('Seeded title'),
+      }),
+    );
     await seedPolicies(() =>
       policies.create({
         objectRef,
@@ -747,7 +764,7 @@ describe('resolveFieldPolicy', () => {
 
     // Deleting the DEFAULT row (not the demotion row) would strand a hidden
     // required field — the resolver safety net forces it visible.
-    await appDefault.delete();
+    await seedPolicies(() => appDefault.delete());
 
     const afterDeletion = await resolveFieldPolicy(objectRef, {
       db,
@@ -821,13 +838,15 @@ describe('resolveFieldPolicy', () => {
     const tenantId = randomUUID();
     const userId = randomUUID();
 
-    await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'app',
-      defaultValue: JSON.stringify('app default'),
-      help: 'app help',
-    });
+    await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('app default'),
+        help: 'app help',
+      }),
+    );
     await seedPolicies(async () => {
       await policies.create({
         objectRef,

@@ -12,10 +12,17 @@ import {
   resetTenancy,
   setupTestTenancy,
   TenantIsolationError,
+  withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it as vitestIt,
+} from 'vitest';
 // Registers smrt-users' classes (Tenant) so getTestDatabase can create the
 // tenants table the write-time org checks read through the default hierarchy
 // loader.
@@ -23,6 +30,15 @@ import { TenantCollection } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 import { resolveFieldPolicy } from './field-policy-resolver.js';
+import {
+  MANAGE_FIELD_POLICY_PERMISSION,
+  PERSONALIZE_FIELD_POLICY_PERMISSION,
+} from './permissions.js';
+
+const FIELD_POLICY_PERMISSIONS = new Set([
+  MANAGE_FIELD_POLICY_PERMISSION,
+  PERSONALIZE_FIELD_POLICY_PERMISSION,
+]);
 
 @smrt({
   packageName: '@test/smrt-fields-model',
@@ -80,6 +96,9 @@ function fixtureRef(): string {
   return registered.qualifiedName;
 }
 
+const SCOPE_DENIAL_MESSAGE =
+  'Field policy scope is not permitted for this principal.';
+
 /**
  * Seed tenant/user-scope rows the way real ops flows do: under a super-admin
  * bypass context. Without any ambient identity such rows are rejected
@@ -90,7 +109,7 @@ function seedPolicies<T>(fn: () => Promise<T>): Promise<T> {
   return withTenant(
     {
       tenantId: randomUUID(),
-      permissions: new Set<string>(),
+      permissions: new Set(FIELD_POLICY_PERMISSIONS),
       superAdminBypass: true,
     },
     fn,
@@ -114,7 +133,7 @@ function asUser<T>(
     {
       tenantId: identity.tenantId ?? randomUUID(),
       userId: identity.userId,
-      permissions: new Set<string>(),
+      permissions: new Set(FIELD_POLICY_PERMISSIONS),
     },
     fn,
   );
@@ -128,7 +147,17 @@ function asUserlessTenant<T>(
   return withTenant({ tenantId, permissions: new Set<string>() }, fn);
 }
 
+/**
+ * Most model tests target validation and resolver invariants, not an
+ * untrusted request transport. Keep their fixture authority explicit while
+ * nested `withTenant` calls retain control of authorization-denial scenarios.
+ */
+const itTrusted = (name: string, fn: () => Promise<void>): void => {
+  vitestIt(name, () => withSystemContext(fn));
+};
+
 describe('FieldPolicy write-time validation', () => {
+  const it = itTrusted;
   let db: DatabaseInterface;
   let policies: FieldPolicyCollection;
   let objectRef: string;
@@ -147,6 +176,81 @@ describe('FieldPolicy write-time validation', () => {
     if (typeof (db as { close?: () => Promise<void> }).close === 'function') {
       await (db as unknown as { close: () => Promise<void> }).close();
     }
+  });
+
+  it('requires catalog-backed manage or self-personalize permission before mutation', async () => {
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+
+    await withTenant(
+      { tenantId, userId, permissions: new Set<string>() },
+      async () => {
+        await expect(
+          policies.create({
+            objectRef,
+            fieldName: 'summary',
+            scopeType: 'tenant',
+            help: 'denied org change',
+          }),
+        ).rejects.toThrow(/fields\.policy\.manage/);
+        await expect(
+          policies.create({
+            objectRef,
+            fieldName: 'summary',
+            scopeType: 'user',
+            help: 'denied personal change',
+          }),
+        ).rejects.toThrow(/fields\.policy\.personalize/);
+      },
+    );
+
+    await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        await policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'tenant',
+          help: 'allowed org change',
+        });
+        await expect(
+          policies.create({
+            objectRef,
+            fieldName: 'category',
+            scopeType: 'user',
+            help: 'still denied personal change',
+          }),
+        ).rejects.toThrow(/fields\.policy\.personalize/);
+      },
+    );
+
+    await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([PERSONALIZE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        await policies.create({
+          objectRef,
+          fieldName: 'category',
+          scopeType: 'user',
+          help: 'allowed personal change',
+        });
+        await expect(
+          policies.create({
+            objectRef,
+            fieldName: 'wordCount',
+            scopeType: 'tenant',
+            help: 'still denied org change',
+          }),
+        ).rejects.toThrow(/fields\.policy\.manage/);
+      },
+    );
   });
 
   it('rejects unknown objectRef and unqualified names', async () => {
@@ -247,7 +351,7 @@ describe('FieldPolicy write-time validation', () => {
         scopeType: 'tenant',
         help: 'x',
       }),
-    ).rejects.toThrow(/Tenant-scope field policy rows/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
 
     await expect(
       policies.create({
@@ -258,7 +362,7 @@ describe('FieldPolicy write-time validation', () => {
         userId: randomUUID(),
         help: 'x',
       }),
-    ).rejects.toThrow(/Tenant-scope field policy rows/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
 
     await expect(
       policies.create({
@@ -269,7 +373,7 @@ describe('FieldPolicy write-time validation', () => {
         userId: randomUUID(),
         help: 'x',
       }),
-    ).rejects.toThrow(/User-scope field policy rows/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
 
     await expect(
       policies.create({
@@ -278,7 +382,7 @@ describe('FieldPolicy write-time validation', () => {
         scopeType: 'user',
         help: 'x',
       }),
-    ).rejects.toThrow(/User-scope field policy rows/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
   });
 
   it('type-checks defaults against the manifest field type', async () => {
@@ -465,6 +569,40 @@ describe('FieldPolicy write-time validation', () => {
     expect(optional.visibility).toBe('hidden');
   });
 
+  it('validates required-field updates against the projected policy', async () => {
+    const appDefault = await policies.create({
+      objectRef,
+      fieldName: 'title',
+      scopeType: 'app',
+      defaultValue: JSON.stringify('Only default'),
+    });
+
+    // The persisted row is the only usable default. Clearing it while
+    // demoting must be rejected instead of letting read-time recovery mask a
+    // bad write.
+    appDefault.defaultValue = null;
+    appDefault.visibility = 'hidden';
+    await expect(appDefault.save()).rejects.toThrow(/no resolved default/);
+
+    const tenantId = randomUUID();
+    const tenantRow = await seedPolicies(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'title',
+        scopeType: 'tenant',
+        tenantId,
+        defaultValue: JSON.stringify('Tenant default'),
+      }),
+    );
+
+    // The unchanged app row is a lower-layer usable default, so replacing the
+    // tenant row with a sparse demotion remains valid.
+    tenantRow.defaultValue = null;
+    tenantRow.visibility = 'advanced';
+    await seedPolicies(() => tenantRow.save());
+    expect(tenantRow.visibility).toBe('advanced');
+  });
+
   it('restricts locked to org rows and enforces the lock against user writes', async () => {
     await seedPolicies(async () => {
       await expect(
@@ -597,7 +735,7 @@ describe('FieldPolicy write-time validation', () => {
       {
         tenantId: contextTenant,
         userId: contextUser,
-        permissions: new Set<string>(),
+        permissions: new Set(FIELD_POLICY_PERMISSIONS),
       },
       async () => {
         await expect(
@@ -654,7 +792,7 @@ describe('FieldPolicy write-time validation', () => {
     await withTenant(
       {
         tenantId: contextTenant,
-        permissions: new Set<string>(),
+        permissions: new Set(FIELD_POLICY_PERMISSIONS),
         superAdminBypass: true,
       },
       async () => {
@@ -676,14 +814,16 @@ describe('FieldPolicy write-time validation', () => {
     const contextUser = randomUUID();
     const foreignUser = randomUUID();
 
-    // App row seeded bare (allowed without ambient identity); tenant/user
-    // rows seeded under bypass like real ops flows.
-    const appRow = await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'app',
-      help: 'app row',
-    });
+    // App rows are server-owned too: use the explicit system context rather
+    // than treating a missing request identity as authority.
+    const appRow = await withSystemContext(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'summary',
+        scopeType: 'app',
+        help: 'app row',
+      }),
+    );
     const { foreignTenantRow, foreignUserRow, ownTenantRow } =
       await seedPolicies(async () => ({
         foreignTenantRow: await policies.create({
@@ -713,7 +853,7 @@ describe('FieldPolicy write-time validation', () => {
       {
         tenantId: contextTenant,
         userId: contextUser,
-        permissions: new Set<string>(),
+        permissions: new Set(FIELD_POLICY_PERMISSIONS),
       },
       async () => {
         // A caller holding a foreign row id (e.g. via the generated DELETE
@@ -848,7 +988,7 @@ describe('FieldPolicy write-time validation', () => {
       {
         tenantId: String(child.id),
         userId,
-        permissions: new Set<string>(),
+        permissions: new Set([PERSONALIZE_FIELD_POLICY_PERMISSION]),
       },
       async () => {
         await expect(
@@ -887,7 +1027,11 @@ describe('FieldPolicy write-time validation', () => {
     // A child-tenant demotion resolves that ancestor default through the
     // hierarchy walk and is accepted.
     const childDemotion = await withTenant(
-      { tenantId: String(child.id), permissions: new Set<string>() },
+      {
+        tenantId: String(child.id),
+        userId: randomUUID(),
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
       () =>
         policies.create({
           objectRef,
@@ -905,7 +1049,7 @@ describe('FieldPolicy write-time validation', () => {
       {
         tenantId: String(child.id),
         userId,
-        permissions: new Set<string>(),
+        permissions: new Set([PERSONALIZE_FIELD_POLICY_PERMISSION]),
       },
       async () => {
         const userDemotion = await policies.create({
@@ -933,55 +1077,71 @@ describe('FieldPolicy write-time validation', () => {
     });
   });
 
-  it('fails closed without any ambient identity: app-scope writes only', async () => {
-    // No tenant context is active: tenant- and user-scope rows are
-    // unattributable and rejected outright (a runtime API deployment whose
-    // middleware never enters the tenancy ALS must not accept them).
-    await expect(
-      policies.create({
-        objectRef,
-        fieldName: 'summary',
-        scopeType: 'tenant',
-        tenantId: randomUUID(),
-        help: 'x',
-      }),
-    ).rejects.toThrow(TenantIsolationError);
+  vitestIt(
+    'fails closed without any ambient identity and keeps the system bypass explicit',
+    async () => {
+      // No tenant context is active: every row is unattributable and rejected
+      // outright (an API deployment whose middleware never enters the tenancy
+      // ALS must not treat absence of identity as authority).
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'tenant',
+          tenantId: randomUUID(),
+          help: 'x',
+        }),
+      ).rejects.toThrow(TenantIsolationError);
 
-    await expect(
-      policies.create({
-        objectRef,
-        fieldName: 'summary',
-        scopeType: 'user',
-        userId: randomUUID(),
-        help: 'x',
-      }),
-    ).rejects.toThrow(TenantIsolationError);
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'user',
+          userId: randomUUID(),
+          help: 'x',
+        }),
+      ).rejects.toThrow(TenantIsolationError);
 
-    // App-scope rows remain the legitimate server-side/ops path.
-    const appRow = await policies.create({
-      objectRef,
-      fieldName: 'summary',
-      scopeType: 'app',
-      help: 'app ok',
-    });
-    expect(appRow.help).toBe('app ok');
+      await expect(
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'app',
+          help: 'not attributable',
+        }),
+      ).rejects.toThrow(/Permission denied/);
 
-    // Deletes obey the same rule: a seeded tenant row cannot be deleted
-    // without an ambient identity, while app rows can.
-    const seededTenantRow = await seedPolicies(() =>
-      policies.create({
-        objectRef,
-        fieldName: 'category',
-        scopeType: 'tenant',
-        tenantId: randomUUID(),
-        help: 'seeded',
-      }),
-    );
-    await expect(seededTenantRow.delete()).rejects.toThrow(
-      TenantIsolationError,
-    );
-    await appRow.delete();
-  });
+      // App-scope rows remain available only to the explicit trusted server
+      // context, which is deliberately distinct from an absent context.
+      const appRow = await withSystemContext(() =>
+        policies.create({
+          objectRef,
+          fieldName: 'summary',
+          scopeType: 'app',
+          help: 'app ok',
+        }),
+      );
+      expect(appRow.help).toBe('app ok');
+
+      // Deletes obey the same rule: a seeded tenant row and an app row cannot
+      // be deleted without identity, while the explicit system context can.
+      const seededTenantRow = await seedPolicies(() =>
+        policies.create({
+          objectRef,
+          fieldName: 'category',
+          scopeType: 'tenant',
+          tenantId: randomUUID(),
+          help: 'seeded',
+        }),
+      );
+      await expect(seededTenantRow.delete()).rejects.toThrow(
+        TenantIsolationError,
+      );
+      await expect(appRow.delete()).rejects.toThrow(/Permission denied/);
+      await withSystemContext(() => appRow.delete());
+    },
+  );
 
   it('validates reference-field defaults as UUIDs unless the field stores text ids', async () => {
     await expect(
@@ -1124,7 +1284,7 @@ describe('FieldPolicy write-time validation', () => {
           scopeType: 'user',
           help: 'mine',
         }),
-      ).rejects.toThrow(/must set userId/);
+      ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
     });
 
     const survivors = await policies.list({

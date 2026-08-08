@@ -222,6 +222,13 @@ export interface WebToolDescriptor {
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
   /** REST collection name (e.g. `products`). */
   name: string;
+  /**
+   * Canonical qualified model identity (e.g.
+   * `@happyvertical/smrt-products:Product`). Generated definitions always
+   * provide it; optional here for source compatibility with manual literals
+   * authored before policy-aware web collections.
+   */
+  objectRef?: string;
   /** Source class name (e.g. `Product`). */
   className: string;
   /** Path under the API base path (e.g. `/products`). */
@@ -274,16 +281,64 @@ export interface SmrtCrudFetchers {
  * Raised when a generated-client call resolved with an error payload
  * (`{ error: string }` from the generated REST routes) or an unexpected shape.
  * Thrown inside a mutation handler, this triggers the automatic rollback of
- * optimistic state.
+ * optimistic state. HTTP 5xx failures are always opaque: their server payload
+ * is neither parsed nor retained because it may contain internal detail.
  */
 export class SmrtWebRequestError extends Error {
   readonly payload: unknown;
+  readonly status?: number;
+  readonly code?: string;
 
-  constructor(message: string, payload?: unknown) {
+  constructor(
+    message: string,
+    payload?: unknown,
+    status?: number,
+    code?: string,
+  ) {
     super(message);
     this.name = 'SmrtWebRequestError';
     this.payload = payload;
+    if (status !== undefined) this.status = status;
+    if (code !== undefined) this.code = code;
   }
+}
+
+function getWebErrorDetail(payload: unknown): {
+  message?: string;
+  code?: string;
+} {
+  if (!payload || typeof payload !== 'object') return {};
+  const error = (payload as Record<string, unknown>).error;
+  if (typeof error === 'string') return { message: error };
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
+  const failure = error as Record<string, unknown>;
+  return {
+    message: typeof failure.message === 'string' ? failure.message : undefined,
+    code: typeof failure.code === 'string' ? failure.code : undefined,
+  };
+}
+
+function createHttpRequestError(
+  collectionName: string,
+  status: number,
+  payload?: unknown,
+): SmrtWebRequestError {
+  // 5xx response bodies often expose exception messages, stack traces, or
+  // upstream diagnostic payloads. The browser only gets a generic failure.
+  if (status >= 500) {
+    return new SmrtWebRequestError(
+      `[smrt-web] ${collectionName} request failed: server error`,
+      undefined,
+      status,
+    );
+  }
+  const detail = getWebErrorDetail(payload);
+  return new SmrtWebRequestError(
+    `[smrt-web] ${collectionName} request failed: ${detail.message ?? `HTTP ${status}`}`,
+    payload,
+    status,
+    detail.code,
+  );
 }
 
 /** A row as stored in the client collection: the DTO plus a required key. */
@@ -412,7 +467,8 @@ export function buildListQuery(params?: Record<string, unknown>): string {
  * Build CRUD fetchers from a generated collection definition — the same URL
  * scheme and payload handling as the generated REST client
  * (`basePath + endpoint`), with one improvement: HTTP error statuses reject
- * with the server's `{ error }` body instead of resolving with it.
+ * instead of resolving with them. Typed/legacy 4xx detail is retained; 5xx
+ * failures stay opaque and payload-free.
  */
 export function createDefinitionFetchers(
   definition: SmrtWebCollectionDefinition<object>,
@@ -423,20 +479,14 @@ export function createDefinitionFetchers(
   const headers = { 'Content-Type': 'application/json' };
 
   const parse = async (response: Response): Promise<unknown> => {
-    const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
-      const message =
-        payload &&
-        typeof payload === 'object' &&
-        typeof (payload as Record<string, unknown>).error === 'string'
-          ? String((payload as Record<string, unknown>).error)
-          : `HTTP ${response.status}`;
-      throw new SmrtWebRequestError(
-        `[smrt-web] ${definition.name} request failed: ${message}`,
-        payload,
-      );
+      if (response.status >= 500) {
+        throw createHttpRequestError(definition.name, response.status);
+      }
+      const payload: unknown = await response.json().catch(() => null);
+      throw createHttpRequestError(definition.name, response.status, payload);
     }
-    return payload;
+    return response.json().catch(() => null);
   };
 
   return {
@@ -468,9 +518,11 @@ export function createDefinitionFetchers(
         headers,
       });
       if (!response.ok) {
-        throw new SmrtWebRequestError(
-          `[smrt-web] delete(${definition.name}) failed: HTTP ${response.status}`,
-        );
+        if (response.status >= 500) {
+          throw createHttpRequestError(definition.name, response.status);
+        }
+        const payload: unknown = await response.json().catch(() => null);
+        throw createHttpRequestError(definition.name, response.status, payload);
       }
       return true;
     },

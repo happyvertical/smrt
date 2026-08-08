@@ -79,3 +79,8 @@ export {
   type TenantEntryPointRunner,
   type TenantGateOptions,
 } from './tenant-gate';
+// Shared 4xx normalization for generated REST and SvelteKit transports.
+export {
+  normalizeTypedHttpError,
+  type TypedHttpFailure,
+} from './typed-http-error';

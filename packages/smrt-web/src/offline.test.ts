@@ -56,6 +56,7 @@ function fakeCtx(name: string): SmrtWebCapabilityContext<object> {
   return {
     definition: {
       name,
+      objectRef: '@test/smrt-web:X',
       className: 'X',
       endpoint: `/${name}`,
       idField: 'id',

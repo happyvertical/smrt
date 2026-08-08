@@ -31,6 +31,8 @@ export interface SeedRolePermissionsOptions {
    */
   syncCatalog?: boolean;
   tenantId?: string;
+  /** @internal Restrict the matrix to system roles (tenantId null + isSystem). */
+  systemRolesOnly?: boolean;
 }
 
 export interface SeedRolePermissionsResult {
@@ -74,6 +76,19 @@ const DEFAULT_MEMBER_CREATE_DENIED_RESOURCES = new Set([
   'users_magic_link_tokens',
   'usersmagiclinktokens',
 ]);
+
+// Self-personalization is deliberately available to every built-in role. It
+// is appended only when the contributing package has registered the catalog
+// definition, so users-only applications do not report an unmatched pattern.
+const DEFAULT_SELF_PERSONALIZATION_PERMISSION = 'fields.policy.personalize';
+
+function isBuiltInDefaultRoleSlug(
+  roleSlug: string,
+): roleSlug is DefaultRoleSlug {
+  return Object.values(DEFAULT_ROLE_SLUGS).includes(
+    roleSlug as DefaultRoleSlug,
+  );
+}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -267,7 +282,9 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
     for (const [roleSlug, rawPatterns] of Object.entries(matrix)) {
       ensureResultSlot(result, roleSlug);
 
-      const role = await roles.findBySlug(roleSlug, options.tenantId);
+      const role = options.systemRolesOnly
+        ? await roles.findSystemRoleBySlug(roleSlug)
+        : await roles.findBySlug(roleSlug, options.tenantId);
       if (!role?.id) {
         result.missingRoles.push(roleSlug);
         continue;
@@ -288,6 +305,19 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
           }
           matchedSlugs.add(slug);
         }
+      }
+
+      if (
+        isBuiltInDefaultRoleSlug(roleSlug) &&
+        role.tenantId === null &&
+        role.isSystem === true &&
+        catalogSlugs.includes(DEFAULT_SELF_PERSONALIZATION_PERMISSION) &&
+        shouldSeedDefaultRolePermission(
+          roleSlug,
+          DEFAULT_SELF_PERSONALIZATION_PERMISSION,
+        )
+      ) {
+        matchedSlugs.add(DEFAULT_SELF_PERSONALIZATION_PERMISSION);
       }
 
       const sortedMatchedSlugs = Array.from(matchedSlugs).sort();
@@ -335,5 +365,25 @@ export class RolePermissionCollection extends SmrtCollection<RolePermission> {
     }
 
     return result;
+  }
+
+  /**
+   * Add the catalog-registered self-personalization grant to existing built-in
+   * roles. This is the explicit, idempotent upgrade path for applications
+   * whose roles predate the Fields permission; custom role matrices are never
+   * considered here.
+   */
+  async seedDefaultRolePersonalizationPermissions(
+    options: Omit<SeedRolePermissionsOptions, 'prune'> = {},
+  ): Promise<SeedRolePermissionsResult> {
+    const builtInMatrix = Object.fromEntries(
+      Object.values(DEFAULT_ROLE_SLUGS).map((slug) => [slug, []]),
+    ) as RolePermissionPatternMatrix;
+    const { tenantId: _ignoredTenantId, ...systemOptions } = options;
+    return await this.seedRolePermissions(builtInMatrix, {
+      ...systemOptions,
+      prune: false,
+      systemRolesOnly: true,
+    });
   }
 }

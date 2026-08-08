@@ -86,15 +86,18 @@ export async function resolveFieldPolicyExplained(
   // unknown refs throw before the cache is consulted.
   const fieldMap = await getObjectFieldMap(objectRef);
 
-  const cached = getCachedFieldPolicy(
-    objectRef,
-    tenantId,
-    userId,
-    cacheDb,
-    options.tenantHierarchyLoader,
-  );
-  if (cached) {
-    return cached;
+  const hasExcludedRows = (options.excludePolicyIds?.size ?? 0) > 0;
+  if (!hasExcludedRows) {
+    const cached = getCachedFieldPolicy(
+      objectRef,
+      tenantId,
+      userId,
+      cacheDb,
+      options.tenantHierarchyLoader,
+    );
+    if (cached) {
+      return cached;
+    }
   }
 
   const policyFields = selectPolicyAddressableFields(fieldMap);
@@ -144,7 +147,7 @@ export async function resolveFieldPolicyExplained(
     );
 
     const appRow = appRows.get(fieldName);
-    if (appRow) {
+    if (appRow && !options.excludePolicyIds?.has(String(appRow.id))) {
       const delta = rowToDelta(appRow);
       contributions.push({ layer: 'app', delta });
       state = applyDelta(state, delta);
@@ -156,7 +159,7 @@ export async function resolveFieldPolicyExplained(
     // walk, but the explained contributions never list discarded ancestors.
     for (const node of survivingChain) {
       const row = tenantRows.get(node.id)?.get(fieldName);
-      if (row) {
+      if (row && !options.excludePolicyIds?.has(String(row.id))) {
         const delta = rowToDelta(row);
         contributions.push({ layer: 'tenant', tenantId: node.id, delta });
         state = applyDelta(state, delta);
@@ -167,7 +170,11 @@ export async function resolveFieldPolicyExplained(
     // is skipped entirely — a stale user row cannot bypass a later lock.
     const orgLocked = state.locked === true;
     const userRow = userId ? userRows.get(fieldName) : undefined;
-    if (userRow && !orgLocked) {
+    if (
+      userRow &&
+      !options.excludePolicyIds?.has(String(userRow.id)) &&
+      !orgLocked
+    ) {
       const delta = rowToDelta(userRow);
       contributions.push({ layer: 'user', userId: userId as string, delta });
       state = applyDelta(state, delta);
@@ -205,14 +212,16 @@ export async function resolveFieldPolicyExplained(
   }
 
   const explained: ExplainedObjectFieldPolicy = { objectRef, fields, layers };
-  setCachedFieldPolicy(
-    objectRef,
-    tenantId,
-    userId,
-    cacheDb,
-    explained,
-    options.tenantHierarchyLoader,
-  );
+  if (!hasExcludedRows) {
+    setCachedFieldPolicy(
+      objectRef,
+      tenantId,
+      userId,
+      cacheDb,
+      explained,
+      options.tenantHierarchyLoader,
+    );
+  }
   return explained;
 }
 

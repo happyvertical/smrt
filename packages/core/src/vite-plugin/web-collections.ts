@@ -16,7 +16,7 @@
  * `@happyvertical/smrt-web` (`packages/smrt-web/src/index.ts`) — that package
  * is deliberately smrt-dependency-free, so its copy cannot import these types;
  * keep it textually in sync when the shape here changes. The per-collection SHAPE
- * (name/className/endpoint/idField/actions/fields/relationships) is built by the
+ * (name/objectRef/className/endpoint/idField/actions/fields/relationships) is built by the
  * ONE {@link buildWebCollectionDefinition}, shared by the runtime emission AND
  * the #1764 {@link computeWebManifestHash} shape digest — so the emitted shape
  * and the hashed shape can never drift (a drift would let the hash under-cover a
@@ -147,6 +147,7 @@ interface ManifestObjectIndex {
   byPackageAndClass: Map<string, SmartObjectDefinition>;
   bySimpleName: Map<string, SmartObjectDefinition>;
   packageByObject: WeakMap<SmartObjectDefinition, string>;
+  objectRefByObject: WeakMap<SmartObjectDefinition, string>;
 }
 
 const manifestObjectIndexes = new WeakMap<
@@ -176,6 +177,7 @@ function getManifestObjectIndex(
     byPackageAndClass: new Map(),
     bySimpleName: new Map(),
     packageByObject: new WeakMap(),
+    objectRefByObject: new WeakMap(),
   };
 
   for (const [manifestKey, candidate] of entries) {
@@ -202,6 +204,21 @@ function getManifestObjectIndex(
         index.byPackageAndClass.set(packageKey, candidate);
       }
     }
+
+    // New manifests carry `qualifiedName` on each object. Legacy aggregated
+    // manifests can omit it from the object body while retaining a qualified
+    // manifest key, so retain that equally canonical identity for browser
+    // definitions rather than falling back to an ambiguous simple class name.
+    const objectRef = candidate.qualifiedName?.includes(':')
+      ? candidate.qualifiedName
+      : manifestKey.includes(':')
+        ? manifestKey
+        : packageName
+          ? `${packageName}:${candidate.className}`
+          : undefined;
+    if (objectRef && !index.objectRefByObject.has(candidate)) {
+      index.objectRefByObject.set(candidate, objectRef);
+    }
   }
 
   manifestObjectIndexes.set(manifest.objects, index);
@@ -215,6 +232,25 @@ function indexedManifestObjectPackage(
   const index = getManifestObjectIndex(manifest);
   return (
     index.packageByObject.get(obj) || manifestObjectPackage(undefined, obj)
+  );
+}
+
+/**
+ * Return the canonical qualified model identity carried by a web collection.
+ * Field-policy APIs require this `@package/name:ClassName` reference; a simple
+ * class name is ambiguous in aggregated manifests and must never reach a
+ * browser definition.
+ */
+function webCollectionObjectRef(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): string {
+  const objectRef = getManifestObjectIndex(manifest).objectRefByObject.get(obj);
+  if (objectRef) return objectRef;
+
+  throw new Error(
+    `[smrt] Cannot emit web collection definition for ${obj.className}: ` +
+      'a qualifiedName, qualified manifest key, or packageName is required',
   );
 }
 
@@ -514,6 +550,7 @@ export function buildWebCollectionDefinition(
   manifest: SmartObjectManifest,
 ): {
   name: string;
+  objectRef: string;
   className: string;
   endpoint: string;
   idField: string;
@@ -523,6 +560,7 @@ export function buildWebCollectionDefinition(
 } {
   return {
     name: entry.collection,
+    objectRef: webCollectionObjectRef(manifest, entry.obj),
     className: entry.obj.className,
     endpoint: `/${entry.collection}`,
     idField: 'id',

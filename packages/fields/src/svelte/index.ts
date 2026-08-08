@@ -17,17 +17,27 @@
 
 import type { ComponentProps } from 'svelte';
 import AdvancedFields from './components/AdvancedFields.svelte';
+import FieldPolicyEditor from './components/FieldPolicyEditor.svelte';
+import FieldPolicyGearButton from './components/FieldPolicyGearButton.svelte';
+import FieldPolicyGearProvider from './components/FieldPolicyGearProvider.svelte';
 import FieldPolicyProvider from './components/FieldPolicyProvider.svelte';
 import FormHelp from './components/FormHelp.svelte';
 import ModeSwitch from './components/ModeSwitch.svelte';
+import ObjectForm from './components/ObjectForm.svelte';
+import ObjectFormSourceProvider from './components/ObjectFormSourceProvider.svelte';
 import PolicyField from './components/PolicyField.svelte';
 
 // Components
 export {
   AdvancedFields,
+  FieldPolicyEditor,
+  FieldPolicyGearButton,
+  FieldPolicyGearProvider,
   FieldPolicyProvider,
   FormHelp,
   ModeSwitch,
+  ObjectForm,
+  ObjectFormSourceProvider,
   PolicyField,
 };
 
@@ -38,6 +48,17 @@ export type FieldPolicyProviderProps = ComponentProps<
 >;
 export type FormHelpProps = ComponentProps<typeof FormHelp>;
 export type ModeSwitchProps = ComponentProps<typeof ModeSwitch>;
+export type ObjectFormProps = ComponentProps<typeof ObjectForm>;
+export type ObjectFormSourceProviderProps = ComponentProps<
+  typeof ObjectFormSourceProvider
+>;
+export type FieldPolicyEditorProps = ComponentProps<typeof FieldPolicyEditor>;
+export type FieldPolicyGearButtonProps = ComponentProps<
+  typeof FieldPolicyGearButton
+>;
+export type FieldPolicyGearProviderProps = ComponentProps<
+  typeof FieldPolicyGearProvider
+>;
 export type PolicyFieldProps = ComponentProps<typeof PolicyField>;
 
 // Re-export resolved-policy types consumers need (from the core package)
@@ -55,5 +76,55 @@ export {
   setFieldPolicyContext,
   tryGetFieldPolicyContext,
 } from './context.svelte.js';
+export type { PolicyDataTableColumn } from './data-table.js';
+export { policyToVisibleColumnIds } from './data-table.js';
+export type {
+  FieldPolicyEditorAdapter,
+  FieldPolicyEditorDraft,
+  FieldPolicyEditorMutation,
+  FieldPolicyEditorTab,
+  FieldPolicyFocusTool,
+  FieldPolicyFocusToolRegistrar,
+  FieldPolicyOrganizationScope,
+} from './field-policy-editor.js';
+export {
+  defaultValueSerializationError,
+  draftFromRow,
+  editorStateErrorMessage,
+  hasUsableDefault,
+  isFieldPolicyEditorState,
+  mutationFromDraft,
+  registerFieldPolicyFocusTool,
+  requiredVisibilityIsInvalid,
+  rowForScope,
+  serializeDefaultValue,
+} from './field-policy-editor.js';
+export type { FieldPolicyGearController } from './gear-context.svelte.js';
+export {
+  getFieldPolicyGearContext,
+  setFieldPolicyGearContext,
+  tryGetFieldPolicyGearContext,
+} from './gear-context.svelte.js';
+export type { FieldInputComponent } from './input-registry.js';
+export {
+  createFieldInputRegistry,
+  FieldInputRegistry,
+} from './input-registry.js';
+export { resolveObjectFormFields } from './object-form.js';
+export {
+  assertObjectFormCollectionDefinition,
+  ObjectFormSourceRegistry,
+} from './object-form-source.svelte.js';
 // Snippet escape-hatch props
-export type { PolicyFieldSnippetProps } from './types.js';
+export type {
+  FieldInputProps,
+  ObjectFormCollectionDefinition,
+  ObjectFormField,
+  ObjectFormFieldDefinition,
+  ObjectFormFieldSnippetProps,
+  ObjectFormPolicyClient,
+  ObjectFormResolvedSource,
+  ObjectFormSource,
+  ObjectFormWireType,
+  PolicyFieldSnippetProps,
+} from './types.js';

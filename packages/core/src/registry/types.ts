@@ -159,6 +159,22 @@ export interface ApiConfig {
   public?: boolean | 'read';
 
   /**
+   * Establish a trusted principal context for this object's generated
+   * SvelteKit routes.
+   *
+   * This is distinct from `@TenantScoped`: it does not inject a tenant field
+   * or filter rows. Instead it opt-ins a route to carrying the authenticated
+   * session's `locals.tenantId`, user ID, and permission slugs into the
+   * tenancy AsyncLocalStorage. Use it for non-tenant-scoped models whose model
+   * policies derive an owner or authorization decision from the principal.
+   *
+   * The generated route accepts only complete, well-formed trusted `locals`;
+   * request bodies never supply this context. Missing or malformed identity
+   * data leaves no context active.
+   */
+  principalContext?: boolean;
+
+  /**
    * Allowlist of field names that may be set from the request body on generated
    * `create`/`update` routes.
    *

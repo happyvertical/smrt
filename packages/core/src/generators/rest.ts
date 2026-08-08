@@ -51,6 +51,7 @@ import {
   resolveCustomActionMetadata,
 } from './custom-action';
 import { handleEventsRoute } from './events-route';
+import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
   basePath?: string;
@@ -626,6 +627,10 @@ export class APIGenerator {
           return this.createErrorResponse(405, 'Method not allowed');
       }
     } catch (error) {
+      const failure = normalizeTypedHttpError(error);
+      if (failure) {
+        return this.createJsonResponse({ error: failure }, failure.status);
+      }
       console.error('API Error:', error);
       return this.createErrorResponse(500, 'Internal server error');
     }

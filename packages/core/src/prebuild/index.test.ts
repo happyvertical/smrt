@@ -173,6 +173,8 @@ describe('generateDeclarations', () => {
     // Client interface derives CRUD operations keyed by unique collection name.
     expect(clientDecl).toContain('"articles": CrudOperations<ArticleData>;');
     expect(clientDecl).toContain('"authors": CrudOperations<AuthorData>;');
+    expect(clientDecl).toContain('error?: string | SmrtClientFailure;');
+    expect(clientDecl).toContain('code?: string;');
 
     const typesDecl = readFileSync(join(outDir, 'smrt-types.d.ts'), 'utf-8');
     expect(typesDecl).toContain("declare module '@smrt/types'");
@@ -209,6 +211,7 @@ describe('generateDeclarations', () => {
     // runtime WebFieldDefinition and the ambient virt-web declaration.
     expect(webDecl).toContain('export type SmrtWebFieldType =');
     expect(webDecl).toContain('export interface SmrtWebFieldUIHints {');
+    expect(webDecl).toContain('objectRef: string;');
     expect(webDecl).toContain('description?: string;');
     expect(webDecl).toContain('ui?: SmrtWebFieldUIHints;');
 

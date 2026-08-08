@@ -9,6 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
@@ -16,14 +17,20 @@ import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 function createManifest(
   projectRoot: string,
   objectFilePath: string,
+  include?: string[],
+  principalContext = false,
 ): SmartObjectManifest {
   return {
     objects: {
       Widget: {
         className: 'Widget',
         collection: 'widgets',
+        qualifiedName: '@test/generated-helper-app:Widget',
         decoratorConfig: {
-          api: true,
+          api:
+            include || principalContext
+              ? { ...(include ? { include } : {}), principalContext }
+              : true,
         },
         fields: {},
         filePath: objectFilePath,
@@ -32,6 +39,39 @@ function createManifest(
     },
     packageName: '@test/generated-helper-app',
   };
+}
+
+function writeWorkspaceTenancyShim(projectRoot: string): void {
+  const packageDir = join(
+    projectRoot,
+    'node_modules',
+    '@happyvertical',
+    'smrt-tenancy',
+  );
+  mkdirSync(packageDir, { recursive: true });
+  writeFileSync(
+    join(packageDir, 'package.json'),
+    JSON.stringify(
+      {
+        exports: { '.': './index.js' },
+        name: '@happyvertical/smrt-tenancy',
+        type: 'module',
+        version: '1.0.0',
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(
+    join(packageDir, 'index.js'),
+    [
+      'globalThis.__smrtGeneratedTenantContexts ??= [];',
+      'export function hasTenantContext() { return false; }',
+      'export function enterTenantContext(context) {',
+      '  globalThis.__smrtGeneratedTenantContexts.push(context);',
+      '}',
+    ].join('\n'),
+  );
 }
 
 function writeWorkspaceCoreShim(projectRoot: string): void {
@@ -65,12 +105,21 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const ObjectRegistry = {',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
+      '    if (globalThis.__smrtGeneratedRouteCollection) {',
+      '      return globalThis.__smrtGeneratedRouteCollection;',
+      '    }',
       "    return { marker: 'collection' };",
       '  },',
       '  register(...args) {',
       '    globalThis.__smrtGeneratedHelperRegistrations.push(args);',
       '  },',
       '};',
+      'export function normalizeTypedHttpError(error) {',
+      "  if (!error || typeof error !== 'object' || !Number.isInteger(error.status) || error.status < 400 || error.status > 499) return undefined;",
+      "  const code = typeof error.code === 'string' ? error.code : error.status === 403 ? 'permission_denied' : 'request_rejected';",
+      "  const message = typeof error.publicMessage === 'string' && error.publicMessage.length > 0 ? error.publicMessage : error instanceof Error && error.message.length > 0 ? error.message : 'Request rejected';",
+      '  return { code, message, ok: false, status: error.status };',
+      '}',
     ].join('\n'),
   );
 }
@@ -122,6 +171,7 @@ describe('generated SvelteKit helper runtime', () => {
       'export class Widget {}\n',
     );
     writeWorkspaceCoreShim(projectRoot);
+    writeWorkspaceTenancyShim(projectRoot);
     initializeGitRepository(projectRoot);
   });
 
@@ -139,6 +189,10 @@ describe('generated SvelteKit helper runtime', () => {
     delete (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedHelperRegistrations;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedRouteCollection;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedTenantContexts;
   });
 
   async function importGeneratedHelper() {
@@ -157,6 +211,85 @@ describe('generated SvelteKit helper runtime', () => {
 
     return await import(
       pathToFileURL(join(projectRoot, 'src/lib/server/smrt.ts')).href
+    );
+  }
+
+  async function bundleGeneratedRoute(routePath: string, outputFile: string) {
+    const svelteKitShim = join(projectRoot, 'sveltekit-shim.ts');
+    writeFileSync(
+      svelteKitShim,
+      [
+        'export function error(status: number, message: string): never {',
+        '  throw Object.assign(new Error(message), { status });',
+        '}',
+        'export function json(body: unknown, init: ResponseInit = {}): Response {',
+        '  return new Response(JSON.stringify(body), init);',
+        '}',
+      ].join('\n'),
+    );
+    const bundled = await build({
+      bundle: true,
+      entryPoints: [join(projectRoot, routePath)],
+      format: 'esm',
+      plugins: [
+        {
+          name: 'generated-route-test-aliases',
+          setup(pluginBuild) {
+            pluginBuild.onResolve({ filter: /^@sveltejs\/kit$/ }, () => ({
+              path: svelteKitShim,
+            }));
+            pluginBuild.onResolve({ filter: /^\$lib\/server\/smrt$/ }, () => ({
+              path: join(projectRoot, 'src/lib/server/smrt.ts'),
+            }));
+          },
+        },
+      ],
+      platform: 'node',
+      write: false,
+    });
+    const outputPath = join(projectRoot, outputFile);
+    writeFileSync(outputPath, bundled.outputFiles[0].text);
+    return await import(`${pathToFileURL(outputPath).href}?${Date.now()}`);
+  }
+
+  async function importGeneratedCollectionPost(principalContext = false) {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    await generateSvelteKitRoutes(
+      projectRoot,
+      createManifest(projectRoot, objectFilePath, ['create'], principalContext),
+      {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      },
+    );
+
+    return await bundleGeneratedRoute(
+      'src/routes/api/widgets/+server.ts',
+      principalContext
+        ? 'generated-principal-post-route.mjs'
+        : 'generated-post-route.mjs',
+    );
+  }
+
+  async function importGeneratedItemDelete() {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    await generateSvelteKitRoutes(
+      projectRoot,
+      createManifest(projectRoot, objectFilePath, ['delete']),
+      {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      },
+    );
+    return await bundleGeneratedRoute(
+      'src/routes/api/widgets/[id]/+server.ts',
+      'generated-delete-route.mjs',
     );
   }
 
@@ -213,6 +346,144 @@ describe('generated SvelteKit helper runtime', () => {
         }),
       ],
     ]);
+  });
+
+  it('executes emitted POST routes with safe typed 4xx errors and opaque 5xx errors', async () => {
+    const route = await importGeneratedCollectionPost();
+    const routeCollection = globalThis as Record<string, unknown>;
+    routeCollection.__smrtGeneratedRouteCollection = {
+      create: async () => {
+        throw Object.assign(new Error('tenant=secret-tenant'), {
+          code: 'tenant_isolation',
+          publicMessage: 'This request is not permitted for the active tenant',
+          status: 403,
+        });
+      },
+    };
+
+    const denied = await route.POST({
+      locals: { user: { id: 'user-1' } },
+      request: new Request('http://localhost/api/widgets', {
+        body: JSON.stringify({ name: 'Widget' }),
+        method: 'POST',
+      }),
+    });
+    expect(denied.status).toBe(403);
+    await expect(denied.json()).resolves.toEqual({
+      error: {
+        code: 'tenant_isolation',
+        message: 'This request is not permitted for the active tenant',
+        ok: false,
+        status: 403,
+      },
+    });
+
+    routeCollection.__smrtGeneratedRouteCollection = {
+      create: async () => {
+        throw Object.assign(new Error('database secret leaked'), {
+          code: 'database_failed',
+          status: 500,
+        });
+      },
+    };
+    const failed = await route.POST({
+      locals: { user: { id: 'user-1' } },
+      request: new Request('http://localhost/api/widgets', {
+        body: JSON.stringify({ name: 'Widget' }),
+        method: 'POST',
+      }),
+    });
+    expect(failed.status).toBe(500);
+    await expect(failed.json()).resolves.toEqual({
+      error: 'Internal server error',
+    });
+  });
+
+  it('executes emitted DELETE routes with safe typed 4xx errors and opaque 5xx errors', async () => {
+    const route = await importGeneratedItemDelete();
+    const routeCollection = globalThis as Record<string, unknown>;
+    routeCollection.__smrtGeneratedRouteCollection = {
+      get: async () => ({
+        delete: async () => {
+          throw Object.assign(new Error('foreign tenant=secret-tenant'), {
+            code: 'tenant_isolation',
+            publicMessage:
+              'This request is not permitted for the active tenant',
+            status: 403,
+          });
+        },
+      }),
+    };
+
+    const denied = await route.DELETE({
+      locals: { user: { id: 'user-1' } },
+      params: { id: 'foreign-policy' },
+    });
+    expect(denied.status).toBe(403);
+    await expect(denied.json()).resolves.toEqual({
+      error: {
+        code: 'tenant_isolation',
+        message: 'This request is not permitted for the active tenant',
+        ok: false,
+        status: 403,
+      },
+    });
+
+    routeCollection.__smrtGeneratedRouteCollection = {
+      get: async () => ({
+        delete: async () => {
+          throw Object.assign(new Error('database secret leaked'), {
+            code: 'database_failed',
+            status: 500,
+          });
+        },
+      }),
+    };
+    const failed = await route.DELETE({
+      locals: { user: { id: 'user-1' } },
+      params: { id: 'foreign-policy' },
+    });
+    expect(failed.status).toBe(500);
+    await expect(failed.json()).resolves.toEqual({
+      error: 'Internal server error',
+    });
+  });
+
+  it('uses only trusted session locals to establish opted-in principal context', async () => {
+    const route = await importGeneratedCollectionPost(true);
+    const routeCollection = globalThis as Record<string, unknown>;
+    routeCollection.__smrtGeneratedRouteCollection = {
+      create: async () => ({
+        toPublicJSON: () => ({ id: 'created-policy' }),
+      }),
+    };
+
+    const response = await route.POST({
+      locals: {
+        permissions: ['fields.policy.manage'],
+        tenantId: 'trusted-tenant',
+        user: { id: 'trusted-user' },
+      },
+      request: new Request('http://localhost/api/widgets', {
+        body: JSON.stringify({
+          tenantId: 'forged-tenant',
+          userId: 'forged-user',
+        }),
+        method: 'POST',
+      }),
+    });
+    expect(response.status).toBe(201);
+    const contexts = (globalThis as Record<string, unknown>)
+      .__smrtGeneratedTenantContexts as Array<{
+      permissions: Set<string>;
+      tenantId: string;
+      userId: string;
+    }>;
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0].tenantId).toBe('trusted-tenant');
+    expect(contexts[0].userId).toBe('trusted-user');
+    expect([...contexts[0].permissions]).toEqual(['fields.policy.manage']);
+    expect(JSON.stringify(contexts[0])).not.toContain('forged');
   });
 
   it('migrates the default route directory without ignoring handwritten handlers', async () => {

@@ -42,6 +42,7 @@ function productDefinition(
 ): SmrtWebCollectionDefinition<ProductData> {
   return {
     name,
+    objectRef: '@test/smrt-web:Product',
     className: 'Product',
     endpoint: `/${name}`,
     idField: 'id',
@@ -747,6 +748,7 @@ describe('capability seam — contributeCacheKey preserves relationship invalida
 
   const commentsDefinition = (): SmrtWebCollectionDefinition<CommentData> => ({
     name: 'comments',
+    objectRef: '@test/smrt-web:Comment',
     className: 'Comment',
     endpoint: '/comments',
     idField: 'id',
@@ -758,6 +760,7 @@ describe('capability seam — contributeCacheKey preserves relationship invalida
   });
   const articlesDefinition = (): SmrtWebCollectionDefinition<ArticleData> => ({
     name: 'articles',
+    objectRef: '@test/smrt-web:Article',
     className: 'Article',
     endpoint: '/articles',
     idField: 'id',

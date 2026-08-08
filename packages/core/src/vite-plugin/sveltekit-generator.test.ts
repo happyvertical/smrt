@@ -27,12 +27,58 @@ vi.mock('node:fs', () => ({
 // Import after mocking
 import {
   findCliApiCoherenceViolations,
-  generateSvelteKitRoutes,
+  generateSvelteKitRoutes as generateSvelteKitRoutesImpl,
   methodNameToKebab,
   resolveApiActionRouteConfig,
   resolveApiActionSet,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator';
+
+/**
+ * The scanner supplies every real object with a qualified name. Older route
+ * fixtures intentionally omit package metadata to test registration fallbacks;
+ * retain that shape while supplying only the qualified identity now required by
+ * the web-definition hash generated alongside each route.
+ */
+function withSyntheticQualifiedNames(
+  manifest: SmartObjectManifest,
+): SmartObjectManifest {
+  return {
+    ...manifest,
+    objects: Object.fromEntries(
+      Object.entries(manifest.objects).map(([key, objectDef]) => {
+        if (
+          objectDef.qualifiedName?.includes(':') ||
+          key.includes(':') ||
+          objectDef.packageName ||
+          objectDef.extends === 'SmrtCollection' ||
+          objectDef.extendsTypeArg
+        ) {
+          return [key, objectDef];
+        }
+        return [
+          key,
+          {
+            ...objectDef,
+            qualifiedName: `@test/sveltekit:${objectDef.className}`,
+          },
+        ];
+      }),
+    ),
+  } as SmartObjectManifest;
+}
+
+async function generateSvelteKitRoutes(
+  projectRoot: string,
+  manifest: SmartObjectManifest,
+  options: Parameters<typeof generateSvelteKitRoutesImpl>[2],
+): Promise<void> {
+  await generateSvelteKitRoutesImpl(
+    projectRoot,
+    withSyntheticQualifiedNames(manifest),
+    options,
+  );
+}
 
 describe('methodNameToKebab (#1305)', () => {
   it.each([
@@ -615,7 +661,15 @@ describe('SvelteKit Route Generator', () => {
       // Should include POST handler for create
       expect(content).toContain('export const POST: RequestHandler');
       expect(content).toContain('await collection.create');
-      expect(content).toContain('await item.save()');
+      expect(content).not.toContain('await item.save()');
+      expect(content).toContain(
+        "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';",
+      );
+      expect(content).toContain('function smrtRouteErrorResponse');
+      expect(content).toContain('return smrtRouteErrorResponse(cause);');
+      expect(content).toContain(
+        "return json({ error: 'Internal server error' }, { status: 500 });",
+      );
 
       // Should NOT include hardcoded config
       expect(content).not.toContain('process.env.DATABASE_URL');
@@ -673,6 +727,8 @@ describe('SvelteKit Route Generator', () => {
       // Should include PUT handler
       expect(content).toContain('export const PUT: RequestHandler');
       expect(content).toContain('Object.assign(item, data)');
+      expect(content).toContain('await item.save()');
+      expect(content).toContain('return smrtRouteErrorResponse(cause);');
 
       // Should include DELETE handler
       expect(content).toContain('export const DELETE: RequestHandler');
@@ -739,8 +795,10 @@ describe('SvelteKit Route Generator', () => {
       expect(analyzeContent).toContain('await item.analyze');
       expect(analyzeContent).toContain("action: 'analyze'");
       expect(analyzeContent).toContain(
-        "import { normalizeCustomActionFailure } from '@happyvertical/smrt-core';",
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError } from '@happyvertical/smrt-core';",
       );
+      expect(analyzeContent).toContain('let result: unknown;');
+      expect(analyzeContent).toContain('return smrtRouteErrorResponse(cause);');
       expect(analyzeContent).toContain(
         'return json({ error: failure }, { status: failure.status });',
       );

@@ -13,6 +13,7 @@ import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   resetTenancy,
   setupTestTenancy,
+  withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -20,9 +21,16 @@ import { CLIGenerator } from '../../cli/src/cli-generator.js';
 // Registers smrt-users' Tenant so getTestDatabase can create the tenants
 // table the user-tier write-time lock check reads through the default
 // hierarchy loader.
-import { TenantCollection } from '../../users/src/index.js';
+import {
+  TenantCollection,
+  withPrincipalPermissionContext,
+} from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
+import {
+  MANAGE_FIELD_POLICY_PERMISSION,
+  PERSONALIZE_FIELD_POLICY_PERMISSION,
+} from './permissions.js';
 
 @smrt({
   packageName: '@test/smrt-fields-surfaces',
@@ -32,6 +40,9 @@ import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
   mcp: false,
 })
 class PolicySurfaceDoc extends SmrtObject {
+  @field({ required: true })
+  requiredHeadline: string = '';
+
   @field({ ui: { basic: true } })
   headline: string = '';
 
@@ -79,12 +90,14 @@ describe('smrt-fields generated surfaces', () => {
 
   it('exposes writes but NO reads over the generated REST surface', async () => {
     const objectRef = fixtureRef();
-    const existing = await policies.create({
-      objectRef,
-      fieldName: 'headline',
-      scopeType: 'app',
-      help: 'seeded',
-    });
+    const existing = await withSystemContext(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'headline',
+        scopeType: 'app',
+        help: 'seeded',
+      }),
+    );
 
     const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
     api.registerCollection('fieldpolicy', policies);
@@ -104,35 +117,143 @@ describe('smrt-fields generated surfaces', () => {
     // Writes stay open (each guarded by the model's save/delete boundaries).
     // The create targets a DIFFERENT field: a natural-key upsert would
     // replace the seeded row's id and invalidate the update/delete steps.
-    const createResponse = await handler(
-      new Request('http://localhost/api/v1/fieldpolicy', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          objectRef,
-          fieldName: 'tagline',
-          scopeType: 'app',
-          label: 'Tagline',
+    const createResponse = await withSystemContext(() =>
+      handler(
+        new Request('http://localhost/api/v1/fieldpolicy', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            objectRef,
+            fieldName: 'tagline',
+            scopeType: 'app',
+            label: 'Tagline',
+          }),
         }),
-      }),
+      ),
     );
     expect(createResponse.status).toBe(201);
 
-    const updateResponse = await handler(
-      new Request(`http://localhost/api/v1/fieldpolicy/${existing.id}`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ help: 'updated help' }),
-      }),
+    const updateResponse = await withSystemContext(() =>
+      handler(
+        new Request(`http://localhost/api/v1/fieldpolicy/${existing.id}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ help: 'updated help' }),
+        }),
+      ),
     );
     expect(updateResponse.status).toBe(200);
 
-    const deleteResponse = await handler(
-      new Request(`http://localhost/api/v1/fieldpolicy/${existing.id}`, {
-        method: 'DELETE',
-      }),
+    const deleteResponse = await withSystemContext(() =>
+      handler(
+        new Request(`http://localhost/api/v1/fieldpolicy/${existing.id}`, {
+          method: 'DELETE',
+        }),
+      ),
     );
     expect(deleteResponse.status).toBe(204);
+  });
+
+  it('returns 403 when a generated user write is blocked by an org lock', async () => {
+    const objectRef = fixtureRef();
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+    await withSystemContext(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'headline',
+        scopeType: 'app',
+        locked: true,
+      }),
+    );
+
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldpolicy', policies);
+    const response = await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([PERSONALIZE_FIELD_POLICY_PERMISSION]),
+      },
+      () =>
+        api.generateHandler()(
+          new Request('http://localhost/api/v1/fieldpolicy', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              objectRef,
+              fieldName: 'headline',
+              scopeType: 'user',
+              label: 'Denied personal override',
+            }),
+          }),
+        ),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects a generated PUT that clears a required field’s only default while demoting it', async () => {
+    const objectRef = fixtureRef();
+    const existing = await withSystemContext(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'requiredHeadline',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('Only default'),
+      }),
+    );
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldpolicy', policies);
+    const handler = api.generateHandler();
+
+    const response = await withSystemContext(() =>
+      handler(
+        new Request(`http://localhost/api/v1/fieldpolicy/${existing.id}`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ defaultValue: null, visibility: 'hidden' }),
+        }),
+      ),
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+
+    // Replacing a tenant row is valid when an app-tier default remains below
+    // it; the PUT validates the projected policy rather than its old row.
+    const tenantId = randomUUID();
+    const tenantRow = await withTenant(
+      {
+        tenantId,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      () =>
+        policies.create({
+          objectRef,
+          fieldName: 'requiredHeadline',
+          scopeType: 'tenant',
+          tenantId,
+          defaultValue: JSON.stringify('Tenant default'),
+        }),
+    );
+    const permitted = await withTenant(
+      {
+        tenantId,
+        userId: randomUUID(),
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      () =>
+        handler(
+          new Request(`http://localhost/api/v1/fieldpolicy/${tenantRow.id}`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              defaultValue: null,
+              visibility: 'advanced',
+            }),
+          }),
+        ),
+    );
+    expect(permitted.status).toBe(200);
   });
 
   it('dispatches the batch resolve action on the runtime REST transport', async () => {
@@ -211,22 +332,32 @@ describe('smrt-fields generated surfaces', () => {
     const tenantId = randomUUID();
     const userId = randomUUID();
 
-    // App tier: no owner columns at all, no ambient context.
+    // App tier is server-owned: its transport write needs the explicit system
+    // bypass, never an absent identity.
     expect(
       (
-        await post({
-          objectRef,
-          fieldName: 'headline',
-          scopeType: 'app',
-          label: 'Headline',
-        })
+        await withSystemContext(() =>
+          post({
+            objectRef,
+            fieldName: 'headline',
+            scopeType: 'app',
+            label: 'Headline',
+          }),
+        )
       ).status,
     ).toBe(201);
 
     // Tenant tier: the body names the tenant, the transport strips it, and
     // the model re-derives it from the ambient context.
     await withTenant(
-      { tenantId, userId, permissions: new Set<string>() },
+      {
+        tenantId,
+        userId,
+        permissions: new Set([
+          MANAGE_FIELD_POLICY_PERMISSION,
+          PERSONALIZE_FIELD_POLICY_PERMISSION,
+        ]),
+      },
       async () => {
         expect(
           (
@@ -293,7 +424,11 @@ describe('smrt-fields generated surfaces', () => {
     const foreignTenant = randomUUID();
 
     await withTenant(
-      { tenantId: contextTenant, permissions: new Set<string>() },
+      {
+        tenantId: contextTenant,
+        userId: randomUUID(),
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
       async () => {
         const response = await handler(
           new Request('http://localhost/api/v1/fieldpolicy', {
@@ -317,6 +452,290 @@ describe('smrt-fields generated surfaces', () => {
     });
     expect(rows).toHaveLength(1);
     expect(rows[0].tenantId).toBe(contextTenant);
+  });
+
+  it('derives tenant and personal owners from session permission ALS without tenant ALS', async () => {
+    // `createSessionHandler()` always publishes this permission context, but
+    // applications may leave `enterTenantContext` unset. FieldPolicy is not
+    // @TenantScoped, so its generated routes must still source the write owner
+    // from the authenticated principal rather than a request-body id.
+    const objectRef = fixtureRef();
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+    const forgedTenantId = randomUUID();
+    const forgedUserId = randomUUID();
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldpolicy', policies);
+    const handler = api.generateHandler();
+
+    const postAsSessionPrincipal = (
+      permissions: string[],
+      body: Record<string, unknown>,
+    ): Promise<Response> =>
+      withPrincipalPermissionContext(
+        {
+          db,
+          enterTenantContext: false,
+          permissions,
+          tenantId,
+          userId,
+        },
+        () =>
+          handler(
+            new Request('http://localhost/api/v1/fieldpolicy', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+            }),
+          ),
+      );
+
+    const tenantResponse = await postAsSessionPrincipal(
+      [MANAGE_FIELD_POLICY_PERMISSION],
+      {
+        objectRef,
+        fieldName: 'headline',
+        scopeType: 'tenant',
+        tenantId: forgedTenantId,
+        label: 'Session tenant policy',
+      },
+    );
+    expect(tenantResponse.status).toBe(201);
+
+    const personalResponse = await postAsSessionPrincipal(
+      [PERSONALIZE_FIELD_POLICY_PERMISSION],
+      {
+        objectRef,
+        fieldName: 'tagline',
+        scopeType: 'user',
+        label: 'Session personal policy',
+      },
+    );
+    expect(personalResponse.status).toBe(201);
+
+    // A generated body cannot impersonate another user. The normal personal
+    // flow omits this server-owned field and is attributed above; a forged
+    // owner is rejected rather than becoming a cross-user write.
+    const forgedPersonalResponse = await postAsSessionPrincipal(
+      [PERSONALIZE_FIELD_POLICY_PERMISSION],
+      {
+        objectRef,
+        fieldName: 'requiredHeadline',
+        scopeType: 'user',
+        userId: forgedUserId,
+        label: 'Forged personal policy',
+      },
+    );
+    expect(forgedPersonalResponse.status).toBe(403);
+
+    const rows = await policies.list({ where: { objectRef } });
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scopeType: 'tenant',
+          tenantId,
+          userId: null,
+        }),
+        expect.objectContaining({
+          scopeType: 'user',
+          tenantId: null,
+          userId,
+        }),
+      ]),
+    );
+  });
+
+  it('redacts foreign scope identifiers from typed generated-route denials', async () => {
+    const objectRef = fixtureRef();
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+    const foreignTenantId = randomUUID();
+    const foreignUserId = randomUUID();
+    const foreignRows = await withTenant(
+      {
+        tenantId: foreignTenantId,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => ({
+        tenant: await policies.create({
+          objectRef,
+          fieldName: 'headline',
+          scopeType: 'tenant',
+          tenantId: foreignTenantId,
+          label: 'Foreign tenant policy',
+        }),
+        user: await policies.create({
+          objectRef,
+          fieldName: 'tagline',
+          scopeType: 'user',
+          userId: foreignUserId,
+          label: 'Foreign user policy',
+        }),
+      }),
+    );
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldpolicy', policies);
+    const handler = api.generateHandler();
+
+    const deniedDelete = async (id: string, permission: string) => {
+      const response = await withTenant(
+        { tenantId, userId, permissions: new Set([permission]) },
+        () =>
+          handler(
+            new Request(`http://localhost/api/v1/fieldpolicy/${id}`, {
+              method: 'DELETE',
+            }),
+          ),
+      );
+      expect(response.status).toBe(403);
+      const body = await response.text();
+      expect(body).toContain('Field policy scope is not permitted');
+      expect(body).not.toContain(tenantId);
+      expect(body).not.toContain(userId);
+      expect(body).not.toContain(foreignTenantId);
+      expect(body).not.toContain(foreignUserId);
+    };
+
+    const foreignTenantRowId = foreignRows.tenant.id;
+    const foreignUserRowId = foreignRows.user.id;
+    if (!foreignTenantRowId || !foreignUserRowId) {
+      throw new Error('Seeded field-policy rows must have persistent ids');
+    }
+    await deniedDelete(foreignTenantRowId, MANAGE_FIELD_POLICY_PERMISSION);
+    await deniedDelete(foreignUserRowId, PERSONALIZE_FIELD_POLICY_PERMISSION);
+  });
+
+  it('dispatches a capability-filtered editor-state action at the registered singular route', async () => {
+    const objectRef = fixtureRef();
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+    await withTenant(
+      {
+        tenantId,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => {
+        await policies.create({
+          objectRef,
+          fieldName: 'headline',
+          scopeType: 'app',
+          help: 'app override',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'apiToken',
+          scopeType: 'app',
+          help: 'must not be emitted',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'headline',
+          scopeType: 'tenant',
+          tenantId,
+          help: 'tenant override',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'headline',
+          scopeType: 'user',
+          userId,
+          help: 'private override',
+        });
+      },
+    );
+
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    // The registered route segment is intentionally singular. It is the key
+    // handed to the runtime generator, not the collection's plural metadata.
+    api.registerCollection('fieldpolicy', policies);
+    const handler = api.generateHandler();
+    const editorRequest = (): Request =>
+      new Request('http://localhost/api/v1/fieldpolicy/editor-state', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ objectRef }),
+      });
+
+    const denied = await withTenant(
+      { tenantId, userId, permissions: new Set<string>() },
+      () => handler(editorRequest()),
+    );
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({
+      error: {
+        code: 'permission_denied',
+        ok: false,
+        status: 403,
+      },
+    });
+
+    const authorized = await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      () => handler(editorRequest()),
+    );
+    expect(authorized.status).toBe(200);
+    const payload = (await authorized.json()) as {
+      action: string;
+      result: {
+        capabilities: { manage: boolean; personalize: boolean };
+        policy: { fields: Record<string, unknown> };
+        rows: {
+          app: Array<{ fieldName: string; id: string }>;
+          tenant: Array<{ fieldName: string; id: string }>;
+          user: Array<{ fieldName: string; id: string }>;
+        };
+      };
+    };
+    expect(payload.action).toBe('getEditorState');
+    expect(payload.result.capabilities).toEqual({
+      manage: true,
+      personalize: false,
+    });
+    expect(payload.result.policy.fields.headline).toBeDefined();
+    expect(payload.result.policy.fields.apiToken).toBeUndefined();
+    expect(payload.result.rows.app).toEqual([
+      expect.objectContaining({
+        fieldName: 'headline',
+        id: expect.any(String),
+      }),
+    ]);
+    expect(payload.result.rows.tenant).toEqual([
+      expect.objectContaining({
+        fieldName: 'headline',
+        id: expect.any(String),
+      }),
+    ]);
+    // `manage` never exposes the caller's personal raw row; that requires
+    // the separate personalize capability.
+    expect(payload.result.rows.user).toEqual([]);
+
+    // The generator accepts both its registered singular segment and its
+    // canonical plural alias. Pin that the plural alias dispatches the same
+    // collection action rather than silently reopening generated list/get.
+    const pluralRoute = await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      () =>
+        handler(
+          new Request('http://localhost/api/v1/fieldpolicies/editor-state', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ objectRef }),
+          }),
+        ),
+    );
+    expect(pluralRoute.status).toBe(200);
+    expect((await pluralRoute.json()).action).toBe('getEditorState');
   });
 
   it('keeps the prefixed system table name as the registry authority', async () => {
@@ -367,6 +786,9 @@ describe('smrt-fields generated surfaces', () => {
           schema?: {
             indexes?: Array<{ columns?: string[]; unique?: boolean }>;
           };
+          decoratorConfig?: {
+            api?: { principalContext?: boolean };
+          };
         }
       >;
     };
@@ -377,6 +799,16 @@ describe('smrt-fields generated surfaces', () => {
     );
     // Both the model and its decorated collection emit a schema here.
     expect(policyEntries).toHaveLength(2);
+
+    // FieldPolicy's sparse table is intentionally not @TenantScoped, but its
+    // generated CRUD and collection actions still require a tenant/user
+    // identity derived from trusted session locals. Pin the manifest contract
+    // consumed by SvelteKit route generation for BOTH route hosts.
+    expect(
+      policyEntries.map(
+        ([, entry]) => entry.decoratorConfig?.api?.principalContext === true,
+      ),
+    ).toEqual([true, true]);
 
     for (const [name, entry] of policyEntries) {
       const uniqueIndexes = (entry.schema?.indexes ?? []).filter(

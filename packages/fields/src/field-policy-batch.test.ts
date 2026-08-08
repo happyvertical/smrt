@@ -9,6 +9,7 @@ import {
 import {
   resetTenancy,
   setupTestTenancy,
+  withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -19,6 +20,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
+import {
+  MANAGE_FIELD_POLICY_PERMISSION,
+  PERSONALIZE_FIELD_POLICY_PERMISSION,
+} from './permissions.js';
 
 @smrt({
   packageName: '@test/smrt-fields-batch',
@@ -119,14 +124,23 @@ describe('FieldPolicyCollection.resolveBatch', () => {
     const tenantId = randomUUID();
     const userId = randomUUID();
 
-    await policies.create({
-      objectRef,
-      fieldName: 'blurb',
-      scopeType: 'app',
-      defaultValue: JSON.stringify('app blurb'),
-    });
+    await withSystemContext(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'blurb',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('app blurb'),
+      }),
+    );
     await withTenant(
-      { tenantId, userId, permissions: new Set<string>() },
+      {
+        tenantId,
+        userId,
+        permissions: new Set([
+          MANAGE_FIELD_POLICY_PERMISSION,
+          PERSONALIZE_FIELD_POLICY_PERMISSION,
+        ]),
+      },
       async () => {
         await policies.create({
           objectRef,
@@ -153,7 +167,14 @@ describe('FieldPolicyCollection.resolveBatch', () => {
 
     // Inside a session context, tenant + user tiers apply.
     await withTenant(
-      { tenantId, userId, permissions: new Set<string>() },
+      {
+        tenantId,
+        userId,
+        permissions: new Set([
+          MANAGE_FIELD_POLICY_PERMISSION,
+          PERSONALIZE_FIELD_POLICY_PERMISSION,
+        ]),
+      },
       async () => {
         const scoped = await policies.resolveBatch({
           objectRefs: [objectRef],
@@ -177,15 +198,22 @@ describe('FieldPolicyCollection.resolveBatch', () => {
 
   it('ignores identity keys smuggled into the request body', async () => {
     const tenantId = randomUUID();
-    await withTenant({ tenantId, permissions: new Set<string>() }, async () => {
-      await policies.create({
-        objectRef,
-        fieldName: 'blurb',
-        scopeType: 'tenant',
+    await withTenant(
+      {
         tenantId,
-        defaultValue: JSON.stringify('tenant blurb'),
-      });
-    });
+        userId: randomUUID(),
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'tenant',
+          tenantId,
+          defaultValue: JSON.stringify('tenant blurb'),
+        });
+      },
+    );
 
     // Without an ambient context, a body-supplied tenantId must not select
     // the tenant tier: only the code seed (blurb's initializer '') resolves.
@@ -195,5 +223,222 @@ describe('FieldPolicyCollection.resolveBatch', () => {
       userId: randomUUID(),
     } as any);
     expect(spoofed.policies[objectRef].fields.blurb.defaultValue).toBe('');
+  });
+
+  it('returns editor state only for the caller’s allowed policy scopes', async () => {
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+
+    // Server-owned fixture creation uses the explicit bypass, while every
+    // editor call below proves the ordinary permission boundary.
+    await withTenant(
+      {
+        tenantId,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => {
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'app',
+          help: 'app help',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'tenant',
+          tenantId,
+          help: 'tenant help',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'user',
+          userId,
+          help: 'my help',
+        });
+      },
+    );
+
+    await withTenant(
+      { tenantId, userId, permissions: new Set<string>() },
+      async () => {
+        await expect(
+          policies.getEditorState({ objectRef }),
+        ).resolves.toMatchObject({
+          code: 'permission_denied',
+          ok: false,
+          status: 403,
+        });
+      },
+    );
+
+    // API-key/service contexts can carry a permission set but no user
+    // identity. They must not receive a useless personal capability/tab.
+    await withTenant(
+      {
+        tenantId,
+        permissions: new Set([PERSONALIZE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        await expect(
+          policies.getEditorState({ objectRef }),
+        ).resolves.toMatchObject({
+          code: 'permission_denied',
+          ok: false,
+          status: 403,
+        });
+      },
+    );
+
+    // A trusted service actor may still manage org policy without a user id,
+    // but it never receives a self-personalization capability.
+    await withTenant(
+      {
+        tenantId,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => {
+        const state = await policies.getEditorState({ objectRef });
+        if (!('capabilities' in state))
+          throw new Error('expected editor state');
+        expect(state.capabilities).toEqual({
+          manage: true,
+          personalize: false,
+        });
+        expect(state.rows.user).toEqual([]);
+      },
+    );
+
+    await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        const state = await policies.getEditorState({ objectRef });
+        if (!('capabilities' in state))
+          throw new Error('expected editor state');
+        expect(state.capabilities).toEqual({
+          manage: true,
+          personalize: false,
+        });
+        expect(state.rows.app).toHaveLength(1);
+        expect(state.rows.tenant).toHaveLength(1);
+        expect(state.rows.user).toEqual([]);
+        expect(state.rows.app[0].id).toBeTruthy();
+        expect(state.policy.layers.blurb.map((layer) => layer.layer)).toEqual([
+          'app',
+          'tenant',
+        ]);
+      },
+    );
+
+    await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([PERSONALIZE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        const state = await policies.getEditorState({ objectRef });
+        if (!('capabilities' in state))
+          throw new Error('expected editor state');
+        expect(state.capabilities).toEqual({
+          manage: false,
+          personalize: true,
+        });
+        expect(state.rows.app).toEqual([]);
+        expect(state.rows.tenant).toEqual([]);
+        expect(state.rows.user).toHaveLength(1);
+        expect(state.rows.user[0].id).toBeTruthy();
+        expect(state.policy.layers.blurb.map((layer) => layer.layer)).toEqual([
+          'user',
+        ]);
+      },
+    );
+
+    await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([
+          MANAGE_FIELD_POLICY_PERMISSION,
+          PERSONALIZE_FIELD_POLICY_PERMISSION,
+        ]),
+      },
+      async () => {
+        const state = await policies.getEditorState({ objectRef });
+        if (!('capabilities' in state))
+          throw new Error('expected editor state');
+        expect(state.rows.app).toHaveLength(1);
+        expect(state.rows.tenant).toHaveLength(1);
+        expect(state.rows.user).toHaveLength(1);
+        expect(state.policy.layers.blurb.map((layer) => layer.layer)).toEqual([
+          'app',
+          'tenant',
+          'user',
+        ]);
+      },
+    );
+  });
+
+  it('returns a non-disclosing usable-lower-default signal for a personalize-only editor', async () => {
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+
+    await withSystemContext(async () => {
+      await policies.create({
+        objectRef,
+        fieldName: 'docName',
+        scopeType: 'app',
+        defaultValue: JSON.stringify('organization fallback'),
+      });
+    });
+    await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([PERSONALIZE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        await policies.create({
+          objectRef,
+          fieldName: 'docName',
+          scopeType: 'user',
+          defaultValue: JSON.stringify('personal default'),
+          visibility: 'hidden',
+        });
+
+        const state = await policies.getEditorState({ objectRef });
+        if (!('capabilities' in state))
+          throw new Error('expected editor state');
+        expect(state.capabilities).toEqual({
+          manage: false,
+          personalize: true,
+        });
+        expect(state.personalLowerDefaultUsable.docName).toBe(true);
+        expect(state.rows.app).toEqual([]);
+        expect(state.rows.tenant).toEqual([]);
+        expect(state.policy.layers.docName.map((layer) => layer.layer)).toEqual(
+          ['user'],
+        );
+        // The effective policy and own row may show the caller's default, but
+        // the lower app value never crosses the personalize-only boundary.
+        expect(JSON.stringify(state)).not.toContain('organization fallback');
+
+        // The editor signal mirrors, but does not replace, the authoritative
+        // model validation: clearing the persisted personal default while
+        // retaining hidden is permitted only because the app fallback exists.
+        const own = await policies.get({ id: state.rows.user[0]?.id ?? '' });
+        if (!own) throw new Error('expected persisted personal policy row');
+        own.defaultValue = null;
+        own.visibility = 'hidden';
+        await expect(own.save()).resolves.toBe(own);
+      },
+    );
   });
 });

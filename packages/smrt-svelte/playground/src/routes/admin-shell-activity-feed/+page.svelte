@@ -61,6 +61,7 @@ interface FeedWriter {
 
 const jobDefinition: SmrtWebCollectionDefinition<JobRow> = {
   name: 'demo_render_jobs',
+  objectRef: '@happyvertical/smrt-svelte:RenderJob',
   className: 'RenderJob',
   endpoint: '/demo_render_jobs',
   idField: 'id',

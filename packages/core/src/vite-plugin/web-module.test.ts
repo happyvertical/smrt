@@ -126,6 +126,7 @@ export class HiddenGadget extends SmrtObject {
     expect(Object.keys(definitions).sort()).toEqual(['categories', 'widgets']);
 
     const widgets = definitions.widgets as Record<string, unknown>;
+    expect(widgets.objectRef).toBe('mini-web-app:Widget');
     expect(widgets.className).toBe('Widget');
     expect(widgets.endpoint).toBe('/widgets');
     expect(widgets.idField).toBe('id');

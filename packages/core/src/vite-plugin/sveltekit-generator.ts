@@ -663,6 +663,20 @@ function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
 }
 
 /**
+ * Whether generated routes must publish the authenticated principal into the
+ * tenancy ALS without making the model itself tenant-scoped. This is an
+ * explicit model-level opt-in: body data is never an identity source.
+ */
+function usesPrincipalContext(objectDef: SmartObjectDefinition): boolean {
+  const api = getApiConfigObject(objectDef.decoratorConfig?.api);
+  return api?.principalContext === true;
+}
+
+function needsRouteTenantContext(objectDef: SmartObjectDefinition): boolean {
+  return isTenantScoped(objectDef) || usesPrincipalContext(objectDef);
+}
+
+/**
  * Emit the tenant-context establishment + fail-closed read-scope helpers for
  * `@TenantScoped` objects (#1540 facet 2; #1782). Generated handlers call
  * `establishTenantContext(locals)` after the auth guard so every query runs
@@ -682,22 +696,26 @@ function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
  * active. Both helpers are imported only for tenant-scoped routes, which already
  * depend on `@happyvertical/smrt-tenancy`.
  */
-function generateTenantContextHelper(): string {
-  return `
-import { enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled } from '@happyvertical/smrt-tenancy';
-
-function establishTenantContext(locals: unknown): void {
-  if (hasTenantContext()) return;
-  if (!locals || typeof locals !== 'object') return;
-  const l = locals as Record<string, unknown>;
-  const user = l.user as Record<string, unknown> | undefined;
-  const session = l.session as Record<string, unknown> | undefined;
-  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
-  if (typeof tenantId === 'string' && tenantId) {
-    enterTenantContext({ tenantId });
-  }
-}
-
+function generateTenantContextHelper(
+  requirePrincipal: boolean,
+  includeReadScope: boolean,
+): string {
+  const principalGuard = requirePrincipal
+    ? `  if (
+    typeof tenantId !== 'string' || !tenantId ||
+    typeof userId !== 'string' || !userId ||
+    !permissions
+  ) return;
+`
+    : '';
+  const contextArgument = requirePrincipal
+    ? '{ tenantId, userId, permissions }'
+    : '{ tenantId }';
+  const tenancyImport = includeReadScope
+    ? 'enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled'
+    : 'enterTenantContext, hasTenantContext';
+  const readScopeHelpers = includeReadScope
+    ? `
 // Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
 // model has no tenant context, so the tenancy interceptor (optional mode) would
 // pass the query through UNFILTERED and return every tenant's rows. When tenancy
@@ -722,6 +740,34 @@ function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
   }
   return { tenantId: getCurrentTenant()?.tenantId ?? null };
 }
+`
+    : '';
+  return `
+import { ${tenancyImport} } from '@happyvertical/smrt-tenancy';
+
+function establishTenantContext(locals: unknown): void {
+  if (hasTenantContext()) return;
+  if (!locals || typeof locals !== 'object') return;
+  const l = locals as Record<string, unknown>;
+  const user = l.user as Record<string, unknown> | undefined;
+  const session = l.session as Record<string, unknown> | undefined;
+  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId;
+  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId;
+  const rawPermissions = l.permissions;
+  const permissions =
+    rawPermissions instanceof Set && [...rawPermissions].every((value) => typeof value === 'string')
+      ? rawPermissions
+      : Array.isArray(rawPermissions) && rawPermissions.every((value) => typeof value === 'string')
+        ? new Set(rawPermissions)
+        : undefined;
+${principalGuard}
+  if (typeof tenantId === 'string' && tenantId) {
+    enterTenantContext(
+      ${contextArgument},
+    );
+  }
+}
+${readScopeHelpers}
 `;
 }
 
@@ -734,7 +780,7 @@ function routeGuardPreamble(
   mutating: boolean,
 ): string {
   const lines = [`  requireRouteAuth(locals, ${mutating});`];
-  if (isTenantScoped(objectDef)) {
+  if (needsRouteTenantContext(objectDef)) {
     lines.push('  establishTenantContext(locals);');
   }
   return lines.join('\n');
@@ -2151,6 +2197,16 @@ function isLocalObject(
 /**
  * Generates collection route template (GET list, POST create)
  */
+function generateTypedRouteErrorHelper(): string {
+  return `
+function smrtRouteErrorResponse(cause: unknown) {
+  const failure = normalizeTypedHttpError(cause);
+  if (failure) return json({ error: failure }, { status: failure.status });
+  return json({ error: 'Internal server error' }, { status: 500 });
+}
+`;
+}
+
 function generateCollectionRouteTemplate(
   projectRoot: string,
   className: string,
@@ -2193,9 +2249,10 @@ import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
 ${
   serializerImports ? `${serializerImports}\n` : ''
 }import { getCollection } from '$lib/server/smrt';
+${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
@@ -2257,20 +2314,23 @@ ${routeGuardPreamble(objectDef, true)}
   const data = applyWritablePolicy(body);
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
-  const item = await collection.create(data);
-  await item.save();
+  try {
+    const item = await collection.create(data);
 ${
   serializers.itemSerializerName
     ? `
-  const serializedItem = await ${serializers.itemSerializerName}(item);
+    const serializedItem = await ${serializers.itemSerializerName}(item);
 
-  return json(
-    applyReadPermissionRedaction(serializedItem, publicJsonOptions),
-    { status: 201 },
-  );`
+    return json(
+      applyReadPermissionRedaction(serializedItem, publicJsonOptions),
+      { status: 201 },
+    );`
     : `
-  return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
+    return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
 }
+  } catch (cause) {
+    return smrtRouteErrorResponse(cause);
+  }
 };
 `
     : '';
@@ -2370,8 +2430,9 @@ function generateItemRouteTemplate(
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
+${hasPut || hasDelete ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef, manifest)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -2432,7 +2493,11 @@ ${generateNotFoundError(className)}
   const body: unknown = await request.json();
   const data = applyWritablePolicy(body);
   Object.assign(item, data);
-  await item.save();
+  try {
+    await item.save();
+  } catch (cause) {
+    return smrtRouteErrorResponse(cause);
+  }
 ${
   serializers.itemSerializerName
     ? `
@@ -2455,7 +2520,11 @@ ${generateCollectionLoad(className, { typeName: modelType.typeName })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
 
-  await item.delete();
+  try {
+    await item.delete();
+  } catch (cause) {
+    return smrtRouteErrorResponse(cause);
+  }
   return json({ success: true });
 };
 `
@@ -2516,7 +2585,7 @@ function generateActionRouteTemplate(
 
   const importBlock = [
     "import { error, json } from '@sveltejs/kit';",
-    "import { normalizeCustomActionFailure } from '@happyvertical/smrt-core';",
+    "import { normalizeCustomActionFailure, normalizeTypedHttpError } from '@happyvertical/smrt-core';",
     hostType === 'collection' || routeConfig.scope !== 'collection'
       ? "import { getCollection } from '$lib/server/smrt';"
       : "import { ObjectRegistry } from '@happyvertical/smrt-core';",
@@ -2531,6 +2600,13 @@ function generateActionRouteTemplate(
     routeSpecs.some(
       (spec) => !!spec.lookupObjectDef && isTenantScoped(spec.lookupObjectDef),
     );
+  const principalContext =
+    usesPrincipalContext(objectDef) ||
+    routeSpecs.some(
+      (spec) =>
+        !!spec.lookupObjectDef && usesPrincipalContext(spec.lookupObjectDef),
+    );
+  const needsTenantContext = tenantScoped || principalContext;
   const handlers = routeSpecs
     .map((spec) =>
       generateActionRouteHandler(
@@ -2540,6 +2616,7 @@ function generateActionRouteTemplate(
         spec.routeConfig,
         spec.hostType,
         tenantScoped,
+        needsTenantContext,
         lookupModelType.typeName,
         hostModelType.typeName,
       ),
@@ -2550,7 +2627,8 @@ function generateActionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-${generateAuthGuardHelper(objectDef, manifest)}${tenantScoped ? generateTenantContextHelper() : ''}
+${generateAuthGuardHelper(objectDef, manifest)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
+${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }
 
@@ -2561,6 +2639,7 @@ function generateActionRouteHandler(
   routeConfig: ResolvedApiActionRouteConfig,
   hostType: 'item' | 'collection',
   tenantScoped: boolean,
+  needsTenantContext: boolean,
   lookupTypeName: string,
   hostTypeName: string,
 ): string {
@@ -2570,7 +2649,7 @@ function generateActionRouteHandler(
   const guardLines = [
     `  requireRouteAuth(locals, ${routeConfig.method !== 'GET'});`,
   ];
-  if (tenantScoped) {
+  if (needsTenantContext) {
     guardLines.push('  establishTenantContext(locals);');
   }
   const authGuardLine = guardLines.join('\n');
@@ -2615,11 +2694,16 @@ ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
 ${generateCollectionNotRegisteredError(lookupClassName)}
 ${staticTargetLoad}
 
-${optionsLoad}${scopedOptions.source}  const result = ${buildActionInvocationExpression(
+${optionsLoad}${scopedOptions.source}  let result: unknown;
+  try {
+    result = ${buildActionInvocationExpression(
       receiverExpression,
       actionName,
       invocationArgs,
     )};
+  } catch (cause) {
+    return smrtRouteErrorResponse(cause);
+  }
 
   const failure = normalizeCustomActionFailure(result);
   if (failure) {
@@ -2659,11 +2743,16 @@ ${authGuardLine}
 ${generateClassNotRegisteredError(lookupClassName)}
 
 ${optionsLoad}${scopedOptions.source}  const ClassRef = registered.constructor as typeof ${hostTypeName};
-  const result = ${buildActionInvocationExpression(
-    'ClassRef',
-    actionName,
-    invocationArgs,
-  )};
+  let result: unknown;
+  try {
+    result = ${buildActionInvocationExpression(
+      'ClassRef',
+      actionName,
+      invocationArgs,
+    )};
+  } catch (cause) {
+    return smrtRouteErrorResponse(cause);
+  }
 
   const failure = normalizeCustomActionFailure(result);
   if (failure) {
@@ -2701,11 +2790,16 @@ ${generateCollectionLoad(lookupClassName, { typeName: lookupTypeName })}
 ${scopedItemLoad}
 ${generateNotFoundError(lookupClassName)}
 
-${optionsLoad}  const result = ${buildActionInvocationExpression(
-    'item',
-    actionName,
-    invocationArgs,
-  )};
+${optionsLoad}  let result: unknown;
+  try {
+    result = ${buildActionInvocationExpression(
+      'item',
+      actionName,
+      invocationArgs,
+    )};
+  } catch (cause) {
+    return smrtRouteErrorResponse(cause);
+  }
 
   const failure = normalizeCustomActionFailure(result);
   if (failure) {

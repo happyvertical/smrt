@@ -33,6 +33,7 @@ function productDefinition(
 ): SmrtWebCollectionDefinition<ProductData> {
   return {
     name,
+    objectRef: '@test/smrt-svelte:Product',
     className: 'Product',
     endpoint: `/${name}`,
     idField: 'id',

@@ -179,6 +179,12 @@ export interface ResolveFieldPolicyOptions {
    */
   db?: SmrtClassOptions['db'];
   tenantHierarchyLoader?: FieldPolicyTenantHierarchyLoader;
+  /**
+   * Internal write-validation seam: omit persisted rows while evaluating a
+   * proposed replacement. Excluded resolutions bypass the shared cache so a
+   * projected result can never poison ordinary reads.
+   */
+  excludePolicyIds?: ReadonlySet<string>;
 }
 
 /**
@@ -209,5 +215,60 @@ export interface FieldPolicyUsersModule {
 export interface FieldPolicyBatchResult {
   policies: Record<string, ResolvedObjectFieldPolicy>;
 }
+
+/** A policy row safe to expose through the context-scoped gear action. */
+export interface FieldPolicyEditorRow {
+  defaultValue: string | null;
+  displayOrder: number | null;
+  fieldName: string;
+  help: string | null;
+  id: string;
+  label: string | null;
+  locked: boolean | null;
+  scopeType: FieldPolicyScopeType;
+  tenantId: string | null;
+  updatedBy: string | null;
+  userId: string | null;
+  visibility: FieldPolicyVisibility | null;
+}
+
+/** Context-derived authorization state for the field-policy gear. */
+export interface FieldPolicyEditorCapabilities {
+  manage: boolean;
+  personalize: boolean;
+}
+
+/**
+ * Gear bootstrap response. `policy` is always filtered by the public-field
+ * rail; raw rows and explanation layers appear only for scopes the caller is
+ * authorized to mutate. Row ids are present for reset/delete operations.
+ */
+export interface FieldPolicyEditorState {
+  capabilities: FieldPolicyEditorCapabilities;
+  /**
+   * For the caller's personal layer only, whether removing that layer's
+   * default still leaves a usable default at code/app/tenant precedence.
+   * This intentionally exposes no lower-layer rows or default values.
+   */
+  personalLowerDefaultUsable: Record<string, boolean>;
+  policy: ExplainedObjectFieldPolicy;
+  rows: {
+    app: FieldPolicyEditorRow[];
+    tenant: FieldPolicyEditorRow[];
+    user: FieldPolicyEditorRow[];
+  };
+}
+
+/** Explicit 403 result used by generated custom-action transports. */
+export interface FieldPolicyEditorStateDenied {
+  code: 'permission_denied';
+  message: string;
+  ok: false;
+  status: 403;
+}
+
+export type FieldPolicyEditorStateResult =
+  | FieldPolicyEditorState
+  | FieldPolicyEditorStateDenied;
 
 export type { SmrtClassOptions };

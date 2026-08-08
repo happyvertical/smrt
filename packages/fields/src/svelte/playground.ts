@@ -7,6 +7,7 @@
  */
 const loadFieldPolicyForm = () =>
   import('./playground/FieldPolicyFormPreview.svelte');
+const loadObjectForm = () => import('./playground/ObjectFormPreview.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-fields',
@@ -27,6 +28,16 @@ export default {
           label: 'Mock',
         },
       },
+    },
+    {
+      id: 'object-form',
+      title: 'Generated ObjectForm',
+      description:
+        'A reusable create/edit form from generated web fields and resolved policy, including advanced groups and a per-field custom renderer.',
+      loadComponent: loadObjectForm,
+      order: 2,
+      tags: ['forms', 'fields', 'object-form', 'registry'],
+      modes: { mock: { label: 'Mock' } },
     },
   ],
 };

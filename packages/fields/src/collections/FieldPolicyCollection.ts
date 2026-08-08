@@ -1,14 +1,23 @@
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
+import { checkOperationPermission } from '@happyvertical/smrt-users';
 import {
   getFieldReadPermission,
   getObjectFieldMap,
   isSensitiveField,
   isTransientField,
+  isUsableRequiredDefault,
 } from '../field-definitions.js';
 import { FieldPolicy } from '../models/FieldPolicy.js';
+import {
+  MANAGE_FIELD_POLICY_PERMISSION,
+  PERSONALIZE_FIELD_POLICY_PERMISSION,
+} from '../permissions.js';
 import type {
+  ExplainedObjectFieldPolicy,
   FieldPolicyBatchResult,
+  FieldPolicyEditorRow,
+  FieldPolicyEditorStateResult,
   ResolvedObjectFieldPolicy,
 } from '../types.js';
 
@@ -44,12 +53,21 @@ const MAX_BATCH_OBJECT_REFS = 100;
 @smrt({
   conflictColumns: ['object_ref', 'field_name', 'scope_type', 'scope_key'],
   api: {
-    include: ['create', 'update', 'delete', 'resolveBatch'],
+    include: ['create', 'update', 'delete', 'resolveBatch', 'getEditorState'],
+    // The collection-scoped editor action shares the sparse cross-scope
+    // policy table, so generated SvelteKit routes establish identity from
+    // authenticated locals even though FieldPolicy is not @TenantScoped.
+    principalContext: true,
     routes: {
       resolveBatch: {
         scope: 'collection',
         method: 'POST',
         path: 'resolve',
+      },
+      getEditorState: {
+        scope: 'collection',
+        method: 'POST',
+        path: 'editor-state',
       },
     },
   },
@@ -174,6 +192,146 @@ export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
     return { policies };
   }
 
+  /**
+   * Context-derived bootstrap data for the policy gear. This is deliberately
+   * a collection action instead of reopening list/get: a caller can inspect
+   * only their safe effective policy and rows/layers they are permitted to
+   * edit, never arbitrary tenant or user policy rows.
+   */
+  async getEditorState(
+    options: { objectRef?: string } = {},
+  ): Promise<FieldPolicyEditorStateResult> {
+    const objectRef = options.objectRef;
+    if (typeof objectRef !== 'string' || objectRef.trim() === '') {
+      throw new Error('getEditorState requires a non-empty "objectRef" string');
+    }
+
+    const context = getCurrentTenant();
+    const permissionOptions = {
+      collection: 'fields.policy',
+      db: this.db,
+      tenantId: context?.tenantId ?? null,
+      userId: context?.userId ?? null,
+      permissionSet: context?.permissions,
+      onDeny: 'return' as const,
+    };
+    const manage = await checkOperationPermission({
+      ...permissionOptions,
+      action: MANAGE_FIELD_POLICY_PERMISSION.split('.').at(-1) ?? 'manage',
+    });
+    const personalize = await checkOperationPermission({
+      ...permissionOptions,
+      action:
+        PERSONALIZE_FIELD_POLICY_PERMISSION.split('.').at(-1) ?? 'personalize',
+    });
+
+    // A permission alone cannot make a personal layer usable: service/API-key
+    // contexts without a user identity must never receive a personal tab (or
+    // an affirmative capability they cannot safely act on).
+    const personalizeAllowed =
+      personalize.allowed &&
+      typeof context?.userId === 'string' &&
+      context.userId.length > 0;
+
+    if (!manage.allowed && !personalizeAllowed) {
+      // The runtime custom-action transport maps explicit failures to their
+      // requested non-2xx status. Returning one avoids its generic catch-all
+      // turning an authorization denial into a misleading 500.
+      return {
+        code: 'permission_denied',
+        message: `Permission denied for '${personalize.permission ?? MANAGE_FIELD_POLICY_PERMISSION}'.`,
+        ok: false,
+        status: 403,
+      };
+    }
+
+    const { resolveFieldPolicyExplained } = await import(
+      '../field-policy-resolver.js'
+    );
+    const resolved = await resolveFieldPolicyExplained(objectRef, {
+      tenantId: context?.tenantId ?? null,
+      userId: context?.userId ?? null,
+      db: this.db,
+    });
+    const policy = await this.gateExplainedForEditorResponse(resolved, {
+      manage: manage.allowed,
+      personalize: personalizeAllowed,
+    });
+    const fieldNames = new Set(Object.keys(policy.fields));
+    // A personal editor must be able to preserve the required-field invariant
+    // when it clears its own default, but a personalize-only caller cannot
+    // receive app/tenant rows or explanation layers. Return only the boolean
+    // answer for code/app/tenant resolution; never the contributing rows or
+    // their default values.
+    const personalLowerDefaultUsable = personalizeAllowed
+      ? await this.getPersonalLowerDefaultUsability(
+          objectRef,
+          context?.tenantId ?? null,
+          fieldNames,
+        )
+      : {};
+
+    const appRows = manage.allowed
+      ? this.toEditorRows(await this.getAppRows(objectRef), fieldNames)
+      : [];
+    const tenantRows =
+      manage.allowed && context?.tenantId
+        ? this.toEditorRows(
+            (await this.getTenantRows(objectRef, [context.tenantId])).get(
+              context.tenantId,
+            ) ?? new Map(),
+            fieldNames,
+          )
+        : [];
+    const userRows =
+      personalizeAllowed && context?.userId
+        ? this.toEditorRows(
+            await this.getUserRows(objectRef, context.userId),
+            fieldNames,
+          )
+        : [];
+
+    return {
+      capabilities: {
+        manage: manage.allowed,
+        personalize: personalizeAllowed,
+      },
+      personalLowerDefaultUsable,
+      policy,
+      rows: { app: appRows, tenant: tenantRows, user: userRows },
+    };
+  }
+
+  /**
+   * Compute the non-disclosing fallback signal used only by personal drafts.
+   * Passing no user id resolves exactly code/app/tenant precedence, including
+   * the real tenant hierarchy, while keeping every lower-layer value server
+   * side. The public map is limited to fields already admitted by the editor
+   * response's security rail.
+   */
+  private async getPersonalLowerDefaultUsability(
+    objectRef: string,
+    tenantId: string | null,
+    fieldNames: ReadonlySet<string>,
+  ): Promise<Record<string, boolean>> {
+    const { resolveFieldPolicy } = await import('../field-policy-resolver.js');
+    const lowerPolicy = await resolveFieldPolicy(objectRef, {
+      tenantId,
+      db: this.db,
+    });
+    return Object.fromEntries(
+      Array.from(fieldNames, (fieldName) => {
+        const field = lowerPolicy.fields[fieldName];
+        return [
+          fieldName,
+          isUsableRequiredDefault(
+            field?.hasDefault ? { value: field.defaultValue } : undefined,
+          ),
+        ];
+      }),
+    );
+  }
+
   private async gateResolvedForPublicResponse(
     resolved: ResolvedObjectFieldPolicy,
   ): Promise<ResolvedObjectFieldPolicy> {
@@ -196,5 +354,59 @@ export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
     }
 
     return { objectRef: resolved.objectRef, fields };
+  }
+
+  private async gateExplainedForEditorResponse(
+    resolved: ExplainedObjectFieldPolicy,
+    capabilities: { manage: boolean; personalize: boolean },
+  ): Promise<ExplainedObjectFieldPolicy> {
+    const fieldMap = await getObjectFieldMap(resolved.objectRef);
+    const fields: ExplainedObjectFieldPolicy['fields'] = {};
+    const layers: ExplainedObjectFieldPolicy['layers'] = {};
+
+    for (const [fieldName, policy] of Object.entries(resolved.fields)) {
+      const fieldDef = fieldMap.get(fieldName);
+      if (
+        !fieldDef ||
+        isSensitiveField(fieldDef) ||
+        getFieldReadPermission(fieldDef) !== undefined ||
+        isTransientField(fieldDef)
+      ) {
+        continue;
+      }
+
+      fields[fieldName] = policy;
+      layers[fieldName] = (resolved.layers[fieldName] ?? []).filter(
+        (layer) =>
+          (capabilities.manage &&
+            (layer.layer === 'app' || layer.layer === 'tenant')) ||
+          (capabilities.personalize && layer.layer === 'user'),
+      );
+    }
+
+    return { objectRef: resolved.objectRef, fields, layers };
+  }
+
+  private toEditorRows(
+    rows: Map<string, FieldPolicy>,
+    allowedFieldNames: ReadonlySet<string>,
+  ): FieldPolicyEditorRow[] {
+    return Array.from(rows.values())
+      .filter((row) => allowedFieldNames.has(row.fieldName))
+      .map((row) => ({
+        defaultValue: row.defaultValue,
+        displayOrder: row.displayOrder,
+        fieldName: row.fieldName,
+        help: row.help,
+        id: String(row.id),
+        label: row.label,
+        locked: row.locked,
+        scopeType: row.scopeType,
+        tenantId: row.tenantId,
+        updatedBy: row.updatedBy,
+        userId: row.userId,
+        visibility: row.visibility,
+      }))
+      .sort((left, right) => left.fieldName.localeCompare(right.fieldName));
   }
 }

@@ -51,6 +51,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:"
   },
   "devDependencies": {

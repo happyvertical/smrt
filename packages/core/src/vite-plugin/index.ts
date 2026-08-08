@@ -1679,9 +1679,17 @@ declare module '@happyvertical/smrt-virt-routes' {
 // (#1796). Shared CRUD wire types stay aligned with the prebuild declaration
 // path; Vite-only custom action declarations are layered onto them below.
 declare module '@happyvertical/smrt-virt-client' {
+  /** Structured custom-action failure nested under an API error body's \`error\` key. */
+  export interface SmrtClientFailure {
+    ok: false;
+    code: string;
+    message: string;
+    status?: number;
+  }
+
   /** Shape of a JSON error body carried by a rejected request (SmrtClientError.body). */
   export interface ApiError {
-    error?: string;
+    error?: string | SmrtClientFailure;
     message?: string;
   }
 
@@ -1689,6 +1697,8 @@ declare module '@happyvertical/smrt-virt-client' {
   export interface SmrtClientError extends Error {
     name: 'SmrtClientError';
     status: number;
+    /** Machine-readable code from a structured custom-action failure, when present. */
+    code?: string;
     body?: ApiError | string;
   }
 
@@ -1798,6 +1808,8 @@ declare module '@happyvertical/smrt-virt-web' {
 
   export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
     name: string;
+    /** Canonical qualified model identity (\`@package/name:ClassName\`) for policy APIs. */
+    objectRef: string;
     className: string;
     endpoint: string;
     idField: string;

@@ -43,6 +43,7 @@ function clearModelContext(): void {
 // all. Only the fields registerWebMcpTools reads are populated.
 const PRODUCT_DEF: SmrtWebCollectionDefinition = {
   name: 'products',
+  objectRef: '@test/smrt-web:Product',
   className: 'Product',
   endpoint: '/products',
   idField: 'id',
@@ -200,6 +201,7 @@ describe('registerWebMcpTools', () => {
     const registry = installModelContext();
     const bare: SmrtWebCollectionDefinition = {
       name: 'tags',
+      objectRef: '@test/smrt-web:Tag',
       className: 'Tag',
       endpoint: '/tags',
       idField: 'id',
