@@ -55,6 +55,8 @@ export interface ObjectFormProps {
   inputRegistry?: FieldInputRegistry;
   /** Per-field custom widget snippets, keyed by field name. */
   renderers?: Readonly<Record<string, Snippet<[ObjectFormFieldSnippetProps]>>>;
+  /** Optional controls rendered after the policy-ordered fields inside the form. */
+  actions?: Snippet;
   class?: string;
   onsubmit?: (event: SubmitEvent) => void;
 }
@@ -71,6 +73,7 @@ let {
   showPolicyGear = false,
   inputRegistry,
   renderers = {},
+  actions,
   class: className = '',
   onsubmit,
 }: ObjectFormProps = $props();
@@ -334,6 +337,7 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
         {@render renderGroups(advancedGroups)}
       </AdvancedFields>
     {/if}
+    {@render actions?.()}
   </Form>
 </FieldPolicyProvider>
 {/if}

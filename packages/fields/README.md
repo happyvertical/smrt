@@ -75,6 +75,20 @@ and ordering, and keeps form state transport-neutral.
   bind:value={record} {inputRegistry} />
 ```
 
+Pass an `actions` snippet to place host controls inside the owned native form.
+The snippet renders after ObjectForm's policy-ordered fields, so a regular
+submit button keeps native Enter/click submission and ObjectForm's validation
+and `onsubmit` handling without querying the DOM.
+
+```svelte
+<ObjectForm {objectRef} fields={collectionDefinition.fields} {policy}
+  bind:value={record} onsubmit={save}>
+  {#snippet actions()}
+    <button type="submit">Save</button>
+  {/snippet}
+</ObjectForm>
+```
+
 An app can register all of its generated collection definitions once and put
 the `resolveBatch` custom-action client behind an `ObjectFormSourceProvider`.
 Then forms need only their canonical object reference; the registry validates
