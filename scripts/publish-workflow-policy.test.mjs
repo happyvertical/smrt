@@ -55,6 +55,11 @@ test('routine releases batch instead of publishing after every main push', () =>
   assert.match(batchWorkflow, /^  docs-scope:$/m);
   assert.match(batchWorkflow, /fetch-depth: 0/);
   assert.match(batchWorkflow, /git tag --merged HEAD --list 'v\*'/);
+  assert.doesNotMatch(
+    batchWorkflow,
+    /git tag --merged HEAD --list 'v\*' --sort=-version:refname \| head -n 1/,
+  );
+  assert.match(batchWorkflow, /tag=\$\{tag%%\$'\\n'\*\}/);
   assert.match(
     batchWorkflow,
     /base: \$\{\{ steps\.release-base\.outputs\.ref \}\}/,
