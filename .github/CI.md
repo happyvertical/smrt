@@ -177,7 +177,7 @@ seven days expire on their own.
 
 ## Job timeouts
 
-Validation jobs on the self-hosted lanes use `timeout-minutes: 45`. The value
+Validation jobs on the self-hosted lanes use `timeout-minutes: 90`. The value
 is a standard, not a per-job estimate: the previous spread ran from 5 to 45,
 mostly unexplained, and the low end was close to the pool's own queue wait
 (p90 1483-1933s measured over 180 jobs, against a median execution of 39-50s).
@@ -204,7 +204,7 @@ to the setting or here:
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
 
-`postgres-tests` is at the standard 45. #2164 retired the unserved
+`postgres-tests` remains at 45 as a deliberate exception. #2164 retired the unserved
 `arc-happyvertical-node` label, deleted the `node-runner-smoke` workflow that
 ran only there, and moved this job onto the general `arc-happyvertical` pool —
 the pool the 45 was measured on — so the standard applies to it for the same
@@ -212,7 +212,7 @@ reason it applies to every other job there. Its earlier 30 was inherited from a
 label whose scale set was quiesced to zero runners, where `timeout-minutes`
 never governed anything.
 
-`publish-release` is at the standard 45 but that value is load-bearing
+`publish-release` remains at 45 but that value is load-bearing
 independently of it: 45 is the documented sequential-registry recovery window
 below, and `scripts/publish-workflow-policy.test.mjs` asserts the exact number.
 Moving the standard later does not by itself license moving that job.
@@ -238,10 +238,17 @@ is `true` on this repository; the unset/false branch is retained only as a
 reversal lever.
 
 - Unset/false: PRs run the historical full suite.
-- `true`: PRs run lint, affected typecheck and tests across the changed
-  packages and everything that depends on them, and — only when
-  knowledge-sensitive paths change — affected knowledge freshness. The
-  complete suite runs for `merge_group`.
+- `true`: PRs run lint and typecheck across the changed packages and everything
+  that depends on them. Their selected test-task closure is split into three
+  deterministic non-core shards; when Turbo's selected test-task closure also
+  contains core, the existing three Vitest core shards run. The selectors read
+  Turbo's dry-run task list, log selected/total package counts, and emit each
+  selected non-core test task exactly once, so wide core closures use the full
+  suite's parallel shape without silently changing coverage. The core and
+  package matrices deliberately do not overlap: each permits two runners, and
+  a shared four-runner burst would transfer feedback latency to fleet queue
+  pressure. Only when knowledge-sensitive paths change do PRs also run
+  affected knowledge freshness. The complete suite runs for `merge_group`.
 
 Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
 Both used to run in both lanes while the merge group re-ran them in full

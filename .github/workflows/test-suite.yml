@@ -216,8 +216,8 @@ jobs:
       - name: Run Biome lint and format checks
         run: npx --yes @biomejs/biome@2.5.2 ci --diagnostic-level=error .
 
-  affected-validation:
-    name: Affected Build, Typecheck, and Tests
+  affected-typecheck:
+    name: Affected Typecheck
     needs: affected-scope
     if: inputs.mode == 'affected'
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
@@ -238,17 +238,144 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Some SvelteKit package tasks generate tracked routes and restore the
-      # original tree during cleanup. Running typecheck and test together lets
-      # one task remove those routes while the other is importing them.
-      - name: Run affected dependency closures
+      - name: Run affected typecheck closure
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
         run: |
           pnpm turbo run typecheck --filter="...[$BASE_SHA]" --concurrency=2
-          pnpm turbo run test --filter="...[$BASE_SHA]" --concurrency=2
+
+  affected-core-tests:
+    needs: affected-test-scope
+    if: inputs.mode == 'affected' && needs.affected-test-scope.outputs.core == 'true'
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build core dependency closure
+        run: pnpm turbo run build --filter='@happyvertical/smrt-core...'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore core test manifest
+        run: pnpm turbo run generate:test --filter='@happyvertical/smrt-core'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run affected core tests (shard ${{ matrix.shard }})
+        working-directory: packages/core
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+
+  affected-package-tests:
+    # Keep the affected test lane at two matrix workers. GitHub scopes
+    # max-parallel to one matrix job, so allowing this matrix to overlap the
+    # core matrix would consume four fleet slots and move the old serial delay
+    # into queue pressure. A skipped core matrix (no core test task selected)
+    # still permits package tests.
+    needs: [affected-test-scope, affected-core-tests]
+    if: >-
+      always() && inputs.mode == 'affected' &&
+      needs.affected-test-scope.result == 'success' &&
+      (needs.affected-core-tests.result == 'success' ||
+      needs.affected-core-tests.result == 'skipped')
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Query the same Turbo test-task closure the former serial job ran, then
+      # partition its non-core packages deterministically. The dry run is also
+      # the per-shard log's count of selected packages.
+      - name: Run affected package tests (shard ${{ matrix.shard }})
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_ENV: test
+          VITEST_MAX_WORKERS: '2'
+          NODE_OPTIONS: --max-old-space-size=2048
+        run: |
+          set -o pipefail
+          pnpm turbo run test --filter="...[$BASE_SHA]" --dry=json |
+            node scripts/affected-test-shard.mjs '${{ matrix.shard }}' |
+            xargs -r pnpm turbo run test --concurrency=2
+
+  # Use Turbo's own task plan to decide whether the core Vitest shards are
+  # needed. A path filter would miss global inputs (lockfile, root config,
+  # workspace configuration) that make Turbo select core even without a direct
+  # packages/core/** edit.
+  affected-test-scope:
+    name: Detect Affected Test Scope
+    needs: affected-scope
+    if: inputs.mode == 'affected'
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    timeout-minutes: 90
+    outputs:
+      core: ${{ steps.scope.outputs.core }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect selected core test task
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          core=$(pnpm turbo run test --filter="...[$BASE_SHA]" --dry=json |
+            node scripts/affected-test-shard.mjs --has-core)
+          printf 'core=%s\n' "$core" | tee -a "$GITHUB_OUTPUT"
 
   affected-knowledge:
     name: Affected Knowledge Freshness
