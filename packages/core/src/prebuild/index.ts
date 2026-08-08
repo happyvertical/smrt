@@ -335,6 +335,7 @@ declare module '@smrt/web' {
   export interface SmrtWebFieldDefinition {
     type: SmrtWebFieldType;
     required?: boolean;
+    nullable?: boolean;
     default?: unknown;
     /** Developer-authored \`@field({ description })\` (#2046) — end-user help seed. */
     description?: string;
