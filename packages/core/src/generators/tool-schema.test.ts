@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertMcpJsonSchemaSafety,
   buildToolDescriptors,
   buildToolInputSchema,
   fieldTypeToJsonSchema,
   isCrudAction,
+  JSON_SCHEMA_2020_12,
+  MCP_SCHEMA_LIMITS,
   type ToolFieldMeta,
 } from './tool-schema.js';
 
@@ -80,6 +83,16 @@ describe('fieldTypeToJsonSchema', () => {
     });
     expect(schema).toMatchObject({ minimum: 0, maximum: 9999, default: 0 });
   });
+
+  it('uses a nullable type union when metadata permits null', () => {
+    expect(
+      fieldTypeToJsonSchema({
+        name: 'publishedAt',
+        type: 'datetime',
+        nullable: true,
+      }),
+    ).toMatchObject({ type: ['string', 'null'], format: 'date-time' });
+  });
 });
 
 describe('buildToolInputSchema', () => {
@@ -103,8 +116,11 @@ describe('buildToolInputSchema', () => {
   it('promotes required model fields onto the create schema', () => {
     const schema = buildToolInputSchema('create', PRODUCT_FIELDS);
     expect(schema.required).toEqual(['name']);
+    expect(schema.$schema).toBe(JSON_SCHEMA_2020_12);
+    expect(schema.$defs).toBeDefined();
     const props = schema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('price');
+    expect(props.name).toEqual({ $ref: '#/$defs/field_0' });
     expect(props).not.toHaveProperty('id'); // server-assigned, never on create
   });
 
@@ -121,6 +137,34 @@ describe('buildToolInputSchema', () => {
     expect(schema.required).toEqual(['id']);
     const props = schema.properties as Record<string, unknown>;
     expect(props).toHaveProperty('options');
+  });
+});
+
+describe('MCP JSON Schema safety bounds', () => {
+  it('rejects external refs without attempting to dereference them', () => {
+    expect(() =>
+      assertMcpJsonSchemaSafety({ $ref: 'https://example.test/schema.json' }),
+    ).toThrow('local #/$defs/ references');
+  });
+
+  it('rejects schemas whose composition exceeds the depth bound', () => {
+    const schema: Record<string, unknown> = {};
+    let cursor = schema;
+    for (let index = 0; index <= MCP_SCHEMA_LIMITS.maxDepth; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor.allOf = [next];
+      cursor = next;
+    }
+
+    expect(() => assertMcpJsonSchemaSafety(schema)).toThrow('levels of depth');
+  });
+
+  it('rejects schemas whose serialized size exceeds the transport budget', () => {
+    expect(() =>
+      assertMcpJsonSchemaSafety({
+        description: 'x'.repeat(MCP_SCHEMA_LIMITS.maxSerializedBytes),
+      }),
+    ).toThrow('serialized bytes');
   });
 });
 

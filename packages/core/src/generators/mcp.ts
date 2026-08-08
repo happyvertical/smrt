@@ -12,7 +12,6 @@ import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
 import {
-  buildCustomActionInputSchema,
   buildCustomActionInvocationArgs,
   type CustomActionFailure,
   type CustomActionMetadata,
@@ -29,13 +28,13 @@ import {
   type RuntimeOptions,
 } from './mcp-runtime-template.js';
 import { runWithTenantGate } from './tenant-gate.js';
-
-/**
- * A JSON Schema fragment for an MCP tool input property. The shape varies by
- * field kind (string/number/object/…), so values are `unknown`; this is only
- * ever serialized into the generated tool definitions, never read back.
- */
-type McpJsonSchema = Record<string, unknown>;
+import {
+  buildToolInputSchema,
+  fieldTypeToJsonSchema,
+  finalizeMcpJsonSchema,
+  type ToolFieldMeta,
+  type ToolJsonSchema,
+} from './tool-schema.js';
 
 /**
  * Runtime tool-call arguments. They arrive as untyped JSON from the MCP client,
@@ -87,11 +86,9 @@ export interface MCPContext {
 export interface MCPTool {
   name: string;
   description: string;
-  inputSchema: {
-    type: string;
-    properties: Record<string, McpJsonSchema>;
-    required?: string[];
-  };
+  inputSchema: ToolJsonSchema;
+  /** Public result schema for tools/call structuredContent. */
+  outputSchema: ToolJsonSchema;
 }
 
 export interface MCPRequest {
@@ -109,6 +106,8 @@ export interface MCPResponse {
   }>;
   isError?: boolean;
   _meta?: Record<string, unknown>;
+  /** Machine-readable projection matching the tool's declared outputSchema. */
+  structuredContent?: unknown;
 }
 
 class CustomActionFailureError extends Error {
@@ -238,33 +237,8 @@ export class MCPGenerator {
       tools.push({
         name: `${lowerName}_list`,
         description: `List ${objectName} objects with optional filtering`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            limit: {
-              type: 'integer',
-              description: 'Maximum number of items to return',
-              default: 50,
-              minimum: 1,
-              maximum: 1000,
-            },
-            offset: {
-              type: 'integer',
-              description: 'Number of items to skip',
-              default: 0,
-              minimum: 0,
-            },
-            orderBy: {
-              type: 'string',
-              description: 'Field to order by (e.g., "created_at DESC")',
-            },
-            where: {
-              type: 'object',
-              description: 'Filter conditions as key-value pairs',
-              additionalProperties: true,
-            },
-          },
-        },
+        inputSchema: this.buildInputSchema(objectName, 'list', fields),
+        outputSchema: this.buildOutputSchema(objectName, 'list', fields),
       });
     }
 
@@ -273,67 +247,28 @@ export class MCPGenerator {
       tools.push({
         name: `${lowerName}_get`,
         description: `Get a specific ${objectName} by ID or slug`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: 'Unique identifier of the object',
-            },
-            slug: {
-              type: 'string',
-              description: 'URL-friendly identifier of the object',
-            },
-          },
-          required: ['id'],
-        },
+        inputSchema: this.buildInputSchema(objectName, 'get', fields),
+        outputSchema: this.buildOutputSchema(objectName, 'get', fields),
       });
     }
 
     // CREATE tool
     if (shouldInclude('create')) {
-      const properties: Record<string, McpJsonSchema> = {};
-      const required: string[] = [];
-
-      for (const [fieldName, field] of fields) {
-        properties[fieldName] = this.fieldToMCPSchema(field);
-        if (field._meta?.required) {
-          required.push(fieldName);
-        }
-      }
-
       tools.push({
         name: `${lowerName}_create`,
         description: `Create a new ${objectName}`,
-        inputSchema: {
-          type: 'object',
-          properties,
-          required,
-        },
+        inputSchema: this.buildInputSchema(objectName, 'create', fields),
+        outputSchema: this.buildOutputSchema(objectName, 'create', fields),
       });
     }
 
     // UPDATE tool
     if (shouldInclude('update')) {
-      const properties: Record<string, McpJsonSchema> = {
-        id: {
-          type: 'string',
-          description: 'ID of the object to update',
-        },
-      };
-
-      for (const [fieldName, field] of fields) {
-        properties[fieldName] = this.fieldToMCPSchema(field);
-      }
-
       tools.push({
         name: `${lowerName}_update`,
         description: `Update an existing ${objectName}`,
-        inputSchema: {
-          type: 'object',
-          properties,
-          required: ['id'],
-        },
+        inputSchema: this.buildInputSchema(objectName, 'update', fields),
+        outputSchema: this.buildOutputSchema(objectName, 'update', fields),
       });
     }
 
@@ -342,16 +277,8 @@ export class MCPGenerator {
       tools.push({
         name: `${lowerName}_delete`,
         description: `Delete a ${objectName} by ID`,
-        inputSchema: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: 'ID of the object to delete',
-            },
-          },
-          required: ['id'],
-        },
+        inputSchema: this.buildInputSchema(objectName, 'delete', fields),
+        outputSchema: this.buildOutputSchema(objectName, 'delete', fields),
       });
     }
 
@@ -475,9 +402,17 @@ export class MCPGenerator {
     return {
       name: `${lowerName}_${methodName}`.toLowerCase(),
       description: `Execute ${methodName} action on ${objectName}`,
-      inputSchema: buildCustomActionInputSchema(
+      inputSchema: this.buildInputSchema(
+        objectName,
+        methodName,
+        ObjectRegistry.getFields(objectName),
         metadata,
-      ) as MCPTool['inputSchema'],
+      ),
+      outputSchema: this.buildOutputSchema(
+        objectName,
+        methodName,
+        ObjectRegistry.getFields(objectName),
+      ),
     };
   }
 
@@ -540,57 +475,242 @@ export class MCPGenerator {
     }
   }
 
+  /** Normalize registry fields for the transport-neutral schema emitter. */
+  private toToolFields(fields: Map<string, FieldDefinition>): ToolFieldMeta[] {
+    return Array.from(fields, ([name, field]) => ({
+      name,
+      type: field.type,
+      required: field.required ?? field._meta?.required,
+      nullable: field._meta?.nullable === true,
+      description:
+        typeof field._meta?.description === 'string'
+          ? field._meta.description
+          : undefined,
+      default: field._meta?.default,
+      maxLength: field._meta?.maxLength,
+      minLength: field._meta?.minLength,
+      min: field._meta?.min,
+      max: field._meta?.max,
+      related: field.related,
+    }));
+  }
+
   /**
-   * Convert field definition to MCP schema
+   * Add the optional STI discriminator branches to write schemas. The legacy
+   * branch preserves existing base-class creates that let SMRT pick the base
+   * type; an explicit `_meta_type` selects a known child collection below.
    */
-  private fieldToMCPSchema(field: FieldDefinition): McpJsonSchema {
-    const schema: McpJsonSchema = {
-      description: field._meta?.description || `${field.type} field`,
+  private buildInputSchema(
+    objectName: string,
+    action: string,
+    fields: Map<string, FieldDefinition>,
+    customAction?: CustomActionMetadata,
+  ): ToolJsonSchema {
+    const schema = buildToolInputSchema(
+      action,
+      this.toToolFields(fields),
+      customAction,
+    );
+    if (action !== 'create' && action !== 'update') return schema;
+
+    const variants = this.getStiVariants(objectName);
+    if (variants.length === 0) return schema;
+
+    const properties = {
+      ...((schema.properties as Record<string, ToolJsonSchema> | undefined) ??
+        {}),
+      _meta_type: {
+        type: 'string',
+        description:
+          'Optional STI discriminator. When provided for create, selects the declared subtype.',
+      },
+    };
+    return finalizeMcpJsonSchema({
+      ...schema,
+      properties,
+      oneOf: [
+        { not: { required: ['_meta_type'] } },
+        ...variants.map(({ name, discriminator }) => {
+          const variantFields = ObjectRegistry.getFields(name);
+          return {
+            properties: {
+              ...this.buildFieldSchemaProperties(variantFields),
+              _meta_type: { const: discriminator },
+            },
+            required: [
+              '_meta_type',
+              ...this.toToolFields(variantFields)
+                .filter((field) => field.required)
+                .map((field) => field.name),
+            ],
+          };
+        }),
+      ],
+    });
+  }
+
+  /**
+   * Public output schemas follow the actual `toPublicJSON()` boundary: known
+   * non-sensitive fields are described, while `additionalProperties` keeps
+   * framework/system fields and application transforms honest.
+   */
+  private buildOutputSchema(
+    objectName: string,
+    action: string,
+    fields: Map<string, FieldDefinition>,
+  ): ToolJsonSchema {
+    const errorSchema: ToolJsonSchema = {
+      type: 'object',
+      properties: {
+        error: { type: 'object', additionalProperties: true },
+      },
+      required: ['error'],
     };
 
-    switch (field.type) {
-      case 'text':
-        schema.type = 'string';
-        if (field._meta?.maxLength) schema.maxLength = field._meta.maxLength;
-        if (field._meta?.minLength) schema.minLength = field._meta.minLength;
-        break;
-      case 'integer':
-        schema.type = 'integer';
-        if (field._meta?.min !== undefined) schema.minimum = field._meta.min;
-        if (field._meta?.max !== undefined) schema.maximum = field._meta.max;
-        break;
-      case 'decimal':
-        schema.type = 'number';
-        if (field._meta?.min !== undefined) schema.minimum = field._meta.min;
-        if (field._meta?.max !== undefined) schema.maximum = field._meta.max;
-        break;
-      case 'boolean':
-        schema.type = 'boolean';
-        break;
-      case 'datetime':
-        schema.type = 'string';
-        schema.format = 'date-time';
-        break;
-      case 'json':
-        schema.type = 'object';
-        break;
-      case 'foreignKey':
-        schema.type = 'string';
-        // Lockstep with tool-schema.ts fieldTypeToJsonSchema: the generic
-        // relation hint is a fallback — an authored description wins (#2046).
-        if (!field._meta?.description) {
-          schema.description = `ID of related ${field.related || 'object'}`;
-        }
-        break;
-      default:
-        schema.type = 'string';
+    if (!['list', 'get', 'create', 'update', 'delete'].includes(action)) {
+      // Custom action results are deliberately domain-defined and can be any
+      // JSON value. MCP structuredContent itself must be object-rooted, so the
+      // machine-readable projection carries that value in `data`; legacy text
+      // keeps the original public result unchanged.
+      return finalizeMcpJsonSchema({
+        type: 'object',
+        anyOf: [
+          {
+            type: 'object',
+            properties: { data: {} },
+            required: ['data'],
+          },
+          { $ref: '#/$defs/error' },
+        ],
+        $defs: { error: errorSchema },
+      });
     }
 
-    if (field._meta?.default !== undefined) {
-      schema.default = field._meta.default;
+    const itemSchema = this.buildPublicItemSchema(objectName, fields);
+
+    if (action === 'list') {
+      return finalizeMcpJsonSchema({
+        type: 'object',
+        anyOf: [
+          {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: { $ref: '#/$defs/publicItem' },
+              },
+              meta: {
+                type: 'object',
+                properties: {
+                  total: { type: 'integer', minimum: 0 },
+                  limit: { type: 'integer', minimum: 0 },
+                  offset: { type: 'integer', minimum: 0 },
+                  count: { type: 'integer', minimum: 0 },
+                },
+                required: ['total', 'limit', 'offset', 'count'],
+              },
+            },
+            required: ['data', 'meta'],
+          },
+          { $ref: '#/$defs/error' },
+        ],
+        $defs: { publicItem: itemSchema, error: errorSchema },
+      });
     }
 
-    return schema;
+    if (action === 'delete') {
+      return finalizeMcpJsonSchema({
+        type: 'object',
+        anyOf: [
+          {
+            type: 'object',
+            properties: {
+              success: { const: true },
+              message: { type: 'string' },
+            },
+            required: ['success', 'message'],
+          },
+          { $ref: '#/$defs/error' },
+        ],
+        $defs: { error: errorSchema },
+      });
+    }
+
+    return finalizeMcpJsonSchema({
+      type: 'object',
+      anyOf: [itemSchema, { $ref: '#/$defs/error' }],
+      $defs: { error: errorSchema },
+    });
+  }
+
+  private buildPublicItemSchema(
+    objectName: string,
+    fields: Map<string, FieldDefinition>,
+  ): ToolJsonSchema {
+    const properties = this.buildFieldSchemaProperties(fields, true);
+
+    const variants = this.getStiVariants(objectName);
+    if (variants.length > 0) {
+      return {
+        oneOf: variants.map(({ name, discriminator }) => ({
+          type: 'object',
+          properties: {
+            ...this.buildFieldSchemaProperties(
+              ObjectRegistry.getFields(name),
+              true,
+            ),
+            _meta_type: { const: discriminator },
+          },
+          required: ['_meta_type'],
+          additionalProperties: true,
+        })),
+      };
+    }
+
+    return { type: 'object', properties, additionalProperties: true };
+  }
+
+  private buildFieldSchemaProperties(
+    fields: Map<string, FieldDefinition>,
+    publicOnly = false,
+  ): Record<string, ToolJsonSchema> {
+    const properties: Record<string, ToolJsonSchema> = {};
+    for (const [name, field] of fields) {
+      if (
+        publicOnly &&
+        (field._meta?.sensitive === true || field._meta?.transient === true)
+      ) {
+        continue;
+      }
+      const [toolField] = this.toToolFields(new Map([[name, field]]));
+      if (!toolField) continue;
+      properties[name] = { ...fieldTypeToJsonSchema(toolField) };
+    }
+    return properties;
+  }
+
+  private getStiVariants(
+    objectName: string,
+  ): Array<{ name: string; discriminator: string }> {
+    if (ObjectRegistry.getTableStrategy(objectName) !== 'sti') return [];
+
+    const base = ObjectRegistry.getClass(objectName);
+    const baseNames = new Set(
+      [objectName, base?.name, base?.qualifiedName].filter(
+        (name): name is string => typeof name === 'string',
+      ),
+    );
+    const variants = new Map<string, { name: string; discriminator: string }>();
+    for (const [key, info] of ObjectRegistry.getAllClasses()) {
+      const name = info.name || key;
+      const chain = ObjectRegistry.getInheritanceChain(name);
+      if (!chain.some((ancestor) => baseNames.has(ancestor))) continue;
+      const discriminator = info.qualifiedName || name;
+      variants.set(discriminator, { name, discriminator });
+    }
+    return Array.from(variants.values()).sort((left, right) =>
+      left.discriminator.localeCompare(right.discriminator),
+    );
   }
 
   /**
@@ -653,39 +773,71 @@ export class MCPGenerator {
         args,
         actualObjectName,
       );
+      const publicResult = this.toJsonValue(result);
+      const structuredContent = this.toStructuredContent(action, publicResult);
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify(result, null, 2),
+            text: JSON.stringify(publicResult, null, 2),
           },
         ],
+        structuredContent,
       };
     } catch (error) {
       if (error instanceof CustomActionFailureError) {
+        const structuredContent = { error: error.failure };
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ error: error.failure }),
+              text: JSON.stringify(structuredContent),
             },
           ],
           isError: true,
+          structuredContent,
           _meta: {
             [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: error.failure,
           },
         };
       }
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return {
         content: [
           {
             type: 'text',
-            text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            text: `Error: ${message}`,
           },
         ],
+        isError: true,
+        structuredContent: { error: { message } },
       };
     }
+  }
+
+  /** Convert runtime values to the JSON values MCP structuredContent permits. */
+  private toJsonValue(value: unknown): unknown {
+    const serialized = JSON.stringify(value);
+    return serialized === undefined ? null : JSON.parse(serialized);
+  }
+
+  /** Build the MCP-required object root without changing legacy text payloads. */
+  private toStructuredContent(
+    action: string,
+    publicResult: unknown,
+  ): Record<string, unknown> {
+    if (!['list', 'get', 'create', 'update', 'delete'].includes(action)) {
+      return { data: publicResult };
+    }
+    if (
+      publicResult === null ||
+      typeof publicResult !== 'object' ||
+      Array.isArray(publicResult)
+    ) {
+      throw new Error(`Expected object result for MCP ${action} action`);
+    }
+    return publicResult as Record<string, unknown>;
   }
 
   /**
@@ -857,8 +1009,29 @@ export class MCPGenerator {
     args: ToolArgs,
     objectName?: string,
   ): Promise<unknown> {
+    let targetCollection = collection;
+    let targetObjectName = objectName;
+    if (
+      action === 'create' &&
+      objectName &&
+      typeof args._meta_type === 'string'
+    ) {
+      const variant = this.getStiVariants(objectName).find(
+        (candidate) => candidate.discriminator === args._meta_type,
+      );
+      if (!variant) {
+        throw new Error(`Unknown STI discriminator: ${args._meta_type}`);
+      }
+      const classInfo = ObjectRegistry.getClass(variant.name);
+      if (!classInfo) {
+        throw new Error(`STI subtype '${variant.name}' is not registered`);
+      }
+      targetCollection = await this.getCollection(variant.name, classInfo);
+      targetObjectName = variant.name;
+    }
+
     const mutating = action !== 'list' && action !== 'get';
-    this.requireToolAuth(objectName, mutating);
+    this.requireToolAuth(targetObjectName, mutating);
 
     // Fail-closed tenant context (#1554). For tenant-scoped objects, establish
     // the context from the principal's tenant (or an explicit cross-tenant
@@ -867,12 +1040,12 @@ export class MCPGenerator {
     // is resolved inside tenancy by class name so it matches the interceptor.
     return runWithTenantGate(
       {
-        className: objectName,
+        className: targetObjectName,
         tenantId: this.context.tenantId,
         allowCrossTenant: this.context.allowCrossTenant,
         surface: 'MCP',
       },
-      () => this.runAction(collection, action, args, objectName),
+      () => this.runAction(targetCollection, action, args, targetObjectName),
     );
   }
 
@@ -1277,6 +1450,7 @@ export class MCPGenerator {
         tools,
         customActions: await this.runtimeCustomActions(tools),
         tenantScopedObjects: await this.tenantScopedObjectNames(tools),
+        stiTargets: this.runtimeStiTargets(tools),
       };
 
       const serverCode = generateRuntimeBootstrap(runtimeOptions);
@@ -1359,6 +1533,44 @@ export class MCPGenerator {
       };
     }
     return metadata;
+  }
+
+  /**
+   * Emit only the STI discriminator targets advertised by create-tool schemas.
+   * Generated processes start with an empty registry, so resolving the
+   * qualified target through `getCollection()` both validates the declaration
+   * and lets the public registry loader register the selected subtype.
+   */
+  private runtimeStiTargets(
+    tools: MCPTool[],
+  ): Record<string, Record<string, string>> {
+    const targets: Record<string, Record<string, string>> = {};
+    const classes = ObjectRegistry.getAllClasses();
+
+    for (const tool of tools) {
+      const separator = tool.name.indexOf('_');
+      if (separator === -1 || tool.name.slice(separator + 1) !== 'create') {
+        continue;
+      }
+      const objectPrefix = tool.name.slice(0, separator);
+      const matched = Array.from(classes.entries()).find(
+        ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
+      );
+      if (!matched) continue;
+
+      const [key, classInfo] = matched;
+      const variants = this.getStiVariants(classInfo.name || key);
+      if (variants.length === 0) continue;
+
+      targets[objectPrefix] = Object.fromEntries(
+        variants.map((variant) => [
+          variant.discriminator,
+          variant.discriminator,
+        ]),
+      );
+    }
+
+    return targets;
   }
 
   /**
@@ -1452,6 +1664,7 @@ export const tools: Array<{
   name: string;
   description: string;
   inputSchema: any;
+  outputSchema: any;
 }> = ${JSON.stringify(tools, null, 2)};
 `;
   }
@@ -1461,8 +1674,9 @@ export const tools: Array<{
    */
   private async generateToolSwitchCases(
     indent: string = '    ',
+    generatedTools?: MCPTool[],
   ): Promise<string> {
-    const tools = await this.generateTools();
+    const tools = generatedTools ?? (await this.generateTools());
 
     const capitalize = (str: string) =>
       str.charAt(0).toUpperCase() + str.slice(1);
@@ -1482,13 +1696,17 @@ ${indent}  const offset = args.offset ?? 0;
 ${indent}  const where = args.where ?? {};
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
 ${indent}  const items = await collection.list({ where, limit, offset });
 ${indent}  const itemsPublic = items.map((item) => item.toPublicJSON(PUBLIC_JSON_OPTIONS));
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(itemsPublic) }] };
+${indent}  const structuredContent = {
+${indent}    data: itemsPublic,
+${indent}    meta: { total: await collection.count({ where }), limit, offset, count: items.length },
+${indent}  };
+${indent}  return successResult(structuredContent, JSON.stringify(itemsPublic));
 ${indent}}`;
 
             case 'get':
@@ -1498,7 +1716,7 @@ ${indent}    throw new Error('Either id or slug is required');
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -1509,20 +1727,17 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(item.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
+${indent}  return successResult(item.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
             case 'create':
               return `${indent}case '${tool.name}': {
-${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
-${indent}    ai: aiConfig
-${indent}  });
+${indent}  const { collection, objectName: targetObjectName } = await resolveCreateTarget('${objectName}', args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy('${capitalize(objectName)}', args));
+${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, args));
 ${indent}  await newItem.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
+${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
             case 'update':
@@ -1533,7 +1748,7 @@ ${indent}    throw new Error('ID is required for update');
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -1545,7 +1760,7 @@ ${indent}  }
 ${indent}  Object.assign(existing, applyWritablePolicy('${capitalize(objectName)}', updateData));
 ${indent}  await existing.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON(PUBLIC_JSON_OPTIONS)) }] };
+${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
             case 'delete':
@@ -1555,7 +1770,7 @@ ${indent}    throw new Error('ID is required for delete');
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -1566,7 +1781,7 @@ ${indent}  }
 
 ${indent}  await toDelete.delete();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify({ success: true, message: 'Object deleted successfully' }) }] };
+${indent}  return successResult({ success: true, message: 'Object deleted successfully' });
 ${indent}}`;
 
             default: {
@@ -1623,7 +1838,7 @@ ${indent}    throw new Error('Custom action ${action} is collection-scoped and d
 ${indent}  }
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(registeredName)}, {
-${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memory:' },
+${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
@@ -1649,14 +1864,15 @@ ${indent}  const methodArgs = ${methodArgs.startsWith('[') ? methodArgs : `[${me
 ${indent}  const result = await actionMethod.call(target, ...methodArgs);
 ${indent}  const failure = normalizeCustomActionFailure(result);
 ${indent}  if (failure) {
-${indent}    return {
-${indent}      content: [{ type: 'text', text: JSON.stringify({ error: failure }) }],
-${indent}      isError: true,
-${indent}      _meta: { [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure },
-${indent}    };
+${indent}    return errorResult(
+${indent}      { error: failure },
+${indent}      JSON.stringify({ error: failure }),
+${indent}      { [SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY]: failure },
+${indent}    );
 ${indent}  }
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(toPublicResult(result)) }] };
+${indent}  const publicResult = toPublicResult(result);
+${indent}  return successResult({ data: publicResult }, JSON.stringify(publicResult));
 ${indent}}`;
             }
           }
@@ -1673,7 +1889,9 @@ ${indent}}`;
   private async generateHandlersFile(
     tenantScopedObjects: string[] = [],
   ): Promise<string> {
-    const switchCases = await this.generateToolSwitchCases('        ');
+    const tools = await this.generateTools();
+    const switchCases = await this.generateToolSwitchCases('        ', tools);
+    const stiTargets = this.runtimeStiTargets(tools);
     const tenantScopedSet = Array.from(
       new Set(tenantScopedObjects.map((n) => n.toLowerCase())),
     );
@@ -1713,6 +1931,7 @@ const PUBLIC_JSON_OPTIONS = {
     .map((permission) => permission.trim())
     .filter(Boolean),
 };
+const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and
@@ -1747,6 +1966,23 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
   return result;
 }
 
+/** Resolve an advertised STI discriminator to its registered subtype collection. */
+async function resolveCreateTarget(baseObjectName: string, args: Record<string, any>, aiConfig: any) {
+  let objectName = baseObjectName;
+  const discriminator = args._meta_type;
+  const targets = STI_TARGETS[baseObjectName];
+  if (typeof discriminator === 'string' && targets) {
+    const target = targets[discriminator];
+    if (!target) throw new Error('Unknown STI discriminator: ' + discriminator);
+    objectName = target;
+  }
+  const collection = await ObjectRegistry.getCollection(objectName, {
+    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
+    ai: aiConfig,
+  });
+  return { collection, objectName };
+}
+
 /**
  * Sensitive-field-safe serialization for custom-action results (#1540).
  * Recurses through arrays and plain objects so nested SmrtObjects are stripped
@@ -1769,6 +2005,22 @@ function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any 
     out[key] = toPublicResult(entry, seen);
   }
   return out;
+}
+
+function successResult(structuredContent: any, text = JSON.stringify(structuredContent)) {
+  return {
+    content: [{ type: 'text', text }],
+    structuredContent,
+  };
+}
+
+function errorResult(structuredContent: any, text: string, _meta?: Record<string, any>) {
+  return {
+    content: [{ type: 'text', text }],
+    isError: true,
+    structuredContent,
+    ...(_meta ? { _meta } : {}),
+  };
 }
 
 /**
@@ -1810,15 +2062,10 @@ ${
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-    return {
-      content: [
-        {
-          type: 'text',
-          text: \`Error executing tool \${name}: \${errorMessage}\`,
-        },
-      ],
-      isError: true,
-    };
+    return errorResult(
+      { error: { message: errorMessage } },
+      \`Error executing tool \${name}: \${errorMessage}\`,
+    );
   }
 }
 `;
@@ -1838,7 +2085,10 @@ ${
 
 import { Server } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { loadConfig } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
 import { getAI } from '@happyvertical/ai';
@@ -1854,6 +2104,17 @@ export async function createServer() {
     if (DEBUG) {
       console.error(\`[MCP] Starting server: \${SERVER_NAME} v\${SERVER_VERSION}\`);
       console.error(\`[MCP] Available tools:\`, tools.map(t => t.name).join(', '));
+    }
+
+    // Register the application package manifest before resolving generated
+    // object names. Generated servers are commonly run from the application
+    // package itself, which is not a node_modules dependency of its process.
+    const localManifestPaths = [
+      resolve(process.cwd(), 'dist', 'manifest.json'),
+      resolve(process.cwd(), '.smrt', 'manifest.json'),
+    ].filter(existsSync);
+    if (localManifestPaths.length > 0) {
+      ObjectRegistry.loadAllManifests({ manifestPaths: localManifestPaths });
     }
 
     // Load configuration from environment and .smrt.config files
@@ -1884,6 +2145,7 @@ export async function createServer() {
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
+          outputSchema: tool.outputSchema,
         })),
       };
     });

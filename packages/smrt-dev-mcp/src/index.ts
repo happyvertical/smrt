@@ -46,8 +46,33 @@ type KnowledgeIndexResult = Awaited<ReturnType<typeof buildKnowledgeIndex>>;
 type KnowledgePackageResult = KnowledgeIndexResult['packages'][number];
 type PromptArguments = Record<string, string> | undefined;
 
+const JSON_SCHEMA_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
+
+/**
+ * Stable success/error envelope for development tools. `data` preserves each
+ * tool's existing payload exactly; coverage/diagnostics are promoted only when
+ * the underlying result actually reports them.
+ */
+const DEV_MCP_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
+  $schema: JSON_SCHEMA_2020_12,
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok', 'coverage', 'diagnostics', 'data'],
+  properties: {
+    ok: { type: 'boolean' },
+    coverage: { type: ['object', 'null'], additionalProperties: true },
+    diagnostics: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true },
+    },
+    data: {},
+  },
+};
+
 // Tool definitions
-export const TOOLS = [
+const TOOL_DEFINITIONS: Array<
+  Pick<Tool, 'name' | 'description' | 'inputSchema'>
+> = [
   // Code Generation Tools
   {
     name: 'generate-smrt-class',
@@ -481,6 +506,15 @@ export const TOOLS = [
   },
 ];
 
+export const TOOLS: Tool[] = TOOL_DEFINITIONS.map((tool) => ({
+  ...tool,
+  inputSchema: {
+    ...tool.inputSchema,
+    $schema: JSON_SCHEMA_2020_12,
+  },
+  outputSchema: DEV_MCP_OUTPUT_SCHEMA,
+}));
+
 export function createServer(): Server {
   if (DEBUG) {
     console.error(`[${SERVER_NAME}] Starting server v${SERVER_VERSION}`);
@@ -505,7 +539,7 @@ export function createServer(): Server {
     if (DEBUG) {
       console.error(`[${SERVER_NAME}] ListTools request`);
     }
-    return { tools: TOOLS as Tool[] };
+    return { tools: TOOLS };
   });
 
   server.setRequestHandler('prompts/list', async () => {
@@ -945,6 +979,7 @@ export function createServer(): Server {
             text: result,
           },
         ],
+        structuredContent: toDevToolStructuredContent(result),
       };
     } catch (error) {
       const errorMessage =
@@ -959,6 +994,12 @@ export function createServer(): Server {
           },
         ],
         isError: true,
+        structuredContent: {
+          ok: false,
+          coverage: null,
+          diagnostics: [{ severity: 'error', message: errorMessage }],
+          data: null,
+        },
       };
     }
   });
@@ -1144,6 +1185,26 @@ function compactKnowledgePackage(pkg: KnowledgePackageResult) {
 function detailArg(args: unknown): string | undefined {
   const detail = (args as Record<string, unknown> | undefined)?.detail;
   return typeof detail === 'string' ? detail : undefined;
+}
+
+function toDevToolStructuredContent(result: string) {
+  let data: unknown = result;
+  try {
+    data = JSON.parse(result);
+  } catch {
+    // `generate-smrt-class` intentionally returns source text, not JSON.
+  }
+
+  const source = isRecord(data) ? data : undefined;
+  const coverage = isRecord(source?.coverage) ? source.coverage : null;
+  const diagnostics = Array.isArray(source?.diagnostics)
+    ? source.diagnostics.filter(isRecord)
+    : [];
+  return { ok: true, coverage, diagnostics, data };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function sanitizeKnowledgePackage(pkg: KnowledgePackageResult) {

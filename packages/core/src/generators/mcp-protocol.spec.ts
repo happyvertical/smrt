@@ -68,11 +68,15 @@ describe('MCP Protocol Compliance', () => {
         expect(tool).toHaveProperty('name');
         expect(tool).toHaveProperty('description');
         expect(tool).toHaveProperty('inputSchema');
+        expect(tool).toHaveProperty('outputSchema');
 
         // Types
         expect(typeof tool.name).toBe('string');
         expect(typeof tool.description).toBe('string');
         expect(typeof tool.inputSchema).toBe('object');
+        expect(typeof tool.outputSchema).toBe('object');
+        // MCP outputSchema/structuredContent must use an object root.
+        expect(tool.outputSchema.type).toBe('object');
       });
     });
 
@@ -142,7 +146,7 @@ describe('MCP Protocol Compliance', () => {
       expect(getTool).toBeDefined();
       expect(getTool?.description).toContain('Get');
       expect(getTool?.inputSchema.properties).toHaveProperty('id');
-      expect(getTool?.inputSchema.required).toContain('id');
+      expect(getTool?.inputSchema.required).toBeUndefined();
     });
 
     it('should define custom action tools correctly', async () => {
@@ -188,6 +192,11 @@ describe('MCP Protocol Compliance', () => {
           expect(typeof item.text).toBe('string');
         }
       });
+
+      expect(response.structuredContent).toMatchObject({
+        data: expect.any(Array),
+        meta: expect.objectContaining({ count: expect.any(Number) }),
+      });
     });
 
     it('should return errors in MCP format', async () => {
@@ -208,6 +217,30 @@ describe('MCP Protocol Compliance', () => {
       const errorContent = response.content[0];
       expect(errorContent.type).toBe('text');
       expect(errorContent.text).toContain('Unknown tool');
+      expect(response.isError).toBe(true);
+      expect(response.structuredContent).toMatchObject({
+        error: { message: expect.stringContaining('Unknown tool') },
+      });
+    });
+
+    it('keeps custom-action text compatible while exposing an object envelope', async () => {
+      const item = await collection.create({ name: 'custom-result' });
+      await item.save();
+      const response = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'protocoltestobject_testaction',
+          arguments: { id: item.id },
+        },
+      });
+
+      expect(JSON.parse(response.content[0].text)).toMatchObject({
+        action: 'testAction',
+        result: 'success',
+      });
+      expect(response.structuredContent).toMatchObject({
+        data: { action: 'testAction', result: 'success' },
+      });
     });
   });
 

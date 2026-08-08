@@ -79,6 +79,8 @@ export type WebFieldType = Exclude<
 export interface WebFieldDefinition {
   type: WebFieldType;
   required?: boolean;
+  /** Whether the public field contract explicitly permits `null`. */
+  nullable?: boolean;
   default?: unknown;
   /**
    * The developer-authored `@field({ description })` (#2046) — the same text
@@ -556,6 +558,7 @@ export function buildWebFieldDefinitions(
       // Safe: the three skips above are exactly the types WebFieldType excludes.
       type: field.type as WebFieldType,
       ...(field.required !== undefined ? { required: field.required } : {}),
+      ...(field._meta?.nullable === true ? { nullable: true } : {}),
       ...(field.default !== undefined ? { default: field.default } : {}),
       ...(description !== undefined ? { description } : {}),
       ...(ui ? { ui } : {}),
@@ -690,6 +693,7 @@ export function buildWebToolDescriptors(
       name,
       type: def.type,
       ...(def.required !== undefined ? { required: def.required } : {}),
+      ...(def.nullable === true ? { nullable: true } : {}),
       ...(def.default !== undefined ? { default: def.default } : {}),
       // #2046: the authored field description flows into the generated JSON
       // Schema (`fieldTypeToJsonSchema` prefers it over the type-derived
