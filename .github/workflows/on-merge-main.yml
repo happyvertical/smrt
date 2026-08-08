@@ -67,7 +67,8 @@ jobs:
         id: release-base
         shell: bash
         run: |
-          tag=$(git tag --merged HEAD --list 'v*' --sort=-version:refname | head -n 1)
+          tag=$(git tag --merged HEAD --list 'v*' --sort=-version:refname)
+          tag=${tag%%$'\n'*}
           if [ -z "$tag" ]; then
             echo "No prior release tag found; deploy documentation."
             echo "ref=HEAD^" >> "$GITHUB_OUTPUT"
