@@ -334,7 +334,7 @@ describe('createMcpAppServer', () => {
   });
 
   it('keeps explicitly public catalogs private when a registered tool is tenant-scoped', async () => {
-    generateToolsMock.mockResolvedValue([tool('cachemetadatatenant_list')]);
+    generateToolsMock.mockResolvedValue([tool('CacheMetadataTenant_list')]);
     const allClasses = vi
       .spyOn(ObjectRegistry, 'getAllClasses')
       .mockReturnValue(
@@ -349,7 +349,7 @@ describe('createMcpAppServer', () => {
       smrtOptions: () => ({}),
       serverInfo: { name: 'app', version: '0.1.0' },
       allowedClassNames: ['CacheMetadataTenant'],
-      publicToolPatterns: () => ['cachemetadatatenant_*'],
+      publicToolPatterns: () => ['CacheMetadataTenant_*'],
       toolListCache: { cacheScope: 'public', publicCatalog: true },
     });
 

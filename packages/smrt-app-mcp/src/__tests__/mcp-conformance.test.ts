@@ -88,6 +88,16 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
             description: 'Antelope',
             inputSchema: { type: 'object' },
           },
+          {
+            name: 'I_list',
+            description: 'Uppercase I',
+            inputSchema: { type: 'object' },
+          },
+          {
+            name: 'i_list',
+            description: 'Lowercase i',
+            inputSchema: { type: 'object' },
+          },
         ] satisfies MCPTool[];
       },
     };
@@ -98,7 +108,7 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
     const response = await modernRequest(unsortedHandler, 'tools/list');
     expect(
       response.body.result.tools.map((tool: { name: string }) => tool.name),
-    ).toEqual(['antelope_list', 'zebra_list']);
+    ).toEqual(['I_list', 'antelope_list', 'i_list', 'zebra_list']);
   });
 
   it('allowlists access-error metadata before exposing it over MCP', async () => {

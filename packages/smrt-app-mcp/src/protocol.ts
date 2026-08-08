@@ -9,6 +9,7 @@ import {
 } from '@modelcontextprotocol/server';
 import { McpAccessError } from './errors.js';
 import type { McpAppPrincipal, McpAppServer } from './server.js';
+import { compareMcpToolNames } from './tools.js';
 
 const DEFAULT_TOOL_LIST_CACHE_HINT = {
   ttlMs: 86_400_000,
@@ -56,7 +57,7 @@ export function createMcpProtocolServer(
       DEFAULT_TOOL_LIST_CACHE_HINT;
     return {
       tools: [...(await appServer.listTools({ principal }))].sort(
-        (left, right) => left.name.localeCompare(right.name),
+        (left, right) => compareMcpToolNames(left.name, right.name),
       ) as Tool[],
       ...cacheHint,
     };

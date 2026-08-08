@@ -18,8 +18,18 @@ await runMcpStdioBridge({
               inputSchema: { type: 'object' },
             },
             {
+              name: 'i_list',
+              description: 'Lowercase i through the HTTP bridge',
+              inputSchema: { type: 'object' },
+            },
+            {
               name: 'antelope',
               description: 'Antelope through the HTTP bridge',
+              inputSchema: { type: 'object' },
+            },
+            {
+              name: 'I_list',
+              description: 'Uppercase I through the HTTP bridge',
               inputSchema: { type: 'object' },
             },
           ],

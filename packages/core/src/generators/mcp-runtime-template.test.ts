@@ -42,7 +42,7 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       'const TOOL_LIST_CACHE_HINT = {"ttlMs":86400000,"cacheScope":"private"};',
     );
     expect(source).toContain(
-      'tools: [...TOOLS].sort((left, right) => left.name.localeCompare(right.name))',
+      'tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)',
     );
   });
 
@@ -99,10 +99,14 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       { name: 'zebra_list' },
       { name: 'antelope_list' },
       { name: 'marmoset_list' },
+      { name: 'i_list' },
+      { name: 'I_list' },
     ];
 
     expect(sortMCPTools(source).map((tool) => tool.name)).toEqual([
+      'I_list',
       'antelope_list',
+      'i_list',
       'marmoset_list',
       'zebra_list',
     ]);
@@ -110,6 +114,8 @@ describe('generated MCP custom-action runtime (#2182)', () => {
       'zebra_list',
       'antelope_list',
       'marmoset_list',
+      'i_list',
+      'I_list',
     ]);
   });
 

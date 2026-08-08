@@ -52,6 +52,10 @@ const PRIVATE_TOOL_LIST_CACHE_HINT = {
   cacheScope: 'private' as const,
 };
 
+function compareToolNames(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /**
  * Configuration for the bridge.
  *
@@ -104,7 +108,7 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
       return {
         ...result,
         tools: [...result.tools].sort((left, right) =>
-          left.name.localeCompare(right.name),
+          compareToolNames(left.name, right.name),
         ),
         ...PRIVATE_TOOL_LIST_CACHE_HINT,
       };

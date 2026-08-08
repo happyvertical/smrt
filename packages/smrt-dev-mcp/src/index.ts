@@ -59,6 +59,10 @@ type PromptArguments = Record<string, string> | undefined;
 
 const JSON_SCHEMA_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 
+function compareToolNames(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /**
  * Stable success/error envelope for development tools. `data` preserves each
  * tool's existing payload exactly; coverage/diagnostics are promoted only when
@@ -524,7 +528,7 @@ export const TOOLS: Tool[] = TOOL_DEFINITIONS.map((tool) => ({
     $schema: JSON_SCHEMA_2020_12,
   },
   outputSchema: DEV_MCP_OUTPUT_SCHEMA,
-})).sort((left, right) => left.name.localeCompare(right.name));
+})).sort((left, right) => compareToolNames(left.name, right.name));
 
 export function createServer(): Server {
   if (DEBUG) {

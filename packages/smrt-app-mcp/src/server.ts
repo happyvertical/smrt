@@ -32,6 +32,7 @@ import {
 import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from './errors.js';
 import {
   classNamePrefixes,
+  compareMcpToolNames,
   isAllowedCoreTool,
   isPublicToolName,
 } from './tools.js';
@@ -215,7 +216,7 @@ function configuredToolListCacheHint(
 function isTenantScopedTool(tool: MCPTool): boolean {
   const separator = tool.name.indexOf('_');
   if (separator <= 0) return false;
-  const objectName = tool.name.slice(0, separator);
+  const objectName = tool.name.slice(0, separator).toLowerCase();
   for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
     const name = classInfo.name || key;
     if (name.toLowerCase() === objectName) {
@@ -273,8 +274,10 @@ export function createMcpAppServer(
   async function allowedTools(): Promise<MCPTool[]> {
     const tools = await makeGenerator().generateTools();
     return tools
-      .filter((tool) => isAllowedCoreTool(tool.name, allowedPrefixes))
-      .sort((left, right) => left.name.localeCompare(right.name));
+      .filter((tool) =>
+        isAllowedCoreTool(tool.name.toLowerCase(), allowedPrefixes),
+      )
+      .sort((left, right) => compareMcpToolNames(left.name, right.name));
   }
 
   function passesBasePolicy(

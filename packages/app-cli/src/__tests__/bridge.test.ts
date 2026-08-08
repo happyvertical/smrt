@@ -128,7 +128,9 @@ describe('runMcpStdioBridge', () => {
         cacheScope: 'private',
       });
       expect(tools.tools.map((tool) => tool.name)).toEqual([
+        'I_list',
         'antelope',
+        'i_list',
         'zebra',
       ]);
 
@@ -166,7 +168,9 @@ describe('runMcpStdioBridge', () => {
       expect(client.getNegotiatedProtocolVersion()).toBe('2025-11-25');
       const tools = await client.listTools();
       expect(tools.tools.map((tool) => tool.name)).toEqual([
+        'I_list',
         'antelope',
+        'i_list',
         'zebra',
       ]);
     } finally {

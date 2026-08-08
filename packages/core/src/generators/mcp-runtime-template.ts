@@ -488,7 +488,7 @@ ${
       }
 
       return {
-        tools: [...TOOLS].sort((left, right) => left.name.localeCompare(right.name)),
+        tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 

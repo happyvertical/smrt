@@ -161,7 +161,9 @@ export interface MCPTool {
 
 /** Return a copied, canonical tool sequence for byte-stable tools/list output. */
 export function sortMCPTools<T extends Pick<MCPTool, 'name'>>(tools: T[]): T[] {
-  return [...tools].sort((left, right) => left.name.localeCompare(right.name));
+  return [...tools].sort((left, right) =>
+    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+  );
 }
 
 export interface MCPRequest {
@@ -2263,7 +2265,7 @@ export async function createServer() {
       }
 
       return {
-        tools: [...tools].sort((left, right) => left.name.localeCompare(right.name)).map(tool => ({
+        tools: [...tools].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0).map(tool => ({
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,
