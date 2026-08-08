@@ -34,7 +34,7 @@ permissions:
   pull-requests: write
   id-token: write
   pages: write
-  actions: write
+  actions: read
 
 jobs:
   queue-idle:
