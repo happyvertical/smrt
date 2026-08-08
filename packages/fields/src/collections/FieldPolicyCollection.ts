@@ -288,9 +288,13 @@ export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
     // follow the user. Resolve tenant membership first so this roll-up cannot
     // leak whether users belonging only to another tenant customized a field.
     const memberships = await MembershipCollection.create({ db: this.db });
-    const memberIds = (await memberships.findActiveByTenant(tenantId))
-      .map((membership) => membership.userId)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const memberIds = [
+      ...new Set(
+        (await memberships.findActiveByTenant(tenantId))
+          .map((membership) => membership.userId?.trim())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
     const projected =
       countObjectRefs.length && memberIds.length
         ? await this.list({

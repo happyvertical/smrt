@@ -134,13 +134,14 @@ export function decorateCatalogPage(
   return {
     ...page,
     items: page.items.map((item) => decorateCatalogItem(item, audit)),
+    selected: page.selected ? decorateCatalogItem(page.selected, audit) : null,
   };
 }
 
-export function decorateCatalogItem(
-  item: FieldPolicySummaryItem,
+export function decorateCatalogItem<T extends FieldPolicySummaryItem>(
+  item: T,
   audit: FieldPolicyAuditSnapshot,
-): FieldPolicySummaryItem {
+): Omit<T, 'label' | 'description' | 'status'> & FieldPolicySummaryItem {
   const rollup = fieldPolicyRollup(audit, item.objectRef, item.fieldName);
   const status = [
     rollup.app.contributed || rollup.appRow ? 'App' : null,

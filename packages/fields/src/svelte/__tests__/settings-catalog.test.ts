@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { FieldPolicyAuditSnapshot } from '../../types.js';
 import {
   auditObjectRefs,
+  decorateCatalogPage,
   fieldPolicyCatalogPreservedParams,
   fieldPolicyControlPanelNavItem,
   fieldPolicyRollup,
@@ -118,6 +119,35 @@ describe('field-policy control-panel adapters', () => {
     expect(refs.objectRefs).toHaveLength(100);
     expect(refs.objectRefs[0]).toBe('@test:Selected');
     expect(refs.countObjectRefs).toHaveLength(101);
+  });
+
+  it('decorates an off-page selected detail alongside page summaries', () => {
+    const page = decorateCatalogPage(
+      {
+        items: [],
+        selected: {
+          id: 'selected',
+          objectRef,
+          fieldName: 'title',
+          className: 'Document',
+          packageName: '@test/smrt-fields',
+          label: 'Raw title',
+          description: 'Raw description',
+          fields: {},
+        },
+        query: '',
+        page: 1,
+        pageSize: 25,
+        total: 1,
+      },
+      audit(),
+    );
+
+    expect(page.selected).toMatchObject({
+      label: 'Title',
+      status: 'Organization · 2 user overrides',
+      fields: {},
+    });
   });
 
   it('selects only caller-prunable drift rows and produces a permission-gated tenant nav item', () => {
