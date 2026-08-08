@@ -65,11 +65,12 @@ member package owns, mirroring the member-excluded scan.
 
 ## Agent Skills
 
-Bundled skills live under `agent-skills/`. They are plain Markdown procedures
+Bundled skills live under `skills/`, the Agent Plugins fixed discovery
+location. They are plain Markdown procedures
 with YAML frontmatter (`name` and `description`) and harness-neutral body text.
 Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 
-- `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT code review workflow.
+- `skills/smrt-code-review/SKILL.md` — downstream SMRT code review workflow.
   Agents should fetch it with `get-agent-skill`, then call `smrt-review` for
   deterministic context, inspect the actual diff, and produce a findings-first
   review.
@@ -97,7 +98,8 @@ launcher or a small wrapper script with an absolute Node path.
 - `src/index.ts` — MCP server setup, tool registration
 - `src/knowledge/index.ts` — deterministic SMRT, SDK, and downstream domain knowledge discovery; workspace-glob expansion, provenance, coverage, and diagnostics
 - `src/agent-skills.ts` — bundled skill registry and file loader
-- `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
+- `plugin.json` / `mcp.json` — Agent Plugins 1.0.0 portable root manifests
+- `skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
 - `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
 - `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`
 - `src/tools/review-smrt-project.ts` — advisory ecosystem-alignment checks for downstream projects
@@ -112,6 +114,15 @@ launcher or a small wrapper script with an absolute Node path.
   fallback
 - **Skill loading**: bundled skills must be included in `package.json` `files`
   because runtime reads them from the installed package directory
+- **Portable plugin boundary**: `mcp.json` launches only `./dist/index.js` from
+  the plugin root. Paths must remain contained after resolution. Clients, not
+  the package, provide the reserved `PLUGIN_ROOT` and `PLUGIN_DATA` environment
+  variables and manage OAuth or all other credentials; do not add secret-bearing
+  environment variables or headers to portable config.
+- **Working Draft compatibility**: Agent Plugins 1.0.0 remains a Working Draft.
+  Keep `plugin.json` and `mcp.json` pinned to the canonical 1.0.0 schema IDs,
+  validate against the packaged `schemas/agent-plugins-1.0.0/` snapshots
+  offline, and do not add streamable HTTP until #2147 provides the endpoint.
 - **Field type mapping**: `text`, `integer`, `decimal`, `boolean`, `datetime`, `json` — maps to SMRT field helpers (but prefer TypeScript defaults per framework convention)
 - **Never call `ManifestGenerator` from a tool path**: `generateSchemas` and
   friends write progress lines to **stdout** through the SDK logger, which is the

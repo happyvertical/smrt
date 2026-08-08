@@ -23,7 +23,10 @@
     "README.md",
     "dist",
     "AGENTS.md",
-    "agent-skills"
+    "plugin.json",
+    "mcp.json",
+    "skills",
+    "schemas"
   ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
@@ -61,6 +64,7 @@
     "@modelcontextprotocol/conformance": "0.2.0-alpha.10",
     "@modelcontextprotocol/node": "2.0.0",
     "@types/node": "24.13.2",
+    "ajv": "8.18.0",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vite-plugin-dts": "^4.5.4",

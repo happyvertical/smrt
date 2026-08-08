@@ -10,6 +10,37 @@ or architecture prompt bundles.
 pnpm install @happyvertical/smrt-dev-mcp
 ```
 
+## Agent Plugins package
+
+The published package root is a self-contained [Agent Plugins 1.0.0](https://agent-plugins.org/specification)
+plugin. Compatible clients discover `plugin.json`, `mcp.json`, and
+`skills/smrt-code-review/SKILL.md` directly from the installed package root.
+The shipped `mcp.json` declares only the local stdio server:
+
+```json
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "smrt-dev-mcp": { "type": "stdio", "command": "./dist/index.js" }
+  }
+}
+```
+
+The executable path is plugin-relative and must remain inside the resolved
+plugin root. Clients provide `PLUGIN_ROOT` (the resolved package root) and the
+client-managed, persistent `PLUGIN_DATA` directory; this package does not set
+or override either reserved environment variable. Portable configuration never
+contains credentials, secrets, authorization headers, or OAuth settings.
+Clients own authorization interaction and credential storage.
+
+Agent Plugins 1.0.0 is a Working Draft. This package targets only the canonical
+1.0.0 schema identifiers and includes pinned schema snapshots for offline
+validation; clients must not fetch schemas when loading the package.
+
+`streamable-http` is not shipped: its endpoint is gated on #2147. A future,
+credential-free configuration could declare a `streamable-http` URL only after
+that endpoint exists; it must not be inferred from this package today.
+
 ## Usage
 
 Add to your project-local `.mcp.json`, Codex MCP config, or Claude Desktop
@@ -163,7 +194,8 @@ smrt knowledge:architecture-context "tenant-aware publishing workflow" --format 
 
 ## Agent Skills
 
-The package ships harness-agnostic agent skills under `agent-skills/`.
+The package ships harness-agnostic agent skills under `skills/`, the fixed
+Agent Plugins discovery location.
 
 Downstream agents should fetch the review procedure before starting a formal
 s-m-r-t review:
