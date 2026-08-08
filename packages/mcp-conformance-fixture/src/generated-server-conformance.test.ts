@@ -183,6 +183,41 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
       resultType: 'complete',
       _meta: { [SERVER_INFO_META_KEY]: { name: 'smrt-generated-conformance' } },
     });
+
+    const listResponse = await fetch(mcpUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'mcp-method': 'tools/list',
+        'mcp-protocol-version': '2026-07-28',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/list',
+        params: {
+          _meta: {
+            [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
+            [CLIENT_INFO_META_KEY]: {
+              name: 'generated-fixture-test',
+              version: '0.0.0',
+            },
+            [CLIENT_CAPABILITIES_META_KEY]: {},
+          },
+        },
+      }),
+    });
+    const list = (await listResponse.json()) as any;
+    expect(list.result).toMatchObject({
+      resultType: 'complete',
+      ttlMs: 86_400_000,
+      cacheScope: 'private',
+    });
+    expect(
+      list.result.tools.map((tool: { name: string }) => tool.name),
+    ).toEqual(
+      [...list.result.tools.map((tool: { name: string }) => tool.name)].sort(),
+    );
   });
 
   it('passes the official server suite with the reviewed baseline', async () => {

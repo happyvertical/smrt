@@ -53,10 +53,78 @@ export interface MCPConfig {
   name?: string;
   version?: string;
   description?: string;
+  /**
+   * Cache policy for generated MCP protocol results.
+   *
+   * Generated catalog results are private by default. A public tool catalog
+   * needs both an explicit public scope and an explicit assertion that the
+   * entire catalog is global and unauthenticated; tenant-scoped catalogs are
+   * always forced back to private.
+   */
+  cache?: {
+    toolsList?: MCPToolListCacheOptions;
+  };
   server?: {
     name: string;
     version: string;
   };
+}
+
+export const MCP_STABLE_CATALOG_TTL_MS = 86_400_000;
+
+export interface MCPToolListCacheOptions {
+  /** Cache lifetime in milliseconds. Defaults to one day for a deploy-static catalog. */
+  ttlMs?: number;
+  /** Requested cache visibility. Defaults to private. */
+  cacheScope?: 'private' | 'public';
+  /**
+   * Explicitly attest that every listed tool is global and unauthenticated.
+   * This must accompany `cacheScope: 'public'`; tenant-scoped tool sets cannot
+   * opt in regardless of this assertion.
+   */
+  publicCatalog?: true;
+}
+
+export interface MCPToolListCacheHint {
+  ttlMs: number;
+  cacheScope: 'private' | 'public';
+}
+
+/**
+ * Resolve the generated tools/list cache policy at generation time.
+ *
+ * A shared cache may otherwise serve one tenant's tool catalog to another, so
+ * public caching is deliberately double opt-in and unavailable when a
+ * generated server exposes any tenant-scoped object.
+ */
+export function resolveMCPToolListCacheHint(
+  options: MCPToolListCacheOptions | undefined,
+  hasTenantScopedTools: boolean,
+): MCPToolListCacheHint {
+  const ttlMs = options?.ttlMs ?? MCP_STABLE_CATALOG_TTL_MS;
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < 0) {
+    throw new RangeError(
+      'MCP tools/list cache ttlMs must be a non-negative safe integer.',
+    );
+  }
+  if (
+    options?.cacheScope !== undefined &&
+    options.cacheScope !== 'private' &&
+    options.cacheScope !== 'public'
+  ) {
+    throw new RangeError(
+      "MCP tools/list cacheScope must be 'private' or 'public'.",
+    );
+  }
+
+  const cacheScope =
+    !hasTenantScopedTools &&
+    options?.cacheScope === 'public' &&
+    options.publicCatalog === true
+      ? 'public'
+      : 'private';
+
+  return { ttlMs, cacheScope };
 }
 
 export interface MCPContext {
@@ -89,6 +157,11 @@ export interface MCPTool {
   inputSchema: ToolJsonSchema;
   /** Public result schema for tools/call structuredContent. */
   outputSchema: ToolJsonSchema;
+}
+
+/** Return a copied, canonical tool sequence for byte-stable tools/list output. */
+export function sortMCPTools<T extends Pick<MCPTool, 'name'>>(tools: T[]): T[] {
+  return [...tools].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export interface MCPRequest {
@@ -217,7 +290,7 @@ export class MCPGenerator {
       tools.push(...objectTools);
     }
 
-    return tools;
+    return sortMCPTools(tools);
   }
 
   /**
@@ -1102,6 +1175,32 @@ export class MCPGenerator {
   }
 
   /**
+   * Whether a catalog contains a tenant-scoped class for cache isolation.
+   *
+   * Unlike the emitted runtime tenant gate, cache visibility must also fail
+   * closed for core-declared `@smrt({ tenantScoped })` models when the optional
+   * tenancy package is not installed. The registry covers that form, while
+   * `tenantScopedObjectNames()` covers the tenancy-owned decorator form.
+   */
+  private async hasTenantScopedTools(tools: MCPTool[]): Promise<boolean> {
+    if ((await this.tenantScopedObjectNames(tools)).length > 0) return true;
+
+    for (const tool of tools) {
+      const [objectName] = tool.name.split('_');
+      if (!objectName) continue;
+      for (const [key, info] of ObjectRegistry.getAllClasses()) {
+        const simpleName = info.name || key;
+        if (simpleName.toLowerCase() === objectName.toLowerCase()) {
+          if (ObjectRegistry.isTenantScoped(simpleName)) return true;
+          break;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Execute a resolved MCP action (CRUD or custom) against a collection. Always
    * invoked inside the tenant gate established by {@link executeAction}.
    */
@@ -1440,6 +1539,10 @@ export class MCPGenerator {
     } else {
       // Generate single-file server with static tools
       const tools = await this.generateTools();
+      const tenantScopedObjects = await this.tenantScopedObjectNames(tools);
+      const hasTenantScopedTools =
+        tenantScopedObjects.length > 0 ||
+        (await this.hasTenantScopedTools(tools));
 
       const runtimeOptions: RuntimeOptions = {
         name: serverName,
@@ -1450,8 +1553,12 @@ export class MCPGenerator {
         debug,
         tools,
         customActions: await this.runtimeCustomActions(tools),
-        tenantScopedObjects: await this.tenantScopedObjectNames(tools),
+        tenantScopedObjects,
         stiTargets: this.runtimeStiTargets(tools),
+        toolListCacheHint: resolveMCPToolListCacheHint(
+          this.config.cache?.toolsList,
+          hasTenantScopedTools,
+        ),
       };
 
       const serverCode = generateRuntimeBootstrap(runtimeOptions);
@@ -1608,24 +1715,33 @@ export class MCPGenerator {
     await writeFile(configPath, configCode, 'utf-8');
     console.log(`✅ Generated config: ${configPath}`);
 
+    const generatedTools = await this.generateTools();
+
     // Generate tools/index.ts with tool definitions
     const toolsPath = resolve(toolsDir, 'index.ts');
-    const toolsCode = await this.generateToolsFile();
+    const toolsCode = this.generateToolsFile(generatedTools);
     await writeFile(toolsPath, toolsCode, 'utf-8');
     console.log(`✅ Generated tools: ${toolsPath}`);
 
     // Generate handlers/index.ts with tool call handlers
     const handlersPath = resolve(handlersDir, 'index.ts');
-    const tenantScopedObjects = await this.tenantScopedObjectNames(
-      await this.generateTools(),
-    );
+    const tenantScopedObjects =
+      await this.tenantScopedObjectNames(generatedTools);
+    const hasTenantScopedTools =
+      tenantScopedObjects.length > 0 ||
+      (await this.hasTenantScopedTools(generatedTools));
     const handlersCode = await this.generateHandlersFile(tenantScopedObjects);
     await writeFile(handlersPath, handlersCode, 'utf-8');
     console.log(`✅ Generated handlers: ${handlersPath}`);
 
     // Generate main index.js entry point
     const indexPath = resolve(outputDir, 'index.js');
-    const indexCode = this.generateModularIndex();
+    const indexCode = this.generateModularIndex(
+      resolveMCPToolListCacheHint(
+        this.config.cache?.toolsList,
+        hasTenantScopedTools,
+      ),
+    );
     await writeFile(indexPath, indexCode, 'utf-8');
     console.log(`✅ Generated MCP server: ${indexPath}`);
   }
@@ -1653,9 +1769,7 @@ export const DEBUG = ${debug};
   /**
    * Generate tools definitions file for modular server
    */
-  private async generateToolsFile(): Promise<string> {
-    const tools = await this.generateTools();
-
+  private generateToolsFile(tools: MCPTool[]): string {
     return `/**
  * MCP Tools Definitions
  * Auto-generated from SMRT objects
@@ -2075,7 +2189,9 @@ ${
   /**
    * Generate modular index file (main entry point)
    */
-  private generateModularIndex(): string {
+  private generateModularIndex(
+    toolListCacheHint: MCPToolListCacheHint,
+  ): string {
     return `#!/usr/bin/env node
 /**
  * Auto-generated MCP Server
@@ -2097,6 +2213,8 @@ import { getAI } from '@happyvertical/ai';
 import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config.js';
 import { tools } from './tools/index.js';
 import { handleToolCall } from './handlers/index.js';
+
+const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 
 /**
  * Main server startup function
@@ -2132,6 +2250,9 @@ export async function createServer() {
         capabilities: {
           tools: {},
         },
+        cacheHints: {
+          'tools/list': TOOL_LIST_CACHE_HINT,
+        },
       }
     );
 
@@ -2142,7 +2263,7 @@ export async function createServer() {
       }
 
       return {
-        tools: tools.map(tool => ({
+        tools: [...tools].sort((left, right) => left.name.localeCompare(right.name)).map(tool => ({
           name: tool.name,
           description: tool.description,
           inputSchema: tool.inputSchema,

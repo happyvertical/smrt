@@ -13,8 +13,13 @@ await runMcpStdioBridge({
         JSON.stringify({
           tools: [
             {
-              name: 'echo',
-              description: 'Echo through the HTTP bridge',
+              name: 'zebra',
+              description: 'Zebra through the HTTP bridge',
+              inputSchema: { type: 'object' },
+            },
+            {
+              name: 'antelope',
+              description: 'Antelope through the HTTP bridge',
               inputSchema: { type: 'object' },
             },
           ],

@@ -41,6 +41,8 @@ export {
   type McpAppUser,
   type McpPublicToolPatternsThunk,
   type McpSmrtOptionsThunk,
+  type McpToolListCacheHint,
+  type McpToolListCacheOptions,
   type McpToolPolicy,
   type McpToolPolicyContext,
   type McpWorkflowAssertion,

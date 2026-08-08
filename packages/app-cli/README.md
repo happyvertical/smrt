@@ -115,6 +115,11 @@ The package also ships the generic `smrt-mcp-bridge` binary. The remote app
 surface is typically mounted with
 [`@happyvertical/smrt-app-mcp`](../smrt-app-mcp/README.md).
 
+The bridge canonicalizes its `tools/list` catalog by tool name and emits a
+one-day `private` cache lifetime. The catalog is tied to the configured local
+app credentials, so it never opts into shared caching even when an upstream
+app serves public tools.
+
 ## Configuration and authentication
 
 - `name` supplies the display name and default environment-variable prefix.

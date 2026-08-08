@@ -166,6 +166,14 @@ manifest artifacts before falling back to raw manifest/doc scanning. The runtime
 `manifest.json` stays focused on object registration; `smrt-knowledge.json` is
 the agent/developer contract.
 
+## Cache Metadata
+
+The deploy-static `tools/list` and `prompts/list` catalogs advertise a one-day
+`private` cache lifetime. Workspace knowledge resources (`resources/list` and
+`resources/read`) are also `private`, but use `ttlMs: 0`: they are rebuilt from
+the current workspace on each request and have no transport-visible invalidation
+signal that could make a positive freshness promise honest.
+
 After using a model to update package docs or expertise, always run the
 deterministic checker again:
 

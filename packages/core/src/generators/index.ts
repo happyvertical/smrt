@@ -55,9 +55,16 @@ export type {
   MCPRequest,
   MCPResponse,
   MCPTool,
+  MCPToolListCacheHint,
+  MCPToolListCacheOptions,
 } from './mcp';
 // MCP Server Generator
-export { MCPGenerator } from './mcp';
+export {
+  MCP_STABLE_CATALOG_TTL_MS,
+  MCPGenerator,
+  resolveMCPToolListCacheHint,
+  sortMCPTools,
+} from './mcp';
 export type { APIConfig, APIContext, RestServerConfig } from './rest';
 // REST API Generator and server utilities
 export {

@@ -543,6 +543,19 @@ await generator.generate();
 // Creates: ./mcp/documents-mcp-server.js for AI model integration
 ```
 
+Generated `tools/list` results are sorted by tool name and advertise a one-day
+`private` cache lifetime. Only a reviewed global, unauthenticated catalog may
+opt into shared caching, and the opt-in is rejected for a server that exposes
+tenant-scoped tools:
+
+```typescript
+const generator = new MCPGenerator({
+  cache: {
+    toolsList: { cacheScope: 'public', publicCatalog: true },
+  },
+});
+```
+
 ## SMRT Development MCP
 
 Use `@happyvertical/smrt-dev-mcp` for development-time code generation,

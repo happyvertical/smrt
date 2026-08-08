@@ -123,7 +123,14 @@ describe('runMcpStdioBridge', () => {
       });
 
       const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual(['echo']);
+      expect(tools).toMatchObject({
+        ttlMs: 86_400_000,
+        cacheScope: 'private',
+      });
+      expect(tools.tools.map((tool) => tool.name)).toEqual([
+        'antelope',
+        'zebra',
+      ]);
 
       const result = await client.callTool({
         name: 'echo',
@@ -158,7 +165,10 @@ describe('runMcpStdioBridge', () => {
       await client.connect(transport);
       expect(client.getNegotiatedProtocolVersion()).toBe('2025-11-25');
       const tools = await client.listTools();
-      expect(tools.tools.map((tool) => tool.name)).toEqual(['echo']);
+      expect(tools.tools.map((tool) => tool.name)).toEqual([
+        'antelope',
+        'zebra',
+      ]);
     } finally {
       await client.close();
       await transport.close();

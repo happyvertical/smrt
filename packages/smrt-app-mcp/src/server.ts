@@ -16,12 +16,19 @@
  * @packageDocumentation
  */
 
+import {
+  isTenantScopedClassResolved,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import type {
   MCPConfig,
   MCPResponse,
   MCPTool,
 } from '@happyvertical/smrt-core/generators/mcp';
-import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
+import {
+  MCP_STABLE_CATALOG_TTL_MS,
+  MCPGenerator,
+} from '@happyvertical/smrt-core/generators/mcp';
 import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from './errors.js';
 import {
   classNamePrefixes,
@@ -85,6 +92,23 @@ export type McpSmrtOptionsThunk = () => Record<string, unknown>;
 /** Public-tool patterns thunk — same lazy-evaluation rationale. */
 export type McpPublicToolPatternsThunk = () => readonly string[];
 
+export interface McpToolListCacheHint {
+  ttlMs: number;
+  cacheScope: 'private' | 'public';
+}
+
+export interface McpToolListCacheOptions {
+  /** Cache lifetime in milliseconds. Defaults to one day for a deploy-static catalog. */
+  ttlMs?: number;
+  /** Requested cache visibility. Defaults to private. */
+  cacheScope?: 'private' | 'public';
+  /**
+   * Explicit attestation that every allowed tool is global, unauthenticated,
+   * and safe to share through an intermediary cache.
+   */
+  publicCatalog?: true;
+}
+
 /**
  * Options for `createMcpAppServer`.
  */
@@ -106,6 +130,12 @@ export interface CreateMcpAppServerOptions {
    * (everything requires auth).
    */
   publicToolPatterns?: McpPublicToolPatternsThunk;
+  /**
+   * Cache policy for the MCP tools/list result. Public caching is honored only
+   * when this explicitly opts in and every allowed tool is a non-tenant,
+   * unauthenticated read-only tool with no principal-aware policy.
+   */
+  toolListCache?: McpToolListCacheOptions;
   /**
    * Optional generic principal-aware tool policy. It is evaluated for every
    * tool that passes the app allow-list and base public/authenticated policy,
@@ -149,8 +179,52 @@ export interface CallToolInput {
 export interface McpAppServer {
   listTools(input: ListToolsInput): Promise<MCPTool[]>;
   callTool(input: CallToolInput): Promise<MCPResponse>;
+  /** Cache policy for protocol tools/list responses. */
+  getToolsListCacheHint?(): Promise<McpToolListCacheHint>;
   /** Read-only view of the configured server identity. */
   readonly serverInfo: CreateMcpAppServerOptions['serverInfo'];
+}
+
+function configuredToolListCacheHint(
+  options: McpToolListCacheOptions | undefined,
+): McpToolListCacheHint {
+  const ttlMs = options?.ttlMs ?? MCP_STABLE_CATALOG_TTL_MS;
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < 0) {
+    throw new RangeError(
+      'MCP tools/list cache ttlMs must be a non-negative safe integer.',
+    );
+  }
+  if (
+    options?.cacheScope !== undefined &&
+    options.cacheScope !== 'private' &&
+    options.cacheScope !== 'public'
+  ) {
+    throw new RangeError(
+      "MCP tools/list cacheScope must be 'private' or 'public'.",
+    );
+  }
+  return {
+    ttlMs,
+    cacheScope:
+      options?.cacheScope === 'public' && options.publicCatalog === true
+        ? 'public'
+        : 'private',
+  };
+}
+
+function isTenantScopedTool(tool: MCPTool): boolean {
+  const separator = tool.name.indexOf('_');
+  if (separator <= 0) return false;
+  const objectName = tool.name.slice(0, separator);
+  for (const [key, classInfo] of ObjectRegistry.getAllClasses()) {
+    const name = classInfo.name || key;
+    if (name.toLowerCase() === objectName) {
+      return (
+        ObjectRegistry.isTenantScoped(name) || isTenantScopedClassResolved(name)
+      );
+    }
+  }
+  return false;
 }
 
 /**
@@ -166,6 +240,9 @@ export function createMcpAppServer(
     options.publicToolPatterns ?? ((): readonly string[] => []);
   const toolPolicy = options.toolPolicy;
   const workflowAssertions = options.workflowAssertions ?? {};
+  const requestedToolListCacheHint = configuredToolListCacheHint(
+    options.toolListCache,
+  );
 
   function userForGenerator(
     principal?: McpAppPrincipal | null,
@@ -238,6 +315,30 @@ export function createMcpAppServer(
     return tools.filter((_, index) => visible[index]);
   }
 
+  async function getToolsListCacheHint(): Promise<McpToolListCacheHint> {
+    if (requestedToolListCacheHint.cacheScope !== 'public') {
+      return requestedToolListCacheHint;
+    }
+
+    // A principal-aware policy can make one caller's catalog differ from
+    // another's. Likewise, tenant-scoped reads must never be shared across
+    // tenants. The requested public scope is therefore honored only for a
+    // complete, unauthenticated, non-tenant read-only catalog.
+    const tools = await allowedTools();
+    const publicPatterns = getPublicPatterns();
+    const isSafePublicCatalog =
+      !toolPolicy &&
+      tools.every(
+        (tool) =>
+          isPublicToolName(tool.name, publicPatterns) &&
+          !isTenantScopedTool(tool),
+      );
+
+    return isSafePublicCatalog
+      ? requestedToolListCacheHint
+      : { ...requestedToolListCacheHint, cacheScope: 'private' };
+  }
+
   async function callTool(input: CallToolInput): Promise<MCPResponse> {
     const args = input.arguments ?? {};
     const principal = principalForCall(input);
@@ -276,6 +377,7 @@ export function createMcpAppServer(
   return {
     listTools,
     callTool,
+    getToolsListCacheHint,
     serverInfo: options.serverInfo,
   };
 }

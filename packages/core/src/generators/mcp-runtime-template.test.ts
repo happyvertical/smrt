@@ -1,4 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { ObjectRegistry } from '../registry.js';
+import {
+  MCP_STABLE_CATALOG_TTL_MS,
+  MCPGenerator,
+  resolveMCPToolListCacheHint,
+  sortMCPTools,
+} from './mcp.js';
 import { generateRuntimeBootstrap } from './mcp-runtime-template.js';
 
 describe('generated MCP custom-action runtime (#2182)', () => {
@@ -18,6 +25,92 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain('ObjectRegistry.loadAllManifests');
     expect(source).not.toContain('@modelcontextprotocol/sdk');
     expect(source).not.toContain('initialize');
+  });
+
+  it('emits a private cacheable, byte-stable tool catalog by default', () => {
+    const source = generateRuntimeBootstrap({
+      tools: [
+        { name: 'zebra_list', description: 'Zebra', inputSchema: {} },
+        { name: 'antelope_list', description: 'Antelope', inputSchema: {} },
+      ],
+    });
+
+    expect(source).toContain(
+      "cacheHints: {\n          'tools/list': TOOL_LIST_CACHE_HINT,",
+    );
+    expect(source).toContain(
+      'const TOOL_LIST_CACHE_HINT = {"ttlMs":86400000,"cacheScope":"private"};',
+    );
+    expect(source).toContain(
+      'tools: [...TOOLS].sort((left, right) => left.name.localeCompare(right.name))',
+    );
+  });
+
+  it('requires an explicit global-catalog opt-in and never shares tenant catalogs', () => {
+    expect(resolveMCPToolListCacheHint(undefined, false)).toEqual({
+      ttlMs: MCP_STABLE_CATALOG_TTL_MS,
+      cacheScope: 'private',
+    });
+    expect(
+      resolveMCPToolListCacheHint({ cacheScope: 'public' }, false),
+    ).toMatchObject({ cacheScope: 'private' });
+    expect(
+      resolveMCPToolListCacheHint(
+        { cacheScope: 'public', publicCatalog: true },
+        false,
+      ),
+    ).toMatchObject({ cacheScope: 'public' });
+    expect(
+      resolveMCPToolListCacheHint(
+        { cacheScope: 'public', publicCatalog: true },
+        true,
+      ),
+    ).toMatchObject({ cacheScope: 'private' });
+  });
+
+  it('treats registry-declared tenant tools as private even without the tenancy runtime', async () => {
+    const allClasses = vi
+      .spyOn(ObjectRegistry, 'getAllClasses')
+      .mockReturnValue(
+        new Map([
+          ['TenantCacheDocument', { name: 'TenantCacheDocument' }],
+        ]) as ReturnType<typeof ObjectRegistry.getAllClasses>,
+      );
+    const isTenantScoped = vi
+      .spyOn(ObjectRegistry, 'isTenantScoped')
+      .mockReturnValue(true);
+    const generator = new MCPGenerator();
+    const detector = generator as unknown as {
+      hasTenantScopedTools(tools: Array<{ name: string }>): Promise<boolean>;
+    };
+
+    try {
+      await expect(
+        detector.hasTenantScopedTools([{ name: 'tenantcachedocument_list' }]),
+      ).resolves.toBe(true);
+    } finally {
+      allClasses.mockRestore();
+      isTenantScoped.mockRestore();
+    }
+  });
+
+  it('sorts a copied tool catalog independently of discovery order', () => {
+    const source = [
+      { name: 'zebra_list' },
+      { name: 'antelope_list' },
+      { name: 'marmoset_list' },
+    ];
+
+    expect(sortMCPTools(source).map((tool) => tool.name)).toEqual([
+      'antelope_list',
+      'marmoset_list',
+      'zebra_list',
+    ]);
+    expect(source.map((tool) => tool.name)).toEqual([
+      'zebra_list',
+      'antelope_list',
+      'marmoset_list',
+    ]);
   });
 
   it('carries canonical receivers and positional invocation metadata without exposing it as a tool field', () => {
