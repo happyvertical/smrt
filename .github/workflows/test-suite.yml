@@ -247,7 +247,6 @@ jobs:
           pnpm turbo run typecheck --filter="...[$BASE_SHA]" --concurrency=2
 
   affected-core-tests:
-    name: Affected Core Tests (${{ matrix.shard }})
     needs: affected-test-scope
     if: inputs.mode == 'affected' && needs.affected-test-scope.outputs.core == 'true'
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
@@ -290,7 +289,6 @@ jobs:
           NODE_ENV: test
 
   affected-package-tests:
-    name: Affected Package Tests (${{ matrix.shard }})
     # Keep the affected test lane at two matrix workers. GitHub scopes
     # max-parallel to one matrix job, so allowing this matrix to overlap the
     # core matrix would consume four fleet slots and move the old serial delay
