@@ -44,6 +44,7 @@ async function generate(api: unknown): Promise<void> {
     {
       objects: {
         Widget: {
+          qualifiedName: '@test/smrt:Widget',
           className: 'Widget',
           collection: 'widgets',
           fields: { name: { type: 'text' } },

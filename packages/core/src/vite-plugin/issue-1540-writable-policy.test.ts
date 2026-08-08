@@ -77,6 +77,7 @@ describe('Issue #1540 (2b): writable-field allowlist on generated routes', () =>
     await generate({
       objects: {
         Widget: {
+          qualifiedName: '@test/smrt:Widget',
           className: 'Widget',
           collection: 'widgets',
           fields: {
@@ -123,6 +124,7 @@ describe('Issue #1540 (2b): writable-field allowlist on generated routes', () =>
     await generate({
       objects: {
         Gadget: {
+          qualifiedName: '@test/smrt:Gadget',
           className: 'Gadget',
           collection: 'gadgets',
           fields: { name: { type: 'text' }, price: { type: 'decimal' } },

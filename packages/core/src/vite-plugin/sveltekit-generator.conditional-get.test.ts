@@ -36,6 +36,7 @@ function manifestFor(api: unknown): SmartObjectManifest {
   return {
     objects: {
       Product: {
+        qualifiedName: '@test/smrt:Product',
         className: 'Product',
         collection: 'products',
         fields: {},
@@ -219,6 +220,7 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       const manifest: SmartObjectManifest = {
         objects: {
           Product: {
+            qualifiedName: '@test/smrt:Product',
             className: 'Product',
             collection: 'products',
             fields: {},
@@ -290,6 +292,7 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     const manifest: SmartObjectManifest = {
       objects: {
         Product: {
+          qualifiedName: '@test/smrt:Product',
           className: 'Product',
           collection: 'products',
           fields: {},

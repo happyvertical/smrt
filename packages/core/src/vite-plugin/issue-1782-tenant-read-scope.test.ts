@@ -68,6 +68,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     await generate({
       objects: {
         PublicTenantDoc: {
+          qualifiedName: '@test/smrt:PublicTenantDoc',
           className: 'PublicTenantDoc',
           collection: 'publictenantdocs',
           fields: { title: { type: 'text' } },
@@ -107,6 +108,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     await generate({
       objects: {
         PublicTenantDoc: {
+          qualifiedName: '@test/smrt:PublicTenantDoc',
           className: 'PublicTenantDoc',
           collection: 'publictenantdocs',
           fields: { title: { type: 'text' } },
@@ -148,6 +150,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     await generate({
       objects: {
         PublicTenantDoc: {
+          qualifiedName: '@test/smrt:PublicTenantDoc',
           className: 'PublicTenantDoc',
           collection: 'publictenantdocs',
           fields: { title: { type: 'text' } },
@@ -158,6 +161,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
           },
         },
         PublicTenantDocCollection: {
+          qualifiedName: '@test/smrt:PublicTenantDocCollection',
           className: 'PublicTenantDocCollection',
           collection: 'publictenantdocs',
           fields: {},
@@ -211,6 +215,7 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     await generate({
       objects: {
         PlainDoc: {
+          qualifiedName: '@test/smrt:PlainDoc',
           className: 'PlainDoc',
           collection: 'plaindocs',
           fields: { title: { type: 'text' } },

@@ -30,6 +30,7 @@ async function generateAndRead(api: unknown): Promise<{
     {
       objects: {
         Product: {
+          qualifiedName: '@test/smrt:Product',
           className: 'Product',
           collection: 'products',
           fields: {

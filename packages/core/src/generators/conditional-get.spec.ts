@@ -459,6 +459,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
       const scannerManifest: SmartObjectManifest = {
         objects: {
           ParityCity: {
+            qualifiedName: '@test/smrt:ParityCity',
             className: 'ParityCity',
             collection: 'paritycities',
             fields: {
@@ -473,6 +474,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
             },
           },
           ParityVenue: {
+            qualifiedName: '@test/smrt:ParityVenue',
             className: 'ParityVenue',
             collection: 'parityvenues_custom',
             fields: {
@@ -494,6 +496,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
             },
           },
           ParityContent: {
+            qualifiedName: '@test/smrt:ParityContent',
             className: 'ParityContent',
             collection: 'paritycontents',
             fields: {
@@ -507,6 +510,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
             },
           },
           ParityArticle: {
+            qualifiedName: '@test/smrt:ParityArticle',
             className: 'ParityArticle',
             collection: 'paritycontents',
             extends: 'ParityContent',
@@ -529,6 +533,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityCity',
           {
             name: 'ParityCity',
+            qualifiedName: '@test/smrt:ParityCity',
             fields: new Map([
               ['id', { type: 'uuid' }],
               // Runtime decorator registration keeps defaults under `_meta`;
@@ -548,6 +553,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityVenue',
           {
             name: 'ParityVenue',
+            qualifiedName: '@test/smrt:ParityVenue',
             collection: 'parityvenues_custom',
             fields: new Map([
               ['id', { type: 'uuid' }],
@@ -578,6 +584,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityContent',
           {
             name: 'ParityContent',
+            qualifiedName: '@test/smrt:ParityContent',
             collection: 'paritycontents',
             fields: new Map([
               ['id', { type: 'uuid' }],
@@ -594,6 +601,7 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
           'ParityArticle',
           {
             name: 'ParityArticle',
+            qualifiedName: '@test/smrt:ParityArticle',
             collection: 'paritycontents',
             extends: 'ParityContent',
             fields: new Map([
