@@ -13,7 +13,6 @@ import {
   renameSync,
   rmSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -93,8 +92,11 @@ describe('Issue #2223 - test manifest task ownership', () => {
   });
 
   it('keeps a cold build hash and production output independent of test artifacts', () => {
+    // Keep the rename backup on the package filesystem: CI can mount TMPDIR
+    // separately from the checkout.
     const backupDir = join(
-      tmpdir(),
+      packageDir,
+      '.smrt',
       `smrt-2223-test-manifests-${process.pid}-${Date.now()}`,
     );
     mkdirSync(backupDir, { recursive: true });
