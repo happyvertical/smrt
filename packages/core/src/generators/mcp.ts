@@ -510,6 +510,7 @@ export class MCPGenerator {
       action,
       this.toToolFields(fields),
       customAction,
+      ObjectRegistry.getConfig(objectName).idType,
     );
     if (action !== 'create' && action !== 'update') return schema;
 

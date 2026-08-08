@@ -151,6 +151,9 @@ export interface ToolFieldMeta {
   related?: string;
 }
 
+/** Storage contract for the synthetic primary identifier. */
+export type ToolIdType = 'uuid' | 'text';
+
 /** The CRUD verbs with dedicated input-schema skeletons; anything else is custom. */
 const CRUD_ACTIONS = new Set(['list', 'get', 'create', 'update', 'delete']);
 
@@ -254,7 +257,14 @@ export function buildToolInputSchema(
   action: string,
   fields: ToolFieldMeta[],
   customAction?: CustomActionMetadata,
+  idType: ToolIdType = 'uuid',
 ): ToolJsonSchema {
+  const identifierSchema = (description: string): ToolJsonSchema => ({
+    type: 'string',
+    ...(idType === 'uuid' ? { format: 'uuid' } : {}),
+    description,
+  });
+
   switch (action) {
     case 'list':
       return finalizeMcpJsonSchema({
@@ -293,11 +303,7 @@ export function buildToolInputSchema(
         type: 'object',
         anyOf: [{ required: ['id'] }, { required: ['slug'] }],
         properties: {
-          id: {
-            type: 'string',
-            format: 'uuid',
-            description: 'Unique identifier of the object',
-          },
+          id: identifierSchema('Unique identifier of the object'),
           slug: {
             type: 'string',
             description: 'URL-friendly identifier of the object',
@@ -323,11 +329,7 @@ export function buildToolInputSchema(
       const { properties: fieldProperties, defs } =
         buildFieldProperties(fields);
       const properties: Record<string, ToolJsonSchema> = {
-        id: {
-          type: 'string',
-          format: 'uuid',
-          description: 'ID of the object to update',
-        },
+        id: identifierSchema('ID of the object to update'),
         ...fieldProperties,
       };
       return finalizeMcpJsonSchema({
@@ -342,11 +344,7 @@ export function buildToolInputSchema(
       return finalizeMcpJsonSchema({
         type: 'object',
         properties: {
-          id: {
-            type: 'string',
-            format: 'uuid',
-            description: 'ID of the object to delete',
-          },
+          id: identifierSchema('ID of the object to delete'),
         },
         required: ['id'],
       });
@@ -397,6 +395,7 @@ export function buildToolDescriptors(opts: {
   actions: string[];
   customActions?: Record<string, CustomActionMetadata>;
   toolPrefix?: string;
+  idType?: ToolIdType;
 }): ToolDescriptor[] {
   const { className, fields, actions } = opts;
   const prefix = (opts.toolPrefix ?? className).toLowerCase();
@@ -411,6 +410,7 @@ export function buildToolDescriptors(opts: {
       action,
       fields,
       opts.customActions?.[action],
+      opts.idType,
     ),
     readOnly: action === 'list' || action === 'get',
   }));

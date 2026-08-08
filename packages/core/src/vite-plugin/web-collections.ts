@@ -680,9 +680,9 @@ export function buildWebRelationships(
  * Deliberately NOT part of {@link buildWebCollectionDefinition}: descriptors are
  * layered onto the emitted value by {@link generateWebModule} instead, so the
  * #1764 {@link computeWebManifestHash} shape digest keeps hashing ONLY the row
- * shape. That is safe because a descriptor is a pure function of
- * className/actions/fields — all already in the hash — so excluding it never
- * lets the digest under-cover a real shape change.
+ * shape. That remains safe because descriptor-only inputs (including `idType`)
+ * do not alter persisted public rows or read responses, which are the cache
+ * contracts this digest protects.
  */
 export function buildWebToolDescriptors(
   entry: WebCollectionEntry,
@@ -717,6 +717,7 @@ export function buildWebToolDescriptors(
         }),
       ]),
     ),
+    idType: entry.obj.decoratorConfig.idType,
   });
 }
 

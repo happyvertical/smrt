@@ -194,6 +194,12 @@ class McpFkWidget extends SmrtObject {
   }
 }
 
+@smrt({ idType: 'text', mcp: { include: ['get', 'update', 'delete'] } })
+class McpTextIdWidget extends SmrtObject {
+  @field({ type: 'text' })
+  title = '';
+}
+
 @smrt({
   tableStrategy: 'sti',
   mcp: { include: ['create', 'get'] },
@@ -228,6 +234,22 @@ describe('MCP foreignKey field schema (#1500)', () => {
     const authorId = schema.$defs[ref.slice('#/$defs/'.length)];
     expect(authorId.type).toBe('string');
     expect(authorId.description).toContain('ID of related');
+  });
+});
+
+describe('MCP text identifier schemas (#2149)', () => {
+  it('does not falsely advertise UUID-only identifiers', async () => {
+    const generator = new MCPGenerator();
+    const tools = await generator.generateTools();
+
+    for (const action of ['get', 'update', 'delete']) {
+      const tool = tools.find(
+        (candidate) => candidate.name === `mcptextidwidget_${action}`,
+      );
+      const properties = tool?.inputSchema.properties as Record<string, any>;
+      expect(properties.id.type).toBe('string');
+      expect(properties.id.format).toBeUndefined();
+    }
   });
 });
 

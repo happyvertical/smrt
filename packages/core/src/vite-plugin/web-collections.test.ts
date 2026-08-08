@@ -271,6 +271,31 @@ describe('buildWebToolDescriptors', () => {
     expect(definition.type).toEqual(['string', 'null']);
   });
 
+  it('does not advertise UUID-only identifiers for text-id objects', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'ExternalProduct',
+          collection: 'external-products',
+          decoratorConfig: { idType: 'text' },
+        }),
+      ),
+    )[0];
+
+    for (const action of ['get', 'update', 'delete']) {
+      const descriptor = buildWebToolDescriptors(entry).find(
+        (tool) => tool.action === action,
+      );
+      const properties = descriptor?.inputSchema.properties as Record<
+        string,
+        unknown
+      >;
+      expect(properties.id).not.toEqual(
+        expect.objectContaining({ format: 'uuid' }),
+      );
+    }
+  });
+
   it('uses the same item receiver and typed custom arguments as Node MCP', () => {
     const entry = selectWebCollectionEntries(
       manifest(

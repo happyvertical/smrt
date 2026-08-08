@@ -118,6 +118,24 @@ describe('buildToolInputSchema', () => {
     ]);
   });
 
+  it('omits UUID format for text-id CRUD objects', () => {
+    for (const action of ['get', 'update', 'delete']) {
+      const schema = buildToolInputSchema(
+        action,
+        PRODUCT_FIELDS,
+        undefined,
+        'text',
+      );
+      const properties = schema.properties as Record<string, unknown>;
+      expect(properties.id).toEqual(
+        expect.objectContaining({ type: 'string' }),
+      );
+      expect(properties.id).not.toEqual(
+        expect.objectContaining({ format: 'uuid' }),
+      );
+    }
+  });
+
   it('promotes required model fields onto the create schema', () => {
     const schema = buildToolInputSchema('create', PRODUCT_FIELDS);
     expect(schema.required).toEqual(['name']);
@@ -212,6 +230,28 @@ describe('buildToolDescriptors', () => {
       toolPrefix: 'catalog_item',
     });
     expect(tool.name).toBe('catalog_item_list');
+  });
+
+  it('propagates text idType to every CRUD descriptor', () => {
+    const descriptors = buildToolDescriptors({
+      className: 'TextProduct',
+      fields: PRODUCT_FIELDS,
+      actions: ['get', 'update', 'delete'],
+      idType: 'text',
+    });
+
+    for (const descriptor of descriptors) {
+      const properties = descriptor.inputSchema.properties as Record<
+        string,
+        unknown
+      >;
+      expect(properties.id).toEqual(
+        expect.objectContaining({ type: 'string' }),
+      );
+      expect(properties.id).not.toEqual(
+        expect.objectContaining({ format: 'uuid' }),
+      );
+    }
   });
 });
 
