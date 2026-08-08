@@ -349,6 +349,8 @@ export class GenClientReadonly extends SmrtObject {
     expect(declarationSource).toContain(
       '"genclientreadonlies": Pick<CrudOperations<GenClientReadonlyData>, "get"> & {\n      ping(id: string, options?: Record<string, never>): Promise<any>;',
     );
+    expect(declarationSource).toContain('error?: string | SmrtClientFailure;');
+    expect(declarationSource).toContain('code?: string;');
 
     // Evaluate the generated ESM the way a bundler would: write it to disk and
     // dynamic-import it. This exercises the ACTUAL emitted source, not a
@@ -407,6 +409,7 @@ export class GenClientReadonly extends SmrtObject {
       expect(declarationSource).toContain(
         '"audit-events": SmrtWebCollectionDefinition<',
       );
+      expect(declarationSource).toContain('objectRef: string;');
     } finally {
       rmSync(declarationRoot, { force: true, recursive: true });
     }
@@ -548,7 +551,7 @@ export class GenClientReadonly extends SmrtObject {
     expect(fetched.name).toBe('Gadget');
   });
 
-  it('#1796: a 500 response makes the generated client REJECT (optimistic rollback can observe it)', async () => {
+  it('#1796: a 500 response rejects opaquely so optimistic rollback can observe it', async () => {
     // A server that always 500s — models a failing mutation.
     const failing: (req: Request) => Promise<Response> = async () =>
       new Response(JSON.stringify({ error: 'boom' }), {
@@ -559,17 +562,44 @@ export class GenClientReadonly extends SmrtObject {
     const client = createClient('/api/v1');
 
     // An optimistic-update layer applies its change, then awaits the mutation;
-    // if the promise resolves on a 500 the rollback can never fire. Assert it
-    // rejects instead.
+    // if the promise resolves on a 500 the rollback can never fire. Server
+    // failure detail is deliberately opaque because an upstream 5xx body may
+    // contain sensitive internals.
     let rolledBack = false;
-    await expect(
-      client.genclientproducts
-        .create({ name: 'DoomedGadget', price: 1 })
-        .catch((err) => {
-          rolledBack = true;
-          throw err;
-        }),
-    ).rejects.toBeDefined();
+    const error = await client.genclientproducts
+      .create({ name: 'DoomedGadget', price: 1 })
+      .catch((err) => {
+        rolledBack = true;
+        return err;
+      });
     expect(rolledBack).toBe(true);
+    expect(error).toMatchObject({ name: 'SmrtClientError', status: 500 });
+    expect((error as Error).message).not.toContain('boom');
+    expect(error).not.toHaveProperty('body');
+    expect(error).not.toHaveProperty('code');
+  });
+
+  it('preserves structured custom-action failures without stringifying their error object', async () => {
+    const failure = {
+      ok: false,
+      code: 'policy_locked',
+      message: 'This policy is locked by your organization',
+      status: 403,
+    };
+    stubFetchToServer(async () =>
+      Response.json({ error: failure }, { status: 403 }),
+    );
+    const client = createClient('/api/v1');
+
+    await expect(client.genclientproducts.list()).rejects.toMatchObject({
+      name: 'SmrtClientError',
+      status: 403,
+      code: 'policy_locked',
+      body: { error: failure },
+    });
+    await client.genclientproducts.list().catch((error: Error) => {
+      expect(error.message).toContain(failure.message);
+      expect(error.message).not.toContain('[object Object]');
+    });
   });
 });

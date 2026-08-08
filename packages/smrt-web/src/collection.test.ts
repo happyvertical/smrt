@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  createDefinitionFetchers,
   createSmrtCollection,
   createSmrtWebClient,
   getEngineCollection,
@@ -32,6 +33,7 @@ function productDefinition(
   // Mirrors what @happyvertical/smrt-virt-web emits for the products package.
   return {
     name,
+    objectRef: '@test/smrt-web:Product',
     className: 'Product',
     endpoint: `/${name}`,
     idField: 'id',
@@ -104,6 +106,30 @@ function makeScriptedFetchers(initialRows: Array<Record<string, unknown>>) {
 }
 
 describe('createSmrtCollection', () => {
+  it('accepts a legacy hand-written definition without objectRef', async () => {
+    // Compile regression: SmrtWebCollectionDefinition remains structurally
+    // compatible with manual literals produced before generated definitions
+    // gained their policy-facing qualified object identity.
+    const legacy: SmrtWebCollectionDefinition<ProductData> = {
+      name: 'legacy-products',
+      className: 'Product',
+      endpoint: '/legacy-products',
+      idField: 'id',
+      actions: ['list'],
+      fields: { name: { type: 'text', required: true } },
+    };
+    const collection = createSmrtCollection(legacy, {
+      fetchers: {
+        list: async () => [{ id: 'p1', name: 'Widget' }],
+        create: async (data) => ({ ...data, id: 'p2' }),
+      },
+    });
+
+    await collection.preload();
+    expect(collection.toArray).toMatchObject([{ id: 'p1', name: 'Widget' }]);
+    await collection.cleanup();
+  });
+
   it('loads rows through the generated fetchers and serves repeat reads from cache within the staleness window', async () => {
     const scripted = makeScriptedFetchers([
       { id: 'p1', name: 'Widget', price: 9.99 },
@@ -513,11 +539,19 @@ describe('definition-derived fetchers', () => {
     });
     expect(collection.size).toBe(1);
 
-    // Failed create: HTTP 500 rejects and rolls back the optimistic row.
+    // Failed create: HTTP 500 rejects and rolls back the optimistic row, but
+    // must not expose potentially sensitive server diagnostics to the browser.
     const localId = newLocalId();
     const tx = collection.insert({ id: localId, name: 'FAIL thing' });
     expect(collection.has(localId)).toBe(true);
-    await expect(tx.isPersisted.promise).rejects.toThrow('rejected by server');
+    const failure = await tx.isPersisted.promise.catch((error) => error);
+    expect(failure).toMatchObject({
+      name: 'SmrtWebRequestError',
+      status: 500,
+    });
+    expect((failure as Error).message).toContain('server error');
+    expect((failure as Error).message).not.toContain('rejected by server');
+    expect((failure as SmrtWebRequestError).payload).toBeUndefined();
     expect(collection.has(localId)).toBe(false);
     expect(collection.size).toBe(1);
 
@@ -530,6 +564,32 @@ describe('definition-derived fetchers', () => {
     );
 
     await collection.cleanup();
+  });
+
+  it('retains typed 4xx failure detail for actionable client errors', async () => {
+    const failure = {
+      ok: false,
+      code: 'policy_locked',
+      message: 'This policy is locked by your organization',
+      status: 403,
+    };
+    const fetchers = createDefinitionFetchers(
+      productDefinition('products-4xx') as SmrtWebCollectionDefinition<object>,
+      '/api/v1',
+      (async () =>
+        Response.json({ error: failure }, { status: 403 })) as typeof fetch,
+    );
+
+    const error = await fetchers
+      .create({ name: 'Widget' })
+      .catch((cause) => cause);
+    expect(error).toMatchObject({
+      name: 'SmrtWebRequestError',
+      status: 403,
+      code: 'policy_locked',
+      payload: { error: failure },
+    });
+    expect((error as Error).message).toContain(failure.message);
   });
 });
 

@@ -36,9 +36,11 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 2. App rows — `scopeType: 'app'`, `tenantId`/`userId` null
 3. Tenant rows — hierarchy walk root → leaf via an injected
    `tenantHierarchyLoader` (smrt-features shape); the default loader
-   dynamic-imports `@happyvertical/smrt-users` (missing-package failures —
-   `ERR_MODULE_NOT_FOUND` / "Cannot find package" across the cause chain —
-   fall back to a flat single-tenant chain). A node that breaks permission
+   uses `@happyvertical/smrt-users`' `TenantCollection`; an injected loader
+   may return no provider (or no chain for a tenant), which falls back to a
+   flat single-tenant chain. `smrt-users` itself is a required Fields runtime
+   dependency for policy authorization, not an optional hierarchy dependency.
+   A node that breaks permission
    inheritance discards every earlier tenant contribution (chain-structural),
    so only the suffix from the LAST break participates — in merging AND in
    the explained layers, which therefore replay to the merged result
@@ -75,9 +77,11 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - **Write-time org checks reuse the resolver**: the required-demotion default
   and the user-write lock are computed by `resolveFieldPolicy` over the org
   tiers (default hierarchy loader), so cascading ancestor-tenant defaults and
-  locks are honored at save time too. On updates the resolver sees the row's
-  persisted version (no self-exclusion), so the resolver-side safety net
-  remains the authoritative enforcement at read time.
+  locks are honored at save time too. On updates the persisted row is excluded
+  from projected lower-layer resolution, so clearing the row's only default
+  while demoting a required field is rejected before mutation; that projected
+  lookup bypasses the shared cache. The resolver-side safety net remains
+  authoritative when a different row is later deleted.
 - **Isolation — a MISSING identity component DENIES, it never skips.** This
   is the package rule; both the write guard
   (`FieldPolicy.assertScopeOwnedByAmbientContext`) and the read guard
@@ -88,12 +92,13 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   `withTenant({ tenantId })`) may not touch the user tier at all. Skipping
   that check instead of denying it was a live ownership bypass: user rows are
   `tenantId: null` by design, so nothing else contains such a write. App-scope
-  writes inside a tenant context require super-admin bypass. With NO ambient
-  identity at all (tenancy ALS never entered), only app-scope writes/deletes
-  are accepted; context-LESS *reads* stay allowed because
-  `resolveFieldPolicy` is a trusted server-side API. Residual: ALS-less
-  deployments can still write APP rows with any authenticated principal until
-  the #2049 permission layer adds `fields:policy:manage`. `save()`/`delete()`
+  writes inside a tenant context require super-admin bypass. `fields.policy.manage`
+  authorizes app/tenant policy mutations; `fields.policy.personalize` authorizes
+  only the caller's user tier (default-seeded for built-in roles). With NO ambient
+  identity at all (tenancy ALS never entered), policy writes/deletes fail closed;
+  trusted system and super-admin contexts retain their explicit bypasses.
+  Context-LESS *reads* stay allowed because `resolveFieldPolicy` is a trusted
+  server-side API. `save()`/`delete()`
   on an existing row additionally authorize against the row's PERSISTED
   scope, looked up by primary key AND — because a generated create always
   mints a fresh UUID while the `conflictColumns` upsert still replaces the
@@ -170,6 +175,27 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   `field_policies`; persistence uses the item class
   (`_smrt_field_policies`), and both are pinned in
   `generated-surfaces.test.ts`.
+
+## Svelte generated forms (#2049)
+
+- `ObjectForm` accepts direct generated `fields` plus a resolved `policy` for
+  SSR and explicit hosts, or accepts only `objectRef` beneath an
+  `ObjectFormSourceProvider`. `ObjectFormSourceRegistry` is per app and maps
+  canonical refs to generated web collection definitions before calling the
+  generated `resolveBatch` custom action. It uses structural types only: this
+  package must never import `smrt-web`.
+- Generated custom-action clients resolve `Promise<any>`; validate their
+  `policies[objectRef]` response at the registry boundary and fail closed on a
+  missing/mismatched definition or policy. The component renders an accessible
+  loading state and alert rather than a partial form.
+- Browser manifest types are `text`, `integer`, `decimal`, `boolean`,
+  `datetime`, `json`, `foreignKey`, and `crossPackageRef`; there is no `select`
+  wire type. Apps use the per-app `FieldInputRegistry.registerField` seam for
+  select-like widgets. Reference fields intentionally default to identifier
+  inputs unless an app supplies a chooser.
+- `policyToVisibleColumnIds(policy, columns)` feeds smrt-ui `DataTable`'s
+  `visibleColumnIds`; it filters policy-hidden mapped fields, preserves unmapped
+  computed/action columns, and cannot reveal a static `column.hidden` column.
 
 ## Related
 

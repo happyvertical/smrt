@@ -42,6 +42,35 @@ class RestRouteWidgetCollection extends SmrtCollection<RestRouteWidget> {
   static readonly _itemClass = RestRouteWidget;
 }
 
+@smrt({ api: { public: true } })
+class RestTypedErrorWidget extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+
+  constructor(options: { name?: string } = {}) {
+    super(options);
+    if (options.name !== undefined) this.name = options.name;
+  }
+
+  override async save(): Promise<this> {
+    if (this.name === 'typed-denial') {
+      throw Object.assign(new Error('Explicit permission denial.'), {
+        status: 403,
+      });
+    }
+    if (this.name === 'server-fault') {
+      throw Object.assign(new Error('Sensitive server detail.'), {
+        status: 500,
+      });
+    }
+    return await super.save();
+  }
+}
+
+class RestTypedErrorWidgetCollection extends SmrtCollection<RestTypedErrorWidget> {
+  static readonly _itemClass = RestTypedErrorWidget;
+}
+
 // Object exposing only list/get — create/update/delete must be 405.
 @smrt({ api: { include: ['list', 'get'], public: true } })
 class RestReadOnlyWidget extends SmrtObject {
@@ -102,6 +131,10 @@ describe('REST generator route map (#1500)', () => {
     RestRouteWidgetCollection,
   );
   ObjectRegistry.registerCollection(
+    'RestTypedErrorWidget',
+    RestTypedErrorWidgetCollection,
+  );
+  ObjectRegistry.registerCollection(
     'RestReadOnlyWidget',
     RestReadOnlyWidgetCollection,
   );
@@ -126,12 +159,16 @@ describe('REST generator route map (#1500)', () => {
       url: ':memory:',
       classes: [
         'RestRouteWidget',
+        'RestTypedErrorWidget',
         'RestReadOnlyWidget',
         'RestExcludeWidget',
         'RestReadPermissionWidget',
       ],
     });
     collection = await RestRouteWidgetCollection.create({ db });
+    const typedErrorCollection = await RestTypedErrorWidgetCollection.create({
+      db,
+    });
     permissionCollection = await RestReadPermissionWidgetCollection.create({
       db,
     });
@@ -144,6 +181,10 @@ describe('REST generator route map (#1500)', () => {
 
     const api = new APIGenerator({ basePath: '/api/v1' });
     api.registerCollection('restroutewidgets', collection);
+    api.registerCollection(
+      'resttypederrorwidgets',
+      typedErrorCollection as unknown as SmrtCollection<SmrtObject>,
+    );
     api.registerCollection(
       'restreadpermissionwidgets',
       permissionCollection as unknown as SmrtCollection<SmrtObject>,
@@ -163,6 +204,34 @@ describe('REST generator route map (#1500)', () => {
         body: JSON.stringify(body),
       }),
     );
+
+  const postTypedError = (body: Record<string, any>) =>
+    handler(
+      new Request('http://local/api/v1/resttypederrorwidgets', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  it('serializes typed 4xx model denials but keeps 5xx details opaque', async () => {
+    const denied = await postTypedError({ name: 'typed-denial' });
+    expect(denied.status).toBe(403);
+    await expect(denied.json()).resolves.toEqual({
+      error: {
+        code: 'permission_denied',
+        message: 'Explicit permission denial.',
+        ok: false,
+        status: 403,
+      },
+    });
+
+    const fault = await postTypedError({ name: 'server-fault' });
+    expect(fault.status).toBe(500);
+    await expect(fault.json()).resolves.toEqual({
+      error: 'Internal server error',
+    });
+  });
 
   describe('full CRUD lifecycle', () => {
     let createdId: string;

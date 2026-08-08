@@ -132,7 +132,12 @@ Setup: README → *Manifest-derived permission catalog* and *Postgres RLS enforc
   intentionally exclude users/RBAC authority and security resources (`users`,
   `tenants`, `roles`, `permissions`, memberships, groups, sessions, magic-link
   tokens, and related join/override tables). Re-seeding is additive and
-  idempotent; pruning stale mappings requires `{ prune: true }`.
+  idempotent; pruning stale mappings requires `{ prune: true }`. When a
+  contributing package registers a new built-in self-personalization
+  permission after system roles already exist, call the explicit,
+  idempotent `RolePermissionCollection.seedDefaultRolePersonalizationPermissions()`
+  upgrade helper; it targets owner/admin/member/viewer only and never grants
+  custom roles.
 
 **Critical**: `getGroupIdsForTenant(userId, tenantId)` (joins with groups table to scope by tenant). Never use `getGroupIds()` — it's cross-tenant.
 

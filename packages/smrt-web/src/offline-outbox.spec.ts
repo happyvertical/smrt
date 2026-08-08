@@ -321,6 +321,7 @@ function productDefinition(
 ): SmrtWebCollectionDefinition<ProductData> {
   return {
     name,
+    objectRef: '@test/smrt-web:Product',
     className: 'Product',
     endpoint: `/${name}`,
     idField: 'id',

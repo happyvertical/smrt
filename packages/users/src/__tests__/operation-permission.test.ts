@@ -499,6 +499,125 @@ describe('operation permission guards', () => {
     expect(third.added.viewer).not.toContain('campaigns.approve');
   });
 
+  it('default-grants registered self-personalization permissions to every system role', async () => {
+    const unregister = registerPermissionDefinitions([
+      {
+        category: 'fields',
+        name: 'Personalize Field Policies',
+        slug: 'fields.policy.personalize',
+      },
+    ]);
+    cleanupFns.push(unregister);
+
+    await roles.seedSystemRoles();
+    const seeded = await rolePermissions.seedRolePermissions();
+
+    for (const role of ['owner', 'admin', 'member', 'viewer']) {
+      expect(seeded.added[role]).toContain('fields.policy.personalize');
+    }
+  });
+
+  it('never injects the built-in self-personalization grant into a custom role matrix', async () => {
+    const unregister = registerPermissionDefinitions([
+      {
+        category: 'fields',
+        name: 'Personalize Field Policies',
+        slug: 'fields.policy.personalize',
+      },
+    ]);
+    cleanupFns.push(unregister);
+
+    await roles.seedSystemRoles();
+    const auditor = await roles.create({ name: 'Auditor', slug: 'auditor' });
+    await auditor.save();
+
+    const seeded = await rolePermissions.seedRolePermissions({
+      ...DEFAULT_ROLE_PERMISSION_PATTERNS,
+      auditor: ['operation_permission_records.read'],
+    });
+    expect(seeded.matched.auditor).not.toContain('fields.policy.personalize');
+    expect(await slugsForRole('auditor')).not.toContain(
+      'fields.policy.personalize',
+    );
+  });
+
+  it('upgrades existing built-in roles with the registered personalization grant only', async () => {
+    await roles.seedSystemRoles();
+    await rolePermissions.seedRolePermissions();
+    const auditor = await roles.create({ name: 'Auditor', slug: 'auditor' });
+    await auditor.save();
+    const tenant = await tenants.create({ name: 'Tenant role collision' });
+    await tenant.save();
+    if (!tenant.id) throw new Error('Expected a persisted tenant id.');
+    const tenantViewer = await roles.create({
+      name: 'Tenant Viewer',
+      slug: 'viewer',
+      tenantId: tenant.id,
+      context: tenant.id,
+    });
+    await tenantViewer.save();
+    const tenantMember = await roles.create({
+      name: 'Tenant Member',
+      slug: 'member',
+      tenantId: tenant.id,
+      context: tenant.id,
+    });
+    await tenantMember.save();
+
+    const unregister = registerPermissionDefinitions([
+      {
+        category: 'fields',
+        name: 'Personalize Field Policies',
+        slug: 'fields.policy.personalize',
+      },
+    ]);
+    cleanupFns.push(unregister);
+
+    const tenantSeeded = await rolePermissions.seedRolePermissions(
+      {
+        member: DEFAULT_ROLE_PERMISSION_PATTERNS.member,
+        viewer: DEFAULT_ROLE_PERMISSION_PATTERNS.viewer,
+      },
+      { tenantId: tenant.id },
+    );
+    for (const role of ['member', 'viewer']) {
+      expect(tenantSeeded.matched[role]).not.toContain(
+        'fields.policy.personalize',
+      );
+    }
+    for (const role of [tenantViewer, tenantMember]) {
+      if (!role.id) throw new Error('Expected a persisted tenant role id.');
+      const permissionIds = await rolePermissions.getPermissionIds(role.id);
+      const permissionMap = await permissions.findByIds(permissionIds);
+      expect(
+        Array.from(permissionMap.values()).map((permission) => permission.slug),
+      ).not.toContain('fields.policy.personalize');
+    }
+
+    const upgraded =
+      await rolePermissions.seedDefaultRolePersonalizationPermissions({
+        // A caller may be operating in this tenant, but the upgrade must still
+        // target system roles only rather than these colliding custom slugs.
+        tenantId: tenant.id,
+      });
+    for (const role of ['owner', 'admin', 'member', 'viewer']) {
+      expect(upgraded.added[role]).toContain('fields.policy.personalize');
+      expect(await slugsForRole(role)).toContain('fields.policy.personalize');
+    }
+    expect(upgraded.added.auditor).toBeUndefined();
+    expect(await slugsForRole('auditor')).not.toContain(
+      'fields.policy.personalize',
+    );
+    for (const role of [tenantViewer, tenantMember]) {
+      if (!role.id) throw new Error('Expected a persisted tenant role id.');
+      const permissionIds = await rolePermissions.getPermissionIds(role.id);
+      const permissionMap = await permissions.findByIds(permissionIds);
+      expect(
+        Array.from(permissionMap.values()).map((permission) => permission.slug),
+      ).not.toContain('fields.policy.personalize');
+    }
+  });
+
   it('can seed role permissions through seedSystemRoles opt-in', async () => {
     await roles.seedSystemRoles({
       permissionMatrix: DEFAULT_ROLE_PERMISSION_PATTERNS,

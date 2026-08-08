@@ -10,6 +10,7 @@ import {
   TenantIsolationError,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
+import { assertOperationPermission } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { invalidateFieldPolicyCache } from '../cache.js';
 import {
@@ -23,6 +24,11 @@ import {
   type RegisteredFieldInfo,
 } from '../field-definitions.js';
 import {
+  ensureFieldPolicyPermissionsRegistered,
+  MANAGE_FIELD_POLICY_PERMISSION,
+  PERSONALIZE_FIELD_POLICY_PERMISSION,
+} from '../permissions.js';
+import {
   APP_FIELD_POLICY_SCOPE_KEY,
   FIELD_POLICY_SCOPE_TYPES,
   FIELD_POLICY_VISIBILITIES,
@@ -32,7 +38,13 @@ import {
   type ResolvedFieldPolicy,
 } from '../types.js';
 
+// Direct model imports (rather than the package entrypoint) are common in
+// server-side integrations and tests. Register before any guard asks the
+// shared users catalog about either custom capability.
+ensureFieldPolicyPermissionsRegistered();
+
 type FieldPolicyIdentity = {
+  id: string;
   objectRef: string;
   fieldName: string;
   scopeType: string;
@@ -45,6 +57,17 @@ type FieldPolicyTransactionHandle = DatabaseInterface & {
   commit: () => Promise<void>;
   rollback: () => Promise<void>;
 };
+
+/** Expected authorization denial that generated REST serializes as HTTP 403. */
+class FieldPolicyAuthorizationError extends Error {
+  readonly code = 'permission_denied';
+  readonly status = 403;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'FieldPolicyAuthorizationError';
+  }
+}
 
 /**
  * Sparse, layered field policy override (epic #2045, issue #2047).
@@ -211,7 +234,10 @@ export class FieldPolicy extends SmrtObject {
     // the original foreign row).
     if (previousIdentity) {
       this.assertScopeOwnedByAmbientContext(previousIdentity, 'save');
+      await this.assertScopePermission(previousIdentity);
     }
+    this.assertScopeOwnedByAmbientContext(this, 'save');
+    await this.assertScopePermission(this);
     // Audit attribution (#2050): inside an ambient context the SERVER stamps
     // who wrote the row — a client-supplied `updatedBy` is overwritten, so
     // attribution cannot be spoofed through the generated write routes. A
@@ -222,7 +248,7 @@ export class FieldPolicy extends SmrtObject {
       this.updatedBy = ambientContext.userId ?? null;
     }
     this.normalizeDefaultValueForPersistence();
-    await this.validateFieldPolicy();
+    await this.validateFieldPolicy(previousIdentity);
     // scopeKey makes the conflict-column tuple total even though tenantId and
     // userId are nullable (nullable columns would allow duplicate NULL rows).
     this.scopeKey = this.computeScopeKey();
@@ -322,6 +348,7 @@ export class FieldPolicy extends SmrtObject {
     if (persisted) {
       this.assertScopeOwnedByAmbientContext(persisted, 'delete');
     }
+    await this.assertScopePermission(persisted ?? this);
     const objectRef = persisted?.objectRef ?? this.objectRef;
     await super.delete();
     invalidateFieldPolicyCache(objectRef, this.db);
@@ -330,7 +357,9 @@ export class FieldPolicy extends SmrtObject {
     }
   }
 
-  private async validateFieldPolicy(): Promise<void> {
+  private async validateFieldPolicy(
+    previousIdentity: FieldPolicyIdentity | null,
+  ): Promise<void> {
     if (!this.objectRef || this.objectRef.trim() === '') {
       throw new Error('FieldPolicy.objectRef is required');
     }
@@ -426,7 +455,7 @@ export class FieldPolicy extends SmrtObject {
     const needsLockCheck = this.scopeType === 'user';
 
     if (needsOrgDefault || needsLockCheck) {
-      const orgPolicy = await this.resolveOrgTierFieldPolicy();
+      const orgPolicy = await this.resolveOrgTierFieldPolicy(previousIdentity);
 
       if (needsOrgDefault) {
         const orgDefault = orgPolicy?.hasDefault
@@ -446,7 +475,7 @@ export class FieldPolicy extends SmrtObject {
       // resolver additionally skips the user layer at read time whenever the
       // org tiers resolve locked, so stale user rows cannot bypass a lock.
       if (needsLockCheck && orgPolicy?.locked) {
-        throw new Error(
+        throw new FieldPolicyAuthorizationError(
           `Field "${this.objectRef}.${this.fieldName}" is locked by org ` +
             `policy; user-scope overrides are not allowed`,
         );
@@ -462,14 +491,14 @@ export class FieldPolicy extends SmrtObject {
    * tenant-scope rows, the ambient context tenant for user-scope rows, and
    * none for app-scope rows (their only lower layer is the code seed).
    *
-   * On updates the resolver sees this row's PERSISTED version (there is no
-   * self-exclusion), so a save that removes the only default while demoting
-   * can pass here; the resolver-side safety net stays authoritative at read
-   * time.
+   * During an update, the persisted row is excluded from the lower-layer
+   * projection. That makes a clear-default + required-field demotion validate
+   * the post-write policy rather than accidentally counting the row being
+   * replaced.
    */
-  private async resolveOrgTierFieldPolicy(): Promise<
-    ResolvedFieldPolicy | undefined
-  > {
+  private async resolveOrgTierFieldPolicy(
+    previousIdentity: FieldPolicyIdentity | null,
+  ): Promise<ResolvedFieldPolicy | undefined> {
     const tenantIdForChain =
       this.scopeType === 'tenant'
         ? this.tenantId
@@ -483,6 +512,9 @@ export class FieldPolicy extends SmrtObject {
     const resolved = await resolveFieldPolicy(this.objectRef, {
       tenantId: tenantIdForChain,
       db: this.options.db ?? this.options.persistence,
+      ...(previousIdentity
+        ? { excludePolicyIds: new Set([previousIdentity.id]) }
+        : {}),
     });
     return resolved.fields[this.fieldName];
   }
@@ -657,6 +689,32 @@ export class FieldPolicy extends SmrtObject {
     );
   }
 
+  /**
+   * Permission boundary for policy mutations. Scope ownership is checked
+   * separately (and first) because permission never grants cross-tenant or
+   * cross-user access. Existing rows are checked against their persisted
+   * scope before an identity-changing save can mutate or delete them.
+   */
+  private async assertScopePermission(scope: {
+    scopeType: string;
+  }): Promise<void> {
+    const context = getCurrentTenant();
+    const action =
+      scope.scopeType === 'user'
+        ? PERSONALIZE_FIELD_POLICY_PERMISSION
+        : MANAGE_FIELD_POLICY_PERMISSION;
+    const [, , operation] = action.split('.');
+
+    await assertOperationPermission({
+      collection: 'fields.policy',
+      action: operation ?? 'manage',
+      db: this.options.db ?? this.options.persistence,
+      tenantId: context?.tenantId ?? null,
+      userId: context?.userId ?? null,
+      permissionSet: context?.permissions,
+    });
+  }
+
   private validateDefaultAgainstSecurityRail(
     fieldDef: RegisteredFieldInfo,
   ): void {
@@ -735,6 +793,7 @@ export class FieldPolicy extends SmrtObject {
     };
 
     return {
+      id: read('id', 'id', String(this.id ?? '')),
       objectRef: read('objectRef', 'object_ref', this.objectRef),
       fieldName: read('fieldName', 'field_name', this.fieldName),
       scopeType: read('scopeType', 'scope_type', this.scopeType),

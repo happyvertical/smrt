@@ -306,6 +306,28 @@ describe('buildWebToolDescriptors', () => {
     // Descriptors are layered on in generateWebModule, NOT here — that is what
     // keeps computeWebManifestHash (which hashes this shape) row-shape-only.
     expect(def).not.toHaveProperty('toolDescriptors');
+    expect(def.objectRef).toBe('@happyvertical/smrt-core:Product');
+  });
+
+  it('uses the qualified manifest key when legacy objects omit package identity', () => {
+    const legacyProduct = obj({
+      className: 'Product',
+      collection: 'products',
+      qualifiedName: '@example/products:Product',
+    });
+    legacyProduct.qualifiedName = undefined;
+    legacyProduct.packageName = undefined;
+    const legacyManifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      objects: { '@example/products:Product': legacyProduct },
+    } as SmartObjectManifest;
+
+    const definition = buildWebCollectionDefinition(
+      selectWebCollectionEntries(legacyManifest)[0],
+      legacyManifest,
+    );
+    expect(definition.objectRef).toBe('@example/products:Product');
   });
 });
 
@@ -1037,6 +1059,28 @@ describe('computeWebManifestHash (#1764)', () => {
       ),
     );
     expect(withEdge).not.toBe(withoutEdge);
+  });
+
+  it('CHANGES when the canonical objectRef changes', () => {
+    const core = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          qualifiedName: '@happyvertical/smrt-core:Product',
+        }),
+      ),
+    );
+    const products = computeWebManifestHash(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          qualifiedName: '@happyvertical/smrt-products:Product',
+        }),
+      ),
+    );
+    expect(products).not.toBe(core);
   });
 
   // The salt covers get-OR-list routes, not just materializable (list) ones

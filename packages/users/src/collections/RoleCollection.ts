@@ -88,6 +88,15 @@ export class RoleCollection extends SmrtCollection<Role> {
     return systemRoles.length > 0 ? systemRoles[0] : null;
   }
 
+  /** Find a built-in system role only; tenant slug collisions never match. */
+  async findSystemRoleBySlug(slug: string): Promise<Role | null> {
+    const systemRoles = await this.list({
+      where: { slug, tenantId: null, isSystem: true },
+      limit: 1,
+    });
+    return systemRoles[0] ?? null;
+  }
+
   /**
    * Seed default system roles
    */

@@ -36,6 +36,7 @@ interface JobData {
 function jobDefinition(name: string): SmrtWebCollectionDefinition<JobData> {
   return {
     name,
+    objectRef: '@test/smrt-svelte:RenderJob',
     className: 'RenderJob',
     endpoint: `/${name}`,
     idField: 'id',

@@ -13,6 +13,8 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+import { ensureFieldPolicyPermissionsRegistered } from './permissions.js';
+
 export {
   clearFieldPolicyCache,
   getFieldPolicyCacheTtlMs,
@@ -42,12 +44,23 @@ export {
 } from './field-policy-resolver.js';
 export { FieldPolicy } from './models/FieldPolicy.js';
 export {
+  ensureFieldPolicyPermissionsRegistered,
+  FIELD_POLICY_PERMISSION_DEFINITIONS,
+  MANAGE_FIELD_POLICY_PERMISSION,
+  PERSONALIZE_FIELD_POLICY_PERMISSION,
+} from './permissions.js';
+export {
   APP_FIELD_POLICY_SCOPE_KEY,
   type ExplainedObjectFieldPolicy,
   FIELD_POLICY_SCOPE_TYPES,
   FIELD_POLICY_VISIBILITIES,
   type FieldPolicyBatchResult,
   type FieldPolicyDelta,
+  type FieldPolicyEditorCapabilities,
+  type FieldPolicyEditorRow,
+  type FieldPolicyEditorState,
+  type FieldPolicyEditorStateDenied,
+  type FieldPolicyEditorStateResult,
   type FieldPolicyLayerContribution,
   type FieldPolicyOptions,
   type FieldPolicyScopeType,
@@ -61,3 +74,7 @@ export {
   type ResolvedObjectFieldPolicy,
   type ResolveFieldPolicyOptions,
 } from './types.js';
+
+// Contribute the field-policy capabilities to the shared runtime catalog on
+// import, so normal role seeding and every server gate recognize the slugs.
+ensureFieldPolicyPermissionsRegistered();

@@ -36,6 +36,10 @@ import type { PolicyFieldSnippetProps } from '../types.js';
 export interface Props {
   /** The field name matching a key in the resolved policy's `fields`. */
   name: string;
+  /** Stable per-form control id; defaults to `name` for standalone use. */
+  id?: string;
+  /** Stable per-form help id; defaults to `${id}-help`. */
+  helpId?: string;
   /**
    * Children — the actual input(s). Always rendered when the field is visible
    * (unless the `render` snippet escape hatch is used).
@@ -76,6 +80,8 @@ export interface Props {
 
 let {
   name,
+  id = name,
+  helpId = `${id}-help`,
   children,
   render: renderSnippet,
   isNewRecord = true,
@@ -119,6 +125,8 @@ const defaultValue = $derived(resolvedField?.defaultValue);
 
 // Snippet escape hatch data
 const snippetProps = $derived<PolicyFieldSnippetProps>({
+  id,
+  helpId,
   visible,
   label,
   help,
@@ -213,10 +221,10 @@ $effect(() => {
   if (control.hasAttribute('aria-describedby')) {
     return; // Consumer owns the association — never overwrite it.
   }
-  control.setAttribute('aria-describedby', `${name}-help`);
+  control.setAttribute('aria-describedby', helpId);
   return () => {
     // Hint no longer rendered (or wrapper torn down) — drop the link we added.
-    if (control.getAttribute('aria-describedby') === `${name}-help`) {
+    if (control.getAttribute('aria-describedby') === helpId) {
       control.removeAttribute('aria-describedby');
     }
   };
@@ -251,8 +259,8 @@ $effect(() => {
   if (control.id) {
     controlId = control.id;
   } else {
-    control.setAttribute('id', name);
-    controlId = name;
+    control.setAttribute('id', id);
+    controlId = id;
   }
 });
 
@@ -289,7 +297,7 @@ $effect(() => {
            when it resolves to null (no wrapped control). -->
       <label
         class="policy-field__label"
-        for={controlId === undefined ? name : controlId}
+        for={controlId === undefined ? id : controlId}
         title={helpDensity === 'tooltip' && help !== null ? help : undefined}
       >
         {label}{#if required}<span class="policy-field__required" aria-hidden="true">*</span>{/if}
@@ -300,7 +308,7 @@ $effect(() => {
       <!-- Hint text density, or tooltip density with no label to attach the
            title attribute to (fall back to visible help rather than dropping
            it). -->
-      <p class="policy-field__hint" id="{name}-help">{help}</p>
+      <p class="policy-field__hint" id={helpId}>{help}</p>
     {/if}
   </div>
 {/if}

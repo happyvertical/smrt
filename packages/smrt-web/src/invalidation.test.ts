@@ -47,6 +47,7 @@ interface TagData {
 function commentsDefinition(): SmrtWebCollectionDefinition<CommentData> {
   return {
     name: 'comments',
+    objectRef: '@test/smrt-web:Comment',
     className: 'Comment',
     endpoint: '/comments',
     idField: 'id',
@@ -68,6 +69,7 @@ function commentsDefinition(): SmrtWebCollectionDefinition<CommentData> {
 function articlesDefinition(): SmrtWebCollectionDefinition<ArticleData> {
   return {
     name: 'articles',
+    objectRef: '@test/smrt-web:Article',
     className: 'Article',
     endpoint: '/articles',
     idField: 'id',
@@ -83,6 +85,7 @@ function articlesDefinition(): SmrtWebCollectionDefinition<ArticleData> {
 function tagsDefinition(): SmrtWebCollectionDefinition<TagData> {
   return {
     name: 'tags',
+    objectRef: '@test/smrt-web:Tag',
     className: 'Tag',
     endpoint: '/tags',
     idField: 'id',

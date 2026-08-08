@@ -1066,6 +1066,9 @@ importers:
       '@happyvertical/smrt-ui':
         specifier: workspace:*
         version: link:../smrt-ui
+      '@happyvertical/smrt-users':
+        specifier: workspace:*
+        version: link:../users
       '@happyvertical/sql':
         specifier: ^0.85.5
         version: 0.85.5(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
@@ -1073,9 +1076,6 @@ importers:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
         version: link:../cli
-      '@happyvertical/smrt-users':
-        specifier: workspace:*
-        version: link:../users
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

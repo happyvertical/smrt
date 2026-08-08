@@ -25,6 +25,7 @@ interface ProductData {
 function productDefinition(): SmrtWebCollectionDefinition<ProductData> {
   return {
     name: 'products',
+    objectRef: '@test/smrt-web:Product',
     className: 'Product',
     endpoint: '/products',
     idField: 'id',
