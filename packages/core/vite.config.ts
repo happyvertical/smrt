@@ -15,7 +15,7 @@ import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 
 // Function to read core package exports and generate entries
-function getCoreEntries() {
+export function getCoreEntries() {
   const pkgPath = resolve(__dirname, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
   const entries: Record<string, string> = {};
@@ -55,15 +55,11 @@ function getCoreEntries() {
 
   // Also add browser entry point
   entries['browser'] = resolve(__dirname, 'src/browser.ts');
-  // These runtime manifest stubs are required by manifest-loader but are not
-  // public package exports, so we include them explicitly in the build graph.
+  // The runtime static manifest is required by manifest-loader but is not a
+  // public package export, so include it explicitly in the build graph.
   entries['manifest/static-manifest'] = resolve(
     __dirname,
     'src/manifest/static-manifest.ts',
-  );
-  entries['manifest/test-manifest-stub'] = resolve(
-    __dirname,
-    'src/manifest/test-manifest-stub.ts',
   );
 
   return entries;
@@ -215,6 +211,8 @@ export default defineConfig({
         '**/*.config.ts',
         '**/*.config.js',
         '**/*.d.ts',
+        // Test-only generated artifact; generate:test owns it exclusively.
+        'src/manifest/test-manifest-stub.ts',
         // Exclude browser template - loaded as string, not compiled
         'src/vite-plugin/templates/default-ui.ts',
       ],
