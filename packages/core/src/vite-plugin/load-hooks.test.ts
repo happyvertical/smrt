@@ -77,12 +77,19 @@ describe('smrtPlugin api.options', () => {
       baseClasses: ['SmrtObject', 'CustomBase'],
       followImports: false,
     });
+    expect(plugin.api.options).not.toHaveProperty('projectRoot');
     expect(plugin.api.options).toEqual({
       include: ['lib/**/*.ts'],
       exclude: ['**/*.spec.ts'],
       baseClasses: ['SmrtObject', 'CustomBase'],
       followImports: false,
     });
+  });
+
+  it('exposes an explicitly configured project root', () => {
+    const plugin: any = smrtPlugin({ projectRoot: '/tmp/smrt-app' });
+
+    expect(plugin.api.options).toHaveProperty('projectRoot', '/tmp/smrt-app');
   });
 });
 
