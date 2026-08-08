@@ -18,9 +18,8 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CLIGenerator } from '../../cli/src/cli-generator.js';
-// Registers smrt-users' Tenant so getTestDatabase can create the tenants
-// table the user-tier write-time lock check reads through the default
-// hierarchy loader.
+// Registers smrt-users' Tenant/Membership so test databases cover hierarchy
+// reads and the control-panel's tenant-scoped user-override counts.
 import {
   TenantCollection,
   withPrincipalPermissionContext,
@@ -76,7 +75,9 @@ describe('smrt-fields generated surfaces', () => {
   beforeEach(async () => {
     setupTestTenancy();
     clearFieldPolicyCache();
-    db = await getTestDatabase({ classes: ['FieldPolicy', 'Tenant'] });
+    db = await getTestDatabase({
+      classes: ['FieldPolicy', 'Tenant', 'Membership'],
+    });
     policies = await FieldPolicyCollection.create({ db });
   });
 
@@ -736,6 +737,33 @@ describe('smrt-fields generated surfaces', () => {
     );
     expect(pluralRoute.status).toBe(200);
     expect((await pluralRoute.json()).action).toBe('getEditorState');
+
+    // The control-panel roll-up is likewise a collection action: it must
+    // dispatch through the generated runtime route rather than falling
+    // through to CRUD (which would reopen the sparse policy table).
+    const auditRoute = await withTenant(
+      {
+        tenantId,
+        userId,
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      () =>
+        handler(
+          new Request('http://localhost/api/v1/fieldpolicy/policy-audit', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ objectRefs: [objectRef] }),
+          }),
+        ),
+    );
+    expect(auditRoute.status).toBe(200);
+    expect(await auditRoute.json()).toMatchObject({
+      action: 'policyAudit',
+      result: {
+        caller: { canManageOrg: true },
+        policies: { [objectRef]: { fields: { headline: expect.anything() } } },
+      },
+    });
   });
 
   it('keeps the prefixed system table name as the registry authority', async () => {

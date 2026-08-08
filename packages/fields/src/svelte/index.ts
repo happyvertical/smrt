@@ -17,6 +17,7 @@
 
 import type { ComponentProps } from 'svelte';
 import AdvancedFields from './components/AdvancedFields.svelte';
+import FieldPolicyControlPanel from './components/FieldPolicyControlPanel.svelte';
 import FieldPolicyEditor from './components/FieldPolicyEditor.svelte';
 import FieldPolicyGearButton from './components/FieldPolicyGearButton.svelte';
 import FieldPolicyGearProvider from './components/FieldPolicyGearProvider.svelte';
@@ -30,6 +31,7 @@ import PolicyField from './components/PolicyField.svelte';
 // Components
 export {
   AdvancedFields,
+  FieldPolicyControlPanel,
   FieldPolicyEditor,
   FieldPolicyGearButton,
   FieldPolicyGearProvider,
@@ -53,6 +55,9 @@ export type ObjectFormSourceProviderProps = ComponentProps<
   typeof ObjectFormSourceProvider
 >;
 export type FieldPolicyEditorProps = ComponentProps<typeof FieldPolicyEditor>;
+export type FieldPolicyControlPanelProps = ComponentProps<
+  typeof FieldPolicyControlPanel
+>;
 export type FieldPolicyGearButtonProps = ComponentProps<
   typeof FieldPolicyGearButton
 >;
@@ -61,6 +66,13 @@ export type FieldPolicyGearProviderProps = ComponentProps<
 >;
 export type PolicyFieldProps = ComponentProps<typeof PolicyField>;
 
+export type {
+  FieldPolicyCatalogObjectSummary,
+  FieldPolicyDetailItem,
+  FieldPolicySettingsCatalogData,
+  FieldPolicySettingsCatalogPage,
+  FieldPolicySummaryItem,
+} from '../settings-catalog.js';
 // Re-export resolved-policy types consumers need (from the core package)
 export type {
   ResolvedFieldPolicy,
@@ -115,6 +127,21 @@ export {
   assertObjectFormCollectionDefinition,
   ObjectFormSourceRegistry,
 } from './object-form-source.svelte.js';
+export type {
+  FieldPolicyControlPanelAdapter,
+  FieldPolicyFieldRollup,
+  FieldPolicyLayerCell,
+} from './settings-catalog.js';
+export {
+  auditObjectRefs,
+  decorateCatalogItem,
+  decorateCatalogPage,
+  fieldPolicyControlPanelNavItem,
+  fieldPolicyRollup,
+  MAX_FIELD_POLICY_AUDIT_OBJECT_REFS,
+  orgRowIdsForObject,
+  prunableDriftRows,
+} from './settings-catalog.js';
 // Snippet escape-hatch props
 export type {
   FieldInputProps,

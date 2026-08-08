@@ -13,6 +13,7 @@ import {
   type FieldDefinitionMap,
   getCodeSeedGroup,
   getObjectFieldMap,
+  isPolicyAddressableField,
   isRequiredField,
   isUsableRequiredDefault,
 } from './field-definitions.js';
@@ -56,6 +57,20 @@ export async function resolveFieldPolicy(
 ): Promise<ResolvedObjectFieldPolicy> {
   const explained = await resolveFieldPolicyExplained(objectRef, options);
   return { objectRef: explained.objectRef, fields: explained.fields };
+}
+
+/**
+ * The tenant ids whose rows participate in precedence for a tenant, root to
+ * leaf. Catalog code uses this instead of reimplementing inheritance-break
+ * handling when it decides whether an inherited override is customized.
+ */
+export async function resolveSurvivingTenantChainIds(
+  tenantId: string,
+  options: ResolveFieldPolicyOptions = {},
+): Promise<string[]> {
+  assertResolutionAllowedInContext(tenantId, null);
+  const chain = await resolveTenantChain(tenantId, options);
+  return selectSurvivingChainSuffix(chain).map((node) => node.id);
 }
 
 /**
@@ -280,17 +295,9 @@ function selectPolicyAddressableFields(
 ): FieldDefinitionMap {
   const selected: FieldDefinitionMap = new Map();
   for (const [name, field] of fieldMap) {
-    if (field._meta?.__smrtSystemField === true) {
-      continue;
+    if (isPolicyAddressableField(field)) {
+      selected.set(name, field);
     }
-    if (
-      field.type === 'oneToMany' ||
-      field.type === 'manyToMany' ||
-      field.type === 'meta'
-    ) {
-      continue;
-    }
-    selected.set(name, field);
   }
   return selected;
 }
