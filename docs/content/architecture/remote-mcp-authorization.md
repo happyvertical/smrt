@@ -2,11 +2,11 @@
 
 This is the deployment contract for Anytown, Ergot, and other applications that
 put a SMRT MCP HTTP surface on the public internet. SMRT currently supplies the
-application-scoped `/api/mcp/tools` and `/api/mcp/call` adapters and a local
-stdio bridge. It does **not** supply an OAuth authorization server or the MCP
-Streamable HTTP transport. Until the stateless transport lands, terminate OAuth
-at the application gateway and populate the authenticated SvelteKit principal
-only after token validation.
+application-scoped `/api/mcp` stateless Streamable HTTP endpoint and a local
+stdio bridge. The REST-shaped `/api/mcp/tools` and `/api/mcp/call` adapters are
+deprecated compatibility routes for one release. SMRT does **not** supply an
+OAuth authorization server. Terminate OAuth at the application gateway and
+populate the authenticated SvelteKit principal only after token validation.
 
 ## Authorization-server contract
 
@@ -54,12 +54,14 @@ fallback includes `application_type`, `grant_types`, `response_types`, and
 
 ## Application wiring
 
-For the current application adapters:
+For the application MCP route:
 
-1. Protect both `/api/mcp/tools` and `/api/mcp/call` at the same gateway.
+1. Protect `/api/mcp` at the gateway. During the one-release compatibility
+   window, apply the same policy to `/api/mcp/tools` and `/api/mcp/call`.
 2. Validate the bearer token at the gateway and populate `event.locals.user`,
-   `tenantId`, and permissions from the validated principal. Header presence is
-   not authentication.
+   `tenantId`, and permissions from the validated principal on every request.
+   `mountMcpRoute` uses that principal for discovery and calls; header presence
+   is not authentication.
 3. Keep `publicToolPatterns` empty unless anonymous read access is deliberate.
 4. Preserve tenant isolation and the app allow-list for every tool invocation.
 5. Do not expose the generated stdio server remotely; stdio obtains credentials

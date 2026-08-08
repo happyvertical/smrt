@@ -173,7 +173,9 @@ async function modernRequest(
         'content-type': 'application/json',
         ...(mcpMethod === null ? {} : { 'mcp-method': mcpMethod }),
         'mcp-protocol-version': '2026-07-28',
-        ...(mcpName === null ? {} : { 'mcp-name': mcpName }),
+        ...(mcpName === null || mcpName === undefined
+          ? {}
+          : { 'mcp-name': mcpName }),
       },
       body: JSON.stringify({
         jsonrpc: '2.0',

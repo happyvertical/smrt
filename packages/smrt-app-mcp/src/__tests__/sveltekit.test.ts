@@ -81,7 +81,9 @@ function makeModernEvent(init: {
       'content-type': 'application/json',
       'mcp-protocol-version': '2026-07-28',
       ...(mcpMethod === null ? {} : { 'mcp-method': mcpMethod }),
-      ...(mcpName === null ? {} : { 'mcp-name': mcpName }),
+      ...(mcpName === null || mcpName === undefined
+        ? {}
+        : { 'mcp-name': mcpName }),
     },
     locals: init.locals,
     url: 'https://example.com/api/mcp',
