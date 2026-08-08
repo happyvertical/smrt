@@ -92,6 +92,14 @@ describe('smrt-dev-mcp stdio server', () => {
     const reflect = JSON.parse(textContent(reflectResult));
     expect(reflect.smrtPackageCount).toBeGreaterThan(0);
     expect(reflect.freshness.ok).toBe(true);
+    expect(reflectResult).toMatchObject({
+      structuredContent: {
+        ok: true,
+        coverage: expect.any(Object),
+        diagnostics: expect.any(Array),
+        data: expect.objectContaining({ smrtPackageCount: expect.any(Number) }),
+      },
+    });
 
     const domainReflectResult = await client.callTool({
       name: 'reflect-domain-knowledge',

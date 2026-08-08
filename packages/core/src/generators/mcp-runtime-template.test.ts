@@ -11,6 +11,11 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain("setRequestHandler('tools/call'");
     expect(source).toContain('serveStdio(() => createServer()');
     expect(source).toContain('await loadConfig()');
+    expect(source).toContain('structuredContent');
+    expect(source).toContain('function successResult');
+    expect(source).toContain('function errorResult');
+    expect(source).toContain('function resolveCreateTarget');
+    expect(source).toContain('ObjectRegistry.loadAllManifests');
     expect(source).not.toContain('@modelcontextprotocol/sdk');
     expect(source).not.toContain('initialize');
   });
@@ -85,5 +90,25 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain('normalizeCustomActionFailure(result)');
     expect(source).toContain('isError: true');
     expect(source).not.toContain('customActions:');
+  });
+
+  it('resolves STI create discriminators before applying write policy', () => {
+    const source = generateRuntimeBootstrap({
+      tools: [
+        {
+          name: 'animal_create',
+          description: 'Create an animal',
+          inputSchema: { type: 'object' },
+        },
+      ],
+      stiTargets: {
+        animal: { '@test/animals:Cat': '@test/animals:Cat' },
+      },
+    });
+
+    expect(source).toContain("resolveCreateTarget('animal', args, aiConfig)");
+    expect(source).toContain('const STI_TARGETS');
+    expect(source).toContain('"@test/animals:Cat":"@test/animals:Cat"');
+    expect(source).toContain('applyWritablePolicy(targetObjectName, args)');
   });
 });

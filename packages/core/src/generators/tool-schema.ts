@@ -31,6 +31,104 @@ import {
  */
 export type ToolJsonSchema = Record<string, unknown>;
 
+/** The only JSON Schema dialect emitted by generated MCP and WebMCP tools. */
+export const JSON_SCHEMA_2020_12 =
+  'https://json-schema.org/draft/2020-12/schema';
+
+/**
+ * Bounds for generated schemas. Field metadata is authored input, so it must
+ * not turn a tools/list response into an unbounded composition or validation
+ * workload. These limits are deliberately far above normal SMRT objects while
+ * still keeping schemas comfortably inside MCP transport budgets.
+ */
+export const MCP_SCHEMA_LIMITS = {
+  maxDepth: 16,
+  maxNodes: 2_048,
+  maxSerializedBytes: 65_536,
+} as const;
+
+/**
+ * Apply the draft-2020-12 dialect and reject schemas that violate MCP's
+ * bounded-composition contract. Generated schemas only ever reference local
+ * `$defs`; external refs are neither emitted nor followed.
+ */
+export function finalizeMcpJsonSchema(schema: ToolJsonSchema): ToolJsonSchema {
+  const finalized = {
+    ...schema,
+    $schema: JSON_SCHEMA_2020_12,
+  };
+  assertMcpJsonSchemaSafety(finalized);
+  return finalized;
+}
+
+/**
+ * Validate the resource envelope of an emitted schema without resolving refs.
+ * This is intentionally structural rather than a general JSON-Schema
+ * evaluator: the server already owns every schema it emits, and this guard
+ * exists to keep authored metadata from introducing hostile shape growth.
+ */
+export function assertMcpJsonSchemaSafety(schema: ToolJsonSchema): void {
+  let nodes = 0;
+  const ancestors = new WeakSet<object>();
+
+  const visit = (value: unknown, depth: number, key?: string): void => {
+    nodes += 1;
+    if (nodes > MCP_SCHEMA_LIMITS.maxNodes) {
+      throw new Error(
+        `MCP JSON Schema exceeds ${MCP_SCHEMA_LIMITS.maxNodes} nodes`,
+      );
+    }
+    if (depth > MCP_SCHEMA_LIMITS.maxDepth) {
+      throw new Error(
+        `MCP JSON Schema exceeds ${MCP_SCHEMA_LIMITS.maxDepth} levels of depth`,
+      );
+    }
+    if (key === '$ref') {
+      if (
+        typeof value !== 'string' ||
+        !value.startsWith('#/$defs/') ||
+        value.includes('://')
+      ) {
+        throw new Error(
+          'MCP JSON Schema may only use local #/$defs/ references',
+        );
+      }
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    if (ancestors.has(value)) {
+      throw new Error('MCP JSON Schema must not contain cyclic values');
+    }
+
+    ancestors.add(value);
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, depth + 1);
+    } else {
+      for (const [childKey, child] of Object.entries(value)) {
+        visit(child, depth + 1, childKey);
+      }
+    }
+    ancestors.delete(value);
+  };
+
+  visit(schema, 0);
+
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(schema);
+  } catch {
+    throw new Error('MCP JSON Schema must be JSON-serializable');
+  }
+  if (
+    new TextEncoder().encode(serialized).byteLength >
+    MCP_SCHEMA_LIMITS.maxSerializedBytes
+  ) {
+    throw new Error(
+      `MCP JSON Schema exceeds ${MCP_SCHEMA_LIMITS.maxSerializedBytes} serialized bytes`,
+    );
+  }
+}
+
 /**
  * Normalized field metadata — the intersection of what the runtime registry
  * (`FieldDefinition._meta`) and the build-time manifest (`WebFieldDefinition`)
@@ -47,9 +145,14 @@ export interface ToolFieldMeta {
   minLength?: number;
   min?: number;
   max?: number;
+  /** Field values may explicitly be null in the runtime/manifest contract. */
+  nullable?: boolean;
   /** For `foreignKey`: the related class name, for the generated description. */
   related?: string;
 }
+
+/** Storage contract for the synthetic primary identifier. */
+export type ToolIdType = 'uuid' | 'text';
 
 /** The CRUD verbs with dedicated input-schema skeletons; anything else is custom. */
 const CRUD_ACTIONS = new Set(['list', 'get', 'create', 'update', 'delete']);
@@ -103,6 +206,7 @@ export function fieldTypeToJsonSchema(field: ToolFieldMeta): ToolJsonSchema {
       schema.type = 'object';
       break;
     case 'foreignKey':
+    case 'crossPackageRef':
       schema.type = 'string';
       // The generic relation hint is a fallback only — an authored
       // `@field({ description })` wins (#2046 threads descriptions into web
@@ -119,7 +223,29 @@ export function fieldTypeToJsonSchema(field: ToolFieldMeta): ToolJsonSchema {
     schema.default = field.default;
   }
 
+  if (field.nullable && typeof schema.type === 'string') {
+    schema.type = [schema.type, 'null'];
+  }
+
   return schema;
+}
+
+function buildFieldProperties(fields: ToolFieldMeta[]): {
+  properties: Record<string, ToolJsonSchema>;
+  defs: Record<string, ToolJsonSchema>;
+} {
+  const properties: Record<string, ToolJsonSchema> = {};
+  const defs: Record<string, ToolJsonSchema> = {};
+
+  fields.forEach((field, index) => {
+    // Numeric keys avoid JSON Pointer escaping and keep output deterministic
+    // even for an authored field name containing `/` or `~`.
+    const defKey = `field_${index}`;
+    defs[defKey] = fieldTypeToJsonSchema(field);
+    properties[field.name] = { $ref: `#/$defs/${defKey}` };
+  });
+
+  return { properties, defs };
 }
 
 /**
@@ -131,10 +257,17 @@ export function buildToolInputSchema(
   action: string,
   fields: ToolFieldMeta[],
   customAction?: CustomActionMetadata,
+  idType: ToolIdType = 'uuid',
 ): ToolJsonSchema {
+  const identifierSchema = (description: string): ToolJsonSchema => ({
+    type: 'string',
+    ...(idType === 'uuid' ? { format: 'uuid' } : {}),
+    description,
+  });
+
   switch (action) {
     case 'list':
-      return {
+      return finalizeMcpJsonSchema({
         type: 'object',
         properties: {
           limit: {
@@ -160,64 +293,71 @@ export function buildToolInputSchema(
             additionalProperties: true,
           },
         },
-      };
+      });
 
     case 'get':
       // Either `id` OR `slug` identifies the object (collection.get resolves
-      // both), so neither is required at the schema level — the handler validates
-      // that at least one is present. This intentionally relaxes mcp.ts's
-      // historical `required: ['id']`, which over-constrained slug-only lookups;
-      // when mcp.ts adopts this helper it inherits the fix.
-      return {
+      // both). The schema must require one of them just as the handler does,
+      // while still allowing slug-only lookups.
+      return finalizeMcpJsonSchema({
         type: 'object',
+        anyOf: [{ required: ['id'] }, { required: ['slug'] }],
         properties: {
-          id: {
-            type: 'string',
-            description: 'Unique identifier of the object',
-          },
+          id: identifierSchema('Unique identifier of the object'),
           slug: {
             type: 'string',
             description: 'URL-friendly identifier of the object',
           },
         },
-      };
+      });
 
     case 'create': {
-      const properties: Record<string, ToolJsonSchema> = {};
+      const { properties, defs } = buildFieldProperties(fields);
       const required: string[] = [];
       for (const field of fields) {
-        properties[field.name] = fieldTypeToJsonSchema(field);
         if (field.required) required.push(field.name);
       }
-      return { type: 'object', properties, required };
+      return finalizeMcpJsonSchema({
+        type: 'object',
+        properties,
+        ...(required.length > 0 ? { required } : {}),
+        ...(Object.keys(defs).length > 0 ? { $defs: defs } : {}),
+      });
     }
 
     case 'update': {
+      const { properties: fieldProperties, defs } =
+        buildFieldProperties(fields);
       const properties: Record<string, ToolJsonSchema> = {
-        id: { type: 'string', description: 'ID of the object to update' },
+        id: identifierSchema('ID of the object to update'),
+        ...fieldProperties,
       };
-      for (const field of fields) {
-        properties[field.name] = fieldTypeToJsonSchema(field);
-      }
-      return { type: 'object', properties, required: ['id'] };
+      return finalizeMcpJsonSchema({
+        type: 'object',
+        properties,
+        required: ['id'],
+        ...(Object.keys(defs).length > 0 ? { $defs: defs } : {}),
+      });
     }
 
     case 'delete':
-      return {
+      return finalizeMcpJsonSchema({
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'ID of the object to delete' },
+          id: identifierSchema('ID of the object to delete'),
         },
         required: ['id'],
-      };
+      });
 
     default:
-      return buildCustomActionInputSchema(
-        customAction ?? {
-          scope: 'item',
-          idRequired: true,
-          isStatic: false,
-        },
+      return finalizeMcpJsonSchema(
+        buildCustomActionInputSchema(
+          customAction ?? {
+            scope: 'item',
+            idRequired: true,
+            isStatic: false,
+          },
+        ),
       );
   }
 }
@@ -255,6 +395,7 @@ export function buildToolDescriptors(opts: {
   actions: string[];
   customActions?: Record<string, CustomActionMetadata>;
   toolPrefix?: string;
+  idType?: ToolIdType;
 }): ToolDescriptor[] {
   const { className, fields, actions } = opts;
   const prefix = (opts.toolPrefix ?? className).toLowerCase();
@@ -269,6 +410,7 @@ export function buildToolDescriptors(opts: {
       action,
       fields,
       opts.customActions?.[action],
+      opts.idType,
     ),
     readOnly: action === 'list' || action === 'get',
   }));

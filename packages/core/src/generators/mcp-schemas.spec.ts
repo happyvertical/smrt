@@ -65,10 +65,42 @@ describe('MCP tool input schemas (#1500)', () => {
 
   const tool = (name: string) => tools.find((t) => t.name === name);
 
+  const resolveField = (schema: any, propertyName: string) => {
+    const ref = schema.properties[propertyName].$ref as string;
+    return schema.$defs[ref.slice('#/$defs/'.length)];
+  };
+
   it('emits the five CRUD tools for the object', () => {
     for (const verb of ['list', 'get', 'create', 'update', 'delete']) {
       expect(tool(`mcpschemawidget_${verb}`)).toBeDefined();
     }
+  });
+
+  it('declares draft-2020-12 input/output schemas with local-only refs', () => {
+    const refs: string[] = [];
+    const collectRefs = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(collectRefs);
+      } else if (value && typeof value === 'object') {
+        for (const [key, entry] of Object.entries(value)) {
+          if (key === '$ref') refs.push(String(entry));
+          collectRefs(entry);
+        }
+      }
+    };
+
+    for (const generatedTool of tools) {
+      expect(generatedTool.inputSchema.$schema).toBe(
+        'https://json-schema.org/draft/2020-12/schema',
+      );
+      expect(generatedTool.outputSchema.$schema).toBe(
+        'https://json-schema.org/draft/2020-12/schema',
+      );
+      collectRefs(generatedTool.inputSchema);
+      collectRefs(generatedTool.outputSchema);
+    }
+
+    expect(refs.every((ref) => ref.startsWith('#/$defs/'))).toBe(true);
   });
 
   it('builds the list tool with pagination + where properties', () => {
@@ -81,43 +113,54 @@ describe('MCP tool input schemas (#1500)', () => {
     expect(props.where.additionalProperties).toBe(true);
   });
 
-  it('marks id (not slug) as required on the get tool', () => {
+  it('allows id or slug on the get tool, with UUID-format ids', () => {
     const get = tool('mcpschemawidget_get');
-    expect(get?.inputSchema.required).toEqual(['id']);
+    expect(get?.inputSchema.required).toBeUndefined();
+    expect(get?.inputSchema.anyOf).toEqual([
+      { required: ['id'] },
+      { required: ['slug'] },
+    ]);
     const props = get?.inputSchema.properties as Record<string, any>;
     expect(props.id.type).toBe('string');
+    expect(props.id.format).toBe('uuid');
     expect(props.slug.type).toBe('string');
   });
 
   it('maps every field type in the create tool schema', () => {
     const create = tool('mcpschemawidget_create');
-    const props = create?.inputSchema.properties as Record<string, any>;
+    const schema = create?.inputSchema as any;
+    const title = resolveField(schema, 'title');
+    const count = resolveField(schema, 'count');
+    const rating = resolveField(schema, 'rating');
+    const active = resolveField(schema, 'active');
+    const startsAt = resolveField(schema, 'startsAt');
+    const payload = resolveField(schema, 'payload');
 
     // text with length constraints
-    expect(props.title.type).toBe('string');
-    expect(props.title.maxLength).toBe(50);
-    expect(props.title.minLength).toBe(3);
+    expect(title.type).toBe('string');
+    expect(title.maxLength).toBe(50);
+    expect(title.minLength).toBe(3);
 
     // integer with min/max + default
-    expect(props.count.type).toBe('integer');
-    expect(props.count.minimum).toBe(0);
-    expect(props.count.maximum).toBe(10);
-    expect(props.count.default).toBe(1);
+    expect(count.type).toBe('integer');
+    expect(count.minimum).toBe(0);
+    expect(count.maximum).toBe(10);
+    expect(count.default).toBe(1);
 
     // decimal → number with min/max
-    expect(props.rating.type).toBe('number');
-    expect(props.rating.minimum).toBe(0.5);
-    expect(props.rating.maximum).toBe(99.5);
+    expect(rating.type).toBe('number');
+    expect(rating.minimum).toBe(0.5);
+    expect(rating.maximum).toBe(99.5);
 
     // boolean
-    expect(props.active.type).toBe('boolean');
+    expect(active.type).toBe('boolean');
 
-    // datetime → string/date-time
-    expect(props.startsAt.type).toBe('string');
-    expect(props.startsAt.format).toBe('date-time');
+    // nullable datetime → draft-2020-12 type union/date-time
+    expect(startsAt.type).toEqual(['string', 'null']);
+    expect(startsAt.format).toBe('date-time');
 
     // json → object
-    expect(props.payload.type).toBe('object');
+    expect(payload.type).toBe('object');
 
     // required-field propagation onto the create schema.
     expect(create?.inputSchema.required).toContain('title');
@@ -151,14 +194,116 @@ class McpFkWidget extends SmrtObject {
   }
 }
 
+@smrt({ idType: 'text', mcp: { include: ['get', 'update', 'delete'] } })
+class McpTextIdWidget extends SmrtObject {
+  @field({ type: 'text' })
+  title = '';
+}
+
+@smrt({
+  tableStrategy: 'sti',
+  mcp: { include: ['create', 'get'] },
+})
+class McpStiAnimal extends SmrtObject {
+  @field({ type: 'text', required: true })
+  name = '';
+}
+
+@smrt({ mcp: { include: ['create', 'get'] } })
+class McpStiCat extends McpStiAnimal {
+  @field({ type: 'integer' })
+  lives = 9;
+}
+
+@smrt({ mcp: { include: ['get'] } })
+class McpSensitiveWidget extends SmrtObject {
+  @field({ type: 'text' })
+  title = '';
+
+  @field({ type: 'text', sensitive: true })
+  apiToken = '';
+}
+
 describe('MCP foreignKey field schema (#1500)', () => {
   it('renders a foreignKey field as a string with a related-id description', async () => {
     const generator = new MCPGenerator();
     const tools = await generator.generateTools();
     const create = tools.find((t) => t.name === 'mcpfkwidget_create');
-    const props = create?.inputSchema.properties as Record<string, any>;
-    expect(props.authorId.type).toBe('string');
-    expect(props.authorId.description).toContain('ID of related');
+    const schema = create?.inputSchema as any;
+    const ref = schema.properties.authorId.$ref as string;
+    const authorId = schema.$defs[ref.slice('#/$defs/'.length)];
+    expect(authorId.type).toBe('string');
+    expect(authorId.description).toContain('ID of related');
+  });
+});
+
+describe('MCP text identifier schemas (#2149)', () => {
+  it('does not falsely advertise UUID-only identifiers', async () => {
+    const generator = new MCPGenerator();
+    const tools = await generator.generateTools();
+
+    for (const action of ['get', 'update', 'delete']) {
+      const tool = tools.find(
+        (candidate) => candidate.name === `mcptextidwidget_${action}`,
+      );
+      const properties = tool?.inputSchema.properties as Record<string, any>;
+      expect(properties.id.type).toBe('string');
+      expect(properties.id.format).toBeUndefined();
+    }
+  });
+});
+
+describe('MCP STI schemas (#2149)', () => {
+  it('uses a discriminated oneOf for STI create and public item shapes', async () => {
+    const generator = new MCPGenerator();
+    const tools = await generator.generateTools();
+    const create = tools.find((tool) => tool.name === 'mcpstianimal_create');
+    const get = tools.find((tool) => tool.name === 'mcpstianimal_get');
+
+    expect(create?.inputSchema.oneOf).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            _meta_type: { const: '@happyvertical/smrt-core:McpStiCat' },
+          }),
+          required: expect.arrayContaining(['_meta_type']),
+        }),
+      ]),
+    );
+    if (!get) throw new Error('Expected MCP STI get tool');
+    const [successSchema] = get.outputSchema.anyOf ?? [];
+    expect(successSchema).toEqual(
+      expect.objectContaining({
+        oneOf: expect.arrayContaining([
+          expect.objectContaining({
+            properties: expect.objectContaining({
+              _meta_type: { const: '@happyvertical/smrt-core:McpStiCat' },
+            }),
+          }),
+        ]),
+      }),
+    );
+  });
+});
+
+describe('MCP public output schemas (#2149)', () => {
+  it('does not expose sensitive fields declared behind toPublicJSON()', async () => {
+    const generator = new MCPGenerator();
+    const tools = await generator.generateTools();
+    const get = tools.find((tool) => tool.name === 'mcpsensitivewidget_get');
+    if (!get) throw new Error('Expected MCP sensitive-widget get tool');
+    const [publicItem] = get.outputSchema.anyOf ?? [];
+
+    expect(publicItem).toEqual(
+      expect.objectContaining({
+        properties: expect.objectContaining({ title: expect.anything() }),
+      }),
+    );
+    expect(publicItem).toEqual(
+      expect.not.objectContaining({
+        properties: expect.objectContaining({ apiToken: expect.anything() }),
+      }),
+    );
   });
 });
 

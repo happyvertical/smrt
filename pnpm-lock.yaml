@@ -69,10 +69,12 @@ overrides:
   fast-uri@>=3.0.0 <3.1.5: 3.1.5
   ip-address@<=10.3.0: 10.3.1
   fast-xml-builder@>=1.0.0 <1.1.7: 1.2.1
-  js-yaml@>=4.0.0 <4.2.0: 4.3.0
+  js-yaml@>=4.0.0 <4.3.1: 4.3.1
   svelte@>=5.0.0 <5.54.0: 5.56.4
   brace-expansion@>=4.0.0 <5.0.9: 5.0.9
-  js-yaml@>=3.0.0 <3.15.0: 3.15.0
+  js-yaml@>=3.0.0 <3.15.1: 3.15.1
+  pdfjs-dist@>=5.6.83 <6.2.108: 6.2.108
+  nanoid@<3.3.17: 3.3.17
   axios@>=1.15.2 <1.18.0: 1.18.0
   postcss@<=8.5.17: 8.5.18
   markdown-it@<14.1.2: 14.3.0
@@ -7666,12 +7668,12 @@ packages:
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  js-yaml@3.15.0:
-    resolution: {integrity: sha512-ttBQIIQPDeLjpPOohtUdXuXUVoA2uIB6fEH9HyJ7234s5mBJ5wTx20njxplLZQgLaOfpmPQA7X2t5AX6tIPbog==}
+  js-yaml@3.15.1:
+    resolution: {integrity: sha512-S99WuO3HlhO3XN41EtYUNl9zzXjoJx7QvmipxsJVxtCBT0YHEFy+iOJhjSvrmV12nYhWpZaM8lPHkJm0yUMbag==}
     hasBin: true
 
-  js-yaml@4.3.0:
-    resolution: {integrity: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==}
+  js-yaml@4.3.1:
+    resolution: {integrity: sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ==}
     hasBin: true
 
   jsdom@26.1.0:
@@ -8167,8 +8169,8 @@ packages:
     resolution: {integrity: sha512-avsJQhyd+680gKXyG/sQc0nXaC6rBkPOfyHYcFb9+hdkqQkR9bdnkJ0AMZhke0oesPqIO+mFFJ+IdBc7mst4IA==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
 
-  nanoid@3.3.15:
-    resolution: {integrity: sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==}
+  nanoid@3.3.17:
+    resolution: {integrity: sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -8480,8 +8482,8 @@ packages:
   pdf-lib@1.17.1:
     resolution: {integrity: sha512-V/mpyJAoTsN4cnP31vc0wfNA1+p20evqqnap0KLoRUN0Yk/p3wN52DOEsL4oBFcLdb76hlpKPtzJIgo67j/XLw==}
 
-  pdfjs-dist@6.1.200:
-    resolution: {integrity: sha512-o8MolyzirkkLrcdsae/HEOiIcXWI7DS5zGpvqW8xTC2YUsW30rltFw2bDGvw/fskUdEMrQm2br68jzDS5BH2vw==}
+  pdfjs-dist@6.2.108:
+    resolution: {integrity: sha512-YxFb+SQcodN2rnX9Tn3dHYlqfb7NjlzzfONPpJd+AKoKtUjEdevTfbC07d5TcczzOK6261auRkP/M8OBHs9vFQ==}
     engines: {node: '>=22.13.0 || >=24'}
 
   peberminta@0.10.0:
@@ -10631,7 +10633,7 @@ snapshots:
   '@changesets/parse@0.4.3':
     dependencies:
       '@changesets/types': 6.1.0
-      js-yaml: 4.3.0
+      js-yaml: 4.3.1
 
   '@changesets/pre@2.0.2':
     dependencies:
@@ -10811,7 +10813,7 @@ snapshots:
       fingerprint-generator: 2.1.82
       fingerprint-injector: 2.1.82(playwright@1.61.1)
       lodash.merge: 4.6.2
-      nanoid: 3.3.15
+      nanoid: 3.3.17
       ow: 0.28.2
       p-limit: 3.1.0
       proxy-chain: 2.7.1
@@ -11444,7 +11446,7 @@ snapshots:
       '@napi-rs/canvas': 0.1.100
       marked: 18.0.7
       pdf-lib: 1.17.1
-      pdfjs-dist: 6.1.200
+      pdfjs-dist: 6.2.108
       puppeteer-core: 25.4.0
       unpdf: 1.6.2(@napi-rs/canvas@0.1.100)
     optionalDependencies:
@@ -11469,7 +11471,7 @@ snapshots:
   '@happyvertical/repos@0.85.5':
     dependencies:
       '@happyvertical/graphql': 0.85.5
-      js-yaml: 4.3.0
+      js-yaml: 4.3.1
 
   '@happyvertical/secrets@0.85.5(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)':
     dependencies:
@@ -14022,7 +14024,7 @@ snapshots:
     dependencies:
       env-paths: 2.2.1
       import-fresh: 3.3.1
-      js-yaml: 4.3.0
+      js-yaml: 4.3.1
       parse-json: 5.2.0
     optionalDependencies:
       typescript: 5.9.3
@@ -15319,12 +15321,12 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  js-yaml@3.15.0:
+  js-yaml@3.15.1:
     dependencies:
       argparse: 1.0.10
       esprima: 4.0.1
 
-  js-yaml@4.3.0:
+  js-yaml@4.3.1:
     dependencies:
       argparse: 2.0.1
 
@@ -15821,7 +15823,7 @@ snapshots:
 
   mute-stream@1.0.0: {}
 
-  nanoid@3.3.15: {}
+  nanoid@3.3.17: {}
 
   negotiator@1.0.0: {}
 
@@ -16155,7 +16157,7 @@ snapshots:
       pako: 1.0.11
       tslib: 1.14.1
 
-  pdfjs-dist@6.1.200:
+  pdfjs-dist@6.2.108:
     optionalDependencies:
       '@napi-rs/canvas': 1.0.3
 
@@ -16266,7 +16268,7 @@ snapshots:
 
   postcss@8.5.18:
     dependencies:
-      nanoid: 3.3.15
+      nanoid: 3.3.17
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
@@ -16390,7 +16392,7 @@ snapshots:
   read-yaml-file@1.1.0:
     dependencies:
       graceful-fs: 4.2.11
-      js-yaml: 3.15.0
+      js-yaml: 3.15.1
       pify: 4.0.1
       strip-bom: 3.0.0
 

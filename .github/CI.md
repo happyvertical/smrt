@@ -177,7 +177,7 @@ seven days expire on their own.
 
 ## Job timeouts
 
-Validation jobs on the self-hosted lanes use `timeout-minutes: 45`. The value
+Validation jobs on the self-hosted lanes use `timeout-minutes: 90`. The value
 is a standard, not a per-job estimate: the previous spread ran from 5 to 45,
 mostly unexplained, and the low end was close to the pool's own queue wait
 (p90 1483-1933s measured over 180 jobs, against a median execution of 39-50s).
@@ -204,7 +204,7 @@ to the setting or here:
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
 
-`postgres-tests` is at the standard 45. #2164 retired the unserved
+`postgres-tests` remains at 45 as a deliberate exception. #2164 retired the unserved
 `arc-happyvertical-node` label, deleted the `node-runner-smoke` workflow that
 ran only there, and moved this job onto the general `arc-happyvertical` pool —
 the pool the 45 was measured on — so the standard applies to it for the same
@@ -212,7 +212,7 @@ reason it applies to every other job there. Its earlier 30 was inherited from a
 label whose scale set was quiesced to zero runners, where `timeout-minutes`
 never governed anything.
 
-`publish-release` is at the standard 45 but that value is load-bearing
+`publish-release` remains at 45 but that value is load-bearing
 independently of it: 45 is the documented sequential-registry recovery window
 below, and `scripts/publish-workflow-policy.test.mjs` asserts the exact number.
 Moving the standard later does not by itself license moving that job.
@@ -238,10 +238,17 @@ is `true` on this repository; the unset/false branch is retained only as a
 reversal lever.
 
 - Unset/false: PRs run the historical full suite.
-- `true`: PRs run lint, affected typecheck and tests across the changed
-  packages and everything that depends on them, and — only when
-  knowledge-sensitive paths change — affected knowledge freshness. The
-  complete suite runs for `merge_group`.
+- `true`: PRs run lint and typecheck across the changed packages and everything
+  that depends on them. Their selected test-task closure is split into three
+  deterministic non-core shards; when Turbo's selected test-task closure also
+  contains core, the existing three Vitest core shards run. The selectors read
+  Turbo's dry-run task list, log selected/total package counts, and emit each
+  selected non-core test task exactly once, so wide core closures use the full
+  suite's parallel shape without silently changing coverage. The core and
+  package matrices deliberately do not overlap: each permits two runners, and
+  a shared four-runner burst would transfer feedback latency to fleet queue
+  pressure. Only when knowledge-sensitive paths change do PRs also run
+  affected knowledge freshness. The complete suite runs for `merge_group`.
 
 Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
 Both used to run in both lanes while the merge group re-ran them in full
@@ -321,6 +328,24 @@ Interrupted jobs are cleaned hourly after six hours. Tests must never use a
 fixed shared database name or remove the wrapper from their package script.
 
 ## Release artifacts
+
+Routine releases are batched to avoid repeatedly invalidating merge-queue work.
+Merging a pull request advances `main` once and does not invoke the publisher.
+`.github/workflows/on-merge-main.yml` runs daily at 07:17 UTC and can also be
+dispatched manually for an urgent release. Each run versions every eligible
+commit since the previous release, so a group of merged pull requests produces
+one release commit and tag. The workflow checks for active merge-group runs and
+queue refs before starting and again before the irreversible registry and Git
+release phase. An API error or non-idle queue fails closed and defers the
+release. Once registry publication begins, the matching `main` and tag update
+must complete so the registry and Git release cannot be stranded out of sync.
+To publish a specific cohort immediately, let every pull request in the cohort
+merge and the queue drain before dispatching `on-merge-main.yml`; do not enqueue
+new work while that release is publishing.
+
+Do not restore a `push` trigger on the batch workflow. A release commit changes
+the base of every speculative merge-group branch; publishing after each merge
+therefore cancels or restarts validation for entries still in the queue (#2174).
 
 Each package is packed once. Pack shards verify that exact tarball and emit a
 schema-versioned manifest containing package name, version, filename, and
