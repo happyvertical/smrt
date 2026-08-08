@@ -54,6 +54,10 @@ const MAX_BATCH_OBJECT_REFS = 100;
   conflictColumns: ['object_ref', 'field_name', 'scope_type', 'scope_key'],
   api: {
     include: ['create', 'update', 'delete', 'resolveBatch', 'getEditorState'],
+    // The collection-scoped editor action shares the sparse cross-scope
+    // policy table, so generated SvelteKit routes establish identity from
+    // authenticated locals even though FieldPolicy is not @TenantScoped.
+    principalContext: true,
     routes: {
       resolveBatch: {
         scope: 'collection',

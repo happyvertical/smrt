@@ -21,7 +21,10 @@ import { CLIGenerator } from '../../cli/src/cli-generator.js';
 // Registers smrt-users' Tenant so getTestDatabase can create the tenants
 // table the user-tier write-time lock check reads through the default
 // hierarchy loader.
-import { TenantCollection } from '../../users/src/index.js';
+import {
+  TenantCollection,
+  withPrincipalPermissionContext,
+} from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 import {
@@ -451,6 +454,159 @@ describe('smrt-fields generated surfaces', () => {
     expect(rows[0].tenantId).toBe(contextTenant);
   });
 
+  it('derives tenant and personal owners from session permission ALS without tenant ALS', async () => {
+    // `createSessionHandler()` always publishes this permission context, but
+    // applications may leave `enterTenantContext` unset. FieldPolicy is not
+    // @TenantScoped, so its generated routes must still source the write owner
+    // from the authenticated principal rather than a request-body id.
+    const objectRef = fixtureRef();
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+    const forgedTenantId = randomUUID();
+    const forgedUserId = randomUUID();
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldpolicy', policies);
+    const handler = api.generateHandler();
+
+    const postAsSessionPrincipal = (
+      permissions: string[],
+      body: Record<string, unknown>,
+    ): Promise<Response> =>
+      withPrincipalPermissionContext(
+        {
+          db,
+          enterTenantContext: false,
+          permissions,
+          tenantId,
+          userId,
+        },
+        () =>
+          handler(
+            new Request('http://localhost/api/v1/fieldpolicy', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+            }),
+          ),
+      );
+
+    const tenantResponse = await postAsSessionPrincipal(
+      [MANAGE_FIELD_POLICY_PERMISSION],
+      {
+        objectRef,
+        fieldName: 'headline',
+        scopeType: 'tenant',
+        tenantId: forgedTenantId,
+        label: 'Session tenant policy',
+      },
+    );
+    expect(tenantResponse.status).toBe(201);
+
+    const personalResponse = await postAsSessionPrincipal(
+      [PERSONALIZE_FIELD_POLICY_PERMISSION],
+      {
+        objectRef,
+        fieldName: 'tagline',
+        scopeType: 'user',
+        label: 'Session personal policy',
+      },
+    );
+    expect(personalResponse.status).toBe(201);
+
+    // A generated body cannot impersonate another user. The normal personal
+    // flow omits this server-owned field and is attributed above; a forged
+    // owner is rejected rather than becoming a cross-user write.
+    const forgedPersonalResponse = await postAsSessionPrincipal(
+      [PERSONALIZE_FIELD_POLICY_PERMISSION],
+      {
+        objectRef,
+        fieldName: 'requiredHeadline',
+        scopeType: 'user',
+        userId: forgedUserId,
+        label: 'Forged personal policy',
+      },
+    );
+    expect(forgedPersonalResponse.status).toBe(403);
+
+    const rows = await policies.list({ where: { objectRef } });
+    expect(rows).toHaveLength(2);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scopeType: 'tenant',
+          tenantId,
+          userId: null,
+        }),
+        expect.objectContaining({
+          scopeType: 'user',
+          tenantId: null,
+          userId,
+        }),
+      ]),
+    );
+  });
+
+  it('redacts foreign scope identifiers from typed generated-route denials', async () => {
+    const objectRef = fixtureRef();
+    const tenantId = randomUUID();
+    const userId = randomUUID();
+    const foreignTenantId = randomUUID();
+    const foreignUserId = randomUUID();
+    const foreignRows = await withTenant(
+      {
+        tenantId: foreignTenantId,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => ({
+        tenant: await policies.create({
+          objectRef,
+          fieldName: 'headline',
+          scopeType: 'tenant',
+          tenantId: foreignTenantId,
+          label: 'Foreign tenant policy',
+        }),
+        user: await policies.create({
+          objectRef,
+          fieldName: 'tagline',
+          scopeType: 'user',
+          userId: foreignUserId,
+          label: 'Foreign user policy',
+        }),
+      }),
+    );
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldpolicy', policies);
+    const handler = api.generateHandler();
+
+    const deniedDelete = async (id: string, permission: string) => {
+      const response = await withTenant(
+        { tenantId, userId, permissions: new Set([permission]) },
+        () =>
+          handler(
+            new Request(`http://localhost/api/v1/fieldpolicy/${id}`, {
+              method: 'DELETE',
+            }),
+          ),
+      );
+      expect(response.status).toBe(403);
+      const body = await response.text();
+      expect(body).toContain('Field policy scope is not permitted');
+      expect(body).not.toContain(tenantId);
+      expect(body).not.toContain(userId);
+      expect(body).not.toContain(foreignTenantId);
+      expect(body).not.toContain(foreignUserId);
+    };
+
+    const foreignTenantRowId = foreignRows.tenant.id;
+    const foreignUserRowId = foreignRows.user.id;
+    if (!foreignTenantRowId || !foreignUserRowId) {
+      throw new Error('Seeded field-policy rows must have persistent ids');
+    }
+    await deniedDelete(foreignTenantRowId, MANAGE_FIELD_POLICY_PERMISSION);
+    await deniedDelete(foreignUserRowId, PERSONALIZE_FIELD_POLICY_PERMISSION);
+  });
+
   it('dispatches a capability-filtered editor-state action at the registered singular route', async () => {
     const objectRef = fixtureRef();
     const tenantId = randomUUID();
@@ -630,6 +786,9 @@ describe('smrt-fields generated surfaces', () => {
           schema?: {
             indexes?: Array<{ columns?: string[]; unique?: boolean }>;
           };
+          decoratorConfig?: {
+            api?: { principalContext?: boolean };
+          };
         }
       >;
     };
@@ -640,6 +799,16 @@ describe('smrt-fields generated surfaces', () => {
     );
     // Both the model and its decorated collection emit a schema here.
     expect(policyEntries).toHaveLength(2);
+
+    // FieldPolicy's sparse table is intentionally not @TenantScoped, but its
+    // generated CRUD and collection actions still require a tenant/user
+    // identity derived from trusted session locals. Pin the manifest contract
+    // consumed by SvelteKit route generation for BOTH route hosts.
+    expect(
+      policyEntries.map(
+        ([, entry]) => entry.decoratorConfig?.api?.principalContext === true,
+      ),
+    ).toEqual([true, true]);
 
     for (const [name, entry] of policyEntries) {
       const uniqueIndexes = (entry.schema?.indexes ?? []).filter(

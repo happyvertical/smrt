@@ -10,7 +10,10 @@ import {
   TenantIsolationError,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
-import { assertOperationPermission } from '@happyvertical/smrt-users';
+import {
+  assertOperationPermission,
+  getCurrentSessionPermissionContext,
+} from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { invalidateFieldPolicyCache } from '../cache.js';
 import {
@@ -58,6 +61,48 @@ type FieldPolicyTransactionHandle = DatabaseInterface & {
   rollback: () => Promise<void>;
 };
 
+const FIELD_POLICY_SCOPE_DENIAL_MESSAGE =
+  'Field policy scope is not permitted for this principal.';
+
+/**
+ * The policy-write identity is normally supplied by tenancy ALS. Generated
+ * SvelteKit routes are also valid under `createSessionHandler()` with
+ * `enterTenantContext` left unset, however: that handler deliberately enters
+ * only the users request-permission ALS. Use its already authenticated,
+ * request-bound principal as a fallback so route bodies never become an owner
+ * source. A tenant context always wins when one exists.
+ */
+type FieldPolicyAmbientContext = {
+  permissions: ReadonlySet<string>;
+  superAdminBypass: boolean;
+  tenantId: string;
+  userId?: string;
+};
+
+function getFieldPolicyAmbientContext(): FieldPolicyAmbientContext | undefined {
+  const tenantContext = getCurrentTenant();
+  if (tenantContext) {
+    return {
+      permissions: tenantContext.permissions,
+      superAdminBypass: isSuperAdminBypass(),
+      tenantId: tenantContext.tenantId,
+      userId: tenantContext.userId,
+    };
+  }
+
+  const sessionContext = getCurrentSessionPermissionContext();
+  if (!sessionContext?.tenantId) {
+    return undefined;
+  }
+
+  return {
+    permissions: sessionContext.permissionSet,
+    superAdminBypass: sessionContext.superAdminBypass,
+    tenantId: sessionContext.tenantId,
+    userId: sessionContext.userId ?? undefined,
+  };
+}
+
 /** Expected authorization denial that generated REST serializes as HTTP 403. */
 class FieldPolicyAuthorizationError extends Error {
   readonly code = 'permission_denied';
@@ -66,6 +111,40 @@ class FieldPolicyAuthorizationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'FieldPolicyAuthorizationError';
+  }
+}
+
+/**
+ * Scope isolation is an expected request denial, not an internal failure.
+ * Preserve the tenancy error type for callers that distinguish isolation
+ * failures while giving generated transports the bounded 4xx signal they need
+ * to serialize it safely.
+ */
+class FieldPolicyTenantIsolationError extends TenantIsolationError {
+  readonly publicMessage = FIELD_POLICY_SCOPE_DENIAL_MESSAGE;
+  readonly status = 403;
+
+  constructor(
+    diagnosticMessage: string,
+    details?: { attemptedTenantId?: string; tenantId?: string },
+  ) {
+    // `normalizeTypedHttpError()` serializes Error.message for all expected
+    // 4xx errors. Scope diagnostics contain tenant/user identifiers, so keep
+    // this client-facing message intentionally bounded and retain the useful
+    // detail only as non-enumerable server-side error metadata.
+    super(FIELD_POLICY_SCOPE_DENIAL_MESSAGE);
+    Object.defineProperty(this, 'cause', {
+      configurable: true,
+      enumerable: false,
+      value: new Error(diagnosticMessage),
+      writable: false,
+    });
+    Object.defineProperty(this, 'diagnostic', {
+      configurable: true,
+      enumerable: false,
+      value: { ...details, message: diagnosticMessage },
+      writable: false,
+    });
   }
 }
 
@@ -94,7 +173,13 @@ class FieldPolicyAuthorizationError extends Error {
 @smrt({
   tableName: '_smrt_field_policies',
   conflictColumns: ['object_ref', 'field_name', 'scope_type', 'scope_key'],
-  api: { include: ['create', 'update', 'delete'] },
+  api: {
+    include: ['create', 'update', 'delete'],
+    // Generated SvelteKit policy routes need a trusted principal-derived
+    // tenancy context even though this sparse cross-scope table itself is not
+    // @TenantScoped. Owner ids remain server-derived in this model.
+    principalContext: true,
+  },
   cli: {
     include: ['create', 'update', 'delete'],
     exclude: ['getDefaultValue', 'setDefaultValue'],
@@ -243,7 +328,7 @@ export class FieldPolicy extends SmrtObject {
     // attribution cannot be spoofed through the generated write routes. A
     // context without a user id attributes to null; trusted context-less
     // flows keep whatever explicit attribution they set.
-    const ambientContext = getCurrentTenant();
+    const ambientContext = getFieldPolicyAmbientContext();
     if (ambientContext) {
       this.updatedBy = ambientContext.userId ?? null;
     }
@@ -503,7 +588,7 @@ export class FieldPolicy extends SmrtObject {
       this.scopeType === 'tenant'
         ? this.tenantId
         : this.scopeType === 'user'
-          ? (getCurrentTenant()?.tenantId ?? null)
+          ? (getFieldPolicyAmbientContext()?.tenantId ?? null)
           : null;
 
     // Dynamic import: the resolver statically imports the collection, which
@@ -568,14 +653,15 @@ export class FieldPolicy extends SmrtObject {
    * a non-bypass caller's tenant/user rows to name exactly the ambient
    * tenant/user, so the derived value is the ONLY value that could ever have
    * been accepted. An explicit value is never overwritten (a super-admin
-   * bypass caller keeps naming other scopes), and with no ambient context
-   * nothing is derived — scope-shape validation rejects the row as before.
+   * bypass caller keeps naming other scopes), and with neither tenancy nor
+   * authenticated-session context nothing is derived — scope-shape validation
+   * rejects the row as before.
    * Consequence: a bypass caller writing ANOTHER tenant's row must pass
    * `tenantId` through a server-side model call, because the generated routes
    * still strip it.
    */
   private attributeScopeToAmbientContext(): void {
-    const context = getCurrentTenant();
+    const context = getFieldPolicyAmbientContext();
     if (!context) {
       return;
     }
@@ -592,13 +678,13 @@ export class FieldPolicy extends SmrtObject {
    * the NEW scope on save and to the PERSISTED scope on save/delete of an
    * existing row.
    *
-   * With NO ambient identity at all (no tenant context entered — e.g. a
-   * runtime API deployment whose auth middleware never enters the tenancy
-   * ALS), only app-scope rows are accepted: tenant- and user-scope rows are
-   * unattributable without a context, so they are rejected outright rather
-   * than allowed by default. Inside a non-bypass context, a caller may only
-   * touch rows for its own tenant, and user rows only for its own user id —
-   * a context that carries NO user id may not touch the user tier at all.
+   * With NO ambient identity at all (neither tenant ALS nor authenticated
+   * session-permission ALS), only app-scope rows are accepted: tenant- and
+   * user-scope rows are unattributable without a context, so they are
+   * rejected outright rather than allowed by default. Inside a non-bypass
+   * context, a caller may only touch rows for its own tenant, and user rows
+   * only for its own user id — a context that carries NO user id may not
+   * touch the user tier at all.
    * App-wide rows then require super-admin bypass (or a context-less/system
    * caller).
    *
@@ -612,11 +698,11 @@ export class FieldPolicy extends SmrtObject {
     },
     operation: 'save' | 'delete',
   ): void {
-    const context = getCurrentTenant();
+    const context = getFieldPolicyAmbientContext();
 
     if (!context) {
       if (scope.scopeType === 'tenant' || scope.scopeType === 'user') {
-        throw new TenantIsolationError(
+        throw new FieldPolicyTenantIsolationError(
           `${scope.scopeType === 'tenant' ? 'Tenant' : 'User'}-scope field ` +
             `policy ${operation}s require an ambient tenant context (or ` +
             `super-admin bypass); without one the caller identity is ` +
@@ -626,12 +712,12 @@ export class FieldPolicy extends SmrtObject {
       return;
     }
 
-    if (isSuperAdminBypass()) {
+    if (context.superAdminBypass) {
       return;
     }
 
     if (scope.scopeType === 'app') {
-      throw new TenantIsolationError(
+      throw new FieldPolicyTenantIsolationError(
         `App-scope field policy ${operation}s are not allowed inside a ` +
           'tenant context (use a system context or super-admin bypass)',
         { tenantId: context.tenantId },
@@ -639,7 +725,7 @@ export class FieldPolicy extends SmrtObject {
     }
 
     if (scope.scopeType === 'tenant' && scope.tenantId !== context.tenantId) {
-      throw new TenantIsolationError(
+      throw new FieldPolicyTenantIsolationError(
         `Tenant isolation violation in FieldPolicy.${operation}: context ` +
           `tenant is '${context.tenantId}' but the row belongs to ` +
           `'${scope.tenantId}'`,
@@ -660,7 +746,7 @@ export class FieldPolicy extends SmrtObject {
       // ANY tenant, with the generated PUT echoing the row back as a read
       // primitive.
       if (context.userId === undefined) {
-        throw new TenantIsolationError(
+        throw new FieldPolicyTenantIsolationError(
           `User-scope field policy ${operation}s require an ambient context ` +
             `that carries a user id; this context cannot attribute a ` +
             `user-scope write`,
@@ -668,7 +754,7 @@ export class FieldPolicy extends SmrtObject {
         );
       }
       if (scope.userId !== context.userId) {
-        throw new TenantIsolationError(
+        throw new FieldPolicyTenantIsolationError(
           `Tenant isolation violation in FieldPolicy.${operation}: context ` +
             `user is '${context.userId}' but the row belongs to ` +
             `'${scope.userId}'`,
@@ -698,7 +784,7 @@ export class FieldPolicy extends SmrtObject {
   private async assertScopePermission(scope: {
     scopeType: string;
   }): Promise<void> {
-    const context = getCurrentTenant();
+    const context = getFieldPolicyAmbientContext();
     const action =
       scope.scopeType === 'user'
         ? PERSONALIZE_FIELD_POLICY_PERMISSION

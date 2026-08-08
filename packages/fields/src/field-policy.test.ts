@@ -96,6 +96,9 @@ function fixtureRef(): string {
   return registered.qualifiedName;
 }
 
+const SCOPE_DENIAL_MESSAGE =
+  'Field policy scope is not permitted for this principal.';
+
 /**
  * Seed tenant/user-scope rows the way real ops flows do: under a super-admin
  * bypass context. Without any ambient identity such rows are rejected
@@ -348,7 +351,7 @@ describe('FieldPolicy write-time validation', () => {
         scopeType: 'tenant',
         help: 'x',
       }),
-    ).rejects.toThrow(/Tenant-scope field policy (rows|saves require)/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
 
     await expect(
       policies.create({
@@ -359,7 +362,7 @@ describe('FieldPolicy write-time validation', () => {
         userId: randomUUID(),
         help: 'x',
       }),
-    ).rejects.toThrow(/Tenant-scope field policy (rows|saves require)/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
 
     await expect(
       policies.create({
@@ -370,7 +373,7 @@ describe('FieldPolicy write-time validation', () => {
         userId: randomUUID(),
         help: 'x',
       }),
-    ).rejects.toThrow(/User-scope field policy (rows|saves require)/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
 
     await expect(
       policies.create({
@@ -379,7 +382,7 @@ describe('FieldPolicy write-time validation', () => {
         scopeType: 'user',
         help: 'x',
       }),
-    ).rejects.toThrow(/User-scope field policy (rows|saves require)/);
+    ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
   });
 
   it('type-checks defaults against the manifest field type', async () => {
@@ -1281,7 +1284,7 @@ describe('FieldPolicy write-time validation', () => {
           scopeType: 'user',
           help: 'mine',
         }),
-      ).rejects.toThrow(/carries a user id/);
+      ).rejects.toThrow(SCOPE_DENIAL_MESSAGE);
     });
 
     const survivors = await policies.list({

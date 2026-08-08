@@ -42,13 +42,32 @@ function findRouteContent(suffix: string): string {
 }
 
 async function generate(manifest: SmartObjectManifest): Promise<void> {
-  await generateSvelteKitRoutes(projectRoot, manifest, {
-    enabled: true,
-    routesDir: 'src/routes/api',
-    objectsDir: 'src/lib/objects',
-    configPath: 'src/lib/server',
-    configFileName: 'smrt.ts',
-  });
+  const packageName = manifest.packageName ?? '@test/tenant-context';
+  await generateSvelteKitRoutes(
+    projectRoot,
+    {
+      ...manifest,
+      packageName,
+      objects: Object.fromEntries(
+        Object.entries(manifest.objects).map(([key, objectDef]) => [
+          key,
+          objectDef.qualifiedName?.includes(':') || key.includes(':')
+            ? objectDef
+            : {
+                ...objectDef,
+                qualifiedName: `${packageName}:${objectDef.className}`,
+              },
+        ]),
+      ),
+    } as SmartObjectManifest,
+    {
+      enabled: true,
+      routesDir: 'src/routes/api',
+      objectsDir: 'src/lib/objects',
+      configPath: 'src/lib/server',
+      configFileName: 'smrt.ts',
+    },
+  );
 }
 
 describe('Issue #1540 (facet 2): tenant-context establishment', () => {
@@ -65,6 +84,7 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
 
   it('establishes tenant context in a @TenantScoped object’s routes', async () => {
     await generate({
+      packageName: '@test/fields',
       objects: {
         TenantDoc: {
           className: 'TenantDoc',
@@ -112,5 +132,51 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     expect(collectionRoute).not.toContain('establishTenantContext');
     // Auth guard is still present (every route is fail-closed).
     expect(collectionRoute).toContain('requireRouteAuth(locals,');
+  });
+
+  it('publishes only a complete trusted principal for opted-in non-tenant routes', async () => {
+    await generate({
+      objects: {
+        FieldPolicy: {
+          className: 'FieldPolicy',
+          collection: 'fieldpolicies',
+          fields: { scopeType: { type: 'text' } },
+          methods: {
+            editorState: {
+              name: 'editorState',
+              parameters: [],
+              returnType: 'Promise<unknown>',
+              isPublic: true,
+            },
+          },
+          decoratorConfig: {
+            api: {
+              include: ['create', 'editorState'],
+              principalContext: true,
+            },
+          },
+        },
+      },
+    } as unknown as SmartObjectManifest);
+
+    const collectionRoute = findRouteContent('fieldpolicies/+server.ts');
+    const actionRoute = findRouteContent(
+      'fieldpolicies/[id]/editorState/+server.ts',
+    );
+
+    for (const route of [collectionRoute, actionRoute]) {
+      expect(route).toContain("from '@happyvertical/smrt-tenancy'");
+      expect(route).toContain('function establishTenantContext');
+      expect(route).toContain('const userId = l.userId ?? user?.id');
+      expect(route).toContain('const rawPermissions = l.permissions;');
+      expect(route).toContain("typeof userId !== 'string' || !userId");
+      expect(route).toContain('!permissions');
+      expect(route).toContain('enterTenantContext(');
+      expect(route).toContain('{ tenantId, userId, permissions }');
+      expect(route).toContain('establishTenantContext(locals);');
+    }
+    // Request body ownership values are intentionally absent from the helper.
+    expect(collectionRoute).not.toContain('body.tenantId');
+    expect(collectionRoute).not.toContain('body.userId');
   });
 });

@@ -51,6 +51,7 @@ import {
   resolveCustomActionMetadata,
 } from './custom-action';
 import { handleEventsRoute } from './events-route';
+import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
   basePath?: string;
@@ -626,9 +627,9 @@ export class APIGenerator {
           return this.createErrorResponse(405, 'Method not allowed');
       }
     } catch (error) {
-      const status = getTypedHttpErrorStatus(error);
-      if (status !== undefined) {
-        return this.createTypedErrorResponse(status, error);
+      const failure = normalizeTypedHttpError(error);
+      if (failure) {
+        return this.createJsonResponse({ error: failure }, failure.status);
       }
       console.error('API Error:', error);
       return this.createErrorResponse(500, 'Internal server error');
@@ -1608,31 +1609,6 @@ export class APIGenerator {
     });
   }
 
-  /** Serialize expected model denials without flattening them into a 500. */
-  private createTypedErrorResponse(status: number, error: unknown): Response {
-    const details = error as { code?: unknown };
-    const code =
-      typeof details.code === 'string'
-        ? details.code
-        : status === 403
-          ? 'permission_denied'
-          : 'request_rejected';
-    return new Response(
-      JSON.stringify({
-        error: {
-          code,
-          message: getTypedHttpErrorMessage(error),
-          ok: false,
-          status,
-        },
-      }),
-      {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-      },
-    );
-  }
-
   /**
    * Resolve the allowed `Access-Control-Allow-Origin` for a request (#1540).
    * Returns the request's `Origin` only when it is in the configured allowlist;
@@ -1765,28 +1741,6 @@ export class APIGenerator {
     }
     return `${word}s`;
   }
-}
-
-/**
- * Domain models may mark an expected client denial with a 4xx HTTP status
- * (for example an RBAC or lock refusal). Keep 5xx and untyped exceptions
- * opaque so runtime faults never become fabricated authorization results.
- */
-function getTypedHttpErrorStatus(error: unknown): number | undefined {
-  if (!error || typeof error !== 'object') return undefined;
-  const status = (error as { status?: unknown }).status;
-  return typeof status === 'number' &&
-    Number.isInteger(status) &&
-    status >= 400 &&
-    status <= 499
-    ? status
-    : undefined;
-}
-
-function getTypedHttpErrorMessage(error: unknown): string {
-  return error instanceof Error && error.message.length > 0
-    ? error.message
-    : 'Request rejected';
 }
 
 // REST Server Utilities
