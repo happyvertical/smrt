@@ -513,7 +513,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     // Expose options for external access (e.g., test manifest generation)
     api: {
       options: {
-        projectRoot: configuredProjectRoot,
+        ...(configuredProjectRoot === undefined
+          ? {}
+          : { projectRoot: configuredProjectRoot }),
         baseClasses,
         followImports,
         include,
