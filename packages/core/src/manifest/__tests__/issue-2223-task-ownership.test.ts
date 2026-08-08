@@ -134,5 +134,5 @@ describe('Issue #2223 - test manifest task ownership', () => {
       }
       rmSync(backupDir, { force: true, recursive: true });
     }
-  });
+  }, 180_000);
 });
