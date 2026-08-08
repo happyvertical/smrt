@@ -7,14 +7,16 @@
  *
  * @example
  * ```ts
- * // src/routes/api/mcp/tools/+server.ts
- * import { mountMcpToolsRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
+ * // src/routes/api/mcp/+server.ts
+ * import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
  * import { mcpServer } from '$lib/server/mcp';
- * export const GET = mountMcpToolsRoute(mcpServer);
+ * export const POST = mountMcpRoute(mcpServer);
  * ```
  */
 
+import { createMcpHandler } from '@modelcontextprotocol/server';
 import { McpAccessError } from './errors.js';
+import { createMcpProtocolServer } from './protocol.js';
 import type { CallToolInput, McpAppPrincipal, McpAppServer } from './server.js';
 
 /** Minimal subset of a SvelteKit RequestEvent we actually touch. */
@@ -24,7 +26,10 @@ type SvelteKitRequestEvent = {
   url: URL;
 };
 
-type SvelteKitHandler = (event: SvelteKitRequestEvent) => Promise<Response>;
+/** A SvelteKit `+server.ts` request handler with no SvelteKit dependency. */
+export type McpSvelteKitHandler = (
+  event: SvelteKitRequestEvent,
+) => Promise<Response>;
 
 type ResolvedRequestPrincipal = {
   principal: McpAppPrincipal | null;
@@ -96,14 +101,64 @@ export interface MountMcpRouteOptions {
   resolveAuthenticated?: (event: SvelteKitRequestEvent) => boolean;
 }
 
+function protocolServerForRequest(
+  server: McpAppServer,
+  resolved: ResolvedRequestPrincipal,
+): McpAppServer {
+  // Older applications sometimes used a boolean discovery-only adapter. Keep
+  // its positive result intact for the deprecated resolver while new mounts
+  // consistently use the principal on both MCP methods.
+  if (!resolved.legacyAuthenticated || resolved.principal) return server;
+  return {
+    serverInfo: server.serverInfo,
+    listTools: () => server.listTools({ authenticated: true }),
+    callTool: (input) => server.callTool(input),
+  };
+}
+
+/**
+ * Mount a modern, stateless Streamable HTTP MCP endpoint as a SvelteKit
+ * `POST` handler. The scoped SDK validates the 2026-07-28 envelope plus the
+ * required `Mcp-Method` and `Mcp-Name` headers, returning `-32020` on a
+ * mismatch. A fresh protocol server is created for each HTTP request, so this
+ * route holds neither MCP sessions nor request principal state between nodes.
+ */
+export function mountMcpRoute(
+  server: McpAppServer,
+  options: MountMcpRouteOptions = {},
+): McpSvelteKitHandler {
+  return async (event) => {
+    const resolved = resolveRequestPrincipal(event, options);
+    const handler = createMcpHandler(
+      () =>
+        createMcpProtocolServer(protocolServerForRequest(server, resolved), {
+          principal: resolved.principal,
+        }),
+      {
+        // The legacy REST-shaped mounts below remain the migration path for
+        // one release. This endpoint is deliberately 2026-07-28-only.
+        legacy: 'reject',
+        // The SDK validates every request before consulting its listen router.
+        // Zero capacity keeps this tools-only mount stateless by refusing a
+        // listen request before it can open an SSE response.
+        maxSubscriptions: 0,
+      },
+    );
+    return handler.fetch(event.request);
+  };
+}
+
 /**
  * Mount `server.listTools` as a `GET` handler. Returns the tool list shape
  * `{ tools }` for compatibility with the stock MCP bridge.
+ *
+ * @deprecated Use {@link mountMcpRoute}; retained for one release so existing
+ * REST-shaped mounts can migrate without a coordinated cutover.
  */
 export function mountMcpToolsRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
-): SvelteKitHandler {
+): McpSvelteKitHandler {
   return async (event) => {
     try {
       const tools = await server.listTools(
@@ -122,11 +177,14 @@ export function mountMcpToolsRoute(
 /**
  * Mount `server.callTool` as a `POST` handler that expects
  * `{ name, arguments }` in the JSON body.
+ *
+ * @deprecated Use {@link mountMcpRoute}; retained for one release so existing
+ * REST-shaped mounts can migrate without a coordinated cutover.
  */
 export function mountMcpCallRoute(
   server: McpAppServer,
   options: MountMcpRouteOptions = {},
-): SvelteKitHandler {
+): McpSvelteKitHandler {
   return async (event) => {
     const body = (await event.request.json().catch(() => null)) as {
       arguments?: Record<string, unknown>;

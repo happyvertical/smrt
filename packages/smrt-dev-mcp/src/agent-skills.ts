@@ -26,9 +26,9 @@ const AGENT_SKILLS: AgentSkillDefinition[] = [
     name: 'smrt-code-review',
     description:
       'Harness-agnostic downstream SMRT code review workflow using smrt-dev-mcp deterministic context and prompt bundles.',
-    path: 'agent-skills/smrt-code-review/SKILL.md',
-    skillFile: 'agent-skills/smrt-code-review/SKILL.md',
-    references: ['agent-skills/smrt-code-review/references/review-output.md'],
+    path: 'skills/smrt-code-review/SKILL.md',
+    skillFile: 'skills/smrt-code-review/SKILL.md',
+    references: ['skills/smrt-code-review/references/review-output.md'],
   },
 ];
 

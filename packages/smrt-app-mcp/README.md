@@ -3,7 +3,10 @@
 App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
 
 - **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolPolicy?, workflowAssertions? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
-- **SvelteKit adapters** (`./sveltekit`) — `mountMcpToolsRoute` / `mountMcpCallRoute` for `/api/mcp/{tools,call}/+server.ts`.
+- **SvelteKit adapters** (`./sveltekit`) — `mountMcpRoute` mounts a modern
+  2026-07-28 stateless Streamable HTTP MCP endpoint. The REST-shaped
+  `mountMcpToolsRoute` / `mountMcpCallRoute` aliases remain available for one
+  release while applications migrate.
 
 For piping a deployed app's MCP surface to a local stdio MCP client, see `@happyvertical/smrt-app-cli` — the client-side runtime CLI exposes a `startMcpBridge()` default and a generic `smrt-mcp-bridge` bin.
 
@@ -40,6 +43,44 @@ export const mcpServer = createMcpAppServer({
   },
 });
 ```
+
+```ts
+// src/routes/api/mcp/+server.ts
+import { mountMcpRoute } from '@happyvertical/smrt-app-mcp/sveltekit';
+import { mcpServer } from '$lib/server/mcp';
+export const POST = mountMcpRoute(mcpServer);
+```
+
+`mountMcpRoute` is a modern-only, fetch-style Streamable HTTP endpoint. It
+serves `server/discover`, `tools/list`, and `tools/call` with the SDK's
+2026-07-28 envelope and reports only the `tools` capability. Tool discovery is
+deterministically ordered by name. Stock MCP clients send the required
+`Mcp-Method` header (and `Mcp-Name` for `tools/call`); the mount validates them
+against the JSON-RPC body and returns the protocol `HeaderMismatch` error
+(`-32020`, HTTP 400) for a missing or mismatched header.
+
+The route constructs a fresh protocol server for every HTTP request. It does
+not issue or rely on `Mcp-Session-Id`, sticky load-balancer routing, or a held
+SSE connection, so it is safe behind ordinary round-robin deployment. This
+mount exposes no subscription capability; subscription requests are refused as
+a JSON-RPC error before any SSE stream opens. Persist stateful workflow
+progress in application objects, then pass their explicit s-m-r-t object id
+back to the next tool call:
+
+```ts
+// `basket_create` returns an object with id "basket-123".
+await client.callTool({
+  name: 'basket_additem',
+  arguments: { id: 'basket-123', productId: 'product-456' },
+});
+```
+
+## Deprecated REST compatibility
+
+For one release, applications that have not moved their route path can retain
+the old handlers below. They are REST-shaped compatibility aliases, not an MCP
+transport, and will be removed after the migration window. Direct calls to a
+tool outside the app allow-list continue to receive the safe 404 behavior.
 
 ```ts
 // src/routes/api/mcp/tools/+server.ts

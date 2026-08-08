@@ -1,3 +1,4 @@
+import { chmodSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
@@ -6,6 +7,12 @@ const packageDir = resolve(__dirname);
 
 export default defineConfig({
   plugins: [
+    {
+      name: 'smrt-dev-mcp-executable-entrypoint',
+      writeBundle() {
+        chmodSync(resolve(packageDir, 'dist/index.js'), 0o755);
+      },
+    },
     dts({
       outDir: resolve(packageDir, 'dist'),
       entryRoot: resolve(packageDir, 'src'),

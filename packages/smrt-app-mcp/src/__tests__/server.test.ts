@@ -40,9 +40,9 @@ describe('createMcpAppServer', () => {
 
   it('filters tools to the allow-listed class prefixes', async () => {
     generateToolsMock.mockResolvedValue([
-      tool('opportunity_list'),
       tool('opportunity_create'),
       tool('user_list'),
+      tool('opportunity_list'),
     ]);
 
     const server = createMcpAppServer({
@@ -53,8 +53,8 @@ describe('createMcpAppServer', () => {
 
     const all = await server.listTools({ authenticated: true });
     expect(all.map((t) => t.name)).toEqual([
-      'opportunity_list',
       'opportunity_create',
+      'opportunity_list',
     ]);
   });
 
@@ -109,8 +109,8 @@ describe('createMcpAppServer', () => {
         principal: { id: 'human-1', kind: 'human', roles: ['operator'] },
       }),
     ).resolves.toMatchObject([
-      { name: 'opportunity_get' },
       { name: 'opportunity_create' },
+      { name: 'opportunity_get' },
     ]);
     await expect(
       server.listTools({
@@ -130,8 +130,8 @@ describe('createMcpAppServer', () => {
         },
       }),
     ).resolves.toMatchObject([
-      { name: 'opportunity_get' },
       { name: 'opportunity_create' },
+      { name: 'opportunity_get' },
     ]);
     expect(policyCalls).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -284,7 +284,7 @@ describe('createMcpAppServer', () => {
     patternRef.value = ['opportunity_*'];
     expect(
       (await server.listTools({ authenticated: false })).map((t) => t.name),
-    ).toEqual(['opportunity_list', 'opportunity_get']);
+    ).toEqual(['opportunity_get', 'opportunity_list']);
     expect(publicToolPatterns).toHaveBeenCalledTimes(2);
   });
 });
