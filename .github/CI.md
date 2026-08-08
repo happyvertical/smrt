@@ -177,12 +177,19 @@ seven days expire on their own.
 
 ## Job timeouts
 
-Validation jobs on the self-hosted lanes use `timeout-minutes: 90`. The value
-is a standard, not a per-job estimate: the previous spread ran from 5 to 45,
-mostly unexplained, and the low end was close to the pool's own queue wait
-(p90 1483-1933s measured over 180 jobs, against a median execution of 39-50s).
-A ceiling near that scale is fragile — it leaves nothing for a cold Turbo cache
-or a slow checkout, and it invites cancelling healthy work.
+Standalone validation jobs on the self-hosted lanes use
+`timeout-minutes: 45`. The value is a standard, not a per-job estimate: the
+previous spread ran from 5 to 45, mostly unexplained, and the low end was close
+to the pool's own queue wait (p90 1483-1933s measured over 180 jobs, against a
+median execution of 39-50s). A ceiling near that scale is fragile — it leaves
+nothing for a cold Turbo cache or a slow checkout, and it invites cancelling
+healthy work.
+
+The heavy jobs in `test-suite.yml` intentionally use 90 minutes. #2210 raised
+them after healthy merge-group work was cancelled at the old 45-minute ceiling
+(runs 30798553114 and 30832703730); this is execution headroom, not a response
+to queue wait. Keep 45 for the standalone jobs below unless they have their own
+measured reason to move.
 
 `timeout-minutes` is measured from the moment a job starts executing, not from
 when it is queued, so this ceiling does not govern queue wait and raising it
@@ -190,15 +197,15 @@ does not fix a job that is requeued while waiting. That behaviour is tracked
 separately in happyvertical/iac#1282. Do not treat a change here as a fix for
 requeueing.
 
-These jobs deliberately sit below the standard, with the reason recorded next
-to the setting or here:
+These jobs deliberately sit below their otherwise applicable ceiling, with the
+reason recorded next to the setting or here:
 
 - GitHub-hosted jobs that set a timeout (`dependency-audit` at 10,
   `mobile.yml`'s two Linux Gradle jobs at 30, and `test-suite.yml`'s
   `affected-scope` and `lint` at 10). Hosted runners never enter the
   self-hosted queue, so the fragility above does not apply and their values can
-  track observed runtime. The last two came down from the 90-minute standard
-  when they were pinned to hosted (#2236); at 6 s and 18 s measured, ten
+  track observed runtime. The last two came down from the 90-minute heavy-suite
+  ceiling when they were pinned to hosted (#2236); at 6 s and 18 s measured, ten
   minutes is a hang guard rather than a capacity budget.
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
@@ -212,10 +219,11 @@ reason it applies to every other job there. Its earlier 30 was inherited from a
 label whose scale set was quiesced to zero runners, where `timeout-minutes`
 never governed anything.
 
-`publish-release` remains at 45 but that value is load-bearing
-independently of it: 45 is the documented sequential-registry recovery window
-below, and `scripts/publish-workflow-policy.test.mjs` asserts the exact number.
-Moving the standard later does not by itself license moving that job.
+`publish-release` is at the standalone 45-minute standard, but that value is
+load-bearing independently of it: 45 is the documented sequential-registry
+recovery window below, and `scripts/publish-workflow-policy.test.mjs` asserts
+the exact number. Changing the heavy-suite ceiling does not by itself license
+moving that job.
 
 Two related constraints are deliberately not per-job settings:
 
@@ -223,7 +231,7 @@ Two related constraints are deliberately not per-job settings:
   GitHub's 360-minute default. That is a separate gap from this standard; it is
   not a licence to leave a self-hosted job uncapped.
 - A merge queue configured with a 60-minute timeout measures wall time, which
-  includes queue wait; a chain of 45-minute jobs can exceed it. Tune the queue
+  includes queue wait; a chain of self-hosted jobs can exceed it. Tune the queue
   timeout at the queue, not by shrinking job ceilings back toward the queue
   wait.
 
@@ -426,7 +434,7 @@ to `true`, PR validation re-resolved every job from the self-hosted label to
 Nothing approached a ceiling, and these are cold numbers: PR validation runs
 on `pull_request_target`, where the Turbo shim is refused, so no job restored
 from the hosted cache pool. The last two rows carry their post-#2236 ceilings;
-they were at the 90-minute standard when the rehearsal ran.
+they were at the 90-minute heavy-suite ceiling when the rehearsal ran.
 
 Two limits on what that rehearsal proves. It exercised the pull-request path
 in `affected` mode, not a `merge_group` run in `full` mode, so the six
@@ -462,4 +470,4 @@ Queue wait is the gap between a job's `createdAt` and `startedAt`, which
 does not improve, the freed slots were not the binding constraint and the
 capacity oracle in phases 1-2 of happyvertical/iac#1349 is the next lever, not
 a wider pinning. Rollback is per-job and independent: restore the lever
-expression and the 90-minute standard on any job that regresses.
+expression and the 90-minute heavy-suite ceiling on any job that regresses.

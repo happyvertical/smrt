@@ -1,17 +1,3 @@
-# Spillover guard (#2199). `svelte-check`, via `pnpm typecheck`, runs a second
-# route-generation pass using the plugin's DEFAULT routesDir, emitting a
-# duplicate API surface directly under src/routes/api/. This package's real
-# generated routes live under src/routes/api/v1 and are listed in the
-# generator-managed block below; the handwritten handlers there are re-included
-# by the negation, so they stay tracked and linted. Delete both lines when
-# #2199 removes the duplicate pass.
-#
-# Write handwritten handlers under src/routes/api/v1 only. One placed directly
-# under src/routes/api/ is indistinguishable from the duplicate surface and
-# would be ignored here without warning.
-src/routes/api/**/+server.ts
-!src/routes/api/v1/**/+server.ts
-
 # BEGIN SMRT auto-generated routes (Vite plugin)
 src/routes/api/v1/_changes/+server.ts
 src/routes/api/v1/_events/+server.ts
