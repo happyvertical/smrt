@@ -10,6 +10,10 @@ import {
   workspaceAliasPackageNames,
 } from './workspace-aliases.js';
 
+// Keep configResolved side effects in this package when Vite loads the config
+// while checking a dependent workspace package (#2199).
+const packageRoot = import.meta.dirname;
+
 /**
  * Dual-mode Vite config for smrt-assets
  *
@@ -62,6 +66,7 @@ export default defineConfig(async ({ mode }) => {
   });
 
   return {
+    root: packageRoot,
     resolve: {
       alias: viteWorkspaceAliases,
     },
@@ -74,10 +79,11 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       sveltekit(),
       smrtConsumer({
-        projectRoot: process.cwd(),
+        projectRoot: packageRoot,
         svelteKit: true,
       }),
       smrtPlugin({
+        projectRoot: packageRoot,
         include: ['src/**/*.ts'],
         exclude: ['**/*.test.ts', '**/*.spec.ts', 'src/svelte/**/*', 'src/routes/**/*', '**/*.svelte'],
         generateTypes: false,

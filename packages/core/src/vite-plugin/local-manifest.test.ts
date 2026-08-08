@@ -146,6 +146,69 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     expect(manifest).toHaveProperty('objects');
   });
 
+  it("uses an explicit project root instead of Vite's invoking root (#2199)", async () => {
+    const invokingRoot = join(tmpDir, 'foreign-vite-root');
+    mkdirSync(invokingRoot, { recursive: true });
+
+    const plugin = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await (plugin as any).configResolved({
+      root: invokingRoot,
+      build: {},
+      plugins: [],
+    });
+
+    expect(existsSync(join(tmpDir, '.smrt', 'manifest.json'))).toBe(true);
+    expect(existsSync(join(invokingRoot, '.smrt', 'manifest.json'))).toBe(
+      false,
+    );
+  });
+
+  it('generates SvelteKit routes from the explicit project root (#2199)', async () => {
+    const invokingRoot = join(tmpDir, 'foreign-vite-root');
+    mkdirSync(invokingRoot, { recursive: true });
+    createLocalSmrtObject(tmpDir);
+    writeFileSync(
+      join(tmpDir, 'smrt.config.json'),
+      JSON.stringify({ knowledge: { api: { enabled: true } } }),
+    );
+    writeFileSync(
+      join(invokingRoot, 'smrt.config.json'),
+      JSON.stringify({ knowledge: { api: { enabled: false } } }),
+    );
+
+    const plugin = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+      svelteKit: {
+        enabled: true,
+        routesDir: 'src/routes/api/v1',
+        objectsDir: 'src',
+      },
+    });
+
+    await (plugin as any).configResolved({
+      root: invokingRoot,
+      build: {},
+      plugins: [],
+    });
+
+    const generatedRoute = 'src/routes/api/v1/localthings/+server.ts';
+    const knowledgeRoute = 'src/routes/__smrt/knowledge/+server.ts';
+    expect(existsSync(join(tmpDir, generatedRoute))).toBe(true);
+    expect(existsSync(join(tmpDir, knowledgeRoute))).toBe(true);
+    expect(readFileSync(join(tmpDir, '.gitignore'), 'utf-8')).toContain(
+      generatedRoute,
+    );
+    expect(existsSync(join(invokingRoot, generatedRoute))).toBe(false);
+    expect(existsSync(join(invokingRoot, '.gitignore'))).toBe(false);
+  });
+
   it('writes domain knowledge when config omits this package override', async () => {
     writeFileSync(
       join(tmpDir, 'smrt.config.json'),
