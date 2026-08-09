@@ -93,6 +93,20 @@ export function isTransientField(field: RegisteredFieldInfo): boolean {
 }
 
 /**
+ * True when a registered field can receive a policy row.  Keep this shared by
+ * the resolver and the catalog audit: otherwise a row that never resolves can
+ * accidentally be presented as an editable setting.
+ */
+export function isPolicyAddressableField(field: RegisteredFieldInfo): boolean {
+  return (
+    field._meta?.__smrtSystemField !== true &&
+    field.type !== 'oneToMany' &&
+    field.type !== 'manyToMany' &&
+    field.type !== 'meta'
+  );
+}
+
+/**
  * A field is required when flagged required and not explicitly nullable.
  *
  * `nullable` is read from BOTH the top level and `_meta` for the same reason

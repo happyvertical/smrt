@@ -1,9 +1,16 @@
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
-import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
-import { checkOperationPermission } from '@happyvertical/smrt-users';
+import {
+  getCurrentTenant,
+  isSuperAdminBypass,
+} from '@happyvertical/smrt-tenancy';
+import {
+  checkOperationPermission,
+  MembershipCollection,
+} from '@happyvertical/smrt-users';
 import {
   getFieldReadPermission,
   getObjectFieldMap,
+  isPolicyAddressableField,
   isSensitiveField,
   isTransientField,
   isUsableRequiredDefault,
@@ -15,7 +22,11 @@ import {
 } from '../permissions.js';
 import type {
   ExplainedObjectFieldPolicy,
+  FieldPolicyAuditRow,
+  FieldPolicyAuditSnapshot,
   FieldPolicyBatchResult,
+  FieldPolicyDriftReason,
+  FieldPolicyDriftRow,
   FieldPolicyEditorRow,
   FieldPolicyEditorStateResult,
   ResolvedObjectFieldPolicy,
@@ -23,6 +34,10 @@ import type {
 
 /** Upper bound on objectRefs per batch call — bounds registry/db work per request. */
 const MAX_BATCH_OBJECT_REFS = 100;
+/** Public cap shared by the server catalog and browser adapter. */
+export const MAX_FIELD_POLICY_AUDIT_OBJECT_REFS = MAX_BATCH_OBJECT_REFS;
+/** Count queries are projected, so they can cover a page plus an off-page selection. */
+export const MAX_FIELD_POLICY_AUDIT_COUNT_REFS = MAX_BATCH_OBJECT_REFS * 2;
 
 /**
  * Collection surface for {@link FieldPolicy} rows plus the batch resolve
@@ -53,7 +68,14 @@ const MAX_BATCH_OBJECT_REFS = 100;
 @smrt({
   conflictColumns: ['object_ref', 'field_name', 'scope_type', 'scope_key'],
   api: {
-    include: ['create', 'update', 'delete', 'resolveBatch', 'getEditorState'],
+    include: [
+      'create',
+      'update',
+      'delete',
+      'resolveBatch',
+      'getEditorState',
+      'policyAudit',
+    ],
     // The collection-scoped editor action shares the sparse cross-scope
     // policy table, so generated SvelteKit routes establish identity from
     // authenticated locals even though FieldPolicy is not @TenantScoped.
@@ -69,6 +91,11 @@ const MAX_BATCH_OBJECT_REFS = 100;
         method: 'POST',
         path: 'editor-state',
       },
+      policyAudit: {
+        scope: 'collection',
+        method: 'POST',
+        path: 'policy-audit',
+      },
     },
   },
   cli: false,
@@ -76,6 +103,274 @@ const MAX_BATCH_OBJECT_REFS = 100;
 })
 export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
   static readonly _itemClass = FieldPolicy;
+
+  /**
+   * Permission-gated, tenant-scoped audit read for the defaults control
+   * panel. It returns editable own-tenant rows, read-only app summaries,
+   * projected user override counts, and identity-only manifest drift rows.
+   */
+  async policyAudit(
+    options: {
+      objectRefs?: string[];
+      countObjectRefs?: string[];
+      /** Capability-only bootstrap for catalog builders before page selection. */
+      summaryOnly?: boolean;
+      /** Return row/count roll-ups without resolving field-policy layers. */
+      countsOnly?: boolean;
+      /** Return the first bounded page of manifest drift candidates. */
+      includeDrift?: boolean;
+    } = {},
+  ): Promise<FieldPolicyAuditSnapshot> {
+    const objectRefs = normalizeAuditRefs(
+      options.objectRefs,
+      'objectRefs',
+      MAX_FIELD_POLICY_AUDIT_OBJECT_REFS,
+    );
+    const countObjectRefs = normalizeAuditRefs(
+      options.countObjectRefs ?? objectRefs,
+      'countObjectRefs',
+      MAX_FIELD_POLICY_AUDIT_COUNT_REFS,
+    );
+    const context = getCurrentTenant();
+    const tenantId = context?.tenantId ?? null;
+    const userId = context?.userId ?? null;
+    const permissionOptions = {
+      collection: 'fields.policy',
+      db: this.db,
+      tenantId,
+      userId,
+      permissionSet: context?.permissions,
+      onDeny: 'return' as const,
+    };
+    const manage = tenantId
+      ? await checkOperationPermission({
+          ...permissionOptions,
+          action: MANAGE_FIELD_POLICY_PERMISSION.split('.').at(-1) ?? 'manage',
+        })
+      : { allowed: false };
+    const personalize = userId
+      ? await checkOperationPermission({
+          ...permissionOptions,
+          action:
+            PERSONALIZE_FIELD_POLICY_PERMISSION.split('.').at(-1) ??
+            'personalize',
+        })
+      : { allowed: false };
+    const caller = {
+      tenantId,
+      userId,
+      canManageOrg: manage.allowed,
+      canPersonalize: personalize.allowed && userId !== null,
+    };
+    if (!caller.canManageOrg || tenantId === null) return emptyAudit(caller);
+    if (options.summaryOnly === true) return emptyAudit(caller);
+
+    const fieldMaps = new Map<
+      string,
+      Promise<Awaited<ReturnType<typeof getObjectFieldMap>> | null>
+    >();
+    const fieldMapFor = (objectRef: string) => {
+      let loaded = fieldMaps.get(objectRef);
+      if (!loaded) {
+        loaded = getObjectFieldMap(objectRef).catch(() => null);
+        fieldMaps.set(objectRef, loaded);
+      }
+      return loaded;
+    };
+    const classify = async (
+      row: Pick<FieldPolicy, 'objectRef' | 'fieldName'>,
+    ): Promise<'ok' | 'gated' | FieldPolicyDriftReason> => {
+      const fields = await fieldMapFor(row.objectRef);
+      if (!fields) return 'unknown-object';
+      const definition = fields.get(row.fieldName);
+      if (!definition) return 'unknown-field';
+      if (
+        isSensitiveField(definition) ||
+        getFieldReadPermission(definition) !== undefined ||
+        isTransientField(definition)
+      ) {
+        return 'gated';
+      }
+      return isPolicyAddressableField(definition) ? 'ok' : 'excluded-field';
+    };
+
+    const [appRows, orgRows, ownUserRows] = objectRefs.length
+      ? await Promise.all([
+          this.list({
+            where: { scopeType: 'app', 'objectRef in': objectRefs },
+          }),
+          this.list({
+            where: {
+              scopeType: 'tenant',
+              tenantId,
+              'objectRef in': objectRefs,
+            },
+          }),
+          userId
+            ? this.list({
+                where: {
+                  scopeType: 'user',
+                  userId,
+                  'objectRef in': objectRefs,
+                },
+              })
+            : Promise.resolve([] as FieldPolicy[]),
+        ])
+      : ([[], [], []] as [FieldPolicy[], FieldPolicy[], FieldPolicy[]]);
+    const audit: FieldPolicyAuditSnapshot = {
+      ...emptyAudit(caller),
+      policies: options.countsOnly
+        ? {}
+        : await this.resolveAuditPolicies(objectRefs, tenantId, fieldMapFor),
+    };
+    const append = async (
+      row: FieldPolicy,
+      target: FieldPolicyAuditRow[],
+      driftPrunable: boolean,
+    ) => {
+      const state = await classify(row);
+      if (state === 'ok') target.push(toAuditRow(row));
+      else if (state !== 'gated') {
+        audit.driftRows.push({
+          ...toDriftIdentity(row),
+          reason: state,
+          prunable: driftPrunable,
+        });
+      }
+    };
+    for (const row of orgRows) await append(row, audit.orgRows, true);
+    for (const row of appRows)
+      await append(row, audit.appRows, isSuperAdminBypass());
+    for (const row of ownUserRows) {
+      const state = await classify(row);
+      if (state !== 'ok' && state !== 'gated') {
+        audit.driftRows.push({
+          ...toDriftIdentity(row),
+          reason: state,
+          prunable: caller.canPersonalize,
+        });
+      }
+    }
+
+    if (options.includeDrift === true) {
+      // Drift is a separate bounded list: catalog browsing must not scan every
+      // policy row merely to populate a secondary maintenance affordance.
+      const [driftAppRows, driftOrgRows, driftUserRows] = await Promise.all([
+        this.list({ where: { scopeType: 'app' }, limit: 100 }),
+        this.list({ where: { scopeType: 'tenant', tenantId }, limit: 100 }),
+        userId
+          ? this.list({ where: { scopeType: 'user', userId }, limit: 100 })
+          : Promise.resolve([] as FieldPolicy[]),
+      ]);
+      const knownIds = new Set(
+        [...appRows, ...orgRows, ...ownUserRows].map((row) => String(row.id)),
+      );
+      for (const [rows, prunable] of [
+        [driftAppRows, isSuperAdminBypass()],
+        [driftOrgRows, true],
+        [driftUserRows, caller.canPersonalize],
+      ] as const) {
+        for (const row of rows) {
+          if (knownIds.has(String(row.id))) continue;
+          const state = await classify(row);
+          if (state !== 'ok' && state !== 'gated') {
+            audit.driftRows.push({
+              ...toDriftIdentity(row),
+              reason: state,
+              prunable,
+            });
+          }
+        }
+      }
+    }
+
+    // User policy rows intentionally have no tenantId because preferences
+    // follow the user. Resolve tenant membership first so this roll-up cannot
+    // leak whether users belonging only to another tenant customized a field.
+    const memberships = await MembershipCollection.create({ db: this.db });
+    const memberIds = [
+      ...new Set(
+        (await memberships.findActiveByTenant(tenantId))
+          .map((membership) => membership.userId?.trim())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const projected =
+      countObjectRefs.length && memberIds.length
+        ? await this.list({
+            where: {
+              scopeType: 'user',
+              'objectRef in': countObjectRefs,
+              'userId in': memberIds,
+            },
+            select: ['objectRef', 'fieldName'],
+          })
+        : [];
+    for (const row of projected) {
+      if ((await classify(row)) !== 'ok') continue;
+      const byField = audit.userOverrideCounts[row.objectRef] ?? {};
+      audit.userOverrideCounts[row.objectRef] = byField;
+      byField[row.fieldName] = (byField[row.fieldName] ?? 0) + 1;
+    }
+
+    const { resolveSurvivingTenantChainIds } = await import(
+      '../field-policy-resolver.js'
+    );
+    const ancestorIds = (
+      await resolveSurvivingTenantChainIds(tenantId, {
+        db: this.db,
+      })
+    ).filter((id) => id !== tenantId);
+    if (ancestorIds.length && objectRefs.length) {
+      const ancestors = await this.list({
+        where: {
+          scopeType: 'tenant',
+          'tenantId in': ancestorIds,
+          'objectRef in': objectRefs,
+        },
+      });
+      for (const row of ancestors) {
+        if ((await classify(row)) !== 'ok') continue;
+        const names = audit.inheritedOrgKeys[row.objectRef] ?? [];
+        audit.inheritedOrgKeys[row.objectRef] = names;
+        if (!names.includes(row.fieldName)) names.push(row.fieldName);
+      }
+    }
+    audit.orgRows.sort(sortAuditRows);
+    audit.appRows.sort(sortAuditRows);
+    audit.driftRows.sort(sortDriftRows);
+    for (const names of Object.values(audit.inheritedOrgKeys)) names.sort();
+    return audit;
+  }
+
+  private async resolveAuditPolicies(
+    objectRefs: string[],
+    tenantId: string,
+    fieldMapFor: (
+      objectRef: string,
+    ) => Promise<Awaited<ReturnType<typeof getObjectFieldMap>> | null>,
+  ): Promise<Record<string, ExplainedObjectFieldPolicy>> {
+    const { resolveFieldPolicyExplained } = await import(
+      '../field-policy-resolver.js'
+    );
+    const policies: Record<string, ExplainedObjectFieldPolicy> = {};
+    for (const objectRef of objectRefs) {
+      if (!(await fieldMapFor(objectRef))) continue;
+      const resolved = await resolveFieldPolicyExplained(objectRef, {
+        tenantId,
+        db: this.db,
+      });
+      policies[objectRef] = await this.gateExplainedForEditorResponse(
+        resolved,
+        {
+          manage: true,
+          personalize: false,
+        },
+        true,
+      );
+    }
+    return policies;
+  }
 
   /** All app-scope rows for an object, keyed by field name. */
   async getAppRows(objectRef: string): Promise<Map<string, FieldPolicy>> {
@@ -359,6 +654,7 @@ export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
   private async gateExplainedForEditorResponse(
     resolved: ExplainedObjectFieldPolicy,
     capabilities: { manage: boolean; personalize: boolean },
+    includeCode = false,
   ): Promise<ExplainedObjectFieldPolicy> {
     const fieldMap = await getObjectFieldMap(resolved.objectRef);
     const fields: ExplainedObjectFieldPolicy['fields'] = {};
@@ -378,6 +674,7 @@ export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
       fields[fieldName] = policy;
       layers[fieldName] = (resolved.layers[fieldName] ?? []).filter(
         (layer) =>
+          (includeCode && layer.layer === 'code') ||
           (capabilities.manage &&
             (layer.layer === 'app' || layer.layer === 'tenant')) ||
           (capabilities.personalize && layer.layer === 'user'),
@@ -409,4 +706,101 @@ export class FieldPolicyCollection extends SmrtCollection<FieldPolicy> {
       }))
       .sort((left, right) => left.fieldName.localeCompare(right.fieldName));
   }
+}
+
+function normalizeAuditRefs(
+  value: unknown,
+  label: string,
+  maximum: number,
+): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`policyAudit ${label} must be a string array`);
+  }
+  if (value.some((ref) => typeof ref !== 'string' || ref.trim() === '')) {
+    throw new Error(`policyAudit ${label} must contain non-empty strings`);
+  }
+  const refs = [...new Set(value)];
+  if (refs.length > maximum) {
+    throw new Error(
+      `policyAudit ${label} accepts at most ${maximum} objectRefs`,
+    );
+  }
+  return refs;
+}
+
+function emptyAudit(
+  caller: FieldPolicyAuditSnapshot['caller'],
+): FieldPolicyAuditSnapshot {
+  return {
+    orgRows: [],
+    appRows: [],
+    inheritedOrgKeys: {},
+    userOverrideCounts: {},
+    driftRows: [],
+    policies: {},
+    caller,
+  };
+}
+
+function dateText(value: unknown): string | null {
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === 'string' ? value : null;
+}
+
+function toAuditRow(row: FieldPolicy): FieldPolicyAuditRow {
+  return {
+    objectRef: row.objectRef,
+    defaultValue: row.defaultValue,
+    displayOrder: row.displayOrder,
+    fieldName: row.fieldName,
+    help: row.help,
+    id: String(row.id),
+    label: row.label,
+    locked: row.locked,
+    scopeType: row.scopeType,
+    tenantId: row.tenantId,
+    updatedBy: row.updatedBy,
+    userId: row.userId,
+    visibility: row.visibility,
+    createdAt: dateText((row as { createdAt?: unknown }).createdAt),
+    updatedAt: dateText((row as { updatedAt?: unknown }).updatedAt),
+  };
+}
+
+function toDriftIdentity(
+  row: FieldPolicy,
+): Omit<FieldPolicyDriftRow, 'reason' | 'prunable'> {
+  return {
+    id: String(row.id),
+    objectRef: row.objectRef,
+    fieldName: row.fieldName,
+    scopeType: row.scopeType,
+    tenantId: row.tenantId,
+    userId: row.userId,
+    updatedBy: row.updatedBy,
+    createdAt: dateText((row as { createdAt?: unknown }).createdAt),
+    updatedAt: dateText((row as { updatedAt?: unknown }).updatedAt),
+  };
+}
+
+function sortAuditRows(
+  left: FieldPolicyAuditRow,
+  right: FieldPolicyAuditRow,
+): number {
+  return (
+    left.objectRef.localeCompare(right.objectRef) ||
+    left.fieldName.localeCompare(right.fieldName)
+  );
+}
+
+function sortDriftRows(
+  left: FieldPolicyDriftRow,
+  right: FieldPolicyDriftRow,
+): number {
+  return (
+    left.objectRef.localeCompare(right.objectRef) ||
+    left.fieldName.localeCompare(right.fieldName) ||
+    left.scopeType.localeCompare(right.scopeType)
+  );
 }

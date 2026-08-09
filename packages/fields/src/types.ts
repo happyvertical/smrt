@@ -259,6 +259,53 @@ export interface FieldPolicyEditorState {
   };
 }
 
+/** A stored organization row with the immutable audit metadata needed by #2050. */
+export interface FieldPolicyAuditRow extends FieldPolicyEditorRow {
+  objectRef: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+/** Why a persisted policy row is no longer usable by the live registry. */
+export type FieldPolicyDriftReason =
+  | 'unknown-object'
+  | 'unknown-field'
+  | 'excluded-field';
+
+/** Drift is deliberately identity-only: stale values are never serialized. */
+export interface FieldPolicyDriftRow {
+  id: string;
+  objectRef: string;
+  fieldName: string;
+  scopeType: FieldPolicyScopeType;
+  tenantId: string | null;
+  userId: string | null;
+  updatedBy: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  reason: FieldPolicyDriftReason;
+  prunable: boolean;
+}
+
+/**
+ * Tenant-admin catalog read surface. Foreign user rows are represented only
+ * by counts; their values and identifiers never leave the collection.
+ */
+export interface FieldPolicyAuditSnapshot {
+  orgRows: FieldPolicyAuditRow[];
+  appRows: FieldPolicyAuditRow[];
+  inheritedOrgKeys: Record<string, string[]>;
+  userOverrideCounts: Record<string, Record<string, number>>;
+  driftRows: FieldPolicyDriftRow[];
+  policies: Record<string, ExplainedObjectFieldPolicy>;
+  caller: {
+    tenantId: string | null;
+    userId: string | null;
+    canManageOrg: boolean;
+    canPersonalize: boolean;
+  };
+}
+
 /** Explicit 403 result used by generated custom-action transports. */
 export interface FieldPolicyEditorStateDenied {
   code: 'permission_denied';

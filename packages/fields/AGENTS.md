@@ -197,6 +197,26 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   `visibleColumnIds`; it filters policy-hidden mapped fields, preserves unmapped
   computed/action columns, and cannot reveal a static `column.hidden` column.
 
+## Defaults control panel (#2050)
+
+- `buildFieldPolicySettingsCatalog()` is the server-side, URL/GET-driven
+  catalog builder. It structurally targets `SettingsCatalog`, but this package
+  must not import `smrt-svelte`; hosts inject `SettingsCatalog` into
+  `FieldPolicyControlPanel` and retain their own route and transport adapters.
+- `policyAudit` is the only routed organization roll-up. It requires
+  `fields.policy.manage`, returns only the caller tenant's editable rows and
+  read-only app summaries, and represents other users strictly as per-field
+  counts. It resolves only requested page refs; never pre-resolve the catalog.
+- Display code/app/org values by replaying the explained resolver layers, not
+  by independently calculating precedence. Reset and drift prune are ordinary
+  model deletes, so existing scope/permission validation remains authoritative.
+  The panel asks for an explicit confirmation before either destructive action;
+  SSR hosts can inject that confirmation decision instead of relying on
+  `window.confirm`.
+- `fieldPolicyControlPanelNavItem()` is a structural AdminShell tenant-nav
+  seam. It never imports `smrt-svelte` or `smrt-web`; the host supplies the
+  returned entry and must enforce its real route permission server-side.
+
 ## Related
 
 - `@happyvertical/smrt-prompts` / `smrt-languages` / `smrt-features` — the

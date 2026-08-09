@@ -14,16 +14,17 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-// Side-effect import: registers smrt-users' classes (Tenant) so
+// Registers smrt-users' classes (Tenant/Membership) so
 // getTestDatabase can create the tenants table the default hierarchy loader
 // reads under an ambient tenant context.
-import '../../users/src/index.js';
+import { MembershipCollection } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 import {
   MANAGE_FIELD_POLICY_PERMISSION,
   PERSONALIZE_FIELD_POLICY_PERMISSION,
 } from './permissions.js';
+import { buildFieldPolicySettingsCatalog } from './settings-catalog.js';
 
 @smrt({
   packageName: '@test/smrt-fields-batch',
@@ -69,7 +70,9 @@ describe('FieldPolicyCollection.resolveBatch', () => {
     clearFieldPolicyCache();
     // 'Tenant' backs the default hierarchy loader (smrt-users is installed
     // in this workspace, so resolveBatch walks the real tenant table).
-    db = await getTestDatabase({ classes: ['FieldPolicy', 'Tenant'] });
+    db = await getTestDatabase({
+      classes: ['FieldPolicy', 'Tenant', 'Membership'],
+    });
     policies = await FieldPolicyCollection.create({ db });
     objectRef = fixtureRef();
   });
@@ -382,6 +385,121 @@ describe('FieldPolicyCollection.resolveBatch', () => {
           'tenant',
           'user',
         ]);
+      },
+    );
+  });
+
+  it('returns a manage-gated catalog audit with rows, explained layers, and count-only user overrides', async () => {
+    const tenantId = randomUUID();
+    const managerId = randomUUID();
+    const otherUserId = randomUUID();
+    const foreignTenantId = randomUUID();
+    const foreignUserId = randomUUID();
+    const memberships = await MembershipCollection.create({ db });
+    await memberships.create({
+      userId: otherUserId,
+      tenantId,
+      roleId: randomUUID(),
+    });
+    await memberships.create({
+      userId: foreignUserId,
+      tenantId: foreignTenantId,
+      roleId: randomUUID(),
+    });
+    await withTenant(
+      {
+        tenantId,
+        userId: managerId,
+        permissions: new Set<string>(),
+        superAdminBypass: true,
+      },
+      async () => {
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'app',
+          label: 'Application label',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'tenant',
+          tenantId,
+          help: 'Tenant help',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'user',
+          userId: otherUserId,
+          label: 'Private label',
+        });
+        await policies.create({
+          objectRef,
+          fieldName: 'blurb',
+          scopeType: 'user',
+          userId: foreignUserId,
+          label: 'Foreign private label',
+        });
+      },
+    );
+
+    await withTenant(
+      {
+        tenantId,
+        userId: managerId,
+        permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+      },
+      async () => {
+        const audit = await policies.policyAudit({ objectRefs: [objectRef] });
+        expect(audit.caller.canManageOrg).toBe(true);
+        expect(audit.appRows).toMatchObject([
+          { objectRef, fieldName: 'blurb', label: 'Application label' },
+        ]);
+        expect(audit.orgRows).toMatchObject([
+          { objectRef, fieldName: 'blurb', help: 'Tenant help' },
+        ]);
+        expect(audit.userOverrideCounts[objectRef]?.blurb).toBe(1);
+        expect(audit.policies[objectRef]?.fields.blurb.help).toBe(
+          'Tenant help',
+        );
+        expect(
+          audit.policies[objectRef]?.layers.blurb.map((layer) => layer.layer),
+        ).toEqual(['code', 'app', 'tenant']);
+
+        const catalog = await buildFieldPolicySettingsCatalog({
+          collection: policies,
+          objectRefs: [objectRef],
+          customizedOnly: true,
+        });
+        expect(catalog.page.items).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ objectRef, fieldName: 'blurb' }),
+          ]),
+        );
+
+        const countsOnly = await policies.policyAudit({
+          objectRefs: [objectRef],
+          countsOnly: true,
+        });
+        expect(countsOnly.policies).toEqual({});
+        expect(countsOnly.appRows).toHaveLength(1);
+        expect(countsOnly.orgRows).toHaveLength(1);
+        expect(countsOnly.userOverrideCounts[objectRef]?.blurb).toBe(1);
+      },
+    );
+
+    await withTenant(
+      { tenantId, userId: managerId, permissions: new Set<string>() },
+      async () => {
+        const denied = await policies.policyAudit({ objectRefs: [objectRef] });
+        expect(denied).toMatchObject({
+          orgRows: [],
+          appRows: [],
+          driftRows: [],
+          policies: {},
+          caller: { canManageOrg: false },
+        });
       },
     );
   });

@@ -30,6 +30,7 @@ export {
   getCodeSeedGroup,
   getFieldReadPermission,
   getObjectFieldMap,
+  isPolicyAddressableField,
   isRequiredField,
   isSensitiveField,
   isTransientField,
@@ -41,6 +42,7 @@ export {
 export {
   resolveFieldPolicy,
   resolveFieldPolicyExplained,
+  resolveSurvivingTenantChainIds,
 } from './field-policy-resolver.js';
 export { FieldPolicy } from './models/FieldPolicy.js';
 export {
@@ -50,12 +52,29 @@ export {
   PERSONALIZE_FIELD_POLICY_PERMISSION,
 } from './permissions.js';
 export {
+  type BuildFieldPolicySettingsCatalogOptions,
+  buildFieldPolicySettingsCatalog,
+  type FieldPolicyCatalogField,
+  type FieldPolicyCatalogObjectSummary,
+  type FieldPolicyDetailItem,
+  type FieldPolicySettingsCatalogData,
+  type FieldPolicySettingsCatalogPage,
+  type FieldPolicySettingsCatalogQuery,
+  type FieldPolicySummaryItem,
+  fieldPolicyCatalogItemId,
+  parseFieldPolicyCatalogQuery,
+} from './settings-catalog.js';
+export {
   APP_FIELD_POLICY_SCOPE_KEY,
   type ExplainedObjectFieldPolicy,
   FIELD_POLICY_SCOPE_TYPES,
   FIELD_POLICY_VISIBILITIES,
+  type FieldPolicyAuditRow,
+  type FieldPolicyAuditSnapshot,
   type FieldPolicyBatchResult,
   type FieldPolicyDelta,
+  type FieldPolicyDriftReason,
+  type FieldPolicyDriftRow,
   type FieldPolicyEditorCapabilities,
   type FieldPolicyEditorRow,
   type FieldPolicyEditorState,
