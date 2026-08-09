@@ -25,6 +25,7 @@ import {
 } from '../index.js';
 import { FieldInputRegistry } from '../input-registry.js';
 import { resolveObjectFormFields } from '../object-form.js';
+import ObjectFormActionsFixture from './fixtures/ObjectFormActionsFixture.svelte';
 import ObjectFormFixture from './fixtures/ObjectFormFixture.svelte';
 import ObjectFormRegistryFixture from './fixtures/ObjectFormRegistryFixture.svelte';
 import ObjectFormSnippetFixture from './fixtures/ObjectFormSnippetFixture.svelte';
@@ -287,6 +288,28 @@ describe('ObjectForm component', () => {
     expect(
       screen.queryByRole('textbox', { name: 'Name' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('renders host actions inside the form and keeps submit validation and callbacks intact', async () => {
+    const onsubmit = vi.fn();
+    render(ObjectFormActionsFixture, { props: { fields, policy, onsubmit } });
+
+    const submit = screen.getByRole('button', { name: 'Save product' });
+    expect(submit).toHaveAttribute('type', 'submit');
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Name' }),
+      'Deluxe',
+    );
+    await userEvent.click(submit);
+    expect(onsubmit).toHaveBeenCalledTimes(1);
+
+    const metadata = screen.getByRole('textbox', {
+      name: 'Metadata',
+    }) as HTMLTextAreaElement;
+    metadata.value = '{not json}';
+    await fireEvent.input(metadata);
+    await userEvent.click(submit);
+    expect(onsubmit).toHaveBeenCalledTimes(1);
   });
 
   it('is axe-clean for its generated basic form', async () => {
