@@ -220,13 +220,13 @@ function fieldId(name: string): string {
   return `${formInstanceId}-${name}`;
 }
 
-function captureUsage(): void {
+function captureUsage(values: Readonly<Record<string, unknown>>): void {
   if (!resolvedPolicy) return;
   reportFieldUsage(
     usageReporter,
     collectFieldUsageEntries({
       objectRef,
-      values: value,
+      values,
       // Hidden fields are not submitted user inputs. Basic and advanced fields
       // are included even when a value matches the default so the server's
       // dominance calculation has a complete denominator.
@@ -265,12 +265,28 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
     return;
   }
   if (!onsubmit) return;
+  // A successful create commonly replaces the bound record before its
+  // persistence promise resolves. Snapshot before awaiting so usage describes
+  // the fields that were submitted, not the newly cleared next-record state.
+  const submittedValues = snapshotUsageValues(value);
   try {
     // Form prevents native navigation itself, so persistence acknowledgement
     // must be explicit rather than inferred from event.defaultPrevented.
-    if ((await onsubmit(event)) === true) captureUsage();
+    if ((await onsubmit(event)) === true) captureUsage(submittedValues);
   } catch {
     // The host owns persistence errors; rejected submissions never emit usage.
+  }
+}
+
+function snapshotUsageValues(
+  record: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  try {
+    return structuredClone(record);
+  } catch {
+    // Generated form values are wire-safe, but retain a shallow fallback for
+    // host extensions that add an uncloneable value outside telemetry fields.
+    return { ...record };
   }
 }
 

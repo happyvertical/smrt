@@ -28,7 +28,7 @@ import type {
 /**
  * Deviation comparison: strict equality, then a JSON round-trip so structured
  * and Date-shaped values compare by serialization. Mirrors the browser-side
- * `usageValuesEqual` (the packaging boundary bars value imports across the
+ * `fieldUsageValuesEqual` (the packaging boundary bars value imports across the
  * subpath split — the permission-slug precedent); a node test pins the two
  * behaviours equal.
  */
@@ -45,9 +45,8 @@ export function usageValuesEqual(a: unknown, b: unknown): boolean {
 
 /**
  * Per-call bound on reported entries — the rate rail for the fire-and-forget
- * ingestion action (the resolveBatch precedent). Mirrored browser-side by
- * `src/svelte/usage-capture.ts` (`USAGE_REPORT_BATCH_LIMIT`); a node test
- * pins the two equal.
+ * ingestion action (the resolveBatch precedent). The browser deliberately
+ * does not impose a duplicate limit: every report is server-bounded here.
  */
 export const MAX_USAGE_REPORT_ENTRIES = 100;
 

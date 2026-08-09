@@ -619,6 +619,40 @@ describe('FieldPolicySuggestion actions (#2051)', () => {
     ).rejects.toThrow(/sensitive, read-permission-gated, or transient/);
   });
 
+  it('still refuses a promote whose existing policy target became gated', async () => {
+    // Exercise the atomic UPDATE path: a stale promote must not bypass the
+    // model's live addressability rail merely because a tenant row exists.
+    await asManager(() =>
+      policies.create({
+        objectRef,
+        fieldName: 'featured',
+        scopeType: 'tenant',
+        tenantId,
+        help: 'existing sparse row',
+      }),
+    );
+    const seeded = await seedSuggestion({ fieldName: 'featured' });
+    await db.query(
+      `UPDATE _smrt_field_policy_suggestions SET field_name = ? WHERE id = ?`,
+      'apiToken',
+      String(seeded.id),
+    );
+
+    await expect(
+      asManager(() => suggestions.acceptSuggestion({ id: String(seeded.id) })),
+    ).rejects.toThrow(/sensitive, read-permission-gated, or transient/);
+    const row = await policies.list({
+      where: {
+        objectRef,
+        fieldName: 'featured',
+        scopeType: 'tenant',
+        tenantId,
+      },
+    });
+    expect(row).toHaveLength(1);
+    expect(row[0].visibility).toBeNull();
+  });
+
   it('holds the active slot across a NON-TRANSACTIONAL accept (P2 regression)', async () => {
     // A database VIEW exposes `transaction` but not `beginTransaction`, so the
     // accept takes the two-step claim path. Model that by hiding

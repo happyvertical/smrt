@@ -12,6 +12,7 @@ import {
   assertDefaultValueMatchesFieldType,
   getFieldReadPermission,
   getObjectFieldMap,
+  isPolicyAddressableField,
   isSensitiveField,
   isTransientField,
 } from '../field-definitions.js';
@@ -281,24 +282,7 @@ async function updatePolicyColumn(
 async function assertAcceptedDefaultStillAllowed(
   suggestion: FieldPolicySuggestion,
 ): Promise<void> {
-  const fields = await getObjectFieldMap(suggestion.objectRef);
-  const fieldDef = fields.get(suggestion.fieldName);
-  if (!fieldDef) {
-    throw new Error(
-      `Unknown field "${suggestion.fieldName}" on "${suggestion.objectRef}"`,
-    );
-  }
-  if (
-    isSensitiveField(fieldDef) ||
-    getFieldReadPermission(fieldDef) !== undefined ||
-    isTransientField(fieldDef)
-  ) {
-    throw new Error(
-      `Cannot store a default for "${suggestion.objectRef}.` +
-        `${suggestion.fieldName}": the field is sensitive, ` +
-        `read-permission-gated, or transient`,
-    );
-  }
+  const fieldDef = await assertAcceptedPolicyTargetStillAllowed(suggestion);
   if (suggestion.proposedValue === null) {
     throw new Error(
       "FieldPolicySuggestion of kind 'default' requires a proposedValue",
@@ -319,6 +303,32 @@ async function assertAcceptedDefaultStillAllowed(
     fieldDef,
     parsed,
   );
+}
+
+/** Re-check every policy-addressability rail before an atomic acceptance write. */
+async function assertAcceptedPolicyTargetStillAllowed(
+  suggestion: FieldPolicySuggestion,
+) {
+  const fields = await getObjectFieldMap(suggestion.objectRef);
+  const fieldDef = fields.get(suggestion.fieldName);
+  if (!fieldDef || !isPolicyAddressableField(fieldDef)) {
+    throw new Error(
+      `Field "${suggestion.fieldName}" on "${suggestion.objectRef}" ` +
+        `is not policy-addressable`,
+    );
+  }
+  if (
+    isSensitiveField(fieldDef) ||
+    getFieldReadPermission(fieldDef) !== undefined ||
+    isTransientField(fieldDef)
+  ) {
+    throw new Error(
+      `Cannot apply a policy for "${suggestion.objectRef}.` +
+        `${suggestion.fieldName}": the field is sensitive, ` +
+        `read-permission-gated, or transient`,
+    );
+  }
+  return fieldDef;
 }
 
 /** Default cool-down a dismissal applies (30 days). */
@@ -627,11 +637,12 @@ export class FieldPolicySuggestionCollection extends SmrtCollection<FieldPolicyS
    *    insert, so two concurrent creates cannot each mint a row: the loser
    *    collides and falls back to step 1, applying only its own column.
    *
-   * The update path skips the model, so the value rail is re-checked here
-   * through the SHARED helpers the models use (a field can turn sensitive or
-   * gated between a suggestion being queued and accepted). Promotion to `basic`
-   * needs no such check: the required-field invariant restricts only
-   * advanced/hidden, and org locks constrain the user tier, not org rows.
+   * The update path skips the model, so BOTH kinds re-check live target
+   * addressability through the shared helpers (a field can turn sensitive,
+   * gated, transient, or disappear between queueing and acceptance). Defaults
+   * additionally re-check their value/type rail; a promotion to `basic` has no
+   * value payload, and the required-field invariant restricts only
+   * advanced/hidden. Org locks constrain the user tier, not org rows.
    */
   private async applyAcceptedPolicy(
     db: DatabaseInterface,
@@ -641,6 +652,8 @@ export class FieldPolicySuggestionCollection extends SmrtCollection<FieldPolicyS
   ): Promise<string> {
     if (suggestion.kind === 'default') {
       await assertAcceptedDefaultStillAllowed(suggestion);
+    } else {
+      await assertAcceptedPolicyTargetStillAllowed(suggestion);
     }
 
     const target = {

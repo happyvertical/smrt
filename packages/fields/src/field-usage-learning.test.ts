@@ -20,7 +20,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Side-effect import: registers smrt-users' classes (Tenant) for the
 // resolver's default hierarchy loader.
 import '../../users/src/index.js';
@@ -41,6 +41,7 @@ import {
   MAX_REPORTED_GROUP_FAILURES,
   pruneFieldPolicySuggestions,
   pruneFieldUsageCounters,
+  pruneFieldUsageReportReceipts,
   runFieldPolicySuggestionGeneration,
   runFieldUsageMaintenance,
 } from './usage-learning.js';
@@ -169,6 +170,7 @@ describe('field usage learning jobs (#2051)', () => {
         'FieldPolicy',
         'FieldPolicySuggestion',
         'FieldUsageCounter',
+        'FieldUsageReportReceipt',
         'Tenant',
       ],
     });
@@ -719,6 +721,34 @@ describe('field usage learning jobs (#2051)', () => {
       ]);
     });
 
+    it('prunes daily receipts at the counter age cutoff without reopening active de-duplication', async () => {
+      await withTenant(
+        { tenantId, userId: randomUUID(), permissions: new Set() },
+        () =>
+          counters.reportUsage({
+            entries: [
+              { objectRef, fieldName: 'region' },
+              { objectRef, fieldName: 'headline' },
+            ],
+          }),
+      );
+
+      const now = Date.now();
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 120 * DAY_MS);
+      try {
+        const countersPruned = await pruneFieldUsageCounters(db, {
+          maxAgeMs: 90 * DAY_MS,
+        });
+        const receiptsPruned = await pruneFieldUsageReportReceipts(db, {
+          maxAgeMs: 90 * DAY_MS,
+        });
+        expect(countersPruned.pruned).toBe(2);
+        expect(receiptsPruned.pruned).toBe(2);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
     it('honors an EXPLICIT zero bound instead of the default (P2 regression)', async () => {
       // `0` is a value the prune functions accept and it means "purge
       // everything"; swapping it for the 90d/100k default silently ignores an
@@ -845,6 +875,7 @@ describe('field usage learning jobs (#2051)', () => {
 
       const summary = await runFieldUsageMaintenance({ db });
       expect(summary.countersPruned).toBe(1);
+      expect(summary.receiptsPruned).toBe(0);
       expect(summary.suggestionsPruned).toBe(1);
       expect(await counters.list({})).toHaveLength(1);
     });

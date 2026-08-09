@@ -358,6 +358,31 @@ describe('ObjectForm component', () => {
     await vi.waitFor(() => expect(reportUsage).toHaveBeenCalledTimes(1));
   });
 
+  it('reports the submitted values when a successful create clears its bound record', async () => {
+    const reportUsage = vi.fn();
+    render(ObjectFormActionsFixture, {
+      props: {
+        fields,
+        policy,
+        onsubmit: async () => true,
+        usageReporter: { reportUsage },
+        resetAfterSuccessfulSubmit: true,
+      },
+    });
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Name' }),
+      'Deluxe',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+
+    await vi.waitFor(() =>
+      expect(reportUsage).toHaveBeenCalledWith({
+        entries: [{ objectRef: '@test:Product', fieldName: 'name' }],
+      }),
+    );
+  });
+
   it('keeps named void and Promise<void> persistence handlers compatible without treating either as success', async () => {
     function legacyVoidHandler(_event: SubmitEvent): void {}
     async function legacyAsyncVoidHandler(_event: SubmitEvent): Promise<void> {}

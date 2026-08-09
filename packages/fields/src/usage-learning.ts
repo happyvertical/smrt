@@ -105,6 +105,7 @@ export const FIELD_USAGE_SUGGESTION_DEFAULTS: FieldUsageSuggestionConfig = {
 
 export interface FieldUsageMaintenanceSummary {
   countersPruned: number;
+  receiptsPruned: number;
   suggestionsPruned: number;
 }
 
@@ -211,6 +212,41 @@ export async function pruneFieldUsageCounters(
   return { pruned };
 }
 
+/**
+ * Drop durable anti-inflation receipts at the same age cutoff as counters.
+ *
+ * Deliberately do NOT delete a receipt merely because its counter row is
+ * absent: report ingestion claims its receipt before merging the counter, so
+ * an orphan sweep could otherwise reopen the once-per-user/day quota during
+ * that in-flight interval. A max-row counter trim likewise leaves its recent
+ * receipts until the age cutoff — retaining a de-duplication guard is safer
+ * than allowing a second contribution for that day.
+ */
+export async function pruneFieldUsageReportReceipts(
+  db: DatabaseInterface,
+  options: { maxAgeMs: number; tenantId?: string | null },
+): Promise<{ pruned: number }> {
+  if (!Number.isFinite(options.maxAgeMs) || options.maxAgeMs < 0) {
+    throw new Error(
+      `pruneFieldUsageReportReceipts maxAgeMs must be >= 0, got ` +
+        `${options.maxAgeMs}`,
+    );
+  }
+  const cutoffDay = fieldUsagePeriodForDate(
+    new Date(Date.now() - options.maxAgeMs),
+  );
+  const tenantCondition = options.tenantId ? ' AND tenant_id = ?' : '';
+  const tenantParams = options.tenantId ? [options.tenantId] : [];
+  return {
+    pruned: await deleteCounted(
+      db,
+      `period < ?${tenantCondition}`,
+      [cutoffDay, ...tenantParams],
+      '_smrt_field_usage_report_receipts',
+    ),
+  };
+}
+
 export interface FieldPolicySuggestionRetention {
   /** Drop ACCEPTED suggestions decided longer ago than this. */
   acceptedMaxAgeMs: number;
@@ -265,7 +301,9 @@ export interface RunFieldUsageMaintenanceOptions
 /**
  * The "aggregation" schedule's work. Ingestion pre-aggregates into period
  * buckets, so the roll-up job's real job is retention: prune counter buckets
- * per `{maxAgeMs, maxRows}` and settle old suggestion rows.
+ * and durable receipts at the shared age cutoff, then settle old suggestion
+ * rows. Max-row trimming leaves recent receipts intact to preserve daily
+ * de-duplication while an ingestion merge is in flight.
  */
 export async function runFieldUsageMaintenance(
   options: RunFieldUsageMaintenanceOptions,
@@ -278,6 +316,10 @@ export async function runFieldUsageMaintenance(
     maxRows: config.counterMaxRows,
     tenantId: ambientTenantId,
   });
+  const receipts = await pruneFieldUsageReportReceipts(options.db, {
+    maxAgeMs: config.counterMaxAgeMs,
+    tenantId: ambientTenantId,
+  });
   const suggestions = await pruneFieldPolicySuggestions(options.db, {
     acceptedMaxAgeMs: config.suggestionAcceptedMaxAgeMs,
     tenantId: ambientTenantId,
@@ -285,6 +327,7 @@ export async function runFieldUsageMaintenance(
 
   return {
     countersPruned: counters.pruned,
+    receiptsPruned: receipts.pruned,
     suggestionsPruned: suggestions.pruned,
   };
 }
