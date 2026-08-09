@@ -1,5 +1,31 @@
 # @happyvertical/smrt-core
 
+## 0.40.61
+
+### Patch Changes
+
+- ### Features
+
+  - add ObjectForm submit actions (#2264) (fields)
+  - add policy control panel and audit catalog (#2261) (fields)
+  - emit cache metadata for catalogs (#2260) (mcp)
+  - add generated ObjectForm and policy gear (#2251) (fields)
+  - ship stateless HTTP and Agent Plugins (#2249) (mcp)
+  - headless form primitives (FieldPolicyProvider, PolicyField, help) (#2246) (fields)
+
+  ### Bug Fixes
+
+  - avoid docs scope tag SIGPIPE (#2259) (ci)
+  - consolidate release and generator safeguards (#2255) (ci,core)
+  - shard affected validation closure (#2254) (ci)
+
+  ### Other Changes
+
+  - perf: batch release publication (#2258) (ci)
+  - @happyvertical/smrt-config@0.40.61
+  - @happyvertical/smrt-types@0.40.61
+  - @happyvertical/smrt-scanner@0.40.61
+
 ## 0.40.60
 
 ### Patch Changes
