@@ -75,7 +75,7 @@ class PolicyModelDoc extends SmrtObject {
   @field({ ui: { locked: true } })
   lockedByCode: string = '';
 
-  @field({ required: true })
+  @field({ required: true, default: 'general' })
   category: string = 'general';
 
   @meta()

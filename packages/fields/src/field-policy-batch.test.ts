@@ -37,7 +37,7 @@ class PolicyBatchDoc extends SmrtObject {
   @field({ required: true })
   docName: string = '';
 
-  @field({ ui: { basic: true } })
+  @field({ default: '', ui: { basic: true } })
   blurb: string = '';
 
   @field({ sensitive: true })
