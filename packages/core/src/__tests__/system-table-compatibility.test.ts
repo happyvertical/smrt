@@ -148,6 +148,15 @@ describe('system table compatibility', () => {
     const columns = await db.query(`PRAGMA table_info(_smrt_jobs)`);
     const columnNames = columns.rows.map((row: { name: string }) => row.name);
     expect(columnNames).toContain('tenant_id');
+    expect(columnNames).toEqual(
+      expect.arrayContaining([
+        'task_id',
+        'task_owner_id',
+        'task_result',
+        'task_input_requests',
+        'task_input_responses',
+      ]),
+    );
 
     const indexes = await db.query(`
       SELECT name FROM sqlite_master
@@ -156,6 +165,14 @@ describe('system table compatibility', () => {
     `);
     const indexNames = indexes.rows.map((row: { name: string }) => row.name);
     expect(indexNames).toContain('idx_smrt_jobs_tenant_id');
+    const taskIndexes = await db.query(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index'
+        AND name = 'idx_smrt_jobs_task_id'
+    `);
+    expect(taskIndexes.rows.map((row: { name: string }) => row.name)).toContain(
+      'idx_smrt_jobs_task_id',
+    );
   });
 
   it('upgrades legacy jobs tables without replaying system DDL', async () => {
@@ -209,6 +226,15 @@ describe('system table compatibility', () => {
     const columns = await db.query(`PRAGMA table_info(_smrt_jobs)`);
     const columnNames = columns.rows.map((row: { name: string }) => row.name);
     expect(columnNames).toContain('tenant_id');
+    expect(columnNames).toEqual(
+      expect.arrayContaining([
+        'task_id',
+        'task_owner_id',
+        'task_result',
+        'task_input_requests',
+        'task_input_responses',
+      ]),
+    );
 
     const indexes = await db.query(`
       SELECT name FROM sqlite_master
@@ -217,6 +243,14 @@ describe('system table compatibility', () => {
     `);
     const indexNames = indexes.rows.map((row: { name: string }) => row.name);
     expect(indexNames).toContain('idx_smrt_jobs_tenant_id');
+    const taskIndexes = await db.query(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index'
+        AND name = 'idx_smrt_jobs_task_id'
+    `);
+    expect(taskIndexes.rows.map((row: { name: string }) => row.name)).toContain(
+      'idx_smrt_jobs_task_id',
+    );
   });
 
   it('upgrades legacy job event tables without replaying system DDL', async () => {
@@ -261,6 +295,18 @@ describe('system table compatibility', () => {
   });
 
   it('skips Postgres jobs DDL when the compatibility column and index already exist', async () => {
+    const existingColumns = new Set([
+      'tenant_id',
+      'task_id',
+      'task_owner_id',
+      'task_result',
+      'task_input_requests',
+      'task_input_responses',
+    ]);
+    const existingIndexes = new Set([
+      'idx_smrt_jobs_tenant_id',
+      'idx_smrt_jobs_task_id',
+    ]);
     const query = vi
       .fn()
       .mockImplementation(async (sql: string, ...params: unknown[]) => {
@@ -271,12 +317,13 @@ describe('system table compatibility', () => {
 
         if (sql.includes('information_schema.columns')) {
           expect(sql).toContain('table_schema = current_schema()');
-          expect(params).toEqual(['_smrt_jobs', 'tenant_id']);
+          expect(params[0]).toBe('_smrt_jobs');
+          expect(existingColumns.has(params[1] as string)).toBe(true);
           return { rows: [{ '?column?': 1 }] };
         }
 
         if (sql.includes('pg_indexes')) {
-          expect(params).toEqual(['idx_smrt_jobs_tenant_id']);
+          expect(existingIndexes.has(params[0] as string)).toBe(true);
           return { rows: [{ '?column?': 1 }] };
         }
 

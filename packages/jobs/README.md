@@ -117,6 +117,25 @@ runner.on('job:failed', (job, error) => { /* ... */ });
 process.on('SIGTERM', () => runner.stop());
 ```
 
+### Back MCP task operations with durable jobs
+
+`McpTaskStore` persists the MCP `io.modelcontextprotocol/tasks` lifecycle on
+the same `_smrt_jobs` row that executes the operation. `createTask()` creates a
+correlated job, `getTask()` maps its queue state, and `cancelTask()` cancels
+that exact job without leaving a second record behind. Long-running task
+actions can request client input through `JobExecutionContext.task`:
+
+```typescript
+async generate(context: JobExecutionContext) {
+  const { tone } = await context.task!.requestInput({ tone: { type: 'string' } });
+  return this.render(tone);
+}
+```
+
+Run a `TaskRunner` for the `mcp-tasks` queue in application deployments. Task
+cancellation is cooperative: the job row becomes cancelled immediately and a
+running handler must observe its context before doing further side effects.
+
 ### Liveness-safe job execution
 
 `TaskRunner` records heartbeat telemetry, but recovery keys on a worker

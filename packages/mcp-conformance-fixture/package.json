@@ -15,6 +15,7 @@
   "dependencies": {
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
     "@modelcontextprotocol/server": "2.0.0"
   },
   "devDependencies": {

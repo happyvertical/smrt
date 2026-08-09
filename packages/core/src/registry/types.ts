@@ -403,6 +403,15 @@ export interface SmartObjectConfig {
          * Exclude specific tools (supports both standard CRUD actions and custom methods)
          */
         exclude?: string[];
+
+        /**
+         * Enable the MCP Tasks extension for long-running custom actions.
+         *
+         * `false`/omitted keeps tasks fully disabled. `true` enables eligible
+         * item-scoped custom actions exposed by this MCP configuration; an
+         * array enables only the named actions.
+         */
+        tasks?: boolean | string[];
       };
 
   /**

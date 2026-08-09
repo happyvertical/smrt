@@ -16,7 +16,7 @@
 
 import { createMcpHandler } from '@modelcontextprotocol/server';
 import { McpAccessError } from './errors.js';
-import { createMcpProtocolServer } from './protocol.js';
+import { createMcpProtocolServer, MCP_TASKS_EXTENSION } from './protocol.js';
 import type { CallToolInput, McpAppPrincipal, McpAppServer } from './server.js';
 
 /** Minimal subset of a SvelteKit RequestEvent we actually touch. */
@@ -129,6 +129,12 @@ export function mountMcpRoute(
 ): McpSvelteKitHandler {
   return async (event) => {
     const resolved = resolveRequestPrincipal(event, options);
+    const taskResponse = await maybeHandleTaskRequest(
+      server,
+      resolved.principal,
+      event.request,
+    );
+    if (taskResponse) return taskResponse;
     const handler = createMcpHandler(
       () =>
         createMcpProtocolServer(protocolServerForRequest(server, resolved), {
@@ -146,6 +152,172 @@ export function mountMcpRoute(
     );
     return handler.fetch(event.request);
   };
+}
+
+/**
+ * The installed MCP SDK validates tools/call against a pre-Tasks result codec.
+ * Intercept the extension before the SDK handler so the regular stateless HTTP
+ * protocol stays untouched for every other method.
+ */
+async function maybeHandleTaskRequest(
+  server: McpAppServer,
+  principal: McpAppPrincipal | null,
+  request: Request,
+): Promise<Response | null> {
+  if (
+    !server.tasksEnabled ||
+    !server.hasTaskSupport ||
+    !server.callTask ||
+    !server.getTask ||
+    !server.updateTask ||
+    !server.cancelTask ||
+    request.method !== 'POST'
+  ) {
+    return null;
+  }
+  const body = (await request
+    .clone()
+    .json()
+    .catch(() => null)) as {
+    id?: string | number | null;
+    jsonrpc?: string;
+    method?: string;
+    params?: Record<string, unknown>;
+  } | null;
+  if (body?.jsonrpc !== '2.0' || body.id === undefined) return null;
+  const params = body.params ?? {};
+  const taskTool =
+    body.method === 'tools/call' &&
+    typeof params.name === 'string' &&
+    (await server.hasTaskSupport()) &&
+    (await server.isTaskTool?.(params.name)) === true;
+  const taskMethod = ['tasks/get', 'tasks/update', 'tasks/cancel'].includes(
+    body.method ?? '',
+  );
+  if (!taskTool && !taskMethod) return null;
+
+  // The SDK normally performs this modern HTTP routing validation before
+  // dispatch. Task responses are intercepted ahead of that SDK handler, so
+  // retain the same fail-closed header/body contract here.
+  const headerMismatch = taskHeaderMismatch(request, body.method, params);
+  if (headerMismatch) {
+    return jsonRpcResponse(body.id, undefined, headerMismatch, 400);
+  }
+
+  const clientCapabilities = asRecord(params._meta)[
+    'io.modelcontextprotocol/clientCapabilities'
+  ];
+  const clientSupportsTasks = Object.hasOwn(
+    asRecord(asRecord(clientCapabilities).extensions),
+    MCP_TASKS_EXTENSION,
+  );
+
+  // A synchronous fallback exists for tools/call; lifecycle methods do not.
+  if (!clientSupportsTasks && body.method === 'tools/call') return null;
+  if (!clientSupportsTasks) {
+    return jsonRpcResponse(
+      body.id,
+      undefined,
+      {
+        code: -32021,
+        message: 'Missing required client capability',
+        data: {
+          requiredCapabilities: { extensions: { [MCP_TASKS_EXTENSION]: {} } },
+        },
+      },
+      400,
+    );
+  }
+
+  try {
+    if (body.method === 'tools/call') {
+      const result = await server.callTask({
+        name: params.name as string,
+        arguments: (params.arguments as Record<string, unknown>) ?? {},
+        principal,
+      });
+      return jsonRpcResponse(body.id, result);
+    }
+    if (typeof params.taskId !== 'string') {
+      return jsonRpcResponse(body.id, undefined, {
+        code: -32602,
+        message: 'taskId is required',
+      });
+    }
+    if (body.method === 'tasks/get') {
+      const task = await server.getTask({ taskId: params.taskId, principal });
+      return jsonRpcResponse(body.id, { resultType: 'complete', ...task });
+    }
+    if (body.method === 'tasks/update') {
+      await server.updateTask({
+        taskId: params.taskId,
+        inputResponses:
+          params.inputResponses && typeof params.inputResponses === 'object'
+            ? (params.inputResponses as Record<string, unknown>)
+            : {},
+        principal,
+      });
+      return jsonRpcResponse(body.id, { resultType: 'complete' });
+    }
+    await server.cancelTask({ taskId: params.taskId, principal });
+    return jsonRpcResponse(body.id, { resultType: 'complete' });
+  } catch (error) {
+    if (error instanceof McpAccessError) {
+      const { code, retryable } = error.metadata;
+      return jsonRpcResponse(body.id, undefined, {
+        code: error.status === 404 ? -32602 : -32600,
+        message: error.message,
+        data: {
+          ...(typeof code === 'string' ? { code } : {}),
+          ...(typeof retryable === 'boolean' ? { retryable } : {}),
+        },
+      });
+    }
+    const message =
+      error instanceof Error ? error.message : 'Task operation failed';
+    return jsonRpcResponse(body.id, undefined, { code: -32602, message });
+  }
+}
+
+function taskHeaderMismatch(
+  request: Request,
+  method: string | undefined,
+  params: Record<string, unknown>,
+): { code: number; message: string } | undefined {
+  if (!method || request.headers.get('mcp-method') !== method) {
+    return {
+      code: -32020,
+      message: 'Mcp-Method header must match the JSON-RPC method.',
+    };
+  }
+  if (
+    method === 'tools/call' &&
+    request.headers.get('mcp-name') !== params.name
+  ) {
+    return {
+      code: -32020,
+      message: 'Mcp-Name header must match the tools/call name.',
+    };
+  }
+  return undefined;
+}
+
+function jsonRpcResponse(
+  id: string | number | null,
+  result?: unknown,
+  error?: { code: number; message: string; data?: unknown },
+  status = 200,
+): Response {
+  return new Response(
+    JSON.stringify({ jsonrpc: '2.0', id, ...(error ? { error } : { result }) }),
+    { status, headers: { 'content-type': 'application/json' } },
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 /**

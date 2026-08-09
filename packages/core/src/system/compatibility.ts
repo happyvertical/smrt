@@ -703,6 +703,34 @@ export async function ensureJobsSystemTableCompatibility(
     'tenant_id',
     typeHint,
   );
+  // MCP task support was added after `_smrt_jobs` had already shipped. Keep
+  // the task projection in the job row so a task can never outlive (or lose
+  // track of) the worker job that executes it. JSON is portable here because
+  // SMRT's adapters serialize JSON fields to text where necessary.
+  await addColumnIfMissing(db, '_smrt_jobs', 'task_id', 'TEXT', typeHint);
+  await addColumnIfMissing(db, '_smrt_jobs', 'task_owner_id', 'TEXT', typeHint);
+  await addColumnIfMissing(db, '_smrt_jobs', 'task_result', 'TEXT', typeHint);
+  await addColumnIfMissing(
+    db,
+    '_smrt_jobs',
+    'task_input_requests',
+    'TEXT',
+    typeHint,
+  );
+  await addColumnIfMissing(
+    db,
+    '_smrt_jobs',
+    'task_input_responses',
+    'TEXT',
+    typeHint,
+  );
+  await addUniqueIndexIfMissing(
+    db,
+    'idx_smrt_jobs_task_id',
+    '_smrt_jobs',
+    'task_id',
+    typeHint,
+  );
 }
 
 export async function ensureJobEventsSystemTableCompatibility(

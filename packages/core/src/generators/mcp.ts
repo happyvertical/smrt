@@ -149,6 +149,34 @@ export interface MCPContext {
    * or this flag, tenant-scoped tool calls fail closed when tenancy is enabled.
    */
   allowCrossTenant?: boolean;
+  /**
+   * Optional durable backing store for the MCP Tasks extension. Core owns
+   * task eligibility and action argument projection; jobs-backed runtimes own
+   * persistence so `@happyvertical/smrt-core` stays independent of jobs.
+   */
+  taskStore?: MCPTaskStore;
+}
+
+/** Minimal durable task-store contract implemented by `@smrt-jobs`. */
+export interface MCPTaskStore {
+  createTask(input: {
+    objectType: string;
+    objectId: string;
+    method: string;
+    invocationArgs: unknown[];
+    tenantId?: string | null;
+  }): Promise<MCPTask>;
+}
+
+/** Flat MCP Tasks extension projection shared by generated and app transports. */
+export interface MCPTask {
+  taskId: string;
+  status: 'working' | 'input_required' | 'completed' | 'cancelled' | 'failed';
+  createdAt: string;
+  lastUpdatedAt: string;
+  ttlMs: number;
+  pollIntervalMs?: number;
+  statusMessage?: string;
 }
 
 export interface MCPTool {
@@ -183,6 +211,15 @@ export interface MCPResponse {
   _meta?: Record<string, unknown>;
   /** Machine-readable projection matching the tool's declared outputSchema. */
   structuredContent?: unknown;
+  /** Set only for a Tasks extension CreateTaskResult. */
+  resultType?: 'task' | 'complete';
+  taskId?: string;
+  status?: MCPTask['status'];
+  createdAt?: string;
+  lastUpdatedAt?: string;
+  ttlMs?: number;
+  pollIntervalMs?: number;
+  statusMessage?: string;
 }
 
 class CustomActionFailureError extends Error {
@@ -210,6 +247,43 @@ function resolveCustomActionMethod(
     }
   }
   return [toolAction, undefined];
+}
+
+/** Preserve a declared method's case when a runtime-only class has no manifest. */
+function resolveRuntimeMethodName(
+  classConstructor: unknown,
+  action: string,
+): string {
+  let prototype: object | null | undefined = (
+    classConstructor as { prototype?: object } | undefined
+  )?.prototype;
+  while (prototype && prototype !== Object.prototype) {
+    const match = Object.getOwnPropertyNames(prototype).find(
+      (name) => name.toLowerCase() === action.toLowerCase(),
+    );
+    if (match) return match;
+    prototype = Object.getPrototypeOf(prototype) as object | null;
+  }
+  return action;
+}
+
+/**
+ * Background task methods receive `JobExecutionContext` from TaskRunner, not
+ * from untrusted MCP arguments. Keep that conventional trailing parameter out
+ * of the persisted positional call so the runner can append its live context.
+ */
+function buildTaskActionInvocationArgs(
+  metadata: CustomActionMetadata,
+  args: ToolArgs,
+): unknown[] {
+  const parameters = metadata.parameters;
+  if (parameters?.at(-1)?.name === 'context') {
+    return buildCustomActionInvocationArgs(
+      { ...metadata, parameters: parameters.slice(0, -1) },
+      args,
+    );
+  }
+  return buildCustomActionInvocationArgs(metadata, args);
 }
 
 /**
@@ -892,6 +966,123 @@ export class MCPGenerator {
     }
   }
 
+  /** Whether a visible tool has explicitly opted into durable task execution. */
+  async supportsTaskTool(name: string): Promise<boolean> {
+    return (
+      (await this.resolveTaskAction(name, { id: '__mcp_task_probe__' })) !==
+      null
+    );
+  }
+
+  /**
+   * Create a durable MCP task for an explicitly enabled item custom action.
+   * The caller is responsible for checking the client's extension capability
+   * before exposing this result on the wire.
+   */
+  async createTask(request: MCPRequest): Promise<MCPResponse> {
+    if (!this.context.taskStore) {
+      throw new Error(
+        'MCP Tasks is enabled but no durable task store is configured',
+      );
+    }
+    const resolved = await this.resolveTaskAction(
+      request.params.name,
+      request.params.arguments,
+    );
+    if (!resolved) {
+      throw new Error(
+        `MCP task execution is not enabled for tool: ${request.params.name}`,
+      );
+    }
+    const task = await this.context.taskStore.createTask({
+      objectType: resolved.objectType,
+      objectId: resolved.objectId,
+      method: resolved.methodName,
+      invocationArgs: resolved.invocationArgs,
+      tenantId: this.context.tenantId ?? null,
+    });
+    return {
+      content: [],
+      structuredContent: {},
+      resultType: 'task',
+      ...task,
+    };
+  }
+
+  private async resolveTaskAction(
+    toolName: string,
+    args: ToolArgs,
+  ): Promise<{
+    objectType: string;
+    objectId: string;
+    methodName: string;
+    invocationArgs: unknown[];
+  } | null> {
+    const separator = toolName.indexOf('_');
+    if (separator <= 0) return null;
+    const objectPrefix = toolName.slice(0, separator);
+    const action = toolName.slice(separator + 1);
+    if (['list', 'get', 'create', 'update', 'delete'].includes(action)) {
+      return null;
+    }
+    const classEntry = Array.from(
+      ObjectRegistry.getAllClasses().entries(),
+    ).find(
+      ([key, info]) =>
+        (info.name || key).toLowerCase() === objectPrefix.toLowerCase(),
+    );
+    if (!classEntry) return null;
+    const [key, classInfo] = classEntry;
+    const objectName = classInfo.name || key;
+    const mcpConfig = ObjectRegistry.getConfig(objectName).mcp;
+    const configuredTasks =
+      typeof mcpConfig === 'object' ? mcpConfig.tasks : undefined;
+    if (
+      configuredTasks !== true &&
+      (!Array.isArray(configuredTasks) ||
+        !configuredTasks.some(
+          (method) => method.toLowerCase() === action.toLowerCase(),
+        ))
+    ) {
+      return null;
+    }
+
+    // The action must already be visible through the normal MCP surface. This
+    // keeps `tasks: true` from silently widening a class's configured tool set.
+    const tools = await this.generateTools();
+    if (!tools.some((tool) => tool.name === toolName)) return null;
+
+    const [resolvedMethodName, method] = resolveCustomActionMethod(
+      await ObjectRegistry.getAllMethods(objectName),
+      action,
+    );
+    const methodName = method
+      ? resolvedMethodName
+      : resolveRuntimeMethodName(classInfo.constructor, action);
+    const metadata = this.resolveCustomActionMetadata(
+      objectName,
+      methodName,
+      method,
+      this.hasCollectionReceiver(classInfo),
+    );
+    // TaskRunner preserves the canonical persisted-object hydration invariant.
+    // Collection/static receivers do not have that target and intentionally do
+    // not claim Tasks support until a separate durable receiver contract exists.
+    if (
+      !metadata.idRequired ||
+      metadata.isStatic ||
+      typeof args.id !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      objectType: classInfo.qualifiedName || objectName,
+      objectId: args.id,
+      methodName,
+      invocationArgs: buildTaskActionInvocationArgs(metadata, args),
+    };
+  }
+
   /** Convert runtime values to the JSON values MCP structuredContent permits. */
   private toJsonValue(value: unknown): unknown {
     const serialized = JSON.stringify(value);
@@ -1555,6 +1746,7 @@ export class MCPGenerator {
         debug,
         tools,
         customActions: await this.runtimeCustomActions(tools),
+        taskActions: await this.runtimeTaskActions(tools),
         tenantScopedObjects,
         stiTargets: this.runtimeStiTargets(tools),
         toolListCacheHint: resolveMCPToolListCacheHint(
@@ -1643,6 +1835,31 @@ export class MCPGenerator {
       };
     }
     return metadata;
+  }
+
+  /** Emit only task-enabled item custom actions for the generated runtime. */
+  private async runtimeTaskActions(
+    tools: MCPTool[],
+  ): Promise<NonNullable<RuntimeOptions['taskActions']>> {
+    const actions: NonNullable<RuntimeOptions['taskActions']> = {};
+    const classes = ObjectRegistry.getAllClasses();
+    for (const tool of tools) {
+      if (!(await this.supportsTaskTool(tool.name))) continue;
+      const separator = tool.name.indexOf('_');
+      if (separator <= 0) continue;
+      const objectPrefix = tool.name.slice(0, separator).toLowerCase();
+      const matched = Array.from(classes.entries()).find(
+        ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
+      );
+      if (!matched) continue;
+      const [key, classInfo] = matched;
+      const objectName = classInfo.name || key;
+      actions[tool.name] = {
+        objectName,
+        objectType: classInfo.qualifiedName || objectName,
+      };
+    }
+    return actions;
   }
 
   /**
@@ -2042,6 +2259,7 @@ const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true
 `
     : ''
 }
+
 const PUBLIC_JSON_OPTIONS = {
   permissions: (process.env.SMRT_MCP_PERMISSIONS || '')
     .split(',')

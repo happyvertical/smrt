@@ -29,6 +29,12 @@ import {
   MCP_STABLE_CATALOG_TTL_MS,
   MCPGenerator,
 } from '@happyvertical/smrt-core/generators/mcp';
+import {
+  type McpTask,
+  McpTaskNotFoundError,
+  McpTaskStore,
+} from '@happyvertical/smrt-jobs';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from './errors.js';
 import {
   classNamePrefixes,
@@ -47,6 +53,10 @@ import {
  */
 export interface McpAppPrincipal {
   id?: string;
+  /** Tenant boundary for task ownership and generated tenant-scoped actions. */
+  tenantId?: string;
+  /** Trusted operator override for generated tenant-scoped actions. */
+  allowCrossTenant?: boolean;
   kind?: string;
   roles?: string[];
   scopes?: string[];
@@ -180,6 +190,28 @@ export interface CallToolInput {
 export interface McpAppServer {
   listTools(input: ListToolsInput): Promise<MCPTool[]>;
   callTool(input: CallToolInput): Promise<MCPResponse>;
+  /** Whether this app has any explicitly enabled Tasks extension action. */
+  hasTaskSupport?(): Promise<boolean>;
+  /** Whether a particular visible tool is task-enabled. */
+  isTaskTool?(name: string): Promise<boolean>;
+  /** Static declaration used by the protocol discovery capability surface. */
+  readonly tasksEnabled?: boolean;
+  /** Create a durable task after applying the same tool policy as tools/call. */
+  callTask?(input: CallToolInput): Promise<MCPResponse>;
+  /** Principal-scoped task lifecycle operations. */
+  getTask?(input: {
+    taskId: string;
+    principal?: McpAppPrincipal | null;
+  }): Promise<McpTask>;
+  updateTask?(input: {
+    taskId: string;
+    inputResponses: Record<string, unknown>;
+    principal?: McpAppPrincipal | null;
+  }): Promise<void>;
+  cancelTask?(input: {
+    taskId: string;
+    principal?: McpAppPrincipal | null;
+  }): Promise<void>;
   /** Cache policy for protocol tools/list responses. */
   getToolsListCacheHint?(): Promise<McpToolListCacheHint>;
   /** Read-only view of the configured server identity. */
@@ -229,6 +261,15 @@ function isTenantScopedTool(tool: MCPTool): boolean {
 }
 
 /**
+ * Scope task lookup to both the authenticated principal and its tenant. The
+ * opaque value is stored in the existing job row, so no separate task table
+ * can accidentally bypass a tenant boundary.
+ */
+function taskOwnerIdFor(principal: McpAppPrincipal): string {
+  return JSON.stringify([principal.tenantId ?? null, principal.id]);
+}
+
+/**
  * Build the app-runtime MCP server core. The returned object is intentionally
  * framework-agnostic: HTTP wrappers live in `@happyvertical/smrt-app-mcp/sveltekit`
  * and a stdio bridge lives in `@happyvertical/smrt-app-mcp/bin/smrt-mcp-bridge`.
@@ -244,6 +285,13 @@ export function createMcpAppServer(
   const requestedToolListCacheHint = configuredToolListCacheHint(
     options.toolListCache,
   );
+  const tasksEnabled = options.allowedClassNames.some((className) => {
+    const mcp = ObjectRegistry.getConfig(className).mcp;
+    return (
+      typeof mcp === 'object' &&
+      (mcp.tasks === true || (Array.isArray(mcp.tasks) && mcp.tasks.length > 0))
+    );
+  });
 
   function userForGenerator(
     principal?: McpAppPrincipal | null,
@@ -252,11 +300,33 @@ export function createMcpAppServer(
     return { id: principal.id, roles: principal.roles };
   }
 
-  function makeGenerator(principal?: McpAppPrincipal | null): MCPGenerator {
+  async function taskStoreFor(
+    principal?: McpAppPrincipal | null,
+  ): Promise<McpTaskStore> {
+    if (!principal?.id) {
+      throw new McpAccessError(
+        401,
+        'Authentication is required for MCP tasks.',
+      );
+    }
+    const db = options.smrtOptions().db as DatabaseInterface | undefined;
+    if (!db) {
+      throw new Error('MCP Tasks requires smrtOptions() to provide a database');
+    }
+    return McpTaskStore.create(db, { ownerId: taskOwnerIdFor(principal) });
+  }
+
+  function makeGenerator(
+    principal?: McpAppPrincipal | null,
+    taskStore?: McpTaskStore,
+  ): MCPGenerator {
     const user = userForGenerator(principal);
     return new MCPGenerator(options.serverInfo as MCPConfig, {
       ...options.smrtOptions(),
       user,
+      tenantId: principal?.tenantId,
+      allowCrossTenant: principal?.allowCrossTenant,
+      ...(taskStore ? { taskStore } : {}),
     });
   }
 
@@ -377,9 +447,110 @@ export function createMcpAppServer(
     });
   }
 
+  async function authorizeCall(input: CallToolInput): Promise<{
+    args: Record<string, unknown>;
+    principal: McpAppPrincipal | null;
+    tool: MCPTool;
+  }> {
+    const args = input.arguments ?? {};
+    const principal = principalForCall(input);
+    const tools = await allowedTools();
+    const tool = tools.find((candidate) => candidate.name === input.name);
+    if (!tool) throw new McpAccessError(404, 'Unknown MCP tool.');
+    const publicPatterns = principal ? undefined : getPublicPatterns();
+    if (!passesBasePolicy(tool, principal, publicPatterns)) {
+      throw new McpAccessError(
+        401,
+        `Authentication is required for MCP tool: ${input.name}`,
+      );
+    }
+    if (!(await passesToolPolicy(tool, principal))) {
+      throw new McpAccessError(403, 'MCP tool access is not permitted.', {
+        code: MCP_TOOL_ACCESS_DENIED_CODE,
+        retryable: false,
+      });
+    }
+    const assertion = workflowAssertions[input.name];
+    if (assertion) assertion(args, userForGenerator(principal) ?? null);
+    return { args, principal, tool };
+  }
+
+  async function hasTaskSupport(): Promise<boolean> {
+    const tools = await allowedTools();
+    const generator = makeGenerator();
+    for (const tool of tools) {
+      if (await generator.supportsTaskTool(tool.name)) return true;
+    }
+    return false;
+  }
+
+  async function isTaskTool(name: string): Promise<boolean> {
+    const tools = await allowedTools();
+    if (!tools.some((tool) => tool.name === name)) return false;
+    return makeGenerator().supportsTaskTool(name);
+  }
+
+  async function callTask(input: CallToolInput): Promise<MCPResponse> {
+    const { args, principal } = await authorizeCall(input);
+    const taskStore = await taskStoreFor(principal);
+    return makeGenerator(principal, taskStore).createTask({
+      method: 'tools/call',
+      params: { arguments: args, name: input.name },
+    });
+  }
+
+  async function withTaskStore<T>(
+    principal: McpAppPrincipal | null | undefined,
+    operation: (store: McpTaskStore) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation(await taskStoreFor(principal));
+    } catch (error) {
+      if (error instanceof McpTaskNotFoundError) {
+        throw new McpAccessError(404, 'Unknown MCP task.');
+      }
+      throw error;
+    }
+  }
+
+  async function getTask(input: {
+    taskId: string;
+    principal?: McpAppPrincipal | null;
+  }): Promise<McpTask> {
+    return withTaskStore(input.principal, (store) =>
+      store.getTask(input.taskId),
+    );
+  }
+
+  async function updateTask(input: {
+    taskId: string;
+    inputResponses: Record<string, unknown>;
+    principal?: McpAppPrincipal | null;
+  }): Promise<void> {
+    await withTaskStore(input.principal, (store) =>
+      store.updateTask(input.taskId, input.inputResponses),
+    );
+  }
+
+  async function cancelTask(input: {
+    taskId: string;
+    principal?: McpAppPrincipal | null;
+  }): Promise<void> {
+    await withTaskStore(input.principal, (store) =>
+      store.cancelTask(input.taskId),
+    );
+  }
+
   return {
     listTools,
     callTool,
+    hasTaskSupport,
+    isTaskTool,
+    callTask,
+    getTask,
+    updateTask,
+    cancelTask,
+    tasksEnabled,
     getToolsListCacheHint,
     serverInfo: options.serverInfo,
   };

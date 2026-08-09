@@ -3,7 +3,9 @@
 Private CI fixture for the MCP 2026-07-28 compatibility rail. The test
 generates a Tier-1 server from `MCPGenerator`, negotiates it directly over
 stdio with the exact scoped SDK v2 client, then runs the pinned official MCP
-server conformance suite against the generated server factory.
+server conformance suite against the generated server factory. It also covers
+the opt-in durable MCP tasks extension end to end, including completion and
+cancellation of its correlated job.
 
 ```bash
 pnpm --filter @happyvertical/smrt-mcp-conformance-fixture test

@@ -368,6 +368,27 @@ class Product extends SmrtObject { /* ... */ }
 
 Generators produce OpenAPI REST endpoints, Commander CLI commands, and MCP server tools respectively. The Vite plugin (`smrtPlugin`) generates virtual modules at dev time for routes, clients, and manifests.
 
+### Durable MCP tasks
+
+Long-running item actions may opt into the experimental
+`io.modelcontextprotocol/tasks` extension. Tasks are disabled by default; list
+the action names explicitly and mark the action as background-eligible:
+
+```typescript
+@smrt({
+  mcp: { include: ['generateReport'], tasks: ['generateReport'] },
+})
+class Report extends SmrtObject {
+  @backgroundEligible()
+  async generateReport(): Promise<ReportResult> { /* ... */ }
+}
+```
+
+The generated MCP server advertises the extension only when at least one task
+action is enabled. A task-aware client can request the action as a durable job,
+then use `tasks/get`, `tasks/update`, and `tasks/cancel` to observe or control
+it. Generated stdio servers run an `mcp-tasks` worker automatically.
+
 ## Dependencies
 
 - `@happyvertical/ai` -- AI client (is/do operations, embeddings)

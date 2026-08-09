@@ -53,8 +53,14 @@ export const POST = mountMcpRoute(mcpServer);
 
 `mountMcpRoute` is a modern-only, fetch-style Streamable HTTP endpoint. It
 serves `server/discover`, `tools/list`, and `tools/call` with the SDK's
-2026-07-28 envelope and reports only the `tools` capability. Tool discovery is
-deterministically ordered by name. Stock MCP clients send the required
+2026-07-28 envelope. It advertises the optional
+`io.modelcontextprotocol/tasks` extension only when an allowed object enables
+MCP tasks (`mcp: { tasks: [...] }`); task-aware clients can then call
+`tasks/get`, `tasks/update`, and `tasks/cancel`. Application deployments must
+run a `TaskRunner` for the `mcp-tasks` queue. Task lifecycle operations require
+a stable authenticated principal id; include its `tenantId` in the principal
+when the application uses tenant-scoped objects. Tool discovery is deterministically
+ordered by name. Stock MCP clients send the required
 `Mcp-Method` header (and `Mcp-Name` for `tools/call`); the mount validates them
 against the JSON-RPC body and returns the protocol `HeaderMismatch` error
 (`-32020`, HTTP 400) for a missing or mismatched header.

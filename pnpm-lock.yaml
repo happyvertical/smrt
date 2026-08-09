@@ -1476,6 +1476,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -2155,6 +2158,12 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
+      '@happyvertical/sql':
+        specifier: ^0.85.5
+        version: 0.85.5(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0

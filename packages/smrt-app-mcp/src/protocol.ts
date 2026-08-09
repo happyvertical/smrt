@@ -11,6 +11,8 @@ import { McpAccessError } from './errors.js';
 import type { McpAppPrincipal, McpAppServer } from './server.js';
 import { compareMcpToolNames } from './tools.js';
 
+export const MCP_TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
+
 const DEFAULT_TOOL_LIST_CACHE_HINT = {
   ttlMs: 86_400_000,
   cacheScope: 'private' as const,
@@ -45,8 +47,17 @@ export function createMcpProtocolServer(
   appServer: McpAppServer,
   options: McpProtocolServerOptions = {},
 ): Server {
+  // Task lifecycle records are owner-scoped. Unlike ordinary public read-only
+  // tools, they cannot be safely exposed without a stable principal id.
+  const tasksEnabled =
+    appServer.tasksEnabled &&
+    typeof options.principal !== 'function' &&
+    Boolean(options.principal?.id);
   const server = new Server(appServer.serverInfo, {
-    capabilities: { tools: {} },
+    capabilities: {
+      tools: {},
+      ...(tasksEnabled ? { extensions: { [MCP_TASKS_EXTENSION]: {} } } : {}),
+    } as never,
     cacheHints: { 'tools/list': DEFAULT_TOOL_LIST_CACHE_HINT },
   });
 
