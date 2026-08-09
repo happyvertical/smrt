@@ -1,4 +1,5 @@
 import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { backgroundEligible } from '@happyvertical/smrt-jobs';
 
 @smrt({ api: false, cli: false, mcp: { include: ['list', 'get'] } })
 export class ConformanceWidget extends SmrtObject {
@@ -43,4 +44,23 @@ export class ConformanceAnimalCollection extends SmrtCollection<ConformanceAnima
 
 export class ConformanceCatCollection extends SmrtCollection<ConformanceCat> {
   static readonly _itemClass = ConformanceCat;
+}
+
+@smrt({
+  api: false,
+  cli: false,
+  mcp: { include: ['slowGenerate'], tasks: ['slowGenerate'] },
+})
+export class ConformanceTaskWidget extends SmrtObject {
+  name = '';
+
+  @backgroundEligible()
+  async slowGenerate(options: { prompt: string }) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return { generated: options.prompt };
+  }
+}
+
+export class ConformanceTaskWidgetCollection extends SmrtCollection<ConformanceTaskWidget> {
+  static readonly _itemClass = ConformanceTaskWidget;
 }

@@ -95,6 +95,21 @@ export {
   type JobExecutionContext,
   type JobProgressInput,
 } from './logger-extension.js';
+// Durable MCP Tasks extension adapter.
+export {
+  type CreateMcpTaskInput,
+  createMcpTaskResult,
+  getMcpTaskMarker,
+  MCP_TASKS_EXTENSION,
+  type McpTask,
+  McpTaskCancelledError,
+  type McpTaskJobMarker,
+  McpTaskNotFoundError,
+  type McpTaskStatus,
+  McpTaskStore,
+  requestMcpTaskInput,
+  taskFromJob,
+} from './mcp-task.js';
 // Object extension (mixin)
 export {
   type BackgroundCapable,

@@ -137,6 +137,32 @@ export class SmrtJob extends SmrtObject {
   @field({ type: 'text', nullable: true })
   resultPointer: string | null = null;
 
+  /**
+   * Correlation identifier for an MCP Tasks extension task.
+   *
+   * A task is deliberately represented by its backing job rather than a second
+   * queue row: every task transition therefore has exactly one durable worker
+   * target to cancel, recover, and inspect.
+   */
+  @field({ type: 'text', nullable: true, unique: true })
+  taskId: string | null = null;
+
+  /** Principal that created an MCP task, when the transport has one. */
+  @field({ type: 'text', nullable: true })
+  taskOwnerId: string | null = null;
+
+  /** Completed MCP CallToolResult, stored only for MCP task jobs. */
+  @field({ type: 'json', nullable: true })
+  taskResult: Record<string, unknown> | null = null;
+
+  /** Outstanding input requests made through JobExecutionContext.task. */
+  @field({ type: 'json', nullable: true })
+  taskInputRequests: Record<string, unknown> | null = null;
+
+  /** Accepted task input responses, keyed by the requested input name. */
+  @field({ type: 'json', nullable: true })
+  taskInputResponses: Record<string, unknown> | null = null;
+
   /** Retry strategy configuration */
   @field({ type: 'json' })
   retryStrategy: RetryStrategyConfig = {
@@ -228,6 +254,16 @@ export interface SmrtJobData {
   timeout?: number;
   timeoutBehavior?: TimeoutBehavior;
   retryStrategy?: RetryStrategyConfig;
+  /** MCP task correlation ID. Internal callers only. */
+  taskId?: string | null;
+  /** MCP task owner/principal ID. Internal callers only. */
+  taskOwnerId?: string | null;
+  /** Completed MCP CallToolResult. Internal callers only. */
+  taskResult?: Record<string, unknown> | null;
+  /** Outstanding MCP task input requests. Internal callers only. */
+  taskInputRequests?: Record<string, unknown> | null;
+  /** Accepted MCP task input responses. Internal callers only. */
+  taskInputResponses?: Record<string, unknown> | null;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
@@ -13,31 +13,54 @@ import {
   SERVER_INFO_META_KEY,
 } from '@modelcontextprotocol/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import './fixture-objects.js';
+import {
+  type ConformanceTaskWidget,
+  ConformanceTaskWidgetCollection,
+} from './fixture-objects.js';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(packageRoot, '..', '..');
 const generatedDir = join(packageRoot, '.generated-tmp');
 const generatedPath = join(generatedDir, 'index.ts');
 const generatedDatabasePath = join(generatedDir, 'fixture.sqlite');
+const generatedRegisterPath = join(generatedDir, 'fixture-register.ts');
 const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx');
 const conformanceBin = join(packageRoot, 'node_modules', '.bin', 'conformance');
 const baselinePath = join(packageRoot, 'conformance-baseline.yml');
 let httpChild: ChildProcess | undefined;
 let mcpUrl: string;
+let fixtureDb: Awaited<ReturnType<typeof getTestDatabase>>;
 const originalDatabaseUrl = process.env.DATABASE_URL;
 const originalDatabaseType = process.env.DATABASE_TYPE;
+const originalRegisterPath = process.env.SMRT_MCP_REGISTER_PATH;
+let taskWidget: ConformanceTaskWidget;
 
 beforeAll(async () => {
   await rm(generatedDir, { force: true, recursive: true });
   await mkdir(generatedDir, { recursive: true });
-  await getTestDatabase({
+  await writeFile(
+    generatedRegisterPath,
+    "import '../src/fixture-objects.ts';\n",
+  );
+  fixtureDb = await getTestDatabase({
     type: 'sqlite',
     url: generatedDatabasePath,
-    classes: ['ConformanceAnimal', 'ConformanceCat'],
+    classes: [
+      'ConformanceAnimal',
+      'ConformanceCat',
+      'ConformanceTaskWidget',
+      'SmrtJob',
+      'SmrtJobEvent',
+      'SmrtWorker',
+    ],
   });
+  const taskWidgets = await ConformanceTaskWidgetCollection.create({
+    db: fixtureDb,
+  });
+  taskWidget = await taskWidgets.create({ name: 'generated task widget' });
   process.env.DATABASE_TYPE = 'sqlite';
   process.env.DATABASE_URL = generatedDatabasePath;
+  process.env.SMRT_MCP_REGISTER_PATH = generatedRegisterPath;
   const generator = new MCPGenerator({
     name: 'smrt-generated-conformance',
     version: '0.0.0',
@@ -105,12 +128,126 @@ afterAll(async () => {
   } else {
     process.env.DATABASE_URL = originalDatabaseUrl;
   }
+  if (originalRegisterPath === undefined) {
+    delete process.env.SMRT_MCP_REGISTER_PATH;
+  } else {
+    process.env.SMRT_MCP_REGISTER_PATH = originalRegisterPath;
+  }
   if (process.env.MCP_CONFORMANCE_KEEP_GENERATED !== 'true') {
     await rm(generatedDir, { force: true, recursive: true });
   }
 });
 
 describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
+  it('creates and completes a durable task through generated stdio', async () => {
+    const transport = openRawStdio();
+    try {
+      const discover = await transport.request('server/discover', {});
+      expect(discover.result).toMatchObject({
+        capabilities: {
+          extensions: { 'io.modelcontextprotocol/tasks': {} },
+        },
+      });
+
+      const created = await transport.request('tools/call', {
+        name: 'conformancetaskwidget_slowgenerate',
+        arguments: { id: taskWidget.id, options: { prompt: 'fixture' } },
+      });
+      expect(created.result).toMatchObject({
+        resultType: 'task',
+        status: 'working',
+      });
+      const taskId = created.result.taskId as string;
+
+      let completed: any;
+      let latest: any;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const task = await transport.request('tasks/get', { taskId });
+        latest = task.result;
+        if (task.result?.status === 'completed') {
+          completed = task.result;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(completed, JSON.stringify(latest)).toMatchObject({
+        resultType: 'complete',
+        result: { structuredContent: { data: { generated: 'fixture' } } },
+      });
+    } finally {
+      await transport.close();
+    }
+  });
+
+  it('cancels the correlated generated-stdio task without leaving a queued job', async () => {
+    const transport = openRawStdio();
+    try {
+      const created = await transport.request('tools/call', {
+        name: 'conformancetaskwidget_slowgenerate',
+        arguments: { id: taskWidget.id, options: { prompt: 'cancelled' } },
+      });
+      expect(created.error, JSON.stringify(created)).toBeUndefined();
+      const taskId = created.result.taskId as string;
+
+      const cancelled = await transport.request('tasks/cancel', { taskId });
+      expect(cancelled.result).toEqual({ resultType: 'complete' });
+      const task = await transport.request('tasks/get', { taskId });
+      expect(task.result).toMatchObject({ status: 'cancelled' });
+      const jobs = await fixtureDb.query(
+        'SELECT status FROM _smrt_jobs WHERE task_id = ?',
+        taskId,
+      );
+      expect(jobs.rows).toEqual([{ status: 'cancelled' }]);
+    } finally {
+      await transport.close();
+    }
+  });
+
+  it('rejects an invalid stdio task envelope before creating a durable job', async () => {
+    const transport = openRawStdio();
+    try {
+      const before = await fixtureDb.query(
+        'SELECT task_id FROM _smrt_jobs WHERE task_id IS NOT NULL',
+      );
+      const malformedEnvelopes = [
+        {
+          code: -32602,
+          meta: {
+            [CLIENT_CAPABILITIES_META_KEY]: {
+              extensions: { 'io.modelcontextprotocol/tasks': {} },
+            },
+          },
+        },
+        {
+          code: -32022,
+          meta: {
+            [PROTOCOL_VERSION_META_KEY]: '2025-06-18',
+            [CLIENT_CAPABILITIES_META_KEY]: {
+              extensions: { 'io.modelcontextprotocol/tasks': {} },
+            },
+          },
+        },
+      ];
+      for (const { code, meta } of malformedEnvelopes) {
+        const response = await transport.request(
+          'tools/call',
+          {
+            name: 'conformancetaskwidget_slowgenerate',
+            arguments: { id: taskWidget.id, options: { prompt: 'invalid' } },
+          },
+          { meta },
+        );
+        expect(response.error).toMatchObject({ code });
+      }
+      const jobs = await fixtureDb.query(
+        'SELECT task_id FROM _smrt_jobs WHERE task_id IS NOT NULL',
+      );
+      expect(jobs.rows).toEqual(before.rows);
+    } finally {
+      await transport.close();
+    }
+  });
+
   it('creates an advertised STI subtype through the generated runtime', async () => {
     const transport = new StdioClientTransport({
       command: tsxBin,
@@ -233,6 +370,92 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
     expect(result.code, result.output).toBe(0);
   });
 });
+
+function openRawStdio() {
+  const child = spawn(tsxBin, [generatedPath], {
+    cwd: packageRoot,
+    env: {
+      ...process.env,
+      DATABASE_TYPE: 'sqlite',
+      DATABASE_URL: generatedDatabasePath,
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let sequence = 0;
+  let buffer = '';
+  const pending = new Map<
+    number,
+    { resolve: (value: any) => void; reject: (error: Error) => void }
+  >();
+  child.stdout?.on('data', (chunk) => {
+    buffer += String(chunk);
+    let newline = buffer.indexOf('\n');
+    while (newline !== -1) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (line) {
+        try {
+          const message = JSON.parse(line) as { id?: number };
+          const request =
+            message.id === undefined ? undefined : pending.get(message.id);
+          if (request && message.id !== undefined) {
+            pending.delete(message.id);
+            request.resolve(message);
+          }
+        } catch {
+          // Stdio protocol frames are JSON only; ignore non-protocol diagnostics.
+        }
+      }
+      newline = buffer.indexOf('\n');
+    }
+  });
+  child.once('error', (error) => {
+    for (const request of pending.values()) request.reject(error);
+    pending.clear();
+  });
+  child.once('exit', (code) => {
+    if (code === 0 || pending.size === 0) return;
+    const error = new Error(`Generated MCP stdio process exited: ${code}`);
+    for (const request of pending.values()) request.reject(error);
+    pending.clear();
+  });
+
+  return {
+    request(
+      method: string,
+      params: Record<string, unknown>,
+      options: { meta?: Record<string, unknown> } = {},
+    ) {
+      const id = ++sequence;
+      const request = {
+        jsonrpc: '2.0',
+        id,
+        method,
+        params: {
+          ...params,
+          _meta: options.meta ?? {
+            [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
+            [CLIENT_INFO_META_KEY]: {
+              name: 'generated-task-fixture',
+              version: '0.0.0',
+            },
+            [CLIENT_CAPABILITIES_META_KEY]: {
+              extensions: { 'io.modelcontextprotocol/tasks': {} },
+            },
+          },
+        },
+      };
+      return new Promise<any>((resolve, reject) => {
+        pending.set(id, { resolve, reject });
+        child.stdin?.write(`${JSON.stringify(request)}\n`);
+      });
+    },
+    async close() {
+      child.kill('SIGTERM');
+      await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+    },
+  };
+}
 
 function startHttpAdapter(): Promise<string> {
   return new Promise((resolveUrl, rejectStart) => {

@@ -56,6 +56,8 @@
   "author": "HappyVertical",
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/sql": "catalog:",
     "@modelcontextprotocol/server": "2.0.0"
   },
   "devDependencies": {
