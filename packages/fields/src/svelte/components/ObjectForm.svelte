@@ -21,6 +21,11 @@ import {
   type ObjectFormFieldDefinition,
   type ObjectFormFieldSnippetProps,
 } from '../types.js';
+import {
+  collectFieldUsageEntries,
+  type FieldUsageReporter,
+  reportFieldUsage,
+} from '../usage-capture.js';
 import AdvancedFields from './AdvancedFields.svelte';
 import FieldInput from './FieldInput.svelte';
 import FieldPolicyGearButton from './FieldPolicyGearButton.svelte';
@@ -57,9 +62,22 @@ export interface ObjectFormProps {
   renderers?: Readonly<Record<string, Snippet<[ObjectFormFieldSnippetProps]>>>;
   /** Optional controls rendered after the policy-ordered fields inside the form. */
   actions?: Snippet;
+  /**
+   * Optional telemetry transport. It runs only when `onsubmit` explicitly
+   * resolves `true` after persistence; identity and field sensitivity remain
+   * server-derived.
+   */
+  usageReporter?: FieldUsageReporter;
   class?: string;
-  onsubmit?: (event: SubmitEvent) => void;
+  /** Return true only after the host has persisted this record successfully. */
+  onsubmit?: ObjectFormSubmitHandler;
 }
+
+// biome-ignore lint/suspicious/noConfusingVoidType: void handlers remain a supported legacy integration and never acknowledge persistence.
+export type ObjectFormSubmitAcknowledgement = boolean | void;
+export type ObjectFormSubmitHandler = (
+  event: SubmitEvent,
+) => ObjectFormSubmitAcknowledgement | Promise<ObjectFormSubmitAcknowledgement>;
 
 let {
   objectRef,
@@ -74,6 +92,7 @@ let {
   inputRegistry,
   renderers = {},
   actions,
+  usageReporter,
   class: className = '',
   onsubmit,
 }: ObjectFormProps = $props();
@@ -199,6 +218,60 @@ function setValidity(name: string, valid: boolean): void {
 
 function fieldId(name: string): string {
   return `${formInstanceId}-${name}`;
+}
+
+function captureUsage(): void {
+  if (!resolvedPolicy) return;
+  reportFieldUsage(
+    usageReporter,
+    collectFieldUsageEntries({
+      objectRef,
+      values: value,
+      // Hidden fields are not submitted user inputs. Basic and advanced fields
+      // are included even when a value matches the default so the server's
+      // dominance calculation has a complete denominator.
+      fields: Object.fromEntries(
+        formFields
+          .filter(
+            (field) =>
+              resolvedPolicy.fields[field.name].visibility !== 'hidden',
+          )
+          .map((field) => [field.name, field.definition.type]),
+      ),
+      defaults: Object.fromEntries(
+        formFields
+          .filter(
+            (field) =>
+              resolvedPolicy.fields[field.name].visibility !== 'hidden',
+          )
+          .map((field) => {
+            const resolved = resolvedPolicy.fields[field.name];
+            return [
+              field.name,
+              {
+                hasDefault: resolved.hasDefault,
+                defaultValue: resolved.defaultValue,
+              },
+            ];
+          }),
+      ),
+    }),
+  );
+}
+
+async function handleSubmit(event: SubmitEvent): Promise<void> {
+  if (invalidFields.size > 0) {
+    event.preventDefault();
+    return;
+  }
+  if (!onsubmit) return;
+  try {
+    // Form prevents native navigation itself, so persistence acknowledgement
+    // must be explicit rather than inferred from event.defaultPrevented.
+    if ((await onsubmit(event)) === true) captureUsage();
+  } catch {
+    // The host owns persistence errors; rejected submissions never emit usage.
+  }
 }
 
 // Apply policy defaults to a create record once, before a user can interact
@@ -330,7 +403,7 @@ function inputFor(field: ObjectFormField): FieldInputComponent {
       <div class="object-form__gear"><FieldPolicyGearButton /></div>
     {/if}
   {/if}
-  <Form class="object-form {className}" onsubmit={(event) => { if (invalidFields.size > 0) { event.preventDefault(); return; } onsubmit?.(event); }}>
+  <Form class="object-form {className}" onsubmit={handleSubmit}>
     {@render renderGroups(basicGroups)}
     {#if advancedGroups.length > 0}
       <AdvancedFields open>

@@ -6,6 +6,8 @@ export interface FieldPolicyGearController {
   readonly error: string | null;
   readonly open: boolean;
   readonly canEdit: boolean;
+  /** Pending reviewed suggestions for this form's object, when configured. */
+  readonly pendingSuggestionCount: number;
   show(): void;
   hide(): void;
   reload(): Promise<void>;

@@ -220,6 +220,21 @@ function usesTextIdStorage(field: RegisteredFieldInfo): boolean {
 }
 
 /**
+ * True when a reference identifier can be stored in the field's backing
+ * column. Native UUID columns accept UUIDs only; `idType: 'text'` opts into
+ * arbitrary non-empty string identifiers. Shared by policy defaults and the
+ * usage histogram so a poisoned sample can never become an unwriteable
+ * suggestion.
+ */
+export function isStorableReferenceId(
+  field: RegisteredFieldInfo,
+  value: unknown,
+): value is string {
+  if (typeof value !== 'string' || value === '') return false;
+  return usesTextIdStorage(field) || UUID_PATTERN.test(value);
+}
+
+/**
  * Type-check a parsed default value against the manifest field type.
  *
  * Explicit `null` is allowed only for optional fields (a required field with a
@@ -287,7 +302,7 @@ export function assertDefaultValueMatchesFieldType(
       // Reference columns are native UUID on PostgreSQL/DuckDB unless the
       // field explicitly opts into text ids — a non-UUID default would
       // validate here but fail at insert time on those dialects.
-      if (!usesTextIdStorage(field) && !UUID_PATTERN.test(value)) {
+      if (!isStorableReferenceId(field, value)) {
         throw new Error(
           `${label} must be a UUID string (the reference column stores ` +
             `native UUIDs; declare idType 'text' on the field to store ` +

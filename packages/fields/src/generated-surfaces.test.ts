@@ -26,6 +26,8 @@ import {
 } from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
+import { FieldPolicySuggestionCollection } from './collections/FieldPolicySuggestionCollection.js';
+import { FieldUsageCounterCollection } from './collections/FieldUsageCounterCollection.js';
 import {
   MANAGE_FIELD_POLICY_PERMISSION,
   PERSONALIZE_FIELD_POLICY_PERMISSION,
@@ -71,14 +73,25 @@ const passThroughAuth =
 describe('smrt-fields generated surfaces', () => {
   let db: Awaited<ReturnType<typeof getTestDatabase>>;
   let policies: FieldPolicyCollection;
+  let suggestions: FieldPolicySuggestionCollection;
+  let counters: FieldUsageCounterCollection;
 
   beforeEach(async () => {
     setupTestTenancy();
     clearFieldPolicyCache();
     db = await getTestDatabase({
-      classes: ['FieldPolicy', 'Tenant', 'Membership'],
+      classes: [
+        'FieldPolicy',
+        'FieldPolicySuggestion',
+        'FieldUsageCounter',
+        'FieldUsageReportReceipt',
+        'Tenant',
+        'Membership',
+      ],
     });
     policies = await FieldPolicyCollection.create({ db });
+    suggestions = await FieldPolicySuggestionCollection.create({ db });
+    counters = await FieldUsageCounterCollection.create({ db });
   });
 
   afterEach(async () => {
@@ -305,6 +318,168 @@ describe('smrt-fields generated surfaces', () => {
       }),
     );
     expect(badJson.status).toBe(400);
+  });
+
+  it('dispatches usage and suggestion custom routes with trusted tenant identity only', async () => {
+    const objectRef = fixtureRef();
+    const tenantA = randomUUID();
+    const tenantB = randomUUID();
+    const userA = randomUUID();
+    const userB = randomUUID();
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
+    api.registerCollection('fieldusagecounter', counters);
+    api.registerCollection('fieldpolicysuggestion', suggestions);
+    const handler = api.generateHandler();
+
+    // Both system tables remain closed outside their explicitly declared
+    // collection actions; no generated CRUD/read surface may leak rows.
+    for (const path of ['fieldusagecounter', 'fieldpolicysuggestion']) {
+      expect(
+        (await handler(new Request(`http://localhost/api/v1/${path}`))).status,
+      ).toBe(405);
+      expect(
+        (
+          await handler(
+            new Request(`http://localhost/api/v1/${path}`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({}),
+            }),
+          )
+        ).status,
+      ).toBe(405);
+    }
+
+    // No trusted tenant/user context means no report attribution and no queue
+    // access, regardless of identity-shaped request body keys.
+    const reportWithoutPrincipal = await handler(
+      new Request('http://localhost/api/v1/fieldusagecounter/report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          entries: [{ objectRef, fieldName: 'headline', value: 'x' }],
+          tenantId: tenantA,
+          userId: userA,
+        }),
+      }),
+    );
+    expect(reportWithoutPrincipal.status).toBe(403);
+    const pendingWithoutPrincipal = await handler(
+      new Request('http://localhost/api/v1/fieldpolicysuggestion/pending', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tenantId: tenantA }),
+      }),
+    );
+    expect(pendingWithoutPrincipal.status).toBe(403);
+
+    const reported = await withTenant(
+      { tenantId: tenantA, userId: userA, permissions: new Set<string>() },
+      () =>
+        handler(
+          new Request('http://localhost/api/v1/fieldusagecounter/report', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              entries: [{ objectRef, fieldName: 'headline', value: 'x' }],
+              // These untrusted body values cannot redirect the counter.
+              tenantId: tenantB,
+              userId: userB,
+            }),
+          }),
+        ),
+    );
+    expect(reported.status).toBe(200);
+    expect(await reported.json()).toMatchObject({
+      action: 'reportUsage',
+      result: { accepted: 1, dropped: 0 },
+    });
+    expect((await counters.list({})).map((row) => row.tenantId)).toEqual([
+      tenantA,
+    ]);
+
+    const pendingAccept = await withSystemContext(() =>
+      suggestions.create({
+        tenantId: tenantA,
+        objectRef,
+        fieldName: 'requiredHeadline',
+        kind: 'promote',
+        evidence: '{}',
+      }),
+    );
+    const pendingDismiss = await withSystemContext(() =>
+      suggestions.create({
+        tenantId: tenantA,
+        objectRef,
+        fieldName: 'headline',
+        kind: 'promote',
+        evidence: '{}',
+      }),
+    );
+
+    const managerA = {
+      tenantId: tenantA,
+      userId: userA,
+      permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+    };
+    const managerB = {
+      tenantId: tenantB,
+      userId: userB,
+      permissions: new Set([MANAGE_FIELD_POLICY_PERMISSION]),
+    };
+    const pendingA = await withTenant(managerA, () =>
+      handler(
+        new Request('http://localhost/api/v1/fieldpolicysuggestion/pending', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        }),
+      ),
+    );
+    expect(pendingA.status).toBe(200);
+    expect(await pendingA.json()).toMatchObject({
+      action: 'pendingSuggestions',
+      result: { total: 2 },
+    });
+    const pendingB = await withTenant(managerB, () =>
+      handler(
+        new Request('http://localhost/api/v1/fieldpolicysuggestion/pending', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tenantId: tenantA }),
+        }),
+      ),
+    );
+    expect(pendingB.status).toBe(200);
+    expect(await pendingB.json()).toMatchObject({
+      action: 'pendingSuggestions',
+      result: { total: 0 },
+    });
+
+    const accepted = await withTenant(managerA, () =>
+      handler(
+        new Request('http://localhost/api/v1/fieldpolicysuggestion/accept', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: pendingAccept.id, tenantId: tenantB }),
+        }),
+      ),
+    );
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toMatchObject({ action: 'acceptSuggestion' });
+    const dismissed = await withTenant(managerA, () =>
+      handler(
+        new Request('http://localhost/api/v1/fieldpolicysuggestion/dismiss', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: pendingDismiss.id, tenantId: tenantB }),
+        }),
+      ),
+    );
+    expect(dismissed.status).toBe(200);
+    expect(await dismissed.json()).toMatchObject({
+      action: 'dismissSuggestion',
+    });
   });
 
   it('creates a row at EVERY scope tier through the generated REST surface', async () => {
@@ -859,6 +1034,85 @@ describe('smrt-fields generated surfaces', () => {
       (index) => index?.unique === true,
     );
     expect(uniqueIndexes.map((index) => index.columns)).toEqual([naturalKey]);
+  });
+
+  it('mirrors natural keys on every decorated #2051 collection table schema', () => {
+    // The scanner retains per-class schemas in the manifest even when runtime
+    // registry schemas collapse by table name. Assert the two model/collection
+    // pairs here so a future collection config cannot silently fall back to
+    // SmrtObject's `(slug, context)` index.
+    const manifest = JSON.parse(
+      readFileSync(resolve(process.cwd(), '.smrt/manifest.json'), 'utf8'),
+    ) as {
+      objects?: Record<
+        string,
+        {
+          schema?: {
+            indexes?: Array<{ columns?: string[]; unique?: boolean }>;
+          };
+        }
+      >;
+    };
+    const expected = [
+      {
+        suffixes: [':FieldUsageCounter', ':FieldUsageCounterCollection'],
+        naturalKey: ['object_ref', 'field_name', 'tenant_id', 'period'],
+      },
+      {
+        suffixes: [
+          ':FieldPolicySuggestion',
+          ':FieldPolicySuggestionCollection',
+        ],
+        naturalKey: [
+          'object_ref',
+          'field_name',
+          'tenant_id',
+          'kind',
+          'active_key',
+        ],
+      },
+      {
+        suffixes: [
+          ':FieldUsageReportReceipt',
+          ':FieldUsageReportReceiptCollection',
+        ],
+        naturalKey: [
+          'tenant_id',
+          'user_id',
+          'object_ref',
+          'field_name',
+          'period',
+        ],
+      },
+    ];
+
+    for (const { suffixes, naturalKey } of expected) {
+      const entries = Object.entries(manifest.objects ?? {}).filter(([name]) =>
+        suffixes.some((suffix) => name.endsWith(suffix)),
+      );
+      expect(entries).toHaveLength(2);
+      for (const [name, entry] of entries) {
+        const uniqueIndexes = (entry.schema?.indexes ?? []).filter(
+          (index) => index.unique === true,
+        );
+        expect({
+          name,
+          unique: uniqueIndexes.map((index) => index.columns),
+        }).toEqual({
+          name,
+          unique: [naturalKey],
+        });
+      }
+    }
+
+    // Keep imports live: they are also a direct source-mode registration
+    // smoke test for the two collection decorators.
+    expect(FieldUsageCounterCollection._itemClass.name).toBe(
+      'FieldUsageCounter',
+    );
+    expect(FieldPolicySuggestionCollection._itemClass.name).toBe(
+      'FieldPolicySuggestion',
+    );
   });
 
   it('exposes nothing over MCP or the runtime CLI', async () => {

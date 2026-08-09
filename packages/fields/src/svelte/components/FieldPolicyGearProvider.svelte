@@ -12,6 +12,10 @@ import {
   setFieldPolicyGearContext,
 } from '../gear-context.svelte.js';
 import type { FieldInputRegistry } from '../input-registry.js';
+import {
+  type FieldPolicySuggestionAdapter,
+  parsePendingFieldPolicySuggestions,
+} from '../suggestions.js';
 import type { ObjectFormFieldDefinition } from '../types.js';
 import FieldPolicyEditor from './FieldPolicyEditor.svelte';
 
@@ -22,6 +26,8 @@ interface Props {
   inputRegistry?: FieldInputRegistry;
   /** Hosts in an app-wide context pass app; tenant hosts retain the default. */
   organizationScope?: FieldPolicyOrganizationScope;
+  /** Optional reviewed-suggestion transport for the gear badge. */
+  suggestionAdapter?: FieldPolicySuggestionAdapter;
   children?: Snippet;
 }
 
@@ -31,6 +37,7 @@ let {
   adapter,
   inputRegistry,
   organizationScope = 'tenant',
+  suggestionAdapter,
   children,
 }: Props = $props();
 
@@ -38,6 +45,7 @@ let editorState = $state<FieldPolicyEditorState | null>(null);
 let error = $state<string | null>(null);
 let open = $state(false);
 let loading = $state(false);
+let pendingSuggestionCount = $state(0);
 
 const controller: FieldPolicyGearController = {
   get state() {
@@ -54,6 +62,9 @@ const controller: FieldPolicyGearController = {
       !!editorState &&
       (editorState.capabilities.manage || editorState.capabilities.personalize)
     );
+  },
+  get pendingSuggestionCount() {
+    return pendingSuggestionCount;
   },
   show() {
     if (this.canEdit) open = true;
@@ -104,16 +115,39 @@ async function reload(generation = ++loadGeneration): Promise<void> {
   }
 }
 
+async function reloadPendingSuggestions(
+  generation = ++suggestionGeneration,
+): Promise<void> {
+  if (!suggestionAdapter) {
+    pendingSuggestionCount = 0;
+    return;
+  }
+  try {
+    const result = parsePendingFieldPolicySuggestions(
+      await suggestionAdapter.pendingSuggestions({ objectRefs: [objectRef] }),
+    );
+    if (generation === suggestionGeneration) {
+      pendingSuggestionCount = result.total;
+    }
+  } catch {
+    // A metrics/read failure must not suppress ordinary policy editing.
+    if (generation === suggestionGeneration) pendingSuggestionCount = 0;
+  }
+}
+
 let loadGeneration = 0;
+let suggestionGeneration = 0;
 $effect(() => {
   const generation = ++loadGeneration;
   editorState = null;
   error = null;
   open = false;
   void reload(generation);
+  void reloadPendingSuggestions();
   return () => {
     // A delayed transport response must never repopulate a prior object.
     if (loadGeneration === generation) loadGeneration++;
+    suggestionGeneration++;
   };
 });
 </script>
