@@ -22,6 +22,17 @@ export {
 } from './cache.js';
 export { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 export {
+  FieldPolicySuggestionCollection,
+  FieldPolicySuggestionConflictError,
+} from './collections/FieldPolicySuggestionCollection.js';
+export {
+  decodeHistogramKey,
+  FieldUsageCounterCollection,
+  isHistogramEligibleField,
+  MAX_USAGE_REPORT_ENTRIES,
+  serializeHistogramSample,
+} from './collections/FieldUsageCounterCollection.js';
+export {
   assertDefaultValueMatchesFieldType,
   buildCodeSeedDelta,
   buildCodeSeedVisibility,
@@ -33,6 +44,7 @@ export {
   isPolicyAddressableField,
   isRequiredField,
   isSensitiveField,
+  isStorableReferenceId,
   isTransientField,
   isUsableRequiredDefault,
   type RegisteredFieldInfo,
@@ -45,6 +57,16 @@ export {
   resolveSurvivingTenantChainIds,
 } from './field-policy-resolver.js';
 export { FieldPolicy } from './models/FieldPolicy.js';
+export {
+  ACTIVE_SUGGESTION_KEY,
+  FieldPolicySuggestion,
+} from './models/FieldPolicySuggestion.js';
+export {
+  FieldUsageCounter,
+  fieldUsagePeriodForDate,
+  MAX_DISTINCT_USERS_PER_BUCKET,
+  MAX_VALUE_HISTOGRAM_BUCKETS,
+} from './models/FieldUsageCounter.js';
 export {
   ensureFieldPolicyPermissionsRegistered,
   FIELD_POLICY_PERMISSION_DEFINITIONS,
@@ -65,7 +87,9 @@ export {
   parseFieldPolicyCatalogQuery,
 } from './settings-catalog.js';
 export {
+  type AcceptFieldPolicySuggestionResult,
   APP_FIELD_POLICY_SCOPE_KEY,
+  type DismissFieldPolicySuggestionResult,
   type ExplainedObjectFieldPolicy,
   FIELD_POLICY_SCOPE_TYPES,
   FIELD_POLICY_VISIBILITIES,
@@ -83,16 +107,33 @@ export {
   type FieldPolicyLayerContribution,
   type FieldPolicyOptions,
   type FieldPolicyScopeType,
+  type FieldPolicySuggestionData,
+  type FieldPolicySuggestionKind,
+  type FieldPolicySuggestionStatus,
   type FieldPolicyTenantHierarchyLoader,
   type FieldPolicyTenantHierarchyProvider,
   type FieldPolicyTenantNode,
   type FieldPolicyUsersModule,
   type FieldPolicyUsersTenantRecord,
   type FieldPolicyVisibility,
+  type FieldUsageReportEntry,
+  type FieldUsageReportResult,
+  type PendingFieldPolicySuggestionsResult,
   type ResolvedFieldPolicy,
   type ResolvedObjectFieldPolicy,
   type ResolveFieldPolicyOptions,
 } from './types.js';
+export {
+  FieldUsageLearningAgent,
+  pruneFieldPolicySuggestions,
+  pruneFieldUsageCounters,
+  runFieldPolicySuggestionGeneration,
+  runFieldUsageMaintenance,
+} from './usage-learning.js';
+export {
+  ensureFieldUsageLearningSchedules,
+  FIELD_USAGE_LEARNING_AGENT_TYPE,
+} from './usage-schedules.js';
 
 // Contribute the field-policy capabilities to the shared runtime catalog on
 // import, so normal role seeding and every server gate recognize the slugs.

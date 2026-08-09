@@ -22,6 +22,7 @@ import FieldPolicyEditor from './components/FieldPolicyEditor.svelte';
 import FieldPolicyGearButton from './components/FieldPolicyGearButton.svelte';
 import FieldPolicyGearProvider from './components/FieldPolicyGearProvider.svelte';
 import FieldPolicyProvider from './components/FieldPolicyProvider.svelte';
+import FieldPolicySuggestionQueue from './components/FieldPolicySuggestionQueue.svelte';
 import FormHelp from './components/FormHelp.svelte';
 import ModeSwitch from './components/ModeSwitch.svelte';
 import ObjectForm from './components/ObjectForm.svelte';
@@ -36,6 +37,7 @@ export {
   FieldPolicyGearButton,
   FieldPolicyGearProvider,
   FieldPolicyProvider,
+  FieldPolicySuggestionQueue,
   FormHelp,
   ModeSwitch,
   ObjectForm,
@@ -51,6 +53,10 @@ export type FieldPolicyProviderProps = ComponentProps<
 export type FormHelpProps = ComponentProps<typeof FormHelp>;
 export type ModeSwitchProps = ComponentProps<typeof ModeSwitch>;
 export type ObjectFormProps = ComponentProps<typeof ObjectForm>;
+export type {
+  ObjectFormSubmitAcknowledgement,
+  ObjectFormSubmitHandler,
+} from './components/ObjectForm.svelte';
 export type ObjectFormSourceProviderProps = ComponentProps<
   typeof ObjectFormSourceProvider
 >;
@@ -63,6 +69,9 @@ export type FieldPolicyGearButtonProps = ComponentProps<
 >;
 export type FieldPolicyGearProviderProps = ComponentProps<
   typeof FieldPolicyGearProvider
+>;
+export type FieldPolicySuggestionQueueProps = ComponentProps<
+  typeof FieldPolicySuggestionQueue
 >;
 export type PolicyFieldProps = ComponentProps<typeof PolicyField>;
 
@@ -142,6 +151,13 @@ export {
   orgRowIdsForObject,
   prunableDriftRows,
 } from './settings-catalog.js';
+export {
+  type FieldPolicySuggestion,
+  type FieldPolicySuggestionAdapter,
+  type FieldPolicySuggestionKind,
+  fieldPolicySuggestionEvidence,
+  parsePendingFieldPolicySuggestions,
+} from './suggestions.js';
 // Snippet escape-hatch props
 export type {
   FieldInputProps,
@@ -155,3 +171,15 @@ export type {
   ObjectFormWireType,
   PolicyFieldSnippetProps,
 } from './types.js';
+export {
+  type CollectFieldUsageEntriesOptions,
+  canCaptureFieldUsageValue,
+  collectFieldUsageEntries,
+  type FieldUsageDefault,
+  type FieldUsageEntry,
+  type FieldUsageReporter,
+  type FieldUsageWireType,
+  fieldUsageValuesEqual,
+  isBlankFieldValue,
+  reportFieldUsage,
+} from './usage-capture.js';

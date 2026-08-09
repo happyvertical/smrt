@@ -11,6 +11,7 @@ import type {
 } from '../../types.js';
 import FieldPolicyControlPanel from '../components/FieldPolicyControlPanel.svelte';
 import type { FieldPolicyControlPanelAdapter } from '../settings-catalog.js';
+import type { FieldPolicySuggestionAdapter } from '../suggestions.js';
 import SettingsCatalogStub from './fixtures/SettingsCatalogStub.svelte';
 
 const objectRef = '@test/smrt-fields:ControlPanelDocument';
@@ -140,6 +141,16 @@ function data(pageSize = 25): FieldPolicySettingsCatalogData {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
 function adapter(
   options: { onDelete?: (id: string) => Promise<void>; calls?: string[] } = {},
 ): FieldPolicyControlPanelAdapter {
@@ -169,6 +180,7 @@ function renderPanel(
     confirmAction?: (message: string) => boolean | Promise<boolean>;
     onchanged?: () => void;
     panelData?: FieldPolicySettingsCatalogData;
+    suggestionAdapter?: FieldPolicySuggestionAdapter;
   } = {},
 ) {
   return render(FieldPolicyControlPanel, {
@@ -179,11 +191,45 @@ function renderPanel(
       baseUrl: '/settings/fields',
       confirmAction: options.confirmAction,
       onchanged: options.onchanged,
+      suggestionAdapter: options.suggestionAdapter,
     },
   });
 }
 
 describe('FieldPolicyControlPanel', () => {
+  it('surfaces a reviewed pending-suggestion queue through the structural host adapter', async () => {
+    const pendingSuggestions = vi.fn(async () => ({
+      suggestions: [
+        {
+          id: 'suggestion-title',
+          objectRef,
+          fieldName: 'title',
+          kind: 'promote',
+          proposedValue: null,
+          evidence: { summary: '3 users set this field 5 times.' },
+          status: 'pending',
+        },
+      ],
+      total: 1,
+    }));
+    renderPanel(adapter(), {
+      suggestionAdapter: {
+        pendingSuggestions,
+        acceptSuggestion: async () => undefined,
+        dismissSuggestion: async () => undefined,
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: 'Pending field suggestions' }),
+      ).toBeVisible(),
+    );
+    expect(pendingSuggestions).toHaveBeenCalledWith({
+      objectRefs: [objectRef],
+    });
+  });
+
   it('uses SSR data for the first render and preserves pageSize in catalog navigation', () => {
     renderPanel();
 
@@ -269,5 +315,36 @@ describe('FieldPolicyControlPanel', () => {
       ]),
     );
     expect(screen.getByRole('alert')).toHaveTextContent('second delete failed');
+  });
+
+  it('does not let an older deferred audit refresh overwrite newer panel data', async () => {
+    const staleAudit = deferred<FieldPolicyAuditSnapshot>();
+    const panelAdapter = adapter();
+    panelAdapter.loadAudit = vi.fn(() => staleAudit.promise);
+    const rendered = renderPanel(panelAdapter);
+    await vi.waitFor(() => expect(panelAdapter.load).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Edit settings' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Save', exact: true }),
+    );
+    await vi.waitFor(() =>
+      expect(panelAdapter.loadAudit).toHaveBeenCalledTimes(1),
+    );
+
+    await rendered.rerender({
+      data: { ...data(), audit: audit([], false) },
+    });
+    expect(
+      screen.queryByRole('heading', { name: 'Manifest drift' }),
+    ).toBeNull();
+
+    staleAudit.resolve(audit());
+    await Promise.resolve();
+    expect(
+      screen.queryByRole('heading', { name: 'Manifest drift' }),
+    ).toBeNull();
   });
 });

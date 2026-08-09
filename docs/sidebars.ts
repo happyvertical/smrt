@@ -10,6 +10,7 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: 'doc', id: 'data-compartmentalization' },
         { type: 'doc', id: 'dispatch' },
+        { type: 'doc', id: 'field-policies' },
       ],
     },
     {

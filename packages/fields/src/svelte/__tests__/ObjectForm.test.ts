@@ -17,6 +17,7 @@ import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedObjectFieldPolicy } from '../../types.js';
 import FieldInput from '../components/FieldInput.svelte';
+import type { ObjectFormProps } from '../components/ObjectForm.svelte';
 import { policyToVisibleColumnIds } from '../data-table.js';
 import {
   type ObjectFormCollectionDefinition,
@@ -310,6 +311,172 @@ describe('ObjectForm component', () => {
     await fireEvent.input(metadata);
     await userEvent.click(submit);
     expect(onsubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports only after a synchronous host persistence acknowledgement', async () => {
+    const onsubmit = vi.fn(() => true);
+    const reportUsage = vi.fn(() => {
+      throw new Error('metrics unavailable');
+    });
+    render(ObjectFormActionsFixture, {
+      props: { fields, policy, onsubmit, usageReporter: { reportUsage } },
+    });
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Name' }),
+      'Deluxe',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+
+    expect(onsubmit).toHaveBeenCalledTimes(1);
+    expect(reportUsage).toHaveBeenCalledWith({
+      entries: [{ objectRef: '@test:Product', fieldName: 'name' }],
+    });
+
+    const metadata = screen.getByRole('textbox', {
+      name: 'Metadata',
+    }) as HTMLTextAreaElement;
+    metadata.value = '{not json}';
+    await fireEvent.input(metadata);
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+    expect(reportUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports after an asynchronous host persistence acknowledgement', async () => {
+    const onsubmit = vi.fn(async () => true);
+    const reportUsage = vi.fn();
+    render(ObjectFormActionsFixture, {
+      props: { fields, policy, onsubmit, usageReporter: { reportUsage } },
+    });
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Name' }),
+      'Deluxe',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+
+    await vi.waitFor(() => expect(reportUsage).toHaveBeenCalledTimes(1));
+  });
+
+  it('reports the submitted values when a successful create clears its bound record', async () => {
+    const reportUsage = vi.fn();
+    render(ObjectFormActionsFixture, {
+      props: {
+        fields,
+        policy,
+        onsubmit: async () => true,
+        usageReporter: { reportUsage },
+        resetAfterSuccessfulSubmit: true,
+      },
+    });
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Name' }),
+      'Deluxe',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+
+    await vi.waitFor(() =>
+      expect(reportUsage).toHaveBeenCalledWith({
+        entries: [{ objectRef: '@test:Product', fieldName: 'name' }],
+      }),
+    );
+  });
+
+  it('keeps named void and Promise<void> persistence handlers compatible without treating either as success', async () => {
+    function legacyVoidHandler(_event: SubmitEvent): void {}
+    async function legacyAsyncVoidHandler(_event: SubmitEvent): Promise<void> {}
+    const handlers: Array<NonNullable<ObjectFormProps['onsubmit']>> = [
+      legacyVoidHandler,
+      legacyAsyncVoidHandler,
+    ];
+
+    for (const onsubmit of handlers) {
+      const reportUsage = vi.fn();
+      const view = render(ObjectFormActionsFixture, {
+        props: { fields, policy, onsubmit, usageReporter: { reportUsage } },
+      });
+      await userEvent.type(
+        screen.getByRole('textbox', { name: 'Name' }),
+        'Deluxe',
+      );
+      await userEvent.click(
+        screen.getByRole('button', { name: 'Save product' }),
+      );
+      await Promise.resolve();
+      expect(reportUsage).not.toHaveBeenCalled();
+      view.unmount();
+    }
+  });
+
+  it('marks a count-only text default as matched after persistence', async () => {
+    const policyWithTextDefault: ResolvedObjectFieldPolicy = {
+      ...policy,
+      fields: {
+        ...policy.fields,
+        name: {
+          ...policy.fields.name,
+          hasDefault: true,
+          defaultValue: 'Default product name',
+        },
+      },
+    };
+    const reportUsage = vi.fn();
+    render(ObjectFormActionsFixture, {
+      props: {
+        fields,
+        policy: policyWithTextDefault,
+        onsubmit: () => true,
+        usageReporter: { reportUsage },
+      },
+    });
+    await tick();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save product' }));
+
+    expect(reportUsage).toHaveBeenCalledWith({
+      entries: [
+        {
+          objectRef: '@test:Product',
+          fieldName: 'name',
+          matchedDefault: true,
+        },
+      ],
+    });
+  });
+
+  it('does not report when the host cancels, omits success, rejects, or local validation fails', async () => {
+    let attempt = 0;
+    const onsubmit = vi.fn(async () => {
+      attempt++;
+      if (attempt === 1) return undefined;
+      if (attempt === 2) return false;
+      throw new Error('persistence failed');
+    });
+    const reportUsage = vi.fn();
+    render(ObjectFormActionsFixture, {
+      props: { fields, policy, onsubmit, usageReporter: { reportUsage } },
+    });
+
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Name' }),
+      'Deluxe',
+    );
+    const submit = screen.getByRole('button', { name: 'Save product' });
+    await userEvent.click(submit);
+    await userEvent.click(submit);
+    await userEvent.click(submit);
+    await vi.waitFor(() => expect(onsubmit).toHaveBeenCalledTimes(3));
+    expect(reportUsage).not.toHaveBeenCalled();
+
+    const metadata = screen.getByRole('textbox', {
+      name: 'Metadata',
+    }) as HTMLTextAreaElement;
+    metadata.value = '{not json}';
+    await fireEvent.input(metadata);
+    await userEvent.click(submit);
+    expect(onsubmit).toHaveBeenCalledTimes(3);
+    expect(reportUsage).not.toHaveBeenCalled();
   });
 
   it('is axe-clean for its generated basic form', async () => {

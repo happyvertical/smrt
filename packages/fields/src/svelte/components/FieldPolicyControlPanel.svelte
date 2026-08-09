@@ -29,7 +29,9 @@ import {
   orgRowIdsForObject,
   prunableDriftRows,
 } from '../settings-catalog.js';
+import type { FieldPolicySuggestionAdapter } from '../suggestions.js';
 import FieldPolicyEditor from './FieldPolicyEditor.svelte';
+import FieldPolicySuggestionQueue from './FieldPolicySuggestionQueue.svelte';
 
 export interface FieldPolicyCatalogComponentProps {
   page: FieldPolicySettingsCatalogPage;
@@ -48,6 +50,8 @@ export interface FieldPolicyControlPanelProps {
   heading?: string;
   onchanged?: () => void;
   confirmAction?: (message: string) => boolean | Promise<boolean>;
+  /** Optional reviewed-suggestion queue transport. */
+  suggestionAdapter?: FieldPolicySuggestionAdapter;
 }
 
 let {
@@ -59,6 +63,7 @@ let {
   heading = 'Field settings',
   onchanged,
   confirmAction,
+  suggestionAdapter,
 }: FieldPolicyControlPanelProps = $props();
 
 // Before client effects run (including SSR), render the server snapshot.
@@ -70,6 +75,7 @@ let loadingEditor = $state(false);
 let busy = $state(false);
 let error = $state<string | null>(null);
 let generation = 0;
+let auditGeneration = 0;
 
 const Catalog = $derived(catalog);
 const visibleAudit = $derived(audit ?? data.audit);
@@ -83,6 +89,9 @@ const preservedParams = $derived(fieldPolicyCatalogPreservedParams(data));
 
 $effect(() => {
   data;
+  // A prop snapshot supersedes every in-flight mutation refresh. Without this
+  // invalidation, an older response can overwrite newer SSR/navigation data.
+  auditGeneration++;
   audit = data.audit;
   editorState = null;
   editorOpen = false;
@@ -114,11 +123,15 @@ async function loadEditor(): Promise<void> {
 }
 
 async function refreshAudit(): Promise<boolean> {
+  const token = ++auditGeneration;
   const refs = auditObjectRefs(data.page);
   try {
-    audit = await adapter.loadAudit({ ...refs, includeDrift: true });
+    const refreshed = await adapter.loadAudit({ ...refs, includeDrift: true });
+    if (token !== auditGeneration) return false;
+    audit = refreshed;
     return true;
   } catch (cause) {
+    if (token !== auditGeneration) return false;
     error =
       cause instanceof Error
         ? cause.message
@@ -195,6 +208,13 @@ function valueText(cell: FieldPolicyLayerCell): string {
     return String(cell.defaultValue);
   }
 }
+
+async function suggestionChanged(): Promise<void> {
+  if (await refreshAudit()) {
+    await loadEditor();
+    onchanged?.();
+  }
+}
 </script>
 
 {#if canManage}
@@ -232,6 +252,13 @@ function valueText(cell: FieldPolicyLayerCell): string {
         fields={selected.fields}
         onclose={() => editorOpen = false}
         onmutated={editorMutated}
+      />
+    {/if}
+    {#if suggestionAdapter}
+      <FieldPolicySuggestionQueue
+        adapter={suggestionAdapter}
+        objectRefs={auditObjectRefs(data.page).objectRefs}
+        onchanged={suggestionChanged}
       />
     {/if}
     {#if prunableDriftRows(visibleAudit).length}

@@ -318,4 +318,58 @@ export type FieldPolicyEditorStateResult =
   | FieldPolicyEditorState
   | FieldPolicyEditorStateDenied;
 
+// ---------------------------------------------------------------------------
+// Usage capture + promotion suggestions (#2051)
+// ---------------------------------------------------------------------------
+
+export type FieldPolicySuggestionKind = 'promote' | 'default';
+export const FIELD_POLICY_SUGGESTION_KINDS: readonly FieldPolicySuggestionKind[] =
+  ['promote', 'default'];
+
+export type FieldPolicySuggestionStatus = 'pending' | 'accepted' | 'dismissed';
+export const FIELD_POLICY_SUGGESTION_STATUSES: readonly FieldPolicySuggestionStatus[] =
+  ['pending', 'accepted', 'dismissed'];
+
+/** One bounded client-side form submission sample. */
+export interface FieldUsageReportEntry {
+  objectRef: string;
+  fieldName: string;
+  value?: unknown;
+  /** Used only for value-less samples; server comparison wins when present. */
+  matchedDefault?: boolean;
+}
+
+export interface FieldUsageReportResult {
+  accepted: number;
+  dropped: number;
+}
+
+export interface FieldPolicySuggestionData {
+  id: string;
+  objectRef: string;
+  fieldName: string;
+  tenantId: string;
+  kind: FieldPolicySuggestionKind;
+  proposedValue: string | null;
+  evidence: Record<string, unknown>;
+  status: FieldPolicySuggestionStatus;
+  cooldownUntil: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}
+
+export interface PendingFieldPolicySuggestionsResult {
+  suggestions: FieldPolicySuggestionData[];
+  total: number;
+}
+
+export interface AcceptFieldPolicySuggestionResult {
+  suggestion: FieldPolicySuggestionData;
+  policyRowId: string;
+}
+
+export interface DismissFieldPolicySuggestionResult {
+  suggestion: FieldPolicySuggestionData;
+}
+
 export type { SmrtClassOptions };

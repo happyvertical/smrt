@@ -39,7 +39,7 @@ class PolicyResolverDoc extends SmrtObject {
   @field({ required: true, description: 'Title help' })
   title: string = '';
 
-  @field({ ui: { basic: true, group: 'main', order: 2 } })
+  @field({ default: '', ui: { basic: true, group: 'main', order: 2 } })
   summary: string = '';
 
   // The scanner only carries an initializer default into the manifest when
@@ -51,7 +51,7 @@ class PolicyResolverDoc extends SmrtObject {
   @field({ nullable: true })
   subtitle: string | null = null;
 
-  @field({ ui: { locked: true } })
+  @field({ default: 'default', ui: { locked: true } })
   theme: string = 'default';
 
   @field({ sensitive: true })
