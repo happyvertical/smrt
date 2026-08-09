@@ -8,6 +8,7 @@ import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
 import {
   getClassConfigResolvers,
+  normalizeCustomActionFailure,
   ObjectRegistry,
   resolveLazyConfig,
   type SmrtObject,
@@ -23,6 +24,11 @@ import {
   type JobExecutionContext,
   type JobProgressInput,
 } from './logger-extension.js';
+import {
+  createMcpTaskResult,
+  getMcpTaskMarker,
+  requestMcpTaskInput,
+} from './mcp-task.js';
 import { type SmrtJob, SmrtJobCollection } from './smrt-job.js';
 import { type SmrtJobEvent, SmrtJobEventCollection } from './smrt-job-event.js';
 import { SmrtWorkerCollection } from './smrt-worker.js';
@@ -420,6 +426,9 @@ export class TaskRunner extends EventEmitter {
         status: 'completed',
         completed_at: completedAt.toISOString(),
         result_pointer: result?.resultPointer ?? null,
+        task_result: result?.taskResult
+          ? JSON.stringify(result.taskResult)
+          : null,
         updated_at: completedAt.toISOString(),
       });
 
@@ -427,6 +436,7 @@ export class TaskRunner extends EventEmitter {
         job.status = 'completed';
         job.completedAt = completedAt;
         job.resultPointer = result?.resultPointer ?? null;
+        job.taskResult = result?.taskResult ?? null;
         await this.appendJobEvent(job, {
           type: 'progress',
           level: 'info',
@@ -471,7 +481,11 @@ export class TaskRunner extends EventEmitter {
   private async runWithTimeout(
     job: SmrtJob,
     captureHandle: (handle: NodeJS.Timeout) => void,
-  ): Promise<{ result?: unknown; resultPointer?: string }> {
+  ): Promise<{
+    result?: unknown;
+    resultPointer?: string;
+    taskResult?: Record<string, unknown>;
+  }> {
     if (job.timeoutBehavior === 'warn') {
       const handle = setTimeout(() => {
         this.logger.warn(
@@ -535,12 +549,15 @@ export class TaskRunner extends EventEmitter {
   /**
    * Execute a job by invoking the method on the SmrtObject
    */
-  private async executeJob(
-    job: SmrtJob,
-  ): Promise<{ result?: unknown; resultPointer?: string }> {
+  private async executeJob(job: SmrtJob): Promise<{
+    result?: unknown;
+    resultPointer?: string;
+    taskResult?: Record<string, unknown>;
+  }> {
     const runJob = async (): Promise<{
       result?: unknown;
       resultPointer?: string;
+      taskResult?: Record<string, unknown>;
     }> => {
       // Get the object class from registry
       const registeredClass = ObjectRegistry.getClass(job.objectType);
@@ -559,7 +576,12 @@ export class TaskRunner extends EventEmitter {
         string,
         unknown
       >;
-      const { _agentConfig: _, _scheduleId: __, ...methodArgs } = rawArgs;
+      const {
+        _agentConfig: _,
+        _scheduleId: __,
+        _mcpTask: ___,
+        ...methodArgs
+      } = rawArgs;
 
       // Resolve any lazy / env-derived config sentinels at execute time so
       // operators can rotate env vars without rewriting persisted schedule
@@ -656,9 +678,26 @@ export class TaskRunner extends EventEmitter {
         );
       }
 
-      const result = await method.call(instance, methodArgs, executionContext);
+      const taskMarker = getMcpTaskMarker(job);
+      const result = taskMarker
+        ? await (
+            method as (...args: unknown[]) => Promise<unknown> | unknown
+          ).call(instance, ...taskMarker.invocationArgs, executionContext)
+        : await method.call(instance, methodArgs, executionContext);
 
-      return { result };
+      // Generated custom actions use an explicit `{ ok: false, ... }` return
+      // convention. A task must surface that as a failed terminal state, not
+      // a successfully completed task whose payload happens to describe an
+      // error.
+      if (taskMarker) {
+        const failure = normalizeCustomActionFailure(result);
+        if (failure) throw new Error(failure.message);
+      }
+
+      return {
+        result,
+        ...(taskMarker ? { taskResult: createMcpTaskResult(result) } : {}),
+      };
     };
 
     if (job.tenantId) {
@@ -804,6 +843,18 @@ export class TaskRunner extends EventEmitter {
           data,
         });
       },
+      ...(job.taskId && this.db
+        ? {
+            task: {
+              requestInput: (inputRequests: Record<string, unknown>) =>
+                requestMcpTaskInput(
+                  this.db as DatabaseInterface,
+                  job,
+                  inputRequests,
+                ),
+            },
+          }
+        : {}),
     };
   }
 

@@ -64,6 +64,14 @@ export interface RuntimeOptions {
       legacyOptions: boolean;
     }
   >;
+  /** Task-enabled item custom actions. Never emitted in tools/list. */
+  taskActions?: Record<
+    string,
+    {
+      objectName: string;
+      objectType: string;
+    }
+  >;
 
   /**
    * Lowercased simple names of objects that are `@TenantScoped` (#1554). When
@@ -97,6 +105,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     debug = false,
     tools = [],
     customActions = {},
+    taskActions = {},
     tenantScopedObjects = [],
     stiTargets = {},
     toolListCacheHint = { ttlMs: 86_400_000, cacheScope: 'private' },
@@ -104,6 +113,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
 
   // Generate static tool array as TypeScript code
   const toolsCode = tools.length > 0 ? JSON.stringify(tools, null, 2) : '[]';
+  const hasTaskActions = Object.keys(taskActions).length > 0;
 
   // Fail-closed tenant context (#1554): only wire the tenancy gate when at
   // least one exposed object is tenant-scoped, so apps without tenancy never
@@ -296,14 +306,16 @@ import {
   type CallToolRequest,
   type ListToolsRequest,
   Server,
+  ${hasTaskActions ? 'specTypeSchemas,' : ''}
 } from '@modelcontextprotocol/server';
-import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { ${hasTaskActions ? 'StdioServerTransport, ' : ''}serveStdio } from '@modelcontextprotocol/server/stdio';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { loadConfig } from '@happyvertical/smrt-config';
+${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
 const SERVER_NAME = ${JSON.stringify(name)};
@@ -315,6 +327,7 @@ const DEBUG = ${debug};
 const TOOLS = ${toolsCode};
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
+const TASK_ACTIONS = ${JSON.stringify(taskActions)};
 const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 ${
   hasTenantScoped
@@ -426,6 +439,215 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
   };
 }
 
+${
+  hasTaskActions
+    ? `
+// The bundled SDK validates tools/call responses against its older result
+// codec, which does not yet know CreateTaskResult. Intercept the extension at
+// the transport boundary, then pass every non-task message untouched to the
+// SDK server. This keeps ordinary MCP behaviour and version negotiation owned
+// by the SDK while making the extension available today.
+const MCP_TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
+let taskRuntime: Promise<{ store: McpTaskStore; runner: TaskRunner }> | undefined;
+
+function clientSupportsTasks(message: any): boolean {
+  return message?.params?._meta?.['io.modelcontextprotocol/clientCapabilities']
+    ?.extensions?.[MCP_TASKS_EXTENSION] !== undefined;
+}
+
+/** Validate the 2026 request envelope before task dispatch mutates a job. */
+function taskEnvelopeError(message: any): { code: number; message: string; data?: any } | undefined {
+  const meta = message?.params?._meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return {
+      code: -32602,
+      message: 'Request is missing the required _meta envelope for protocol revision 2026-07-28',
+    };
+  }
+  const protocolVersion = meta['io.modelcontextprotocol/protocolVersion'];
+  if (protocolVersion !== '2026-07-28') {
+    return typeof protocolVersion === 'string'
+      ? {
+          code: -32022,
+          message: 'Unsupported protocol version: ' + protocolVersion,
+          data: { supported: ['2026-07-28'], requested: protocolVersion },
+        }
+      : {
+          code: -32602,
+          message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/protocolVersion must be a string',
+        };
+  }
+  if (!specTypeSchemas.ClientCapabilities.safeParse(
+    meta['io.modelcontextprotocol/clientCapabilities'],
+  ).success) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/clientCapabilities is invalid',
+    };
+  }
+  if (
+    meta['io.modelcontextprotocol/clientInfo'] !== undefined &&
+    !specTypeSchemas.Implementation.safeParse(
+      meta['io.modelcontextprotocol/clientInfo'],
+    ).success
+  ) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/clientInfo is invalid',
+    };
+  }
+  if (
+    meta['io.modelcontextprotocol/logLevel'] !== undefined &&
+    !specTypeSchemas.LoggingLevel.safeParse(
+      meta['io.modelcontextprotocol/logLevel'],
+    ).success
+  ) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/logLevel is invalid',
+    };
+  }
+  if (
+    meta.progressToken !== undefined &&
+    !specTypeSchemas.ProgressToken.safeParse(meta.progressToken).success
+  ) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: progressToken is invalid',
+    };
+  }
+  return undefined;
+}
+
+function jsonRpcError(id: any, code: number, message: string, data?: any) {
+  return { jsonrpc: '2.0', id, error: { code, message, ...(data === undefined ? {} : { data }) } };
+}
+
+async function getTaskRuntime() {
+  if (!taskRuntime) {
+    taskRuntime = (async () => {
+      const firstAction = Object.values(TASK_ACTIONS)[0] as { objectName: string } | undefined;
+      if (!firstAction) throw new Error('No task-enabled MCP action is configured');
+      const collection = await ObjectRegistry.getCollection(firstAction.objectName, {
+        persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
+      });
+      const db = collection.db;
+      const store = await McpTaskStore.create(db, { ownerId: process.env.SMRT_MCP_TENANT_ID || null });
+      const runner = new TaskRunner({ queues: ['mcp-tasks'] });
+      await runner.initialize(db);
+      await runner.start();
+      return { store, runner };
+    })();
+  }
+  return taskRuntime;
+}
+
+function taskInvocationArgs(actionMeta: any, args: Record<string, any>): any[] {
+  const { id: _id, options, ...directArgs } = args;
+  if (actionMeta.legacyOptions) {
+    return [Object.keys(options ?? {}).length > 0 ? options : directArgs];
+  }
+  if (actionMeta.optionsParameter) return [options];
+  const parameterNames = actionMeta.parameterNames || [];
+  const invocationParameterNames = parameterNames.at(-1) === 'context'
+    ? parameterNames.slice(0, -1)
+    : parameterNames;
+  return invocationParameterNames.map((parameterName: string) =>
+    args[parameterName === 'id' ? 'actionId' : parameterName],
+  );
+}
+
+async function handleTaskExtensionMessage(message: any): Promise<any | null> {
+  if (!message || typeof message !== 'object' || message.id === undefined) return null;
+  const method = message.method;
+  const params = message.params ?? {};
+  const action = method === 'tools/call' ? TASK_ACTIONS[params.name] : undefined;
+  const isTaskMethod = action || ['tasks/get', 'tasks/update', 'tasks/cancel'].includes(method);
+  if (!isTaskMethod) return null;
+  // A task-enabled tool retains its normal synchronous behaviour until its
+  // client explicitly opts into Tasks. Do not impose the task envelope on
+  // legacy calls that will be passed untouched to the SDK.
+  if (!clientSupportsTasks(message) && method === 'tools/call') return null;
+  const envelopeError = taskEnvelopeError(message);
+  if (envelopeError) {
+    return jsonRpcError(message.id, envelopeError.code, envelopeError.message, envelopeError.data);
+  }
+  if (!clientSupportsTasks(message)) {
+    // A task-only method cannot fall back to a legacy response shape. A task
+    // tool can still run normally when the client did not opt in, so let the
+    // SDK handle that direct tools/call path.
+    if (method === 'tools/call') return null;
+    return jsonRpcError(message.id, -32021, 'Missing required client capability', {
+      requiredCapabilities: { extensions: { [MCP_TASKS_EXTENSION]: {} } },
+    });
+  }
+  try {
+    const { store } = await getTaskRuntime();
+    if (action) {
+      if (typeof params.arguments?.id !== 'string') {
+        return jsonRpcError(message.id, -32602, 'Task-enabled custom actions require an id');
+      }
+      const actionMeta = CUSTOM_ACTIONS[params.name];
+      const task = await store.createTask({
+        objectType: action.objectType,
+        objectId: params.arguments.id,
+        method: actionMeta.methodName || params.name.slice(params.name.indexOf('_') + 1),
+        invocationArgs: taskInvocationArgs(actionMeta, params.arguments),
+        tenantId: ${hasTenantScoped ? 'MCP_TENANT_ID ?? null' : 'null'},
+      });
+      return { jsonrpc: '2.0', id: message.id, result: { resultType: 'task', content: [], structuredContent: {}, ...task } };
+    }
+    if (typeof params.taskId !== 'string') {
+      return jsonRpcError(message.id, -32602, 'taskId is required');
+    }
+    if (method === 'tasks/get') {
+      const task = await store.getTask(params.taskId);
+      return { jsonrpc: '2.0', id: message.id, result: { resultType: 'complete', ...task } };
+    }
+    if (method === 'tasks/update') {
+      await store.updateTask(
+        params.taskId,
+        params.inputResponses && typeof params.inputResponses === 'object'
+          ? params.inputResponses
+          : {},
+      );
+      return { jsonrpc: '2.0', id: message.id, result: { resultType: 'complete' } };
+    }
+    await store.cancelTask(params.taskId);
+    return { jsonrpc: '2.0', id: message.id, result: { resultType: 'complete' } };
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : 'Task operation failed';
+    return jsonRpcError(message.id, -32602, messageText);
+  }
+}
+
+class McpTaskExtensionTransport {
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (message: any) => void;
+
+  constructor(private readonly wire: StdioServerTransport) {}
+
+  async start() {
+    this.wire.onclose = () => this.onclose?.();
+    this.wire.onerror = (error) => this.onerror?.(error);
+    this.wire.onmessage = (message) => {
+      void (async () => {
+        const response = await handleTaskExtensionMessage(message);
+        if (response) await this.wire.send(response);
+        else this.onmessage?.(message);
+      })().catch((error) => this.onerror?.(error instanceof Error ? error : new Error(String(error))));
+    };
+    await this.wire.start();
+  }
+
+  close() { return this.wire.close(); }
+  send(message: any) { return this.wire.send(message); }
+}
+`
+    : ''
+}
+
 /**
  * Main server startup function
  */
@@ -456,6 +678,16 @@ ${
       ObjectRegistry.loadAllManifests({ manifestPaths: localManifestPaths });
     }
 
+    // A manifest supplies schemas and tool metadata, while an executable
+    // custom action also needs the application's actual class constructor.
+    // Consumer builds generate this registration module; load it after the
+    // manifest so decorators enrich the already-known metadata.
+    const localRegisterPath = process.env.SMRT_MCP_REGISTER_PATH
+      || resolve(process.cwd(), '.smrt', 'register.js');
+    if (existsSync(localRegisterPath)) {
+      await import(pathToFileURL(localRegisterPath).href);
+    }
+
     // Load configuration from environment and .smrt.config files
     const appConfig = await loadConfig();
     const aiConfig = appConfig?.ai || {};
@@ -474,6 +706,7 @@ ${
       {
         capabilities: {
           tools: {},
+          ${hasTaskActions ? "extensions: { 'io.modelcontextprotocol/tasks': {} }," : ''}
         },
         cacheHints: {
           'tools/list': TOOL_LIST_CACHE_HINT,
@@ -548,11 +781,18 @@ ${
 
 async function main() {
   try {
-    const handle = serveStdio(() => createServer(), {
+    // Initialize the registry before accepting an intercepted task call. The
+    // SDK would normally invoke this factory for the first regular message,
+    // but task calls can be the first message on a stdio connection.
+    const server = await createServer();
+    const transport = ${hasTaskActions ? 'new McpTaskExtensionTransport(new StdioServerTransport())' : 'undefined'};
+    const handle = serveStdio(() => server, {
+      ...(transport ? { transport } : {}),
       onerror: (error) => console.error('[MCP] Protocol error:', error),
     });
     const shutdown = async () => {
       if (DEBUG) console.error('[MCP] Shutting down gracefully');
+      ${hasTaskActions ? 'if (taskRuntime) {\n        const { runner } = await taskRuntime;\n        await runner.stop();\n      }' : ''}
       await handle.close();
       process.exit(0);
     };

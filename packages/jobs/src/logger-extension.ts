@@ -39,6 +39,16 @@ export interface JobExecutionContext {
     message: string,
     data?: Record<string, unknown>,
   ): Promise<void>;
+  /**
+   * Present only for a job created by the MCP Tasks extension. Calling this
+   * persists an input request and resolves after `tasks/update` supplies every
+   * requested key (or rejects cooperatively if the task is cancelled).
+   */
+  task?: {
+    requestInput(
+      inputRequests: Record<string, unknown>,
+    ): Promise<Record<string, unknown>>;
+  };
 }
 
 /**

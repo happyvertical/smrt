@@ -16,13 +16,16 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain("from '@modelcontextprotocol/server/stdio'");
     expect(source).toContain("setRequestHandler('tools/list'");
     expect(source).toContain("setRequestHandler('tools/call'");
-    expect(source).toContain('serveStdio(() => createServer()');
+    expect(source).toContain('const server = await createServer()');
+    expect(source).toContain('serveStdio(() => server');
     expect(source).toContain('await loadConfig()');
     expect(source).toContain('structuredContent');
     expect(source).toContain('function successResult');
     expect(source).toContain('function errorResult');
     expect(source).toContain('function resolveCreateTarget');
     expect(source).toContain('ObjectRegistry.loadAllManifests');
+    expect(source).toContain('SMRT_MCP_REGISTER_PATH');
+    expect(source).toContain("resolve(process.cwd(), '.smrt', 'register.js')");
     expect(source).not.toContain('@modelcontextprotocol/sdk');
     expect(source).not.toContain('initialize');
   });
@@ -44,6 +47,28 @@ describe('generated MCP custom-action runtime (#2182)', () => {
     expect(source).toContain(
       'tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)',
     );
+  });
+
+  it('emits the Tasks extension only for eligible generated actions', () => {
+    const disabled = generateRuntimeBootstrap({ tools: [], taskActions: {} });
+    const enabled = generateRuntimeBootstrap({
+      tools: [],
+      taskActions: {
+        report_generate: {
+          objectName: 'Report',
+          objectType: '@test/reports:Report',
+        },
+      },
+    });
+
+    expect(disabled).not.toContain(
+      "extensions: { 'io.modelcontextprotocol/tasks': {} }",
+    );
+    expect(enabled).toContain(
+      "extensions: { 'io.modelcontextprotocol/tasks': {} }",
+    );
+    expect(enabled).toContain('class McpTaskExtensionTransport');
+    expect(enabled).toContain('new McpTaskExtensionTransport');
   });
 
   it('requires an explicit global-catalog opt-in and never shares tenant catalogs', () => {
