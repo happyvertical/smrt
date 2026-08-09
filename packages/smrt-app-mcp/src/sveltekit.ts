@@ -14,7 +14,11 @@
  * ```
  */
 
-import { createMcpHandler } from '@modelcontextprotocol/server';
+import {
+  classifyInboundRequest,
+  createMcpHandler,
+  isJsonContentType,
+} from '@modelcontextprotocol/server';
 import { McpAccessError } from './errors.js';
 import { createMcpProtocolServer, MCP_TASKS_EXTENSION } from './protocol.js';
 import type { CallToolInput, McpAppPrincipal, McpAppServer } from './server.js';
@@ -166,7 +170,6 @@ async function maybeHandleTaskRequest(
 ): Promise<Response | null> {
   if (
     !server.tasksEnabled ||
-    !server.hasTaskSupport ||
     !server.callTask ||
     !server.getTask ||
     !server.updateTask ||
@@ -189,12 +192,45 @@ async function maybeHandleTaskRequest(
   const taskTool =
     body.method === 'tools/call' &&
     typeof params.name === 'string' &&
-    (await server.hasTaskSupport()) &&
     (await server.isTaskTool?.(params.name)) === true;
   const taskMethod = ['tasks/get', 'tasks/update', 'tasks/cancel'].includes(
     body.method ?? '',
   );
   if (!taskTool && !taskMethod) return null;
+
+  // Keep task requests on the SDK's protocol-validation path until their
+  // 2026 request envelope is known-good. In particular, never enqueue durable
+  // work for malformed envelopes, unsupported revisions, or non-JSON bodies.
+  // The fallback handler owns its wire-exact error response for those cases.
+  if (!isJsonContentType(request.headers.get('content-type'))) return null;
+  const classification = classifyInboundRequest({
+    httpMethod: request.method,
+    protocolVersionHeader:
+      request.headers.get('mcp-protocol-version') ?? undefined,
+    mcpMethodHeader: request.headers.get('mcp-method') ?? undefined,
+    mcpNameHeader: request.headers.get('mcp-name') ?? undefined,
+    body: body as never,
+  });
+  if (classification.kind === 'reject') {
+    return jsonRpcResponse(
+      body.id,
+      undefined,
+      {
+        code: classification.code,
+        message: classification.message,
+        ...(classification.data === undefined
+          ? {}
+          : { data: classification.data }),
+      },
+      classification.httpStatus,
+    );
+  }
+  if (
+    classification.kind !== 'modern' ||
+    classification.classification.revision !== '2026-07-28'
+  ) {
+    return null;
+  }
 
   // The SDK normally performs this modern HTTP routing validation before
   // dispatch. Task responses are intercepted ahead of that SDK handler, so
@@ -284,15 +320,23 @@ function taskHeaderMismatch(
   method: string | undefined,
   params: Record<string, unknown>,
 ): { code: number; message: string } | undefined {
-  if (!method || request.headers.get('mcp-method') !== method) {
+  if (
+    !method ||
+    normalizeHeaderValue(request.headers.get('mcp-method') ?? '') !== method
+  ) {
     return {
       code: -32020,
       message: 'Mcp-Method header must match the JSON-RPC method.',
     };
   }
+  const toolName =
+    method === 'tools/call' && typeof params.name === 'string'
+      ? params.name
+      : undefined;
+  const headerName = request.headers.get('mcp-name');
   if (
-    method === 'tools/call' &&
-    request.headers.get('mcp-name') !== params.name
+    toolName !== undefined &&
+    (headerName === null || decodeMcpHeaderValue(headerName) !== toolName)
   ) {
     return {
       code: -32020,
@@ -300,6 +344,35 @@ function taskHeaderMismatch(
     };
   }
   return undefined;
+}
+
+/** Match the SDK's RFC 9110 optional-whitespace handling for MCP headers. */
+function normalizeHeaderValue(value: string): string {
+  return value.replace(/^[\t ]+|[\t ]+$/g, '');
+}
+
+/** Decode the SDK's canonical Base64 sentinel for an MCP header value. */
+function decodeMcpHeaderValue(value: string): string | undefined {
+  const normalized = normalizeHeaderValue(value);
+  const prefix = '=?base64?';
+  if (!normalized.startsWith(prefix) || !normalized.endsWith('?=')) {
+    return normalized;
+  }
+  const encoded = normalized.slice(prefix.length, -2);
+  if (
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      encoded,
+    )
+  ) {
+    return undefined;
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(
+      Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0)),
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 function jsonRpcResponse(

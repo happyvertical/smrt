@@ -203,6 +203,51 @@ describe('generated Tier-1 MCP 2026-07-28 conformance', () => {
     }
   });
 
+  it('rejects an invalid stdio task envelope before creating a durable job', async () => {
+    const transport = openRawStdio();
+    try {
+      const before = await fixtureDb.query(
+        'SELECT task_id FROM _smrt_jobs WHERE task_id IS NOT NULL',
+      );
+      const malformedEnvelopes = [
+        {
+          code: -32602,
+          meta: {
+            [CLIENT_CAPABILITIES_META_KEY]: {
+              extensions: { 'io.modelcontextprotocol/tasks': {} },
+            },
+          },
+        },
+        {
+          code: -32022,
+          meta: {
+            [PROTOCOL_VERSION_META_KEY]: '2025-06-18',
+            [CLIENT_CAPABILITIES_META_KEY]: {
+              extensions: { 'io.modelcontextprotocol/tasks': {} },
+            },
+          },
+        },
+      ];
+      for (const { code, meta } of malformedEnvelopes) {
+        const response = await transport.request(
+          'tools/call',
+          {
+            name: 'conformancetaskwidget_slowgenerate',
+            arguments: { id: taskWidget.id, options: { prompt: 'invalid' } },
+          },
+          { meta },
+        );
+        expect(response.error).toMatchObject({ code });
+      }
+      const jobs = await fixtureDb.query(
+        'SELECT task_id FROM _smrt_jobs WHERE task_id IS NOT NULL',
+      );
+      expect(jobs.rows).toEqual(before.rows);
+    } finally {
+      await transport.close();
+    }
+  });
+
   it('creates an advertised STI subtype through the generated runtime', async () => {
     const transport = new StdioClientTransport({
       command: tsxBin,
@@ -376,7 +421,11 @@ function openRawStdio() {
   });
 
   return {
-    request(method: string, params: Record<string, unknown>) {
+    request(
+      method: string,
+      params: Record<string, unknown>,
+      options: { meta?: Record<string, unknown> } = {},
+    ) {
       const id = ++sequence;
       const request = {
         jsonrpc: '2.0',
@@ -384,7 +433,7 @@ function openRawStdio() {
         method,
         params: {
           ...params,
-          _meta: {
+          _meta: options.meta ?? {
             [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
             [CLIENT_INFO_META_KEY]: {
               name: 'generated-task-fixture',

@@ -53,7 +53,9 @@ function taskEvent(
   options: {
     mcpMethod?: string | null;
     mcpName?: string | null;
+    protocolVersionHeader?: string | null;
     taskCapability?: boolean;
+    meta?: Record<string, unknown>;
   } = {},
 ) {
   const url = new URL('https://example.com/api/mcp');
@@ -64,7 +66,12 @@ function taskEvent(
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'mcp-protocol-version': '2026-07-28',
+        ...(options.protocolVersionHeader === null
+          ? {}
+          : {
+              'mcp-protocol-version':
+                options.protocolVersionHeader ?? '2026-07-28',
+            }),
         ...(options.mcpMethod === null
           ? {}
           : { 'mcp-method': options.mcpMethod ?? method }),
@@ -80,7 +87,7 @@ function taskEvent(
         method,
         params: {
           ...params,
-          _meta: {
+          _meta: options.meta ?? {
             'io.modelcontextprotocol/protocolVersion': '2026-07-28',
             'io.modelcontextprotocol/clientInfo': {
               name: 'app-task-test',
@@ -406,6 +413,36 @@ describe('app MCP Tasks extension', () => {
         ),
         code: -32021,
       },
+      {
+        event: taskEvent(
+          'tools/call',
+          {
+            name: 'apptaskprobe_slow',
+            arguments: { id: probe.id, options: {} },
+          },
+          { id: 'principal-a' },
+          {
+            meta: {
+              'io.modelcontextprotocol/clientCapabilities': {
+                extensions: { 'io.modelcontextprotocol/tasks': {} },
+              },
+            },
+          },
+        ),
+        code: -32602,
+      },
+      {
+        event: taskEvent(
+          'tools/call',
+          {
+            name: 'apptaskprobe_slow',
+            arguments: { id: probe.id, options: {} },
+          },
+          { id: 'principal-a' },
+          { protocolVersionHeader: '2025-06-18' },
+        ),
+        code: -32020,
+      },
     ];
 
     for (const { event, code } of requests) {
@@ -413,5 +450,50 @@ describe('app MCP Tasks extension', () => {
       expect(response.status).toBe(400);
       expect((await response.json()).error.code).toBe(code);
     }
+    const taskJobs = await db.query(
+      'SELECT task_id FROM _smrt_jobs WHERE task_id IS NOT NULL',
+    );
+    expect(taskJobs.rows).toEqual([]);
+  });
+
+  it('accepts standard whitespace and Base64-encoded MCP task headers', async () => {
+    ObjectRegistry.registerCollection('AppTaskProbe', AppTaskProbeCollection);
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['AppTaskProbe', 'SmrtJob', 'SmrtJobEvent', 'SmrtWorker'],
+    });
+    const collection = await AppTaskProbeCollection.create({ db });
+    const probe = await collection.create({
+      name: 'encoded header task probe',
+    });
+    const handler = mountMcpRoute(
+      createMcpAppServer({
+        smrtOptions: () => ({ db }),
+        serverInfo: { name: 'app-task-test', version: '0.0.0' },
+        allowedClassNames: ['AppTaskProbe'],
+      }),
+      {
+        resolvePrincipal: (event) => event.locals?.principal as { id: string },
+      },
+    );
+    const response = await handler(
+      taskEvent(
+        'tools/call',
+        {
+          name: 'apptaskprobe_slow',
+          arguments: { id: probe.id, options: {} },
+        },
+        { id: 'principal-a' },
+        {
+          mcpMethod: ' \ttools/call ',
+          mcpName: ' =?base64?YXBwdGFza3Byb2JlX3Nsb3c=?= ',
+        },
+      ),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      result: { resultType: 'task', status: 'working' },
+    });
   });
 });

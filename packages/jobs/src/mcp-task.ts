@@ -50,7 +50,10 @@ export interface McpTaskJobMarker {
 
 /** Serialize a completed task exactly as an MCP CallToolResult. */
 export function createMcpTaskResult(result: unknown): Record<string, unknown> {
-  const publicResult = toPublicTaskData(result);
+  // JSON.stringify(undefined) returns undefined rather than valid JSON. The
+  // generated MCP result boundary represents non-JSON/void action results as
+  // null, so preserve that contract in the durable task payload too.
+  const publicResult = toPublicTaskData(result) ?? null;
   return {
     content: [{ type: 'text', text: JSON.stringify(publicResult) }],
     structuredContent: { data: publicResult },

@@ -126,7 +126,7 @@ that exact job without leaving a second record behind. Long-running task
 actions can request client input through `JobExecutionContext.task`:
 
 ```typescript
-async generate(context: JobExecutionContext) {
+async generate(options: Record<string, never>, context: JobExecutionContext) {
   const { tone } = await context.task!.requestInput({ tone: { type: 'string' } });
   return this.render(tone);
 }

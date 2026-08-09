@@ -306,6 +306,7 @@ import {
   type CallToolRequest,
   type ListToolsRequest,
   Server,
+  ${hasTaskActions ? 'specTypeSchemas,' : ''}
 } from '@modelcontextprotocol/server';
 import { ${hasTaskActions ? 'StdioServerTransport, ' : ''}serveStdio } from '@modelcontextprotocol/server/stdio';
 import { existsSync } from 'node:fs';
@@ -454,6 +455,70 @@ function clientSupportsTasks(message: any): boolean {
     ?.extensions?.[MCP_TASKS_EXTENSION] !== undefined;
 }
 
+/** Validate the 2026 request envelope before task dispatch mutates a job. */
+function taskEnvelopeError(message: any): { code: number; message: string; data?: any } | undefined {
+  const meta = message?.params?._meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return {
+      code: -32602,
+      message: 'Request is missing the required _meta envelope for protocol revision 2026-07-28',
+    };
+  }
+  const protocolVersion = meta['io.modelcontextprotocol/protocolVersion'];
+  if (protocolVersion !== '2026-07-28') {
+    return typeof protocolVersion === 'string'
+      ? {
+          code: -32022,
+          message: 'Unsupported protocol version: ' + protocolVersion,
+          data: { supported: ['2026-07-28'], requested: protocolVersion },
+        }
+      : {
+          code: -32602,
+          message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/protocolVersion must be a string',
+        };
+  }
+  if (!specTypeSchemas.ClientCapabilities.safeParse(
+    meta['io.modelcontextprotocol/clientCapabilities'],
+  ).success) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/clientCapabilities is invalid',
+    };
+  }
+  if (
+    meta['io.modelcontextprotocol/clientInfo'] !== undefined &&
+    !specTypeSchemas.Implementation.safeParse(
+      meta['io.modelcontextprotocol/clientInfo'],
+    ).success
+  ) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/clientInfo is invalid',
+    };
+  }
+  if (
+    meta['io.modelcontextprotocol/logLevel'] !== undefined &&
+    !specTypeSchemas.LoggingLevel.safeParse(
+      meta['io.modelcontextprotocol/logLevel'],
+    ).success
+  ) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: io.modelcontextprotocol/logLevel is invalid',
+    };
+  }
+  if (
+    meta.progressToken !== undefined &&
+    !specTypeSchemas.ProgressToken.safeParse(meta.progressToken).success
+  ) {
+    return {
+      code: -32602,
+      message: 'Invalid _meta envelope for protocol revision 2026-07-28: progressToken is invalid',
+    };
+  }
+  return undefined;
+}
+
 function jsonRpcError(id: any, code: number, message: string, data?: any) {
   return { jsonrpc: '2.0', id, error: { code, message, ...(data === undefined ? {} : { data }) } };
 }
@@ -499,6 +564,14 @@ async function handleTaskExtensionMessage(message: any): Promise<any | null> {
   const action = method === 'tools/call' ? TASK_ACTIONS[params.name] : undefined;
   const isTaskMethod = action || ['tasks/get', 'tasks/update', 'tasks/cancel'].includes(method);
   if (!isTaskMethod) return null;
+  // A task-enabled tool retains its normal synchronous behaviour until its
+  // client explicitly opts into Tasks. Do not impose the task envelope on
+  // legacy calls that will be passed untouched to the SDK.
+  if (!clientSupportsTasks(message) && method === 'tools/call') return null;
+  const envelopeError = taskEnvelopeError(message);
+  if (envelopeError) {
+    return jsonRpcError(message.id, envelopeError.code, envelopeError.message, envelopeError.data);
+  }
   if (!clientSupportsTasks(message)) {
     // A task-only method cannot fall back to a legacy response shape. A task
     // tool can still run normally when the client did not opt in, so let the

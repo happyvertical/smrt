@@ -16,6 +16,9 @@ class McpTaskProbe extends SmrtObject {
   name = '';
 
   @backgroundEligible()
+  async voidResult(): Promise<void> {}
+
+  @backgroundEligible()
   async slow(
     options: { value: string },
     _context?: JobExecutionContext,
@@ -120,6 +123,36 @@ describe('MCP Tasks durable jobs adapter', () => {
       expect(completed.result).toEqual({
         content: [{ type: 'text', text: JSON.stringify({ value: 'done' }) }],
         structuredContent: { data: { value: 'done' } },
+      });
+    } finally {
+      await runner.stop();
+    }
+  });
+
+  it('normalizes a void action result to valid JSON in the durable task payload', async () => {
+    const { db, probe } = await createProbe();
+    const store = await McpTaskStore.create(db, { ownerId: 'principal-a' });
+    const created = await store.createTask({
+      objectType: 'McpTaskProbe',
+      objectId: probe.id ?? '',
+      method: 'voidResult',
+      invocationArgs: [],
+    });
+    const runner = new TaskRunner({
+      queues: ['mcp-tasks'],
+      pollInterval: 5,
+      concurrency: 1,
+    });
+    await runner.initialize(db);
+    await runner.start();
+    try {
+      const completed = await waitFor(
+        () => store.getTask(created.taskId),
+        (task) => task.status === 'completed',
+      );
+      expect(completed.result).toEqual({
+        content: [{ type: 'text', text: 'null' }],
+        structuredContent: { data: null },
       });
     } finally {
       await runner.stop();
