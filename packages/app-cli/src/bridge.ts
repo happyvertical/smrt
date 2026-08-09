@@ -46,6 +46,16 @@ import {
 /** Namespace shared with the published SMRT app-result contract. */
 export { SMRT_MCP_RESULT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
 
+const MCP_STABLE_CATALOG_TTL_MS = 86_400_000;
+const PRIVATE_TOOL_LIST_CACHE_HINT = {
+  ttlMs: MCP_STABLE_CATALOG_TTL_MS,
+  cacheScope: 'private' as const,
+};
+
+function compareToolNames(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 /**
  * Configuration for the bridge.
  *
@@ -81,6 +91,7 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
 
   const server = new Server(options.serverInfo, {
     capabilities: { tools: {} },
+    cacheHints: { 'tools/list': PRIVATE_TOOL_LIST_CACHE_HINT },
   });
 
   server.setRequestHandler(
@@ -93,7 +104,14 @@ export function createMcpStdioBridge(options: McpStdioBridgeOptions): {
         { fetch: options.fetch },
       );
       if (!outcome.ok) throw toMcpTransportError(outcome.error);
-      return withMcpMetadata(outcome.result, outcome.metadata);
+      const result = withMcpMetadata(outcome.result, outcome.metadata);
+      return {
+        ...result,
+        tools: [...result.tools].sort((left, right) =>
+          compareToolNames(left.name, right.name),
+        ),
+        ...PRIVATE_TOOL_LIST_CACHE_HINT,
+      };
     },
   );
 

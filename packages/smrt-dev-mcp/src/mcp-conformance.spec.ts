@@ -47,7 +47,34 @@ describe('smrt-dev-mcp MCP 2026-07-28 conformance', () => {
       _meta: { [SERVER_INFO_META_KEY]: { name: 'smrt-dev-mcp' } },
     });
     const list = await modernRequest(handler, 'tools/list');
-    expect(list.body.result.resultType).toBe('complete');
+    expect(list.body.result).toMatchObject({
+      resultType: 'complete',
+      ttlMs: 86_400_000,
+      cacheScope: 'private',
+    });
+
+    const prompts = await modernRequest(handler, 'prompts/list');
+    expect(prompts.body.result).toMatchObject({
+      ttlMs: 86_400_000,
+      cacheScope: 'private',
+    });
+
+    const resources = await modernRequest(handler, 'resources/list');
+    expect(resources.body.result).toMatchObject({
+      ttlMs: 0,
+      cacheScope: 'private',
+    });
+
+    const read = await modernRequest(
+      handler,
+      'resources/read',
+      'resources/read',
+      { uri: 'smrt-dev-mcp://agent-skills/smrt-code-review' },
+    );
+    expect(read.body.result).toMatchObject({
+      ttlMs: 0,
+      cacheScope: 'private',
+    });
 
     const mismatch = await modernRequest(
       handler,
@@ -97,7 +124,14 @@ async function modernRequest(
   target: McpHttpHandler,
   method: string,
   headerMethod = method,
+  params: Record<string, unknown> = {},
 ) {
+  const mcpName =
+    typeof params.name === 'string'
+      ? params.name
+      : typeof params.uri === 'string'
+        ? params.uri
+        : undefined;
   const response = await target.fetch(
     new Request('http://localhost/mcp', {
       method: 'POST',
@@ -105,12 +139,14 @@ async function modernRequest(
         'content-type': 'application/json',
         'mcp-method': headerMethod,
         'mcp-protocol-version': '2026-07-28',
+        ...(mcpName === undefined ? {} : { 'mcp-name': mcpName }),
       },
       body: JSON.stringify({
         jsonrpc: '2.0',
         id: 1,
         method,
         params: {
+          ...params,
           _meta: {
             [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
             [CLIENT_INFO_META_KEY]: {

@@ -41,12 +41,27 @@ const DOMAIN_CODE_REVIEW_PROMPT = 'domain-code-review';
 const DOMAIN_ARCHITECTURE_PROMPT = 'domain-architecture';
 const KNOWLEDGE_PROJECT_URI = 'smrt://knowledge/project';
 const KNOWLEDGE_PACKAGE_PREFIX = 'smrt://knowledge/package/';
+const DEPLOY_STATIC_CATALOG_CACHE_HINT = {
+  ttlMs: 86_400_000,
+  cacheScope: 'private' as const,
+};
+// Knowledge resources are rebuilt from the workspace on every request. There
+// is no transport-visible project-graph invalidation signal, so a nonzero TTL
+// would promise stale data could not be served after an edit.
+const LIVE_KNOWLEDGE_CACHE_HINT = {
+  ttlMs: 0,
+  cacheScope: 'private' as const,
+};
 
 type KnowledgeIndexResult = Awaited<ReturnType<typeof buildKnowledgeIndex>>;
 type KnowledgePackageResult = KnowledgeIndexResult['packages'][number];
 type PromptArguments = Record<string, string> | undefined;
 
 const JSON_SCHEMA_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
+
+function compareToolNames(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 
 /**
  * Stable success/error envelope for development tools. `data` preserves each
@@ -513,7 +528,7 @@ export const TOOLS: Tool[] = TOOL_DEFINITIONS.map((tool) => ({
     $schema: JSON_SCHEMA_2020_12,
   },
   outputSchema: DEV_MCP_OUTPUT_SCHEMA,
-}));
+})).sort((left, right) => compareToolNames(left.name, right.name));
 
 export function createServer(): Server {
   if (DEBUG) {
@@ -530,6 +545,12 @@ export function createServer(): Server {
         prompts: {},
         resources: {},
         tools: {},
+      },
+      cacheHints: {
+        'tools/list': DEPLOY_STATIC_CATALOG_CACHE_HINT,
+        'prompts/list': DEPLOY_STATIC_CATALOG_CACHE_HINT,
+        'resources/list': LIVE_KNOWLEDGE_CACHE_HINT,
+        'resources/read': LIVE_KNOWLEDGE_CACHE_HINT,
       },
     },
   );

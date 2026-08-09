@@ -85,3 +85,11 @@ export function isAllowedCoreTool(
   }
   return false;
 }
+
+/**
+ * Compare tool names by Unicode code unit, rather than the host locale, so a
+ * catalog has one byte-stable order across every runtime.
+ */
+export function compareMcpToolNames(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}

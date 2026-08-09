@@ -5,6 +5,7 @@
  * workflow-assertion paths in isolation.
  */
 
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MCP_TOOL_ACCESS_DENIED_CODE, McpAccessError } from '../errors.js';
 import { createMcpAppServer } from '../server.js';
@@ -21,7 +22,7 @@ vi.mock('@happyvertical/smrt-core/generators/mcp', () => {
       return handleToolCallMock(request);
     }
   }
-  return { MCPGenerator };
+  return { MCPGenerator, MCP_STABLE_CATALOG_TTL_MS: 86_400_000 };
 });
 
 function tool(name: string) {
@@ -286,5 +287,79 @@ describe('createMcpAppServer', () => {
       (await server.listTools({ authenticated: false })).map((t) => t.name),
     ).toEqual(['opportunity_get', 'opportunity_list']);
     expect(publicToolPatterns).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps tool catalogs private unless every tool explicitly opts into a safe public catalog', async () => {
+    generateToolsMock.mockResolvedValue([
+      tool('opportunity_list'),
+      tool('opportunity_get'),
+    ]);
+    const defaultServer = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+      publicToolPatterns: () => ['opportunity_*'],
+    });
+    await expect(defaultServer.getToolsListCacheHint?.()).resolves.toEqual({
+      ttlMs: 86_400_000,
+      cacheScope: 'private',
+    });
+
+    const publicServer = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+      publicToolPatterns: () => ['opportunity_*'],
+      toolListCache: { cacheScope: 'public', publicCatalog: true },
+    });
+    await expect(publicServer.getToolsListCacheHint?.()).resolves.toEqual({
+      ttlMs: 86_400_000,
+      cacheScope: 'public',
+    });
+
+    generateToolsMock.mockResolvedValue([
+      tool('opportunity_list'),
+      tool('opportunity_create'),
+    ]);
+    const mixedServer = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['Opportunity'],
+      publicToolPatterns: () => ['opportunity_*'],
+      toolListCache: { cacheScope: 'public', publicCatalog: true },
+    });
+    await expect(mixedServer.getToolsListCacheHint?.()).resolves.toMatchObject({
+      cacheScope: 'private',
+    });
+  });
+
+  it('keeps explicitly public catalogs private when a registered tool is tenant-scoped', async () => {
+    generateToolsMock.mockResolvedValue([tool('CacheMetadataTenant_list')]);
+    const allClasses = vi
+      .spyOn(ObjectRegistry, 'getAllClasses')
+      .mockReturnValue(
+        new Map([
+          ['CacheMetadataTenant', { name: 'CacheMetadataTenant' }],
+        ]) as ReturnType<typeof ObjectRegistry.getAllClasses>,
+      );
+    const isTenantScoped = vi
+      .spyOn(ObjectRegistry, 'isTenantScoped')
+      .mockReturnValue(true);
+    const server = createMcpAppServer({
+      smrtOptions: () => ({}),
+      serverInfo: { name: 'app', version: '0.1.0' },
+      allowedClassNames: ['CacheMetadataTenant'],
+      publicToolPatterns: () => ['CacheMetadataTenant_*'],
+      toolListCache: { cacheScope: 'public', publicCatalog: true },
+    });
+
+    try {
+      await expect(server.getToolsListCacheHint?.()).resolves.toMatchObject({
+        cacheScope: 'private',
+      });
+    } finally {
+      allClasses.mockRestore();
+      isTenantScoped.mockRestore();
+    }
   });
 });

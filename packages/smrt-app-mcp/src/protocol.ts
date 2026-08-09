@@ -9,6 +9,12 @@ import {
 } from '@modelcontextprotocol/server';
 import { McpAccessError } from './errors.js';
 import type { McpAppPrincipal, McpAppServer } from './server.js';
+import { compareMcpToolNames } from './tools.js';
+
+const DEFAULT_TOOL_LIST_CACHE_HINT = {
+  ttlMs: 86_400_000,
+  cacheScope: 'private' as const,
+};
 
 export interface McpProtocolServerOptions {
   /** Resolve the authenticated application principal for each MCP request. */
@@ -41,13 +47,21 @@ export function createMcpProtocolServer(
 ): Server {
   const server = new Server(appServer.serverInfo, {
     capabilities: { tools: {} },
+    cacheHints: { 'tools/list': DEFAULT_TOOL_LIST_CACHE_HINT },
   });
 
-  server.setRequestHandler('tools/list', async (_request, context) => ({
-    tools: (await appServer.listTools({
-      principal: await resolvePrincipal(options.principal, context),
-    })) as Tool[],
-  }));
+  server.setRequestHandler('tools/list', async (_request, context) => {
+    const principal = await resolvePrincipal(options.principal, context);
+    const cacheHint =
+      (await appServer.getToolsListCacheHint?.()) ??
+      DEFAULT_TOOL_LIST_CACHE_HINT;
+    return {
+      tools: [...(await appServer.listTools({ principal }))].sort(
+        (left, right) => compareMcpToolNames(left.name, right.name),
+      ) as Tool[],
+      ...cacheHint,
+    };
+  });
 
   server.setRequestHandler('tools/call', async (request, context) => {
     try {

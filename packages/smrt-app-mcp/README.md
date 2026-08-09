@@ -2,7 +2,7 @@
 
 App-runtime MCP server scaffolding for s-m-r-t apps. Provides:
 
-- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolPolicy?, workflowAssertions? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
+- **Core** — `createMcpAppServer({ smrtOptions, serverInfo, allowedClassNames, publicToolPatterns?, toolListCache?, toolPolicy?, workflowAssertions? })` returning `{ listTools, callTool }` wired to `@happyvertical/smrt-core/generators/mcp`.
 - **SvelteKit adapters** (`./sveltekit`) — `mountMcpRoute` mounts a modern
   2026-07-28 stateless Streamable HTTP MCP endpoint. The REST-shaped
   `mountMcpToolsRoute` / `mountMcpCallRoute` aliases remain available for one
@@ -58,6 +58,13 @@ deterministically ordered by name. Stock MCP clients send the required
 `Mcp-Method` header (and `Mcp-Name` for `tools/call`); the mount validates them
 against the JSON-RPC body and returns the protocol `HeaderMismatch` error
 (`-32020`, HTTP 400) for a missing or mismatched header.
+
+`tools/list` emits the required cache metadata with a one-day, `private`
+default. Shared (`public`) caching is intentionally exceptional: set
+`toolListCache: { cacheScope: 'public', publicCatalog: true }` only for a
+reviewed catalog where every allowed tool is unauthenticated, read-only, and
+global. The server verifies that shape (including the absence of tenant-scoped
+tools and principal-aware policy) and falls back to `private` otherwise.
 
 The route constructs a fresh protocol server for every HTTP request. It does
 not issue or rely on `Mcp-Session-Id`, sticky load-balancer routing, or a held

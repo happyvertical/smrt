@@ -46,6 +46,11 @@ export interface RuntimeOptions {
     inputSchema: Record<string, unknown>;
     outputSchema?: Record<string, unknown>;
   }>;
+  /** Cache hint emitted for deploy-static tools/list results. */
+  toolListCacheHint?: {
+    ttlMs: number;
+    cacheScope: 'private' | 'public';
+  };
   /** Internal invocation metadata; never exposed by the MCP tools/list result. */
   customActions?: Record<
     string,
@@ -94,6 +99,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     customActions = {},
     tenantScopedObjects = [],
     stiTargets = {},
+    toolListCacheHint = { ttlMs: 86_400_000, cacheScope: 'private' },
   } = options;
 
   // Generate static tool array as TypeScript code
@@ -307,6 +313,7 @@ const DEBUG = ${debug};
 
 // Static tool definitions (generated at build time)
 const TOOLS = ${toolsCode};
+const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 const STI_TARGETS: Record<string, Record<string, string>> = ${JSON.stringify(stiTargets)};
 ${
@@ -468,6 +475,9 @@ ${
         capabilities: {
           tools: {},
         },
+        cacheHints: {
+          'tools/list': TOOL_LIST_CACHE_HINT,
+        },
       }
     );
 
@@ -478,7 +488,7 @@ ${
       }
 
       return {
-        tools: TOOLS,
+        tools: [...TOOLS].sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
       };
     });
 

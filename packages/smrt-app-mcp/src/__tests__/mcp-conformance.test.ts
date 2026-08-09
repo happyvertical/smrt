@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { MCPTool } from '@happyvertical/smrt-core/generators/mcp';
 import { toNodeHandler } from '@modelcontextprotocol/node';
 import {
   CLIENT_CAPABILITIES_META_KEY,
@@ -67,7 +68,47 @@ describe('smrt-app-mcp MCP 2026-07-28 conformance', () => {
     expect(list.body.result).toMatchObject({
       resultType: 'complete',
       tools: [],
+      ttlMs: 86_400_000,
+      cacheScope: 'private',
     });
+  });
+
+  it('sorts protocol tool lists independently of app-server discovery order', async () => {
+    const unsortedServer: McpAppServer = {
+      ...appServer,
+      async listTools() {
+        return [
+          {
+            name: 'zebra_list',
+            description: 'Zebra',
+            inputSchema: { type: 'object' },
+          },
+          {
+            name: 'antelope_list',
+            description: 'Antelope',
+            inputSchema: { type: 'object' },
+          },
+          {
+            name: 'I_list',
+            description: 'Uppercase I',
+            inputSchema: { type: 'object' },
+          },
+          {
+            name: 'i_list',
+            description: 'Lowercase i',
+            inputSchema: { type: 'object' },
+          },
+        ] satisfies MCPTool[];
+      },
+    };
+    const unsortedHandler = createMcpHandler(() =>
+      createMcpProtocolServer(unsortedServer),
+    );
+
+    const response = await modernRequest(unsortedHandler, 'tools/list');
+    expect(
+      response.body.result.tools.map((tool: { name: string }) => tool.name),
+    ).toEqual(['I_list', 'antelope_list', 'i_list', 'zebra_list']);
   });
 
   it('allowlists access-error metadata before exposing it over MCP', async () => {
