@@ -129,7 +129,7 @@ function description(suggestion: FieldPolicySuggestion): string {
   .field-policy-suggestion-queue h2, .field-policy-suggestion-queue h3 { margin: 0; }
   .field-policy-suggestion-queue__count { border-radius: 999px; background: var(--smrt-color-secondary-container, #e8def8); min-inline-size: 1.5rem; padding: 0.125rem 0.4rem; text-align: center; }
   .field-policy-suggestion-queue ul { display: grid; gap: var(--smrt-spacing-3, 0.75rem); list-style: none; margin: 0; padding: 0; }
-  .field-policy-suggestion-queue article { border: 1px solid var(--smrt-color-outline-variant, currentColor); border-radius: var(--smrt-shape-corner-small, 0.25rem); display: grid; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); }
+  .field-policy-suggestion-queue article { border: 1px solid var(--smrt-color-outline-variant, currentColor); border-radius: var(--smrt-radius-small, 0.25rem); display: grid; gap: var(--smrt-spacing-2, 0.5rem); padding: var(--smrt-spacing-3, 0.75rem); }
   .field-policy-suggestion-queue article p { margin: 0; }
   .field-policy-suggestion-queue__actions { display: flex; flex-wrap: wrap; gap: var(--smrt-spacing-2, 0.5rem); }
 </style>
