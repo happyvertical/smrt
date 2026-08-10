@@ -736,7 +736,7 @@ describe('MCPGenerator with Custom Actions', () => {
           modular: true,
         });
         const handlers = await readFile(
-          join(outputDir, 'handlers', 'index.ts'),
+          join(outputDir, 'handlers', 'index.js'),
           'utf-8',
         );
 

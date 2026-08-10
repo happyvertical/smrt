@@ -23,7 +23,11 @@
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { parseCliArgs } from '@happyvertical/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CLIGenerator } from '../cli-generator.js';
+import {
+  type CLICommand,
+  CLIGenerator,
+  parseCliCommandArgs,
+} from '../cli-generator.js';
 
 /** Minimal in-memory collection backed by a Map (not a mocked DB adapter). */
 function makeMemoryCollection(seed: Array<Record<string, any>> = []) {
@@ -1012,5 +1016,120 @@ describe('CLIGenerator - handleSingletonMethod', () => {
         },
       ),
     ).rejects.toThrow(/registered from manifest/);
+  });
+});
+
+/**
+ * Regression for the swallowed `--version` flag (#2279).
+ *
+ * `parseCliArgs` in `@happyvertical/utils` returns the built-in `version`
+ * command for a `--version` token anywhere in argv, so `smrt generate-mcp
+ * --version 0.1.0` printed the CLI version and generated nothing. A
+ * subcommand's own declared option must win once a subcommand is named; a
+ * global `--version` with no subcommand must not.
+ */
+describe('CLIGenerator - subcommand-scoped --version (regression #2279)', () => {
+  /** Shaped like the real `generate-mcp` command: it declares `--version`. */
+  const generateMcp: CLICommand = {
+    name: 'generate-mcp',
+    description: 'Generate MCP server from registered SMRT objects',
+    aliases: ['generate-mcp-server', 'mcp'],
+    args: [],
+    options: {
+      'output-path': {
+        type: 'string',
+        description: 'Output path for MCP server file',
+        default: '.smrt/mcp-server/index.js',
+      },
+      version: {
+        type: 'string',
+        description: 'Server version',
+        default: '1.0.0',
+      },
+    },
+  };
+
+  it('routes --version to the subcommand that declares it', () => {
+    const parsed = parseCliCommandArgs(
+      ['generate-mcp', '--version', '0.1.0'],
+      [],
+      { 'generate-mcp': generateMcp },
+    );
+
+    expect(parsed.command).toBe('generate-mcp');
+    expect(parsed.options.version).toBe('0.1.0');
+    expect(parsed.options['output-path']).toBe('.smrt/mcp-server/index.js');
+  });
+
+  it('routes the inline --version=value form and command aliases', () => {
+    const parsed = parseCliCommandArgs(
+      ['mcp', '--version=0.2.0'],
+      [generateMcp],
+    );
+
+    expect(parsed.command).toBe('mcp');
+    expect(parsed.options.version).toBe('0.2.0');
+  });
+
+  it('keeps the declared default when the flag is absent', () => {
+    const parsed = parseCliCommandArgs(['generate-mcp'], [generateMcp]);
+
+    expect(parsed.options.version).toBe('1.0.0');
+  });
+
+  it('defers to the built-in lookup before built-ins are loaded', () => {
+    // First parse pass sees object commands only; it must still report the
+    // subcommand so executeCommand() can re-parse with the real definition.
+    const parsed = parseCliCommandArgs(
+      ['generate-mcp', '--version', '0.1.0'],
+      [],
+    );
+
+    expect(parsed.command).toBe('generate-mcp');
+  });
+
+  it('still prints the CLI version for a global --version', () => {
+    expect(parseCliCommandArgs(['--version'], [generateMcp]).command).toBe(
+      'version',
+    );
+    expect(
+      parseCliCommandArgs(['--version', 'generate-mcp'], [generateMcp]).command,
+    ).toBe('version');
+  });
+
+  it('leaves --help alone so subcommand help still works', () => {
+    expect(
+      parseCliCommandArgs(['generate-mcp', '--help'], [generateMcp]).command,
+    ).toBe('help');
+  });
+
+  it('reads the same tokens as parseCliArgs for a full process.argv', () => {
+    const parsed = parseCliCommandArgs(
+      [
+        '/usr/bin/node',
+        '/opt/smrt/dist/index.js',
+        'generate-mcp',
+        '--version',
+        '0.3.0',
+      ],
+      [generateMcp],
+    );
+
+    expect(parsed.command).toBe('generate-mcp');
+    expect(parsed.options.version).toBe('0.3.0');
+
+    expect(
+      parseCliCommandArgs(
+        ['/usr/bin/node', '/opt/smrt/dist/index.js', '--version'],
+        [generateMcp],
+      ).command,
+    ).toBe('version');
+  });
+
+  it('does not rescope a --version positional after --', () => {
+    expect(
+      parseCliCommandArgs(['generate-mcp', '--', '--version'], [generateMcp])
+        .command,
+    ).toBe('version');
   });
 });

@@ -191,7 +191,7 @@ describe('Generated CLI/MCP fail-closed tenant context (#1554)', () => {
       const { join } = await import('node:path');
       const dir = await generateInto(true);
       const handlers = await readFile(
-        join(dir, 'handlers', 'index.ts'),
+        join(dir, 'handlers', 'index.js'),
         'utf-8',
       );
       expect(handlers).toContain('enableTenancy()');

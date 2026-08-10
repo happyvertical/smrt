@@ -21,6 +21,13 @@ import {
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
 } from './custom-action.js';
 import {
+  type GeneratedSourceExtension,
+  type GeneratedSourceLanguage,
+  generatedSiblingExtension,
+  renderGeneratedSource,
+  resolveGeneratedSourceLanguage,
+} from './mcp-emit.js';
+import {
   generateClaudeConfig,
   generateMCPDocumentation,
   generateMCPScript,
@@ -35,6 +42,25 @@ import {
   type ToolFieldMeta,
   type ToolJsonSchema,
 } from './tool-schema.js';
+
+/**
+ * Write one generated module, rendering it for the requested output language.
+ *
+ * Every generator in this file produces TypeScript source; a JavaScript target
+ * is transpiled on the way out so the written file is runnable as-is (#2279).
+ *
+ * @param targetPath - Absolute path of the file to write
+ * @param source - Generated TypeScript source
+ * @param language - Language the file must be written in
+ */
+async function writeGeneratedFile(
+  targetPath: string,
+  source: string,
+  language: GeneratedSourceLanguage,
+): Promise<void> {
+  const rendered = await renderGeneratedSource(source, language, targetPath);
+  await writeFile(targetPath, rendered, 'utf-8');
+}
 
 /**
  * Runtime tool-call arguments. They arrive as untyped JSON from the MCP client,
@@ -1682,7 +1708,13 @@ export class MCPGenerator {
    */
   async generateServer(
     options: {
-      /** Path to output server file (relative or absolute) */
+      /**
+       * Path to output server file (relative or absolute).
+       *
+       * The extension decides the emitted language: `.ts`/`.mts`/`.cts` keep
+       * the generated TypeScript, anything else is transpiled to JavaScript so
+       * plain `node <path>` runs it (#2279).
+       */
       outputPath?: string;
 
       /** Server name for configuration */
@@ -1700,7 +1732,7 @@ export class MCPGenerator {
       /** Generate README documentation */
       generateReadme?: boolean;
 
-      /** Generate modular directory structure (tools/, handlers/, config.ts) */
+      /** Generate modular directory structure (tools/, handlers/, config) */
       modular?: boolean;
     } = {},
   ): Promise<void> {
@@ -1718,16 +1750,21 @@ export class MCPGenerator {
     const resolvedPath = resolve(process.cwd(), outputPath);
     const outputDir = dirname(resolvedPath);
 
+    // The requested extension decides whether the generated TypeScript is
+    // written verbatim or transpiled to runnable JavaScript first (#2279).
+    const language = resolveGeneratedSourceLanguage(resolvedPath);
+
     // Ensure output directory exists
     await mkdir(outputDir, { recursive: true });
 
     if (modular) {
-      // Generate modular structure: tools/, handlers/, config.ts, index.js
+      // Generate modular structure: tools/, handlers/, config, entry point
       await this.generateModularServer(
-        outputDir,
+        resolvedPath,
         serverName,
         serverVersion,
         debug,
+        language,
       );
     } else {
       // Generate single-file server with static tools
@@ -1758,7 +1795,7 @@ export class MCPGenerator {
       const serverCode = generateRuntimeBootstrap(runtimeOptions);
 
       // Write server file
-      await writeFile(resolvedPath, serverCode, 'utf-8');
+      await writeGeneratedFile(resolvedPath, serverCode, language);
       console.log(`✅ Generated MCP server: ${resolvedPath}`);
     }
 
@@ -1906,17 +1943,26 @@ export class MCPGenerator {
    * Creates separate files for tools, handlers, configuration, and main entry point.
    * This makes the generated server easier to customize and extend.
    *
-   * @param outputDir - Directory to generate files in
+   * The sibling modules use the entry point's own extension and the entry
+   * emits matching relative specifiers, so its imports resolve to files that
+   * exist and load with the same module semantics (#2279).
+   *
+   * @param indexPath - Absolute path of the entry point to generate
    * @param serverName - Server name
    * @param serverVersion - Server version
    * @param debug - Enable debug logging
+   * @param language - Language the generated files are written in
    */
   private async generateModularServer(
-    outputDir: string,
+    indexPath: string,
     serverName: string,
     serverVersion: string,
     debug: boolean,
+    language: GeneratedSourceLanguage,
   ): Promise<void> {
+    const outputDir = dirname(indexPath);
+    const extension = generatedSiblingExtension(indexPath);
+
     // Create subdirectories
     const toolsDir = resolve(outputDir, 'tools');
     const handlersDir = resolve(outputDir, 'handlers');
@@ -1924,44 +1970,44 @@ export class MCPGenerator {
     await mkdir(toolsDir, { recursive: true });
     await mkdir(handlersDir, { recursive: true });
 
-    // Generate config.ts
-    const configPath = resolve(outputDir, 'config.ts');
+    // Generate config module
+    const configPath = resolve(outputDir, `config${extension}`);
     const configCode = this.generateConfigFile(
       serverName,
       serverVersion,
       debug,
     );
-    await writeFile(configPath, configCode, 'utf-8');
+    await writeGeneratedFile(configPath, configCode, language);
     console.log(`✅ Generated config: ${configPath}`);
 
     const generatedTools = await this.generateTools();
 
-    // Generate tools/index.ts with tool definitions
-    const toolsPath = resolve(toolsDir, 'index.ts');
+    // Generate tools module with tool definitions
+    const toolsPath = resolve(toolsDir, `index${extension}`);
     const toolsCode = this.generateToolsFile(generatedTools);
-    await writeFile(toolsPath, toolsCode, 'utf-8');
+    await writeGeneratedFile(toolsPath, toolsCode, language);
     console.log(`✅ Generated tools: ${toolsPath}`);
 
-    // Generate handlers/index.ts with tool call handlers
-    const handlersPath = resolve(handlersDir, 'index.ts');
+    // Generate handlers module with tool call handlers
+    const handlersPath = resolve(handlersDir, `index${extension}`);
     const tenantScopedObjects =
       await this.tenantScopedObjectNames(generatedTools);
     const hasTenantScopedTools =
       tenantScopedObjects.length > 0 ||
       (await this.hasTenantScopedTools(generatedTools));
     const handlersCode = await this.generateHandlersFile(tenantScopedObjects);
-    await writeFile(handlersPath, handlersCode, 'utf-8');
+    await writeGeneratedFile(handlersPath, handlersCode, language);
     console.log(`✅ Generated handlers: ${handlersPath}`);
 
-    // Generate main index.js entry point
-    const indexPath = resolve(outputDir, 'index.js');
+    // Generate main entry point
     const indexCode = this.generateModularIndex(
       resolveMCPToolListCacheHint(
         this.config.cache?.toolsList,
         hasTenantScopedTools,
       ),
+      extension,
     );
-    await writeFile(indexPath, indexCode, 'utf-8');
+    await writeGeneratedFile(indexPath, indexCode, language);
     console.log(`✅ Generated MCP server: ${indexPath}`);
   }
 
@@ -2363,11 +2409,11 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
  */
 export async function handleToolCall(
   name: string,
-  arguments: any = {},
+  toolArguments: any = {},
   aiConfig: any = {}
 ) {
   try {
-    const args = arguments;
+    const args = toolArguments;
 
     const runToolBody = async () => {
       switch (name) {
@@ -2408,9 +2454,13 @@ ${
 
   /**
    * Generate modular index file (main entry point)
+   *
+   * @param toolListCacheHint - Cache hint emitted for `tools/list` results
+   * @param extension - Extension of the sibling modules this entry imports
    */
   private generateModularIndex(
     toolListCacheHint: MCPToolListCacheHint,
+    extension: GeneratedSourceExtension = '.js',
   ): string {
     return `#!/usr/bin/env node
 /**
@@ -2427,12 +2477,10 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { loadConfig } from '@happyvertical/smrt-config';
-import { getDatabase } from '@happyvertical/sql';
-import { getAI } from '@happyvertical/ai';
 
-import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config.js';
-import { tools } from './tools/index.js';
-import { handleToolCall } from './handlers/index.js';
+import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config${extension}';
+import { tools } from './tools/index${extension}';
+import { handleToolCall } from './handlers/index${extension}';
 
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 

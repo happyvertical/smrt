@@ -232,15 +232,15 @@ describe('MCPGenerator - Integration Tests', () => {
 
       // Verify file structure
       const configContent = await readFile(
-        join(outputDir, 'config.ts'),
+        join(outputDir, 'config.js'),
         'utf-8',
       );
       const toolsContent = await readFile(
-        join(outputDir, 'tools', 'index.ts'),
+        join(outputDir, 'tools', 'index.js'),
         'utf-8',
       );
       const handlersContent = await readFile(
-        join(outputDir, 'handlers', 'index.ts'),
+        join(outputDir, 'handlers', 'index.js'),
         'utf-8',
       );
       const indexContent = await readFile(join(outputDir, 'index.js'), 'utf-8');

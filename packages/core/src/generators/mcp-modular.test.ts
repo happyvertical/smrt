@@ -94,12 +94,12 @@ describe('MCPGenerator - Modular Generation', () => {
 
       // Verify all expected files exist
       await access(join(outputDir, 'index.js'));
-      await access(join(outputDir, 'config.ts'));
-      await access(join(outputDir, 'tools', 'index.ts'));
-      await access(join(outputDir, 'handlers', 'index.ts'));
+      await access(join(outputDir, 'config.js'));
+      await access(join(outputDir, 'tools', 'index.js'));
+      await access(join(outputDir, 'handlers', 'index.js'));
     });
 
-    it('should create properly structured config.ts file', async () => {
+    it('should create properly structured config module', async () => {
       const outputDir = join(tmpDir, 'config-structure');
 
       await generator.generateServer({
@@ -113,7 +113,7 @@ describe('MCPGenerator - Modular Generation', () => {
       });
 
       const configContent = await readFile(
-        join(outputDir, 'config.ts'),
+        join(outputDir, 'config.js'),
         'utf-8',
       );
 
@@ -125,7 +125,7 @@ describe('MCPGenerator - Modular Generation', () => {
       expect(configContent).toContain('export const DEBUG = true');
     });
 
-    it('should create tools/index.ts with tool definitions', async () => {
+    it('should create tools module with tool definitions', async () => {
       const outputDir = join(tmpDir, 'tools-structure');
 
       await generator.generateServer({
@@ -138,19 +138,17 @@ describe('MCPGenerator - Modular Generation', () => {
       });
 
       const toolsContent = await readFile(
-        join(outputDir, 'tools', 'index.ts'),
+        join(outputDir, 'tools', 'index.js'),
         'utf-8',
       );
 
-      // Verify structure
-      expect(toolsContent).toContain('export const tools');
-      expect(toolsContent).toContain('Array<{');
-      expect(toolsContent).toContain('name: string');
-      expect(toolsContent).toContain('description: string');
-      expect(toolsContent).toContain('inputSchema: any');
+      // Verify structure. A `.js` target is emitted as JavaScript, so the
+      // declaration's TypeScript annotation is gone (#2279).
+      expect(toolsContent).toContain('export const tools = [');
+      expect(toolsContent).not.toContain('Array<{');
     });
 
-    it('should create handlers/index.ts with tool call handler', async () => {
+    it('should create handlers module with tool call handler', async () => {
       const outputDir = join(tmpDir, 'handlers-structure');
 
       await generator.generateServer({
@@ -163,18 +161,18 @@ describe('MCPGenerator - Modular Generation', () => {
       });
 
       const handlersContent = await readFile(
-        join(outputDir, 'handlers', 'index.ts'),
+        join(outputDir, 'handlers', 'index.js'),
         'utf-8',
       );
 
-      // Verify structure
+      // Verify structure. A `.js` target is emitted as JavaScript, so the
+      // handler signature carries no TypeScript annotations (#2279).
       expect(handlersContent).toContain('export async function handleToolCall');
-      expect(handlersContent).toContain('name: string');
-      expect(handlersContent).toContain('arguments: any');
       expect(handlersContent).toContain('switch (name)');
+      expect(handlersContent).not.toContain('arguments: any');
     });
 
-    it('should create modular index.js that imports from separate files', async () => {
+    it('should create a modular entry point that imports from separate files', async () => {
       const outputDir = join(tmpDir, 'modular-index');
 
       await generator.generateServer({
@@ -266,7 +264,7 @@ describe('MCPGenerator - Modular Generation', () => {
       });
 
       const configContent = await readFile(
-        join(outputDir, 'config.ts'),
+        join(outputDir, 'config.js'),
         'utf-8',
       );
       expect(configContent).toContain('export const DEBUG = true');
@@ -395,9 +393,9 @@ describe('MCPGenerator - Modular Generation', () => {
       });
 
       await access(join(deepDir, 'index.js'));
-      await access(join(deepDir, 'config.ts'));
-      await access(join(deepDir, 'tools', 'index.ts'));
-      await access(join(deepDir, 'handlers', 'index.ts'));
+      await access(join(deepDir, 'config.js'));
+      await access(join(deepDir, 'tools', 'index.js'));
+      await access(join(deepDir, 'handlers', 'index.js'));
     });
   });
 });
