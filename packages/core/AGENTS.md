@@ -59,7 +59,20 @@ an `initialize()` hook may query through the same transaction-bound PostgreSQL
 client. Keep this serialization invariant; use `select` when callers need plain
 rows without model hydration.
 
-**WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`, `is null`, `is not null`. Arrays auto-detect `IN`. Dot notation for JSON paths: `metadata.userId`.
+**WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`.
+Arrays auto-detect `IN`. NULL is a value, not an operator: `{ deletedAt: null }`
+renders `IS NULL` and `{ 'deletedAt !=': null }` renders `IS NOT NULL`.
+
+This list is the set `@happyvertical/sql`'s `buildWhere` can execute, and
+`convertWhereKeys` accepts nothing outside it — an operator accepted here but
+unknown there fails inside the query builder, after the API said the query was
+valid (#2276). Two entries were removed for that reason and now reject at the
+API boundary: `contains` (never existed in the SQL layer; use `like` with
+explicit wildcards) and dot-notation JSON paths such as `metadata.userId` (never
+rewritten into an extraction expression, so they reached SQL as qualified column
+references). Re-adding either requires the query builder to support it first;
+`src/__tests__/issue-2276-where-contract.test.ts` executes every accepted
+operator against a database to keep the two in step.
 
 STI child collections auto-filter by `_meta_type`.
 

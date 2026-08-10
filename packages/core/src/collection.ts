@@ -348,7 +348,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private convertWhereKeys(
     where: Record<string, unknown>,
   ): Record<string, unknown> {
-    // Whitelist of allowed SQL operators
+    // Whitelist of allowed SQL operators.
+    //
+    // This list is a contract, not a wish list (#2276): every entry must be an
+    // operator `@happyvertical/sql`'s `parseConditionKey` recognises, because a
+    // key this method accepts is passed straight to `buildWhere`. An operator
+    // accepted here but unknown there is not "unimplemented" — `buildWhere`
+    // fails to split it off the key, tries to read `"<field> <operator>"` as one
+    // identifier, and throws `Invalid SQL identifier` from inside the query
+    // builder. The caller gets a SQL-layer error naming SQL-layer concepts for a
+    // query the API told them was valid. Keep this list in lockstep with
+    // `VALID_OPERATORS` in `@happyvertical/sql`'s `shared/utils.ts`; the
+    // "executes every accepted operator" test in
+    // `src/__tests__/issue-2276-where-contract.test.ts` is what enforces it.
     const VALID_OPERATORS = [
       '=',
       '>',
@@ -359,8 +371,29 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       'in',
       'not in',
       'like',
-      'contains',
     ];
+
+    // Operators callers reach for that this layer cannot honour, mapped to the
+    // supported way to express the same intent. Being listed here only improves
+    // the rejection message — these are rejected exactly like any other unknown
+    // operator. A Map, not an object literal, because the lookup key is
+    // caller-supplied: `{ 'name toString': 'x' }` would otherwise find
+    // `Object.prototype.toString` and splice a function into the error text.
+    const UNSUPPORTED_OPERATOR_HINTS = new Map<string, string>([
+      // `contains` shipped in this whitelist but never existed in the SQL layer,
+      // so it has always failed at execution (#2276). It is not re-implemented
+      // here as `like '%value%'` because that would be a different operator
+      // wearing its name: `%` and `_` in the value would silently become
+      // wildcards (escaping them needs a `LIKE ... ESCAPE` clause `buildWhere`
+      // cannot emit), and `LIKE` is case-insensitive on SQLite but
+      // case-sensitive on PostgreSQL, so the same call would mean two things.
+      // Restoring it belongs in the SQL layer, where the dialect is known —
+      // tracked in happyvertical/sdk#1192.
+      [
+        'contains',
+        "Use 'like' with explicit wildcards instead, e.g. { 'name like': '%term%' }.",
+      ],
+    ]);
 
     // Get schema fields for validation (sync from cache)
     const fields = this.getFieldsSync();
@@ -480,8 +513,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
-      // Support dot-notation for JSON path queries (e.g., 'metadata.userId')
-      // Validate against the first segment (the column name), pass full path through
+      // Split a dot-notation JSON path (e.g. 'metadata.userId') into its base
+      // column and path suffix. The suffix is rejected further down (#2276), but
+      // it is parsed and reassembled first so the guards between here and there
+      // — the #1379 identifier check, the #1540 sensitive-`@meta`-path check,
+      // and the schema field whitelist — still see the whole key rather than a
+      // truncated column name.
       const dotIndex = fieldName.indexOf('.');
       const baseFieldName =
         dotIndex >= 0 ? fieldName.substring(0, dotIndex) : fieldName;
@@ -561,9 +598,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       // Validate operator
       if (!VALID_OPERATORS.includes(effectiveOperator)) {
+        const hint = UNSUPPORTED_OPERATOR_HINTS.get(effectiveOperator);
         throw new Error(
           `Invalid WHERE clause operator: '${operator}'. ` +
-            `Valid operators: ${VALID_OPERATORS.join(', ')}`,
+            `Valid operators: ${VALID_OPERATORS.join(', ')}` +
+            (hint ? `. ${hint}` : ''),
         );
       }
 
@@ -574,6 +613,45 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           `Invalid WHERE clause field: '${fieldName}'. ` +
             `Field does not exist on ${itemClassName}. ` +
             `Valid fields: ${Array.from(validFieldNames).sort().join(', ')}`,
+        );
+      }
+
+      // Reject dot-notation JSON paths (#2276).
+      //
+      // These validated but were never rewritten into a JSON extraction
+      // expression, so `metadata.color` reached SQL verbatim, where it reads as
+      // the qualified column reference `metadata.color` — a column `color` on a
+      // table `metadata`. SQLite answers `no such column`, surfaced to the
+      // caller as an opaque `DatabaseError: Failed to execute raw query` for a
+      // query this method had just accepted.
+      //
+      // Rewriting them here would mean emitting dialect-specific extraction
+      // (`json_extract(col, '$.path')` on SQLite, `col->>'path'` on
+      // PostgreSQL/DuckDB) and resolving the comparison typing that differs
+      // between them — `->>` yields text, so `metadata.count > 5` would compare
+      // a string against a number on PostgreSQL while working on SQLite. That is
+      // a feature with its own semantics to settle, not a repair of this
+      // validator, so this rejects until it exists — tracked in #2282.
+      //
+      // Placed last among the field checks on purpose. Every guard above
+      // describes a different problem with the same key, and each one's message
+      // is more specific than this one: a sensitive `_meta_data.<prop>` path
+      // must still report that it was rejected for being sensitive (#1540), and
+      // a typo'd base column must still report that the column does not exist
+      // rather than being told to "filter on the '<typo>' column itself". By
+      // running here, the advice this message gives is only ever offered for a
+      // column that actually exists — except under `skipFieldValidation`, where
+      // the class has no registered fields and nothing knows which columns are
+      // real (#869). There the base column named below is only the caller's own
+      // word for it, exactly as it is for every other key on such a class.
+      if (jsonPath) {
+        throw new Error(
+          `Invalid WHERE clause field: '${fieldName}'. ` +
+            `Dot-notation JSON paths are not supported — the path is not ` +
+            `rewritten into a JSON extraction expression, so it would reach SQL ` +
+            `as a qualified column reference and fail at execution. ` +
+            `Filter on the '${baseFieldName}' column itself, or filter the ` +
+            `extracted values in application code.`,
         );
       }
 

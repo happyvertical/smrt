@@ -330,19 +330,29 @@ describe('Issue #115: SQL Injection Prevention', () => {
         'name.x)/**/=/**/1',
       ];
       for (const key of payloads) {
+        // Assert the identifier guard specifically. Dotted keys are also
+        // rejected as unsupported JSON paths since #2276, so matching the
+        // generic "Invalid WHERE clause field" prefix would pass even if this
+        // guard were removed.
         await expect(
           collection.list({ where: { [key]: 'value' } }),
-        ).rejects.toThrow(/Invalid WHERE clause field/);
+        ).rejects.toThrow(/Field names must be identifiers/);
       }
     });
 
-    it('should still accept a legitimate JSON-path key', async () => {
+    it('should not report a well-formed JSON-path key as malformed', async () => {
       // metadata isn't a declared column on this class, so it resolves to the
       // field-whitelist error — NOT the identifier-format error. The point is
-      // the strict guard does not reject well-formed dotted identifiers.
+      // the strict guard does not reject well-formed dotted identifiers on
+      // shape. (Dotted keys are separately rejected as unsupported JSON paths
+      // since #2276, but only once the base column is known to exist, so this
+      // key never reaches that check.)
       await expect(
         collection.list({ where: { 'metadata.userId': 'value' } }),
       ).rejects.toThrow(/Field does not exist/);
+      await expect(
+        collection.list({ where: { 'metadata.userId': 'value' } }),
+      ).rejects.not.toThrow(/Field names must be identifiers/);
     });
   });
 
