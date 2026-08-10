@@ -20,9 +20,10 @@
  * To put form help in a page header, extend the SAME provider over the header —
  * it renders no markup of its own. Do not add a second one: each provider owns
  * its own mode store and shadows the outer for its subtree, so a `FormHelp`
- * above a nested provider stops tracking the `ModeSwitch` inside it. That is
- * why `ObjectForm`, which builds its own provider internally, currently has no
- * seam for this component (#2272).
+ * above a nested provider stops tracking the `ModeSwitch` inside it. Inside
+ * `ObjectForm`, which builds its own provider, use its `actions` snippet — it
+ * renders within that provider, so the glossary resolves. There is no header
+ * seam, so it lands below the fields (#2272).
  */
 import { getFieldPolicyContext } from '../context.svelte.js';
 

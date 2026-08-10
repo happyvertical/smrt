@@ -210,8 +210,10 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   out. It must not add a second: each provider constructs its own
   `FieldPolicyModeStore` and `setContext` shadows for the subtree, so a
   `FormHelp` above a nested provider stops tracking the `ModeSwitch` inside it.
-  `ObjectForm` builds its own provider internally and exposes no `FormHelp`
-  seam, so that composition is currently unreachable through it.
+  `ObjectForm` builds its own provider, so never wrap it in another; its
+  `actions` snippet renders INSIDE that provider (context resolves at the render
+  site), which is the only way to reach `FormHelp` through it — below the
+  fields, since there is no header seam (#2289).
 
 ## Defaults control panel (#2050)
 

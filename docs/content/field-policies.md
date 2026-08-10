@@ -238,8 +238,8 @@ the resolved policy and filtered by the current mode.
 
 Unlike <code>PolicyField</code>, these three do not degrade outside a provider. Each
 derives its whole output from the resolved policy, so outside one they raise an
-error naming <code>FieldPolicyProvider</code> rather than rendering an empty
-control.
+error naming <code>FieldPolicyProvider</code> rather than rendering an empty or
+absent control.
 
 The provider contributes no markup, so it can wrap a page header as well as the
 form when help belongs above the fields. Wrap once, though: each
@@ -287,9 +287,11 @@ fails closed with an accessible error when a definition or policy is missing.
 ~~~
 
 <code>ObjectForm</code> creates its own <code>FieldPolicyProvider</code> around the
-fields it renders, so it needs no outer provider and should not be given one.
-It renders <code>ModeSwitch</code> with <code>showModeSwitch</code>; it does not
-currently expose a seam for <code>FormHelp</code>.
+fields it renders, so it needs no outer provider and should not be given one. It
+renders <code>ModeSwitch</code> with <code>showModeSwitch</code>. Its
+<code>actions</code> snippet renders inside that provider, so
+<code>FormHelp</code> placed there resolves the form's policy — but there is no
+header seam, so it can only appear below the fields.
 
 The browser wire types are text, integer, decimal, boolean, datetime, JSON,
 foreign-key, and cross-package-reference. There is no <code>select</code> wire type.
