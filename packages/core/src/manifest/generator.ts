@@ -42,6 +42,11 @@ export interface ManifestBuilderOptions {
   include?: string[];
   exclude?: string[];
   followImports?: boolean;
+  /**
+   * Follow symbolic links while discovering sources. Defaults to `false` —
+   * see `OxcScannerOptions.followSymbolicLinks` (#2275).
+   */
+  followSymbolicLinks?: boolean;
 
   // Scanner Configuration
   baseClasses?: string[];
@@ -276,6 +281,7 @@ export class ManifestBuilder {
       includePrivateMethods: config.includePrivateMethods,
       includeStaticMethods: config.includeStaticMethods,
       followImports: config.followImports,
+      followSymbolicLinks: options.followSymbolicLinks,
     });
 
     const { results, resolved } = await scanner.scanAndResolve();

@@ -76,6 +76,13 @@ export interface SmrtPluginOptions {
   include?: string[];
   /** Patterns to exclude */
   exclude?: string[];
+  /**
+   * Follow symbolic links while discovering sources. Defaults to `false`: a
+   * pnpm `node_modules` is a symlink graph with cycles, so a link-following
+   * walk does not terminate on a real install (#2275). Enable it only for a
+   * project that genuinely keeps sources behind a link.
+   */
+  followSymbolicLinks?: boolean;
   /** Output directory for generated files */
   outDir?: string;
   /** Enable hot module replacement */
@@ -210,6 +217,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     projectRoot: configuredProjectRoot,
     include = ['src/**/*.ts', 'src/**/*.js'],
     exclude = ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
+    followSymbolicLinks = false,
     hmr = true,
     watch = true,
     generateTypes = true,
@@ -1024,6 +1032,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         cwd: rootDir,
         include,
         exclude: safeExclude,
+        followSymbolicLinks,
       });
 
       // Scan and resolve inheritance

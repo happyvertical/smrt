@@ -302,7 +302,7 @@ const TOOL_DEFINITIONS: Array<
         rootDir: { type: 'string' },
         scope: {
           type: 'string',
-          enum: ['project', 'local', 'package', 'sdk'],
+          enum: ['project', 'local', 'package', 'sdk', 'installed'],
           default: 'project',
         },
         package: { type: 'string' },
@@ -339,7 +339,7 @@ const TOOL_DEFINITIONS: Array<
         strict: { type: 'boolean' },
         scope: {
           type: 'string',
-          enum: ['project', 'local', 'package', 'sdk'],
+          enum: ['project', 'local', 'package', 'sdk', 'installed'],
           default: 'project',
         },
         package: { type: 'string' },
@@ -380,7 +380,7 @@ const TOOL_DEFINITIONS: Array<
         documentation: { type: 'string' },
         scope: {
           type: 'string',
-          enum: ['project', 'local', 'package', 'sdk'],
+          enum: ['project', 'local', 'package', 'sdk', 'installed'],
           default: 'project',
         },
         package: { type: 'string' },
@@ -454,7 +454,7 @@ const TOOL_DEFINITIONS: Array<
         focus: { type: 'string' },
         scope: {
           type: 'string',
-          enum: ['project', 'local', 'package', 'sdk'],
+          enum: ['project', 'local', 'package', 'sdk', 'installed'],
           default: 'project',
         },
         package: { type: 'string' },
@@ -601,7 +601,8 @@ export function createServer(): Server {
             },
             {
               name: 'scope',
-              description: 'Knowledge scope: project, local, package, or sdk.',
+              description:
+                'Knowledge scope: project, local, package, sdk, or installed.',
               required: false,
             },
             {
@@ -639,7 +640,8 @@ export function createServer(): Server {
             },
             {
               name: 'scope',
-              description: 'Knowledge scope: project, local, package, or sdk.',
+              description:
+                'Knowledge scope: project, local, package, sdk, or installed.',
               required: false,
             },
             {
@@ -1147,6 +1149,10 @@ function sanitizeKnowledgeIndex(index: KnowledgeIndexResult) {
     packages,
     smrtPackages: packages.filter((pkg) => pkg.kind === 'smrt'),
     sdkPackages: packages.filter((pkg) => pkg.kind === 'sdk'),
+    // Rebuilt from the sanitized list rather than carried over by the spread.
+    // Installed dependencies live outside the project root, so theirs are the
+    // absolute host paths this projection exists to strip (#2275).
+    installedPackages: packages.filter((pkg) => pkg.isInstalledDependency),
   };
 }
 

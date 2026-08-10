@@ -27,6 +27,29 @@ executes the source.
   `ScanResults`, `FileScanResult`, `OxcScannerOptions`, `InferredFieldType`,
   `FieldTypeInference`.
 
+## Discovery boundaries
+
+File discovery is the difference between a scan that finishes and one that
+exhausts the heap when the scanner is pointed at an application root (#2275):
+
+- `dot: true` is set so ignore patterns apply beneath dot directories. Without
+  it a `**` cannot cross a dot segment, so `**/node_modules/**` pruned the root
+  `node_modules` but nothing under `.svelte-kit/`, `.vercel/`, or `.turbo/`.
+- `MANDATORY_EXCLUDE` (`**/node_modules/**`, `**/.*/**`, `**/.*`) is unioned with the
+  caller's `exclude` and cannot be overridden. `exclude` REPLACES the defaults,
+  so every caller that narrowed it had silently reopened `node_modules`.
+- `followSymbolicLinks` defaults to `false`. A pnpm `node_modules` is a symlink
+  graph with cycles, not a tree, so a link-following walk reaches the same real
+  directory once per path leading to it. This drops symlinked *files* as well as
+  directories, so pass `followSymbolicLinks: true` for a project that genuinely
+  keeps sources behind a link — it is threaded through `smrtPlugin` and
+  `ManifestBuilderOptions` for the build path.
+- Patterns are rewritten relative to `cwd` before globbing. Globs match as text,
+  so an absolute pattern would hand `**/.*/**` the project's own ancestors and a
+  checkout under `~/.worktrees` or `~/.cache` would match nothing at all.
+- `dot: true` would otherwise widen the result to hidden files, so `**/.*` is in
+  the mandatory prunes too: hidden files stay out, exactly as before.
+
 ## How It Works
 
 1. `fast-glob` finds `.ts` files matching include/exclude patterns.

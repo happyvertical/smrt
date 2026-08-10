@@ -296,6 +296,14 @@ describe('smrt-dev-mcp stdio server', () => {
     );
     expect(projectKnowledge.rootDir).toBe('.');
     expect(projectKnowledge.packages[0]).not.toHaveProperty('directory');
+    // Installed dependencies are the packages whose paths are absolute and
+    // outside the root, so this list is the one that leaks host paths if it is
+    // carried over by a spread instead of rebuilt from sanitized entries
+    // (#2275).
+    expect(Array.isArray(projectKnowledge.installedPackages)).toBe(true);
+    for (const pkg of projectKnowledge.installedPackages) {
+      expect(pkg).not.toHaveProperty('directory');
+    }
 
     const packageUri = resourceUris.find((uri) =>
       uri.startsWith('smrt://knowledge/package/'),

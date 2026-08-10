@@ -24,6 +24,7 @@ export interface OxcScannerConstructor {
     includePrivateMethods?: boolean;
     includeStaticMethods?: boolean;
     followImports?: boolean;
+    followSymbolicLinks?: boolean;
   }): OxcScannerLike;
 }
 

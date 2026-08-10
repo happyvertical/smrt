@@ -5,7 +5,7 @@
  * Provides a simple API for scanning TypeScript files for SMRT classes.
  */
 
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import fg from 'fast-glob';
 import { InheritanceResolver } from './inheritance-resolver.js';
 import { parseFile } from './oxc-parser.js';
@@ -30,6 +30,22 @@ const DEFAULT_EXCLUDE = [
   '**/*.spec.ts',
   '**/__tests__/**',
 ];
+
+/**
+ * Prunes that always apply, on top of whatever `exclude` a caller passes.
+ *
+ * `exclude` replaces {@link DEFAULT_EXCLUDE} wholesale, so every caller that
+ * narrowed the excludes also silently reopened `node_modules` — and installed
+ * dependencies are never a project's own `@smrt()` sources. Dot directories are
+ * generated or tool state (`.git`, `.svelte-kit`, `.turbo`, `.vercel`, agent
+ * scratch) and are pruned for the same reason: nothing authored lives there.
+ * `**\/.*` keeps hidden FILES out of the result too, so turning `dot` on to
+ * make these prunes work does not quietly widen what gets scanned.
+ *
+ * These are load-bearing for termination, not just for speed. See
+ * {@link OxcScanner.discoverFiles}.
+ */
+const MANDATORY_EXCLUDE = ['**/node_modules/**', '**/.*/**', '**/.*'];
 
 /**
  * High-performance TypeScript scanner that discovers `@smrt()`-decorated
@@ -85,6 +101,7 @@ export class OxcScanner {
       includePrivateMethods: options.includePrivateMethods ?? false,
       includeStaticMethods: options.includeStaticMethods ?? true,
       externalManifests: options.externalManifests || new Map(),
+      followSymbolicLinks: options.followSymbolicLinks ?? false,
     };
 
     this.resolver = new InheritanceResolver({
@@ -294,16 +311,44 @@ export class OxcScanner {
   }
 
   /**
-   * Discover files to scan using fast-glob
+   * Discover files to scan using fast-glob.
+   *
+   * Two settings here decide whether discovery terminates at all when the
+   * scanner is pointed at an application root rather than a package `src/`:
+   *
+   * - `dot: true`. Without it a `**` in an ignore pattern cannot cross a
+   *   dot segment, so `**\/node_modules/**` prunes `node_modules` at the root
+   *   but NOT `.svelte-kit/…/node_modules` or any other `node_modules` under a
+   *   dot directory. Those subtrees were then walked in full and every entry
+   *   discarded — unbounded work that could never produce a match.
+   * - `followSymbolicLinks: false`. pnpm materializes `node_modules` as a
+   *   symlink graph with cycles, so a link-following walk revisits the same
+   *   real directories once per path that reaches them.
+   *
+   * Together they were enough to exhaust a 4 GB heap on a consumer app that
+   * installs the published packages (#2275).
+   *
+   * Patterns are rewritten relative to `cwd` first. fast-glob matches `ignore`
+   * in whatever space the patterns use, so an absolute pattern would hand
+   * `**\/.*\/**` the project's own ancestors — a checkout under `~/.worktrees`
+   * or `~/.cache` would then match nothing at all, silently.
    */
   private async discoverFiles(): Promise<string[]> {
-    const patterns = this.options.include;
+    const cwd = resolve(this.options.cwd);
+    const patterns = this.options.include.map((pattern) =>
+      relativeToCwd(pattern, cwd),
+    );
 
     const files = await fg(patterns, {
-      cwd: this.options.cwd,
-      ignore: this.options.exclude,
+      cwd,
+      ignore: [
+        ...this.options.exclude.map((pattern) => relativeToCwd(pattern, cwd)),
+        ...MANDATORY_EXCLUDE,
+      ],
       absolute: true,
       onlyFiles: true,
+      dot: true,
+      followSymbolicLinks: this.options.followSymbolicLinks,
     });
 
     return files;
@@ -316,6 +361,23 @@ export class OxcScanner {
     // parseFile is synchronous but we wrap it for potential future async
     return parseFile(filePath);
   }
+}
+
+/**
+ * Rewrites an absolute pattern rooted inside `cwd` as a `cwd`-relative one.
+ *
+ * Globs are matched as text, so a pattern's leading directories become part of
+ * every comparison — including the mandatory prunes. Patterns outside `cwd` are
+ * left alone: nothing sensible can be said about them relative to a root they
+ * do not live under.
+ */
+function relativeToCwd(pattern: string, cwd: string): string {
+  const normalized = pattern.replaceAll('\\', '/');
+  if (!isAbsolute(normalized)) return normalized;
+  const prefix = `${cwd.replaceAll('\\', '/').replace(/\/+$/, '')}/`;
+  return normalized.startsWith(prefix)
+    ? normalized.slice(prefix.length)
+    : normalized;
 }
 
 /**
