@@ -146,7 +146,7 @@ await agent.execute();
 
 ```typescript
 import { Agent } from '@happyvertical/smrt-agents';
-import { smrt, text, integer, datetime, json } from '@happyvertical/smrt-core';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt()
 class ScraperAgent extends Agent {
@@ -157,17 +157,11 @@ class ScraperAgent extends Agent {
     maxPages: 50
   };
 
-  @text()
-  lastCrawledUrl?: string;
-
-  @integer()
-  pagesProcessed: number = 0;
-
-  @datetime()
-  lastCrawl?: Date;
-
-  @json()
-  errorLog: Array<{ url: string; error: string; timestamp: Date }> = [];
+  // TypeScript types drive the schema; no per-type decorators exist.
+  lastCrawledUrl: string = '';                 // -> TEXT
+  pagesProcessed: number = 0;                  // -> INTEGER (no decimal point)
+  lastCrawl: Date | null = null;               // -> timestamp
+  errorLog: Array<{ url: string; error: string; timestamp: Date }> = []; // -> JSON
 
   async initialize(): Promise<this> {
     await super.initialize();
@@ -250,7 +244,7 @@ await agent.execute();
 
 ```typescript
 import { Agent } from '@happyvertical/smrt-agents';
-import { smrt, text } from '@happyvertical/smrt-core';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt()
 class DatabaseSyncAgent extends Agent {
@@ -259,8 +253,7 @@ class DatabaseSyncAgent extends Agent {
     syncInterval: 60000
   };
 
-  @text()
-  lastSyncId?: string;
+  lastSyncId: string = '';
 
   private connection: any;
   private syncTimer: NodeJS.Timeout | null = null;
@@ -332,7 +325,7 @@ await agent.execute();
 
 ```typescript
 import { Agent } from '@happyvertical/smrt-agents';
-import { smrt, integer, datetime } from '@happyvertical/smrt-core';
+import { smrt } from '@happyvertical/smrt-core';
 
 @smrt()
 class ResilientAgent extends Agent {
@@ -341,17 +334,10 @@ class ResilientAgent extends Agent {
     retryDelay: 5000
   };
 
-  @integer()
   attemptCount: number = 0;
-
-  @integer()
   successCount: number = 0;
-
-  @integer()
   failureCount: number = 0;
-
-  @datetime()
-  lastSuccess?: Date;
+  lastSuccess: Date | null = null;
 
   async run(): Promise<void> {
     for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {

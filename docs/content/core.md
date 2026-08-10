@@ -90,7 +90,7 @@ class Document extends SmrtObject {
 }
 ```
 
-#### When to Use Field Helpers
+#### When to Use Field Decorators
 
 **Use TypeScript types** for most properties (preferred):
 ```typescript
@@ -102,10 +102,16 @@ created: Date = new Date();  // → engine-specific timestamp
 tags: string[] = [];         // → JSON
 ```
 
-**Use field helpers** only when you need:
-1. **Relationships**: `categoryId = foreignKey(Category)`
-2. **Constraints**: `email = text({ required: true, pattern: /^.+@.+$/ })`
-3. **Nullable decimals**: `latitude = decimal({ nullable: true })`
+**Add a decorator** only when you need something the type cannot express:
+1. **Relationships**: `@foreignKey(Category)` above `categoryId = '';`
+2. **Constraints**: `@field({ required: true, pattern: /^.+@.+$/ })` above `email = '';`
+3. **Nullable columns**: `@field({ nullable: true })` above `latitude: number | null = null;`
+
+The **field** decorators exported by `@happyvertical/smrt-core` are `field`,
+`foreignKey`, `crossPackageRef`, `oneToMany`, `manyToMany`, and `meta` (the
+class decorator `smrt` comes from the same package). There are no per-type
+helper functions — `text()`, `integer()`, `decimal()`, `datetime()`, and
+`json()` were removed in #318 and do not exist in any current version.
 
 **The 0 vs 0.0 Heuristic**:
 - `quantity: number = 0` → INTEGER column (no decimal point)
@@ -724,12 +730,17 @@ For more details, see the package `AGENTS.md` documentation.
 All SMRT objects have public `db` property for direct database access via @happyvertical/sql. This enables custom queries, transactions, and advanced database operations:
 
 ```typescript
-import { SmrtObject, SmrtCollection } from '@happyvertical/smrt-core';
+import { field, SmrtObject, SmrtCollection } from '@happyvertical/smrt-core';
 
 class Product extends SmrtObject {
-  name = text({ required: true });
-  price = decimal({ required: true });
-  category = text({ required: true });
+  @field({ required: true })
+  name = '';
+
+  @field({ required: true })
+  price = 0.0;
+
+  @field({ required: true })
+  category = '';
 }
 
 const products = await ProductCollection.create({ db: 'products.db' });
@@ -1281,7 +1292,7 @@ const context = await object.recall({
   minConfidence?: number      // Minimum confidence threshold (default: 0)
 });
 
-// Returns: { value, confidence, metadata, ... } or null if not found
+// Returns: the stored value, JSON-parsed, or null if not found
 ```
 
 #### `recallAll(options)` - Retrieve Multiple Contexts
@@ -1493,8 +1504,10 @@ SMRT integrates seamlessly with other HAVE SDK packages:
 import { SpiderAdapter } from '@happyvertical/spider';
 
 class WebDocument extends SmrtObject {
-  url = text({ required: true });
-  content = text();
+  @field({ required: true })
+  url = '';
+
+  content = '';
 
   async scrapeContent() {
     const spider = new SpiderAdapter(this.options.spider);
@@ -1507,8 +1520,10 @@ class WebDocument extends SmrtObject {
 import { PDFProcessor } from '@happyvertical/pdf';
 
 class PDFDocument extends SmrtObject {
-  filePath = text({ required: true });
-  extractedText = text();
+  @field({ required: true })
+  filePath = '';
+
+  extractedText = '';
 
   async extractText() {
     const pdf = new PDFProcessor(this.options.pdf);
@@ -1593,9 +1608,14 @@ Add indexes to fields that are commonly used in WHERE clauses:
 
 ```typescript
 class Product extends SmrtObject {
-  sku = text({ required: true, unique: true, index: true });
-  category = text({ index: true }); // Frequently queried
-  price = decimal({ min: 0 });
+  @field({ required: true, unique: true, indexed: true })
+  sku = '';
+
+  @field({ indexed: true }) // Frequently queried
+  category = '';
+
+  @field({ min: 0 })
+  price = 0.0;
 }
 ```
 

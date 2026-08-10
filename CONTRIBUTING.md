@@ -124,9 +124,12 @@ class Product extends SmrtObject {
   price: number = 0.0;    // DECIMAL (has decimal point)
   quantity: number = 0;   // INTEGER (no decimal point)
 
-  // Field helpers only when needed
-  categoryId = foreignKey(Category);
-  sku = text({ required: true, unique: true });
+  // Decorators only when needed
+  @foreignKey(Category)
+  categoryId = '';
+
+  @field({ required: true, unique: true })
+  sku = '';
 }
 ```
 

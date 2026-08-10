@@ -751,8 +751,11 @@ expect(cliGen.shouldInclude('delete', config)).toBe(true);
 ```typescript
 // Product model defines fields
 class Product extends SmrtObject {
-  name = text({ required: true, maxLength: 100 });
-  price = decimal({ min: 0 });
+  @field({ required: true, maxLength: 100 })
+  name = '';
+
+  @field({ min: 0 })
+  price = 0.0;
 }
 
 // All generators see identical field definitions
@@ -776,11 +779,16 @@ mcpGen.parameters(fields);      // name: { type: "string", maxLength: 100 }, pri
 The framework supports two approaches for defining properties. Both are processed identically by all generators:
 
 ```typescript
-// Field helpers (when constraints needed)
+// Field decorators (when constraints or relationships are needed)
 class ProductWithConstraints extends SmrtObject {
-  name = text({ required: true, maxLength: 100 });  // Validation needed
-  price = decimal({ min: 0 });                       // Constraint needed
-  categoryId = foreignKey(Category);                 // Relationship
+  @field({ required: true, maxLength: 100 })
+  name = '';                    // Validation needed
+
+  @field({ min: 0 })
+  price = 0.0;                  // Constraint needed
+
+  @foreignKey(Category)
+  categoryId = '';              // Relationship
 }
 
 // TypeScript types (when no constraints)
@@ -801,9 +809,12 @@ class ProductMixed extends SmrtObject {
   quantity: number = 0;       // INTEGER
   price: number = 0.0;        // DECIMAL
 
-  // Field helpers only where needed
-  sku = text({ required: true, unique: true });  // Constraint
-  categoryId = foreignKey(Category);             // Relationship
+  // Decorators only where needed
+  @field({ required: true, unique: true })
+  sku = '';                   // Constraint
+
+  @foreignKey(Category)
+  categoryId = '';            // Relationship
 }
 ```
 
