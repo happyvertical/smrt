@@ -6,7 +6,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
-import fg from 'fast-glob';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
@@ -42,6 +41,11 @@ export interface ManifestBuilderOptions {
   include?: string[];
   exclude?: string[];
   followImports?: boolean;
+  /**
+   * Follow symbolic links while discovering sources. Defaults to `false` —
+   * see `OxcScannerOptions.followSymbolicLinks` (#2275).
+   */
+  followSymbolicLinks?: boolean;
 
   // Scanner Configuration
   baseClasses?: string[];
@@ -124,7 +128,7 @@ export class ManifestBuilder {
     options: ManifestBuilderOptions = {},
   ): Promise<SmartObjectManifest> {
     // 1. Discover files to scan
-    const files = this.discoverFiles(options);
+    const files = await this.discoverFiles(options);
 
     if (files.length === 0) {
       logger.info('[smrt] No source files found');
@@ -191,13 +195,17 @@ export class ManifestBuilder {
   /**
    * Discover source files based on include/exclude patterns
    */
-  private discoverFiles(options: ManifestBuilderOptions): string[] {
+  private async discoverFiles(
+    options: ManifestBuilderOptions,
+  ): Promise<string[]> {
     const include = options.include || ['src/**/*.ts'];
     const exclude = options.exclude || ['src/**/*.d.ts', 'node_modules/**'];
-
-    return fg.sync(include, {
-      absolute: true,
-      ignore: exclude,
+    const { discoverSourceFiles } = await importScanner();
+    return discoverSourceFiles({
+      cwd: process.cwd(),
+      include,
+      exclude,
+      followSymbolicLinks: options.followSymbolicLinks ?? false,
     });
   }
 
@@ -276,6 +284,7 @@ export class ManifestBuilder {
       includePrivateMethods: config.includePrivateMethods,
       includeStaticMethods: config.includeStaticMethods,
       followImports: config.followImports,
+      followSymbolicLinks: options.followSymbolicLinks,
     });
 
     const { results, resolved } = await scanner.scanAndResolve();

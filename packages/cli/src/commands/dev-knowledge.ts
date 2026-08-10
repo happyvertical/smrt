@@ -68,7 +68,8 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
       },
       scope: {
         type: 'string',
-        description: 'Knowledge scope: project, local, package, or sdk',
+        description:
+          'Knowledge scope: project, local, package, sdk, or installed',
         default: 'project',
       },
       package: {
@@ -118,7 +119,8 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
       },
       scope: {
         type: 'string',
-        description: 'Knowledge scope: project, local, package, or sdk',
+        description:
+          'Knowledge scope: project, local, package, sdk, or installed',
         default: 'project',
       },
       package: {
@@ -168,7 +170,8 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
       },
       scope: {
         type: 'string',
-        description: 'Knowledge scope: project, local, package, or sdk',
+        description:
+          'Knowledge scope: project, local, package, sdk, or installed',
         default: 'project',
       },
       package: {
@@ -262,7 +265,8 @@ function contextOptions(
     },
     scope: {
       type: 'string',
-      description: 'Knowledge scope: project, local, package, or sdk',
+      description:
+        'Knowledge scope: project, local, package, sdk, or installed',
       default: 'project',
     },
     package: {

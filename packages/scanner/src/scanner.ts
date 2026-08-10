@@ -6,7 +6,7 @@
  */
 
 import { resolve } from 'node:path';
-import fg from 'fast-glob';
+import { discoverSourceFiles } from './discovery.js';
 import { InheritanceResolver } from './inheritance-resolver.js';
 import { parseFile } from './oxc-parser.js';
 import type {
@@ -31,6 +31,20 @@ const DEFAULT_EXCLUDE = [
   '**/__tests__/**',
 ];
 
+/**
+ * Prunes that always apply, on top of whatever `exclude` a caller passes.
+ *
+ * `exclude` replaces {@link DEFAULT_EXCLUDE} wholesale, so every caller that
+ * narrowed the excludes also silently reopened `node_modules` — and installed
+ * dependencies are never a project's own `@smrt()` sources. Dot directories are
+ * generated or tool state (`.git`, `.svelte-kit`, `.turbo`, `.vercel`, agent
+ * scratch) and are pruned for the same reason: nothing authored lives there.
+ * `**\/.*` keeps hidden FILES out of the result too, so turning `dot` on to
+ * make these prunes work does not quietly widen what gets scanned.
+ *
+ * These are load-bearing for termination, not just for speed. See
+ * {@link OxcScanner.discoverFiles}.
+ */
 /**
  * High-performance TypeScript scanner that discovers `@smrt()`-decorated
  * classes in a project's source files.
@@ -85,6 +99,7 @@ export class OxcScanner {
       includePrivateMethods: options.includePrivateMethods ?? false,
       includeStaticMethods: options.includeStaticMethods ?? true,
       externalManifests: options.externalManifests || new Map(),
+      followSymbolicLinks: options.followSymbolicLinks ?? false,
     };
 
     this.resolver = new InheritanceResolver({
@@ -294,19 +309,35 @@ export class OxcScanner {
   }
 
   /**
-   * Discover files to scan using fast-glob
+   * Discover files to scan using fast-glob.
+   *
+   * Two settings here decide whether discovery terminates at all when the
+   * scanner is pointed at an application root rather than a package `src/`:
+   *
+   * - `dot: true`. Without it a `**` in an ignore pattern cannot cross a
+   *   dot segment, so `**\/node_modules/**` prunes `node_modules` at the root
+   *   but NOT `.svelte-kit/…/node_modules` or any other `node_modules` under a
+   *   dot directory. Those subtrees were then walked in full and every entry
+   *   discarded — unbounded work that could never produce a match.
+   * - `followSymbolicLinks: false`. pnpm materializes `node_modules` as a
+   *   symlink graph with cycles, so a link-following walk revisits the same
+   *   real directories once per path that reaches them.
+   *
+   * Together they were enough to exhaust a 4 GB heap on a consumer app that
+   * installs the published packages (#2275).
+   *
+   * Patterns are rewritten relative to `cwd` first. fast-glob matches `ignore`
+   * in whatever space the patterns use, so an absolute pattern would hand
+   * `**\/.*\/**` the project's own ancestors — a checkout under `~/.worktrees`
+   * or `~/.cache` would then match nothing at all, silently.
    */
   private async discoverFiles(): Promise<string[]> {
-    const patterns = this.options.include;
-
-    const files = await fg(patterns, {
+    return discoverSourceFiles({
       cwd: this.options.cwd,
-      ignore: this.options.exclude,
-      absolute: true,
-      onlyFiles: true,
+      include: this.options.include,
+      exclude: this.options.exclude,
+      followSymbolicLinks: this.options.followSymbolicLinks,
     });
-
-    return files;
   }
 
   /**

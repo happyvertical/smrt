@@ -15,8 +15,9 @@ smrt db:rollback             # Rollback migrations
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
+smrt dev:knowledge-index --scope installed # Installed @happyvertical/* deps, versions, AGENTS.md hashes
 smrt knowledge:review-context --scope package --package <name>
-smrt knowledge:architecture-context --scope project|local|package|sdk
+smrt knowledge:architecture-context --scope project|local|package|sdk|installed
 smrt dev:knowledge-check --format markdown|json
 smrt generate-mcp            # Generate MCP server (aliases: generate-mcp-server, mcp)
 smrt generate-types          # Generate TypeScript declarations (alias: generate-declarations)

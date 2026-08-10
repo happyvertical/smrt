@@ -117,8 +117,8 @@ layout that means declaring them, not relying on the CLI's own dependencies.
 | `smrt dev:knowledge-index --format markdown\|json` | Print the deterministic s-m-r-t + SDK knowledge index |
 | `smrt dev:knowledge-check --format markdown\|json` | Check agent knowledge freshness |
 | `smrt dev:knowledge-diff --format markdown\|json` | Show changed files and affected package experts |
-| `smrt knowledge:review-context --scope project\|local\|package\|sdk --package <name> --format markdown\|json` | Build a model-ready domain review prompt bundle |
-| `smrt knowledge:architecture-context --scope project\|local\|package\|sdk --package <name> --format markdown\|json` | Build a model-ready domain architecture prompt bundle |
+| `smrt knowledge:review-context --scope project\|local\|package\|sdk\|installed --package <name> --format markdown\|json` | Build a model-ready domain review prompt bundle |
+| `smrt knowledge:architecture-context --scope project\|local\|package\|sdk\|installed --package <name> --format markdown\|json` | Build a model-ready domain architecture prompt bundle |
 
 ### Configuration
 

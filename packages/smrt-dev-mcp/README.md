@@ -124,7 +124,7 @@ dependency edge — by connected component, keeping the copy the others depend o
 and reports `duplicate-object-identity`. Unrelated packages that share a class
 name stay distinct.
 
-The index therefore carries two extra blocks (`schemaVersion: 2`):
+The index therefore carries two extra blocks (added in `schemaVersion: 2`):
 
 - `coverage` — `workspaceGlobs`, `workspaceGlobSource`, `packageDirs`,
   `packagesWithObjects`, and `packagesWithoutObjects` with a reason, the artifact
@@ -133,6 +133,13 @@ The index therefore carries two extra blocks (`schemaVersion: 2`):
   error-grade diagnostic naming the roots and artifact paths checked plus the
   commands to fix it, so an unseen project is never reported as a project with no
   model. `smrt-architecture`, `smrt-review`, and the `reflect-*` tools surface it.
+
+`schemaVersion: 3` adds the consumer-app view: `installedPackages` lists every
+installed `@happyvertical/smrt-*` package plus the known SDK packages — the ones
+the project installs rather than authors — each with `isInstalledDependency`, its
+version, and `agentDocSha256`, the hash of its shipped `AGENTS.md`. That hash is
+what a downstream project diffs against a recorded baseline to find documentation
+drift. Reach it with `--scope installed`.
 
 ## Response Budgets
 
@@ -300,7 +307,7 @@ coverage, relationship-v2 counts, and freshness status.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `rootDir` | `string` | No | Project root directory (default: cwd) |
-| `scope` | `string` | No | `project`, `local`, `package`, or `sdk` |
+| `scope` | `string` | No | `project`, `local`, `package`, `sdk`, or `installed` |
 | `package` | `string` | No | Package name or short name to focus |
 
 ### `check-knowledge-freshness`
@@ -323,7 +330,7 @@ Alias over the deterministic checker that emphasizes downstream
 | `rootDir` | `string` | No | Project root directory (default: cwd) |
 | `changed` | `boolean` | No | Limit stale-pattern checks to changed files |
 | `strict` | `boolean` | No | Treat stale-pattern findings as errors |
-| `scope` | `string` | No | `project`, `local`, `package`, or `sdk` |
+| `scope` | `string` | No | `project`, `local`, `package`, `sdk`, or `installed` |
 | `package` | `string` | No | Package name or short name to focus |
 
 ### `build-review-context`

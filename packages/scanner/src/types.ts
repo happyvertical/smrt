@@ -330,6 +330,17 @@ export interface OxcScannerOptions {
 
   /** External package manifests for base class resolution */
   externalManifests?: Map<string, ExternalManifest>;
+
+  /**
+   * Follow symbolic links while discovering files. Defaults to `false`.
+   *
+   * A package's own sources are real files, while a pnpm `node_modules` is a
+   * symlink graph with cycles: every store entry links back out to its
+   * siblings, so a link-following walk reaches the same real directory once per
+   * path that leads to it and never terminates in practice. Discovery therefore
+   * stays on real directories unless a caller explicitly opts back in.
+   */
+  followSymbolicLinks?: boolean;
 }
 
 /**

@@ -30,7 +30,18 @@ import type {
 
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'error' | 'warning';
-export type KnowledgeScope = 'project' | 'local' | 'package' | 'sdk';
+/**
+ * `installed` is the consumer-app scope (#2275): installed
+ * `@happyvertical/smrt-*` packages and packages in the known HappyVertical SDK
+ * allowlist, rather than packages the project authors. The other scopes all
+ * describe the workspace's own sources.
+ */
+export type KnowledgeScope =
+  | 'project'
+  | 'local'
+  | 'package'
+  | 'sdk'
+  | 'installed';
 
 /**
  * Where a package's objects actually came from (#2143). Recording provenance is
@@ -110,6 +121,15 @@ export interface KnowledgePackage {
   docSource: 'AGENTS.md' | 'CLAUDE.md' | null;
   agentDoc?: string;
   /**
+   * SHA-256 of the shipped `AGENTS.md`, when there is one.
+   *
+   * A version bump is a poor drift signal because most releases do not touch a
+   * package's documented surface. This hash is the stable identity a consumer
+   * diffs against its own recorded baseline to answer "which installed packages
+   * changed their documented surface since I last verified my copy?" (#2275).
+   */
+  agentDocSha256?: string;
+  /**
    * Sibling module docs linked from the package's `AGENTS.md` (#2108). Oversized
    * package docs are split by module into `agents/<module>.md` rather than nested
    * `AGENTS.md` files (chains are additive), so this prose is only reachable
@@ -129,6 +149,13 @@ export interface KnowledgePackage {
   isWorkspaceRoot: boolean;
   /** `private: true` packages publish nothing, so packaging rules do not apply. */
   isPrivate: boolean;
+  /**
+   * True when the package was resolved out of `node_modules` rather than
+   * authored in this workspace. This repository's docs and packaging rules do
+   * not apply to it — a consumer cannot add an `AGENTS.md` to a dependency —
+   * so the freshness gate skips it entirely: indexed, never checked (#2275).
+   */
+  isInstalledDependency: boolean;
   objectSource: KnowledgeObjectSource;
   /**
    * Machine-readable reason a package produced no objects, or a note about
@@ -173,13 +200,24 @@ export interface KnowledgeDiagnostic {
 }
 
 export interface SmrtKnowledgeIndex {
-  /** 2 adds `coverage` and `diagnostics` (additive, #2143). */
-  schemaVersion: 2;
+  /**
+   * 2 adds `coverage` and `diagnostics` (additive, #2143); 3 adds
+   * `installedPackages` plus each package's `isInstalledDependency` and
+   * `agentDocSha256` (additive, #2275).
+   */
+  schemaVersion: 3;
   generatedAt: string;
   rootDir: string;
   packages: KnowledgePackage[];
   smrtPackages: KnowledgePackage[];
   sdkPackages: KnowledgePackage[];
+  /**
+   * Installed `@happyvertical/*` dependencies, SMRT and SDK alike. In a
+   * consumer app this is the whole audit surface. In this monorepo it holds the
+   * registry-installed SDK packages; the `smrt-*` names resolve to workspace
+   * copies, which win the name-keyed dedupe (#2275).
+   */
+  installedPackages: KnowledgePackage[];
   relationshipsV2: {
     foreignKeyFields: number;
     crossPackageRefFields: number;
@@ -438,7 +476,7 @@ export async function buildKnowledgeIndex(
   await applyScannerFallbacks(packages, memberExcludes);
 
   packages.push(
-    ...discoverInstalledSdkPackages(rootDir, packageDirs, includeDocs),
+    ...discoverInstalledPackages(rootDir, packageDirs, includeDocs),
   );
 
   const uniquePackages = dedupePackages(packages);
@@ -458,12 +496,15 @@ export async function buildKnowledgeIndex(
   });
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     rootDir,
     packages: scopedPackages,
     smrtPackages,
     sdkPackages,
+    installedPackages: scopedPackages.filter(
+      (pkg) => pkg.isInstalledDependency,
+    ),
     relationshipsV2: summarizeRelationshipsV2(scopedPackages),
     coverage,
     diagnostics: buildIndexDiagnostics(
@@ -482,16 +523,21 @@ function buildCoverage(options: {
   packageDirs: string[];
   packages: KnowledgePackage[];
 }): KnowledgeCoverage {
+  // Coverage answers "did discovery see THIS PROJECT", so it reports on the
+  // packages the project authors. An installed dependency's objects are not
+  // project coverage, and listing every dependency that ships no model as a
+  // gap made the answer unreadable in a consumer app (#2275).
+  const authored = options.packages.filter((pkg) => !pkg.isInstalledDependency);
   return {
     workspaceGlobs: options.globs,
     workspaceGlobSource: options.globSource,
     packageDirs: options.packageDirs.map(
       (dir) => relative(options.rootDir, dir) || '.',
     ),
-    packagesWithObjects: options.packages
+    packagesWithObjects: authored
       .filter((pkg) => pkg.objects.length > 0)
       .map((pkg) => `${pkg.name} (${pkg.objects.length}, ${pkg.objectSource})`),
-    packagesWithoutObjects: options.packages
+    packagesWithoutObjects: authored
       .filter((pkg) => pkg.objects.length === 0)
       .map((pkg) => ({
         name: pkg.name,
@@ -530,12 +576,41 @@ function buildIndexDiagnostics(
   discoveryDiagnostics: KnowledgeDiagnostic[] = [],
 ): KnowledgeDiagnostic[] {
   const diagnostics: KnowledgeDiagnostic[] = [...discoveryDiagnostics];
-  const totalObjects = packages.reduce(
+  // Counted over authored packages only. Installed `@happyvertical/smrt-*`
+  // dependencies ship their own `smrt-knowledge.json`, so counting them would
+  // make this guard unreachable in any project that depends on the framework —
+  // exactly the projects whose own discovery is most likely to be broken
+  // (#2143, #2275).
+  const authoredPackages = packages.filter((pkg) => !pkg.isInstalledDependency);
+  const authoredObjects = authoredPackages.reduce(
     (total, pkg) => total + pkg.objects.length,
     0,
   );
+  const installedObjects = packages.reduce(
+    (total, pkg) =>
+      total + (pkg.isInstalledDependency ? pkg.objects.length : 0),
+    0,
+  );
 
-  if (totalObjects === 0) {
+  if (authoredObjects === 0 && installedObjects > 0) {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'no-authored-smrt-objects',
+      message: [
+        `No SMRT objects were discovered in the project's own packages under ${rootDir},`,
+        `though ${installedObjects} were read from installed dependencies.`,
+        'Expected for an application that only consumes the framework;',
+        'a discovery failure if this workspace is supposed to declare @smrt() classes.',
+      ].join(' '),
+      remedy: [
+        'If this workspace authors SMRT objects, confirm rootDir is the workspace root,',
+        'confirm the workspace globs cover the directories that hold @smrt() classes,',
+        'and run `pnpm build` in the owning package to emit .smrt/manifest.json.',
+      ].join(' '),
+    });
+  }
+
+  if (authoredObjects === 0 && installedObjects === 0) {
     diagnostics.push({
       severity: 'error',
       code: 'no-smrt-objects-discovered',
@@ -546,7 +621,7 @@ function buildIndexDiagnostics(
         'Treat this as a discovery failure, not as evidence that the project has no SMRT model.',
       ].join(' '),
       checkedPaths: [
-        ...new Set(packages.flatMap((pkg) => pkg.checkedObjectPaths)),
+        ...new Set(authoredPackages.flatMap((pkg) => pkg.checkedObjectPaths)),
       ],
       remedy: [
         'Confirm rootDir is the workspace root;',
@@ -656,10 +731,18 @@ export async function checkKnowledgeFreshnessFromIndex(
   // inclusion (#2143). But in a single-package repository the root IS the
   // published package, so exempting every root would turn this gate into a
   // no-op for exactly the layout #2143 added support for.
-  const hasMemberPackages = index.packages.some(
+  //
+  // Installed dependencies are excluded throughout: a consumer app cannot add
+  // an AGENTS.md to a package it merely installs, so gating on one would make
+  // `dev:knowledge-check` unpassable everywhere downstream (#2275). They are
+  // still indexed and reported — only the authored-source rules skip them.
+  const authoredPackages = index.packages.filter(
+    (item) => !item.isInstalledDependency,
+  );
+  const hasMemberPackages = authoredPackages.some(
     (item) => item.kind !== 'sdk' && !item.isWorkspaceRoot,
   );
-  const memberDirectories = index.packages
+  const memberDirectories = authoredPackages
     .filter(
       (item) =>
         item.kind !== 'sdk' && !item.isWorkspaceRoot && item.relativeDirectory,
@@ -678,7 +761,7 @@ export async function checkKnowledgeFreshnessFromIndex(
         directory !== pkg.relativeDirectory &&
         pkg.relativeDirectory.startsWith(`${directory}/`),
     );
-  for (const pkg of index.packages.filter(
+  for (const pkg of authoredPackages.filter(
     (item) =>
       item.kind !== 'sdk' && !(item.isWorkspaceRoot && hasMemberPackages),
   )) {
@@ -770,7 +853,7 @@ export async function checkKnowledgeFreshnessFromIndex(
     }
   }
 
-  for (const pkg of index.packages) {
+  for (const pkg of authoredPackages) {
     issues.push(...checkDomainKnowledgeArtifact(index.rootDir, pkg));
   }
 
@@ -1083,6 +1166,7 @@ export function renderKnowledgeIndexMarkdown(
     '',
     `- SMRT packages: ${index.smrtPackages.length}`,
     `- SDK packages: ${index.sdkPackages.length}`,
+    `- Installed dependencies: ${index.installedPackages.length}`,
     `- foreignKey fields: ${index.relationshipsV2.foreignKeyFields}`,
     `- crossPackageRef fields: ${index.relationshipsV2.crossPackageRefFields}`,
     `- junction collections: ${index.relationshipsV2.junctionCollections}`,
@@ -1113,6 +1197,10 @@ export function renderKnowledgeIndexMarkdown(
     lines.push(
       `- docs: ${pkg.docSource ?? '(none)'}${pkg.hasClaudeShim ? ' + CLAUDE.md shim' : ''}`,
     );
+    if (pkg.isInstalledDependency) {
+      lines.push('- source: installed dependency');
+      lines.push(`- AGENTS.md sha256: ${pkg.agentDocSha256 ?? '(none)'}`);
+    }
     if (pkg.moduleDocs.length > 0) {
       lines.push(
         `- module docs: ${pkg.moduleDocs.map((doc) => doc.path).join(', ')}`,
@@ -1557,7 +1645,29 @@ function discoverProjectPackageDirs(rootDir: string): {
   };
 }
 
-function discoverInstalledSdkPackages(
+/**
+ * Installed `@happyvertical/*` packages, resolved once each (#2275).
+ *
+ * Reads the `@happyvertical` scope directory of the project and of every
+ * workspace package — one `readdir` per scope directory, resolving each entry's
+ * real path — instead of descending through `node_modules`. Under pnpm those
+ * entries are symlinks into a store whose entries link back out to each other,
+ * so a descent revisits the same package once per path that reaches it. The
+ * realpath is the dedupe key only: the same store entry reached from three
+ * scope directories is read once, but it is read through its `node_modules`
+ * path, because a realpath is the wrong thing to report. On a host where any
+ * ancestor of the root is a symlink (`/var` on macOS, a symlinked worktree),
+ * `relative(rootDir, realpath)` escapes the root entirely.
+ *
+ * Workspace packages linked into a sibling's `node_modules` are skipped here.
+ * They are authored source that happens to be reachable through a link, and
+ * calling them installed would exempt them from the freshness gate.
+ *
+ * Both SMRT and SDK packages are returned. A consumer app authors neither, and
+ * its `@happyvertical/smrt-*` dependencies are exactly the surface it needs to
+ * audit; excluding them is why the index could see nothing in a consumer app.
+ */
+function discoverInstalledPackages(
   rootDir: string,
   packageDirs: string[],
   includeDocs: boolean,
@@ -1566,35 +1676,58 @@ function discoverInstalledSdkPackages(
     join(rootDir, 'node_modules', '@happyvertical'),
     ...packageDirs.map((dir) => join(dir, 'node_modules', '@happyvertical')),
   ];
+  const workspaceRealPaths = new Set(
+    [rootDir, ...packageDirs].flatMap((dir) => {
+      try {
+        return [realpathSync(dir)];
+      } catch {
+        return [];
+      }
+    }),
+  );
 
-  return scopeDirs
-    .filter(
-      (scopeDir, index, all) =>
-        existsSync(scopeDir) && all.indexOf(scopeDir) === index,
+  const byRealPath = new Map<string, string>();
+  for (const scopeDir of new Set(scopeDirs)) {
+    if (!existsSync(scopeDir)) continue;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(scopeDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const entryPath = join(scopeDir, entry.name);
+      let resolved: string;
+      try {
+        resolved = realpathSync(entryPath);
+      } catch {
+        // A dangling link is not an installed package.
+        continue;
+      }
+      if (workspaceRealPaths.has(resolved)) continue;
+      if (byRealPath.has(resolved)) continue;
+      byRealPath.set(resolved, entryPath);
+    }
+  }
+
+  const packages: KnowledgePackage[] = [];
+  for (const directory of byRealPath.values()) {
+    const packageJson = objectRecord(readJson(join(directory, 'package.json')));
+    const name = packageJson.name;
+    if (typeof name !== 'string') continue;
+    if (
+      !SDK_PACKAGE_NAMES.has(name) &&
+      !name.startsWith('@happyvertical/smrt-')
     )
-    .flatMap((scopeDir) =>
-      readdirSync(scopeDir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
-        .map((entry) => {
-          const entryPath = join(scopeDir, entry.name);
-          try {
-            return lstatSync(entryPath).isSymbolicLink()
-              ? realpathSync(entryPath)
-              : entryPath;
-          } catch {
-            return entryPath;
-          }
-        }),
-    )
-    .filter((dir) => {
-      const pkg = objectRecord(readJson(join(dir, 'package.json')));
-      return (
-        typeof pkg.name === 'string' &&
-        SDK_PACKAGE_NAMES.has(pkg.name) &&
-        !pkg.name.startsWith('@happyvertical/smrt-')
-      );
-    })
-    .map((dir) => readKnowledgePackage(rootDir, dir, includeDocs));
+      continue;
+    packages.push(
+      readKnowledgePackage(rootDir, directory, includeDocs, {
+        installed: true,
+      }),
+    );
+  }
+  return packages.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function filterKnowledgePackages(
@@ -1610,12 +1743,16 @@ function filterKnowledgePackages(
     switch (options.scope) {
       case 'local':
         return (
-          pkg.kind !== 'sdk' && !pkg.relativeDirectory.includes('node_modules')
+          pkg.kind !== 'sdk' &&
+          !pkg.isInstalledDependency &&
+          !pkg.relativeDirectory.includes('node_modules')
         );
       case 'package':
-        return pkg.kind !== 'sdk';
+        return pkg.kind !== 'sdk' && !pkg.isInstalledDependency;
       case 'sdk':
         return pkg.kind === 'sdk';
+      case 'installed':
+        return pkg.isInstalledDependency;
       case 'project':
       case undefined:
         return true;
@@ -1629,6 +1766,7 @@ function readKnowledgePackage(
   rootDir: string,
   directory: string,
   includeDocs: boolean,
+  options: { installed?: boolean } = {},
 ): KnowledgePackage {
   const packageJson = objectRecord(readJson(join(directory, 'package.json')));
   const dependencies = stringRecord(packageJson.dependencies);
@@ -1690,6 +1828,12 @@ function readKnowledgePackage(
       ? domainKnowledge?.content.agentDoc ||
         (hasAgentsMd ? agentsContent : fallbackClaudeDoc || undefined)
       : undefined,
+    // Always hashed, even when doc bodies are excluded: the hash is the drift
+    // signal, and dropping it with the body would make `includeDocs: false`
+    // useless for a consumer audit (#2275).
+    agentDocSha256: hasAgentsMd
+      ? createHash('sha256').update(agentsContent).digest('hex')
+      : undefined,
     // Prefer the built artifact, but fall back to resolving the links straight
     // from AGENTS.md so a package without a generated smrt-knowledge.json still
     // surfaces its module docs.
@@ -1715,6 +1859,7 @@ function readKnowledgePackage(
     relationshipFeatures: relationshipFeatures(objects),
     isWorkspaceRoot: resolve(directory) === resolve(rootDir),
     isPrivate: packageJson.private === true,
+    isInstalledDependency: options.installed === true,
     objectSource: resolvedObjects.source,
     objectSourceReason: resolvedObjects.reason,
     checkedObjectPaths: resolvedObjects.checkedPaths,
@@ -2832,7 +2977,10 @@ function selectPackages(
   const packageName = options.packageName?.toLowerCase();
   if (packageName) {
     for (const pkg of domainPackages(index)) {
-      if (packageMatches(pkg, packageName)) {
+      if (
+        scopeAllowsPackage(pkg, options.scope) &&
+        packageMatches(pkg, packageName)
+      ) {
         selected.add(pkg);
       }
     }
@@ -2876,7 +3024,7 @@ function selectPackages(
       '@happyvertical/smrt-dev-mcp',
     ]) {
       const pkg = index.smrtPackages.find((item) => item.name === name);
-      if (pkg) selected.add(pkg);
+      if (pkg && scopeAllowsPackage(pkg, options.scope)) selected.add(pkg);
     }
 
     // A downstream product has none of those framework packages in its
@@ -2917,10 +3065,13 @@ function selectSdkPackages(
   const packageName = options.packageName?.toLowerCase();
 
   for (const sdk of index.sdkPackages) {
+    const selectedDependency = sdkNames.has(sdk.name);
+    if (!scopeAllowsSdkPackage(sdk, options.scope, selectedDependency))
+      continue;
     const shortName = sdk.name.replace('@happyvertical/', '');
     if (
       options.scope === 'sdk' ||
-      sdkNames.has(sdk.name) ||
+      selectedDependency ||
       (packageName && packageMatches(sdk, packageName)) ||
       text.includes(sdk.name.toLowerCase()) ||
       includesToken(text, shortName)
@@ -2929,19 +3080,41 @@ function selectSdkPackages(
     }
   }
 
-  if (selected.size === 0) {
+  if (selected.size === 0 && !(packageName && selectedPackages.length === 0)) {
     for (const name of [
       '@happyvertical/ai',
       '@happyvertical/sql',
       '@happyvertical/files',
       '@happyvertical/utils',
     ]) {
-      const sdk = index.sdkPackages.find((item) => item.name === name);
+      const sdk = index.sdkPackages.find(
+        (item) =>
+          item.name === name &&
+          scopeAllowsSdkPackage(item, options.scope, false),
+      );
       if (sdk) selected.add(sdk);
     }
   }
 
   return [...selected].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function scopeAllowsSdkPackage(
+  pkg: KnowledgePackage,
+  scope: KnowledgeScope | undefined,
+  selectedDependency: boolean,
+): boolean {
+  switch (scope) {
+    case 'installed':
+      return pkg.isInstalledDependency;
+    case 'local':
+    case 'package':
+      return !pkg.isInstalledDependency || selectedDependency;
+    case 'sdk':
+    case 'project':
+    case undefined:
+      return true;
+  }
 }
 
 function domainPackages(index: SmrtKnowledgeIndex): KnowledgePackage[] {
@@ -2955,9 +3128,15 @@ function scopeAllowsPackage(
   switch (scope) {
     case 'sdk':
       return false;
+    case 'installed':
+      return pkg.isInstalledDependency;
     case 'local':
-      return !pkg.relativeDirectory.includes('node_modules');
+      return (
+        !pkg.isInstalledDependency &&
+        !pkg.relativeDirectory.includes('node_modules')
+      );
     case 'package':
+      return !pkg.isInstalledDependency;
     case 'project':
     case undefined:
       return true;

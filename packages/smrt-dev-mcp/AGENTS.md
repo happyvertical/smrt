@@ -44,6 +44,36 @@ amplify into unbounded filesystem work. Discovery also stops before package
 reads when more than 512 packages match, revalidates confinement immediately
 before reading each package, and runs at most eight scanner fallbacks at once.
 
+### Consumer apps (#2275)
+
+An app that installs the published packages authors none of them, so workspace
+discovery alone sees nothing. Every installed `@happyvertical/smrt-*` package,
+plus the known SDK packages, is resolved from the project's and each workspace
+package's `node_modules/@happyvertical` scope directory and marked
+`isInstalledDependency`. This is an enumeration, not a walk: pnpm materializes
+a store whose entries link back out to their siblings, so a descent reads the
+same package once per path that reaches it. Real paths deduplicate the result;
+each package is still read through its `node_modules` path, because a realpath
+escapes the root wherever an ancestor is a symlink. A workspace package linked
+into a sibling's `node_modules` is authored source and is never marked
+installed.
+
+- `--scope installed` reports exactly those packages. `local` and `package`
+  exclude them; `project` includes them; the index also lists them separately
+  as `installedPackages` (`schemaVersion: 3`). It is a reporting scope:
+  `dev:knowledge-check` has no authored packages to gate under it.
+- Each package carries `agentDocSha256`, the hash of its shipped `AGENTS.md`.
+  That is the drift signal a consumer diffs against a recorded baseline — a
+  version bump is not, because most releases do not touch a documented surface.
+- The freshness gate skips installed packages entirely: indexed, never checked.
+  A consumer cannot add an `AGENTS.md` to a dependency, and a published
+  package's artifact hashes cannot match its republished sources.
+- Coverage and the `no-smrt-objects-discovered` guard count authored packages
+  only. Dependencies ship their own objects, so counting them would make that
+  guard unreachable in exactly the projects most likely to have broken
+  discovery. A project whose own packages contribute nothing while its
+  dependencies do gets the `no-authored-smrt-objects` warning instead.
+
 Per package, objects resolve in this order, and the winner is recorded in
 `objectSource` with a reason:
 
@@ -52,7 +82,7 @@ Per package, objects resolve in this order, and the winner is recorded in
 3. `scanner` — `OxcScanner` + `ManifestAdapter` over the package's sources
 4. `none` — with a machine-readable reason
 
-The index exposes `coverage` and `diagnostics` (`schemaVersion: 2`). Zero
+The index exposes `coverage` and `diagnostics` (added in `schemaVersion: 2`). Zero
 discovered objects is an **error-grade** diagnostic that names the roots and
 artifact paths checked plus the fix, and it propagates into
 `smrt-architecture`/`smrt-review`/`reflect-*` results and prompt bundles.
