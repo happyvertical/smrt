@@ -10,9 +10,13 @@ const batchWorkflow = readFileSync(
   new URL('../.github/workflows/on-merge-main.yml', import.meta.url),
   'utf8',
 );
+const publishDryRunWorkflow = readFileSync(
+  new URL('../.github/workflows/publish-dry-run.yml', import.meta.url),
+  'utf8',
+);
 
-function job(name) {
-  const match = workflow.match(
+function job(name, source = workflow) {
+  const match = source.match(
     new RegExp(
       `^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z][a-z0-9-]*:\\n|(?![\\s\\S]))`,
       'm',
@@ -21,6 +25,15 @@ function job(name) {
   assert.ok(match, `workflow job ${name} must exist`);
   return match[0];
 }
+
+test('publish dry-run summary terminalizes cancellation without using metal', () => {
+  const summary = job('publish-dry-run-summary', publishDryRunWorkflow);
+
+  assert.match(summary, /^      !cancelled\(\) && always\(\) &&$/m);
+  assert.match(summary, /^    runs-on: ubuntu-latest$/m);
+  assert.match(summary, /^    timeout-minutes: 10$/m);
+  assert.doesNotMatch(summary, /arc-happyvertical/);
+});
 
 test('final publisher skips workspace installation and allows recovery headroom', () => {
   const publisher = job('publish-release');
