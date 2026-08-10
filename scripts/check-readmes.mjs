@@ -3,8 +3,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
 import { discoverWorkspaces } from './workspaces.mjs';
+
+const typescriptModule = process.env.SMRT_TYPESCRIPT_PATH
+  ? await import(pathToFileURL(process.env.SMRT_TYPESCRIPT_PATH).href)
+  : await import('typescript');
+const ts = typescriptModule.default;
 
 const ROOT = resolve(import.meta.dirname, '..');
 const README = join(ROOT, 'README.md');
