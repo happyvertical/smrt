@@ -3394,8 +3394,9 @@ export class SmrtObject extends SmrtClass {
    * @param options.version - Schema version for the stored value (default 1)
    * @param options.expiresAt - Optional expiry timestamp stored on the row.
    *   Storage only: {@link recall} and {@link recallAll} do **not** filter on it,
-   *   so an expired entry is still returned. Callers that need expiry semantics
-   *   must read `expires_at` from `_smrt_contexts` and filter (or delete) themselves.
+   *   so an expired entry is still returned. Callers that need primitive expiry
+   *   semantics should include the expiry in the stored value and enforce it before
+   *   use, or use `LearningMemory`, which filters expired rows through a public API.
    * @returns Promise that resolves when the context is stored
    * @throws Error if `initialize()` has not been called
    *

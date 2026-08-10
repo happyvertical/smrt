@@ -654,8 +654,12 @@ class Product extends SmrtObject {
   // Relationships
   @foreignKey(Category)
   categoryId: string = '';
-  reviews = oneToMany(Review);
-  relatedProducts = manyToMany(Product);
+
+  @oneToMany(Review)
+  reviews: Review[] = [];
+
+  @manyToMany(Product)
+  relatedProducts: Product[] = [];
 }
 ```
 
@@ -691,8 +695,12 @@ SMRT supports eager loading to optimize queries that access related objects, sol
 ```typescript
 // Define relationships
 class Order extends SmrtObject {
-  customerId = foreignKey(Customer);
-  productId = foreignKey(Product);
+  @foreignKey(Customer)
+  customerId: string = '';
+
+  @foreignKey(Product)
+  productId: string = '';
+
   status: string = 'pending';
 }
 
@@ -1182,10 +1190,9 @@ The Context Memory System enables SMRT objects to remember and recall operationa
 When an AI agent discovers that a specific CSS selector works for extracting content from a website, or learns that a particular date format is used consistently, it should remember this for future use. The Context Memory System provides persistent storage for these learned patterns with:
 
 - **Hierarchical scoping**: Organize patterns by domain, context, and specificity
-- **Confidence tracking**: Store how reliable each pattern is (0-1 scale)
-- **Automatic fallback**: Query from specific to general scopes
-- **Success metrics**: Track usage counts for pattern optimization
-- **Expiration support**: Optional TTL for time-sensitive patterns
+- **Confidence filtering**: Store reliability (0–1) and apply a minimum confidence on recall
+- **Opt-in fallback**: Query from specific to general scopes with `includeAncestors: true`
+- **Stored expiration metadata**: Record `expiresAt`; use `LearningMemory` when you need enforced TTL and outcome counters
 
 ### Core Methods
 
@@ -1208,11 +1215,10 @@ class WebScraper extends SmrtObject {
       scope: `parser/content/${new URL(url).hostname}`,
       key: 'article-selector',
       includeAncestors: true // Falls back to parent scopes
-    });
+    }) as string | null;
 
     if (remembered) {
-      console.log(`Using cached selector (confidence: ${remembered.confidence})`);
-      return remembered.value;
+      return remembered;
     }
 
     // Discover selector using AI
@@ -1248,10 +1254,10 @@ class ScraperCollection extends SmrtCollection<WebScraper> {
     const remembered = await this.recall({
       scope: 'config/http',
       key: 'user-agent'
-    });
+    }) as string | null;
 
     if (remembered) {
-      return remembered.value;
+      return remembered;
     }
 
     // Set default for all instances
@@ -1352,7 +1358,7 @@ const contexts = await object.recallAll({
   minConfidence?: number        // Minimum confidence threshold (default: 0)
 });
 
-// Returns: Array of context entries
+// Returns: Map<string, unknown> of key → stored value
 ```
 
 #### `forget(options)` - Delete Context
@@ -1391,7 +1397,7 @@ class ArticleScraper extends SmrtObject {
     });
 
     if (strategy) {
-      return await this.applyStrategy(url, strategy.value);
+      return await this.applyStrategy(url, strategy);
     }
 
     // Discover new strategy with AI
@@ -1415,6 +1421,8 @@ class ArticleScraper extends SmrtObject {
 ```typescript
 class APIClient extends SmrtObject {
   async fetchData(endpoint: string) {
+    const response = await fetch(endpoint);
+
     // Recall known response structure
     const structure = await this.recall({
       scope: `api/response/${endpoint}`,
@@ -1423,11 +1431,10 @@ class APIClient extends SmrtObject {
 
     if (structure) {
       // Use known structure for efficient parsing
-      return this.parseResponse(response, structure.value);
+      return this.parseResponse(response, structure);
     }
 
     // Analyze and remember response structure
-    const response = await fetch(endpoint);
     const discoveredStructure = await this.analyzeStructure(response);
 
     await this.remember({
@@ -1456,8 +1463,8 @@ class DocumentProcessor extends SmrtObject {
     });
 
     // Apply remembered preferences
-    for (const pref of preferences) {
-      this.applyPreference(pref.key, pref.value);
+    for (const [key, value] of preferences) {
+      this.applyPreference(key, value);
     }
   }
 
@@ -1478,20 +1485,24 @@ class DocumentProcessor extends SmrtObject {
 class PatternLearner extends SmrtObject {
   async evolvePattern(scope: string, key: string) {
     // Get current pattern version
-    const current = await this.recall({ scope, key });
+    const current = await this.recall({ scope, key }) as {
+      pattern: unknown;
+      version: number;
+    } | null;
 
     if (!current) return;
 
     // Create improved version
-    const improved = await this.improvePattern(current.value);
+    const improved = await this.improvePattern(current.pattern);
+    const nextVersion = current.version + 1;
 
     // Store as new version
     await this.remember({
       scope,
       key,
-      value: improved,
-      version: (current.version || 1) + 1,
-      confidence: 0.7, // Lower confidence for untested version
+      value: { pattern: improved, version: nextVersion },
+      version: nextVersion,
+      confidence: 1.0,
       metadata: {
         previousVersion: current.version,
         improvedAt: new Date()
@@ -1516,9 +1527,11 @@ The system table is automatically created when you initialize any SMRT object wi
 
 **Expiry is stored, not enforced by `recall()`.** `remember()` writes
 `expires_at`, but `recall()` and `recallAll()` have no expiry predicate — an
-entry whose expiry has passed is still returned. Treat `expiresAt` as metadata
-your own code reads and acts on (re-derive the value, or call `forget()`), not
-as a TTL the primitive API applies. `success_count` / `failure_count` are the
+entry whose expiry has passed is still returned, and the primitive recall APIs
+do not expose the stored expiry. If you stay on the primitive API, include the
+expiry inside the stored value and enforce it before use (then call `forget()`
+to delete the stale entry). Do not query the private `_smrt_contexts` table
+directly. `success_count` / `failure_count` are the
 same shape of promise: the columns exist on the table, but nothing in the
 primitive path ever increments them. `SmrtObject.remember()` does not write
 them at all, and `SmrtCollection.remember()` writes literal zeros — so a
@@ -1541,7 +1554,7 @@ is off unless you set `decayHalfLifeMs`.
 4. **Use metadata for debugging**: Store discovery timestamps, AI model used, etc.
 5. **Clean up old patterns**: Use `forgetScope()` to remove outdated contexts
 6. **Version critical patterns**: Use version numbers for pattern evolution
-7. **Handle expiration yourself**: `expiresAt` is recorded but never applied by `recall()`; filter on it in your own code, or use `LearningMemory`, which does apply it
+7. **Handle expiration explicitly**: `expiresAt` is recorded but never applied or returned by `recall()`; include an expiry in the stored value and enforce it before use, or use `LearningMemory`, which applies expiry through a public API
 
 ## Cross-Package Integration
 

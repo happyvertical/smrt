@@ -137,7 +137,7 @@ class Product extends SmrtObject {
 - `number = 0` → INTEGER column (no decimal point)
 - `number = 0.0` → DECIMAL column (has decimal point)
 
-See [packages/core/CLAUDE.md](./packages/core/CLAUDE.md#typescript-types-vs-field-helpers) for complete guidance.
+See [the core field decorator guide](./packages/core/README.md#field-decorators) for complete guidance.
 
 ## Documentation
 
