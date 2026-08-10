@@ -41,7 +41,7 @@ refreshes `last_used_at`. Keep semantic search behind the
 
 ```typescript
 await collection.list({
-  where: { status: 'active', price: { op: '>', value: 10 } },
+  where: { status: 'active', 'price >': 10 },
   limit: 50, offset: 0, orderBy: 'created_at DESC'
 });
 ```
