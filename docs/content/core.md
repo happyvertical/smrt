@@ -802,8 +802,7 @@ Configure which fields to embed in the `@smrt()` decorator:
   embeddings: {
     fields: ['title', 'content', 'summary'],  // Fields to embed (required)
     provider: 'local',                        // Override the project provider (optional)
-    autoGenerate: true,                       // Embed on save (optional, default true)
-    regenerateOnChange: true                  // Skip unchanged content (optional, default true)
+    autoGenerate: true                        // Allow save-time generation (optional, default true)
   }
 })
 class Article extends SmrtObject {
@@ -813,10 +812,13 @@ class Article extends SmrtObject {
 }
 ```
 
-`ClassEmbeddingConfig` accepts exactly `fields`, `provider`, `autoGenerate`,
-`regenerateOnChange`, and `combinedField`. **There is no `model` key here** — an
-unrecognized key in the decorator is ignored rather than rejected, so a stray
-`model` silently does nothing. The model is a project-level setting:
+The decorator's `embeddings` object accepts exactly `fields`, `provider`,
+`autoGenerate`, `regenerateOnChange`, and `combinedField`.
+
+**There is no `model` key here.** Because `smrt()` takes a typed config, writing
+one in a TypeScript object literal is an excess-property error; in plain
+JavaScript, or wherever that check does not apply, it is simply ignored, since
+nothing reads it. The model is a project-level setting:
 
 ```javascript
 // smrt.config.js
@@ -826,8 +828,8 @@ export default defineConfig({
   smrt: {
     embeddings: {
       provider: 'local',                      // 'local' | 'ai' | 'auto' (default 'local')
-      localModel: 'Xenova/bge-base-en-v1.5',  // used when provider is 'local' or 'auto'
-      aiModel: 'text-embedding-3-small',      // used when provider is 'ai' or as fallback
+      localModel: 'Xenova/bge-base-en-v1.5',  // used by 'local', and by 'auto' with no AI client
+      aiModel: 'text-embedding-3-small',      // used by 'ai', and by 'auto' when an AI client exists
       dimensions: 768                         // default 768
     }
   }
@@ -838,6 +840,16 @@ The project config and the class config are merged into a
 `ResolvedEmbeddingConfig` at runtime. `getEmbedding()` does take a per-call
 `model` argument, but it selects which stored vector to read rather than which
 model to generate with — see below.
+
+Two caveats on the class-level flags:
+
+- `autoGenerate` permits save-time generation but does not guarantee it. `save()`
+  only kicks off a background `generateEmbeddings()` when an AI client is
+  configured, so that a save never quietly loads a local transformer model. With
+  `provider: 'local'` and no AI client, call `generateEmbeddings()` yourself.
+- `regenerateOnChange` is resolved onto `ResolvedEmbeddingConfig` but is not
+  currently consulted anywhere. Unchanged content is skipped regardless; use
+  `generateEmbeddings({ force: true })` to re-embed it.
 
 ### `generateEmbeddings(options?)` - Generate Vectors
 
