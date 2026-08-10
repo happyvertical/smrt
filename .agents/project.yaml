@@ -9,6 +9,10 @@
     "repository": "happyvertical/smrt",
     "project_url": "https://github.com/orgs/happyvertical/projects/7"
   },
+  "forge": {
+    "provider": "github",
+    "repository": "happyvertical/smrt"
+  },
   "labels": {
     "claim": "agent: implementation",
     "blocked": "status: blocked",
