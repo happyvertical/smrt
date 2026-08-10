@@ -468,7 +468,7 @@ import {
 
 ## API Reference
 
-For complete API documentation, see the generated TypeDoc documentation at [/api/assets/globals](/api/assets/globals).
+For the full exported API, read the package sources: [`packages/assets/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/assets/README.md) and [`packages/assets/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/assets/AGENTS.md).
 
 **Core Classes:**
 - `Asset`: Main asset entity with versioning

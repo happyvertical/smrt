@@ -319,7 +319,7 @@ const largeEntries = await entries.list({
 
 ## API Reference
 
-For complete API documentation, see the generated TypeDoc documentation at `/api/accounts/globals`.
+For the full exported API, read the package sources: [`packages/ledgers/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/ledgers/README.md) and [`packages/ledgers/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/ledgers/AGENTS.md).
 
 ### Core Classes
 

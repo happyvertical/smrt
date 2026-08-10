@@ -548,7 +548,7 @@ smrt profiles update <id> --name "Jane Doe"
 
 ## API Reference
 
-For complete API documentation, see the generated TypeDoc documentation at `/api/profiles/globals`.
+For the full exported API, read the package sources: [`packages/profiles/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/profiles/README.md) and [`packages/profiles/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/profiles/AGENTS.md).
 
 **Key Exports:**
 - **Models**: `Profile`, `ProfileType`, `ProfileMetadata`, `ProfileMetafield`, `ProfileRelationship`, `ProfileRelationshipType`, `ProfileRelationshipTerm`

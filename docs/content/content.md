@@ -570,7 +570,7 @@ function contentToString(content: Content): string;
 function stringToContent(data: string): object;
 ```
 
-For complete API documentation, see the [SMRT documentation](https://happyvertical.github.io/smrt/api/content/globals).
+For the full exported API, read the package sources: [`packages/content/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/content/README.md) and [`packages/content/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/content/AGENTS.md).
 
 ## TypeScript Support
 

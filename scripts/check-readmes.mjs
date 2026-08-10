@@ -231,10 +231,7 @@ export async function checkReadmes(root = ROOT) {
       fail(`${relative(root, path)} still references obsolete smrt-homer.png branding`);
     }
   }
-  for (const asset of [
-    join(root, 'smrt-homer.png'),
-    join(root, 'docs/content/api/core/_media/smrt-homer.png'),
-  ]) {
+  for (const asset of [join(root, 'smrt-homer.png')]) {
     if (existsSync(asset) && statSync(asset).isFile()) {
       fail(`${relative(root, asset)} obsolete branding asset still exists`);
     }

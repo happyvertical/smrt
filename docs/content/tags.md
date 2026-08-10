@@ -398,7 +398,7 @@ async function getPostTags(post: BlogPost): Promise<Tag[]> {
 - **`TagMetadata`**: Flexible metadata structure (colors, icons, statistics, etc.)
 - **`TagHierarchy`**: Complete hierarchy result (ancestors, current, descendants)
 
-For complete API documentation, see the generated TypeDoc documentation at `/api/tags/globals`.
+For the full exported API, read the package sources: [`packages/tags/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/tags/README.md) and [`packages/tags/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/tags/AGENTS.md).
 
 ## License
 

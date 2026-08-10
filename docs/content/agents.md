@@ -465,7 +465,7 @@ console.log(`Active agents: ${activeAgents.length}`);
 - `'error'` - Agent encountered an error
 - `'shutdown'` - Agent is shutting down
 
-For complete API documentation, see `/api/agents/globals`.
+For the full exported API, read the package sources: [`packages/agents/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/agents/README.md) and [`packages/agents/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/agents/AGENTS.md).
 
 ## License
 

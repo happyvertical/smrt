@@ -204,22 +204,6 @@
     },
     "clean": {
       "cache": false
-    },
-    "docs": {
-      "dependsOn": [
-        "build"
-      ],
-      "inputs": [
-        "src/**",
-        "README.md",
-        "CLAUDE.md",
-        "package.json"
-      ],
-      "outputs": [
-        "docs/**",
-        "manual/**"
-      ],
-      "cache": true
     }
   }
 }

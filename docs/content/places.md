@@ -470,7 +470,7 @@ Places and PlaceTypes are SMRT objects with auto-generated interfaces:
 
 ## API Reference
 
-For complete API documentation, see the [API Reference](/api/places/globals).
+For the full exported API, read the package sources: [`packages/places/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/places/README.md) and [`packages/places/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/places/AGENTS.md).
 
 ## License
 
