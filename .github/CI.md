@@ -210,6 +210,12 @@ reason recorded next to the setting or here:
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
+- Publish Dry Run's `publish-dry-run-summary`, which only downloads and verifies
+  artifacts before reporting upstream results. It runs on GitHub-hosted capacity
+  with a ten-minute hang guard and skips cancelled workflows. Keeping it off the
+  metal lane is required: an `always()` metal summary can be newly queued after
+  an invalidated merge group is cancelled, preventing the run from becoming
+  terminal and making queue-idle checks report phantom work.
 
 `postgres-tests` remains at 45 as a deliberate exception. #2164 retired the unserved
 `arc-happyvertical-node` label, deleted the `node-runner-smoke` workflow that
