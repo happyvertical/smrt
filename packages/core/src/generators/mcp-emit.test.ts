@@ -14,6 +14,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { stripTypeScriptTypes } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -25,11 +26,12 @@ import {
 import { ObjectRegistry } from '../registry.js';
 import { MCPGenerator } from './mcp.js';
 import {
-  generatedSourceExtension,
+  generatedSiblingExtension,
   renderGeneratedSource,
   resolveGeneratedSourceLanguage,
   transpileGeneratedSource,
 } from './mcp-emit.js';
+import { generateRuntimeBootstrap } from './mcp-runtime-template.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,18 +46,45 @@ async function expectParsesAsEsModule(filePath: string): Promise<void> {
   }
 }
 
+describe('generated TypeScript stays erasable', () => {
+  /**
+   * A `.ts` target is written verbatim and documented as runnable through
+   * Node's type stripping, which only erases — it cannot transform. Parameter
+   * properties, enums, and namespaces would make the emitted server fail with
+   * `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`.
+   */
+  it('emits no transform-only syntax, including for task actions', () => {
+    const source = generateRuntimeBootstrap({
+      name: 'erasable-server',
+      tools: [
+        {
+          name: 'widget_reindex',
+          description: 'Reindex widgets',
+          inputSchema: { type: 'object' },
+        },
+      ],
+      taskActions: {
+        widget_reindex: { objectName: 'widget', objectType: 'Widget' },
+      },
+    });
+
+    expect(source).toContain('McpTaskExtensionTransport');
+    expect(() => stripTypeScriptTypes(source, { mode: 'strip' })).not.toThrow();
+  });
+});
+
 describe('resolveGeneratedSourceLanguage', () => {
   it('treats TypeScript extensions as TypeScript', () => {
     expect(resolveGeneratedSourceLanguage('server.ts')).toBe('typescript');
     expect(resolveGeneratedSourceLanguage('/abs/server.mts')).toBe(
       'typescript',
     );
-    expect(resolveGeneratedSourceLanguage('/abs/Server.CTS')).toBe(
+    expect(resolveGeneratedSourceLanguage('/abs/Server.MTS')).toBe(
       'typescript',
     );
   });
 
-  it('treats every other extension as JavaScript', () => {
+  it('treats every other module extension as JavaScript', () => {
     expect(resolveGeneratedSourceLanguage('.smrt/mcp-server/index.js')).toBe(
       'javascript',
     );
@@ -63,9 +92,25 @@ describe('resolveGeneratedSourceLanguage', () => {
     expect(resolveGeneratedSourceLanguage('server')).toBe('javascript');
   });
 
-  it('maps the language onto the extension used for sibling modules', () => {
-    expect(generatedSourceExtension('typescript')).toBe('.ts');
-    expect(generatedSourceExtension('javascript')).toBe('.js');
+  it('rejects CommonJS targets, which no generated server can run', () => {
+    // The generated server uses `import` and `import.meta.url`.
+    expect(() => resolveGeneratedSourceLanguage('server.cjs')).toThrow(
+      /ES module/,
+    );
+    expect(() => resolveGeneratedSourceLanguage('server.cts')).toThrow(
+      /ES module/,
+    );
+    expect(() => generatedSiblingExtension('server.cjs')).toThrow(/ES module/);
+  });
+
+  it("gives sibling modules the entry point's own extension", () => {
+    expect(generatedSiblingExtension('out/index.ts')).toBe('.ts');
+    expect(generatedSiblingExtension('out/index.mts')).toBe('.mts');
+    expect(generatedSiblingExtension('out/index.js')).toBe('.js');
+    // An `.mjs` entry in a CommonJS package needs `.mjs` siblings, or Node
+    // parses them as CommonJS and their `export` statements fail.
+    expect(generatedSiblingExtension('out/index.mjs')).toBe('.mjs');
+    expect(generatedSiblingExtension('out/server')).toBe('.js');
   });
 });
 
@@ -238,6 +283,40 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
       'utf-8',
     );
     expect(handlersContent).not.toContain('arguments: any');
+  });
+
+  it('gives an .mjs modular entry .mjs siblings and specifiers', async () => {
+    const outputDir = join(tmpDir, 'modular-mjs');
+
+    await generator.generateServer({
+      outputPath: join(outputDir, 'index.mjs'),
+      serverName: 'emit-modular-mjs',
+      serverVersion: '1.0.0',
+      modular: true,
+    });
+
+    const indexContent = await readFile(join(outputDir, 'index.mjs'), 'utf-8');
+    expect(indexContent).toContain("from './config.mjs'");
+    expect(indexContent).toContain("from './tools/index.mjs'");
+    expect(indexContent).toContain("from './handlers/index.mjs'");
+
+    for (const relative of [
+      'index.mjs',
+      'config.mjs',
+      join('tools', 'index.mjs'),
+      join('handlers', 'index.mjs'),
+    ]) {
+      await expectParsesAsEsModule(join(outputDir, relative));
+    }
+  });
+
+  it('refuses a CommonJS output path instead of writing an unusable file', async () => {
+    await expect(
+      generator.generateServer({
+        outputPath: join(tmpDir, 'index.cjs'),
+        serverName: 'emit-cjs-server',
+      }),
+    ).rejects.toThrow(/ES module/);
   });
 
   it('writes the modular entry at the requested path', async () => {

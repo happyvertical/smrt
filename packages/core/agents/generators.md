@@ -30,19 +30,22 @@ Per-field web emission (#2046): `buildWebFieldDefinitions` carries `description`
 ## Generated MCP server output language
 
 `MCPGenerator` builds every file as TypeScript, so the requested `outputPath`
-extension decides what is written (#2279). `.ts`/`.mts`/`.cts` targets keep the
-source verbatim for `tsx` or Node type stripping; every other target
-(`.smrt/mcp-server/index.js` by default) is transpiled to JavaScript with the
-`typescript` dependency before writing, because the printed run script and the
-generated `claude-config.example.json` both invoke it with plain `node`.
-`src/generators/mcp-emit.ts` owns that decision — do not reintroduce a bare
-`writeFile` of generated source.
+extension decides what is written (#2279). `.ts`/`.mts` targets keep the source
+verbatim for `tsx` or Node type stripping — which is why the generated source
+must stay erasable-syntax-only (no parameter properties, enums, or namespaces).
+Every other target (`.smrt/mcp-server/index.js` by default) is transpiled to
+JavaScript with the `typescript` dependency before writing, because the printed
+run script and the generated `claude-config.example.json` both invoke it with
+plain `node`. A `.cjs`/`.cts` target is rejected outright: generated servers are
+ES modules. `src/generators/mcp-emit.ts` owns those decisions — do not
+reintroduce a bare `writeFile` of generated source.
 
-Modular output writes `config`, `tools/index`, and `handlers/index` in the entry
-point's *language* — `.ts` for any TypeScript target (a `.mts`/`.cts` entry still
-gets `.ts` siblings), `.js` otherwise — and the entry's relative import
-specifiers are emitted with that same extension, so the files it imports exist.
-The entry is written at the requested path rather than a hardcoded `index.js`.
+Modular output writes `config`, `tools/index`, and `handlers/index` with the
+entry point's own extension, and emits the entry's relative import specifiers
+with that same extension, so the files it imports both exist and load with the
+same module semantics — an `.mjs` entry gets `.mjs` siblings, not `.js` ones a
+CommonJS package would then parse as CommonJS. The entry is written at the
+requested path rather than a hardcoded `index.js`.
 Generated code also has to be valid in an ES module: `arguments` is not a legal
 binding name there, however convenient it reads.
 

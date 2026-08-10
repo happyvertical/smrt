@@ -94,12 +94,19 @@ also answer to a colon alias for backward compatibility; `generate-mcp` and
 
 `smrt generate-mcp` writes `.smrt/mcp-server/index.js` by default and emits
 JavaScript for a `.js` target, so `node .smrt/mcp-server/index.js` runs it
-directly. The generated server is always an ES module. Ask for a `.ts` target
-to keep the annotated TypeScript for `tsx` or Node's type stripping:
+directly. Ask for a `.ts` target to keep the annotated TypeScript for `tsx` or
+Node's type stripping:
 
 ```bash
 smrt generate-mcp --output-path .smrt/mcp-server/index.ts
 ```
+
+The generated server is always an ES module, so a `.cjs`/`.cts` output path is
+rejected. It imports `@modelcontextprotocol/server`, `@happyvertical/smrt-core`,
+and `@happyvertical/smrt-config` at runtime (plus `@happyvertical/smrt-jobs` for
+task actions and `@happyvertical/smrt-tenancy` for tenant-scoped objects), so
+those have to be resolvable from the project you run it in — under pnpm's strict
+layout that means declaring them, not relying on the CLI's own dependencies.
 
 ### Documentation
 

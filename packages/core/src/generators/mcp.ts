@@ -21,8 +21,9 @@ import {
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
 } from './custom-action.js';
 import {
+  type GeneratedSourceExtension,
   type GeneratedSourceLanguage,
-  generatedSourceExtension,
+  generatedSiblingExtension,
   renderGeneratedSource,
   resolveGeneratedSourceLanguage,
 } from './mcp-emit.js';
@@ -1942,9 +1943,9 @@ export class MCPGenerator {
    * Creates separate files for tools, handlers, configuration, and main entry point.
    * This makes the generated server easier to customize and extend.
    *
-   * The sibling modules use the entry point's language — `.ts` for any
-   * TypeScript target, `.js` otherwise — and the entry emits matching relative
-   * specifiers, so its imports resolve to files that exist (#2279).
+   * The sibling modules use the entry point's own extension and the entry
+   * emits matching relative specifiers, so its imports resolve to files that
+   * exist and load with the same module semantics (#2279).
    *
    * @param indexPath - Absolute path of the entry point to generate
    * @param serverName - Server name
@@ -1960,7 +1961,7 @@ export class MCPGenerator {
     language: GeneratedSourceLanguage,
   ): Promise<void> {
     const outputDir = dirname(indexPath);
-    const extension = generatedSourceExtension(language);
+    const extension = generatedSiblingExtension(indexPath);
 
     // Create subdirectories
     const toolsDir = resolve(outputDir, 'tools');
@@ -2459,7 +2460,7 @@ ${
    */
   private generateModularIndex(
     toolListCacheHint: MCPToolListCacheHint,
-    extension: '.ts' | '.js' = '.js',
+    extension: GeneratedSourceExtension = '.js',
   ): string {
     return `#!/usr/bin/env node
 /**

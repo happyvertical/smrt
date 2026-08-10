@@ -6,9 +6,12 @@
  * the caller asked for as `outputPath` decides how that source has to be
  * written (#2279):
  *
- * - `.ts` / `.mts` / `.cts` — write the TypeScript verbatim. The consumer runs
- *   it through `tsx` or Node's type stripping, which is what the repository's
- *   own MCP conformance fixture does.
+ * - `.ts` / `.mts` — write the TypeScript verbatim. The consumer runs it
+ *   through `tsx` or Node's type stripping, which is what the repository's own
+ *   MCP conformance fixture does. The generated source therefore has to stay
+ *   erasable-syntax-only.
+ * - `.cjs` / `.cts` — rejected. Generated servers are ES modules, so a
+ *   CommonJS target cannot run in any language.
  * - anything else (`.js` by default) — transpile to JavaScript first, so
  *   `node .smrt/mcp-server/index.js` runs instead of dying on
  *   `SyntaxError: Unexpected identifier 'CallToolRequest'`.
@@ -21,7 +24,27 @@
 /** Language a generated file is written in, derived from its extension. */
 export type GeneratedSourceLanguage = 'typescript' | 'javascript';
 
-const TYPESCRIPT_EXTENSIONS = ['.ts', '.mts', '.cts'];
+/** Extension a generated module may be written with. */
+export type GeneratedSourceExtension = '.ts' | '.mts' | '.js' | '.mjs';
+
+const TYPESCRIPT_EXTENSIONS = ['.ts', '.mts'];
+
+/**
+ * Generated servers are ES modules — they use `import` and `import.meta.url` —
+ * so a CommonJS target can never run whatever language it is written in.
+ */
+const COMMONJS_EXTENSIONS = ['.cjs', '.cts'];
+
+function assertModuleTarget(outputPath: string, lowerCased: string): void {
+  const commonJs = COMMONJS_EXTENSIONS.find((extension) =>
+    lowerCased.endsWith(extension),
+  );
+  if (commonJs) {
+    throw new Error(
+      `Cannot generate an MCP server at '${outputPath}': the generated server is an ES module, so a ${commonJs} target cannot run. Use .js/.mjs for JavaScript or .ts/.mts for TypeScript.`,
+    );
+  }
+}
 
 /**
  * Decide how a generated file must be written from the path the caller asked
@@ -30,11 +53,13 @@ const TYPESCRIPT_EXTENSIONS = ['.ts', '.mts', '.cts'];
  *
  * @param outputPath - Path the generated file will be written to
  * @returns The language the file contents must be written in
+ * @throws When the path asks for a CommonJS target
  */
 export function resolveGeneratedSourceLanguage(
   outputPath: string,
 ): GeneratedSourceLanguage {
   const lowerCased = outputPath.toLowerCase();
+  assertModuleTarget(outputPath, lowerCased);
   return TYPESCRIPT_EXTENSIONS.some((extension) =>
     lowerCased.endsWith(extension),
   )
@@ -44,15 +69,24 @@ export function resolveGeneratedSourceLanguage(
 
 /**
  * Extension for modules emitted alongside a generated entry point, so the
- * modular server's relative imports resolve to files that exist on disk.
+ * modular server's relative imports resolve to files that exist on disk *and*
+ * are loaded with the entry's own module semantics. An `.mjs` entry point in a
+ * CommonJS package needs `.mjs` siblings, not `.js` ones that Node would then
+ * parse as CommonJS.
  *
- * @param language - Language the generated files are written in
- * @returns `.ts` for TypeScript output, `.js` for JavaScript output
+ * @param outputPath - Path of the generated entry point
+ * @returns The extension every sibling module is written with
+ * @throws When the path asks for a CommonJS target
  */
-export function generatedSourceExtension(
-  language: GeneratedSourceLanguage,
-): '.ts' | '.js' {
-  return language === 'typescript' ? '.ts' : '.js';
+export function generatedSiblingExtension(
+  outputPath: string,
+): GeneratedSourceExtension {
+  const lowerCased = outputPath.toLowerCase();
+  assertModuleTarget(outputPath, lowerCased);
+  if (lowerCased.endsWith('.mts')) return '.mts';
+  if (lowerCased.endsWith('.ts')) return '.ts';
+  if (lowerCased.endsWith('.mjs')) return '.mjs';
+  return '.js';
 }
 
 type TypeScriptApi = typeof import('typescript');

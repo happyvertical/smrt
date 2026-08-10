@@ -626,7 +626,13 @@ class McpTaskExtensionTransport {
   onerror?: (error: Error) => void;
   onmessage?: (message: any) => void;
 
-  constructor(private readonly wire: StdioServerTransport) {}
+  // An explicit field, not a parameter property: a \`.ts\` target has to stay
+  // erasable-syntax-only so Node's type stripping can run it (#2279).
+  wire: StdioServerTransport;
+
+  constructor(wire: StdioServerTransport) {
+    this.wire = wire;
+  }
 
   async start() {
     this.wire.onclose = () => this.onclose?.();
