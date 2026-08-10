@@ -49,13 +49,13 @@ See `src/prompts.ts` for the full rationale block.
 
 ## UI Registry
 
-Svelte components live in `src/svelte/` and auto-register with `ModuleUIRegistry` from `@happyvertical/smrt-svelte/registry` when `@happyvertical/smrt-analytics/svelte` is imported.
+Svelte components live in `src/svelte/` and auto-register with `ModuleUIRegistry` from `@happyvertical/smrt-ui/registry` when `@happyvertical/smrt-analytics/svelte` is imported.
 
 Slot declarations live in `src/ui.ts`, exported via the `./ui` package subpath. The slots are: `analytics-summary`, `events-table`, `property-info`, `property-status-badge`, `stat-card`, `trend-badge` (see `ANALYTICS_UI_SLOTS` for icons / categories / display order).
 
 ```typescript
 import '@happyvertical/smrt-analytics/svelte'; // side-effect: registers slots
-import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 const StatCard = ModuleUIRegistry.get('@happyvertical/smrt-analytics', 'stat-card');
 ```
 

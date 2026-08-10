@@ -50,20 +50,22 @@ library. Which barrel for what:
 
 | Need | Import from |
 |------|-------------|
-| Buttons, cards, badges, avatars, chips, skeletons, tooltips, dropdowns, trees, pagination | `@happyvertical/smrt-svelte/ui` (or the package root) |
+| Buttons, cards, badges, avatars, chips, skeletons, tooltips, dropdowns, trees, pagination | `@happyvertical/smrt-ui/ui` |
 | Provider-free base inputs — `Input`, `Select`, `Textarea`, `Toggle`, `FormGroup` | `@happyvertical/smrt-ui/forms` (also re-exported from `@happyvertical/smrt-svelte/forms`) |
 | Provider-free `Form` (plain `<form>` wrapper) | `@happyvertical/smrt-ui/forms` **only** — `@happyvertical/smrt-svelte/forms` exports the *rich* Provider-backed `Form` under that name, so import the plain one straight from smrt-ui |
 | Provider-backed inputs — `TextInput`, `NumberInput`, `MoneyInput`, date/measurement/address inputs, `CheckboxInput`, file upload, the rich `Form` | `@happyvertical/smrt-svelte/forms` |
-| `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` | `@happyvertical/smrt-svelte/feedback` |
-| `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-svelte/layout` |
-| Chat message bubble, reaction picker, typing indicator | `@happyvertical/smrt-svelte/chat` |
+| `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` | `@happyvertical/smrt-ui/feedback` |
+| `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-ui/layout` |
+| Chat message bubble, reaction picker, typing indicator | `@happyvertical/smrt-ui/chat` |
 | Admin shell, tenant navigation, focus tools, settings, and activities | `@happyvertical/smrt-svelte/workspace` |
 | First-generation ToolsDock during AdminShell migration | `@happyvertical/smrt-svelte/workspace/legacy` |
 | Server-paged settings search, selection, and list/detail layout | `@happyvertical/smrt-svelte/settings` |
 
-The package root re-exports `./ui`, `./forms`, etc., so `from
-'@happyvertical/smrt-svelte'` also works; prefer the specific subpath in domain
-code for tree-shaking and clarity.
+The domain-agnostic primitives are **not** re-exported by smrt-svelte: its
+`exports` map has no `./ui`, `./feedback`, `./layout`, `./chat`, or `./registry`,
+so those specifiers fail to resolve — import them from `@happyvertical/smrt-ui`.
+The smrt-svelte root does re-export `./forms`, but prefer the specific subpath
+in domain code for tree-shaking and clarity.
 
 **Consolidating an existing re-roll** — two patterns:
 

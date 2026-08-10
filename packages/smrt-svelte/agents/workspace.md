@@ -18,6 +18,12 @@ compatibility. Applications that still need ToolsDock during migration may use
 the explicit `@happyvertical/smrt-svelte/workspace/legacy` subpath; keep legacy
 additions isolated there so the canonical workspace surface remains AdminShell.
 
+Of that family, only ToolsDock has an entry point. `WorkspaceShell`,
+`RoleShell`, `NavTree`, and `Breadcrumbs` are named by no subpath and no barrel,
+so they are unreachable from an installed package even though their `.svelte`
+files are copied into `dist/`. Do not document them as available API; removing
+them from the published artifact versus exporting them is tracked in #2286.
+
 **Principles**:
 - SvelteKit-agnostic core — no `$app/state` or `$app/navigation` imports
 - SSR-safe public shell import/render path; browser listeners and localStorage

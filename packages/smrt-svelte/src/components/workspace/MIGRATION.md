@@ -5,14 +5,25 @@ The first-generation workspace family (`WorkspaceShell`, `RoleShell`,
 `@happyvertical/smrt-svelte/workspace` surface. Treat those source files as a
 migration reference while moving apps to `AdminShell`.
 
+## What is still importable
+
+Only `ToolsDock` (with `defineToolsDock`, `useToolsDock`, and the dock types)
+has a public entry point: `@happyvertical/smrt-svelte/workspace/legacy`.
+
+`WorkspaceShell`, `RoleShell`, `NavTree`, and `Breadcrumbs` have **no export
+subpath**. Their `.svelte` files are copied into `dist/`, but the package's
+`exports` map does not name them and no barrel re-exports them, so
+`import ... from '@happyvertical/smrt-svelte/…'` cannot reach them from an
+installed package — the specifier resolves to nothing exported. Read them as
+source; do not plan a migration that keeps rendering them.
+
 ## Adopting AdminShell is additive
 
-Moving to `AdminShell` is a non-breaking, opt-in change — nothing is removed
-from under you:
+Moving to `AdminShell` is a non-breaking, opt-in change for the parts that are
+still reachable:
 
-- **Existing consumers keep working.** The first-generation classes still ship
-  in this package and still render. Migrate a route or an app at your own pace;
-  there is no flag day.
+- **ToolsDock consumers keep working** through the `workspace/legacy` subpath.
+  Migrate a route or an app at your own pace; there is no flag day.
 - **Adopt by wrapping, not rewriting.** Mount `AdminShell` in a layout around
   your existing pages (`{@render children()}`). Page-level data loading is
   unchanged — in SvelteKit, keep loading data in each route's server `load` and

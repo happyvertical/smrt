@@ -62,7 +62,7 @@ The `./ui` subpath exports `ASSETS_MODULE_META` and `ASSETS_UI_SLOTS` so registr
 ```ts
 import { ASSETS_MODULE_META, ASSETS_UI_SLOTS } from '@happyvertical/smrt-assets/ui';
 import '@happyvertical/smrt-assets/svelte'; // side-effect: ModuleUIRegistry.register(...)
-import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 
 const AssetManager = ModuleUIRegistry.get('@happyvertical/smrt-assets', 'asset-manager');
 ```

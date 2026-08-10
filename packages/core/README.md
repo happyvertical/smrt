@@ -372,9 +372,12 @@ Generators produce OpenAPI REST endpoints, Commander CLI commands, and MCP serve
 
 Long-running item actions may opt into the experimental
 `io.modelcontextprotocol/tasks` extension. Tasks are disabled by default; list
-the action names explicitly and mark the action as background-eligible:
+the action names explicitly, and — if the class restricts what the job runner
+may dispatch — include the action in that allowlist:
 
 ```typescript
+import { backgroundEligible } from '@happyvertical/smrt-jobs';
+
 @smrt({
   mcp: { include: ['generateReport'], tasks: ['generateReport'] },
 })
@@ -383,6 +386,12 @@ class Report extends SmrtObject {
   async generateReport(): Promise<ReportResult> { /* ... */ }
 }
 ```
+
+`@backgroundEligible()` is owned and enforced by `@happyvertical/smrt-jobs`, not
+by this package. It is **restrictive**: a class with no marked methods lets
+`TaskRunner` dispatch any of its methods, and the first marked method turns the
+set into an exhaustive allowlist that excludes every other method on the class.
+Use it to narrow the reachable surface, and mark every method you dispatch.
 
 The generated MCP server advertises the extension only when at least one task
 action is enabled. A task-aware client can request the action as a durable job,
