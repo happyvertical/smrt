@@ -231,15 +231,15 @@ jobs:
     needs:
       - prepare-publish
       - validate-publish-shards
-    # `always()` alone would keep this summary running — and failing on the
-    # missing artifacts — after the two jobs above skip on a pull request, so it
-    # carries the same lane guard (#2214 item 4).
+    # Do not let cancellation enqueue a fresh summary job after GitHub has
+    # invalidated a merge group. This job only verifies artifacts and reports
+    # upstream results, so it must not consume scarce metal capacity.
     if: >-
-      always() &&
+      !cancelled() && always() &&
       (github.event_name != 'pull_request_target' ||
       vars.CI_MERGE_QUEUE_ENABLED != 'true')
-    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
-    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
