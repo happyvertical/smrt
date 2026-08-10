@@ -795,13 +795,15 @@ SMRT objects support vector embeddings for semantic search and similarity compar
 
 ### Configuration
 
-Configure embeddings in the `@smrt()` decorator:
+Configure which fields to embed in the `@smrt()` decorator:
 
 ```typescript
 @smrt({
   embeddings: {
-    fields: ['title', 'content', 'summary'],  // Fields to embed
-    model: 'text-embedding-3-small'            // Embedding model (optional)
+    fields: ['title', 'content', 'summary'],  // Fields to embed (required)
+    provider: 'local',                        // Override the project provider (optional)
+    autoGenerate: true,                       // Embed on save (optional, default true)
+    regenerateOnChange: true                  // Skip unchanged content (optional, default true)
   }
 })
 class Article extends SmrtObject {
@@ -810,6 +812,32 @@ class Article extends SmrtObject {
   summary: string = '';
 }
 ```
+
+`ClassEmbeddingConfig` accepts exactly `fields`, `provider`, `autoGenerate`,
+`regenerateOnChange`, and `combinedField`. **There is no `model` key here** — an
+unrecognized key in the decorator is ignored rather than rejected, so a stray
+`model` silently does nothing. The model is a project-level setting:
+
+```javascript
+// smrt.config.js
+import { defineConfig } from '@happyvertical/smrt-config';
+
+export default defineConfig({
+  smrt: {
+    embeddings: {
+      provider: 'local',                      // 'local' | 'ai' | 'auto' (default 'local')
+      localModel: 'Xenova/bge-base-en-v1.5',  // used when provider is 'local' or 'auto'
+      aiModel: 'text-embedding-3-small',      // used when provider is 'ai' or as fallback
+      dimensions: 768                         // default 768
+    }
+  }
+});
+```
+
+The project config and the class config are merged into a
+`ResolvedEmbeddingConfig` at runtime. `getEmbedding()` does take a per-call
+`model` argument, but it selects which stored vector to read rather than which
+model to generate with — see below.
 
 ### `generateEmbeddings(options?)` - Generate Vectors
 
@@ -833,14 +861,22 @@ await article.generateEmbeddings({
 
 ### `getEmbedding(fieldName, model?)` - Retrieve Embedding
 
-Retrieves the stored embedding vector for a specific field.
+Retrieves the stored embedding vector for a specific field. Returns `null` when
+no embedding is stored for that field yet — callers must handle that case.
 
 ```typescript
+// Signature: getEmbedding(fieldName: string, model?: string): Promise<number[] | null>
+
 // Get the embedding for a field
 const titleVector = await article.getEmbedding('title');
-// Returns: Float32Array with embedding values
+if (titleVector) {
+  console.log(`Embedding has ${titleVector.length} dimensions`);
+} else {
+  await article.generateEmbeddings({ fields: ['title'] });
+}
 
-// Get embedding for specific model (if multiple models used)
+// The model name is part of the storage key, so pass it to read the vector
+// stored under a specific model (defaults to the resolved project model)
 const vector = await article.getEmbedding('content', 'text-embedding-3-large');
 ```
 
