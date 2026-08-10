@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { normalizeGlobSeparators, relativeGlobToCwd } from '../discovery.js';
 import { OxcScanner } from '../scanner.js';
 
 /**
@@ -150,6 +151,33 @@ describe('OxcScanner file discovery bounds', () => {
     }).scanAndResolve();
 
     expect(resolved.map((entry) => entry.className)).toEqual(['Nested']);
+  });
+
+  it('preserves escapes in relative glob patterns', async () => {
+    writeSmrtClass('src/routes/[id]/model.ts', 'EscapedRoute');
+
+    const { resolved } = await new OxcScanner({
+      cwd: dir,
+      include: ['src/routes/\\[id\\]/**/*.ts'],
+    }).scanAndResolve();
+
+    expect(resolved.map((entry) => entry.className)).toEqual(['EscapedRoute']);
+  });
+
+  it('normalizes Windows separators only after an absolute glob is rewritten', () => {
+    expect(normalizeGlobSeparators('src\\**\\*.ts', '\\')).toBe('src/**/*.ts');
+    expect(normalizeGlobSeparators('src/routes/\\[id\\]/**/*.ts', '/')).toBe(
+      'src/routes/\\[id\\]/**/*.ts',
+    );
+    expect(
+      relativeGlobToCwd('C:/repo/src/routes/\\[id\\]/**/*.ts', 'C:\\repo'),
+    ).toBe('src/routes/\\[id\\]/**/*.ts');
+    expect(relativeGlobToCwd('C:\\other\\**\\*.ts', 'C:\\repo')).toBe(
+      'C:/other/**/*.ts',
+    );
+    expect(
+      relativeGlobToCwd('C:/other/routes/\\[id\\]/**/*.ts', 'C:\\repo'),
+    ).toBe('C:/other/routes/\\[id\\]/**/*.ts');
   });
 
   it('terminates on a cyclic pnpm store beneath a dot directory', async () => {

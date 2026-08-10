@@ -5,8 +5,8 @@
  * Provides a simple API for scanning TypeScript files for SMRT classes.
  */
 
-import { isAbsolute, resolve } from 'node:path';
-import fg from 'fast-glob';
+import { resolve } from 'node:path';
+import { discoverSourceFiles } from './discovery.js';
 import { InheritanceResolver } from './inheritance-resolver.js';
 import { parseFile } from './oxc-parser.js';
 import type {
@@ -45,8 +45,6 @@ const DEFAULT_EXCLUDE = [
  * These are load-bearing for termination, not just for speed. See
  * {@link OxcScanner.discoverFiles}.
  */
-const MANDATORY_EXCLUDE = ['**/node_modules/**', '**/.*/**', '**/.*'];
-
 /**
  * High-performance TypeScript scanner that discovers `@smrt()`-decorated
  * classes in a project's source files.
@@ -334,24 +332,12 @@ export class OxcScanner {
    * or `~/.cache` would then match nothing at all, silently.
    */
   private async discoverFiles(): Promise<string[]> {
-    const cwd = resolve(this.options.cwd);
-    const patterns = this.options.include.map((pattern) =>
-      relativeToCwd(pattern, cwd),
-    );
-
-    const files = await fg(patterns, {
-      cwd,
-      ignore: [
-        ...this.options.exclude.map((pattern) => relativeToCwd(pattern, cwd)),
-        ...MANDATORY_EXCLUDE,
-      ],
-      absolute: true,
-      onlyFiles: true,
-      dot: true,
+    return discoverSourceFiles({
+      cwd: this.options.cwd,
+      include: this.options.include,
+      exclude: this.options.exclude,
       followSymbolicLinks: this.options.followSymbolicLinks,
     });
-
-    return files;
   }
 
   /**
@@ -361,23 +347,6 @@ export class OxcScanner {
     // parseFile is synchronous but we wrap it for potential future async
     return parseFile(filePath);
   }
-}
-
-/**
- * Rewrites an absolute pattern rooted inside `cwd` as a `cwd`-relative one.
- *
- * Globs are matched as text, so a pattern's leading directories become part of
- * every comparison — including the mandatory prunes. Patterns outside `cwd` are
- * left alone: nothing sensible can be said about them relative to a root they
- * do not live under.
- */
-function relativeToCwd(pattern: string, cwd: string): string {
-  const normalized = pattern.replaceAll('\\', '/');
-  if (!isAbsolute(normalized)) return normalized;
-  const prefix = `${cwd.replaceAll('\\', '/').replace(/\/+$/, '')}/`;
-  return normalized.startsWith(prefix)
-    ? normalized.slice(prefix.length)
-    : normalized;
 }
 
 /**

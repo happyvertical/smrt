@@ -22,6 +22,8 @@ executes the source.
   and asserts every `@smrt()` object reached `dist/manifest.json` (issue #1483).
   Returns `ok` / `incomplete` / `missing-manifest` / `scan-error` / `skipped`.
   Driven by `scripts/verify-manifest-completeness.mjs` from `prepack`.
+- `discoverSourceFiles(options)` — shared bounded source-discovery policy used
+  by `OxcScanner` and the core manifest preflight.
 - Types (re-exported from `./types`): `RawClassDefinition`,
   `RawFieldDefinition`, `RawMethodDefinition`, `ResolvedClassDefinition`,
   `ScanResults`, `FileScanResult`, `OxcScannerOptions`, `InferredFieldType`,
@@ -35,9 +37,10 @@ exhausts the heap when the scanner is pointed at an application root (#2275):
 - `dot: true` is set so ignore patterns apply beneath dot directories. Without
   it a `**` cannot cross a dot segment, so `**/node_modules/**` pruned the root
   `node_modules` but nothing under `.svelte-kit/`, `.vercel/`, or `.turbo/`.
-- `MANDATORY_EXCLUDE` (`**/node_modules/**`, `**/.*/**`, `**/.*`) is unioned with the
-  caller's `exclude` and cannot be overridden. `exclude` REPLACES the defaults,
-  so every caller that narrowed it had silently reopened `node_modules`.
+- Mandatory excludes (`**/node_modules/**`, `**/.*/**`, `**/.*`) are unioned
+  with the caller's `exclude` and cannot be overridden. `exclude` REPLACES the
+  defaults, so every caller that narrowed it had silently reopened
+  `node_modules`.
 - `followSymbolicLinks` defaults to `false`. A pnpm `node_modules` is a symlink
   graph with cycles, not a tree, so a link-following walk reaches the same real
   directory once per path leading to it. This drops symlinked *files* as well as
@@ -66,6 +69,7 @@ exhausts the heap when the scanner is pointed at an application root (#2275):
   `parseSource`, `extractSmrtImports`, field/decorator/type extractors).
 - `src/scanner.ts` — `OxcScanner`: globbing + multi-file orchestration
   (`scan` / `scanAndResolve`).
+- `src/discovery.ts` — shared bounded glob policy for every scanner entry point.
 - `src/inheritance-resolver.ts` — `InheritanceResolver`: cross-file inheritance
   merging.
 - `src/manifest-adapter.ts` — `ManifestAdapter`: raw → manifest conversion and

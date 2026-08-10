@@ -18,6 +18,12 @@
  * ```
  */
 
+export {
+  discoverSourceFiles,
+  normalizeGlobSeparators,
+  relativeGlobToCwd,
+  type SourceDiscoveryOptions,
+} from './discovery.js';
 export { InheritanceResolver } from './inheritance-resolver.js';
 export { ManifestAdapter } from './manifest-adapter.js';
 export { extractSmrtImports, parseFile, parseSource } from './oxc-parser.js';

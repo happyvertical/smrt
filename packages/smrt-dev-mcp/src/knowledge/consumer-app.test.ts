@@ -4,7 +4,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildKnowledgeIndex, checkKnowledgeFreshness } from './index.js';
+import {
+  buildArchitectureContext,
+  buildKnowledgeIndex,
+  buildReviewContext,
+  checkKnowledgeFreshness,
+} from './index.js';
 
 /**
  * Counts the directories discovery actually opens.
@@ -65,6 +70,7 @@ describe('knowledge index in a consumer app', () => {
     'smrt-tenancy',
     'smrt-users',
     'smrt-web',
+    'utils',
   ];
 
   async function write(path: string, content: string): Promise<void> {
@@ -297,9 +303,74 @@ describe('knowledge index in a consumer app', () => {
       expect(index.packages.map((pkg) => pkg.name)).toEqual(['demo-app']);
     }
 
-    // SMRT packages are not SDK packages, so the SDK scope stays empty here.
+    // The known SDK package remains available only through the SDK scope.
     const sdk = await buildKnowledgeIndex({ rootDir, scope: 'sdk' });
-    expect(sdk.packages).toEqual([]);
+    expect(sdk.packages.map((pkg) => pkg.name)).toEqual([
+      '@happyvertical/utils',
+    ]);
+  });
+
+  it('keeps an authored package selector out of installed review context', async () => {
+    const context = await buildReviewContext({
+      rootDir,
+      scope: 'installed',
+      package: 'demo-app',
+      changedFiles: [],
+    });
+
+    expect(context.selectedPackages).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'demo-app' })]),
+    );
+    expect(context.selectedPackages.length).toBeGreaterThan(0);
+    expect(
+      context.selectedPackages.every((pkg) => pkg.isInstalledDependency),
+    ).toBe(true);
+    expect(context.selectedSdkPackages.length).toBeGreaterThan(0);
+    expect(
+      context.selectedSdkPackages.every((pkg) => pkg.isInstalledDependency),
+    ).toBe(true);
+  });
+
+  it('keeps installed SDK dependencies required by an authored package', async () => {
+    const context = await buildReviewContext({
+      rootDir,
+      scope: 'package',
+      package: 'demo-app',
+      changedFiles: [],
+    });
+
+    expect(context.selectedPackages.map((pkg) => pkg.name)).toEqual([
+      'demo-app',
+    ]);
+    expect(context.selectedSdkPackages.map((pkg) => pkg.name)).toEqual([
+      '@happyvertical/utils',
+    ]);
+  });
+
+  it('does not use an installed framework fallback for package scope', async () => {
+    // An authored default SDK makes this assertion fail on the old fallback;
+    // without it the installed SDK is already filtered and [] is vacuous.
+    await write(
+      join(rootDir, 'packages', 'utils', 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/utils',
+        version: '0.0.1',
+        private: true,
+      }),
+    );
+    await write(
+      join(rootDir, 'packages', 'utils', 'AGENTS.md'),
+      '# Authored utils\n',
+    );
+
+    const context = await buildArchitectureContext({
+      rootDir,
+      scope: 'package',
+      package: 'not-installed-or-authored',
+    });
+
+    expect(context.selectedPackages).toEqual([]);
+    expect(context.selectedSdkPackages).toEqual([]);
   });
 
   it('does not fail freshness on documentation a consumer cannot author', async () => {

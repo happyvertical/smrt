@@ -31,9 +31,10 @@ import type {
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'error' | 'warning';
 /**
- * `installed` is the consumer-app scope (#2275): every `@happyvertical/*`
- * package this project installs, rather than the packages it authors. The other
- * scopes all describe the workspace's own sources.
+ * `installed` is the consumer-app scope (#2275): installed
+ * `@happyvertical/smrt-*` packages and packages in the known HappyVertical SDK
+ * allowlist, rather than packages the project authors. The other scopes all
+ * describe the workspace's own sources.
  */
 export type KnowledgeScope =
   | 'project'
@@ -2976,7 +2977,10 @@ function selectPackages(
   const packageName = options.packageName?.toLowerCase();
   if (packageName) {
     for (const pkg of domainPackages(index)) {
-      if (packageMatches(pkg, packageName)) {
+      if (
+        scopeAllowsPackage(pkg, options.scope) &&
+        packageMatches(pkg, packageName)
+      ) {
         selected.add(pkg);
       }
     }
@@ -3020,7 +3024,7 @@ function selectPackages(
       '@happyvertical/smrt-dev-mcp',
     ]) {
       const pkg = index.smrtPackages.find((item) => item.name === name);
-      if (pkg) selected.add(pkg);
+      if (pkg && scopeAllowsPackage(pkg, options.scope)) selected.add(pkg);
     }
 
     // A downstream product has none of those framework packages in its
@@ -3061,10 +3065,13 @@ function selectSdkPackages(
   const packageName = options.packageName?.toLowerCase();
 
   for (const sdk of index.sdkPackages) {
+    const selectedDependency = sdkNames.has(sdk.name);
+    if (!scopeAllowsSdkPackage(sdk, options.scope, selectedDependency))
+      continue;
     const shortName = sdk.name.replace('@happyvertical/', '');
     if (
       options.scope === 'sdk' ||
-      sdkNames.has(sdk.name) ||
+      selectedDependency ||
       (packageName && packageMatches(sdk, packageName)) ||
       text.includes(sdk.name.toLowerCase()) ||
       includesToken(text, shortName)
@@ -3073,19 +3080,41 @@ function selectSdkPackages(
     }
   }
 
-  if (selected.size === 0) {
+  if (selected.size === 0 && !(packageName && selectedPackages.length === 0)) {
     for (const name of [
       '@happyvertical/ai',
       '@happyvertical/sql',
       '@happyvertical/files',
       '@happyvertical/utils',
     ]) {
-      const sdk = index.sdkPackages.find((item) => item.name === name);
+      const sdk = index.sdkPackages.find(
+        (item) =>
+          item.name === name &&
+          scopeAllowsSdkPackage(item, options.scope, false),
+      );
       if (sdk) selected.add(sdk);
     }
   }
 
   return [...selected].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function scopeAllowsSdkPackage(
+  pkg: KnowledgePackage,
+  scope: KnowledgeScope | undefined,
+  selectedDependency: boolean,
+): boolean {
+  switch (scope) {
+    case 'installed':
+      return pkg.isInstalledDependency;
+    case 'local':
+    case 'package':
+      return !pkg.isInstalledDependency || selectedDependency;
+    case 'sdk':
+    case 'project':
+    case undefined:
+      return true;
+  }
 }
 
 function domainPackages(index: SmrtKnowledgeIndex): KnowledgePackage[] {
@@ -3107,6 +3136,7 @@ function scopeAllowsPackage(
         !pkg.relativeDirectory.includes('node_modules')
       );
     case 'package':
+      return !pkg.isInstalledDependency;
     case 'project':
     case undefined:
       return true;

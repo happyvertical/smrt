@@ -42,4 +42,10 @@ export interface ManifestAdapterLike {
 export interface ScannerModule {
   OxcScanner: OxcScannerConstructor;
   ManifestAdapter: new () => ManifestAdapterLike;
+  discoverSourceFiles(options: {
+    cwd: string;
+    include: string[];
+    exclude: string[];
+    followSymbolicLinks?: boolean;
+  }): Promise<string[]>;
 }
