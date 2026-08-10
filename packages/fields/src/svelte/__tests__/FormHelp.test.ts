@@ -162,6 +162,17 @@ describe('FormHelp', () => {
     expect(terms[1]).toHaveTextContent('Name');
   });
 
+  it('throws an actionable error outside a FieldPolicyProvider (#2272)', () => {
+    // Deliberate contract: FormHelp's whole output is the resolved glossary, so
+    // it reports a missing Provider instead of degrading to an empty panel.
+    // (PolicyField degrades because it has caller-owned children to preserve.)
+    expect(() =>
+      render(FormHelp, {
+        props: { objectDescription: 'A widget is a configurable thing.' },
+      }),
+    ).toThrow(/Wrap your form in <FieldPolicyProvider>/);
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(FormHelpFixture, {
       props: { policy: makePolicy() },

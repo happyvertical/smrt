@@ -9,7 +9,20 @@
  * plus the object description if provided. The data comes entirely from the
  * resolved policy — no separate fetch needed.
  *
- * Must be used inside a FieldPolicyProvider.
+ * Must be used inside a FieldPolicyProvider — deliberately, via the throwing
+ * accessor. The panel's payload IS the resolved glossary, so with no provider
+ * there is nothing to assemble and a `?` affordance that opens onto "No field
+ * help available." would hide the mistake instead of reporting it. This matches
+ * the other provider-only compositions (`ModeSwitch`, `AdvancedFields`);
+ * `PolicyField` degrades instead only because it has caller-owned children to
+ * render verbatim.
+ *
+ * To put form help in a page header, extend the SAME provider over the header —
+ * it renders no markup of its own. Do not add a second one: each provider owns
+ * its own mode store and shadows the outer for its subtree, so a `FormHelp`
+ * above a nested provider stops tracking the `ModeSwitch` inside it. That is
+ * why `ObjectForm`, which builds its own provider internally, currently has no
+ * seam for this component (#2272).
  */
 import { getFieldPolicyContext } from '../context.svelte.js';
 
