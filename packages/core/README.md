@@ -119,7 +119,7 @@ src/routes/api/**/+server.ts
 !src/routes/api/v1/**/+server.ts
 ```
 
-Migration takes the recognized SMRT header plus the contiguous run of
+Migration takes that recognized legacy header plus the contiguous run of
 recursive `+server.ts` wildcards directly beneath it, negations included. The
 run is matched by shape rather than against your current `routesDir`, so a
 project that moved `routesDir` after adopting the plugin still migrates, and

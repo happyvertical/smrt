@@ -255,15 +255,46 @@ jobs:
       # Pin Node to the version declared in package.json engines so that
       # `import.meta.dirname` (Node 20.11+) and other modern features used by
       # scripts/check-standards.mjs are guaranteed available regardless of the
-      # ubuntu-latest default. Skip dep install — the script reads only
-      # package.json files and uses no node_modules.
+      # ubuntu-latest default. check-standards.mjs itself needs no dep install:
+      # it reads only package.json files and uses no node_modules.
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '24.18.0'
 
+      # Deliberately ordered before the install below, so a standards violation
+      # still fails in seconds instead of paying for dependency resolution.
       - name: Run standards check
         run: node scripts/check-standards.mjs
+
+      # #2287: the root `check:standards` script chains check-standards.mjs and
+      # check-readmes.mjs, but this job only ever invoked the first script
+      # directly. The README validator therefore never ran in CI, and main
+      # drifted into package-catalog and branding violations unnoticed.
+      #
+      # Unlike every other checker in this job, check-readmes.mjs is not
+      # dependency-free: it imports `typescript` to type-check the root README
+      # quick start against packages/core/src/index.ts, and
+      # scripts/workspaces.mjs shells out to pnpm to expand pnpm-workspace.yaml.
+      # Hence the pnpm setup and install below.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          run_install: false
+
+      # --ignore-scripts: the validator only needs modules resolvable on disk,
+      # never executed, and this job runs under pull_request_target — declining
+      # to run PR-head lifecycle scripts keeps a privileged-context install
+      # inert. Package linking, which is all the validator depends on, is
+      # unaffected.
+      # No registry auth: .npmrc points @happyvertical at public npmjs, and the
+      # lockfile carries no npm.pkg.github.com tarballs, so this install needs
+      # no token.
+      - name: Install dependencies for README validation
+        run: pnpm install --frozen-lockfile --ignore-scripts --loglevel error
+
+      - name: Run README validation
+        run: pnpm run check:readmes
 
       # DAG guardrails (#1582). Node-only, no node_modules: inter-smrt
       # peerDependencies drive pnpm's per-peer-set physical fan-out, and a
