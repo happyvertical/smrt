@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.40.62
+
+### Patch Changes
+
+- ### Features
+
+  - add field-policy usage learning loop (#2267) (fields)
+  - add durable tasks extension (#2265) (mcp)
+
+  ### Other Changes
+
+  - chore: migrate SMRT to generation 23 (#2273) (#2274) (policy)
+  - @happyvertical/smrt-config@0.40.62
+  - @happyvertical/smrt-types@0.40.62
+  - @happyvertical/smrt-scanner@0.40.62
+
 ## 0.40.61
 
 ### Patch Changes
