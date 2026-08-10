@@ -7,7 +7,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -219,15 +219,194 @@ function collectRepeatableOptionValues(
 }
 
 /**
+ * Option name a subcommand may declare that collides with a global CLI flag.
+ *
+ * `parseCliArgs` dispatches to the built-in `version` command whenever
+ * `--version` appears anywhere in argv, so `smrt generate-mcp --version 0.1.0`
+ * never reached the subcommand and exited without generating anything (#2279).
+ * Only `--version` is rescoped: `--help` after a subcommand still prints help,
+ * which is what someone typing it wants.
+ */
+const SCOPED_GLOBAL_FLAG = 'version';
+
+/**
+ * Private option name the scoped flag is parsed under. Renaming the token is
+ * what keeps `parseCliArgs` from intercepting it; the value is mapped back onto
+ * the declared name before any handler sees it.
+ */
+const SCOPED_GLOBAL_FLAG_ALIAS = 'smrt-scoped-version';
+
+/**
+ * Index of the first real argument, mirroring the node/script-path stripping
+ * `parseCliArgs` does. The CLI entry point passes `process.argv.slice(2)`, but
+ * the shared parser also accepts a full `process.argv`, and this wrapper must
+ * read the same tokens the parser will.
+ */
+function firstArgumentIndex(argv: string[]): number {
+  let index = 0;
+  if (argv.length > index && basename(argv[index]) === 'node') {
+    index += 1;
+  }
+  if (argv.length > index && argv[index].endsWith('.js')) {
+    index += 1;
+  }
+  return index;
+}
+
+/**
+ * Resolve the command a plain argv addresses, mirroring the multi-word command
+ * matching in `parseCliArgs` (up to three leading words, names or aliases).
+ *
+ * @returns The matched command, if any, and how many leading argv tokens it consumed
+ */
+function matchLeadingCommand(
+  argv: string[],
+  commands: CLICommand[],
+  builtInCommands: Record<string, CLICommand>,
+): { command?: CLICommand; wordCount: number } {
+  for (let width = Math.min(3, argv.length); width > 0; width -= 1) {
+    const candidateName = argv.slice(0, width).join(' ');
+    const found =
+      builtInCommands[candidateName] ??
+      commands.find(
+        (candidate) =>
+          candidate.name === candidateName ||
+          candidate.aliases?.includes(candidateName),
+      );
+    if (found) {
+      return { command: found, wordCount: width };
+    }
+  }
+
+  return { wordCount: 0 };
+}
+
+/**
+ * Rewrite a subcommand-scoped `--version` token to a private alias so the
+ * shared parser routes it to the subcommand instead of the global version
+ * command. Tokens before the subcommand — and a bare `smrt --version` — are
+ * left alone, so the global flag still wins when it is used globally.
+ *
+ * @returns Rewritten argv and the matched command, or `null` when nothing applies
+ */
+function rescopeGlobalFlag(
+  argv: string[],
+  commands: CLICommand[],
+  builtInCommands: Record<string, CLICommand>,
+): { argv: string[]; command?: CLICommand } | null {
+  const start = firstArgumentIndex(argv);
+  const leading = argv[start];
+  if (!leading || leading.startsWith('-')) {
+    return null;
+  }
+
+  const flag = `--${SCOPED_GLOBAL_FLAG}`;
+  const inlinePrefix = `${flag}=`;
+  const aliasFlag = `--${SCOPED_GLOBAL_FLAG_ALIAS}`;
+  const { command, wordCount } = matchLeadingCommand(
+    argv.slice(start),
+    commands,
+    builtInCommands,
+  );
+  // An unmatched leading token is still a command request: the built-in command
+  // map is loaded lazily, so the first parse pass sees object commands only.
+  const firstOptionIndex = start + Math.max(wordCount, 1);
+
+  let rewritten = false;
+  const rescoped = [...argv];
+  for (let index = firstOptionIndex; index < rescoped.length; index += 1) {
+    const token = rescoped[index];
+    // Everything past `--` is positional, so it keeps whatever meaning the
+    // shared parser already gives it.
+    if (token === '--') {
+      break;
+    }
+    if (token === flag) {
+      rescoped[index] = aliasFlag;
+      rewritten = true;
+      continue;
+    }
+    if (token.startsWith(inlinePrefix)) {
+      rescoped[index] = `${aliasFlag}=${token.slice(inlinePrefix.length)}`;
+      rewritten = true;
+    }
+  }
+
+  return rewritten ? { argv: rescoped, command } : null;
+}
+
+/**
+ * Swap a matched command's declared `version` option for the private alias the
+ * rescoped token is parsed under, so its type, default, and short flag still
+ * apply. Commands that do not declare the option are returned untouched.
+ */
+function declareScopedGlobalFlag(
+  command: CLICommand | undefined,
+  commands: CLICommand[],
+  builtInCommands: Record<string, CLICommand>,
+): { commands: CLICommand[]; builtInCommands: Record<string, CLICommand> } {
+  const declaredOptions = command?.options;
+  const declared = declaredOptions?.[SCOPED_GLOBAL_FLAG];
+  if (!command || !declaredOptions || !declared) {
+    return { commands, builtInCommands };
+  }
+
+  const { [SCOPED_GLOBAL_FLAG]: _replaced, ...otherOptions } = declaredOptions;
+  const rewrittenCommand: CLICommand = {
+    ...command,
+    options: {
+      ...otherOptions,
+      [SCOPED_GLOBAL_FLAG_ALIAS]: { ...declared },
+    },
+  };
+
+  return {
+    commands: commands.map((candidate) =>
+      candidate === command ? rewrittenCommand : candidate,
+    ),
+    builtInCommands: Object.fromEntries(
+      Object.entries(builtInCommands).map(([name, candidate]) => [
+        name,
+        candidate === command ? rewrittenCommand : candidate,
+      ]),
+    ),
+  };
+}
+
+/**
  * Parse one command while preserving every occurrence of options marked
- * `multiple`. Non-repeatable options retain the shared SDK parser behavior.
+ * `multiple`, and while letting a subcommand's own options win over the
+ * global flags the shared parser intercepts. Everything else retains the
+ * shared SDK parser behavior.
  */
 export function parseCliCommandArgs(
   argv: string[],
   commands: CLICommand[],
   builtInCommands: Record<string, CLICommand> = {},
 ): ParsedArgs {
-  const parsed = parseCliArgs(argv, commands, builtInCommands);
+  const rescoped = rescopeGlobalFlag(argv, commands, builtInCommands);
+  let parsed: ParsedArgs;
+
+  if (rescoped) {
+    const declared = declareScopedGlobalFlag(
+      rescoped.command,
+      commands,
+      builtInCommands,
+    );
+    parsed = parseCliArgs(
+      rescoped.argv,
+      declared.commands,
+      declared.builtInCommands,
+    );
+    if (SCOPED_GLOBAL_FLAG_ALIAS in parsed.options) {
+      parsed.options[SCOPED_GLOBAL_FLAG] =
+        parsed.options[SCOPED_GLOBAL_FLAG_ALIAS];
+      delete parsed.options[SCOPED_GLOBAL_FLAG_ALIAS];
+    }
+  } else {
+    parsed = parseCliArgs(argv, commands, builtInCommands);
+  }
+
   const command = parsed.command
     ? (builtInCommands[parsed.command] ??
       commands.find(

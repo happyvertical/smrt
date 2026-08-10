@@ -83,8 +83,23 @@ the tracker or writing to the database.
 
 | Command | Description |
 |---------|------------|
-| `smrt generate:mcp` | Generate MCP server from registered objects |
-| `smrt generate:types` | Generate TypeScript declarations from manifest |
+| `smrt generate-mcp` | Generate MCP server from registered objects (aliases: `generate-mcp-server`, `mcp`) |
+| `smrt generate-types` | Generate TypeScript declarations from manifest (alias: `generate-declarations`) |
+| `smrt generate-routes` | Generate SvelteKit API routes (aliases: `routes`, `generate:routes`) |
+| `smrt generate-register` | Generate `.smrt/register.js` from discovered packages (aliases: `register`, `generate:register`) |
+
+Generation commands are hyphenated. `generate-routes` and `generate-register`
+also answer to a colon alias for backward compatibility; `generate-mcp` and
+`generate-types` do not.
+
+`smrt generate-mcp` writes `.smrt/mcp-server/index.js` by default and emits
+JavaScript for a `.js` target, so `node .smrt/mcp-server/index.js` runs it
+directly. The generated server is always an ES module. Ask for a `.ts` target
+to keep the annotated TypeScript for `tsx` or Node's type stripping:
+
+```bash
+smrt generate-mcp --output-path .smrt/mcp-server/index.ts
+```
 
 ### Documentation
 
@@ -162,7 +177,7 @@ Custom methods on s-m-r-t objects are auto-discovered from manifests. Method par
 smrt introspect
 
 # Generate an MCP server
-smrt generate:mcp
+smrt generate-mcp
 
 # Scaffold a package playground definition
 smrt playground init

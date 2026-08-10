@@ -127,7 +127,7 @@ export const generateCommands: Record<string, CLICommand> = {
       modular: {
         type: 'boolean',
         description:
-          'Generate modular directory structure (tools/, handlers/, config.ts)',
+          'Generate modular directory structure (tools/, handlers/, config)',
         default: false,
       },
       debug: {

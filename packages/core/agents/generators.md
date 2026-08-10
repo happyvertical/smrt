@@ -27,6 +27,25 @@ The web module also emits a build-time **`manifestHash`** constant (#1764): `com
 
 Per-field web emission (#2046): `buildWebFieldDefinitions` carries `description` (from `@field({ description })`) and sanitized `ui` hints (from `@field({ ui: { basic, group, order, locked } })`, read off the manifest `_meta.ui` bag through per-key type guards) into each emitted field definition, and `buildWebToolDescriptors` threads the same `description` into browser MCP tool schemas. `sensitive`/`transient` fields are excluded from emission entirely, so their descriptions never ship. Both keys are conditional, so hint-less schemas emit byte-identical definitions (and hashes) as before; adding a description/ui hint changes the manifest hash — deliberate over-invalidation, harmless per the #1764 contract.
 
+## Generated MCP server output language
+
+`MCPGenerator` builds every file as TypeScript, so the requested `outputPath`
+extension decides what is written (#2279). `.ts`/`.mts`/`.cts` targets keep the
+source verbatim for `tsx` or Node type stripping; every other target
+(`.smrt/mcp-server/index.js` by default) is transpiled to JavaScript with the
+`typescript` dependency before writing, because the printed run script and the
+generated `claude-config.example.json` both invoke it with plain `node`.
+`src/generators/mcp-emit.ts` owns that decision — do not reintroduce a bare
+`writeFile` of generated source.
+
+Modular output writes `config`, `tools/index`, and `handlers/index` in the entry
+point's *language* — `.ts` for any TypeScript target (a `.mts`/`.cts` entry still
+gets `.ts` siblings), `.js` otherwise — and the entry's relative import
+specifiers are emitted with that same extension, so the files it imports exist.
+The entry is written at the requested path rather than a hardcoded `index.js`.
+Generated code also has to be valid in an ES module: `arguments` is not a legal
+binding name there, however convenient it reads.
+
 ## Custom-action contract
 
 `resolveCustomActionMetadata()` is the common discovery and invocation contract
