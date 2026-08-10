@@ -94,6 +94,23 @@ class SearchTestDocumentCollection extends SmrtCollection<SearchTestDocument> {
   static readonly _itemClass = SearchTestDocument;
 }
 
+// Test document whose embeddings config declares a combined field (#2281)
+@smrt({
+  embeddings: {
+    fields: ['title', 'body'],
+    combinedField: { name: 'content', template: '{title}\n\n{body}' },
+    autoGenerate: false,
+  },
+})
+class CombinedFieldDocument extends SmrtObject {
+  title: string = '';
+  body: string = '';
+}
+
+class CombinedFieldDocumentCollection extends SmrtCollection<CombinedFieldDocument> {
+  static readonly _itemClass = CombinedFieldDocument;
+}
+
 describe('Semantic Search', () => {
   let tempDir: string;
   let dbPath: string;
@@ -444,5 +461,108 @@ describe('Semantic Search', () => {
 
       expect(stats.generated).toBe(10);
     });
+  });
+});
+
+describe('Semantic Search with a combined embedding field (#2281)', () => {
+  let tempDir: string;
+  let dbPath: string;
+  let collection: CombinedFieldDocumentCollection;
+
+  beforeEach(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'smrt-combined-field-test-'));
+    dbPath = join(tempDir, 'documents.db');
+
+    ObjectRegistry.registerCollection(
+      'CombinedFieldDocument',
+      CombinedFieldDocumentCollection,
+    );
+
+    collection = await CombinedFieldDocumentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+      ai: {
+        embed: async (texts: string | string[]) => {
+          const textArray = Array.isArray(texts) ? texts : [texts];
+          return {
+            embeddings: textArray.map((t) => createSemanticEmbeddings(t)),
+          };
+        },
+      } as any,
+    });
+
+    vi.spyOn(EmbeddingProvider.prototype, 'embed').mockImplementation(
+      async (texts: string | string[]) => {
+        const textArray = Array.isArray(texts) ? texts : [texts];
+        return textArray.map((t) => createSemanticEmbeddings(t));
+      },
+    );
+
+    vi.spyOn(EmbeddingProvider.prototype, 'getModelName').mockReturnValue(
+      'test-model',
+    );
+    vi.spyOn(EmbeddingProvider.prototype, 'getDimensions').mockReturnValue(5);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  async function seedCombinedDocument() {
+    const doc = await collection.create({
+      title: 'AI Revolution',
+      body: 'Machine learning and AI are transforming software development.',
+    });
+    await doc.save();
+    await doc.generateEmbeddings();
+    return doc;
+  }
+
+  it('stores a vector under the combined field name', async () => {
+    const doc = await seedCombinedDocument();
+
+    // generateEmbeddings() writes one vector per configured field plus the
+    // combined one, which is what semanticSearch must be able to reach.
+    expect(await doc.getEmbedding('title')).not.toBeNull();
+    expect(await doc.getEmbedding('body')).not.toBeNull();
+    expect(await doc.getEmbedding('content')).not.toBeNull();
+  });
+
+  it('accepts the combined field name in semanticSearch', async () => {
+    const doc = await seedCombinedDocument();
+
+    const results = await collection.semanticSearch(
+      'artificial intelligence and machine learning',
+      { field: 'content', limit: 5 },
+    );
+
+    expect(results.map((r) => r.id)).toContain(doc.id);
+    expect(results[0]._similarity).toBeDefined();
+  });
+
+  it('matches findSimilar, which already accepted the combined field', async () => {
+    const doc = await seedCombinedDocument();
+    const other = await collection.create({
+      title: 'Deep Learning Guide',
+      body: 'Neural networks and computer vision represent the future of AI.',
+    });
+    await other.save();
+    await other.generateEmbeddings();
+
+    const similar = await collection.findSimilar(doc, { field: 'content' });
+
+    expect(similar.map((s) => s.id)).toContain(other.id);
+  });
+
+  it('rejects unknown fields and lists the combined field as available', async () => {
+    await seedCombinedDocument();
+
+    await expect(
+      collection.semanticSearch('anything', { field: 'not-a-field' }),
+    ).rejects.toThrow(/Available fields: title, body, content/);
   });
 });

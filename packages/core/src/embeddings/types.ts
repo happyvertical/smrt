@@ -217,7 +217,10 @@ export interface GenerateEmbeddingsOptions {
  */
 export interface SemanticSearchOptions {
   /**
-   * Field to search (default: combined field or first configured field)
+   * Field to search (default: first configured field)
+   *
+   * Accepts any field listed in `fields`, or the configured
+   * `combinedField.name` — `generateEmbeddings()` stores a vector for each.
    */
   field?: string;
 
