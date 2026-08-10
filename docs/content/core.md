@@ -1267,7 +1267,7 @@ await object.remember({
   metadata?: any,        // Additional metadata
   confidence?: number,   // Confidence score 0-1 (default: 1.0)
   version?: number,      // Version number (default: 1)
-  expiresAt?: Date       // Optional expiration timestamp
+  expiresAt?: Date       // Stored on the row; NOT enforced by recall() (see below)
 });
 ```
 
@@ -1449,11 +1449,30 @@ Context is stored in the `_smrt_contexts` system table alongside your applicatio
 - **Hierarchical scopes**: For organizing patterns by domain and specificity
 - **Confidence tracking**: To prioritize reliable patterns
 - **Version support**: For pattern evolution over time
-- **Usage metrics**: Success/failure counts for optimization
+- **Usage metrics**: `success_count` / `failure_count` columns, maintained only by `LearningMemory` (see below)
 - **Timestamps**: Created, updated, and last used dates
-- **Expiration**: Optional TTL for time-sensitive patterns
+- **Expiration**: An `expires_at` column that stores the `expiresAt` you pass to `remember()`
 
 The system table is automatically created when you initialize any SMRT object with database configuration.
+
+**Expiry is stored, not enforced by `recall()`.** `remember()` writes
+`expires_at`, but `recall()` and `recallAll()` have no expiry predicate — an
+entry whose expiry has passed is still returned. Treat `expiresAt` as metadata
+your own code reads and acts on (re-derive the value, or call `forget()`), not
+as a TTL the primitive API applies. `success_count` / `failure_count` are the
+same shape of promise: the columns exist on the table, but nothing in the
+primitive path ever increments them. `SmrtObject.remember()` does not write
+them at all, and `SmrtCollection.remember()` writes literal zeros — so a
+collection-level `remember()` resets whatever counters had accumulated on that
+row.
+
+If you want expiry, a confidence floor, and reinforcement counters applied for
+you, use `LearningMemory` (exported from `@happyvertical/smrt-core`) instead of
+calling `remember()`/`recall()` directly. It reads and writes the same
+`_smrt_contexts` rows, but it drops expired rows, applies a confidence floor
+(0.7 by default), and updates `success_count`/`failure_count` from the outcomes
+you report. It can also decay confidence by age, but that is opt-in: time decay
+is off unless you set `decayHalfLifeMs`.
 
 ### Best Practices
 
@@ -1463,7 +1482,7 @@ The system table is automatically created when you initialize any SMRT object wi
 4. **Use metadata for debugging**: Store discovery timestamps, AI model used, etc.
 5. **Clean up old patterns**: Use `forgetScope()` to remove outdated contexts
 6. **Version critical patterns**: Use version numbers for pattern evolution
-7. **Consider expiration**: Set `expiresAt` for time-sensitive patterns
+7. **Handle expiration yourself**: `expiresAt` is recorded but never applied by `recall()`; filter on it in your own code, or use `LearningMemory`, which does apply it
 
 ## Cross-Package Integration
 
