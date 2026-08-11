@@ -74,6 +74,7 @@ export {
   resolveDbCacheKey,
   stopCacheInvalidationListeners,
 } from './collection-cache';
+export * from './collection-read-plan';
 export type {
   AiUsageConfig,
   GlobalSignalConfig,

@@ -67,6 +67,44 @@ const results = await products.list({
 
 ```
 
+### Bounded multi-collection reads
+
+When one request needs several independent collections, use a keyed read plan
+instead of an unbounded `Promise.all`. Every entry still uses the normal
+collection `list()` path, but only the requested number of operations run at
+once:
+
+```typescript
+import {
+  executeCollectionReadPlan,
+  type SmrtCollectionReadPlanEntry,
+} from '@happyvertical/smrt-core';
+
+const categories: SmrtCollectionReadPlanEntry<Category> = {
+  className: 'Category',
+  options: { orderBy: 'name ASC' },
+};
+const products: SmrtCollectionReadPlanEntry<Product> = {
+  className: 'Product',
+  options: { where: { isPublished: true }, orderBy: 'name ASC' },
+};
+const records = await executeCollectionReadPlan(
+  {
+    categories,
+    products,
+  },
+  {
+    collectionOptions: { db: 'file:products.db' },
+    maxConcurrency: 2,
+  },
+);
+```
+
+`maxConcurrency` is required and must be a positive integer. If an entry
+fails, the executor starts no further queued entries, waits for already-running
+entries to settle, and rethrows the first error. Read plans do not compose SQL,
+cache whole-plan results, or change database pool defaults.
+
 ### Generate metadata and migrate
 
 Configure Vite 8's Oxc decorator transform and point `smrtPlugin()` at the
