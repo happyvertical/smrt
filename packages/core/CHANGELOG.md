@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.40.63
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - declare the generated MCP server's runtime deps (#2302) (template-sveltekit)
+  - reject WHERE conditions the SQL layer cannot execute (#2294) (core)
+  - make knowledge discovery terminate in a consumer app (#2298) (scanner,dev-mcp)
+  - make generate-mcp output runnable and stop swallowing --version (#2295) (core,cli)
+  - mount the policy-driven form preview inside its provider (#2290) (fields)
+  - accept the combined embedding field in semanticSearch (#2288) (core)
+  - terminalize cancelled publish summaries (#2300) (ci)
+
+  ### Other Changes
+
+  - docs: consolidate API, README, memory, jobs, Svelte, and TypeDoc corrections (#2296)
+  - chore: sync sdk packages to v0.86.1 (#2271) (deps)
+  - @happyvertical/smrt-config@0.40.63
+  - @happyvertical/smrt-types@0.40.63
+  - @happyvertical/smrt-scanner@0.40.63
+
 ## 0.40.62
 
 ### Patch Changes
