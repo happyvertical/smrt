@@ -61,6 +61,7 @@ jobs:
               - 'packages/cli/src/commands/docs-claude.ts'
               - 'packages/core/src/scanner/**'
               - 'packages/core/src/schema/**'
+              - 'packages/smrt-app-mcp/**'
               - 'packages/smrt-dev-mcp/**'
               - 'scripts/check-knowledge.ts'
 

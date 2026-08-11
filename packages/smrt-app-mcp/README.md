@@ -90,10 +90,10 @@ await client.callTool({
 
 ## Deprecated REST compatibility
 
-For one release, applications that have not moved their route path can retain
-the old handlers below. They are REST-shaped compatibility aliases, not an MCP
-transport, and will be removed after the migration window. Direct calls to a
-tool outside the app allow-list continue to receive the safe 404 behavior.
+Applications that have not moved their route path can retain the deprecated
+handlers below while they migrate. They are REST-shaped compatibility aliases,
+not an MCP transport. Direct calls to a tool outside the app allow-list
+continue to receive the safe 404 behavior.
 
 ```ts
 // src/routes/api/mcp/tools/+server.ts

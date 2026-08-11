@@ -145,8 +145,8 @@ export function mountMcpRoute(
           principal: resolved.principal,
         }),
       {
-        // The legacy REST-shaped mounts below remain the migration path for
-        // one release. This endpoint is deliberately 2026-07-28-only.
+        // The legacy REST-shaped mounts below remain a deprecated migration
+        // path. This endpoint accepts only the modern MCP protocol.
         legacy: 'reject',
         // The SDK validates every request before consulting its listen router.
         // Zero capacity keeps this tools-only mount stateless by refusing a
@@ -397,8 +397,8 @@ function asRecord(value: unknown): Record<string, unknown> {
  * Mount `server.listTools` as a `GET` handler. Returns the tool list shape
  * `{ tools }` for compatibility with the stock MCP bridge.
  *
- * @deprecated Use {@link mountMcpRoute}; retained for one release so existing
- * REST-shaped mounts can migrate without a coordinated cutover.
+ * @deprecated Use {@link mountMcpRoute}. Existing REST-shaped mounts can use
+ * this compatibility alias while migrating without a coordinated cutover.
  */
 export function mountMcpToolsRoute(
   server: McpAppServer,
@@ -423,8 +423,8 @@ export function mountMcpToolsRoute(
  * Mount `server.callTool` as a `POST` handler that expects
  * `{ name, arguments }` in the JSON body.
  *
- * @deprecated Use {@link mountMcpRoute}; retained for one release so existing
- * REST-shaped mounts can migrate without a coordinated cutover.
+ * @deprecated Use {@link mountMcpRoute}. Existing REST-shaped mounts can use
+ * this compatibility alias while migrating without a coordinated cutover.
  */
 export function mountMcpCallRoute(
   server: McpAppServer,

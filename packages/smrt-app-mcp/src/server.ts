@@ -1,7 +1,7 @@
 /**
  * `createMcpAppServer` returns the framework-agnostic core that backs an
- * app's HTTP MCP endpoints and stdio bridge. It wraps `MCPGenerator` from
- * `@happyvertical/smrt-core` with:
+ * app's HTTP MCP endpoints and transport-neutral protocol adapter. It wraps
+ * `MCPGenerator` from `@happyvertical/smrt-core` with:
  *
  *  - an allow-list of SMRT class names (so apps publish a subset of their
  *    objects, not everything decorated with `@smrt()`),
