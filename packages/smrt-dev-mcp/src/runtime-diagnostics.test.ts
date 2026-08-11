@@ -1,4 +1,6 @@
-import { resolve } from 'node:path';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -54,7 +56,9 @@ describe('runtime diagnostics adapter', () => {
     const connect = vi.fn(async () => db);
     const configLoader = vi.fn(async () => ({
       packages: {
-        cli: { database: { type: 'sqlite', url: 'file:config.db' } },
+        cli: {
+          database: { type: 'sqlite', url: 'libsql://config.example' },
+        },
       },
     }));
 
@@ -62,7 +66,7 @@ describe('runtime diagnostics adapter', () => {
       'migration-status',
       { dbUrl: ':memory:', dbType: 'sqlite' },
       {
-        env: { SMRT_DEV_DB_URL: 'file:env.db' },
+        env: { SMRT_DEV_DB_URL: 'libsql://env.example' },
         connect,
         configLoader,
       },
@@ -77,7 +81,10 @@ describe('runtime diagnostics adapter', () => {
       'migration-status',
       {},
       {
-        env: { SMRT_DEV_DB_URL: 'file:env.db' },
+        env: {
+          SMRT_DEV_DB_URL: 'libsql://env.example',
+          SMRT_DEV_DB_TYPE: 'sqlite',
+        },
         connect,
         configLoader,
       },
@@ -85,7 +92,7 @@ describe('runtime diagnostics adapter', () => {
     expect(connect).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: 'sqlite',
-        url: `file:${resolve(process.cwd(), 'env.db')}`,
+        url: 'libsql://env.example',
       }),
     );
     expect(configLoader).not.toHaveBeenCalled();
@@ -103,12 +110,10 @@ describe('runtime diagnostics adapter', () => {
     expect(connect).toHaveBeenLastCalledWith(
       expect.objectContaining({
         type: 'sqlite',
-        url: `file:${resolve(process.cwd(), 'config.db')}`,
+        url: 'libsql://config.example',
       }),
     );
-    expect(configLoader).toHaveBeenCalledWith(
-      expect.objectContaining({ cache: false, searchParents: true }),
-    );
+    expect(configLoader).toHaveBeenCalledWith(process.cwd(), {});
   });
 
   it('resolves local database paths from rootDir and closes owned handles', async () => {
@@ -118,30 +123,107 @@ describe('runtime diagnostics adapter', () => {
       query: vi.fn(async () => ({ rows: [] })),
     } as unknown as DatabaseInterface;
     const connect = vi.fn(async () => fakeDb);
-    const rootDir = resolve(process.cwd(), 'fixtures', 'project');
+    const rootDir = await mkdtemp(join(tmpdir(), 'smrt-dev-mcp-path-'));
+    await mkdir(join(rootDir, 'runtime'));
+    await writeFile(join(rootDir, 'runtime/dev.sqlite'), 'existing');
 
+    try {
+      await runRuntimeDiagnostic(
+        'migration-status',
+        {
+          rootDir,
+          dbUrl: './runtime/dev.sqlite',
+          dbType: 'sqlite',
+        },
+        {
+          env: {},
+          connect,
+          ownsConnections: true,
+          configLoader: async () => ({}),
+        },
+      );
+
+      expect(connect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'sqlite',
+          url: resolve(rootDir, 'runtime/dev.sqlite'),
+        }),
+      );
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not create a missing local database', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'smrt-dev-mcp-missing-'));
+    const missingPath = join(rootDir, 'missing.sqlite');
+    try {
+      const result = await runRuntimeDiagnostic('migration-status', {
+        rootDir,
+        dbUrl: './missing.sqlite',
+        dbType: 'sqlite',
+      });
+
+      expect(result).toMatchObject({
+        status: 'unavailable',
+        diagnostics: [{ code: 'database-file-unavailable' }],
+      });
+      await expect(access(missingPath)).rejects.toThrow();
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizes DuckDB scheme URLs and reads an existing DuckDB file', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'smrt-dev-mcp-duckdb-'));
+    const databasePath = join(rootDir, 'runtime.duckdb');
+    let seedDb: DatabaseInterface | undefined;
+    try {
+      seedDb = await getDatabase({
+        type: 'duckdb',
+        url: databasePath,
+        autoRegisterJSON: false,
+      });
+      await seedDb.query(`CREATE TABLE _smrt_schema_migrations (
+        id TEXT PRIMARY KEY, name TEXT, version TEXT, package_name TEXT,
+        status TEXT, applied_at TEXT, execution_time_ms INTEGER,
+        attempts INTEGER, error_message TEXT
+      )`);
+      await seedDb.query(
+        `INSERT INTO _smrt_schema_migrations VALUES
+         ('m1', 'duck failure', '1', 'demo', 'failed', NULL, 5, 1, 'safe')`,
+      );
+      await (seedDb.client as { close?: () => Promise<void> }).close?.();
+      seedDb = undefined;
+
+      const result = await runRuntimeDiagnostic('migration-status', {
+        rootDir,
+        dbUrl: `duckdb://${databasePath}`,
+      });
+      expect(result).toMatchObject({
+        status: 'available',
+        provenance: { engine: 'duckdb' },
+        data: { counts: { failed: 1 } },
+      });
+    } finally {
+      await (
+        seedDb?.client as { close?: () => Promise<void> } | undefined
+      )?.close?.();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('normalizes the DuckDB in-memory scheme before an injected connection', async () => {
+    const connect = vi.fn(async () => db);
     await runRuntimeDiagnostic(
       'migration-status',
-      {
-        rootDir,
-        dbUrl: './runtime/dev.sqlite',
-        dbType: 'sqlite',
-      },
-      {
-        env: {},
-        connect,
-        ownsConnections: true,
-        configLoader: async () => ({}),
-      },
+      { dbUrl: 'duckdb://:memory:' },
+      { env: {}, connect, configLoader: async () => ({}) },
     );
-
     expect(connect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'sqlite',
-        url: resolve(rootDir, 'runtime/dev.sqlite'),
-      }),
+      expect.objectContaining({ type: 'duckdb', url: ':memory:' }),
     );
-    expect(close).toHaveBeenCalledOnce();
   });
 
   it('reads a real seeded SQLite database through the lazy adapter', async () => {

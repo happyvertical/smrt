@@ -40,6 +40,7 @@ export default defineConfig({
         /^@happyvertical\/smrt-core/,
         /^@happyvertical\/smrt-scanner/,
         /^@happyvertical\/sql/,
+        'oxc-parser',
         /^node:/,
       ],
       output: {

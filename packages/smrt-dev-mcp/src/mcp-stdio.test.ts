@@ -1,6 +1,9 @@
 import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getDatabase } from '@happyvertical/sql';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -12,14 +15,16 @@ const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx');
 
 let activeClient: Client | undefined;
 let activeTransport: StdioClientTransport | undefined;
+const temporaryDirectories: string[] = [];
 
-async function createMcpClient() {
+async function createMcpClient(env: NodeJS.ProcessEnv = process.env) {
   expect(existsSync(tsxBin)).toBe(true);
 
   const transport = new StdioClientTransport({
     command: tsxBin,
     args: ['src/index.ts'],
     cwd: packageRoot,
+    env,
     stderr: 'pipe',
   });
   const client = new Client(
@@ -50,9 +55,47 @@ afterEach(async () => {
   await activeTransport?.close();
   activeClient = undefined;
   activeTransport = undefined;
+  for (const directory of temporaryDirectories.splice(0)) {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 describe('smrt-dev-mcp stdio server', () => {
+  it('routes every operational diagnostic over MCP stdio', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-dev-mcp-stdio-'));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, 'runtime.sqlite');
+    const database = await getDatabase({ type: 'sqlite', url: databasePath });
+    await (database.client as { close?: () => Promise<void> }).close?.();
+    const client = await createMcpClient({
+      ...process.env,
+      SMRT_DEV_DB_URL: databasePath,
+      SMRT_DEV_DB_TYPE: 'sqlite',
+    });
+
+    const calls = [
+      ['job-health', { limit: 3, staleAfterMs: 1_000 }],
+      ['schedule-health', { limit: 4, staleAfterMs: 2_000 }],
+      ['dispatch-health', { limit: 5, staleAfterMs: 3_000 }],
+      [
+        'recent-changes',
+        { limit: 6, since: 1_700_000_000_000, tables: ['articles'] },
+      ],
+    ] as const;
+
+    for (const [name, arguments_] of calls) {
+      const result = await client.callTool({ name, arguments: arguments_ });
+      expect(JSON.parse(textContent(result))).toMatchObject({
+        status: 'unavailable',
+        provenance: {
+          source: 'runtime',
+          observation: 'live-db',
+          engine: 'sqlite',
+        },
+      });
+    }
+  });
+
   // This smoke spawns a real server and drives ~11 whole-workspace tool calls
   // against the smrt monorepo. Discovery now reaches every workspace member
   // (#2143), and a member without build artifacts falls back to an OXC source

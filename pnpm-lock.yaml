@@ -2204,6 +2204,9 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
+      oxc-parser:
+        specifier: ^0.138.0
+        version: 0.138.0
     devDependencies:
       '@modelcontextprotocol/client':
         specifier: 2.0.0

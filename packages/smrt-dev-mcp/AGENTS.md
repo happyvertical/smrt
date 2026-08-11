@@ -137,6 +137,7 @@ launcher or a small wrapper script with an absolute Node path.
 
 - `src/index.ts` — MCP server setup, tool registration
 - `src/runtime-diagnostics.ts` — lazy optional connection resolution, trusted scope enforcement, cleanup, and the six live diagnostic adapters
+- `src/static-runtime-config.ts` — bounded, parse-only extraction of database config without importing project modules
 - `src/knowledge/index.ts` — deterministic SMRT, SDK, and downstream domain knowledge discovery; workspace-glob expansion, provenance, coverage, and diagnostics
 - `src/agent-skills.ts` — bundled skill registry and file loader
 - `plugin.json` / `mcp.json` — Agent Plugins 1.0.0 portable root manifests
@@ -152,7 +153,10 @@ launcher or a small wrapper script with an absolute Node path.
   migrate schema, or issue writes while resolving them. No configured database
   is a successful `static-only` result. Connection precedence is per-call
   `dbUrl`/`dbType`, then `SMRT_DEV_DB_URL`/`SMRT_DEV_DB_TYPE`, then
-  `packages.cli.database` from config discovered at `rootDir`.
+  statically readable `packages.cli.database` from config discovered at
+  `rootDir`. Never import project config for diagnostics; dynamic database
+  expressions require the environment or per-call override. Open only existing
+  local SQLite/DuckDB files.
 - **Runtime scope is host-trusted**: `SMRT_DEV_TENANT_ID` authorizes one tenant;
   absent that, diagnostics fail closed to global rows. A tool argument may only
   repeat that tenant and can never request system or cross-tenant scope.

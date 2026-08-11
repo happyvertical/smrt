@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import { stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { loadConfig, sanitizeConfig } from '@happyvertical/smrt-config';
+import { fileURLToPath } from 'node:url';
+import { sanitizeConfig } from '@happyvertical/smrt-config';
 import {
   redactSystemDiagnosticText,
   type SystemDiagnosticEngine,
@@ -10,6 +11,7 @@ import {
   type TrustedSystemDiagnosticScope,
 } from '@happyvertical/smrt-core';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import { loadStaticRuntimeConfig } from './static-runtime-config.js';
 import { introspectProject } from './tools/introspect-project.js';
 
 export type RuntimeDiagnosticToolName =
@@ -42,7 +44,7 @@ interface ResolvedRuntimeConnection {
 export interface RuntimeDiagnosticDependencies {
   env?: NodeJS.ProcessEnv;
   connect?: typeof getDatabase;
-  configLoader?: typeof loadConfig;
+  configLoader?: (rootDir: string, env: NodeJS.ProcessEnv) => Promise<unknown>;
   introspect?: typeof introspectProject;
   /** Test/host override; production connections are owned and closed per call. */
   ownsConnections?: boolean;
@@ -177,7 +179,7 @@ async function resolveRuntimeConnection(
   | ResolvedRuntimeConnection
 > {
   const env = dependencies.env ?? process.env;
-  const configLoader = dependencies.configLoader ?? loadConfig;
+  const configLoader = dependencies.configLoader ?? loadStaticRuntimeConfig;
   const rootDir = resolve(args.rootDir ?? process.cwd());
   let source: ResolvedRuntimeConnection['source'] | null = null;
   let url: string | undefined;
@@ -193,11 +195,7 @@ async function resolveRuntimeConnection(
     engine = supportedEngine(env.SMRT_DEV_DB_TYPE) ?? inferEngine(url);
   } else {
     try {
-      const config = await configLoader({
-        searchFrom: rootDir,
-        searchParents: true,
-        cache: false,
-      });
+      const config = await configLoader(rootDir, env);
       const database = packageDatabaseConfig(config);
       if (database?.url) {
         source = 'config';
@@ -230,14 +228,27 @@ async function resolveRuntimeConnection(
 
   try {
     const connect = dependencies.connect ?? getDatabase;
-    const normalizedUrl = normalizeDatabaseUrl(url, engine, rootDir);
+    const normalized = await validateDatabaseTarget(
+      normalizeDatabaseUrl(url, engine, rootDir),
+      engine,
+      dependencies.connect !== undefined,
+    );
+    if (!normalized.ok) {
+      return {
+        result: connectionUnavailable(
+          scope,
+          source,
+          normalized.code,
+          normalized.message,
+        ),
+      };
+    }
     const db = await connect({
       type: engine,
-      url: normalizedUrl,
-      // The SQL SDK caches SQLite/Postgres handles by URL unless a dbid is
-      // supplied. A unique id lets this host close the handle in `finally`
-      // without a later call receiving that closed cached connection.
-      dbid: `smrt-dev-mcp-${randomUUID()}`,
+      url: normalized.url,
+      ...(engine === 'duckdb'
+        ? { autoRegisterJSON: false, writeStrategy: 'none' as const }
+        : {}),
     } as Parameters<typeof getDatabase>[0]);
     return {
       db,
@@ -419,18 +430,70 @@ function normalizeDatabaseUrl(
   rootDir: string,
 ): string {
   if (engine === 'postgres' || url === ':memory:') return url;
+  if (engine === 'duckdb' && url.startsWith('duckdb:')) {
+    const suffix = url.slice('duckdb:'.length);
+    if (/^\/{0,3}:memory:$/.test(suffix)) return ':memory:';
+    if (suffix.startsWith('///')) return `/${suffix.slice(3)}`;
+    if (suffix.startsWith('//')) return resolve(rootDir, suffix.slice(2));
+    return isAbsolute(suffix) ? suffix : resolve(rootDir, suffix);
+  }
   if (url.startsWith('file:')) {
     const filePath = url.slice('file:'.length);
     return isAbsolute(filePath) ? url : `file:${resolve(rootDir, filePath)}`;
   }
-  const localPath =
-    engine === 'duckdb' && url.startsWith('duckdb:')
-      ? url.slice('duckdb:'.length)
-      : url;
+  const localPath = url;
   if (isAbsolute(localPath) || /^[a-z][a-z0-9+.-]*:/i.test(localPath)) {
     return localPath;
   }
   return resolve(rootDir, localPath);
+}
+
+async function validateDatabaseTarget(
+  url: string,
+  engine: SystemDiagnosticEngine,
+  injectedConnection: boolean,
+): Promise<
+  { ok: true; url: string } | { ok: false; code: string; message: string }
+> {
+  if (engine === 'postgres' || isRemoteDatabaseUrl(url)) {
+    return { ok: true, url };
+  }
+  if (url === ':memory:') {
+    return injectedConnection
+      ? { ok: true, url }
+      : {
+          ok: false,
+          code: 'ephemeral-database-unsupported',
+          message:
+            'Runtime diagnostics require an existing database; an isolated in-memory database has no runtime state.',
+        };
+  }
+
+  const path = localDatabasePath(url);
+  try {
+    if (!(await stat(path)).isFile()) throw new Error('not a file');
+  } catch {
+    return {
+      ok: false,
+      code: 'database-file-unavailable',
+      message:
+        'The configured local database does not exist as a regular file; runtime diagnostics will not create it.',
+    };
+  }
+  return { ok: true, url };
+}
+
+function isRemoteDatabaseUrl(url: string): boolean {
+  return /^(?:https?|libsql):\/\//i.test(url);
+}
+
+function localDatabasePath(url: string): string {
+  if (!url.startsWith('file:')) return url;
+  const parsed = new URL(url);
+  if (parsed.search || parsed.hash) {
+    throw new Error('SQLite file URLs with parameters are not supported.');
+  }
+  return fileURLToPath(parsed);
 }
 
 async function closeDatabase(db: DatabaseInterface): Promise<void> {

@@ -59,7 +59,8 @@
     "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@modelcontextprotocol/server": "2.0.0"
+    "@modelcontextprotocol/server": "2.0.0",
+    "oxc-parser": "^0.138.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",

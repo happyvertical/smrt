@@ -203,13 +203,19 @@ Connection resolution is lazy and uses the first configured source:
 
 1. Per-call `dbUrl` and optional `dbType`
 2. `SMRT_DEV_DB_URL` and optional `SMRT_DEV_DB_TYPE`
-3. `packages.cli.database` from the project config discovered at `rootDir`
+3. Statically readable `packages.cli.database` from the project config
+   discovered at `rootDir`
 
 Relative SQLite and DuckDB paths resolve from `rootDir`, not the MCP server's
-launch directory. Owned connections are closed after each diagnostic. If no
-connection is configured, each tool succeeds with `status: "not-configured"`
-and `mode: "static-only"`; all other development tools remain available.
-Missing system tables similarly make only that category unavailable.
+launch directory. Config discovery parses only the exported database object and
+literal/environment fallbacks; it never imports JavaScript or TypeScript config.
+Use the environment or per-call override when a database URL is computed by
+application code. Local SQLite and DuckDB targets must already be regular files,
+so diagnostics cannot create a database as a side effect. Owned connections are
+closed after each diagnostic. If no connection is configured, each tool succeeds
+with `status: "not-configured"` and `mode: "static-only"`; all other development
+tools remain available. Missing system tables similarly make only that category
+unavailable.
 
 Runtime scope is fail-closed. Set `SMRT_DEV_TENANT_ID` in the MCP host to permit
 that tenant's operational rows (plus global rows where applicable). Without it,
