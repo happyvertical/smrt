@@ -27,6 +27,8 @@ import type {
   DomainKnowledgeManifest,
   DomainKnowledgeModuleDoc,
 } from '@happyvertical/smrt-types';
+import { TOOLS } from '../tool-catalog.js';
+import { checkMcpToolDocumentation } from './mcp-docs.js';
 
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'error' | 'warning';
@@ -855,6 +857,19 @@ export async function checkKnowledgeFreshnessFromIndex(
 
   for (const pkg of authoredPackages) {
     issues.push(...checkDomainKnowledgeArtifact(index.rootDir, pkg));
+  }
+
+  const devMcpPackage = authoredPackages.find(
+    (pkg) => pkg.name === '@happyvertical/smrt-dev-mcp',
+  );
+  if (devMcpPackage) {
+    issues.push(
+      ...checkMcpToolDocumentation(
+        index.rootDir,
+        devMcpPackage.directory,
+        TOOLS,
+      ),
+    );
   }
 
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));

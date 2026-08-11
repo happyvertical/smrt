@@ -23,6 +23,10 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `list-agent-skills` | Lists bundled harness-agnostic agent skills |
 | `get-agent-skill` | Returns a bundled agent skill as Markdown plus optional references |
 
+`pnpm knowledge:check --strict --format markdown` compares this catalog and the
+README parameter tables to the exported `TOOLS` definitions. Add or change a
+tool schema and its authored documentation in the same commit.
+
 ## Knowledge Discovery (#2143)
 
 Discovery reads the workspace globs instead of assuming `<root>/packages`:

@@ -242,14 +242,14 @@ Generate a complete s-m-r-t class with `@smrt()` decorator, fields, and imports.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `className` | `string` | Yes | Class name (PascalCase) |
-| `properties` | `array` | Yes | Property definitions (`name`, `type`, `required?`, `nullable?`, `description?`, `defaultValue?`) |
-| `baseClass` | `string` | No | `'SmrtObject'` (default) or `'SmrtCollection'` |
-| `template` | `string` | No | `basic`, `global-catalog`, `optional-catalog`, `tenant-project-object`, `tenant-event-log-object`, or `cross-package-reference` |
+| `properties` | `object[]` | Yes | Property definitions (`name`, `type`, `required?`, `nullable?`, `description?`, `defaultValue?`) |
+| `baseClass` | `'SmrtObject' \| 'SmrtCollection'` | No | `'SmrtObject'` (default) or `'SmrtCollection'` |
+| `template` | `'basic' \| 'global-catalog' \| 'optional-catalog' \| 'tenant-project-object' \| 'tenant-event-log-object' \| 'cross-package-reference'` | No | Generation template (default: `basic`) |
 | `tableName` | `string` | No | Explicit `@smrt({ tableName })` value |
 | `conflictColumns` | `string[]` | No | Explicit upsert natural key columns |
-| `tenantScoped` | `boolean/object` | No | Add `@TenantScoped(...)`; object supports `mode`, `field`, and bypass/filter options |
+| `tenantScoped` | `boolean \| object` | No | Add `@TenantScoped(...)`; object supports `mode`, `field`, and bypass/filter options |
 | `includeTenantIdField` | `boolean` | No | Emit a matching `@tenantId()` field |
-| `relationships` | `array` | No | Relationship definitions for `foreignKey`, `crossPackageRef`, `oneToMany`, or `manyToMany` |
+| `relationships` | `object[]` | No | Relationship definitions for `foreignKey`, `crossPackageRef`, `oneToMany`, or `manyToMany` |
 | `includeCompanionSnippets` | `boolean` | No | Append package wiring notes |
 | `includeApiConfig` | `boolean` | No | Include REST API config (default: true) |
 | `includeMcpConfig` | `boolean` | No | Include MCP config (default: true) |
@@ -307,7 +307,7 @@ coverage, relationship-v2 counts, and freshness status.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `rootDir` | `string` | No | Project root directory (default: cwd) |
-| `scope` | `string` | No | `project`, `local`, `package`, `sdk`, or `installed` |
+| `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
 | `package` | `string` | No | Package name or short name to focus |
 
 ### `check-knowledge-freshness`
@@ -330,7 +330,7 @@ Alias over the deterministic checker that emphasizes downstream
 | `rootDir` | `string` | No | Project root directory (default: cwd) |
 | `changed` | `boolean` | No | Limit stale-pattern checks to changed files |
 | `strict` | `boolean` | No | Treat stale-pattern findings as errors |
-| `scope` | `string` | No | `project`, `local`, `package`, `sdk`, or `installed` |
+| `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
 | `package` | `string` | No | Package name or short name to focus |
 
 ### `build-review-context`
@@ -344,11 +344,21 @@ then return a model-ready prompt bundle.
 | `changedFiles` | `string[]` | No | Files to route to package experts |
 | `focus` | `string` | No | Review focus or concern |
 | `documentation` | `string` | No | Additional docs or notes to include |
+| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
 
 ### `build-domain-review-context`
 
-Domain-scoped alias for `build-review-context`. Accepts the same fields plus
-`scope` and `package`.
+Domain-scoped alias for `build-review-context`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `changedFiles` | `string[]` | No | Files to route to package experts |
+| `focus` | `string` | No | Review focus or concern |
+| `documentation` | `string` | No | Additional docs or notes to include |
+| `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
+| `package` | `string` | No | Package name or short name to focus |
+| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
 
 ### `smrt-review`
 
@@ -360,7 +370,8 @@ Return deterministic review findings, a prompt bundle, or both.
 | `changedFiles` | `string[]` | No | Files to route to package experts |
 | `focus` | `string` | No | Review focus or concern |
 | `documentation` | `string` | No | Additional docs or notes to include |
-| `mode` | `string` | No | `findings`, `prompt-bundle`, or `both` |
+| `mode` | `'findings' \| 'prompt-bundle' \| 'both'` | No | Response mode (default: `both`) |
+| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
 
 ### `build-architecture-context`
 
@@ -373,11 +384,21 @@ then return a model-ready architecture prompt bundle.
 | `idea` | `string` | No | Product or implementation idea |
 | `documentation` | `string` | No | Existing docs or requirements |
 | `focus` | `string` | No | Architecture concern to prioritize |
+| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
 
 ### `build-domain-architecture-context`
 
-Domain-scoped alias for `build-architecture-context`. Accepts the same fields
-plus `scope` and `package`.
+Domain-scoped alias for `build-architecture-context`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `idea` | `string` | No | Product or implementation idea |
+| `documentation` | `string` | No | Existing docs or requirements |
+| `focus` | `string` | No | Architecture concern to prioritize |
+| `scope` | `'project' \| 'local' \| 'package' \| 'sdk' \| 'installed'` | No | Knowledge source scope (default: `project`) |
+| `package` | `string` | No | Package name or short name to focus |
+| `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
 
 ### `smrt-architecture`
 
@@ -403,7 +424,7 @@ Return a bundled agent skill as Markdown, with optional referenced files.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | `string` | Yes | Skill name. Currently `smrt-code-review` |
+| `name` | `'smrt-code-review'` | Yes | Skill name |
 | `includeReferences` | `boolean` | No | Include referenced files (default: true) |
 
 ## MCP Resources And Prompts
