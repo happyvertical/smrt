@@ -1657,18 +1657,24 @@ export class ObjectRegistry {
     // CRITICAL FIX for issue #384: Use unique db instance ID for cache key
     // Without this, different tests with different db instances would share
     // the same cached collection, causing queries to hit the wrong database
-    let dbId: number | undefined;
+    let dbCacheKey: string | undefined;
     if (options.db && typeof options.db === 'object') {
       // Get or assign unique ID for this db instance
       if (!ObjectRegistry.dbInstanceIds.has(options.db)) {
         ObjectRegistry.dbInstanceIds.set(options.db, ObjectRegistry.nextDbId++);
       }
-      dbId = ObjectRegistry.dbInstanceIds.get(options.db);
+      const dbId = ObjectRegistry.dbInstanceIds.get(options.db);
+      dbCacheKey = dbId === undefined ? undefined : `instance:${dbId}`;
+    } else if (typeof options.db === 'string') {
+      // String database URLs/paths are valid SmrtClassOptions too. They must
+      // participate in the key or two scoped callers can reuse a collection
+      // bound to the first caller's database.
+      dbCacheKey = `string:${options.db}`;
     }
 
     const cacheKey = `${canonicalName}:${JSON.stringify({
       persistence: options.persistence,
-      db: dbId !== undefined ? `db:${dbId}` : undefined,
+      db: dbCacheKey,
       ai: options.ai ? 'present' : undefined,
     })}`;
 

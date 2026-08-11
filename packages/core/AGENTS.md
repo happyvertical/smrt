@@ -76,6 +76,18 @@ operator against a database to keep the two in step.
 
 STI child collections auto-filter by `_meta_type`.
 
+## Bounded Collection Read Plans
+
+Use `executeCollectionReadPlan()` when one operation needs several independent
+collections. It bounds top-level `collection.list()` concurrency while keeping
+all reads on the normal registry/collection path. Callers must choose an
+explicit positive `maxConcurrency` and pass their normal shared
+`collectionOptions` when database or tenant context matters.
+
+The executor deliberately does not compose SQL, cache the plan, or change pool
+defaults. On failure it stops starting queued entries, drains operations already
+in flight, and rethrows the first error.
+
 ## Object Memory & Semantic Search
 
 Two persistence primitives every `SmrtObject`/`SmrtCollection` inherits — load-bearing for learning agents, usable by any object. Full guide: `docs/content/core.md` → "Context Memory System".

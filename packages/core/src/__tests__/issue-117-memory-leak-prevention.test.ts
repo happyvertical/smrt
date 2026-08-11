@@ -230,6 +230,26 @@ describe('Issue #117: Memory Leak Prevention', () => {
   });
 
   describe('Cache Key Uniqueness', () => {
+    it('keeps string database options isolated', async () => {
+      const databaseA = `file:${path.join(tempDir, 'string-db-a.db')}`;
+      const databaseB = `file:${path.join(tempDir, 'string-db-b.db')}`;
+      const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
+        'CacheTestObject',
+        { db: databaseA },
+      );
+      const collection2 = await ObjectRegistry.getCollection<CacheTestObject>(
+        'CacheTestObject',
+        { db: databaseB },
+      );
+      const collection1Again =
+        await ObjectRegistry.getCollection<CacheTestObject>('CacheTestObject', {
+          db: databaseA,
+        });
+
+      expect(collection1).not.toBe(collection2);
+      expect(collection1Again).toBe(collection1);
+    });
+
     it('should cache different persistence configurations separately', async () => {
       const collection1 = await ObjectRegistry.getCollection<CacheTestObject>(
         'CacheTestObject',
