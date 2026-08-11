@@ -55,7 +55,7 @@ pnpm add @happyvertical/smrt-svelte
 
 ```svelte
 <script>
-  import { PermissionCheck, permission } from '@happyvertical/smrt-svelte';
+  import { PermissionCheck, permission } from '@happyvertical/smrt-ui';
 </script>
 
 <PermissionCheck requires="admin:write">
@@ -144,22 +144,52 @@ scaffold adopts AdminShell as its default chrome exactly this way; copy its
 
 ### Entry Points
 
+This is the complete `exports` map of this package. Anything not listed is not
+importable, even if it appears in `dist/`.
+
 | Import Path | Contents |
 |-------------|----------|
-| `@happyvertical/smrt-svelte` | Provider, DataTable, permission utilities, hooks, state, components |
-| `@happyvertical/smrt-svelte/calendar` | Calendar and DayView |
-| `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, etc.) |
-| `@happyvertical/smrt-svelte/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
-| `@happyvertical/smrt-svelte/ui` | UI primitives (Button, Card, Badge, Pagination) |
-| `@happyvertical/smrt-ui/themes` | Canonical ThemeProvider, Material/Glass/Studio/s-m-r-t presets, CSS generation |
-| `@happyvertical/smrt-ui/forms` | Provider-free foundational form controls and the agent interaction registry |
-| `@happyvertical/smrt-ui/data` | DataTable, CollectionList/ContentList, CollectionToolbar |
-| `@happyvertical/smrt-svelte/registry` | ModuleUIRegistry for agent admin panels |
+| `@happyvertical/smrt-svelte` | `Provider`, hooks (`useAppState`, `useAuth`, `useLLM`, `useSocket`, `useSTT`, `useTheme`, `useTTS`), app state/context, `ModulePanel`, and the form components below |
+| `@happyvertical/smrt-svelte/forms` | Form inputs (TextInput, Select, MoneyInput, DateTimeInput, Toggle, etc.) |
+| `@happyvertical/smrt-svelte/settings` | Server-paged settings search, selection, and list/detail layout (`SettingsCatalog`, `paginateSettingsCatalog`) |
 | `@happyvertical/smrt-svelte/workspace` | AdminShell, ShellState, tenant nav, focus tools, settings, activities, and system/app panels |
 | `@happyvertical/smrt-svelte/workspace/legacy` | Opt-in ToolsDock compatibility surface for applications migrating to AdminShell |
+| `@happyvertical/smrt-svelte/workspace/server` | Server-side workspace helpers (Node only) |
+| `@happyvertical/smrt-svelte/workspace/live` | `systemFeed` — the AdminShell system scope (jobs/schedules/dispatch) polled from an app status endpoint; deliberately carries no `smrt-web` dependency |
 | `@happyvertical/smrt-svelte/browser-ai` | Browser AI client (STT/TTS/LLM adapters, capability detection) |
 | `@happyvertical/smrt-svelte/browser-ai/svelte` | Svelte AI components (VoiceInput, CapabilityGate, etc.) |
-| `@happyvertical/smrt-svelte/styles/tokens.css` | Design tokens CSS |
+| `@happyvertical/smrt-svelte/web` | `smrt-web` live-query bindings (`liveCollection`, `activityFeed`, `useUpdateAvailable`) |
+| `@happyvertical/smrt-svelte/i18n/server` | Server-side i18n resolver (Node only) |
+
+Domain-agnostic UI lives in `@happyvertical/smrt-ui`. There is no `ui`,
+`layout`, `calendar`, `data`, `chat`, `feedback`, `registry`, `themes`, `i18n`,
+or `styles/tokens.css` subpath on `smrt-svelte`, so those specifiers only
+resolve against `smrt-ui`:
+
+| Import Path | Contents |
+|-------------|----------|
+| `@happyvertical/smrt-ui` | `PermissionCheck`, `permission` / `hasPermission` / `hasAnyPermission` / `hasAllPermissions` |
+| `@happyvertical/smrt-ui/ui` | UI primitives (Button, Card, Badge, Pagination) |
+| `@happyvertical/smrt-ui/layout` | Layout (Container, Grid, Header, Footer, Masthead, etc.) |
+| `@happyvertical/smrt-ui/calendar` | Calendar and DayView |
+| `@happyvertical/smrt-ui/data` | DataTable, CollectionList/ContentList, CollectionToolbar |
+| `@happyvertical/smrt-ui/feedback` | Modal, ConfirmDialog, LoadingOverlay, ProgressBar |
+| `@happyvertical/smrt-ui/chat` | Message bubble, reaction picker, typing indicator |
+| `@happyvertical/smrt-ui/registry` | ModuleUIRegistry for agent admin panels |
+| `@happyvertical/smrt-ui/themes` | Canonical ThemeProvider, Material/Glass/Studio/s-m-r-t presets, CSS generation |
+| `@happyvertical/smrt-ui/i18n` | Client i18n (`useI18n`, `Trans`) — the counterpart to `smrt-svelte`'s `/i18n/server` |
+| `@happyvertical/smrt-ui/styles/tokens.css` | Design tokens CSS |
+
+`forms` is the one name on both: `@happyvertical/smrt-ui/forms` holds the
+Provider-free primitives (`Input`, `Select`, `Textarea`, `Toggle`, `FormGroup`),
+and `@happyvertical/smrt-svelte/forms` re-exports those and adds the
+Provider-backed inputs, so it stays the one-stop barrel for applications.
+
+The first-generation `WorkspaceShell`, `RoleShell`, `NavTree`, and `Breadcrumbs`
+have no entry point at all. Their `.svelte` files are copied into `dist/` but no
+export subpath or barrel names them, so they cannot be imported from an
+installed package — see the [migration
+guide](./src/components/workspace/MIGRATION.md). `AdminShell` supersedes them.
 
 Legacy ToolsDock availability is presentation-only, not authorization.
 `fetchAvailability` failures intentionally keep controls usable using the

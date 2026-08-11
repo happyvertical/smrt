@@ -178,8 +178,6 @@
     "test:watch": "node scripts/generate-test-manifest.js && vitest",
     "build": "node scripts/generate-manifest.js && vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json && cp src/manifest/smrt-knowledge.json dist/smrt-knowledge.json",
     "build:watch": "vite build --watch",
-    "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",
-    "docs:watch": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules --watch",
     "clean": "rm -rf dist docs",
     "dev": "npm run build:watch & npm run test:watch",
     "verify:consumer-plugin": "node -e \"try { const { smrtConsumer } = require('./dist/consumer-plugin.js'); const plugin = smrtConsumer(); console.log('✅ Consumer plugin working:', plugin.name); } catch(e) { console.error('❌ Consumer plugin failed:', e.message); process.exit(1); }\"",

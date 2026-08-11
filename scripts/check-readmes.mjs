@@ -3,8 +3,13 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
 import { discoverWorkspaces } from './workspaces.mjs';
+
+const typescriptPath = process.env.SMRT_TYPESCRIPT_PATH;
+const typescriptModule = typescriptPath
+  ? await import(pathToFileURL(typescriptPath).href)
+  : await import('typescript');
+const ts = typescriptModule.default;
 
 const ROOT = resolve(import.meta.dirname, '..');
 const README = join(ROOT, 'README.md');
@@ -118,6 +123,9 @@ export function validateQuickstart(quickstart, root = ROOT) {
     skipLibCheck: true,
     noEmit: true,
     baseUrl: root,
+    typeRoots: typescriptPath
+      ? [resolve(dirname(typescriptPath), '..', '..', '@types')]
+      : undefined,
     paths: { '@happyvertical/smrt-core': [coreIndexPath] },
   };
   const host = ts.createCompilerHost(options);
@@ -231,10 +239,7 @@ export async function checkReadmes(root = ROOT) {
       fail(`${relative(root, path)} still references obsolete smrt-homer.png branding`);
     }
   }
-  for (const asset of [
-    join(root, 'smrt-homer.png'),
-    join(root, 'docs/content/api/core/_media/smrt-homer.png'),
-  ]) {
+  for (const asset of [join(root, 'smrt-homer.png')]) {
     if (existsSync(asset) && statSync(asset).isFile()) {
       fail(`${relative(root, asset)} obsolete branding asset still exists`);
     }

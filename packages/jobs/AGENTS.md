@@ -109,6 +109,32 @@ transitions and monotonic checkpoints in
 
 Mixin that adds `bg()` and `background()` to any SmrtObject. Uses WeakMap for collection caching per DB instance.
 
+## Background policy (`background-policy.ts`, S5 audit #1402)
+
+Three opt-in guards, all owned **and enforced here**. Other packages apply the
+eligibility marker (`reports`, `support`, `fields`, the MCP conformance
+fixture), but nothing outside this package acts on it — `TaskRunner` is the only
+reader. In particular `@happyvertical/smrt-agents` has no reference to any of
+these guards and does not depend on this package, so marking a method does not
+change what the agents runtime will dispatch.
+
+- `clampRetries()` / `MAX_JOB_RETRIES` (25): a requested retry count above the
+  ceiling is clamped, not rejected.
+- `assertWithinTenantCreationCap(tenantId, current, cap)` /
+  `DEFAULT_TENANT_JOB_CAP` (10 000): throws `TenantJobCapExceededError` when the
+  tenant's count of non-terminal jobs is already at or above the cap. Applied in
+  `SmrtJobCollection.enqueueJob()` (`smrt-job.ts`), which is the single choke
+  point for the builder and `ScheduleRunner`; a `null` tenant and a `cap <= 0`
+  both skip the check. Deliberately not serialized — concurrent enqueues can
+  overshoot by the number of in-flight creators (see the method's own comment).
+- `@backgroundEligible()` / `markBackgroundEligible()` /
+  `isBackgroundEligibleMethod()`: an allowlist of methods `TaskRunner` may
+  dispatch, enforced at exactly one call site (`runner.ts`, after the method
+  lookup). **Restrictive, not enabling** — a class with no marked methods allows
+  any of its methods, and the first mark makes the set exhaustive, excluding
+  every sibling method. Adding the decorator to one method of an existing class
+  is therefore a behaviour change for the rest of it.
+
 ## Gotchas
 
 - **Cron not timezone-aware**: cron fields match the server's **local** time, not UTC (set `TZ` for UTC); no missed-run catch-up (fire-once-forward)

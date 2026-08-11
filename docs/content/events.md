@@ -407,7 +407,7 @@ participant.setMetadata({
 
 ## API Reference
 
-For complete API documentation, see the generated TypeDoc documentation or visit the [SMRT Framework documentation site](https://happyvertical.github.io/smrt/api/events/globals).
+For the full exported API, read the package sources: [`packages/events/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/events/README.md) and [`packages/events/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/events/AGENTS.md).
 
 ### Core Classes
 

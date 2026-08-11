@@ -223,7 +223,7 @@ import type { Signal, SignalAdapter, SignalType } from '@happyvertical/smrt-type
 
 ## API Reference
 
-For complete API documentation, see [/api/types/globals](/api/types/globals).
+For the full exported API, read the package sources: [`packages/types/README.md`](https://github.com/happyvertical/smrt/blob/main/packages/types/README.md) and [`packages/types/AGENTS.md`](https://github.com/happyvertical/smrt/blob/main/packages/types/AGENTS.md).
 
 ## License
 

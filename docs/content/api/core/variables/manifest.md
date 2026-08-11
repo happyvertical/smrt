@@ -1,5 +1,0 @@
-# Variable: manifest
-
-> `const` **manifest**: [`SmartObjectManifest`](../interfaces/SmartObjectManifest.md)
-
-Defined in: packages/core/src/manifest/static-manifest.ts:9

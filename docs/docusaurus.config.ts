@@ -18,8 +18,9 @@ const config: Config = {
   onBrokenLinks: 'warn',
 
   // Markdown configuration
-  // Use 'detect' to allow CommonMark for TypeDoc-generated API docs
-  // while still supporting MDX for hand-written docs
+  // 'detect' parses .md as CommonMark — which is what every page under
+  // content/ currently is, including the copied package READMEs — and reserves
+  // MDX for .mdx files.
   markdown: {
     format: 'detect',
     mermaid: true,
@@ -61,120 +62,6 @@ const config: Config = {
           customCss: './src/css/custom.css',
         },
       } satisfies Preset.Options,
-    ],
-  ],
-
-  plugins: [
-    // TypeDoc API documentation for each package
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'types',
-        entryPoints: ['../packages/types/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/types',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'core',
-        entryPoints: ['../packages/core/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/core',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'agents',
-        entryPoints: ['../packages/agents/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/agents',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'assets',
-        entryPoints: ['../packages/assets/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/assets',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'content',
-        entryPoints: ['../packages/content/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/content',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'events',
-        entryPoints: ['../packages/events/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/events',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'gnode',
-        entryPoints: ['../packages/gnode/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/gnode',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'places',
-        entryPoints: ['../packages/places/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/places',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'products',
-        entryPoints: ['../packages/products/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/products',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'profiles',
-        entryPoints: ['../packages/profiles/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/profiles',
-        skipErrorChecking: true,
-      },
-    ],
-    [
-      'docusaurus-plugin-typedoc',
-      {
-        id: 'tags',
-        entryPoints: ['../packages/tags/src/index.ts'],
-        tsconfig: './typedoc.tsconfig.json',
-        out: 'content/api/tags',
-        skipErrorChecking: true,
-      },
     ],
   ],
 

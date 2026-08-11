@@ -10,7 +10,7 @@
 ### Field Conventions
 - Plain TypeScript types preferred: `name: string = ''`, `count: number = 0`
 - INTEGER: `= 0` (no decimal). DECIMAL: `= 0.0` (has decimal point)
-- Use field helpers only for: `foreignKey(Class)`, `text({ required: true })`, `decimal({ nullable: true })`
+- Add a decorator only when the type cannot express it: `@foreignKey(Class)`, `@field({ required: true })`, `@field({ nullable: true })`. There are no per-type helpers — `text()`/`integer()`/`decimal()`/`datetime()`/`json()` do not exist
 - `@meta()` for STI child-specific fields — stored in `_meta_data` JSONB column, not as table columns
 - `@tenantId({ nullable: true })` for optional tenant scoping
 

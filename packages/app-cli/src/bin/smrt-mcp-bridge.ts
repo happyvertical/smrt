@@ -18,8 +18,8 @@
  *  - `SMRT_MCP_DEFAULT_SERVER_URL` — fallback server URL.
  *
  * Apps that want their own branded bin should call `runMcpStdioBridge`
- * directly from `@happyvertical/smrt-app-mcp/cli` instead of going through
- * this generic entrypoint.
+ * directly from `@happyvertical/smrt-app-cli` — this package's root export —
+ * instead of going through this generic entrypoint.
  */
 
 import { runMcpStdioBridge } from '../bridge.js';

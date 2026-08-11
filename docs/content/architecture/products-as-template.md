@@ -1,5 +1,16 @@
 # HAVE SMRT Template
 
+> **Historical document — the API below no longer exists.** This page describes a
+> template repository from before the `@have/*` → `@happyvertical/*` rename. At
+> 0.40.61 there is no `@have/smrt`, `@have/smrt-template`, or `@have/svelte`
+> package; `SmartMicroservice` and `generateFromTemplate` are not exported by
+> anything; and the per-type field helpers (`text()`, `decimal()`, `boolean()`)
+> were removed in #318 — schema now comes from TypeScript property types,
+> narrowed by the `field` / `foreignKey` / `meta` decorators. For a current
+> application scaffold, use `packages/template-sveltekit`. This page is kept
+> because [ADR 0001](../adr/0001-kmp-mobile-foundation.md) cites it; read it as a
+> record of intent, not as instructions.
+
 A GitHub template for building AI-powered applications with the HAVE SDK ecosystem.
 
 ## Quick Start

@@ -3392,7 +3392,11 @@ export class SmrtObject extends SmrtClass {
    * @param options.metadata - Optional additional JSON metadata
    * @param options.confidence - Confidence score (0–1, default 1.0)
    * @param options.version - Schema version for the stored value (default 1)
-   * @param options.expiresAt - Optional expiry date after which `recall()` will ignore this entry
+   * @param options.expiresAt - Optional expiry timestamp stored on the row.
+   *   Storage only: {@link recall} and {@link recallAll} do **not** filter on it,
+   *   so an expired entry is still returned. Callers that need primitive expiry
+   *   semantics should include the expiry in the stored value and enforce it before
+   *   use, or use `LearningMemory`, which filters expired rows through a public API.
    * @returns Promise that resolves when the context is stored
    * @throws Error if `initialize()` has not been called
    *
@@ -3463,6 +3467,9 @@ export class SmrtObject extends SmrtClass {
    * When `includeAncestors: true`, walks up the scope hierarchy by progressively
    * removing the last path segment (e.g. `'a/b/c'` → `'a/b'` → `'a'` → `'global'`)
    * until a match is found.
+   *
+   * Expiry is **not** applied here: a row whose `expires_at` has already passed is
+   * still returned. `expiresAt` is caller-managed metadata (see {@link remember}).
    *
    * @param options.scope - Scope path to search (e.g. `'parser/example.com/article'`)
    * @param options.key - Lookup key within the scope
@@ -3564,6 +3571,9 @@ export class SmrtObject extends SmrtClass {
    * Returns a `Map<key, value>` for every entry owned by this object that matches
    * the scope and optional filters. When `includeDescendants: true`, a LIKE query
    * (`scope%`) matches the scope itself and all child scopes.
+   *
+   * Expiry is **not** applied here either: expired rows are included in the result
+   * (see {@link remember}).
    *
    * @param options.scope - Optional scope path filter; omit to retrieve all scopes
    * @param options.includeDescendants - If `true`, match `scope` and all child scopes (default `false`)

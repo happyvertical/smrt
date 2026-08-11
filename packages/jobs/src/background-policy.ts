@@ -14,8 +14,14 @@
  *   opt-in allowlist of methods that may be invoked by the runner. The runner's
  *   dispatch is already bounded to existing prototype methods (no eval / dynamic
  *   import), but a class can further restrict which of its methods are reachable
- *   from a persisted job row. This same marker is intended to be consumed by the
- *   agents package, which dispatches methods through an equivalent path.
+ *   from a persisted job row.
+ *
+ * All three live in and are enforced by this package (`@happyvertical/smrt-jobs`).
+ * Other packages apply the marker (`smrt-reports`, `smrt-support`,
+ * `smrt-fields`), but the only thing that reads it is `TaskRunner`'s dispatch in
+ * `runner.ts`. `@happyvertical/smrt-agents` neither imports nor honours it, and
+ * does not depend on this package. Marking a method does **not** make it
+ * background-eligible anywhere outside the jobs runner.
  */
 
 /**
@@ -90,9 +96,9 @@ export function assertWithinTenantCreationCap(
  */
 export interface BackgroundEligibleClass {
   /**
-   * Method names that may be invoked by the job/agent runner. When present
-   * (even if empty), it is treated as an exhaustive allowlist. When absent,
-   * the runner falls back to its default behaviour (any existing method).
+   * Method names that may be invoked by `TaskRunner`. When present (even if
+   * empty), it is treated as an exhaustive allowlist. When absent, the runner
+   * falls back to its default behaviour (any existing method).
    */
   backgroundEligibleMethods?: ReadonlyArray<string> | ReadonlySet<string>;
 }
@@ -104,8 +110,9 @@ export interface BackgroundEligibleClass {
  * Once any method is marked, the runner refuses to dispatch a job whose
  * `method` is not in the set — turning the dispatch surface from "any prototype
  * method" into an explicit contract. Use this when applying the
- * {@link backgroundEligible} decorator is inconvenient (or in non-decorator
- * code, including the agents package).
+ * {@link backgroundEligible} decorator is inconvenient. Non-decorator code can
+ * skip the helper entirely and declare the static array directly, as
+ * `smrt-fields` does in `usage-learning.ts`.
  *
  * @param ctor - The class constructor to annotate.
  * @param methods - Method names to allow.
@@ -127,11 +134,16 @@ export function markBackgroundEligible(
 /**
  * Decorator: mark a method as background-eligible.
  *
+ * This is **restrictive, not enabling**. Without it, `TaskRunner` will dispatch
+ * any existing prototype method; the first `@backgroundEligible()` on a class
+ * closes that surface and turns the set into an exhaustive allowlist, so every
+ * *other* method on that class stops being reachable from a persisted job row.
+ * Adding it to one method of an existing class is therefore a behaviour change
+ * for its siblings — mark all the methods you dispatch, or none of them.
+ *
  * This is a legacy (`experimentalDecorators`) method decorator — the mode the
  * SMRT monorepo compiles with. Applying it (one or more times) builds up the
- * static `backgroundEligibleMethods` allowlist on the owning class. Once any
- * method is marked, the runner will refuse to dispatch a job whose `method` is
- * not in the set.
+ * static `backgroundEligibleMethods` allowlist on the owning class.
  *
  * @example
  * ```ts

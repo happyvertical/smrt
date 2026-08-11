@@ -90,7 +90,7 @@ class Document extends SmrtObject {
 }
 ```
 
-#### When to Use Field Helpers
+#### When to Use Field Decorators
 
 **Use TypeScript types** for most properties (preferred):
 ```typescript
@@ -102,10 +102,16 @@ created: Date = new Date();  // → engine-specific timestamp
 tags: string[] = [];         // → JSON
 ```
 
-**Use field helpers** only when you need:
-1. **Relationships**: `categoryId = foreignKey(Category)`
-2. **Constraints**: `email = text({ required: true, pattern: /^.+@.+$/ })`
-3. **Nullable decimals**: `latitude = decimal({ nullable: true })`
+**Add a decorator** only when you need something the type cannot express:
+1. **Relationships**: `@foreignKey(Category)` above `categoryId = '';`
+2. **Constraints**: `@field({ required: true, pattern: /^.+@.+$/ })` above `email = '';`
+3. **Nullable columns**: `@field({ nullable: true })` above `latitude: number | null = null;`
+
+The **field** decorators exported by `@happyvertical/smrt-core` are `field`,
+`foreignKey`, `crossPackageRef`, `oneToMany`, `manyToMany`, and `meta` (the
+class decorator `smrt` comes from the same package). There are no per-type
+helper functions — `text()`, `integer()`, `decimal()`, `datetime()`, and
+`json()` were removed in #318 and do not exist in any current version.
 
 **The 0 vs 0.0 Heuristic**:
 - `quantity: number = 0` → INTEGER column (no decimal point)
@@ -648,8 +654,12 @@ class Product extends SmrtObject {
   // Relationships
   @foreignKey(Category)
   categoryId: string = '';
-  reviews = oneToMany(Review);
-  relatedProducts = manyToMany(Product);
+
+  @oneToMany(Review)
+  reviews: Review[] = [];
+
+  @manyToMany(Product)
+  relatedProducts: Product[] = [];
 }
 ```
 
@@ -685,8 +695,12 @@ SMRT supports eager loading to optimize queries that access related objects, sol
 ```typescript
 // Define relationships
 class Order extends SmrtObject {
-  customerId = foreignKey(Customer);
-  productId = foreignKey(Product);
+  @foreignKey(Customer)
+  customerId: string = '';
+
+  @foreignKey(Product)
+  productId: string = '';
+
   status: string = 'pending';
 }
 
@@ -724,12 +738,17 @@ For more details, see the package `AGENTS.md` documentation.
 All SMRT objects have public `db` property for direct database access via @happyvertical/sql. This enables custom queries, transactions, and advanced database operations:
 
 ```typescript
-import { SmrtObject, SmrtCollection } from '@happyvertical/smrt-core';
+import { field, SmrtObject, SmrtCollection } from '@happyvertical/smrt-core';
 
 class Product extends SmrtObject {
-  name = text({ required: true });
-  price = decimal({ required: true });
-  category = text({ required: true });
+  @field({ required: true })
+  name = '';
+
+  @field({ required: true })
+  price = 0.0;
+
+  @field({ required: true })
+  category = '';
 }
 
 const products = await ProductCollection.create({ db: 'products.db' });
@@ -795,13 +814,14 @@ SMRT objects support vector embeddings for semantic search and similarity compar
 
 ### Configuration
 
-Configure embeddings in the `@smrt()` decorator:
+Configure which fields to embed in the `@smrt()` decorator:
 
 ```typescript
 @smrt({
   embeddings: {
-    fields: ['title', 'content', 'summary'],  // Fields to embed
-    model: 'text-embedding-3-small'            // Embedding model (optional)
+    fields: ['title', 'content', 'summary'],  // Fields to embed (required)
+    provider: 'local',                        // Override the project provider (optional)
+    autoGenerate: true                        // Allow save-time generation (optional, default true)
   }
 })
 class Article extends SmrtObject {
@@ -810,6 +830,45 @@ class Article extends SmrtObject {
   summary: string = '';
 }
 ```
+
+The decorator's `embeddings` object accepts exactly `fields`, `provider`,
+`autoGenerate`, `regenerateOnChange`, and `combinedField`.
+
+**There is no `model` key here.** Because `smrt()` takes a typed config, writing
+one in a TypeScript object literal is an excess-property error; in plain
+JavaScript, or wherever that check does not apply, it is simply ignored, since
+nothing reads it. The model is a project-level setting:
+
+```javascript
+// smrt.config.js
+import { defineConfig } from '@happyvertical/smrt-config';
+
+export default defineConfig({
+  smrt: {
+    embeddings: {
+      provider: 'local',                      // 'local' | 'ai' | 'auto' (default 'local')
+      localModel: 'Xenova/bge-base-en-v1.5',  // used by 'local', and by 'auto' with no AI client
+      aiModel: 'text-embedding-3-small',      // used by 'ai', and by 'auto' when an AI client exists
+      dimensions: 768                         // default 768
+    }
+  }
+});
+```
+
+The project config and the class config are merged into a
+`ResolvedEmbeddingConfig` at runtime. `getEmbedding()` does take a per-call
+`model` argument, but it selects which stored vector to read rather than which
+model to generate with — see below.
+
+Two caveats on the class-level flags:
+
+- `autoGenerate` permits save-time generation but does not guarantee it. `save()`
+  only kicks off a background `generateEmbeddings()` when an AI client is
+  configured, so that a save never quietly loads a local transformer model. With
+  `provider: 'local'` and no AI client, call `generateEmbeddings()` yourself.
+- `regenerateOnChange` is resolved onto `ResolvedEmbeddingConfig` but is not
+  currently consulted anywhere. Unchanged content is skipped regardless; use
+  `generateEmbeddings({ force: true })` to re-embed it.
 
 ### `generateEmbeddings(options?)` - Generate Vectors
 
@@ -833,14 +892,22 @@ await article.generateEmbeddings({
 
 ### `getEmbedding(fieldName, model?)` - Retrieve Embedding
 
-Retrieves the stored embedding vector for a specific field.
+Retrieves the stored embedding vector for a specific field. Returns `null` when
+no embedding is stored for that field yet — callers must handle that case.
 
 ```typescript
+// Signature: getEmbedding(fieldName: string, model?: string): Promise<number[] | null>
+
 // Get the embedding for a field
 const titleVector = await article.getEmbedding('title');
-// Returns: Float32Array with embedding values
+if (titleVector) {
+  console.log(`Embedding has ${titleVector.length} dimensions`);
+} else {
+  await article.generateEmbeddings({ fields: ['title'] });
+}
 
-// Get embedding for specific model (if multiple models used)
+// The model name is part of the storage key, so pass it to read the vector
+// stored under a specific model (defaults to the resolved project model)
 const vector = await article.getEmbedding('content', 'text-embedding-3-large');
 ```
 
@@ -1123,10 +1190,9 @@ The Context Memory System enables SMRT objects to remember and recall operationa
 When an AI agent discovers that a specific CSS selector works for extracting content from a website, or learns that a particular date format is used consistently, it should remember this for future use. The Context Memory System provides persistent storage for these learned patterns with:
 
 - **Hierarchical scoping**: Organize patterns by domain, context, and specificity
-- **Confidence tracking**: Store how reliable each pattern is (0-1 scale)
-- **Automatic fallback**: Query from specific to general scopes
-- **Success metrics**: Track usage counts for pattern optimization
-- **Expiration support**: Optional TTL for time-sensitive patterns
+- **Confidence filtering**: Store reliability (0–1) and apply a minimum confidence on recall
+- **Opt-in fallback**: Query from specific to general scopes with `includeAncestors: true`
+- **Stored expiration metadata**: Record `expiresAt`; use `LearningMemory` when you need enforced TTL and outcome counters
 
 ### Core Methods
 
@@ -1149,11 +1215,10 @@ class WebScraper extends SmrtObject {
       scope: `parser/content/${new URL(url).hostname}`,
       key: 'article-selector',
       includeAncestors: true // Falls back to parent scopes
-    });
+    }) as string | null;
 
     if (remembered) {
-      console.log(`Using cached selector (confidence: ${remembered.confidence})`);
-      return remembered.value;
+      return remembered;
     }
 
     // Discover selector using AI
@@ -1189,10 +1254,10 @@ class ScraperCollection extends SmrtCollection<WebScraper> {
     const remembered = await this.recall({
       scope: 'config/http',
       key: 'user-agent'
-    });
+    }) as string | null;
 
     if (remembered) {
-      return remembered.value;
+      return remembered;
     }
 
     // Set default for all instances
@@ -1267,7 +1332,7 @@ await object.remember({
   metadata?: any,        // Additional metadata
   confidence?: number,   // Confidence score 0-1 (default: 1.0)
   version?: number,      // Version number (default: 1)
-  expiresAt?: Date       // Optional expiration timestamp
+  expiresAt?: Date       // Stored on the row; NOT enforced by recall() (see below)
 });
 ```
 
@@ -1281,7 +1346,7 @@ const context = await object.recall({
   minConfidence?: number      // Minimum confidence threshold (default: 0)
 });
 
-// Returns: { value, confidence, metadata, ... } or null if not found
+// Returns: the stored value, JSON-parsed, or null if not found
 ```
 
 #### `recallAll(options)` - Retrieve Multiple Contexts
@@ -1293,7 +1358,7 @@ const contexts = await object.recallAll({
   minConfidence?: number        // Minimum confidence threshold (default: 0)
 });
 
-// Returns: Array of context entries
+// Returns: Map<string, unknown> of key → stored value
 ```
 
 #### `forget(options)` - Delete Context
@@ -1332,7 +1397,7 @@ class ArticleScraper extends SmrtObject {
     });
 
     if (strategy) {
-      return await this.applyStrategy(url, strategy.value);
+      return await this.applyStrategy(url, strategy);
     }
 
     // Discover new strategy with AI
@@ -1356,6 +1421,8 @@ class ArticleScraper extends SmrtObject {
 ```typescript
 class APIClient extends SmrtObject {
   async fetchData(endpoint: string) {
+    const response = await fetch(endpoint);
+
     // Recall known response structure
     const structure = await this.recall({
       scope: `api/response/${endpoint}`,
@@ -1364,11 +1431,10 @@ class APIClient extends SmrtObject {
 
     if (structure) {
       // Use known structure for efficient parsing
-      return this.parseResponse(response, structure.value);
+      return this.parseResponse(response, structure);
     }
 
     // Analyze and remember response structure
-    const response = await fetch(endpoint);
     const discoveredStructure = await this.analyzeStructure(response);
 
     await this.remember({
@@ -1397,8 +1463,8 @@ class DocumentProcessor extends SmrtObject {
     });
 
     // Apply remembered preferences
-    for (const pref of preferences) {
-      this.applyPreference(pref.key, pref.value);
+    for (const [key, value] of preferences) {
+      this.applyPreference(key, value);
     }
   }
 
@@ -1419,20 +1485,24 @@ class DocumentProcessor extends SmrtObject {
 class PatternLearner extends SmrtObject {
   async evolvePattern(scope: string, key: string) {
     // Get current pattern version
-    const current = await this.recall({ scope, key });
+    const current = await this.recall({ scope, key }) as {
+      pattern: unknown;
+      version: number;
+    } | null;
 
     if (!current) return;
 
     // Create improved version
-    const improved = await this.improvePattern(current.value);
+    const improved = await this.improvePattern(current.pattern);
+    const nextVersion = current.version + 1;
 
     // Store as new version
     await this.remember({
       scope,
       key,
-      value: improved,
-      version: (current.version || 1) + 1,
-      confidence: 0.7, // Lower confidence for untested version
+      value: { pattern: improved, version: nextVersion },
+      version: nextVersion,
+      confidence: 1.0,
       metadata: {
         previousVersion: current.version,
         improvedAt: new Date()
@@ -1449,11 +1519,32 @@ Context is stored in the `_smrt_contexts` system table alongside your applicatio
 - **Hierarchical scopes**: For organizing patterns by domain and specificity
 - **Confidence tracking**: To prioritize reliable patterns
 - **Version support**: For pattern evolution over time
-- **Usage metrics**: Success/failure counts for optimization
+- **Usage metrics**: `success_count` / `failure_count` columns, maintained only by `LearningMemory` (see below)
 - **Timestamps**: Created, updated, and last used dates
-- **Expiration**: Optional TTL for time-sensitive patterns
+- **Expiration**: An `expires_at` column that stores the `expiresAt` you pass to `remember()`
 
 The system table is automatically created when you initialize any SMRT object with database configuration.
+
+**Expiry is stored, not enforced by `recall()`.** `remember()` writes
+`expires_at`, but `recall()` and `recallAll()` have no expiry predicate — an
+entry whose expiry has passed is still returned, and the primitive recall APIs
+do not expose the stored expiry. If you stay on the primitive API, include the
+expiry inside the stored value and enforce it before use (then call `forget()`
+to delete the stale entry). Do not query the private `_smrt_contexts` table
+directly. `success_count` / `failure_count` are the
+same shape of promise: the columns exist on the table, but nothing in the
+primitive path ever increments them. `SmrtObject.remember()` does not write
+them at all, and `SmrtCollection.remember()` writes literal zeros — so a
+collection-level `remember()` resets whatever counters had accumulated on that
+row.
+
+If you want expiry, a confidence floor, and reinforcement counters applied for
+you, use `LearningMemory` (exported from `@happyvertical/smrt-core`) instead of
+calling `remember()`/`recall()` directly. It reads and writes the same
+`_smrt_contexts` rows, but it drops expired rows, applies a confidence floor
+(0.7 by default), and updates `success_count`/`failure_count` from the outcomes
+you report. It can also decay confidence by age, but that is opt-in: time decay
+is off unless you set `decayHalfLifeMs`.
 
 ### Best Practices
 
@@ -1463,7 +1554,7 @@ The system table is automatically created when you initialize any SMRT object wi
 4. **Use metadata for debugging**: Store discovery timestamps, AI model used, etc.
 5. **Clean up old patterns**: Use `forgetScope()` to remove outdated contexts
 6. **Version critical patterns**: Use version numbers for pattern evolution
-7. **Consider expiration**: Set `expiresAt` for time-sensitive patterns
+7. **Handle expiration explicitly**: `expiresAt` is recorded but never applied or returned by `recall()`; include an expiry in the stored value and enforce it before use, or use `LearningMemory`, which applies expiry through a public API
 
 ## Cross-Package Integration
 
@@ -1474,8 +1565,10 @@ SMRT integrates seamlessly with other HAVE SDK packages:
 import { SpiderAdapter } from '@happyvertical/spider';
 
 class WebDocument extends SmrtObject {
-  url = text({ required: true });
-  content = text();
+  @field({ required: true })
+  url = '';
+
+  content = '';
 
   async scrapeContent() {
     const spider = new SpiderAdapter(this.options.spider);
@@ -1488,8 +1581,10 @@ class WebDocument extends SmrtObject {
 import { PDFProcessor } from '@happyvertical/pdf';
 
 class PDFDocument extends SmrtObject {
-  filePath = text({ required: true });
-  extractedText = text();
+  @field({ required: true })
+  filePath = '';
+
+  extractedText = '';
 
   async extractText() {
     const pdf = new PDFProcessor(this.options.pdf);
@@ -1574,9 +1669,14 @@ Add indexes to fields that are commonly used in WHERE clauses:
 
 ```typescript
 class Product extends SmrtObject {
-  sku = text({ required: true, unique: true, index: true });
-  category = text({ index: true }); // Frequently queried
-  price = decimal({ min: 0 });
+  @field({ required: true, unique: true, indexed: true })
+  sku = '';
+
+  @field({ indexed: true }) // Frequently queried
+  category = '';
+
+  @field({ min: 0 })
+  price = 0.0;
 }
 ```
 

@@ -148,6 +148,6 @@ for the capture, privacy, retention, and schedule contract.
 
 ## Example application
 
-The [SMRT SaaS starter field-policy walkthrough](https://github.com/happyvertical/smrt-saas-starter/pull/51)
-uses SMRT `0.40.61` and shows the owner/admin controls and the member-facing
+The [s-m-r-t SaaS starter field-policy walkthrough](https://github.com/happyvertical/smrt-saas-starter/pull/51)
+uses s-m-r-t `0.40.61` and shows the owner/admin controls and the member-facing
 personal form flow in a working application.

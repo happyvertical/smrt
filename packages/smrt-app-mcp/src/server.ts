@@ -271,8 +271,13 @@ function taskOwnerIdFor(principal: McpAppPrincipal): string {
 
 /**
  * Build the app-runtime MCP server core. The returned object is intentionally
- * framework-agnostic: HTTP wrappers live in `@happyvertical/smrt-app-mcp/sveltekit`
- * and a stdio bridge lives in `@happyvertical/smrt-app-mcp/bin/smrt-mcp-bridge`.
+ * framework-agnostic: HTTP wrappers live in `@happyvertical/smrt-app-mcp/sveltekit`,
+ * this package's only other export.
+ *
+ * This package ships no stdio bridge. To pipe a deployed app's HTTP MCP surface
+ * to a local stdio MCP client, use `@happyvertical/smrt-app-cli`, which provides
+ * a generic `smrt-mcp-bridge` bin plus `runMcpStdioBridge` and
+ * `createAppCli().startMcpBridge()` for branded entry points.
  */
 export function createMcpAppServer(
   options: CreateMcpAppServerOptions,

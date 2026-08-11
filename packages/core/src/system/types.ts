@@ -18,7 +18,10 @@ export interface NoteOptions {
   confidence?: number;
   /** Strategy version number */
   version?: number;
-  /** Expiration date */
+  /**
+   * Expiration date persisted to `_smrt_contexts.expires_at`. Stored only —
+   * `recall()`/`recallAll()` do not filter expired rows, so callers own expiry.
+   */
   expiresAt?: Date;
 }
 

@@ -86,8 +86,7 @@ jobs:
           filters: |
             docs:
               - 'docs/**'
-              # docs prebuild copies every workspace README, and the site also
-              # renders TypeDoc API pages from selected package sources.
+              # docs prebuild copies every workspace README.
               - 'packages/**'
               # copy-readmes discovers packages through these root inputs.
               - 'pnpm-workspace.yaml'

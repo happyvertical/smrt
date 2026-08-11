@@ -2885,6 +2885,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Stores context applicable to all instances of this collection type.
    * Use for patterns that apply to the entire collection (e.g., default parsing strategies).
    *
+   * `expiresAt` is stored on the `_smrt_contexts` row as caller-managed metadata.
+   * {@link recall} and {@link recallAll} do **not** filter on it, so an expired
+   * entry is still returned; filter or delete expired entries yourself.
+   *
    * @param options - Context options
    * @returns Promise that resolves when context is stored
    * @example
