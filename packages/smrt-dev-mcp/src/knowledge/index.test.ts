@@ -420,6 +420,19 @@ describe('SMRT knowledge index', () => {
               tags: [],
               risks: [],
             },
+            {
+              name: 'UnscopedArtifact',
+              qualifiedName: '@happyvertical/smrt-demo:UnscopedArtifact',
+              collection: 'unscoped_artifacts',
+              fields: [],
+              relationships: [],
+              methods: [],
+              tenant: { scoped: false },
+              surfaces: [],
+              relationshipFeatures: [],
+              tags: [],
+              risks: [],
+            },
           ],
           surfaces: [
             {
@@ -457,6 +470,7 @@ describe('SMRT knowledge index', () => {
     expect(demo?.objects.map((object) => object.className)).toEqual([
       'ArtifactDemo',
       'LegacyArtifact',
+      'UnscopedArtifact',
     ]);
     expect(demo?.mcpTools.map((tool) => tool.name)).toEqual([
       'artifactdemo_sync',
@@ -505,6 +519,16 @@ describe('SMRT knowledge index', () => {
       methods: [],
     });
     expect(demo?.objects[1].tenant).toBeUndefined();
+    expect(demo?.objects[2].tenant).toEqual({ scoped: false });
+
+    const architecture = await buildArchitectureContext({
+      rootDir,
+      package: '@happyvertical/smrt-demo',
+      detail: 'full',
+    });
+    expect(architecture.promptBundle.contextMarkdown).toContain(
+      '@happyvertical/smrt-demo:UnscopedArtifact — tenant unscoped',
+    );
   });
 
   it('fails freshness when exported domain knowledge is missing', async () => {

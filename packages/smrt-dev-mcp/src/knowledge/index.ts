@@ -3577,7 +3577,9 @@ function renderObjectStructuralFacts(objects: KnowledgeObject[]): string[] {
   for (const object of objects) {
     const objectFacts = [
       object.tenant
-        ? `tenant ${object.tenant.mode ?? 'required'}${object.tenant.field ? ` via ${object.tenant.field}` : ''}`
+        ? object.tenant.scoped
+          ? `tenant ${object.tenant.mode ?? 'required'}${object.tenant.field ? ` via ${object.tenant.field}` : ''}`
+          : 'tenant unscoped'
         : undefined,
       object.tableStrategy
         ? `table strategy ${object.tableStrategy}`
