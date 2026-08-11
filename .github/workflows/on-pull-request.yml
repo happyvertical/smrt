@@ -250,7 +250,7 @@ jobs:
     steps:
       # Install the validator runtime before checking out PR-controlled files.
       # Versions are pinned here rather than discovered from package.json, and
-      # the TypeScript install is isolated from the workspace, so neither
+      # the dependency install is isolated from the workspace, so neither
       # packageManager nor .npmrc/.pnpmfile.cjs from the PR can affect setup.
       - name: Set up Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -258,10 +258,11 @@ jobs:
           node-version: '24.18.0'
 
       - name: Install trusted README validator dependency
-        run: >-
-          npm install --prefix "$RUNNER_TEMP/readme-validator"
-          --ignore-scripts --no-audit --no-fund
-          typescript@5.9.3 @types/node@24.13.2
+        run: |
+          npm install --prefix "$RUNNER_TEMP/readme-validator" \
+            --ignore-scripts --no-audit --no-fund \
+            pnpm@11.13.1 typescript@5.9.3 @types/node@24.13.2
+          echo "$RUNNER_TEMP/readme-validator/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Checkout PR branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -279,8 +280,13 @@ jobs:
       #
       - name: Run README validation
         env:
+          # Keep the trusted pnpm 11.13.1 binary from honoring the repository's
+          # older packageManager version and self-switching during discovery.
+          PNPM_CONFIG_PM_ON_FAIL: ignore
           SMRT_TYPESCRIPT_PATH: ${{ runner.temp }}/readme-validator/node_modules/typescript/lib/typescript.js
-        run: node scripts/check-readmes.mjs
+        run: |
+          test "$(pnpm --version)" = "11.13.1"
+          node scripts/check-readmes.mjs
 
       # DAG guardrails (#1582). Node-only, no node_modules: inter-smrt
       # peerDependencies drive pnpm's per-peer-set physical fan-out, and a
