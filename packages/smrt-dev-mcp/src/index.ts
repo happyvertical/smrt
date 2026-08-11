@@ -25,6 +25,13 @@ import {
   smrtArchitecture,
   smrtReview,
 } from './knowledge/index.js';
+import {
+  type RuntimeDiagnosticToolArgs,
+  type RuntimeDiagnosticToolName,
+  runRuntimeDiagnostic,
+  sanitizeRuntimeArguments,
+  sanitizeRuntimeError,
+} from './runtime-diagnostics.js';
 import { REVIEW_SKILL_NAME, TOOLS } from './tool-catalog.js';
 import {
   generateSmrtClass,
@@ -339,7 +346,7 @@ export function createServer(): Server {
       console.error(`[${SERVER_NAME}] CallTool: ${name}`);
       console.error(
         `[${SERVER_NAME}] Arguments:`,
-        JSON.stringify(args, null, 2),
+        JSON.stringify(sanitizeRuntimeArguments(args), null, 2),
       );
     }
 
@@ -347,6 +354,22 @@ export function createServer(): Server {
       let result: string;
 
       switch (name) {
+        case 'migration-status':
+        case 'job-health':
+        case 'schedule-health':
+        case 'dispatch-health':
+        case 'recent-changes':
+        case 'registry-drift':
+          result = JSON.stringify(
+            await runRuntimeDiagnostic(
+              name as RuntimeDiagnosticToolName,
+              args as RuntimeDiagnosticToolArgs,
+            ),
+            null,
+            2,
+          );
+          break;
+
         case 'generate-smrt-class':
           result = await generateSmrtClass(
             args as unknown as Parameters<typeof generateSmrtClass>[0],
@@ -533,9 +556,8 @@ export function createServer(): Server {
         structuredContent: toDevToolStructuredContent(result),
       };
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      console.error(`[${SERVER_NAME}] Error:`, error);
+      const errorMessage = sanitizeRuntimeError(error) || 'Unknown error';
+      console.error(`[${SERVER_NAME}] Error: ${errorMessage}`);
 
       return {
         content: [
@@ -561,7 +583,9 @@ export function createServer(): Server {
 async function main() {
   const handle = serveStdio(() => createServer(), {
     onerror: (error) =>
-      console.error(`[${SERVER_NAME}] Protocol error:`, error),
+      console.error(
+        `[${SERVER_NAME}] Protocol error: ${sanitizeRuntimeError(error)}`,
+      ),
   });
 
   if (DEBUG) {
@@ -788,7 +812,9 @@ function sanitizePath(path: string | undefined): string | undefined {
 
 if (isEntrypoint()) {
   main().catch((error) => {
-    console.error(`[${SERVER_NAME}] Fatal error:`, error);
+    console.error(
+      `[${SERVER_NAME}] Fatal error: ${sanitizeRuntimeError(error)}`,
+    );
     process.exit(1);
   });
 }

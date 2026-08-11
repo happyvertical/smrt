@@ -36,8 +36,10 @@ export default defineConfig({
     rollupOptions: {
       external: [
         /^@modelcontextprotocol\//,
+        /^@happyvertical\/smrt-config/,
         /^@happyvertical\/smrt-core/,
         /^@happyvertical\/smrt-scanner/,
+        /^@happyvertical\/sql/,
         /^node:/,
       ],
       output: {

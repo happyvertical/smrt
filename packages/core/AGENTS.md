@@ -17,6 +17,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 | `src/change-feed.ts` | the adapter-agnostic change-observation spine — `_smrt_changes`, cursors, table versions, generated `_changes` routes, retention | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-signals.ts` + the generated `_events` SSE route | the push companion to the change feed — the signal bus, cross-replica fan-out, the SSE route, and its documented gaps | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/` + `src/vite-plugin/web-collections.ts` | REST/CLI/MCP/web-collection generation, the `manifestHash` emission sites, and generated conditional-GET / ETag v2 semantics | [agents/generators.md](agents/generators.md) |
+| `src/system-diagnostics.ts` | typed, bounded, SELECT-only runtime health reads over SMRT system tables | [agents/system-diagnostics.md](agents/system-diagnostics.md) |
 
 ## SmrtObject Lifecycle
 

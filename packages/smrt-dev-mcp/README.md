@@ -190,6 +190,35 @@ pnpm knowledge:check --strict --format markdown
 
 Use `--format json` when another script needs machine-readable output.
 
+## Optional Runtime Diagnostics
+
+Six tools can inspect a development database without starting the application:
+`migration-status`, `job-health`, `schedule-health`, `dispatch-health`,
+`recent-changes`, and `registry-drift`. They run fixed, bounded `SELECT` queries
+only. They never create or migrate tables, execute application code, or return
+job inputs/results, schedule agent configuration or method arguments, dispatch
+payloads/metadata, or raw registry blobs.
+
+Connection resolution is lazy and uses the first configured source:
+
+1. Per-call `dbUrl` and optional `dbType`
+2. `SMRT_DEV_DB_URL` and optional `SMRT_DEV_DB_TYPE`
+3. `packages.cli.database` from the project config discovered at `rootDir`
+
+Relative SQLite and DuckDB paths resolve from `rootDir`, not the MCP server's
+launch directory. Owned connections are closed after each diagnostic. If no
+connection is configured, each tool succeeds with `status: "not-configured"`
+and `mode: "static-only"`; all other development tools remain available.
+Missing system tables similarly make only that category unavailable.
+
+Runtime scope is fail-closed. Set `SMRT_DEV_TENANT_ID` in the MCP host to permit
+that tenant's operational rows (plus global rows where applicable). Without it,
+only global rows are visible. The optional `tenantId` argument on
+`recent-changes` may repeat the configured tenant but cannot widen scope, and no
+tool argument enables system-wide or cross-tenant access. Results carry common
+`runtime` / `live-db` provenance. Connection URLs, secret-shaped arguments, and
+adapter errors are sanitized before logging or returning diagnostics.
+
 ## Downstream Review Flow
 
 1. Run the downstream app build or dev server so `.smrt/smrt-knowledge.json`
@@ -273,6 +302,77 @@ available it falls back to `@happyvertical/smrt-scanner`.
 | `includeFields` | `boolean` | No | Include field details (`detail: "full"` only) |
 | `includeRelationships` | `boolean` | No | Analyze relationships (`detail: "full"` only) |
 | `includeMethods` | `boolean` | No | Include public method details (`detail: "full"` only) |
+
+### `migration-status`
+
+Read migration status totals and a bounded list from the optional live database.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root for config discovery and relative local paths |
+| `dbUrl` | `string` | No | Per-call development database URL |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Explicit database engine when it cannot be inferred |
+| `limit` | `number` | No | Detail-row limit from 1–200 (default: 50) |
+
+### `job-health`
+
+Read scoped job totals, recent failures, and lease-orphaned running jobs.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root for config discovery and relative local paths |
+| `dbUrl` | `string` | No | Per-call development database URL |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Explicit database engine when it cannot be inferred |
+| `limit` | `number` | No | Detail-row limit from 1–200 (default: 50) |
+
+### `schedule-health`
+
+Read scoped schedule totals plus bounded due, overdue, and errored details.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root for config discovery and relative local paths |
+| `dbUrl` | `string` | No | Per-call development database URL |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Explicit database engine when it cannot be inferred |
+| `limit` | `number` | No | Detail-row limit from 1–200 (default: 50) |
+| `staleAfterMs` | `number` | No | Age after due time that marks a schedule overdue |
+
+### `dispatch-health`
+
+Read scoped dispatch totals, stuck work, and subscription topology.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root for config discovery and relative local paths |
+| `dbUrl` | `string` | No | Per-call development database URL |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Explicit database engine when it cannot be inferred |
+| `limit` | `number` | No | Detail-row limit from 1–200 (default: 50) |
+| `staleAfterMs` | `number` | No | Age after last update that marks processing as stuck |
+
+### `recent-changes`
+
+Read one bounded page of the authorized live `_smrt_changes` feed.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root for config discovery and relative local paths |
+| `dbUrl` | `string` | No | Per-call development database URL |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Explicit database engine when it cannot be inferred |
+| `limit` | `number` | No | Detail-row limit from 1–200 (default: 50) |
+| `since` | `number` | No | Change cursor (default: 0) |
+| `tables` | `string[]` | No | Optional table-name filters (maximum 50) |
+| `tenantId` | `string` | No | Must exactly match the host-authorized tenant |
+
+### `registry-drift`
+
+Compare statically declared objects with compact live registry identities.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root for config discovery and relative local paths |
+| `dbUrl` | `string` | No | Per-call development database URL |
+| `dbType` | `'sqlite' \| 'postgres' \| 'duckdb'` | No | Explicit database engine when it cannot be inferred |
+| `limit` | `number` | No | Detail-row limit from 1–200 (default: 50) |
 
 ### `review-smrt-project`
 

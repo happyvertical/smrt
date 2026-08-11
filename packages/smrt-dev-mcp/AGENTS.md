@@ -22,6 +22,12 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `smrt-architecture` | Recommends SMRT/SDK packages, object-model sketch, risks, and questions |
 | `list-agent-skills` | Lists bundled harness-agnostic agent skills |
 | `get-agent-skill` | Returns a bundled agent skill as Markdown plus optional references |
+| `migration-status` | Reads live migration totals and bounded migration details from an optional development database |
+| `job-health` | Reads scoped job totals, recent failures, and lease-orphaned running jobs |
+| `schedule-health` | Reads scoped due, overdue, and errored schedule health |
+| `dispatch-health` | Reads scoped dispatch totals, stuck work, and subscription topology |
+| `recent-changes` | Reads a bounded page of the authorized live change feed |
+| `registry-drift` | Compares declared static objects with compact live registry identities |
 
 `pnpm knowledge:check --strict --format markdown` compares this catalog and the
 README parameter tables to the exported `TOOLS` definitions. Add or change a
@@ -130,6 +136,7 @@ launcher or a small wrapper script with an absolute Node path.
 ## Key Files
 
 - `src/index.ts` — MCP server setup, tool registration
+- `src/runtime-diagnostics.ts` — lazy optional connection resolution, trusted scope enforcement, cleanup, and the six live diagnostic adapters
 - `src/knowledge/index.ts` — deterministic SMRT, SDK, and downstream domain knowledge discovery; workspace-glob expansion, provenance, coverage, and diagnostics
 - `src/agent-skills.ts` — bundled skill registry and file loader
 - `plugin.json` / `mcp.json` — Agent Plugins 1.0.0 portable root manifests
@@ -141,6 +148,19 @@ launcher or a small wrapper script with an absolute Node path.
 ## Gotchas
 
 - **Read-only**: never writes files or executes generated code
+- **Runtime diagnostics stay optional and SELECT-only**: do not boot an app,
+  migrate schema, or issue writes while resolving them. No configured database
+  is a successful `static-only` result. Connection precedence is per-call
+  `dbUrl`/`dbType`, then `SMRT_DEV_DB_URL`/`SMRT_DEV_DB_TYPE`, then
+  `packages.cli.database` from config discovered at `rootDir`.
+- **Runtime scope is host-trusted**: `SMRT_DEV_TENANT_ID` authorizes one tenant;
+  absent that, diagnostics fail closed to global rows. A tool argument may only
+  repeat that tenant and can never request system or cross-tenant scope.
+- **Runtime results are compact and sanitized**: never project job payloads or
+  results, `agentConfig`, method args, dispatch payloads/metadata, or raw registry
+  blobs. Resolve relative local database paths against `rootDir`, close owned
+  handles after every call, and sanitize connection arguments and errors before
+  logging.
 - **Model-agnostic**: review and architecture tools return deterministic
   findings/context and prompt bundles; they do not call model providers
 - **Domain artifacts first**: discovery must prefer `.smrt/smrt-knowledge.json`,

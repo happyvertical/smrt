@@ -29,6 +29,29 @@ const DEV_MCP_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
   },
 };
 
+const RUNTIME_CONNECTION_PROPERTIES = {
+  rootDir: {
+    type: 'string',
+    description: 'Project root used for smrt config discovery (default: cwd)',
+  },
+  dbUrl: {
+    type: 'string',
+    description:
+      'Optional per-call development database URL; never returned or logged',
+  },
+  dbType: {
+    type: 'string',
+    enum: ['sqlite', 'postgres', 'duckdb'],
+    description: 'Database engine when it cannot be inferred from dbUrl',
+  },
+  limit: {
+    type: 'number',
+    minimum: 1,
+    maximum: 200,
+    default: 50,
+  },
+};
+
 // Tool definitions
 const TOOL_DEFINITIONS: Array<
   Pick<Tool, 'name' | 'description' | 'inputSchema'>
@@ -194,6 +217,89 @@ const TOOL_DEFINITIONS: Array<
           description: 'Include public method details (detail: "full" only)',
         },
       },
+    },
+  },
+  // Optional live runtime diagnostics. Every tool remains callable without a
+  // connection and returns a successful static-only/not-configured result.
+  {
+    name: 'migration-status',
+    description:
+      'Read pending, running, completed, failed, and rolled-back schema migrations from the optional dev database',
+    inputSchema: {
+      type: 'object',
+      properties: { ...RUNTIME_CONNECTION_PROPERTIES },
+    },
+  },
+  {
+    name: 'job-health',
+    description:
+      'Read tenant-scoped job counts, recent failures, and lease-orphaned running jobs from the optional dev database',
+    inputSchema: {
+      type: 'object',
+      properties: { ...RUNTIME_CONNECTION_PROPERTIES },
+    },
+  },
+  {
+    name: 'schedule-health',
+    description:
+      'Read tenant-scoped due, overdue, and errored schedules without exposing agentConfig or method arguments',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...RUNTIME_CONNECTION_PROPERTIES,
+        staleAfterMs: {
+          type: 'number',
+          minimum: 0,
+          description: 'Age after due time that marks a schedule overdue',
+        },
+      },
+    },
+  },
+  {
+    name: 'dispatch-health',
+    description:
+      'Read tenant-scoped dispatch status and subscription topology without payloads or metadata',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...RUNTIME_CONNECTION_PROPERTIES,
+        staleAfterMs: {
+          type: 'number',
+          minimum: 0,
+          description: 'Age after last update that marks processing as stuck',
+        },
+      },
+    },
+  },
+  {
+    name: 'recent-changes',
+    description:
+      'Read a bounded tenant-authorized page from the live _smrt_changes feed',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ...RUNTIME_CONNECTION_PROPERTIES,
+        since: { type: 'number', minimum: 0, default: 0 },
+        tables: {
+          type: 'array',
+          maxItems: 50,
+          items: { type: 'string', minLength: 1 },
+        },
+        tenantId: {
+          type: 'string',
+          description:
+            'Optional narrowing filter; must match SMRT_DEV_TENANT_ID and can never widen scope',
+        },
+      },
+    },
+  },
+  {
+    name: 'registry-drift',
+    description:
+      'Compare statically declared project objects with the compact live registry identity snapshot',
+    inputSchema: {
+      type: 'object',
+      properties: { ...RUNTIME_CONNECTION_PROPERTIES },
     },
   },
   {

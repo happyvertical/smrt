@@ -82,8 +82,24 @@ describe('smrt-dev-mcp stdio server', () => {
         'review-smrt-project',
         'list-agent-skills',
         'get-agent-skill',
+        'migration-status',
+        'job-health',
+        'schedule-health',
+        'dispatch-health',
+        'recent-changes',
+        'registry-drift',
       ]),
     );
+
+    const staticOnlyResult = await client.callTool({
+      name: 'migration-status',
+      arguments: { rootDir: repoRoot },
+    });
+    expect(JSON.parse(textContent(staticOnlyResult))).toMatchObject({
+      status: 'not-configured',
+      mode: 'static-only',
+      diagnostics: [{ code: 'runtime-not-configured' }],
+    });
 
     const reflectResult = await client.callTool({
       name: 'reflect-knowledge',

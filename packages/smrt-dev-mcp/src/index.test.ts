@@ -23,6 +23,16 @@ describe('smrt-dev-mcp tools', () => {
     expect(names).toContain('review-smrt-project');
     expect(names).toContain('list-agent-skills');
     expect(names).toContain('get-agent-skill');
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'migration-status',
+        'job-health',
+        'schedule-health',
+        'dispatch-health',
+        'recent-changes',
+        'registry-drift',
+      ]),
+    );
 
     for (const tool of TOOLS) {
       expect(tool.inputSchema.$schema).toBe(

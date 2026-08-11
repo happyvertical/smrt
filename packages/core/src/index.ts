@@ -208,6 +208,32 @@ export type {
   RecallOptions,
   SystemTableConfig,
 } from './system/types';
+// SELECT-only operational diagnostics over `_smrt_*` tables (issue #1824).
+export {
+  type BoundedDiagnosticOptions,
+  type DispatchDiagnosticRow,
+  type DispatchHealthDiagnostics,
+  type DispatchHealthOptions,
+  type DispatchSubscriptionDiagnosticRow,
+  type JobDiagnosticRow,
+  type JobHealthDiagnostics,
+  type MigrationDiagnosticRow,
+  type MigrationStatusDiagnostics,
+  type RecentChangesDiagnosticOptions,
+  type RegistryDiagnosticRow,
+  type RegistryDiagnostics,
+  redactSystemDiagnosticText,
+  type ScheduleDiagnosticRow,
+  type ScheduleHealthDiagnostics,
+  type ScheduleHealthOptions,
+  type SystemDiagnosticEngine,
+  type SystemDiagnosticMessage,
+  type SystemDiagnosticProvenance,
+  type SystemDiagnosticResult,
+  SystemDiagnosticsReader,
+  type SystemDiagnosticsReaderOptions,
+  type TrustedSystemDiagnosticScope,
+} from './system-diagnostics';
 // Table existence verification cache (for test setup reset)
 export { resetVerifiedTables } from './table-cache';
 // Testing utilities (for test setup only)

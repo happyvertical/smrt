@@ -2186,6 +2186,9 @@ importers:
 
   packages/smrt-dev-mcp:
     dependencies:
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2195,6 +2198,9 @@ importers:
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
+      '@happyvertical/sql':
+        specifier: ^0.86.1
+        version: 0.86.1(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
