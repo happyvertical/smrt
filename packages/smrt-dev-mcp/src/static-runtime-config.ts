@@ -12,8 +12,16 @@ const CONFIG_NAMES = [
   'smrt.config.json',
 ] as const;
 const MAX_CONFIG_BYTES = 1_000_000;
+const UNRESOLVED = Symbol('unresolved-static-config-value');
 
 type Node = Record<string, unknown>;
+type ScalarValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | typeof UNRESOLVED;
 
 /**
  * Read only the database fields needed by runtime diagnostics. Source config is
@@ -162,7 +170,9 @@ function getObjectProperty(
     variables,
     seen,
   );
-  if (node.type !== 'ObjectExpression') return null;
+  if (node.type !== 'ObjectExpression') {
+    throw new Error('SMRT database config is not statically readable.');
+  }
   const properties = (node.properties as Node[]) ?? [];
   for (let index = properties.length - 1; index >= 0; index--) {
     const property = properties[index];
@@ -176,7 +186,10 @@ function getObjectProperty(
       if (spread) return spread;
       continue;
     }
-    if (property.type !== 'Property' || property.computed === true) continue;
+    if (property.type !== 'Property') continue;
+    if (property.computed === true) {
+      throw new Error('SMRT database config is not statically readable.');
+    }
     const propertyKey = property.key as Node;
     const name =
       propertyKey.type === 'Identifier'
@@ -209,20 +222,29 @@ function evaluateScalar(
   variables: Map<string, Node>,
   env: NodeJS.ProcessEnv,
   seen: Set<string>,
-): unknown {
+): ScalarValue {
   const node = unwrap(input);
-  if (node.type === 'Literal') return node.value;
+  if (node.type === 'Literal') {
+    const value = node.value;
+    return typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      value === null
+      ? value
+      : UNRESOLVED;
+  }
   if (node.type === 'Identifier' && typeof node.name === 'string') {
     if (node.name === 'undefined') return undefined;
-    if (seen.has(node.name)) return undefined;
+    if (seen.has(node.name)) return UNRESOLVED;
     const value = variables.get(node.name);
-    if (!value) return undefined;
+    if (!value) return UNRESOLVED;
     const nextSeen = new Set(seen).add(node.name);
     return evaluateScalar(value, variables, env, nextSeen);
   }
   if (node.type === 'MemberExpression') return readEnvironment(node, env);
   if (node.type === 'LogicalExpression') {
     const left = evaluateScalar(node.left as Node, variables, env, seen);
+    if (left === UNRESOLVED) return UNRESOLVED;
     if (node.operator === '??') {
       return left ?? evaluateScalar(node.right as Node, variables, env, seen);
     }
@@ -234,7 +256,9 @@ function evaluateScalar(
     }
   }
   if (node.type === 'ConditionalExpression') {
-    return evaluateScalar(node.test as Node, variables, env, seen)
+    const test = evaluateScalar(node.test as Node, variables, env, seen);
+    if (test === UNRESOLVED) return UNRESOLVED;
+    return test
       ? evaluateScalar(node.consequent as Node, variables, env, seen)
       : evaluateScalar(node.alternate as Node, variables, env, seen);
   }
@@ -245,20 +269,18 @@ function evaluateScalar(
   ) {
     const quasi = (node.quasis as Node[])?.[0];
     const value = quasi?.value as Node | undefined;
-    return value?.cooked ?? value?.raw;
+    const text = value?.cooked ?? value?.raw;
+    return typeof text === 'string' ? text : UNRESOLVED;
   }
-  return undefined;
+  return UNRESOLVED;
 }
 
-function readEnvironment(
-  input: Node,
-  env: NodeJS.ProcessEnv,
-): string | undefined {
+function readEnvironment(input: Node, env: NodeJS.ProcessEnv): ScalarValue {
   const node = unwrap(input);
-  if (node.type !== 'MemberExpression') return undefined;
+  if (node.type !== 'MemberExpression') return UNRESOLVED;
   const object = unwrap(node.object as Node);
   const property = node.property as Node;
-  if (object.type !== 'MemberExpression') return undefined;
+  if (object.type !== 'MemberExpression') return UNRESOLVED;
   const processNode = object.object as Node;
   const envNode = object.property as Node;
   if (
@@ -267,7 +289,7 @@ function readEnvironment(
     envNode?.type !== 'Identifier' ||
     envNode.name !== 'env'
   ) {
-    return undefined;
+    return UNRESOLVED;
   }
   const key =
     property?.type === 'Identifier'
@@ -275,7 +297,7 @@ function readEnvironment(
       : property?.type === 'Literal'
         ? property.value
         : undefined;
-  return typeof key === 'string' ? env[key] : undefined;
+  return typeof key === 'string' ? env[key] : UNRESOLVED;
 }
 
 function resolveReference(

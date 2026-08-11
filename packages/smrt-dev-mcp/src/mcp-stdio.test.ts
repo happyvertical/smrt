@@ -81,6 +81,7 @@ describe('smrt-dev-mcp stdio server', () => {
         'recent-changes',
         { limit: 6, since: 1_700_000_000_000, tables: ['articles'] },
       ],
+      ['registry-drift', { rootDir: packageRoot, limit: 2 }],
     ] as const;
 
     for (const [name, arguments_] of calls) {

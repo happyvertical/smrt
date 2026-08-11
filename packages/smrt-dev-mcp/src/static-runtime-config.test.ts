@@ -42,6 +42,11 @@ describe('static runtime config', () => {
         cli: { database: { type: 'sqlite', url: './env.db' } },
       },
     });
+    await expect(loadStaticRuntimeConfig(directory, {})).resolves.toMatchObject(
+      {
+        packages: { cli: { database: { url: './app.db' } } },
+      },
+    );
     expect((globalThis as Record<string, unknown>)[marker]).toBeUndefined();
   });
 
@@ -51,6 +56,42 @@ describe('static runtime config', () => {
       join(directory, 'smrt.config.js'),
       `export default {
         packages: { cli: { database: { type: 'sqlite', url: makeUrl() } } }
+      };`,
+    );
+
+    await expect(loadStaticRuntimeConfig(directory, {})).rejects.toThrow(
+      'not statically readable',
+    );
+  });
+
+  it.each([
+    `makeUrl() || './fallback.db'`,
+    `makeUrl() ? './primary.db' : './fallback.db'`,
+  ])('does not treat an unknown expression as a known branch: %s', async (url) => {
+    const directory = await temporaryDirectory();
+    await writeFile(
+      join(directory, 'smrt.config.js'),
+      `export default {
+        packages: { cli: { database: { type: 'sqlite', url: ${url} } } }
+      };`,
+    );
+
+    await expect(loadStaticRuntimeConfig(directory, {})).rejects.toThrow(
+      'not statically readable',
+    );
+  });
+
+  it('rejects an overriding spread that cannot be resolved statically', async () => {
+    const directory = await temporaryDirectory();
+    await writeFile(
+      join(directory, 'smrt.config.js'),
+      `export default {
+        packages: {
+          cli: {
+            database: { type: 'sqlite', url: './before-spread.db' },
+            ...makeCliConfig(),
+          },
+        },
       };`,
     );
 
