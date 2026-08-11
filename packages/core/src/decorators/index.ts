@@ -77,8 +77,14 @@ export interface FieldOptions {
    * For regular (column-backed) fields the index is a plain column index.
    * For `@meta()` fields stored inside `_meta_data` JSONB, the index targets
    * the JSON path — `json_extract(_meta_data, '$.fieldName')` on SQLite,
-   * `(_meta_data->>'fieldName')` on Postgres — giving WHERE clauses on that
-   * meta key the same performance as a real column.
+   * `(_meta_data->>'fieldName')` on Postgres.
+   *
+   * Note that `collection.list({ where })` cannot currently reach a JSON-path
+   * index: dot-notation keys such as `_meta_data.fieldName` are rejected,
+   * because nothing rewrites them into the matching extraction expression
+   * (#2276, tracked in #2282). The index is still emitted and still serves
+   * hand-written SQL that spells the expression out; it just has no
+   * collection-level query to accelerate yet.
    */
   indexed?: boolean;
   /** Whether the field is nullable */
