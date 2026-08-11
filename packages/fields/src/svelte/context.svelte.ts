@@ -12,6 +12,21 @@
  * outside a Provider: an unwrapped field renders its children verbatim, and a
  * consumer can adopt the primitives incrementally without wrapping the whole
  * form.
+ *
+ * The two accessors are a deliberate two-tier contract, not a style choice:
+ *
+ * - `tryGetFieldPolicyContext` is for a primitive that still has something
+ *   meaningful to render without a policy — today only `PolicyField`, whose
+ *   fallback is the caller's own children.
+ * - `getFieldPolicyContext` is for the provider-only compositions
+ *   (`ModeSwitch`, `AdvancedFields`, `FormHelp`) whose entire output is derived
+ *   from the resolved policy. Degrading those would render an empty or absent
+ *   control rather than surface the missing Provider, so they throw with an
+ *   actionable message instead (#2272).
+ *
+ * One provider per form. `setContext` shadows, so a nested `FieldPolicyProvider`
+ * gives its subtree a second, independent `FieldPolicyModeStore` — consumers
+ * above the nested provider then stop tracking the `ModeSwitch` below it.
  */
 
 import { getContext, setContext } from 'svelte';

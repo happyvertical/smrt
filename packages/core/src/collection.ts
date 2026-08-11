@@ -15,6 +15,7 @@ import {
 } from './collection-cache';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
+import type { ClassEmbeddingConfig } from './embeddings/types';
 import {
   createInterceptorContext,
   GlobalInterceptors,
@@ -67,6 +68,27 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
   }
 
   return where;
+}
+
+/**
+ * Field names that carry a stored embedding vector for a class (Issue #2281)
+ *
+ * `SmrtObject.generateEmbeddings()` writes one vector per configured field and,
+ * when `combinedField` is set, an extra vector under `combinedField.name`. Any
+ * of those names is a legitimate target for the collection's semantic-search
+ * methods, so validation and error messages should describe the whole set.
+ *
+ * @param config - Resolved embedding configuration for the class
+ * @returns Configured field names, plus the combined field name when distinct
+ */
+function getSearchableEmbeddingFields(
+  config: Pick<ClassEmbeddingConfig, 'fields' | 'combinedField'>,
+): string[] {
+  const combinedName = config.combinedField?.name;
+  if (!combinedName || config.fields.includes(combinedName)) {
+    return config.fields;
+  }
+  return [...config.fields, combinedName];
 }
 
 /**
@@ -3104,7 +3126,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @param query - Text to search for
    * @param options - Search options
-   * @param options.field - Specific field to search (defaults to first embedding field)
+   * @param options.field - Specific field to search (defaults to first embedding
+   *   field). Any configured embedding field, or the configured
+   *   `combinedField.name`, is accepted.
    * @param options.limit - Maximum results to return (default: 10)
    * @param options.minSimilarity - Minimum similarity threshold 0-1 (default: 0)
    * @param options.where - Additional WHERE filters to apply
@@ -3120,6 +3144,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * for (const article of results) {
    *   console.log(`${article.title} (similarity: ${article._similarity})`);
    * }
+   *
+   * // Search the combined vector built from `combinedField.template`
+   * const combined = await articles.semanticSearch('machine learning trends', {
+   *   field: 'content'
+   * });
    * ```
    */
   public async semanticSearch(
@@ -3145,12 +3174,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    // Determine which field to search
+    // Determine which field to search.
+    // `generateEmbeddings()` also stores a vector under the configured
+    // `combinedField.name`, and `findSimilar`/`findSimilarToEmbedding` happily
+    // search it, so it belongs in the searchable set here too (#2281).
     const searchField = field || embeddingConfig.fields[0];
-    if (!embeddingConfig.fields.includes(searchField)) {
+    const searchableFields = getSearchableEmbeddingFields(embeddingConfig);
+    if (!searchableFields.includes(searchField)) {
       throw new Error(
         `Field '${searchField}' is not configured for embeddings on ${this._itemClass.name}. ` +
-          `Available fields: ${embeddingConfig.fields.join(', ')}`,
+          `Available fields: ${searchableFields.join(', ')}`,
       );
     }
 

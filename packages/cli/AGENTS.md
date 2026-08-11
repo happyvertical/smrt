@@ -18,7 +18,9 @@ smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
 smrt knowledge:review-context --scope package --package <name>
 smrt knowledge:architecture-context --scope project|local|package|sdk
 smrt dev:knowledge-check --format markdown|json
-smrt generate:mcp            # Generate MCP server
+smrt generate-mcp            # Generate MCP server (aliases: generate-mcp-server, mcp)
+smrt generate-types          # Generate TypeScript declarations (alias: generate-declarations)
+smrt generate-routes         # Generate SvelteKit API routes (aliases: routes, generate:routes)
 smrt config:export           # Export agent config for SSG
 smrt init                    # Init new project
 smrt gnode                   # Scaffold gnode site
@@ -50,4 +52,13 @@ migrations are manifest-driven through registered objects and project manifests.
 
 - **Test mode detection**: checks `NODE_ENV=test`, `VITEST=true`, `global.it`/`describe` — could conflict with other test runners
 - **External package load failures silenced**: one package failing doesn't prevent others from loading
+- **Generation command names are hyphenated**: `generate-mcp` and `generate-types` have
+  no colon alias. Only `generate-routes` and `generate-register` declare one, so
+  `smrt generate:mcp` is an unknown command (#2279).
+- **Subcommand `--version` beats the global flag**: `parseCliArgs` in
+  `@happyvertical/utils` dispatches to the built-in `version` command for a
+  `--version` token anywhere in argv. `parseCliCommandArgs` rescopes that token to
+  the named subcommand (`smrt generate-mcp --version 0.1.0`) and only leaves it
+  global when it appears before or without a subcommand (#2279). `--help` is
+  deliberately untouched.
 - **Schema history nuance**: `db:status` / `db:history` should distinguish active live drift from superseded failed generated schema repairs instead of treating all failed rows as current blockers

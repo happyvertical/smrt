@@ -202,6 +202,52 @@ the user cleared. Outside a provider it degrades to rendering its children, so
 an application can adopt it incrementally. Use its <code>render</code> snippet when a
 custom layout needs the resolved field data directly.
 
+### Provider-only compositions
+
+Three optional compositions layer over the same form. <code>ModeSwitch</code>
+toggles basic and advanced. <code>AdvancedFields</code> collapses advanced-tier
+fields into a disclosure. <code>FormHelp</code> is a help toggle that lists the
+object description and every visible field's label and help text, assembled from
+the resolved policy and filtered by the current mode.
+
+~~~svelte
+<script lang="ts">
+  import {
+    FieldPolicyProvider,
+    FormHelp,
+    ModeSwitch,
+    PolicyField,
+  } from '@happyvertical/smrt-fields/svelte';
+
+  let { policy, invoice = $bindable({}) } = $props();
+</script>
+
+<FieldPolicyProvider {policy}>
+  <header>
+    <h2>Invoice</h2>
+    <FormHelp objectDescription="An invoice issued to a customer." />
+  </header>
+
+  <ModeSwitch />
+
+  <PolicyField name="title">
+    <input id="title" bind:value={invoice.title} />
+  </PolicyField>
+</FieldPolicyProvider>
+~~~
+
+Unlike <code>PolicyField</code>, these three do not degrade outside a provider. Each
+derives its whole output from the resolved policy, so outside one they raise an
+error naming <code>FieldPolicyProvider</code> rather than rendering an empty or
+absent control.
+
+The provider contributes no markup, so it can wrap a page header as well as the
+form when help belongs above the fields. Wrap once, though: each
+<code>FieldPolicyProvider</code> owns its own mode state, and a nested provider
+shadows the outer one for everything inside it. Two providers means an outer
+<code>FormHelp</code> whose glossary does not follow the inner
+<code>ModeSwitch</code>.
+
 ## Generated ObjectForm and source registry
 
 <code>ObjectForm</code> renders the safe intersection of a generated browser field
@@ -239,6 +285,13 @@ fails closed with an accessible error when a definition or policy is missing.
   />
 </ObjectFormSourceProvider>
 ~~~
+
+<code>ObjectForm</code> creates its own <code>FieldPolicyProvider</code> around the
+fields it renders, so it needs no outer provider and should not be given one. It
+renders <code>ModeSwitch</code> with <code>showModeSwitch</code>. Its
+<code>actions</code> snippet renders inside that provider, so
+<code>FormHelp</code> placed there resolves the form's policy — but there is no
+header seam, so it can only appear below the fields.
 
 The browser wire types are text, integer, decimal, boolean, datetime, JSON,
 foreign-key, and cross-package-reference. There is no <code>select</code> wire type.

@@ -97,19 +97,25 @@ function handleSubmit() {
 </script>
 
 <section class="field-policy-preview">
-  <header class="preview-header">
-    <h2>Hand-written form adopting PolicyField</h2>
-    <p class="preview-desc">
-      A developer-authored product form. Two fields (name, SKU) adopt
-      PolicyField for help, defaults, and progressive disclosure; the rest stay
-      hand-written. Toggle the mode switch to reveal advanced-tier fields.
-    </p>
-    <FormHelp
-      objectDescription="A sellable catalog product with wholesale pricing and inventory controls."
-    />
-  </header>
-
+  <!--
+    ONE provider, extended over the header too. FormHelp assembles its glossary
+    from the provider context and must live inside it; the provider renders no
+    markup of its own, so covering the header costs no layout. Do not add a
+    second provider to reach it — a nested one shadows this mode store — #2272.
+  -->
   <FieldPolicyProvider policy={resolvedPolicy} mode="basic">
+    <header class="preview-header">
+      <h2>Hand-written form adopting PolicyField</h2>
+      <p class="preview-desc">
+        A developer-authored product form. Two fields (name, SKU) adopt
+        PolicyField for help, defaults, and progressive disclosure; the rest stay
+        hand-written. Toggle the mode switch to reveal advanced-tier fields.
+      </p>
+      <FormHelp
+        objectDescription="A sellable catalog product with wholesale pricing and inventory controls."
+      />
+    </header>
+
     <div class="toolbar">
       <ModeSwitch />
     </div>

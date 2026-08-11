@@ -196,6 +196,24 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - `policyToVisibleColumnIds(policy, columns)` feeds smrt-ui `DataTable`'s
   `visibleColumnIds`; it filters policy-hidden mapped fields, preserves unmapped
   computed/action columns, and cannot reveal a static `column.hidden` column.
+- **Two-tier context contract.** `PolicyField` alone reads the context with
+  `tryGetFieldPolicyContext()`, because outside a Provider it still has the
+  caller's children to render verbatim (incremental adoption). The
+  provider-only compositions — `ModeSwitch`, `AdvancedFields`, `FormHelp` —
+  read it with the throwing `getFieldPolicyContext()`: their whole output is
+  derived from the resolved policy, so degrading would render an empty or
+  absent control instead of surfacing the missing Provider. Do not convert one
+  of them to the non-throwing accessor in isolation (#2272).
+- **One provider per form.** `FieldPolicyProvider` renders only
+  `{@render children?.()}`, so a host wanting `FormHelp` in a page header
+  extends the SAME provider over the header rather than hoisting the component
+  out. It must not add a second: each provider constructs its own
+  `FieldPolicyModeStore` and `setContext` shadows for the subtree, so a
+  `FormHelp` above a nested provider stops tracking the `ModeSwitch` inside it.
+  `ObjectForm` builds its own provider, so never wrap it in another; its
+  `actions` snippet renders INSIDE that provider (context resolves at the render
+  site), which is the only way to reach `FormHelp` through it — below the
+  fields, since there is no header seam (#2289).
 
 ## Defaults control panel (#2050)
 
