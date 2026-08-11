@@ -9,7 +9,24 @@ import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 
 type DynamicSmrtObject = SmrtObject & Record<string, unknown>;
-type DynamicSmrtListOptions = SmrtListOptions<DynamicSmrtObject>;
+type SmrtHydratedCollectionReadOptions<ModelType extends SmrtObject> = Omit<
+  SmrtListOptions<ModelType>,
+  'select'
+> & {
+  select?: undefined;
+};
+type SmrtProjectedCollectionReadOptions<ModelType extends SmrtObject> = Omit<
+  SmrtListOptions<ModelType>,
+  'select' | 'include'
+> & {
+  select: readonly SmrtSelectField<ModelType>[];
+  include?: never;
+};
+type SmrtCollectionReadOptions<ModelType extends SmrtObject> =
+  | SmrtHydratedCollectionReadOptions<ModelType>
+  | SmrtProjectedCollectionReadOptions<ModelType>;
+type DynamicSmrtListOptions = SmrtCollectionReadOptions<DynamicSmrtObject>;
+declare const smrtCollectionReadPlanModel: unique symbol;
 
 /**
  * One independent collection read in a bounded read plan.
@@ -17,17 +34,25 @@ type DynamicSmrtListOptions = SmrtListOptions<DynamicSmrtObject>;
  * `ModelType` is optional for dynamic registries. Consumers that know the
  * model type can annotate an entry to retain model/projection result typing.
  */
-export interface SmrtCollectionReadPlanEntry<
+export type SmrtCollectionReadPlanEntry<
   ModelType extends SmrtObject = SmrtObject,
-  ListOptions extends SmrtListOptions<ModelType> | undefined =
-    | SmrtListOptions<ModelType>
+  ListOptions extends SmrtCollectionReadOptions<ModelType> | undefined =
+    | SmrtHydratedCollectionReadOptions<ModelType>
     | undefined,
-> {
+> = {
   /** Registered SMRT object or collection name. */
   className: string;
-  /** Standard options forwarded unchanged to `SmrtCollection.list()`. */
-  options?: ListOptions;
-}
+  /** @internal Retains the model type for keyed result inference. */
+  readonly [smrtCollectionReadPlanModel]?: ModelType;
+} & ([ListOptions] extends [SmrtProjectedCollectionReadOptions<ModelType>]
+  ? {
+      /** Projection options forwarded unchanged to `SmrtCollection.list()`. */
+      options: ListOptions;
+    }
+  : {
+      /** Standard hydrated-list options forwarded unchanged to `SmrtCollection.list()`. */
+      options?: ListOptions;
+    });
 
 /** A keyed group of independent collection reads. */
 export type SmrtCollectionReadPlan = Record<
@@ -38,14 +63,23 @@ export type SmrtCollectionReadPlan = Record<
   }
 >;
 
-type SmrtCollectionReadPlanEntryResult<Entry> =
-  Entry extends SmrtCollectionReadPlanEntry<infer ModelType, infer ListOptions>
-    ? ListOptions extends {
-        select: infer Select extends readonly SmrtSelectField<ModelType>[];
-      }
-      ? SmrtSelectedRow<ModelType, Select>[]
-      : ModelType[]
-    : never;
+type SmrtCollectionReadPlanEntryModel<Entry> = Entry extends {
+  readonly [smrtCollectionReadPlanModel]?: infer ModelType;
+}
+  ? ModelType extends SmrtObject
+    ? ModelType
+    : SmrtObject
+  : SmrtObject;
+
+type SmrtCollectionReadPlanEntryResult<Entry> = Entry extends {
+  options: { select: infer Select };
+}
+  ? Select extends readonly SmrtSelectField<
+      SmrtCollectionReadPlanEntryModel<Entry>
+    >[]
+    ? SmrtSelectedRow<SmrtCollectionReadPlanEntryModel<Entry>, Select>[]
+    : never
+  : SmrtCollectionReadPlanEntryModel<Entry>[];
 
 /** Results retain the exact keys declared by the input plan. */
 export type SmrtCollectionReadPlanResult<Plan extends SmrtCollectionReadPlan> =
@@ -116,7 +150,9 @@ export async function executeCollectionReadPlan<
   const entries = Object.entries(plan) as [keyof Plan, Plan[keyof Plan]][];
 
   if (entries.length === 0) {
-    return Object.fromEntries([]) as SmrtCollectionReadPlanResult<Plan>;
+    return Object.fromEntries(
+      [],
+    ) as unknown as SmrtCollectionReadPlanResult<Plan>;
   }
 
   let nextIndex = 0;
@@ -156,5 +192,5 @@ export async function executeCollectionReadPlan<
   if (failed) throw firstError;
   return Object.fromEntries(
     entries.map(([key], index) => [key, values[index]]),
-  ) as SmrtCollectionReadPlanResult<Plan>;
+  ) as unknown as SmrtCollectionReadPlanResult<Plan>;
 }

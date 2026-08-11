@@ -45,6 +45,26 @@ type InvalidOptionsAreRejected = Expect<
     false
   >
 >;
+type ProjectionIncludeIsRejected = Expect<
+  Equal<
+    {
+      select: readonly ['id'];
+      include: string[];
+    } extends NonNullable<SmrtCollectionReadPlan[string]['options']>
+      ? true
+      : false,
+    false
+  >
+>;
+
+// @ts-expect-error projection-typed entries require their projection options
+const missingProjectionOptions: SmrtCollectionReadPlanEntry<
+  ReadPlanTypeProbe,
+  { select: readonly ['id'] }
+> = {
+  className: 'ReadPlanTypeProbe',
+};
+void missingProjectionOptions;
 
 async function validateExecutorInference(): Promise<void> {
   const result = await executeCollectionReadPlan(
@@ -72,4 +92,5 @@ export type CollectionReadPlanTypeAssertions = [
   PlainResultIsTyped,
   ProjectedResultIsTyped,
   InvalidOptionsAreRejected,
+  ProjectionIncludeIsRejected,
 ];
