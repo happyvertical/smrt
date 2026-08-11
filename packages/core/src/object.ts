@@ -2622,7 +2622,13 @@ export class SmrtObject extends SmrtClass {
    * @returns Promise that resolves when the hook completes
    */
   protected async runHook(hookName: string): Promise<void> {
-    const config = ObjectRegistry.getConfig(this.constructor.name);
+    // Bundlers may deconflict the runtime constructor name while generated
+    // registration restores its logical package-qualified identity. Prefer
+    // exact constructor lookup so preserved function-valued hooks remain
+    // reachable after that promotion.
+    const config =
+      this.getRegisteredClassInfo()?.config ??
+      ObjectRegistry.getConfig(this.constructor.name);
     const hook = config.hooks?.[hookName as keyof typeof config.hooks];
 
     if (!hook) {

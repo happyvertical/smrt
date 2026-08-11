@@ -482,7 +482,7 @@ function validateIsolatedRegistrationManifest(
     !keyMatchesIdentity ||
     objectDef?.className !== name ||
     !packageMatches ||
-    (objectDef.qualifiedName !== undefined &&
+    (objectDef?.qualifiedName !== undefined &&
       objectDef.qualifiedName !== targetKey)
   ) {
     throw new ConfigurationError(
@@ -547,6 +547,7 @@ export function register(
   const name = config.name || ctor.name;
   const explicitPackageName = config.packageName;
   let promotedCollectionConstructor: RegisteredClass['collectionConstructor'];
+  let promotedRuntimeConfig: SmartObjectConfig | undefined;
   let isolatedManifestEntry: SmartObjectDefinition | undefined;
 
   if (config._manifestKey) {
@@ -695,6 +696,12 @@ export function register(
 
       promotedCollectionConstructor =
         constructorEntry.collectionConstructor || targetCollectionConstructor;
+      // Generated manifests are JSON data and cannot carry runtime-only
+      // values such as function-valued lifecycle hooks. Preserve the exact
+      // constructor's decorator-time config as the lowest-priority layer;
+      // the authoritative manifest and explicit generated config still win
+      // for serializable identity, schema, and policy fields.
+      promotedRuntimeConfig = constructorEntry.config;
       getClasses().delete(constructorKey);
       getConstructorIndex().delete(ctor);
       if (targetIsManifestStub && targetEntry) {
@@ -1181,6 +1188,7 @@ export function register(
   // Merge manifest's decoratorConfig into config
   // Use the computed tableName which prioritizes manifest's value for STI correctness
   const mergedConfig = {
+    ...promotedRuntimeConfig,
     ...manifestEntry?.decoratorConfig,
     ...config,
     tableName, // Override with correctly computed tableName
