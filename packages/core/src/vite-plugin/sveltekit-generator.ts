@@ -1385,8 +1385,15 @@ async function generateRegistrationFile(
   const localObjects: Array<[string, (typeof manifest.objects)[string]]> = [];
   const packageObjects = new Map<
     string,
-    { classNames: string[]; hasCollectionImport: boolean }
+    {
+      objects: Array<{
+        simpleName: string;
+        bindingName: string;
+      }>;
+      hasCollectionImport: boolean;
+    }
   >();
+  const registrationBindings = buildRegistrationBindings(manifest);
 
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     if (isLocalObject(projectRoot, objectDef)) {
@@ -1395,14 +1402,19 @@ async function generateRegistrationFile(
     } else if (objectDef.packageName) {
       // External package - group by package name
       const packageEntry = packageObjects.get(objectDef.packageName) || {
-        classNames: [],
+        objects: [],
         hasCollectionImport: false,
       };
 
       if (isCollectionManifestClass(manifest, objectDef)) {
         packageEntry.hasCollectionImport = true;
       } else {
-        packageEntry.classNames.push(className);
+        packageEntry.objects.push({
+          simpleName: extractSimpleClassName(className),
+          bindingName:
+            registrationBindings.get(className) ||
+            extractSimpleClassName(className),
+        });
       }
 
       packageObjects.set(objectDef.packageName, packageEntry);
@@ -1414,7 +1426,10 @@ async function generateRegistrationFile(
 
   // Generate imports for local objects
   // Issue #870: Extract simple class names from qualified names
-  const localNamedImports = new Map<string, string[]>();
+  const localNamedImports = new Map<
+    string,
+    Array<{ simpleName: string; bindingName: string }>
+  >();
   const localSideEffectImports = new Set<string>();
 
   for (const [className, objectDef] of localObjects) {
@@ -1445,15 +1460,20 @@ async function generateRegistrationFile(
     }
 
     const existing = localNamedImports.get(importPath) ?? [];
-    existing.push(simpleClassName);
+    existing.push({
+      simpleName: simpleClassName,
+      bindingName: registrationBindings.get(className) || simpleClassName,
+    });
     localNamedImports.set(importPath, existing);
   }
 
   const localImports = [
     ...Array.from(localNamedImports.entries())
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([importPath, simpleNames]) => {
-        const sortedNames = simpleNames.sort((a, b) => a.localeCompare(b));
+      .map(([importPath, importedObjects]) => {
+        const sortedNames = importedObjects
+          .sort((a, b) => a.bindingName.localeCompare(b.bindingName))
+          .map(formatRegistrationImport);
         return `import { ${sortedNames.join(', ')} } from '${importPath}';`;
       }),
     ...Array.from(localSideEffectImports.values())
@@ -1472,11 +1492,10 @@ async function generateRegistrationFile(
         imports.push(`import '${packageName}';`);
       }
 
-      if (packageEntry.classNames.length > 0) {
-        // Extract simple class names for valid import syntax
-        const simpleNames = packageEntry.classNames
-          .map(extractSimpleClassName)
-          .sort((a, b) => a.localeCompare(b));
+      if (packageEntry.objects.length > 0) {
+        const simpleNames = packageEntry.objects
+          .sort((a, b) => a.bindingName.localeCompare(b.bindingName))
+          .map(formatRegistrationImport);
         imports.push(
           `import { ${simpleNames.join(', ')} } from '${packageName}';`,
         );
@@ -1487,6 +1506,42 @@ async function generateRegistrationFile(
     .join('\n');
 
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
+  const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
+    (dependency) => dependency !== '@happyvertical/smrt-core',
+  );
+  let consumerRegistrationImport = '';
+  if (externalRuntimeDependencies.length > 0) {
+    const consumerRegistrationPath = relative(
+      configDir,
+      join(projectRoot, '.smrt', 'register.js'),
+    ).replace(/\\/g, '/');
+    consumerRegistrationImport = `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
+  }
+  const registrationManifests = Object.fromEntries(
+    Object.entries(manifest.objects).flatMap(([className, objectDef]) => {
+      if (isCollectionManifestClass(manifest, objectDef)) return [];
+      const localObject = isLocalObject(projectRoot, objectDef);
+      const packageName = getRegistrationPackageName(
+        manifest,
+        objectDef,
+        localObject,
+      );
+      if (!packageName) return [];
+      return [
+        [
+          className,
+          {
+            ...manifest,
+            packageName,
+            objects: { [className]: objectDef },
+          },
+        ],
+      ];
+    }),
+  );
+  const registrationManifestLiteral = JSON.stringify(
+    JSON.stringify(registrationManifests),
+  );
   const registrations = Object.entries(manifest.objects)
     .map(([className, objectDef]) => {
       if (isCollectionManifestClass(manifest, objectDef)) {
@@ -1497,6 +1552,8 @@ async function generateRegistrationFile(
       }
 
       const simpleClassName = extractSimpleClassName(className);
+      const bindingName =
+        registrationBindings.get(className) || simpleClassName;
       const localObject = isLocalObject(projectRoot, objectDef);
       const packageName = getRegistrationPackageName(
         manifest,
@@ -1509,16 +1566,19 @@ async function generateRegistrationFile(
       }
 
       const packageNameLiteral = toSingleQuotedStringLiteral(packageName);
-      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { name: '${simpleClassName}', packageName: ${packageNameLiteral} });`;
+      const manifestKeyLiteral = toSingleQuotedStringLiteral(className);
+      const singleLineRegistration = `ObjectRegistry.register(${bindingName}, { name: '${simpleClassName}', packageName: ${packageNameLiteral}, _manifest: smrtRegistrationManifests[${manifestKeyLiteral}], _manifestKey: ${manifestKeyLiteral} });`;
 
       if (singleLineRegistration.length <= BIOME_LINE_WIDTH) {
         return singleLineRegistration;
       }
 
       return [
-        `ObjectRegistry.register(${simpleClassName}, {`,
+        `ObjectRegistry.register(${bindingName}, {`,
         `  name: '${simpleClassName}',`,
         `  packageName: ${packageNameLiteral},`,
+        `  _manifest: smrtRegistrationManifests[${manifestKeyLiteral}],`,
+        `  _manifestKey: ${manifestKeyLiteral},`,
         `});`,
       ].join('\n');
     })
@@ -1536,7 +1596,10 @@ async function generateRegistrationFile(
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
+${consumerRegistrationImport}
 ${imports}
+
+const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
 
 // Re-register imported objects with explicit package names for bundled runtimes
 ${registrations}
@@ -1549,6 +1612,52 @@ ${registrations}
 
   writeFileSync(registrationFilePath, registrationContent, 'utf-8');
   console.log(`[smrt] Generated registration file: ${registrationFilePath}`);
+}
+
+function buildRegistrationBindings(
+  manifest: SmartObjectManifest,
+): Map<string, string> {
+  const keysBySimpleName = new Map<string, string[]>();
+  const reservedBindings = new Set<string>();
+  for (const [manifestKey, objectDef] of Object.entries(manifest.objects)) {
+    if (isCollectionManifestClass(manifest, objectDef)) continue;
+    const simpleName = extractSimpleClassName(manifestKey);
+    reservedBindings.add(simpleName);
+    const keys = keysBySimpleName.get(simpleName) ?? [];
+    keys.push(manifestKey);
+    keysBySimpleName.set(simpleName, keys);
+  }
+
+  const bindings = new Map<string, string>();
+  const generatedBindings = new Set<string>();
+  for (const [simpleName, keys] of keysBySimpleName) {
+    const sortedKeys = keys.sort((a, b) => a.localeCompare(b));
+    for (const [index, manifestKey] of sortedKeys.entries()) {
+      let bindingName = simpleName;
+      if (sortedKeys.length > 1) {
+        let suffix = index + 1;
+        do {
+          bindingName = `__smrt_${simpleName}_${suffix}`;
+          suffix += 1;
+        } while (
+          reservedBindings.has(bindingName) ||
+          generatedBindings.has(bindingName)
+        );
+        generatedBindings.add(bindingName);
+      }
+      bindings.set(manifestKey, bindingName);
+    }
+  }
+  return bindings;
+}
+
+function formatRegistrationImport(importedObject: {
+  simpleName: string;
+  bindingName: string;
+}): string {
+  return importedObject.simpleName === importedObject.bindingName
+    ? importedObject.simpleName
+    : `${importedObject.simpleName} as ${importedObject.bindingName}`;
 }
 
 /**

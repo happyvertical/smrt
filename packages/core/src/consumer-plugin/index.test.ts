@@ -88,6 +88,18 @@ describe('smrtConsumer registration generation', () => {
     }
   });
 
+  it('leaves optional native provider binaries to the Node runtime', async () => {
+    const plugin = smrtConsumer({ projectRoot: tmpDir });
+    const config = await plugin.config?.call({} as any, {} as any, {
+      command: 'build',
+      mode: 'production',
+    });
+    const external = (config as any).build.rollupOptions.external as RegExp[];
+    expect(external).toHaveLength(1);
+    expect(external[0].test('/tmp/provider/native-addon.node')).toBe(true);
+    expect(external[0].test('/tmp/provider/index.js')).toBe(false);
+  });
+
   it('should write explicit package names into .smrt/register.js', async () => {
     const plugin = smrtConsumer({
       packages: ['@test/pkg'],
@@ -103,29 +115,128 @@ describe('smrtConsumer registration generation', () => {
 
     const content = readFileSync(registerPath, 'utf-8');
     expect(content).toContain(
-      'ObjectRegistry.register(ExternalThing, { name: "ExternalThing", packageName: "@test/pkg" });',
+      "import * as __smrt_provider_0 from '@test/pkg';",
+    );
+    expect(content).toContain(
+      'const __smrt_consumer_0 = getSmrtExport(__smrt_provider_0, "ExternalThing");',
+    );
+    expect(content).toContain(
+      'if (__smrt_consumer_0) ObjectRegistry.register(__smrt_consumer_0, { name: "ExternalThing", packageName: "@test/pkg", _manifest: smrtRegistrationManifests["ExternalThing"], _manifestKey: "ExternalThing" });',
     );
     expect(content).toContain(
       "console.log('[smrt:register] Registered 1 external object');",
     );
+    expect(content).not.toContain('ObjectRegistry.register(__smrt_consumer_1');
+    expect(content).not.toContain('ObjectRegistry.register(__smrt_consumer_2');
+    expect(content).not.toContain('ObjectRegistry.register(__smrt_consumer_3');
+
+    const manifestLiteral = content.match(
+      /const smrtRegistrationManifests = JSON\.parse\((.+)\);/,
+    )?.[1];
+    expect(manifestLiteral).toBeDefined();
+    const registrationManifests = JSON.parse(
+      JSON.parse(manifestLiteral as string),
+    );
+    expect(registrationManifests.ExternalThing).toMatchObject({
+      packageName: '@test/pkg',
+      objects: {
+        ExternalThing: {
+          className: 'ExternalThing',
+          packageName: '@test/pkg',
+        },
+      },
+    });
+  });
+
+  it('aliases same-name exports and isolates their registration manifests', async () => {
+    writeFileSync(
+      join(tmpDir, 'node_modules', '@test', 'pkg', 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          '@test/pkg:SharedThing': {
+            className: 'SharedThing',
+            qualifiedName: '@test/pkg:SharedThing',
+            collection: 'pkg_shared_things',
+            fields: { alpha: { type: 'string' } },
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+    mkdirSync(join(tmpDir, 'node_modules', '@test', 'other', 'dist'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(tmpDir, 'node_modules', '@test', 'other', 'package.json'),
+      JSON.stringify({
+        name: '@test/other',
+        version: '4.5.6',
+        exports: { '.': './dist/index.js' },
+      }),
+    );
+    writeFileSync(
+      join(tmpDir, 'node_modules', '@test', 'other', 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/other',
+        objects: {
+          '@test/other:SharedThing': {
+            className: 'SharedThing',
+            qualifiedName: '@test/other:SharedThing',
+            collection: 'other_shared_things',
+            fields: { beta: { type: 'number' } },
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg', '@test/other'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    await plugin.buildStart?.call({} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
     expect(content).toContain(
-      "import { ExternalThingCollection } from '@test/pkg';",
+      "import * as __smrt_provider_1 from '@test/pkg';",
     );
     expect(content).toContain(
-      "import { LegacyThingCollection } from '@test/pkg';",
+      "import * as __smrt_provider_0 from '@test/other';",
     );
     expect(content).toContain(
-      "import { SpecializedThingCollection } from '@test/pkg';",
+      'const __smrt_consumer_0 = getSmrtExport(__smrt_provider_1, "SharedThing");',
     );
-    expect(content).not.toContain(
-      'ObjectRegistry.register(ExternalThingCollection',
+    expect(content).toContain(
+      'const __smrt_consumer_1 = getSmrtExport(__smrt_provider_0, "SharedThing");',
     );
-    expect(content).not.toContain(
-      'ObjectRegistry.register(LegacyThingCollection',
+    expect(content).toContain(
+      'if (__smrt_consumer_0) ObjectRegistry.register(__smrt_consumer_0, { name: "SharedThing", packageName: "@test/pkg", _manifest: smrtRegistrationManifests["@test/pkg:SharedThing"], _manifestKey: "@test/pkg:SharedThing" });',
     );
-    expect(content).not.toContain(
-      'ObjectRegistry.register(SpecializedThingCollection',
+    expect(content).toContain(
+      'if (__smrt_consumer_1) ObjectRegistry.register(__smrt_consumer_1, { name: "SharedThing", packageName: "@test/other", _manifest: smrtRegistrationManifests["@test/other:SharedThing"], _manifestKey: "@test/other:SharedThing" });',
     );
+
+    const manifestLiteral = content.match(
+      /const smrtRegistrationManifests = JSON\.parse\((.+)\);/,
+    )?.[1];
+    const registrationManifests = JSON.parse(
+      JSON.parse(manifestLiteral as string),
+    );
+    expect(
+      registrationManifests['@test/pkg:SharedThing'].objects[
+        '@test/pkg:SharedThing'
+      ].fields,
+    ).toEqual({ alpha: { type: 'string' } });
+    expect(
+      registrationManifests['@test/other:SharedThing'].objects[
+        '@test/other:SharedThing'
+      ].fields,
+    ).toEqual({ beta: { type: 'number' } });
   });
 
   it('preserves local project entries already in .smrt/manifest.json (issue #1760 review)', async () => {
