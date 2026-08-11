@@ -57,6 +57,22 @@ type ProjectionIncludeIsRejected = Expect<
   >
 >;
 
+type MixedOptions =
+  | { limit: number; select?: undefined }
+  | { select: readonly ['id']; include?: never };
+type MixedEntry = SmrtCollectionReadPlanEntry<ReadPlanTypeProbe, MixedOptions>;
+const mixed: MixedEntry = {
+  className: 'ReadPlanTypeProbe',
+  options: { select: ['id'] },
+};
+type MixedResult = SmrtCollectionReadPlanResult<{ mixed: MixedEntry }>;
+type MixedResultIsSound = Expect<
+  Equal<
+    MixedResult['mixed'],
+    ReadPlanTypeProbe[] | { id: string | null | undefined }[]
+  >
+>;
+
 // @ts-expect-error projection-typed entries require their projection options
 const missingProjectionOptions: SmrtCollectionReadPlanEntry<
   ReadPlanTypeProbe,
@@ -93,4 +109,5 @@ export type CollectionReadPlanTypeAssertions = [
   ProjectedResultIsTyped,
   InvalidOptionsAreRejected,
   ProjectionIncludeIsRejected,
+  MixedResultIsSound,
 ];

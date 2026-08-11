@@ -28,6 +28,20 @@ type SmrtCollectionReadOptions<ModelType extends SmrtObject> =
 type DynamicSmrtListOptions = SmrtCollectionReadOptions<DynamicSmrtObject>;
 declare const smrtCollectionReadPlanModel: unique symbol;
 
+type SmrtCollectionReadPlanEntryOptions<
+  ModelType extends SmrtObject,
+  ListOptions extends SmrtCollectionReadOptions<ModelType> | undefined,
+> =
+  ListOptions extends SmrtProjectedCollectionReadOptions<ModelType>
+    ? {
+        /** Projection options forwarded unchanged to `SmrtCollection.list()`. */
+        options: ListOptions;
+      }
+    : {
+        /** Standard hydrated-list options forwarded unchanged to `SmrtCollection.list()`. */
+        options?: ListOptions;
+      };
+
 /**
  * One independent collection read in a bounded read plan.
  *
@@ -36,23 +50,15 @@ declare const smrtCollectionReadPlanModel: unique symbol;
  */
 export type SmrtCollectionReadPlanEntry<
   ModelType extends SmrtObject = SmrtObject,
-  ListOptions extends SmrtCollectionReadOptions<ModelType> | undefined =
-    | SmrtHydratedCollectionReadOptions<ModelType>
-    | undefined,
+  ListOptions extends
+    | SmrtCollectionReadOptions<ModelType>
+    | undefined = SmrtHydratedCollectionReadOptions<ModelType>,
 > = {
   /** Registered SMRT object or collection name. */
   className: string;
   /** @internal Retains the model type for keyed result inference. */
   readonly [smrtCollectionReadPlanModel]?: ModelType;
-} & ([ListOptions] extends [SmrtProjectedCollectionReadOptions<ModelType>]
-  ? {
-      /** Projection options forwarded unchanged to `SmrtCollection.list()`. */
-      options: ListOptions;
-    }
-  : {
-      /** Standard hydrated-list options forwarded unchanged to `SmrtCollection.list()`. */
-      options?: ListOptions;
-    });
+} & SmrtCollectionReadPlanEntryOptions<ModelType, ListOptions>;
 
 /** A keyed group of independent collection reads. */
 export type SmrtCollectionReadPlan = Record<
