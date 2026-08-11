@@ -5,8 +5,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { discoverWorkspaces } from './workspaces.mjs';
 
-const typescriptModule = process.env.SMRT_TYPESCRIPT_PATH
-  ? await import(pathToFileURL(process.env.SMRT_TYPESCRIPT_PATH).href)
+const typescriptPath = process.env.SMRT_TYPESCRIPT_PATH;
+const typescriptModule = typescriptPath
+  ? await import(pathToFileURL(typescriptPath).href)
   : await import('typescript');
 const ts = typescriptModule.default;
 
@@ -122,6 +123,9 @@ export function validateQuickstart(quickstart, root = ROOT) {
     skipLibCheck: true,
     noEmit: true,
     baseUrl: root,
+    typeRoots: typescriptPath
+      ? [resolve(dirname(typescriptPath), '..', '..', '@types')]
+      : undefined,
     paths: { '@happyvertical/smrt-core': [coreIndexPath] },
   };
   const host = ts.createCompilerHost(options);
