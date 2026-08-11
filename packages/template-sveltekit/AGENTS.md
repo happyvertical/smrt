@@ -17,6 +17,16 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
 - `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
   its binary. `@happyvertical/smrt-web` stays opt-in until a page imports it.
+- The generated MCP server resolves its imports from the scaffolded app, not
+  from the CLI, so every specifier `generate-mcp` emits must be declared here.
+  `@modelcontextprotocol/server` (plus its `/stdio` subpath),
+  `@happyvertical/smrt-core`, and `@happyvertical/smrt-config` are always
+  emitted and are always dependencies. `@happyvertical/smrt-jobs` (task actions)
+  and `@happyvertical/smrt-tenancy` (tenant-scoped objects) are conditional;
+  tenancy is already a dependency for other reasons, and jobs is documented in
+  the template README as an add-when-needed. Do not assume pnpm exposes the
+  CLI's or core's transitive dependencies to the app root — its strict layout
+  does not (#2297).
 - `smrtConsumer()` explicitly consumes profiles, tenancy, and users manifests;
   `smrtPlugin()` scans `src/lib/objects`, generates Vite virtual definitions,
   SvelteKit routes, runtime registration, and knowledge artifacts.

@@ -227,7 +227,27 @@ Generate a standalone MCP server when you are ready to configure a transport:
 pnpm smrt generate-mcp --no-config --no-readme
 ```
 
-The output is `.smrt/mcp-server/index.js`. It is generated and ignored.
+The output is `.smrt/mcp-server/index.js`. It is generated and ignored. Run it
+with:
+
+```bash
+node .smrt/mcp-server/index.js
+```
+
+The generated entry resolves its imports from this project, not from the CLI, so
+every module it imports must be a dependency here. `@modelcontextprotocol/server`,
+`@happyvertical/smrt-core`, and `@happyvertical/smrt-config` are always imported
+and are already declared. Two more are emitted only when your objects need them,
+and you must add them yourself:
+
+| Emitted when | Dependency | Already declared? |
+| --- | --- | --- |
+| An exposed object declares task actions (`@smrt({ mcp: { tasks: true } })`) | `@happyvertical/smrt-jobs` | No — add it |
+| An exposed object is tenant-scoped | `@happyvertical/smrt-tenancy` | Yes |
+
+Add the jobs package on the same release line as the other
+`@happyvertical/smrt-*` pins in `package.json`, then reinstall. Missing one of
+these fails at startup with `ERR_MODULE_NOT_FOUND` naming the package to add.
 
 WebMCP is opt-in per browser surface. First add the browser runtime, then put
 registration in a dedicated page that actually exposes tools:
