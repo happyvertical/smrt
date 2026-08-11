@@ -38,6 +38,44 @@ export interface DomainKnowledgeConfig {
   risks?: string[];
 }
 
+/** Validation constraints retained in the curated agent-facing field shape. */
+export interface DomainKnowledgeFieldConstraints {
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+}
+
+/** A field retained in the curated agent-facing object shape. */
+export interface DomainKnowledgeField {
+  name: string;
+  type: string;
+  required?: boolean;
+  related?: string;
+  columnType?: string;
+  default?: unknown;
+  constraints?: DomainKnowledgeFieldConstraints;
+  readonly?: boolean;
+  transient?: boolean;
+}
+
+/** Additive structured signature; `methods: string[]` remains the compatibility surface. */
+export interface DomainKnowledgeMethodSignature {
+  name: string;
+  async?: boolean;
+  static?: boolean;
+  params?: string[];
+  returns?: string;
+}
+
+/** Normalized tenancy facts from `@smrt({ tenantScoped })`. */
+export interface DomainKnowledgeTenant {
+  scoped: boolean;
+  mode?: 'required' | 'optional';
+  field?: string;
+}
+
 /** One object's entry in the domain-knowledge manifest (fields, relationships, surfaces). */
 export interface DomainKnowledgeObject {
   name: string;
@@ -47,21 +85,13 @@ export interface DomainKnowledgeObject {
   packageName?: string;
   extends?: string;
   visibility?: string;
-  fields: Array<{
-    name: string;
-    type: string;
-    required?: boolean;
-    related?: string;
-    columnType?: string;
-  }>;
-  relationships: Array<{
-    name: string;
-    type: string;
-    required?: boolean;
-    related?: string;
-    columnType?: string;
-  }>;
+  fields: DomainKnowledgeField[];
+  relationships: DomainKnowledgeField[];
   methods: string[];
+  methodSignatures?: DomainKnowledgeMethodSignature[];
+  tenant?: DomainKnowledgeTenant;
+  tableStrategy?: 'cti' | 'sti';
+  conflictColumns?: string[];
   surfaces: DomainKnowledgeSurface[];
   relationshipFeatures: string[];
   tags: string[];

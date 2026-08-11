@@ -154,10 +154,13 @@ Knowledge and introspection tools return a **summary** by default and accept
   budget.
 - `smrt-architecture`, `smrt-review`, and the `build-*-context` tools list
   authored `AGENTS.md` and module docs **by path** rather than embedding them,
-  and return compact package records.
+  and return compact package records. With `detail: "full"`, their prompt
+  bundles also render high-signal object facts: tenant mode/field, `cti`/`sti`
+  strategy, conflict columns, method signatures, and field
+  defaults/constraints/readonly/transient flags.
 
-The `smrt dev:knowledge-*` CLI commands request `detail: "full"`, so their output
-is unchanged.
+The `smrt dev:knowledge-*` CLI commands request `detail: "full"`, so they remain
+full-detail and unbudgeted.
 
 ## Knowledge Boundary
 
@@ -171,7 +174,13 @@ Downstream s-m-r-t packages/apps can publish their own scoped
 `.smrt/smrt-knowledge.json`, then `dist/smrt-knowledge.json`, then source
 manifest artifacts before falling back to raw manifest/doc scanning. The runtime
 `manifest.json` stays focused on object registration; `smrt-knowledge.json` is
-the agent/developer contract.
+the agent/developer contract. Its schema-version-1 structural keys are additive,
+and older artifacts without them remain readable. Sensitive fields are excluded
+from both the curated artifact and raw-manifest fallback projection, including
+legacy sensitivity flags under `_meta`.
+Sensitive field names and their snake-case column names are also removed from
+projected conflict columns. A sensitive custom tenant-field name is omitted
+while its tenant scope and mode remain available.
 
 ## Cache Metadata
 

@@ -76,6 +76,15 @@ describe('SMRT knowledge index', () => {
                 mcp: {
                   include: ['list', 'get'],
                 },
+                tenantScoped: { mode: 'optional', field: 'workspaceId' },
+                tableStrategy: 'sti',
+                conflictColumns: [
+                  'workspace_id',
+                  'code',
+                  'secret_id',
+                  'legacy_secret_id',
+                  'api_token_i_d',
+                ],
               },
               fields: {
                 ownerId: {
@@ -86,6 +95,36 @@ describe('SMRT knowledge index', () => {
                 profileId: {
                   type: 'crossPackageRef',
                   related: '@happyvertical/smrt-profiles:Profile',
+                },
+                attempts: {
+                  type: 'integer',
+                  default: 0,
+                  min: 0,
+                  max: 5,
+                  readonly: true,
+                },
+                preview: { type: 'text', _meta: { transient: true } },
+                secretId: {
+                  type: 'foreignKey',
+                  related: 'Secret',
+                  sensitive: true,
+                },
+                legacySecretId: {
+                  type: 'foreignKey',
+                  related: 'LegacySecret',
+                  _meta: { sensitive: true },
+                },
+                apiTokenID: { type: 'text', _meta: { sensitive: true } },
+              },
+              methods: {
+                sync: {
+                  name: 'sync',
+                  async: true,
+                  parameters: [
+                    { name: 'force', type: 'boolean', optional: true },
+                  ],
+                  returnType: 'Promise<void>',
+                  isStatic: false,
                 },
               },
               schema: {
@@ -102,7 +141,30 @@ describe('SMRT knowledge index', () => {
               qualifiedName: '@happyvertical/smrt-demo:DemoLinks',
               extends: 'SmrtJunction',
               collection: 'demo_links',
-              fields: {},
+              decoratorConfig: {
+                tenantScoped: {
+                  mode: 'required',
+                  field: 'privateTenantId',
+                },
+                conflictColumns: ['left_id', 'right_id', 'private_tenant_id'],
+              },
+              fields: {
+                leftId: {
+                  type: 'foreignKey',
+                  related: 'Left',
+                  required: true,
+                },
+                rightId: {
+                  type: 'foreignKey',
+                  related: 'Right',
+                  required: true,
+                },
+                privateTenantId: {
+                  type: 'foreignKey',
+                  related: 'Tenant',
+                  sensitive: true,
+                },
+              },
               methods: {
                 byLeft: { name: 'byLeft' },
               },
@@ -158,12 +220,59 @@ describe('SMRT knowledge index', () => {
     expect(index.smrtPackages[0].mcpTools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(['get_demos', 'list_demos']),
     );
-    expect(index.relationshipsV2.foreignKeyFields).toBe(2);
+    expect(index.relationshipsV2.foreignKeyFields).toBe(4);
     expect(index.relationshipsV2.crossPackageRefFields).toBe(1);
     expect(index.relationshipsV2.junctionCollections).toBe(1);
     expect(index.relationshipsV2.hierarchicalObjects).toBe(1);
     expect(index.relationshipsV2.polymorphicAssociations).toBe(1);
     expect(index.relationshipsV2.uuidColumns).toBe(3);
+  });
+
+  it('projects raw-manifest structural facts and filters sensitive fields', async () => {
+    const index = await buildKnowledgeIndex({ rootDir });
+    const demo = index.smrtPackages[0].objects.find(
+      (object) => object.className === 'Demo',
+    );
+
+    expect(demo).toMatchObject({
+      tenant: { scoped: true, mode: 'optional', field: 'workspaceId' },
+      tableStrategy: 'sti',
+      conflictColumns: ['workspace_id', 'code'],
+      methods: ['sync'],
+      methodSignatures: [
+        {
+          name: 'sync',
+          async: true,
+          params: ['force?: boolean'],
+          returns: 'Promise<void>',
+        },
+      ],
+    });
+    expect(demo?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'attempts',
+          default: 0,
+          constraints: { min: 0, max: 5 },
+          readonly: true,
+        }),
+        expect.objectContaining({ name: 'preview', transient: true }),
+      ]),
+    );
+    expect(demo?.fields.map((field) => field.name)).not.toEqual(
+      expect.arrayContaining(['secretId', 'legacySecretId', 'apiTokenID']),
+    );
+    expect(demo?.relationships.map((field) => field.name)).not.toEqual(
+      expect.arrayContaining(['secretId', 'legacySecretId', 'apiTokenID']),
+    );
+    const links = index.smrtPackages[0].objects.find(
+      (object) => object.className === 'DemoLinks',
+    );
+    expect(links).toMatchObject({
+      tenant: { scoped: true, mode: 'required' },
+      conflictColumns: ['left_id', 'right_id'],
+    });
+    expect(JSON.stringify(links)).not.toContain('privateTenantId');
   });
 
   it('filters the index by package scope and package name', async () => {
@@ -213,6 +322,36 @@ describe('SMRT knowledge index', () => {
                   related: '@happyvertical/smrt-profiles:Profile',
                   columnType: 'UUID',
                 },
+                {
+                  name: 'attempts',
+                  type: 'integer',
+                  default: 0,
+                  constraints: { min: 0, max: 3 },
+                  readonly: true,
+                },
+                {
+                  name: 'secretId',
+                  type: 'foreignKey',
+                  related: 'Secret',
+                  sensitive: true,
+                },
+                {
+                  name: 'legacySecretId',
+                  type: 'foreignKey',
+                  related: 'LegacySecret',
+                  _meta: { sensitive: true },
+                },
+                {
+                  name: 'privateTenantId',
+                  type: 'foreignKey',
+                  related: 'Tenant',
+                  sensitive: true,
+                },
+                {
+                  name: 'apiTokenID',
+                  type: 'text',
+                  _meta: { sensitive: true },
+                },
               ],
               relationships: [
                 {
@@ -221,8 +360,42 @@ describe('SMRT knowledge index', () => {
                   related: '@happyvertical/smrt-profiles:Profile',
                   columnType: 'UUID',
                 },
+                {
+                  name: 'secretId',
+                  type: 'foreignKey',
+                  related: 'Secret',
+                  sensitive: true,
+                },
+                {
+                  name: 'legacySecretId',
+                  type: 'foreignKey',
+                  related: 'LegacySecret',
+                  _meta: { sensitive: true },
+                },
               ],
               methods: ['sync'],
+              methodSignatures: [
+                {
+                  name: 'sync',
+                  async: true,
+                  params: ['force?: boolean'],
+                  returns: 'Promise<void>',
+                },
+              ],
+              tenant: {
+                scoped: true,
+                mode: 'required',
+                field: 'privateTenantId',
+              },
+              tableStrategy: 'cti',
+              conflictColumns: [
+                'tenant_id',
+                'profile_id',
+                'secret_id',
+                'legacy_secret_id',
+                'private_tenant_id',
+                'api_token_i_d',
+              ],
               surfaces: [
                 {
                   kind: 'mcp',
@@ -233,6 +406,18 @@ describe('SMRT knowledge index', () => {
               ],
               relationshipFeatures: ['crossPackageRef', 'uuidColumns'],
               tags: ['artifact'],
+              risks: [],
+            },
+            {
+              name: 'LegacyArtifact',
+              qualifiedName: '@happyvertical/smrt-demo:LegacyArtifact',
+              collection: 'legacy_artifacts',
+              fields: [],
+              relationships: [],
+              methods: [],
+              surfaces: [],
+              relationshipFeatures: [],
+              tags: [],
               risks: [],
             },
           ],
@@ -271,11 +456,55 @@ describe('SMRT knowledge index', () => {
     );
     expect(demo?.objects.map((object) => object.className)).toEqual([
       'ArtifactDemo',
+      'LegacyArtifact',
     ]);
     expect(demo?.mcpTools.map((tool) => tool.name)).toEqual([
       'artifactdemo_sync',
     ]);
     expect(demo?.agentDoc).toContain('Artifact guidance');
+    expect(demo?.objects[0]).toMatchObject({
+      tenant: { scoped: true, mode: 'required' },
+      tableStrategy: 'cti',
+      conflictColumns: ['tenant_id', 'profile_id'],
+      methodSignatures: [
+        {
+          name: 'sync',
+          async: true,
+          params: ['force?: boolean'],
+          returns: 'Promise<void>',
+        },
+      ],
+    });
+    expect(demo?.objects[0].fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'attempts',
+          default: 0,
+          constraints: { min: 0, max: 3 },
+          readonly: true,
+        }),
+      ]),
+    );
+    expect(demo?.objects[0].fields.map((field) => field.name)).not.toEqual(
+      expect.arrayContaining(['secretId', 'legacySecretId', 'apiTokenID']),
+    );
+    expect(
+      demo?.objects[0].relationships.map((field) => field.name),
+    ).not.toEqual(
+      expect.arrayContaining(['secretId', 'legacySecretId', 'apiTokenID']),
+    );
+    expect(JSON.stringify(demo)).not.toMatch(
+      /secretId|legacySecretId|privateTenantId|apiTokenID|secret_id|legacy_secret_id|private_tenant_id|api_token_i_d/,
+    );
+    expect(JSON.stringify(demo?.domainKnowledge)).not.toMatch(
+      /secretId|legacySecretId|privateTenantId|apiTokenID|secret_id|legacy_secret_id|private_tenant_id|api_token_i_d/,
+    );
+    expect(demo?.objects[1]).toMatchObject({
+      className: 'LegacyArtifact',
+      fields: [],
+      methods: [],
+    });
+    expect(demo?.objects[1].tenant).toBeUndefined();
   });
 
   it('fails freshness when exported domain knowledge is missing', async () => {
@@ -422,6 +651,49 @@ describe('SMRT knowledge index', () => {
     expect(result.promptBundle.contextMarkdown).toContain(
       '@happyvertical/smrt-demo',
     );
+    expect(result.promptBundle.contextMarkdown).not.toContain(
+      'Object structural facts',
+    );
+  });
+
+  it('renders structural facts in full review and architecture bundles', async () => {
+    const review = await buildReviewContext({
+      rootDir,
+      changedFiles: ['packages/demo/src/demo.ts'],
+      detail: 'full',
+    });
+    const architecture = await buildArchitectureContext({
+      rootDir,
+      package: '@happyvertical/smrt-demo',
+      detail: 'full',
+    });
+    const smrtReviewResult = await smrtReview({
+      rootDir,
+      changedFiles: ['packages/demo/src/demo.ts'],
+      detail: 'full',
+      mode: 'prompt-bundle',
+    });
+
+    for (const markdown of [
+      review.promptBundle.contextMarkdown,
+      architecture.promptBundle.contextMarkdown,
+      smrtReviewResult.promptBundle?.contextMarkdown ?? '',
+    ]) {
+      expect(markdown).toContain('Object structural facts');
+      expect(markdown).toContain(
+        'tenant optional via workspaceId; table strategy sti; conflict columns workspace_id, code',
+      );
+      expect(markdown).toContain(
+        'field attempts: integer (default 0; constraints min=0, max=5; readonly)',
+      );
+      expect(markdown).toContain(
+        'method async sync(force?: boolean): Promise<void>',
+      );
+      expect(markdown).not.toContain('secretId');
+      expect(markdown).not.toContain('legacySecretId');
+      expect(markdown).not.toContain('apiTokenID');
+      expect(markdown).not.toContain('api_token_i_d');
+    }
   });
 
   it('embeds every linked module doc when nothing narrows the request (#2108)', async () => {

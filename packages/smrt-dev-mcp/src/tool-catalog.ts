@@ -29,6 +29,9 @@ const DEV_MCP_OUTPUT_SCHEMA: NonNullable<Tool['outputSchema']> = {
   },
 };
 
+const KNOWLEDGE_DETAIL_DESCRIPTION =
+  'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed docs and render structural object facts.';
+
 // Tool definitions
 const TOOL_DEFINITIONS: Array<
   Pick<Tool, 'name' | 'description' | 'inputSchema'>
@@ -306,8 +309,7 @@ const TOOL_DEFINITIONS: Array<
           type: 'string',
           enum: ['summary', 'full'],
           default: 'summary',
-          description:
-            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+          description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
       },
     },
@@ -333,8 +335,7 @@ const TOOL_DEFINITIONS: Array<
           type: 'string',
           enum: ['summary', 'full'],
           default: 'summary',
-          description:
-            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+          description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
       },
     },
@@ -359,8 +360,7 @@ const TOOL_DEFINITIONS: Array<
           type: 'string',
           enum: ['summary', 'full'],
           default: 'summary',
-          description:
-            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+          description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
       },
     },
@@ -380,8 +380,7 @@ const TOOL_DEFINITIONS: Array<
           type: 'string',
           enum: ['summary', 'full'],
           default: 'summary',
-          description:
-            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+          description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
       },
     },
@@ -407,8 +406,7 @@ const TOOL_DEFINITIONS: Array<
           type: 'string',
           enum: ['summary', 'full'],
           default: 'summary',
-          description:
-            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+          description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
       },
     },
@@ -428,8 +426,7 @@ const TOOL_DEFINITIONS: Array<
           type: 'string',
           enum: ['summary', 'full'],
           default: 'summary',
-          description:
-            'summary: authored package docs are listed by path to stay inside tool-result budgets. full: embed them.',
+          description: KNOWLEDGE_DETAIL_DESCRIPTION,
         },
       },
     },
