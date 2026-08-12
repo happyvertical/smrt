@@ -470,6 +470,10 @@ describe('SvelteKit Route Generator', () => {
 
       const manifest: SmartObjectManifest = {
         packageName: '@test/app',
+        smrtDependencies: [
+          '@happyvertical/smrt-core',
+          '@happyvertical/smrt-fields',
+        ],
         objects: {
           LocalThing: {
             className: 'LocalThing',
@@ -510,11 +514,17 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationContent).toContain(
         "import { ObjectRegistry } from '@happyvertical/smrt-core';",
       );
-      expect(registrationContent).toMatch(
-        /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*\}\);/s,
+      expect(registrationContent).toContain(
+        "import '../../../.smrt/register.js';",
       );
       expect(registrationContent).toMatch(
-        /ObjectRegistry\.register\(ExternalThing,\s*\{\s*name: 'ExternalThing',\s*packageName: '@test\/pkg',\s*\}\);/s,
+        /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*_manifest: smrtRegistrationManifests\['LocalThing'\],\s*_manifestKey: 'LocalThing',\s*\}\);/s,
+      );
+      expect(registrationContent).toMatch(
+        /ObjectRegistry\.register\(ExternalThing,\s*\{\s*name: 'ExternalThing',\s*packageName: '@test\/pkg',\s*_manifest: smrtRegistrationManifests\['@test\/pkg:ExternalThing'\],\s*_manifestKey: '@test\/pkg:ExternalThing',\s*\}\);/s,
+      );
+      expect(registrationContent).toContain(
+        'const smrtRegistrationManifests = JSON.parse(',
       );
     });
 
@@ -560,11 +570,102 @@ describe('SvelteKit Route Generator', () => {
       const registrationContent = registrationCall?.[1] as string;
 
       expect(registrationContent).toMatch(
-        /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*\}\);/s,
+        /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*_manifest: smrtRegistrationManifests\['LocalThing'\],\s*_manifestKey: 'LocalThing',\s*\}\);/s,
       );
       expect(registrationContent).not.toContain(
         'ObjectRegistry.register(UnqualifiedThing, {});',
       );
+    });
+
+    it('isolates same-name package metadata in generated registrations', async () => {
+      vi.mocked(existsSync).mockReturnValue(false);
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          '@test/a:SharedThing': {
+            className: 'SharedThing',
+            collection: 'sharedthings',
+            fields: { alpha: { type: 'text' } },
+            methods: {},
+            packageName: '@test/a',
+            filePath: '/virtual/node_modules/@test/a/dist/SharedThing.js',
+            decoratorConfig: { tableName: 'a_shared_things' },
+            schema: { tableName: 'a_shared_things' },
+          },
+          '@test/b:SharedThing': {
+            className: 'SharedThing',
+            collection: 'sharedthings',
+            fields: { beta: { type: 'number' } },
+            methods: {},
+            packageName: '@test/b',
+            filePath: '/virtual/node_modules/@test/b/dist/SharedThing.js',
+            decoratorConfig: { tableName: 'b_shared_things' },
+            schema: { tableName: 'b_shared_things' },
+          },
+          '@test/c:__smrt_SharedThing_1': {
+            className: '__smrt_SharedThing_1',
+            collection: 'reservedbindings',
+            fields: {},
+            methods: {},
+            packageName: '@test/c',
+            filePath:
+              '/virtual/node_modules/@test/c/dist/__smrt_SharedThing_1.js',
+            decoratorConfig: { tableName: 'reserved_bindings' },
+            schema: { tableName: 'reserved_bindings' },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        configPath: 'src/lib/server',
+      });
+
+      const registrationCall = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().endsWith('src/lib/server/smrt-register.ts'),
+        );
+      const registrationContent = registrationCall?.[1] as string;
+
+      expect(registrationContent).toContain(
+        "import { SharedThing as __smrt_SharedThing_2 } from '@test/a';",
+      );
+      expect(registrationContent).toContain(
+        "import { SharedThing as __smrt_SharedThing_3 } from '@test/b';",
+      );
+      expect(registrationContent).toContain(
+        'ObjectRegistry.register(__smrt_SharedThing_2, {',
+      );
+      expect(registrationContent).toContain(
+        "_manifest: smrtRegistrationManifests['@test/a:SharedThing']",
+      );
+      expect(registrationContent).toContain(
+        "_manifest: smrtRegistrationManifests['@test/b:SharedThing']",
+      );
+
+      const literal = registrationContent.match(
+        /const smrtRegistrationManifests = JSON\.parse\((.+)\);/u,
+      )?.[1];
+      expect(literal).toBeDefined();
+      const manifests = JSON.parse(JSON.parse(literal || '"{}"'));
+      expect(Object.keys(manifests['@test/a:SharedThing'].objects)).toEqual([
+        '@test/a:SharedThing',
+      ]);
+      expect(
+        manifests['@test/a:SharedThing'].objects['@test/a:SharedThing'],
+      ).toMatchObject({
+        fields: { alpha: { type: 'text' } },
+        schema: { tableName: 'a_shared_things' },
+      });
+      expect(
+        manifests['@test/b:SharedThing'].objects['@test/b:SharedThing'],
+      ).toMatchObject({
+        fields: { beta: { type: 'number' } },
+        schema: { tableName: 'b_shared_things' },
+      });
     });
 
     it('should skip explicit re-registration for collection classes', async () => {

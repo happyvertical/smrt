@@ -735,6 +735,14 @@ export interface SmartObjectConfig {
    * @internal Advanced usage - typically set by build tools
    */
   _manifest?: SmartObjectManifest;
+
+  /**
+   * Exact object key inside `_manifest` for generated bundled registration.
+   * Core validates this single-object identity before replacing a prior
+   * decorator registration.
+   * @internal Advanced usage - set only by build tools
+   */
+  _manifestKey?: string;
 }
 
 /**

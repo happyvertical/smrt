@@ -22,6 +22,7 @@ import type {
   MethodDefinition,
   QualifiedClassName,
   SmartObjectDefinition,
+  SmartObjectManifest,
   SmrtVisibility,
 } from '../scanner/types.js';
 import type {
@@ -429,7 +430,12 @@ function resolveTableName(
   config: SmartObjectConfig,
 ): string {
   const manifestEntry = config._manifest
-    ? lookupInManifest(config._manifest, name)
+    ? lookupRegistrationManifest(
+        config._manifest,
+        name,
+        config.packageName,
+        config._manifestKey,
+      )
     : discoverManifestSync(name);
 
   return (
@@ -438,6 +444,54 @@ function resolveTableName(
     config.tableName ||
     tableNameFromClass(ctor)
   );
+}
+
+function lookupRegistrationManifest(
+  manifest: SmartObjectManifest,
+  name: string,
+  _packageName: string | undefined,
+  manifestKey: string | undefined,
+): SmartObjectDefinition | undefined {
+  if (manifestKey) return manifest.objects[manifestKey];
+  // `_manifest` predates generated keyed registrations and accepts package-less,
+  // unqualified manifests. Preserve that public compatibility path. Generated
+  // code supplies `_manifestKey`, which is validated before this lookup and is
+  // therefore never resolved through the ambiguous simple-name index.
+  return lookupInManifest(manifest, name);
+}
+
+function validateIsolatedRegistrationManifest(
+  manifest: SmartObjectManifest,
+  manifestKey: string,
+  name: string,
+  packageName: string,
+): SmartObjectDefinition {
+  const entries = Object.entries(manifest.objects);
+  const targetKey = createQualifiedName(packageName, name);
+  const [actualKey, objectDef] = entries[0] ?? [];
+  const keyMatchesIdentity =
+    actualKey === name ||
+    (isQualifiedName(actualKey || '') && actualKey === targetKey);
+  const packageMatches =
+    (!manifest.packageName || manifest.packageName === packageName) &&
+    (!objectDef?.packageName || objectDef.packageName === packageName);
+
+  if (
+    entries.length !== 1 ||
+    actualKey !== manifestKey ||
+    !keyMatchesIdentity ||
+    objectDef?.className !== name ||
+    !packageMatches ||
+    (objectDef?.qualifiedName !== undefined &&
+      objectDef.qualifiedName !== targetKey)
+  ) {
+    throw new ConfigurationError(
+      `Invalid isolated registration manifest for "${targetKey}".`,
+      'CONFIG_INVALID_ISOLATED_MANIFEST',
+      { manifestKey, targetKey },
+    );
+  }
+  return objectDef;
 }
 
 function setSmrtTableName(ctor: typeof SmrtObject, tableName: string): void {
@@ -492,6 +546,24 @@ export function register(
 ): void {
   const name = config.name || ctor.name;
   const explicitPackageName = config.packageName;
+  let promotedCollectionConstructor: RegisteredClass['collectionConstructor'];
+  let promotedRuntimeConfig: SmartObjectConfig | undefined;
+  let isolatedManifestEntry: SmartObjectDefinition | undefined;
+
+  if (config._manifestKey) {
+    if (!explicitPackageName || !config._manifest) {
+      throw new ConfigurationError(
+        'Generated isolated manifest registration requires packageName and _manifest.',
+        'CONFIG_INVALID_ISOLATED_MANIFEST',
+      );
+    }
+    isolatedManifestEntry = validateIsolatedRegistrationManifest(
+      config._manifest,
+      config._manifestKey,
+      name,
+      explicitPackageName,
+    );
+  }
 
   function upsertExistingEntry(
     existingKey: string,
@@ -583,6 +655,65 @@ export function register(
     explicitPackageName || getPackageName(ctor, true) || undefined;
   const newInBundledContext = isBundledOutputPath(newSourceFile);
 
+  // Generated consumer registration carries both an explicit package and the
+  // exact constructor imported from the production bundle. Treat that pair as
+  // authoritative identity: discard the earlier decorator registration (whose
+  // runtime name/package may have been rewritten by bundling) and rebuild it
+  // from the isolated manifest so fields, schema, and decorator config all
+  // come from the correct object. This avoids guessing identity from paths,
+  // names, or derived table names.
+  const constructorKey = getConstructorIndex().get(ctor);
+  const constructorEntry = constructorKey
+    ? getClasses().get(constructorKey)
+    : undefined;
+  if (
+    constructorKey &&
+    constructorEntry &&
+    Object.is(constructorEntry.constructor, ctor)
+  ) {
+    if (explicitPackageName && isolatedManifestEntry) {
+      const targetKey = createQualifiedName(explicitPackageName, name);
+      const targetEntry = getClasses().get(targetKey);
+      const targetCollectionConstructor = targetEntry?.collectionConstructor;
+      const targetIsManifestStub =
+        targetEntry &&
+        targetEntry !== constructorEntry &&
+        (targetEntry.constructor as { _isManifestStub?: boolean })
+          ._isManifestStub === true;
+
+      if (
+        targetEntry &&
+        targetEntry !== constructorEntry &&
+        !targetIsManifestStub
+      ) {
+        throw new ConfigurationError(
+          `Class registry collision while promoting "${constructorKey}" to "${targetKey}". ` +
+            'A different class is already registered under the target key.',
+          'CONFIG_REGISTRY_PROMOTION_COLLISION',
+          { existingKey: constructorKey, nextKey: targetKey, className: name },
+        );
+      }
+
+      promotedCollectionConstructor =
+        constructorEntry.collectionConstructor || targetCollectionConstructor;
+      // Generated manifests are JSON data and cannot carry runtime-only
+      // values such as function-valued lifecycle hooks. Preserve the exact
+      // constructor's decorator-time config as the lowest-priority layer;
+      // the authoritative manifest and explicit generated config still win
+      // for serializable identity, schema, and policy fields.
+      promotedRuntimeConfig = constructorEntry.config;
+      getClasses().delete(constructorKey);
+      getConstructorIndex().delete(ctor);
+      if (targetIsManifestStub && targetEntry) {
+        getClasses().delete(targetKey);
+        getConstructorIndex().delete(targetEntry.constructor);
+      }
+    } else {
+      upsertExistingEntry(constructorKey, constructorEntry);
+      return;
+    }
+  }
+
   // 1. Exact-match check (existingKey === name)
   if (getClasses().has(name)) {
     const existing = getClasses().get(name);
@@ -613,6 +744,18 @@ export function register(
     const keyMatches = existingKey.toLowerCase() === lowerName;
     const nameMatches = existing.name?.toLowerCase() === lowerName;
     if (!(keyMatches || nameMatches) || existingKey === name) continue;
+
+    // Distinct explicitly named packages are intentionally allowed to export
+    // the same simple class name. Their qualified keys are unambiguous; do not
+    // route them through the bundled-duplicate collision policy.
+    if (
+      explicitPackageName &&
+      existing.packageName &&
+      explicitPackageName !== existing.packageName &&
+      isQualifiedName(existingKey)
+    ) {
+      continue;
+    }
 
     const handled = applyRegisterCollisionPolicy({
       ctor,
@@ -650,7 +793,12 @@ export function register(
   // Issue #713: Use lookupInManifest for qualified name support
   let manifestEntry: ReturnType<typeof lookupInManifest> | undefined;
   if (config._manifest) {
-    manifestEntry = lookupInManifest(config._manifest, name);
+    manifestEntry = lookupRegistrationManifest(
+      config._manifest,
+      name,
+      explicitPackageName,
+      config._manifestKey,
+    );
   }
   if (!manifestEntry) {
     manifestEntry = discoverManifestSync(name);
@@ -747,7 +895,9 @@ export function register(
 
   // Apply decorator metadata to override/extend manifest fields
   // Decorators take priority over AST-scanned types (Issue #316)
-  const decorators = getFieldDecorators().get(name);
+  const decorators = getFieldDecorators().get(
+    isolatedManifestEntry ? ctor.name : name,
+  );
   if (decorators && decorators.size > 0) {
     verboseLog(
       `[registry] Applying ${decorators.size} field decorators for ${name}`,
@@ -1038,6 +1188,7 @@ export function register(
   // Merge manifest's decoratorConfig into config
   // Use the computed tableName which prioritizes manifest's value for STI correctness
   const mergedConfig = {
+    ...promotedRuntimeConfig,
     ...manifestEntry?.decoratorConfig,
     ...config,
     tableName, // Override with correctly computed tableName
@@ -1073,6 +1224,7 @@ export function register(
     // simple pluralization the scanner uses for inline/test classes that have
     // no manifest entry. (smrt#1311.)
     collection: manifestEntry?.collection ?? pluralizeCollection(name),
+    collectionConstructor: promotedCollectionConstructor,
     packageName, // Store package name from manifest for getPackageName() lookup
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain

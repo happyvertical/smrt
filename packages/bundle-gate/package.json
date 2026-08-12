@@ -22,8 +22,11 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-chat": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-fields": "workspace:*",
     "@happyvertical/smrt-messages": "workspace:*",
     "@happyvertical/smrt-personas": "workspace:*",
+    "@libsql/client": "0.17.2",
     "@types/node": "24.13.2",
     "typescript": "5.9.3",
     "vite": "8.1.4",

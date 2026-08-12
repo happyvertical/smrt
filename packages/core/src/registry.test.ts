@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   OverwriteTestObject,
   RegistryTestProduct,
@@ -1036,6 +1036,7 @@ describe('ObjectRegistry', () => {
             },
           },
         } as any,
+        _manifestKey: 'BundledSecret',
       });
 
       const registered = ObjectRegistry.getClassByConstructor(
@@ -1045,6 +1046,130 @@ describe('ObjectRegistry', () => {
       expect(registered?.qualifiedName).toBe('@test/pkg:BundledSecret');
       expect(registered?.schema.tableName).toBe('bundled_secrets');
       expect((BundledSecret as any).SMRT_TABLE_NAME).toBe('bundled_secrets');
+    });
+
+    it('rejects invalid isolated manifests before changing constructor identity', () => {
+      class SafePromotionTarget extends SmrtObject {}
+
+      ObjectRegistry.register(SafePromotionTarget, {
+        name: 'SafePromotionTarget',
+        tableName: 'safe_promotion_targets',
+      });
+      const original =
+        ObjectRegistry.getClassByConstructor(SafePromotionTarget);
+
+      const validObject = {
+        className: 'SafePromotionTarget',
+        packageName: '@test/safe',
+        fields: { safeField: { type: 'text' } },
+        methods: {},
+        decoratorConfig: { tableName: 'safe_promotion_targets' },
+        schema: {
+          tableName: 'safe_promotion_targets',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test',
+        },
+      };
+      const invalidManifests = [
+        {
+          manifest: {
+            packageName: '@test/safe',
+            objects: {
+              '@test/safe:SafePromotionTarget': validObject,
+              '@test/safe:Other': {
+                ...validObject,
+                className: 'Other',
+              },
+            },
+          },
+          key: '@test/safe:SafePromotionTarget',
+        },
+        {
+          manifest: {
+            packageName: '@test/evil',
+            objects: {
+              '@test/safe:SafePromotionTarget': {
+                ...validObject,
+                packageName: '@test/evil',
+              },
+            },
+          },
+          key: '@test/safe:SafePromotionTarget',
+        },
+        {
+          manifest: { packageName: '@test/safe', objects: {} },
+          key: '@test/safe:SafePromotionTarget',
+        },
+        {
+          manifest: {
+            packageName: '@test/safe',
+            objects: { '@test/safe:SafePromotionTarget': undefined },
+          },
+          key: '@test/safe:SafePromotionTarget',
+        },
+      ];
+
+      for (const { manifest, key } of invalidManifests) {
+        expect(() =>
+          ObjectRegistry.register(SafePromotionTarget, {
+            name: 'SafePromotionTarget',
+            packageName: '@test/safe',
+            _manifest: manifest as any,
+            _manifestKey: key,
+          }),
+        ).toThrow('Invalid isolated registration manifest');
+        expect(ObjectRegistry.getClassByConstructor(SafePromotionTarget)).toBe(
+          original,
+        );
+        expect(original?.schema.tableName).toBe('safe_promotion_targets');
+      }
+    });
+
+    it('preserves runtime-only hooks when promoting a bundled constructor', async () => {
+      const beforeSave = vi.fn(async () => {});
+      class BundledHookTarget2 extends SmrtObject {
+        async triggerBeforeSave(): Promise<void> {
+          await this.runHook('beforeSave');
+        }
+      }
+
+      ObjectRegistry.register(BundledHookTarget2, {
+        hooks: { beforeSave },
+      });
+      ObjectRegistry.register(BundledHookTarget2, {
+        name: 'BundledHookTarget',
+        packageName: '@test/hooks',
+        _manifest: {
+          packageName: '@test/hooks',
+          objects: {
+            '@test/hooks:BundledHookTarget': {
+              className: 'BundledHookTarget',
+              packageName: '@test/hooks',
+              fields: {},
+              methods: {},
+              decoratorConfig: { tableName: 'bundled_hook_targets' },
+              schema: {
+                tableName: 'bundled_hook_targets',
+                ddl: '',
+                columns: {},
+                indexes: [],
+                version: 'test',
+              },
+            },
+          },
+        } as any,
+        _manifestKey: '@test/hooks:BundledHookTarget',
+      });
+
+      const registration =
+        ObjectRegistry.getClassByConstructor(BundledHookTarget2);
+      expect(registration?.name).toBe('BundledHookTarget');
+      expect(registration?.config.hooks?.beforeSave).toBe(beforeSave);
+
+      await new BundledHookTarget2().triggerBeforeSave();
+      expect(beforeSave).toHaveBeenCalledOnce();
     });
 
     it('should preserve text idType in fallback schema aggregation', () => {

@@ -492,12 +492,21 @@ importers:
       '@happyvertical/smrt-chat':
         specifier: workspace:*
         version: link:../chat
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-fields':
+        specifier: workspace:*
+        version: link:../fields
       '@happyvertical/smrt-messages':
         specifier: workspace:*
         version: link:../messages
       '@happyvertical/smrt-personas':
         specifier: workspace:*
         version: link:../personas
+      '@libsql/client':
+        specifier: 0.17.2
+        version: 0.17.2
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2

@@ -33,6 +33,13 @@ from the bundle".
   `@happyvertical/smrt-messages/providers/all` and asserts the SDK wrappers
   ARE reachable again — providers stay available to consumers that opt in.
 
+`src/__tests__/registry-identity.spec.ts` bundles and executes a fresh Node
+consumer of `smrt-core` and `smrt-fields`. It protects provider ownership,
+manifest fields, collection resolution, and storage table identity when Rollup
+flattens or renames provider constructors. Keep the behavioral assertions for
+qualified same-name coexistence, renamed constructors, fresh-database empty
+listing, and provider-manifest non-adoption of consumer classes.
+
 The specs build from **dist** via package export maps (no workspace src
 aliases), so run `pnpm build` for chat/personas/messages first; in CI turbo's
 `test` task already depends on `^build`.

@@ -118,6 +118,19 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   return {
     name: 'smrt-consumer',
 
+    config() {
+      return {
+        build: {
+          rollupOptions: {
+            // Runtime registration evaluates provider entry points so their
+            // exact constructors can be registered. Leave optional native
+            // provider binaries to Node instead of parsing them as JavaScript.
+            external: [/\.node$/],
+          },
+        },
+      };
+    },
+
     async buildStart() {
       console.log('[smrt:consumer] Initializing SMRT consumer plugin');
 
@@ -487,9 +500,29 @@ async function generateRegistrationFile(
   const smrtDir = path.join(projectRoot, '.smrt');
   const registerPath = path.join(smrtDir, 'register.js');
 
-  // Build import statements and registrations
-  const imports: string[] = [];
+  // Bind every imported symbol to a generated local name. Aggregated manifests
+  // may contain same-named exports from different packages (and may list a
+  // collection both beside its object and as its own manifest entry), so using
+  // provider export names as local bindings can produce invalid duplicate
+  // imports in a production consumer bundle.
+  const importBindings = new Map<string, string>();
+  const importsByPath = new Map<string, Map<string, string>>();
+  let nextImportBinding = 0;
+  const getImportBinding = (importPath: string, exportName: string): string => {
+    const key = `${importPath}\0${exportName}`;
+    const existing = importBindings.get(key);
+    if (existing) return existing;
+    const binding = `__smrt_consumer_${nextImportBinding++}`;
+    importBindings.set(key, binding);
+    const specifiers =
+      importsByPath.get(importPath) ?? new Map<string, string>();
+    specifiers.set(exportName, binding);
+    importsByPath.set(importPath, specifiers);
+    return binding;
+  };
+
   const registrations: string[] = [];
+  const registrationManifests: Record<string, ConsumerManifest> = {};
   let importedEntryCount = 0;
   let registeredObjectCount = 0;
 
@@ -563,34 +596,36 @@ async function generateRegistrationFile(
     const hasCollection = def.hasCollection; // Check if collection class actually exists
     const tableName = def.collection || objectName.toLowerCase();
 
-    // Generate import statement
-    // Only import collection if it exists (hasCollection is truthy)
-    if (hasCollection && collectionExportName) {
-      imports.push(
-        `import { ${exportName}, ${collectionExportName} } from '${importPath}';`,
-      );
-    } else {
-      imports.push(`import { ${exportName} } from '${importPath}';`);
-    }
+    const exportBinding = getImportBinding(importPath, exportName);
+    const collectionBinding =
+      hasCollection && collectionExportName
+        ? getImportBinding(importPath, collectionExportName)
+        : undefined;
     importedEntryCount++;
 
     if (isCollectionClass(def)) {
       continue;
     }
 
-    // Generate registration calls
-    // The import above already triggers the @smrt() decorator which registers the class
-    // properly with its simple name and qualified name. We call register() again with
-    // an empty config just to ensure the class is registered (in case it lacks a decorator).
-    // Do NOT pass { name: qualifiedName } as that creates a separate registry entry.
+    const logicalName = def.className || exportName;
+    registrationManifests[objectName] = {
+      ...manifest,
+      packageName: def.packageName,
+      packageVersion: def.packageVersion || manifest.packageVersion,
+      objects: { [objectName]: def },
+    };
+
+    // Import evaluation triggers the provider decorator first. The explicit
+    // constructor/package/key tuple then promotes that exact constructor with
+    // its isolated manifest, which is stable across Rollup name deconfliction.
     registrations.push(
-      `ObjectRegistry.register(${exportName}, { name: ${JSON.stringify(exportName)}, packageName: ${JSON.stringify(def.packageName)} });`,
+      `if (${exportBinding}) ObjectRegistry.register(${exportBinding}, { name: ${JSON.stringify(logicalName)}, packageName: ${JSON.stringify(def.packageName)}, _manifest: smrtRegistrationManifests[${JSON.stringify(objectName)}], _manifestKey: ${JSON.stringify(objectName)} });`,
     );
 
     // Only register collection if it exists
-    if (hasCollection && collectionExportName) {
+    if (collectionBinding) {
       registrations.push(
-        `ObjectRegistry.registerCollection('${tableName}', ${collectionExportName});`,
+        `if (${collectionBinding}) ObjectRegistry.registerCollection('${tableName}', ${collectionBinding});`,
       );
     }
 
@@ -605,6 +640,24 @@ async function generateRegistrationFile(
 
   const registeredObjectLabel =
     registeredObjectCount === 1 ? 'object' : 'objects';
+  const sortedImports = Array.from(importsByPath.entries()).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  const imports = sortedImports.map(
+    ([importPath], index) =>
+      `import * as __smrt_provider_${index} from '${importPath}';`,
+  );
+  const importDeclarations = sortedImports.flatMap(([, specifiers], index) =>
+    Array.from(specifiers.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(
+        ([exportName, binding]) =>
+          `const ${binding} = getSmrtExport(__smrt_provider_${index}, ${JSON.stringify(exportName)});`,
+      ),
+  );
+  const registrationManifestLiteral = JSON.stringify(
+    JSON.stringify(registrationManifests),
+  );
 
   // Generate file content
   const content = `/**
@@ -618,6 +671,17 @@ async function generateRegistrationFile(
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 ${imports.join('\n')}
+
+/**
+ * @param {Record<string, unknown>} provider
+ * @param {string} exportName
+ * @returns {any}
+ */
+const getSmrtExport = (provider, exportName) =>
+  typeof provider[exportName] === 'function' ? provider[exportName] : undefined;
+${importDeclarations.join('\n')}
+
+const smrtRegistrationManifests = JSON.parse(${registrationManifestLiteral});
 
 // Register all objects (executed during module evaluation)
 ${registrations.join('\n')}
