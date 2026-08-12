@@ -1054,7 +1054,11 @@ function restEndpointsFrom(
   const apiConfig = configObject(object.decoratorConfig).api;
   const endpoints: WorkbenchRestEndpointSummary[] = [];
 
-  for (const action of enabledCrudActions(apiConfig)) {
+  const crudActions =
+    stringValue(object.extends) === 'SmrtCollection'
+      ? []
+      : enabledCrudActions(apiConfig);
+  for (const action of crudActions) {
     const route =
       action === 'list'
         ? ['GET', `/api/v1/${collection}`, `List ${className} objects`]
@@ -1679,7 +1683,11 @@ export async function discoverWorkbenchTargets(
   const targets = await discoverInstalledWorkbenches(projectRoot);
   const localPath = resolve(projectRoot, localWorkbenchPath);
   if (existsSync(localPath)) {
+    const localPackageJson = readJsonIfExists<PackageJsonLike>(
+      join(projectRoot, 'package.json'),
+    );
     targets.push({
+      packageName: localPackageJson?.name,
       source: 'app',
       sourcePath: localPath,
     });

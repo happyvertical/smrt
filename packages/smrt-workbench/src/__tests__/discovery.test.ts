@@ -133,6 +133,18 @@ describe('buildWorkbenchProject', () => {
         ]),
       }),
     );
+    expect(project.packages[0]?.api.restEndpoints).not.toContainEqual(
+      expect.objectContaining({
+        objectName: 'ContentContributions',
+        action: 'list',
+      }),
+    );
+    expect(project.packages[0]?.api.restEndpoints).toContainEqual(
+      expect.objectContaining({
+        objectName: 'ContentContributions',
+        action: 'submitWebContribution',
+      }),
+    );
     expect(project.packages[0]?.api.cliCommands).toContainEqual(
       expect.objectContaining({
         command: 'content:list',
@@ -187,5 +199,37 @@ describe('discoverWorkbenchTargets', () => {
     expect(targets.map((target) => target.packageName)).toEqual([
       '@happyvertical/smrt-content',
     ]);
+  });
+
+  it('retains a focused consumer app workbench module', async () => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'smrt-consumer-'));
+    mkdirSync(join(projectRoot, 'src'), { recursive: true });
+    writeFileSync(
+      join(projectRoot, 'package.json'),
+      JSON.stringify({ name: 'consumer-app' }),
+    );
+    writeFileSync(
+      join(projectRoot, 'src', 'workbench.ts'),
+      'export default {};',
+    );
+
+    try {
+      const targets = await discoverWorkbenchTargets(
+        projectRoot,
+        'consumer',
+        'src/workbench.ts',
+        'consumer-app',
+      );
+
+      expect(targets).toEqual([
+        expect.objectContaining({
+          packageName: 'consumer-app',
+          source: 'app',
+          sourcePath: join(projectRoot, 'src', 'workbench.ts'),
+        }),
+      ]);
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
   });
 });
