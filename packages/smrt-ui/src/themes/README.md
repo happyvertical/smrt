@@ -277,14 +277,14 @@ Import the theme styles in your app entry point:
 
 ```ts
 // Import all themes (for runtime switching)
-import '@smrt/svelte/themes/styles/all.css';
+import '@happyvertical/smrt-ui/themes/styles/all.css';
 
 // Or import specific theme only
-import '@smrt/svelte/themes/styles/material.css';
-import '@smrt/svelte/themes/styles/glass.css';
-import '@smrt/svelte/themes/styles/studio.css';
-import '@smrt/svelte/themes/styles/smrt.css';
-import '@smrt/svelte/themes/styles/happyvertical.css';
+import '@happyvertical/smrt-ui/themes/styles/material.css';
+import '@happyvertical/smrt-ui/themes/styles/glass.css';
+import '@happyvertical/smrt-ui/themes/styles/studio.css';
+import '@happyvertical/smrt-ui/themes/styles/smrt.css';
+import '@happyvertical/smrt-ui/themes/styles/happyvertical.css';
 ```
 
 ## ThemeProvider Props
@@ -305,7 +305,7 @@ Use the context to switch themes programmatically:
 
 ```svelte
 <script>
-  import { getThemeContext, ThemeSwitcher } from '@smrt/svelte/themes';
+  import { getThemeContext, ThemeSwitcher } from '@happyvertical/smrt-ui/themes';
   
   const theme = getThemeContext();
   
@@ -628,7 +628,7 @@ For SSR or static sites, import CSS directly and set data attributes:
 
 ```svelte
 <script>
-  import { getThemeContext } from '@smrt/svelte/themes';
+  import { getThemeContext } from '@happyvertical/smrt-ui/themes';
   
   const theme = getThemeContext();
   
@@ -645,7 +645,7 @@ For SSR or static sites, import CSS directly and set data attributes:
 
 ```svelte
 <script>
-  import { getThemeContext } from '@smrt/svelte/themes';
+  import { getThemeContext } from '@happyvertical/smrt-ui/themes';
   
   const theme = getThemeContext();
   
@@ -661,17 +661,17 @@ For SSR or static sites, import CSS directly and set data attributes:
 
 ## Migration from Legacy Theme
 
-The legacy theme system (`@smrt/svelte/theme`) is still available but deprecated. To migrate:
+The legacy theme system (`@happyvertical/smrt-ui/theme`) is still available but deprecated. To migrate:
 
-1. Import from `@smrt/svelte/themes` instead
+1. Import from `@happyvertical/smrt-ui/themes` instead
 2. Wrap app with new `<ThemeProvider>` from themes
 3. Import theme CSS files
 4. Update any theme context usage to new API
 
 ```diff
-- import { ThemeProvider } from '@smrt/svelte/theme';
-+ import { ThemeProvider } from '@smrt/svelte/themes';
-+ import '@smrt/svelte/themes/styles/all.css';
+- import { ThemeProvider } from '@happyvertical/smrt-ui/theme';
++ import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
++ import '@happyvertical/smrt-ui/themes/styles/all.css';
 ```
 
 ## Troubleshooting
