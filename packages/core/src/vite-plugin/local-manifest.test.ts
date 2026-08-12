@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { resolveConfig } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { smrtPlugin } from './index';
 
@@ -207,6 +208,47 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     );
     expect(existsSync(join(invokingRoot, generatedRoute))).toBe(false);
     expect(existsSync(join(invokingRoot, '.gitignore'))).toBe(false);
+  });
+
+  it('generates routes before SvelteKit inventories a clean checkout (#2313)', async () => {
+    createLocalSmrtObject(tmpDir);
+    const generatedRoute = join(
+      tmpDir,
+      'src/routes/api/localthings/+server.ts',
+    );
+    let routeExistedDuringConfig = false;
+
+    await resolveConfig(
+      {
+        root: tmpDir,
+        configFile: false,
+        logLevel: 'silent',
+        plugins: [
+          {
+            name: 'sveltekit-route-inventory-fixture',
+            config: {
+              order: 'pre',
+              handler() {
+                routeExistedDuringConfig = existsSync(generatedRoute);
+              },
+            },
+          },
+          smrtPlugin({
+            include: ['src/**/*.ts'],
+            generateTypes: false,
+            svelteKit: {
+              enabled: true,
+              routesDir: 'src/routes/api',
+              objectsDir: 'src',
+            },
+          }),
+        ],
+      },
+      'build',
+    );
+
+    expect(routeExistedDuringConfig).toBe(true);
+    expect(existsSync(generatedRoute)).toBe(true);
   });
 
   it('writes domain knowledge when config omits this package override', async () => {
