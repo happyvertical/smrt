@@ -3,15 +3,20 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import type {
   DomainKnowledgeConfig,
+  DomainKnowledgeField,
+  DomainKnowledgeFieldConstraints,
   DomainKnowledgeManifest,
+  DomainKnowledgeMethodSignature,
   DomainKnowledgeModuleDoc,
   DomainKnowledgeObject,
   DomainKnowledgeSurface,
+  DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from './scanner/types.js';
+import { toSnakeCase } from './utils/naming.js';
 
 /**
  * Minimal package.json shape consumed by the knowledge builder.
@@ -151,6 +156,7 @@ export function buildDomainKnowledgeManifest(
 
   return {
     schemaVersion: 1,
+    sensitiveFieldsExcluded: true,
     generatedAt: new Date().toISOString(),
     packageName,
     packageVersion,
@@ -200,13 +206,36 @@ function buildKnowledgeObject(
     typeof object.decoratorConfig?.knowledge === 'object'
       ? object.decoratorConfig.knowledge
       : {};
-  const fields = Object.entries(object.fields).map(([name, field]) => ({
-    name,
-    type: field.type,
-    required: field.required,
-    related: field.related,
-    columnType: columnType(object, name),
-  }));
+  const fields = Object.entries(object.fields)
+    .filter(([, field]) => !isSensitiveField(field))
+    .map(([name, field]): DomainKnowledgeField => {
+      const defaultValue = fieldValue(field, 'default');
+      return {
+        name,
+        type: field.type,
+        required: field.required,
+        related: field.related,
+        columnType: columnType(object, name),
+        ...(defaultValue.present ? { default: defaultValue.value } : {}),
+        constraints: fieldConstraints(field),
+        readonly:
+          field.readonly === true || field._meta?.readonly === true
+            ? true
+            : undefined,
+        transient:
+          field.transient === true || field._meta?.transient === true
+            ? true
+            : undefined,
+      };
+    });
+  const sensitiveIdentifiers = sensitiveFieldIdentifiers(object.fields);
+  const tenant = sanitizeTenantFacts(
+    tenantFacts(object.decoratorConfig?.tenantScoped),
+    sensitiveIdentifiers,
+  );
+  const conflictColumns = object.decoratorConfig?.conflictColumns?.filter(
+    (column) => !sensitiveIdentifiers.has(column),
+  );
   const relationships = fields
     .filter((field) => RELATIONSHIP_FIELD_TYPES.has(field.type))
     .map((field) => ({
@@ -228,12 +257,117 @@ function buildKnowledgeObject(
     fields,
     relationships,
     methods: Object.keys(object.methods).sort(),
+    methodSignatures: methodSignatures(object),
+    tenant,
+    tableStrategy: object.decoratorConfig?.tableStrategy,
+    conflictColumns:
+      conflictColumns && conflictColumns.length > 0
+        ? conflictColumns
+        : undefined,
     surfaces: objectSurfaces(object),
-    relationshipFeatures: relationshipFeatures(object),
+    relationshipFeatures: relationshipFeatures(object, fields),
     tags: knowledge.tags ?? [],
     summary: knowledge.summary,
     risks: knowledge.risks ?? [],
   };
+}
+
+function isSensitiveField(field: SmartObjectDefinition['fields'][string]) {
+  return field.sensitive === true || field._meta?.sensitive === true;
+}
+
+function sensitiveFieldIdentifiers(
+  fields: SmartObjectDefinition['fields'],
+): Set<string> {
+  return new Set(
+    Object.entries(fields)
+      .filter(([, field]) => isSensitiveField(field))
+      .flatMap(([name]) => [name, toSnakeCase(name), camelToSnake(name)]),
+  );
+}
+
+function fieldValue(
+  field: SmartObjectDefinition['fields'][string],
+  key: 'default' | 'min' | 'max' | 'minLength' | 'maxLength',
+): { present: boolean; value: unknown } {
+  if (Object.hasOwn(field, key)) {
+    return { present: field[key] !== undefined, value: field[key] };
+  }
+  const value = field._meta?.[key];
+  return { present: value !== undefined, value };
+}
+
+function fieldConstraints(
+  field: SmartObjectDefinition['fields'][string],
+): DomainKnowledgeFieldConstraints | undefined {
+  const constraints: DomainKnowledgeFieldConstraints = {};
+  for (const key of ['min', 'max', 'minLength', 'maxLength'] as const) {
+    const value = fieldValue(field, key);
+    if (value.present && typeof value.value === 'number') {
+      constraints[key] = value.value;
+    }
+  }
+  const pattern = normalizePattern(
+    (field as { pattern?: unknown }).pattern ?? field._meta?.pattern,
+  );
+  if (pattern !== undefined) constraints.pattern = pattern;
+  return Object.keys(constraints).length > 0 ? constraints : undefined;
+}
+
+function normalizePattern(pattern: unknown): string | undefined {
+  if (typeof pattern === 'string') return pattern;
+  if (pattern instanceof RegExp) return pattern.source;
+  if (
+    pattern &&
+    typeof pattern === 'object' &&
+    typeof (pattern as { source?: unknown }).source === 'string'
+  ) {
+    return (pattern as { source: string }).source;
+  }
+  return undefined;
+}
+
+function tenantFacts(
+  tenantScoped: SmartObjectDefinition['decoratorConfig']['tenantScoped'],
+): DomainKnowledgeTenant | undefined {
+  if (!tenantScoped) return undefined;
+  if (tenantScoped === true) {
+    return { scoped: true, mode: 'required', field: 'tenantId' };
+  }
+  return {
+    scoped: true,
+    mode: tenantScoped.mode ?? 'required',
+    field: tenantScoped.field ?? 'tenantId',
+  };
+}
+
+function sanitizeTenantFacts(
+  tenant: DomainKnowledgeTenant | undefined,
+  sensitiveIdentifiers: Set<string>,
+): DomainKnowledgeTenant | undefined {
+  if (!tenant?.field || !sensitiveIdentifiers.has(tenant.field)) return tenant;
+  return { scoped: tenant.scoped, mode: tenant.mode };
+}
+
+function methodSignatures(
+  object: SmartObjectDefinition,
+): DomainKnowledgeMethodSignature[] | undefined {
+  const signatures = Object.values(object.methods)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((method) => ({
+      name: method.name,
+      async: method.async || undefined,
+      static: method.isStatic || undefined,
+      params:
+        method.parameters.length > 0
+          ? method.parameters.map(
+              (parameter) =>
+                `${parameter.name}${parameter.optional ? '?' : ''}: ${parameter.type}`,
+            )
+          : undefined,
+      returns: method.returnType || undefined,
+    }));
+  return signatures.length > 0 ? signatures : undefined;
 }
 
 function objectSurfaces(
@@ -321,9 +455,12 @@ function apiMethod(operation: string): string {
   }
 }
 
-function relationshipFeatures(object: SmartObjectDefinition): string[] {
+function relationshipFeatures(
+  object: SmartObjectDefinition,
+  fields: DomainKnowledgeField[],
+): string[] {
   const features = new Set<string>();
-  for (const field of Object.values(object.fields)) {
+  for (const field of fields) {
     if (field.type === 'foreignKey') features.add('foreignKey');
     if (field.type === 'crossPackageRef') features.add('crossPackageRef');
     if (field.type === 'oneToMany') features.add('oneToMany');
@@ -333,8 +470,8 @@ function relationshipFeatures(object: SmartObjectDefinition): string[] {
   if (object.extends === 'SmrtHierarchical') features.add('SmrtHierarchical');
   if (
     object.extends === 'SmrtPolymorphicAssociation' ||
-    object.fields.metaType ||
-    object.fields.metaId
+    fields.some((field) => field.name === 'metaType') ||
+    fields.some((field) => field.name === 'metaId')
   ) {
     features.add('SmrtPolymorphicAssociation');
   }

@@ -79,6 +79,69 @@ describe('buildDomainKnowledgeManifest', () => {
     );
   });
 
+  it('projects structural facts without exposing sensitive fields', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const order = artifact.objects.find((object) => object.name === 'Order');
+
+    expect(artifact.schemaVersion).toBe(1);
+    expect(artifact.sensitiveFieldsExcluded).toBe(true);
+    expect(order).toMatchObject({
+      tenant: { scoped: true, mode: 'required', field: 'tenantId' },
+      tableStrategy: 'sti',
+      conflictColumns: ['tenant_id', 'profile_id'],
+      methods: ['approve'],
+      methodSignatures: [
+        {
+          name: 'approve',
+          async: true,
+          static: true,
+          params: ['reason?: string'],
+          returns: 'Promise<void>',
+        },
+      ],
+    });
+    expect(
+      artifact.objects.find((object) => object.name === 'OrderLinks'),
+    ).toMatchObject({
+      relationshipFeatures: ['SmrtJunction', 'foreignKey'],
+      conflictColumns: ['order_id', 'item_id'],
+    });
+    expect(order?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'attempts',
+          default: 0,
+          constraints: { min: 0, max: 3 },
+          readonly: true,
+        }),
+        expect.objectContaining({ name: 'active', default: false }),
+        expect.objectContaining({
+          name: 'reference',
+          constraints: { minLength: 2, maxLength: 24, pattern: '^[A-Z]+' },
+        }),
+        expect.objectContaining({ name: 'preview', transient: true }),
+      ]),
+    );
+    expect(order?.fields.map((field) => field.name)).not.toEqual(
+      expect.arrayContaining(['secretId', 'legacySecretId', 'apiTokenID']),
+    );
+    expect(order?.relationships.map((field) => field.name)).not.toEqual(
+      expect.arrayContaining(['secretId', 'legacySecretId', 'apiTokenID']),
+    );
+  });
+
+  it('redacts a sensitive tenant field identity while retaining tenant scope', () => {
+    const manifest = fixtureManifest();
+    manifest.objects['@example/orders:Order'].decoratorConfig.tenantScoped = {
+      field: 'secretId',
+      mode: 'optional',
+    };
+    const artifact = buildDomainKnowledgeManifest({ manifest, rootDir });
+    const order = artifact.objects.find((object) => object.name === 'Order');
+
+    expect(order?.tenant).toEqual({ scoped: true, mode: 'optional' });
+  });
+
   it('preserves relationship details and relationships-v2 counts', () => {
     const artifact = buildFixtureArtifact(rootDir);
     const order = artifact.objects.find((object) => object.name === 'Order');
@@ -99,7 +162,7 @@ describe('buildDomainKnowledgeManifest', () => {
       ]),
     );
     expect(artifact.relationshipsV2).toMatchObject({
-      foreignKeyFields: 1,
+      foreignKeyFields: 3,
       crossPackageRefFields: 1,
       junctionCollections: 1,
       hierarchicalObjects: 1,
@@ -109,10 +172,23 @@ describe('buildDomainKnowledgeManifest', () => {
 
   it('records stable source hashes', () => {
     const artifact = buildFixtureArtifact(rootDir);
+    const rebuilt = buildFixtureArtifact(rootDir);
+    const changedManifest = fixtureManifest();
+    changedManifest.objects[
+      '@example/orders:Order'
+    ].decoratorConfig.conflictColumns = ['tenant_id', 'reference'];
+    const changed = buildDomainKnowledgeManifest({
+      manifest: changedManifest,
+      rootDir,
+    });
 
     expect(artifact.sourceHashes).toHaveProperty('packageJson');
     expect(artifact.sourceHashes).toHaveProperty('agents');
     expect(artifact.sourceHashes).toHaveProperty('manifest');
+    expect(rebuilt.sourceHashes).toEqual(artifact.sourceHashes);
+    expect(changed.sourceHashes.manifest).not.toBe(
+      artifact.sourceHashes.manifest,
+    );
   });
 
   it('omits moduleDocs when AGENTS.md links no sibling docs', () => {
@@ -273,14 +349,48 @@ function fixtureManifest(): SmartObjectManifest {
             type: 'crossPackageRef',
             related: '@happyvertical/smrt-profiles:Profile',
           },
+          attempts: {
+            type: 'integer',
+            default: 0,
+            min: 0,
+            max: 3,
+            readonly: true,
+          },
+          active: { type: 'boolean', default: false },
+          reference: {
+            type: 'text',
+            _meta: {
+              minLength: 2,
+              maxLength: 24,
+              pattern: { source: '^[A-Z]+' },
+            },
+          },
+          preview: { type: 'text', _meta: { transient: true } },
+          secretId: {
+            type: 'foreignKey',
+            related: 'Secret',
+            sensitive: true,
+          },
+          legacySecretId: {
+            type: 'foreignKey',
+            related: 'LegacySecret',
+            _meta: { sensitive: true },
+          },
+          apiTokenID: { type: 'text', _meta: { sensitive: true } },
         },
         methods: {
           approve: {
             name: 'approve',
             async: true,
-            parameters: [],
+            parameters: [
+              {
+                name: 'reason',
+                type: 'string',
+                optional: true,
+              },
+            ],
             returnType: 'Promise<void>',
-            isStatic: false,
+            isStatic: true,
             isPublic: true,
           },
         },
@@ -288,6 +398,15 @@ function fixtureManifest(): SmartObjectManifest {
           api: true,
           cli: { include: ['approve'] },
           mcp: { include: ['get', 'approve'] },
+          tenantScoped: true,
+          tableStrategy: 'sti',
+          conflictColumns: [
+            'tenant_id',
+            'profile_id',
+            'secret_id',
+            'legacy_secret_id',
+            'api_token_i_d',
+          ],
           knowledge: {
             tags: ['payments'],
             summary: 'Order aggregate',
@@ -308,9 +427,12 @@ function fixtureManifest(): SmartObjectManifest {
         className: 'OrderLinks',
         qualifiedName: '@example/orders:OrderLinks',
         collection: 'order_links',
-        fields: {},
+        fields: {
+          orderId: { type: 'foreignKey', related: 'Order', required: true },
+          itemId: { type: 'foreignKey', related: 'Item', required: true },
+        },
         methods: {},
-        decoratorConfig: {},
+        decoratorConfig: { conflictColumns: ['order_id', 'item_id'] },
         extends: 'SmrtJunction',
       },
       '@example/orders:OrderTree': {

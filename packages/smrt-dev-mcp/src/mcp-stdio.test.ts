@@ -1,9 +1,11 @@
 import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, '..');
@@ -12,15 +14,145 @@ const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx');
 
 let activeClient: Client | undefined;
 let activeTransport: StdioClientTransport | undefined;
+let fixtureRoot: string;
+let installedRoot: string;
+
+async function writeFixturePackage(options: {
+  directory: string;
+  name: string;
+  className: string;
+  collection: string;
+}) {
+  const directory = join(fixtureRoot, 'packages', options.directory);
+  await mkdir(join(directory, 'src', 'manifest'), { recursive: true });
+  await mkdir(join(directory, 'src', 'models'), { recursive: true });
+  await writeFile(
+    join(directory, 'package.json'),
+    JSON.stringify({
+      name: options.name,
+      version: '1.0.0',
+      type: 'module',
+      private: true,
+    }),
+  );
+  await writeFile(
+    join(directory, 'AGENTS.md'),
+    `# ${options.className}\n\nFixture package guidance.\n`,
+  );
+  await writeFile(join(directory, 'CLAUDE.md'), '@AGENTS.md\n');
+  await writeFile(
+    join(directory, 'src', 'models', `${options.className}.ts`),
+    `export class ${options.className} {}\n`,
+  );
+  await writeFile(
+    join(directory, 'src', 'manifest', 'manifest.json'),
+    JSON.stringify({
+      version: '1',
+      packageName: options.name,
+      objects: {
+        [`${options.name}:${options.className}`]: {
+          className: options.className,
+          qualifiedName: `${options.name}:${options.className}`,
+          extends: 'SmrtObject',
+          collection: options.collection,
+          fields: {
+            title: { type: 'text', required: true },
+          },
+        },
+      },
+    }),
+  );
+}
+
+async function createFixtureWorkspace() {
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'smrt-dev-mcp-stdio-'));
+  await writeFile(
+    join(fixtureRoot, 'package.json'),
+    JSON.stringify({
+      name: 'mcp-stdio-fixture',
+      private: true,
+      dependencies: { '@happyvertical/smrt-jobs': '1.0.0' },
+    }),
+  );
+  await writeFile(
+    join(fixtureRoot, 'pnpm-workspace.yaml'),
+    "packages:\n  - 'packages/*'\n",
+  );
+  await writeFixturePackage({
+    directory: 'content',
+    name: '@happyvertical/smrt-content',
+    className: 'Article',
+    collection: 'articles',
+  });
+  await writeFixturePackage({
+    directory: 'profiles',
+    name: '@happyvertical/smrt-profiles',
+    className: 'Profile',
+    collection: 'profiles',
+  });
+
+  installedRoot = await mkdtemp(join(tmpdir(), 'smrt-dev-mcp-installed-'));
+  const installedPackage = join(installedRoot, 'smrt-jobs');
+  await mkdir(join(installedPackage, 'dist'), { recursive: true });
+  await mkdir(join(fixtureRoot, 'node_modules', '@happyvertical'), {
+    recursive: true,
+  });
+  await writeFile(
+    join(installedPackage, 'package.json'),
+    JSON.stringify({
+      name: '@happyvertical/smrt-jobs',
+      version: '1.0.0',
+      files: ['dist', 'AGENTS.md', 'CLAUDE.md'],
+      exports: {
+        './smrt-knowledge.json': './dist/smrt-knowledge.json',
+      },
+    }),
+  );
+  await writeFile(join(installedPackage, 'AGENTS.md'), '# Jobs\n');
+  await writeFile(join(installedPackage, 'CLAUDE.md'), '@AGENTS.md\n');
+  await writeFile(
+    join(installedPackage, 'dist', 'smrt-knowledge.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      sensitiveFieldsExcluded: true,
+      generatedAt: new Date().toISOString(),
+      packageName: '@happyvertical/smrt-jobs',
+      packageVersion: '1.0.0',
+      sourceHashes: {},
+      exports: ['./smrt-knowledge.json'],
+      dependencies: {},
+      smrtDependencies: [],
+      sdkDependencies: [],
+      tags: [],
+      risks: [],
+      objects: [],
+      surfaces: [],
+      prompts: [],
+      relationshipsV2: {
+        foreignKeyFields: 0,
+        crossPackageRefFields: 0,
+        junctionCollections: 0,
+        hierarchicalObjects: 0,
+        polymorphicAssociations: 0,
+        uuidColumns: 0,
+      },
+    }),
+  );
+  await symlink(
+    installedPackage,
+    join(fixtureRoot, 'node_modules', '@happyvertical', 'smrt-jobs'),
+  );
+}
 
 async function createMcpClient() {
   expect(existsSync(tsxBin)).toBe(true);
 
   const transport = new StdioClientTransport({
     command: tsxBin,
-    args: ['src/index.ts'],
-    cwd: packageRoot,
-    stderr: 'pipe',
+    args: [join(packageRoot, 'src', 'index.ts')],
+    cwd: fixtureRoot,
+    // Keep the child stream drained and preserve fatal diagnostics in CI.
+    stderr: 'inherit',
   });
   const client = new Client(
     { name: 'smrt-dev-mcp-smoke-test', version: '1.0.0' },
@@ -45,22 +177,26 @@ function textContent(result: Awaited<ReturnType<Client['callTool']>>): string {
   return first.text;
 }
 
+beforeEach(async () => {
+  await createFixtureWorkspace();
+});
+
 afterEach(async () => {
   await activeClient?.close();
   await activeTransport?.close();
   activeClient = undefined;
   activeTransport = undefined;
+  await rm(fixtureRoot, { recursive: true, force: true });
+  await rm(installedRoot, { recursive: true, force: true });
 });
 
 describe('smrt-dev-mcp stdio server', () => {
-  // This smoke spawns a real server and drives ~11 whole-workspace tool calls
-  // against the smrt monorepo. Discovery now reaches every workspace member
-  // (#2143), and a member without build artifacts falls back to an OXC source
-  // scan — seconds per package on a cold CI runner, versus a fast artifact read
-  // locally. The cost therefore tracks how much of the repo is prebuilt, so this
-  // needs a budget well above the 30s default rather than a flaky margin.
+  // This smoke validates the real stdio process boundary against a controlled
+  // workspace. Whole-monorepo discovery belongs in the knowledge integration
+  // suites; repeating it for every protocol call made this process test depend
+  // on runner memory, checkout artifacts, and repository size.
   it('lists and calls knowledge tools over MCP stdio', {
-    timeout: 300_000,
+    timeout: 60_000,
   }, async () => {
     const client = await createMcpClient();
 
@@ -88,7 +224,7 @@ describe('smrt-dev-mcp stdio server', () => {
 
     const reflectResult = await client.callTool({
       name: 'reflect-knowledge',
-      arguments: { rootDir: repoRoot },
+      arguments: { rootDir: fixtureRoot },
     });
     const reflect = JSON.parse(textContent(reflectResult));
     expect(reflect.smrtPackageCount).toBeGreaterThan(0);
@@ -104,7 +240,7 @@ describe('smrt-dev-mcp stdio server', () => {
 
     const domainReflectResult = await client.callTool({
       name: 'reflect-domain-knowledge',
-      arguments: { rootDir: repoRoot },
+      arguments: { rootDir: fixtureRoot },
     });
     const domainReflect = JSON.parse(textContent(domainReflectResult));
     expect(domainReflect.domainKnowledgePackageCount).toBeGreaterThanOrEqual(0);
@@ -112,7 +248,7 @@ describe('smrt-dev-mcp stdio server', () => {
     const reviewResult = await client.callTool({
       name: 'build-review-context',
       arguments: {
-        rootDir: repoRoot,
+        rootDir: fixtureRoot,
         changedFiles: ['packages/content/src/models/Article.ts'],
       },
     });
@@ -138,7 +274,7 @@ describe('smrt-dev-mcp stdio server', () => {
     const fullReviewResult = await client.callTool({
       name: 'build-review-context',
       arguments: {
-        rootDir: repoRoot,
+        rootDir: fixtureRoot,
         changedFiles: ['packages/content/src/models/Article.ts'],
         detail: 'full',
       },
@@ -155,7 +291,7 @@ describe('smrt-dev-mcp stdio server', () => {
     const domainReviewResult = await client.callTool({
       name: 'build-domain-review-context',
       arguments: {
-        rootDir: repoRoot,
+        rootDir: fixtureRoot,
         changedFiles: ['packages/content/src/models/Article.ts'],
         scope: 'package',
         package: 'content',
@@ -169,7 +305,7 @@ describe('smrt-dev-mcp stdio server', () => {
     const architectureResult = await client.callTool({
       name: 'build-architecture-context',
       arguments: {
-        rootDir: repoRoot,
+        rootDir: fixtureRoot,
         idea: 'Publishing workflow with profiles and scheduled social posts',
       },
     });
@@ -184,7 +320,7 @@ describe('smrt-dev-mcp stdio server', () => {
     const domainArchitectureResult = await client.callTool({
       name: 'build-domain-architecture-context',
       arguments: {
-        rootDir: repoRoot,
+        rootDir: fixtureRoot,
         idea: 'Publishing workflow with profiles and scheduled social posts',
         scope: 'package',
         package: 'profiles',
@@ -254,7 +390,7 @@ describe('smrt-dev-mcp stdio server', () => {
     const domainPromptResult = await client.getPrompt({
       name: 'domain-code-review',
       arguments: {
-        rootDir: repoRoot,
+        rootDir: fixtureRoot,
         changedFiles: 'packages/content/src/models/Article.ts',
         scope: 'package',
         package: 'content',
@@ -269,7 +405,7 @@ describe('smrt-dev-mcp stdio server', () => {
     const architecturePromptResult = await client.getPrompt({
       name: 'domain-architecture',
       arguments: {
-        rootDir: repoRoot,
+        rootDir: fixtureRoot,
         idea: 'Publishing workflow with profiles and scheduled social posts',
         scope: 'package',
         package: 'profiles',
@@ -316,9 +452,11 @@ describe('smrt-dev-mcp stdio server', () => {
     // carried over by a spread instead of rebuilt from sanitized entries
     // (#2275).
     expect(Array.isArray(projectKnowledge.installedPackages)).toBe(true);
+    expect(projectKnowledge.installedPackages).toHaveLength(1);
     for (const pkg of projectKnowledge.installedPackages) {
       expect(pkg).not.toHaveProperty('directory');
     }
+    expect(JSON.stringify(projectKnowledge)).not.toContain(tmpdir());
 
     const packageUri = resourceUris.find((uri) =>
       uri.startsWith('smrt://knowledge/package/'),

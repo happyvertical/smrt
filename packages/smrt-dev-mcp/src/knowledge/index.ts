@@ -22,10 +22,16 @@ import {
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
 } from '@happyvertical/smrt-core/knowledge';
+import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import type {
+  DomainKnowledgeField,
+  DomainKnowledgeFieldConstraints,
   DomainKnowledgeManifest,
+  DomainKnowledgeMethodSignature,
   DomainKnowledgeModuleDoc,
+  DomainKnowledgeObject,
+  DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
 import { TOOLS } from '../tool-catalog.js';
 import { checkMcpToolDocumentation } from './mcp-docs.js';
@@ -69,13 +75,7 @@ export type WorkspaceGlobSource =
   | 'package.json#workspaces'
   | 'fallback';
 
-export interface KnowledgeField {
-  name: string;
-  type: string;
-  required?: boolean;
-  related?: string;
-  columnType?: string;
-}
+export type KnowledgeField = DomainKnowledgeField;
 
 export interface KnowledgeObject {
   className: string;
@@ -89,6 +89,10 @@ export interface KnowledgeObject {
   fields: KnowledgeField[];
   relationships: KnowledgeField[];
   methods: string[];
+  methodSignatures?: DomainKnowledgeMethodSignature[];
+  tenant?: DomainKnowledgeTenant;
+  tableStrategy?: 'cti' | 'sti';
+  conflictColumns?: string[];
 }
 
 export interface KnowledgePrompt {
@@ -1855,13 +1859,23 @@ function readKnowledgePackage(
   const agentsContent = hasAgentsMd ? readFileSync(agentsPath, 'utf8') : '';
   const fallbackClaudeDoc =
     hasClaudeMd && claudeContent.trim() !== '@AGENTS.md' ? claudeContent : '';
-  const domainKnowledge = readDomainKnowledge(directory);
+  const manifest = readManifest(directory);
+  const discoveredDomainKnowledge = readDomainKnowledge(directory);
+  const domainKnowledge = discoveredDomainKnowledge
+    ? {
+        ...discoveredDomainKnowledge,
+        content: sanitizeDomainKnowledgeManifest(
+          discoveredDomainKnowledge.content,
+          manifest?.content,
+          name,
+        ),
+      }
+    : null;
   const docSource = hasAgentsMd
     ? 'AGENTS.md'
     : fallbackClaudeDoc
       ? 'CLAUDE.md'
       : null;
-  const manifest = readManifest(directory);
   const resolvedObjects = resolvePackageObjects({
     packageName: name,
     directory,
@@ -2242,22 +2256,24 @@ function readManifestObjects(
     const fields = objectRecord(item.fields);
     const schemaColumns = objectRecord(schema.columns);
     const decoratorConfig = objectRecord(item.decoratorConfig);
-    const knowledgeFields = Object.entries(fields).map(([fieldName, field]) => {
-      const fieldInfo = objectRecord(field);
-      const columnName = camelToSnake(fieldName);
-      const column = objectRecord(schemaColumns[columnName]);
-      return {
-        name: fieldName,
-        type: String(fieldInfo.type ?? 'unknown'),
-        required:
-          typeof fieldInfo.required === 'boolean'
-            ? fieldInfo.required
-            : undefined,
-        related:
-          typeof fieldInfo.related === 'string' ? fieldInfo.related : undefined,
-        columnType: typeof column.type === 'string' ? column.type : undefined,
-      };
-    });
+    const knowledgeFields = Object.entries(fields)
+      .filter(([, field]) => !isSensitiveKnowledgeField(field))
+      .map(([fieldName, field]) => {
+        const columnName = camelToSnake(fieldName);
+        const column = objectRecord(schemaColumns[columnName]);
+        return projectKnowledgeField(fieldName, field, column.type);
+      });
+    const methods = objectRecord(item.methods);
+    const sensitiveIdentifiers = sensitiveKnowledgeFieldIdentifiers(
+      Object.entries(fields),
+    );
+    const tenant = sanitizeKnowledgeTenant(
+      projectTenant(decoratorConfig.tenantScoped),
+      sensitiveIdentifiers,
+    );
+    const conflictColumns = stringArray(decoratorConfig.conflictColumns).filter(
+      (column) => !sensitiveIdentifiers.has(column),
+    );
 
     return {
       className: String(item.className ?? item.name ?? 'Unknown'),
@@ -2282,7 +2298,15 @@ function readManifestObjects(
       relationships: knowledgeFields.filter((field) =>
         RELATIONSHIP_FIELD_TYPES.has(field.type),
       ),
-      methods: Object.keys(objectRecord(item.methods)).sort(),
+      methods: Object.keys(methods).sort(),
+      methodSignatures: projectMethodSignatures(methods),
+      tenant,
+      tableStrategy:
+        decoratorConfig.tableStrategy === 'cti' ||
+        decoratorConfig.tableStrategy === 'sti'
+          ? decoratorConfig.tableStrategy
+          : undefined,
+      conflictColumns: conflictColumns.length > 0 ? conflictColumns : undefined,
     };
   });
 }
@@ -2290,34 +2314,275 @@ function readManifestObjects(
 function readDomainKnowledgeObjects(
   manifest: DomainKnowledgeManifest,
 ): KnowledgeObject[] {
-  return manifest.objects.map((object) => ({
-    className: object.name,
-    qualifiedName: object.qualifiedName,
-    extends: object.extends,
-    collection: object.collection,
-    mcpOperations: object.surfaces
-      .filter((surface) => surface.kind === 'mcp')
-      .map((surface) => surface.operation)
-      .sort(),
-    tableName: object.tableName,
-    idColumnType: object.fields.find((field) => field.name === 'id')
-      ?.columnType,
-    fields: object.fields.map((field) => ({
-      name: field.name,
-      type: field.type,
-      required: field.required,
-      related: field.related,
-      columnType: field.columnType,
-    })),
-    relationships: object.relationships.map((field) => ({
-      name: field.name,
-      type: field.type,
-      required: field.required,
-      related: field.related,
-      columnType: field.columnType,
-    })),
-    methods: object.methods,
-  }));
+  return manifest.objects.map((object) => {
+    const sensitiveIdentifiers = sensitiveKnowledgeFieldIdentifiers(
+      object.fields.map((field) => [field.name, field]),
+    );
+    const fields = object.fields
+      .filter((field) => !isSensitiveKnowledgeField(field))
+      .map((field) => projectKnowledgeField(field.name, field));
+    const safeFieldNames = new Set(fields.map((field) => field.name));
+    const conflictColumns = object.conflictColumns?.filter(
+      (column) => !sensitiveIdentifiers.has(column),
+    );
+    const tenant = sanitizeKnowledgeTenant(
+      object.tenant ? { ...object.tenant } : undefined,
+      sensitiveIdentifiers,
+    );
+    return {
+      className: object.name,
+      qualifiedName: object.qualifiedName,
+      extends: object.extends,
+      collection: object.collection,
+      mcpOperations: object.surfaces
+        .filter((surface) => surface.kind === 'mcp')
+        .map((surface) => surface.operation)
+        .sort(),
+      tableName: object.tableName,
+      idColumnType: fields.find((field) => field.name === 'id')?.columnType,
+      fields,
+      relationships: object.relationships
+        .filter(
+          (field) =>
+            safeFieldNames.has(field.name) && !isSensitiveKnowledgeField(field),
+        )
+        .map((field) => projectKnowledgeField(field.name, field)),
+      methods: object.methods,
+      methodSignatures: object.methodSignatures?.map((signature) => ({
+        name: signature.name,
+        async: signature.async,
+        static: signature.static,
+        params: signature.params ? [...signature.params] : undefined,
+        returns: signature.returns,
+      })),
+      tenant,
+      tableStrategy: object.tableStrategy,
+      conflictColumns:
+        conflictColumns && conflictColumns.length > 0
+          ? conflictColumns
+          : undefined,
+    };
+  });
+}
+
+function sanitizeDomainKnowledgeManifest(
+  manifest: DomainKnowledgeManifest,
+  rawManifest?: Record<string, unknown>,
+  packageName?: string,
+): DomainKnowledgeManifest {
+  const rawObjects = rawManifest
+    ? ownedManifestObjectsByIdentity(rawManifest, packageName)
+    : new Map<string, Record<string, unknown>>();
+  const projectionIsSanitized = manifest.sensitiveFieldsExcluded === true;
+  return {
+    ...manifest,
+    objects: manifest.objects.map((object): DomainKnowledgeObject => {
+      const rawObject =
+        (object.qualifiedName
+          ? rawObjects.get(object.qualifiedName)
+          : undefined) ?? rawObjects.get(object.name);
+      const rawFields = objectRecord(rawObject?.fields);
+      const artifactSensitiveIdentifiers = sensitiveKnowledgeFieldIdentifiers(
+        object.fields.map((field) => [field.name, field]),
+      );
+      const rawSensitiveIdentifiers = sensitiveKnowledgeFieldIdentifiers(
+        Object.entries(rawFields),
+      );
+      const sensitiveIdentifiers = new Set([
+        ...artifactSensitiveIdentifiers,
+        ...rawSensitiveIdentifiers,
+      ]);
+      const rawSafeFieldNames = new Set(
+        Object.entries(rawFields)
+          .filter(([, field]) => !isSensitiveKnowledgeField(field))
+          .map(([name]) => name),
+      );
+      const canTrustField = (field: DomainKnowledgeField) =>
+        projectionIsSanitized ||
+        (rawObject !== undefined && rawSafeFieldNames.has(field.name));
+      const fields = object.fields
+        .filter(
+          (field) => canTrustField(field) && !isSensitiveKnowledgeField(field),
+        )
+        .map((field) => projectKnowledgeField(field.name, field));
+      const safeFieldNames = new Set(fields.map((field) => field.name));
+      const rawDecoratorConfig = objectRecord(rawObject?.decoratorConfig);
+      const projectedConflictColumns = projectionIsSanitized
+        ? object.conflictColumns
+        : rawObject
+          ? stringArray(rawDecoratorConfig.conflictColumns)
+          : undefined;
+      const conflictColumns = projectedConflictColumns?.filter(
+        (column) => !sensitiveIdentifiers.has(column),
+      );
+      const projectedTenant = projectionIsSanitized
+        ? object.tenant
+        : rawObject
+          ? projectTenant(rawDecoratorConfig.tenantScoped)
+          : object.tenant
+            ? { scoped: object.tenant.scoped, mode: object.tenant.mode }
+            : undefined;
+      return {
+        ...object,
+        fields,
+        relationships: object.relationships
+          .filter(
+            (field) =>
+              safeFieldNames.has(field.name) &&
+              !isSensitiveKnowledgeField(field),
+          )
+          .map((field) => projectKnowledgeField(field.name, field)),
+        tenant: sanitizeKnowledgeTenant(projectedTenant, sensitiveIdentifiers),
+        conflictColumns:
+          conflictColumns && conflictColumns.length > 0
+            ? conflictColumns
+            : undefined,
+      };
+    }),
+  };
+}
+
+function ownedManifestObjectsByIdentity(
+  manifest: Record<string, unknown>,
+  packageName?: string,
+): Map<string, Record<string, unknown>> {
+  const owned = packageName
+    ? partitionOwnedObjects(manifest, packageName).owned
+    : objectRecord(manifest.objects);
+  const objects = new Map<string, Record<string, unknown>>();
+  for (const [key, value] of Object.entries(owned)) {
+    const object = objectRecord(value);
+    objects.set(key, object);
+    if (typeof object.className === 'string') {
+      objects.set(object.className, object);
+    }
+    if (typeof object.qualifiedName === 'string') {
+      objects.set(object.qualifiedName, object);
+    }
+  }
+  return objects;
+}
+
+function isSensitiveKnowledgeField(value: unknown): boolean {
+  const field = objectRecord(value);
+  return (
+    field.sensitive === true || objectRecord(field._meta).sensitive === true
+  );
+}
+
+function sensitiveKnowledgeFieldIdentifiers(
+  fields: Array<[string, unknown]>,
+): Set<string> {
+  return new Set(
+    fields
+      .filter(([, field]) => isSensitiveKnowledgeField(field))
+      .flatMap(([name]) => [name, toSnakeCase(name), camelToSnake(name)]),
+  );
+}
+
+function projectKnowledgeField(
+  name: string,
+  value: unknown,
+  columnType?: unknown,
+): KnowledgeField {
+  const field = objectRecord(value);
+  const meta = objectRecord(field._meta);
+  const declaredConstraints = objectRecord(field.constraints);
+  const constraints: DomainKnowledgeFieldConstraints = {};
+  for (const key of ['min', 'max', 'minLength', 'maxLength'] as const) {
+    const candidate = field[key] ?? meta[key] ?? declaredConstraints[key];
+    if (typeof candidate === 'number') constraints[key] = candidate;
+  }
+  const pattern = normalizeKnowledgePattern(
+    field.pattern ?? meta.pattern ?? declaredConstraints.pattern,
+  );
+  if (pattern !== undefined) constraints.pattern = pattern;
+  const hasDefault = Object.hasOwn(field, 'default')
+    ? field.default !== undefined
+    : meta.default !== undefined;
+
+  return {
+    name,
+    type: String(field.type ?? 'unknown'),
+    required: typeof field.required === 'boolean' ? field.required : undefined,
+    related: typeof field.related === 'string' ? field.related : undefined,
+    columnType:
+      typeof columnType === 'string'
+        ? columnType
+        : typeof field.columnType === 'string'
+          ? field.columnType
+          : undefined,
+    ...(hasDefault
+      ? {
+          default: Object.hasOwn(field, 'default')
+            ? field.default
+            : meta.default,
+        }
+      : {}),
+    constraints: Object.keys(constraints).length > 0 ? constraints : undefined,
+    readonly:
+      field.readonly === true || meta.readonly === true ? true : undefined,
+    transient:
+      field.transient === true || meta.transient === true ? true : undefined,
+  };
+}
+
+function normalizeKnowledgePattern(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  const source = objectRecord(value).source;
+  return typeof source === 'string' ? source : undefined;
+}
+
+function projectTenant(value: unknown): DomainKnowledgeTenant | undefined {
+  if (value === true) {
+    return { scoped: true, mode: 'required', field: 'tenantId' };
+  }
+  const config = objectRecord(value);
+  if (Object.keys(config).length === 0) return undefined;
+  return {
+    scoped: true,
+    mode: config.mode === 'optional' ? 'optional' : 'required',
+    field: typeof config.field === 'string' ? config.field : 'tenantId',
+  };
+}
+
+function sanitizeKnowledgeTenant(
+  tenant: DomainKnowledgeTenant | undefined,
+  sensitiveIdentifiers: Set<string>,
+): DomainKnowledgeTenant | undefined {
+  if (!tenant?.field || !sensitiveIdentifiers.has(tenant.field)) return tenant;
+  return { scoped: tenant.scoped, mode: tenant.mode };
+}
+
+function projectMethodSignatures(
+  methods: Record<string, unknown>,
+): DomainKnowledgeMethodSignature[] | undefined {
+  const signatures = Object.entries(methods)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([methodName, value]) => {
+      const method = objectRecord(value);
+      const params = Array.isArray(method.parameters)
+        ? method.parameters.map((raw) => {
+            const parameter = objectRecord(raw);
+            const name =
+              typeof parameter.name === 'string' ? parameter.name : 'arg';
+            const type =
+              typeof parameter.type === 'string' ? parameter.type : 'unknown';
+            return `${name}${parameter.optional === true ? '?' : ''}: ${type}`;
+          })
+        : undefined;
+      return {
+        name: typeof method.name === 'string' ? method.name : methodName,
+        async: method.async === true ? true : undefined,
+        static: method.isStatic === true ? true : undefined,
+        params: params && params.length > 0 ? params : undefined,
+        returns:
+          typeof method.returnType === 'string' && method.returnType
+            ? method.returnType
+            : undefined,
+      };
+    });
+  return signatures.length > 0 ? signatures : undefined;
 }
 
 function readDomainKnowledgePrompts(
@@ -3456,6 +3721,11 @@ function renderPackageContext(
     return lines.join('\n');
   }
 
+  const structuralFacts = renderObjectStructuralFacts(pkg.objects);
+  if (structuralFacts.length > 0) {
+    lines.push('', '#### Object structural facts', '', ...structuralFacts);
+  }
+
   if (pkg.agentDoc) {
     lines.push('', pkg.agentDoc.trim());
   }
@@ -3476,6 +3746,79 @@ function renderPackageContext(
   }
   lines.push('');
   return lines.join('\n');
+}
+
+function renderObjectStructuralFacts(objects: KnowledgeObject[]): string[] {
+  const lines: string[] = [];
+  for (const object of objects) {
+    const objectFacts = [
+      object.tenant
+        ? object.tenant.scoped
+          ? `tenant ${object.tenant.mode ?? 'required'}${object.tenant.field ? ` via ${object.tenant.field}` : ''}`
+          : 'tenant unscoped'
+        : undefined,
+      object.tableStrategy
+        ? `table strategy ${object.tableStrategy}`
+        : undefined,
+      object.conflictColumns && object.conflictColumns.length > 0
+        ? `conflict columns ${object.conflictColumns.join(', ')}`
+        : undefined,
+    ].filter((fact): fact is string => Boolean(fact));
+    const structuralFields = object.fields.filter(
+      (field) =>
+        Object.hasOwn(field, 'default') ||
+        field.constraints !== undefined ||
+        field.readonly === true ||
+        field.transient === true,
+    );
+    const signatures = object.methodSignatures ?? [];
+    if (
+      objectFacts.length === 0 &&
+      structuralFields.length === 0 &&
+      signatures.length === 0
+    ) {
+      continue;
+    }
+
+    lines.push(
+      `- ${object.qualifiedName ?? object.className}${objectFacts.length > 0 ? ` — ${objectFacts.join('; ')}` : ''}`,
+    );
+    for (const field of structuralFields) {
+      const facts = [
+        Object.hasOwn(field, 'default')
+          ? `default ${renderKnowledgeValue(field.default)}`
+          : undefined,
+        field.constraints
+          ? `constraints ${Object.entries(field.constraints)
+              .map(([key, value]) => `${key}=${renderKnowledgeValue(value)}`)
+              .join(', ')}`
+          : undefined,
+        field.readonly ? 'readonly' : undefined,
+        field.transient ? 'transient' : undefined,
+      ].filter((fact): fact is string => Boolean(fact));
+      lines.push(
+        `  - field ${field.name}: ${field.type} (${facts.join('; ')})`,
+      );
+    }
+    for (const signature of signatures) {
+      const prefix = [
+        signature.static ? 'static' : '',
+        signature.async ? 'async' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      lines.push(
+        `  - method ${prefix ? `${prefix} ` : ''}${signature.name}(${(signature.params ?? []).join(', ')})${signature.returns ? `: ${signature.returns}` : ''}`,
+      );
+    }
+  }
+  return lines;
+}
+
+function renderKnowledgeValue(value: unknown): string {
+  const rendered = JSON.stringify(value);
+  if (rendered === undefined) return String(value);
+  return rendered.length > 120 ? `${rendered.slice(0, 117)}...` : rendered;
 }
 
 function getChangedFiles(rootDir: string, base?: string): string[] {

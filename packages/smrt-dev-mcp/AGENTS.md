@@ -147,6 +147,16 @@ launcher or a small wrapper script with an absolute Node path.
 - **Domain artifacts first**: discovery must prefer `.smrt/smrt-knowledge.json`,
   then `dist/smrt-knowledge.json`, then source artifacts before raw manifest
   fallback
+- **Structural projection stays additive and sanitized**: schema-version-1
+  domain artifacts and raw-manifest fallback both carry tenant mode/field,
+  `cti`/`sti`, conflict columns, method signatures, and selected field schema
+  facts. Preserve `methods: string[]`; remove top-level and `_meta` sensitive
+  fields before deriving both fields and relationships, and remove their field
+  and snake-case column names from projected conflict columns.
+  If a custom tenant field is sensitive, retain scope/mode but omit its name.
+  A schema-v1 artifact without `sensitiveFieldsExcluded: true` is legacy: use
+  the owning raw manifest to allowlist its current non-sensitive fields and
+  structural identifiers, or omit uncorroborated field facts fail-closed.
 - **Skill loading**: bundled skills must be included in `package.json` `files`
   because runtime reads them from the installed package directory
 - **Portable plugin boundary**: `mcp.json` launches only `./dist/index.js` from
@@ -186,7 +196,8 @@ launcher or a small wrapper script with an absolute Node path.
 - **Budgets are enforced at the transport boundary**: `KnowledgePackage` carries
   the full `agentDoc` and domain manifest, so the MCP handlers project a compact
   package record unless `detail: 'full'`. Library callers (the CLI) still receive
-  the full objects.
+  the full objects. Structural object facts render into prompt Markdown only in
+  full detail; summary mode remains names/counts/paths.
 - **Private packages skip packaging checks**: the `files` allowlist governs npm
   publication, so `private: true` packages are exempt; authored docs are still
   required. A workspace root is exempt from both — but **only when member
