@@ -263,6 +263,10 @@ function workbenchUrlHost(host: string): string {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
 }
 
+function normalizeWorkbenchHost(host: string): string {
+  return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+}
+
 function isLoopbackHost(host: string): boolean {
   return (
     host === 'localhost' ||
@@ -300,6 +304,24 @@ function detectPackageManager(projectRoot: string): 'pnpm' | 'yarn' | 'npm' {
       return 'yarn';
     }
 
+    const packageJsonPath = join(current, 'package.json');
+    if (existsSync(packageJsonPath)) {
+      try {
+        const packageManager = (
+          JSON.parse(readFileSync(packageJsonPath, 'utf8')) as {
+            packageManager?: unknown;
+          }
+        ).packageManager;
+        if (typeof packageManager === 'string') {
+          if (packageManager.startsWith('pnpm@')) return 'pnpm';
+          if (packageManager.startsWith('yarn@')) return 'yarn';
+          if (packageManager.startsWith('npm@')) return 'npm';
+        }
+      } catch {
+        // The runtime scope resolver reports malformed project metadata.
+      }
+    }
+
     const parent = dirname(current);
     if (parent === current) {
       return 'npm';
@@ -317,14 +339,32 @@ function workbenchDevCommand(
   if (packageManager === 'pnpm') {
     return {
       command: 'pnpm',
-      args: ['--dir', hostDir, 'dev', '--host', host, '--port', port],
+      args: [
+        '--dir',
+        hostDir,
+        'dev',
+        '--host',
+        host,
+        '--port',
+        port,
+        '--strictPort',
+      ],
     };
   }
 
   if (packageManager === 'yarn') {
     return {
       command: 'yarn',
-      args: ['--cwd', hostDir, 'dev', '--host', host, '--port', port],
+      args: [
+        '--cwd',
+        hostDir,
+        'dev',
+        '--host',
+        host,
+        '--port',
+        port,
+        '--strictPort',
+      ],
     };
   }
 
@@ -340,6 +380,7 @@ function workbenchDevCommand(
       host,
       '--port',
       port,
+      '--strictPort',
     ],
   };
 }
@@ -397,10 +438,11 @@ export const workbenchCommands: Record<string, CLICommand> = {
         );
       }
 
-      const host = options.host || '127.0.0.1';
+      const requestedHost = options.host || '127.0.0.1';
+      const host = normalizeWorkbenchHost(requestedHost);
       if (!isLoopbackHost(host) && !options['allow-remote']) {
         throw new Error(
-          `Refusing to expose the workbench on non-loopback host "${host}". Re-run with --allow-remote only on a trusted network.`,
+          `Refusing to expose the workbench on non-loopback host "${requestedHost}". Re-run with --allow-remote only on a trusted network.`,
         );
       }
       const port = resolveWorkbenchPort(options.port);

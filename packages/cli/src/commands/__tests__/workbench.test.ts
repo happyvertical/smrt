@@ -107,6 +107,7 @@ describe('workbench commands', () => {
         '0.0.0.0',
         '--port',
         '5580',
+        '--strictPort',
       ],
       expect.objectContaining({
         cwd: projectRoot,
@@ -347,6 +348,22 @@ describe('workbench commands', () => {
     );
   });
 
+  it('normalizes a bracketed IPv6 loopback address before launching Vite', async () => {
+    await (await loadCommands())['workbench:dev'].handler([], {
+      host: '[::1]',
+      port: '5570',
+    });
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringContaining('http://[::1]:5570/'),
+    );
+    expect(spawnMock).toHaveBeenCalledWith(
+      'pnpm',
+      expect.arrayContaining(['--host', '::1', '--strictPort']),
+      expect.objectContaining({ shell: false }),
+    );
+  });
+
   it('explains the node-modules requirement for Yarn Plug’n’Play', async () => {
     rmSync(join(projectRoot, 'packages'), { recursive: true, force: true });
     writeFileSync(
@@ -414,6 +431,7 @@ describe('workbench commands', () => {
         '127.0.0.1',
         '--port',
         '5570',
+        '--strictPort',
       ],
       expect.objectContaining({
         cwd: projectRoot,
@@ -490,6 +508,7 @@ describe('workbench commands', () => {
         '127.0.0.1',
         '--port',
         '5573',
+        '--strictPort',
       ],
       expect.objectContaining({ cwd: projectRoot, shell: false }),
     );
@@ -511,6 +530,33 @@ describe('workbench commands', () => {
         '127.0.0.1',
         '--port',
         '5571',
+        '--strictPort',
+      ],
+      expect.objectContaining({ cwd: projectRoot }),
+    );
+
+    spawnMock.mockClear();
+    rmSync(join(projectRoot, 'yarn.lock'));
+    writeFileSync(
+      join(projectRoot, 'package.json'),
+      '{"name":"consumer-app","type":"module","packageManager":"yarn@4.9.2"}\n',
+    );
+    await commands['workbench:dev'].handler([], {
+      host: '127.0.0.1',
+      port: '5574',
+    });
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      'yarn',
+      [
+        '--cwd',
+        join(installedRoot, 'host'),
+        'dev',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '5574',
+        '--strictPort',
       ],
       expect.objectContaining({ cwd: projectRoot }),
     );
@@ -542,6 +588,7 @@ describe('workbench commands', () => {
         '127.0.0.1',
         '--port',
         '5572',
+        '--strictPort',
       ],
       expect.objectContaining({ cwd: nestedProjectRoot }),
     );

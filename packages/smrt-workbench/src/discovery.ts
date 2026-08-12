@@ -47,6 +47,7 @@ interface PackageJsonLike {
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   exports?: unknown;
+  packageManager?: string;
 }
 
 interface WorkbenchPackageDir {
@@ -143,6 +144,26 @@ function readJson<T = Record<string, unknown>>(path: string): T {
 
 function readJsonIfExists<T = Record<string, unknown>>(path: string): T | null {
   return existsSync(path) ? readJson<T>(path) : null;
+}
+
+function detectPackageManager(projectRoot: string): 'pnpm' | 'yarn' | 'npm' {
+  let current = resolve(projectRoot);
+
+  while (true) {
+    if (existsSync(join(current, 'pnpm-lock.yaml'))) return 'pnpm';
+    if (existsSync(join(current, 'yarn.lock'))) return 'yarn';
+
+    const packageManager = readJsonIfExists<PackageJsonLike>(
+      join(current, 'package.json'),
+    )?.packageManager;
+    if (packageManager?.startsWith('pnpm@')) return 'pnpm';
+    if (packageManager?.startsWith('yarn@')) return 'yarn';
+    if (packageManager?.startsWith('npm@')) return 'npm';
+
+    const parent = dirname(current);
+    if (parent === current) return 'npm';
+    current = parent;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -893,10 +914,9 @@ function mcpCrudParameters(
 }
 
 function mcpCustomParameters(
-  object: Record<string, unknown>,
-  action: string,
+  _object: Record<string, unknown>,
+  _action: string,
 ): WorkbenchApiParameterSummary[] {
-  const methodParams = methodParameterSummaries(object, action, 'input');
   return [
     {
       name: 'id',
@@ -905,17 +925,13 @@ function mcpCustomParameters(
       location: 'input',
       description: 'ID of the object to execute the action on.',
     },
-    ...(methodParams.length > 0
-      ? methodParams
-      : [
-          {
-            name: 'options',
-            type: 'object',
-            required: false,
-            location: 'input' as const,
-            description: 'Additional options for the custom action.',
-          },
-        ]),
+    {
+      name: 'options',
+      type: 'object',
+      required: false,
+      location: 'input',
+      description: 'Additional options for the custom action.',
+    },
   ];
 }
 
@@ -1524,6 +1540,7 @@ export function resolveWorkbenchScope(
       workspaceRoot,
       packageName,
       packageDir,
+      packageManager: 'pnpm',
     };
   }
 
@@ -1533,6 +1550,7 @@ export function resolveWorkbenchScope(
     cwd: resolvedCwd,
     projectRoot,
     packageName: options.packageName,
+    packageManager: detectPackageManager(projectRoot),
   };
 }
 

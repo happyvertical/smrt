@@ -7,6 +7,7 @@ import {
   qualifyWorkbenchRouteId,
   workbenchRouteHash,
 } from '../runtime.js';
+import { workbenchScriptCommand } from '../svelte/command.js';
 
 describe('@happyvertical/smrt-workbench runtime', () => {
   it('coerces module exports to module arrays', () => {
@@ -131,5 +132,42 @@ describe('Workbench route fragments', () => {
       findWorkbenchRouteByHash(routes, '#content-workspace')?.qualifiedId,
     ).toBe('@happyvertical/smrt-content:content.workspace');
     expect(findWorkbenchRouteByHash(routes, '#missing')).toBeNull();
+  });
+});
+
+describe('workbenchScriptCommand', () => {
+  it('formats workspace and consumer commands for their package manager', () => {
+    expect(
+      workbenchScriptCommand(
+        { name: '@happyvertical/smrt-content', source: 'workspace' },
+        'test',
+        'pnpm',
+      ),
+    ).toBe('pnpm --filter @happyvertical/smrt-content test');
+    expect(
+      workbenchScriptCommand(
+        { name: 'consumer-app', source: 'app' },
+        'test',
+        'npm',
+      ),
+    ).toBe('npm run test');
+    expect(
+      workbenchScriptCommand(
+        { name: 'consumer-app', source: 'app' },
+        'check',
+        'yarn',
+      ),
+    ).toBe('yarn run check');
+    expect(
+      workbenchScriptCommand(
+        {
+          name: '@happyvertical/smrt-content',
+          source: 'package',
+          relativeDirectory: 'node_modules/@happyvertical/smrt-content',
+        },
+        'typecheck',
+        'pnpm',
+      ),
+    ).toBe('pnpm --dir node_modules/@happyvertical/smrt-content run typecheck');
   });
 });

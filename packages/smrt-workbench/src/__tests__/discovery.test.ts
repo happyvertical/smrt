@@ -44,6 +44,53 @@ describe('resolveWorkbenchScope', () => {
       expect(scope.mode).toBe('consumer');
       expect(scope.projectRoot).toBe(projectRoot);
       expect(scope.packageName).toBeUndefined();
+      expect(scope.packageManager).toBe('npm');
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    { packageManager: 'pnpm', marker: 'pnpm-lock.yaml' },
+    { packageManager: 'yarn', marker: 'yarn.lock' },
+  ] as const)('detects $packageManager consumers from their lockfile', ({
+    packageManager,
+    marker,
+  }) => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'smrt-consumer-'));
+    writeFileSync(
+      join(projectRoot, 'package.json'),
+      JSON.stringify({ name: 'consumer-app' }),
+    );
+    writeFileSync(join(projectRoot, marker), '');
+
+    try {
+      expect(resolveWorkbenchScope(projectRoot).packageManager).toBe(
+        packageManager,
+      );
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    'pnpm',
+    'yarn',
+    'npm',
+  ] as const)('detects %s consumers from packageManager metadata', (packageManager) => {
+    const projectRoot = mkdtempSync(join(tmpdir(), 'smrt-consumer-'));
+    writeFileSync(
+      join(projectRoot, 'package.json'),
+      JSON.stringify({
+        name: 'consumer-app',
+        packageManager: `${packageManager}@1.0.0`,
+      }),
+    );
+
+    try {
+      expect(resolveWorkbenchScope(projectRoot).packageManager).toBe(
+        packageManager,
+      );
     } finally {
       rmSync(projectRoot, { recursive: true, force: true });
     }
@@ -106,6 +153,13 @@ describe('buildWorkbenchProject', () => {
         ]),
       }),
     );
+    const customTool = project.packages[0]?.api.mcpTools.find(
+      (tool) => tool.action === 'listForContribution',
+    );
+    expect(customTool?.parameters).toEqual([
+      expect.objectContaining({ name: 'id', required: true }),
+      expect.objectContaining({ name: 'options', required: false }),
+    ]);
   });
 });
 

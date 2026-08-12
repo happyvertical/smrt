@@ -131,6 +131,12 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
   await expect(page.getByTestId('workbench-api-mcp')).toContainText(
     'input · object · optional',
   );
+  await expect(page.getByTestId('workbench-api-mcp')).toContainText(
+    'contentcontributionattachmentcollection_listforcontribution',
+  );
+  await expect(page.getByTestId('workbench-api-mcp')).toContainText(
+    'options',
+  );
   await page.getByTestId('workbench-api-tab-cli').click();
   await expect(page.getByTestId('workbench-api-cli')).toContainText(
     'content:list',
@@ -200,6 +206,15 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
       name: '@happyvertical/smrt-content',
     }),
   ).toBeVisible();
+
+  await sectionList.getByRole('button', { name: 'Examples' }).click();
+  await expect(page.getByTestId('workbench-tab-examples')).toContainText(
+    'Content playground module',
+  );
+  await sectionList.getByRole('button', { name: 'Tests/Scripts' }).click();
+  await expect(page.getByTestId('workbench-tab-scripts')).toContainText(
+    'pnpm --filter @happyvertical/smrt-content test',
+  );
 
   await contentPackage.click();
   await expect(sectionList).toHaveCount(0);

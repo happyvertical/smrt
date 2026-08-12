@@ -10,6 +10,7 @@ export type WorkbenchComponentModule =
 export type WorkbenchComponentLoader = () => Promise<WorkbenchComponentModule>;
 
 export type SmrtWorkbenchScopeMode = 'workspace' | 'package' | 'consumer';
+export type SmrtWorkbenchPackageManager = 'pnpm' | 'yarn' | 'npm';
 
 export interface SmrtWorkbenchRouteDefinition {
   id: string;
@@ -87,6 +88,7 @@ export interface WorkbenchScopeResolution {
   workspaceRoot?: string;
   packageName?: string;
   packageDir?: string;
+  packageManager: SmrtWorkbenchPackageManager;
 }
 
 export interface WorkbenchDocumentSummary {

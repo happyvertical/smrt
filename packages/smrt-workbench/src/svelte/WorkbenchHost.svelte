@@ -28,6 +28,7 @@ import type {
   WorkbenchPackageSummary,
   WorkbenchRestEndpointSummary,
 } from '../types.js';
+import { workbenchScriptCommand } from './command.js';
 import MarkdownDocument from './MarkdownDocument.svelte';
 
 export interface Props {
@@ -211,7 +212,7 @@ $effect(() => {
   }
 });
 
-const selectedPackage = $derived(
+const selectedBasePackage = $derived(
   project.packages.find(
     (packageSummary) => packageSummary.name === selectedPackageName,
   ) ||
@@ -219,6 +220,30 @@ const selectedPackage = $derived(
     project.packages[0] ||
     null,
 );
+
+const selectedModule = $derived(
+  normalizedModules.find(
+    (module) => module.packageName === selectedBasePackage?.name,
+  ) || null,
+);
+
+const selectedPackage = $derived.by(() => {
+  if (!selectedBasePackage) return null;
+  if (!selectedModule) return selectedBasePackage;
+
+  return {
+    ...selectedBasePackage,
+    docs: [...selectedBasePackage.docs, ...(selectedModule.docs || [])],
+    examples: [
+      ...selectedBasePackage.examples,
+      ...(selectedModule.examples || []),
+    ],
+    recommendedCommands: [
+      ...selectedBasePackage.recommendedCommands,
+      ...(selectedModule.recommendedCommands || []),
+    ],
+  };
+});
 
 $effect(() => {
   if (isPackageScoped && activeTab === 'packages') {
@@ -245,12 +270,6 @@ $effect(() => {
     selectedDocumentPath = defaultDocumentFor(selectedPackage)?.path || null;
   }
 });
-
-const selectedModule = $derived(
-  normalizedModules.find(
-    (module) => module.packageName === selectedPackage?.name,
-  ) || null,
-);
 
 const selectedRoutes = $derived(selectedModule?.routes || []);
 const selectedRoute = $derived(
@@ -482,7 +501,21 @@ function commandFor(
   packageSummary: WorkbenchPackageSummary,
   scriptName: string,
 ) {
-  return `pnpm --filter ${packageSummary.name} ${scriptName}`;
+  return workbenchScriptCommand(
+    packageSummary,
+    scriptName,
+    project.scope.packageManager,
+  );
+}
+
+function recommendedCommandFor(
+  packageSummary: WorkbenchPackageSummary,
+  command: { id: string; command: string },
+) {
+  const pnpmFilterPrefix = `pnpm --filter ${packageSummary.name} `;
+  return command.command.startsWith(pnpmFilterPrefix)
+    ? commandFor(packageSummary, command.command.slice(pnpmFilterPrefix.length))
+    : command.command;
 }
 
 function dependencyEntries(packageSummary: WorkbenchPackageSummary) {
@@ -1213,6 +1246,19 @@ function apiTabCount(
                 <div>
                   <strong>{scriptName}</strong>
                   <code>{script}</code>
+                </div>
+                <button type="button" onclick={() => copyValue(command)}>
+                  {copiedValue === command ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            {/each}
+            {#each selectedPackage.recommendedCommands as recommendation (`${recommendation.id}:${recommendation.command}`)}
+              {@const command = recommendedCommandFor(selectedPackage, recommendation)}
+              <div>
+                <div>
+                  <strong>{recommendation.label}</strong>
+                  {#if recommendation.description}<span>{recommendation.description}</span>{/if}
+                  <code>{command}</code>
                 </div>
                 <button type="button" onclick={() => copyValue(command)}>
                   {copiedValue === command ? 'Copied' : 'Copy'}
