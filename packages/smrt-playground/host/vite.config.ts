@@ -80,6 +80,15 @@ export default defineConfig({
         replacement: resolve(__dirname, '../src/index.ts'),
       },
       {
+        // Playground entries are loaded from workspace source, so subpaths
+        // introduced by a source entry must not fall back to an unbuilt dist.
+        find: /^@happyvertical\/smrt-svelte\/board$/,
+        replacement: resolve(
+          __dirname,
+          '../../smrt-svelte/src/components/board/index.ts',
+        ),
+      },
+      {
         find: /^@happyvertical\/smrt-ui\/themes\/styles\/(.*)$/,
         replacement: resolve(__dirname, '../../smrt-ui/src/themes/styles/$1'),
       },
