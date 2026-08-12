@@ -112,13 +112,15 @@ describe('buildWorkbenchProject', () => {
     expect(
       project.packages[0]?.api.objects.find(
         (object) => object.className === 'Content',
-      )?.description,
-    ).toContain('Structured content object with metadata and body text');
-    expect(
-      project.packages[0]?.api.objects.find(
-        (object) => object.className === 'Content',
-      )?.typedocPath,
-    ).toContain('docs/content/api/content/classes/Content.md');
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        sourcePath: expect.stringContaining('packages/content/src/content.ts'),
+        fields: expect.arrayContaining([
+          expect.objectContaining({ name: 'body', type: 'text' }),
+        ]),
+      }),
+    );
     expect(project.packages[0]?.api.restEndpoints).toContainEqual(
       expect.objectContaining({
         method: 'GET',

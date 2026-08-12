@@ -398,8 +398,8 @@ export function createServer(): Server {
       const index = await buildKnowledgeIndex();
       const pkg = index.packages.find((item) => item.name === packageName);
       if (!pkg) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
+        throw new ProtocolError(
+          ProtocolErrorCode.InvalidParams,
           `Unknown workbench package: ${packageName}`,
         );
       }
