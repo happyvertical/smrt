@@ -119,6 +119,8 @@ export interface DomainKnowledgeModuleDoc {
 /** The package-level domain-knowledge artifact (`smrt-knowledge.json`) — the agent/developer contract. */
 export interface DomainKnowledgeManifest {
   schemaVersion: 1;
+  /** True when generation removed sensitive fields before projecting objects. */
+  sensitiveFieldsExcluded?: true;
   generatedAt: string;
   packageName?: string;
   packageVersion?: string;

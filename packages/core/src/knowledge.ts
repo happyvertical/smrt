@@ -156,6 +156,7 @@ export function buildDomainKnowledgeManifest(
 
   return {
     schemaVersion: 1,
+    sensitiveFieldsExcluded: true,
     generatedAt: new Date().toISOString(),
     packageName,
     packageVersion,

@@ -153,6 +153,9 @@ launcher or a small wrapper script with an absolute Node path.
   fields before deriving both fields and relationships, and remove their field
   and snake-case column names from projected conflict columns.
   If a custom tenant field is sensitive, retain scope/mode but omit its name.
+  A schema-v1 artifact without `sensitiveFieldsExcluded: true` is legacy: use
+  the owning raw manifest to allowlist its current non-sensitive fields and
+  structural identifiers, or omit uncorroborated field facts fail-closed.
 - **Skill loading**: bundled skills must be included in `package.json` `files`
   because runtime reads them from the installed package directory
 - **Portable plugin boundary**: `mcp.json` launches only `./dist/index.js` from

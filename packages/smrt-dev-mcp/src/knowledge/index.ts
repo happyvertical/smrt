@@ -1801,12 +1801,15 @@ function readKnowledgePackage(
   const agentsContent = hasAgentsMd ? readFileSync(agentsPath, 'utf8') : '';
   const fallbackClaudeDoc =
     hasClaudeMd && claudeContent.trim() !== '@AGENTS.md' ? claudeContent : '';
+  const manifest = readManifest(directory);
   const discoveredDomainKnowledge = readDomainKnowledge(directory);
   const domainKnowledge = discoveredDomainKnowledge
     ? {
         ...discoveredDomainKnowledge,
         content: sanitizeDomainKnowledgeManifest(
           discoveredDomainKnowledge.content,
+          manifest?.content,
+          name,
         ),
       }
     : null;
@@ -1815,7 +1818,6 @@ function readKnowledgePackage(
     : fallbackClaudeDoc
       ? 'CLAUDE.md'
       : null;
-  const manifest = readManifest(directory);
   const resolvedObjects = resolvePackageObjects({
     packageName: name,
     directory,
@@ -2307,20 +2309,61 @@ function readDomainKnowledgeObjects(
 
 function sanitizeDomainKnowledgeManifest(
   manifest: DomainKnowledgeManifest,
+  rawManifest?: Record<string, unknown>,
+  packageName?: string,
 ): DomainKnowledgeManifest {
+  const rawObjects = rawManifest
+    ? ownedManifestObjectsByIdentity(rawManifest, packageName)
+    : new Map<string, Record<string, unknown>>();
+  const projectionIsSanitized = manifest.sensitiveFieldsExcluded === true;
   return {
     ...manifest,
     objects: manifest.objects.map((object): DomainKnowledgeObject => {
-      const sensitiveIdentifiers = sensitiveKnowledgeFieldIdentifiers(
+      const rawObject =
+        (object.qualifiedName
+          ? rawObjects.get(object.qualifiedName)
+          : undefined) ?? rawObjects.get(object.name);
+      const rawFields = objectRecord(rawObject?.fields);
+      const artifactSensitiveIdentifiers = sensitiveKnowledgeFieldIdentifiers(
         object.fields.map((field) => [field.name, field]),
       );
+      const rawSensitiveIdentifiers = sensitiveKnowledgeFieldIdentifiers(
+        Object.entries(rawFields),
+      );
+      const sensitiveIdentifiers = new Set([
+        ...artifactSensitiveIdentifiers,
+        ...rawSensitiveIdentifiers,
+      ]);
+      const rawSafeFieldNames = new Set(
+        Object.entries(rawFields)
+          .filter(([, field]) => !isSensitiveKnowledgeField(field))
+          .map(([name]) => name),
+      );
+      const canTrustField = (field: DomainKnowledgeField) =>
+        projectionIsSanitized ||
+        (rawObject !== undefined && rawSafeFieldNames.has(field.name));
       const fields = object.fields
-        .filter((field) => !isSensitiveKnowledgeField(field))
+        .filter(
+          (field) => canTrustField(field) && !isSensitiveKnowledgeField(field),
+        )
         .map((field) => projectKnowledgeField(field.name, field));
       const safeFieldNames = new Set(fields.map((field) => field.name));
-      const conflictColumns = object.conflictColumns?.filter(
+      const rawDecoratorConfig = objectRecord(rawObject?.decoratorConfig);
+      const projectedConflictColumns = projectionIsSanitized
+        ? object.conflictColumns
+        : rawObject
+          ? stringArray(rawDecoratorConfig.conflictColumns)
+          : undefined;
+      const conflictColumns = projectedConflictColumns?.filter(
         (column) => !sensitiveIdentifiers.has(column),
       );
+      const projectedTenant = projectionIsSanitized
+        ? object.tenant
+        : rawObject
+          ? projectTenant(rawDecoratorConfig.tenantScoped)
+          : object.tenant
+            ? { scoped: object.tenant.scoped, mode: object.tenant.mode }
+            : undefined;
       return {
         ...object,
         fields,
@@ -2331,7 +2374,7 @@ function sanitizeDomainKnowledgeManifest(
               !isSensitiveKnowledgeField(field),
           )
           .map((field) => projectKnowledgeField(field.name, field)),
-        tenant: sanitizeKnowledgeTenant(object.tenant, sensitiveIdentifiers),
+        tenant: sanitizeKnowledgeTenant(projectedTenant, sensitiveIdentifiers),
         conflictColumns:
           conflictColumns && conflictColumns.length > 0
             ? conflictColumns
@@ -2339,6 +2382,27 @@ function sanitizeDomainKnowledgeManifest(
       };
     }),
   };
+}
+
+function ownedManifestObjectsByIdentity(
+  manifest: Record<string, unknown>,
+  packageName?: string,
+): Map<string, Record<string, unknown>> {
+  const owned = packageName
+    ? partitionOwnedObjects(manifest, packageName).owned
+    : objectRecord(manifest.objects);
+  const objects = new Map<string, Record<string, unknown>>();
+  for (const [key, value] of Object.entries(owned)) {
+    const object = objectRecord(value);
+    objects.set(key, object);
+    if (typeof object.className === 'string') {
+      objects.set(object.className, object);
+    }
+    if (typeof object.qualifiedName === 'string') {
+      objects.set(object.qualifiedName, object);
+    }
+  }
+  return objects;
 }
 
 function isSensitiveKnowledgeField(value: unknown): boolean {

@@ -181,6 +181,9 @@ legacy sensitivity flags under `_meta`.
 Sensitive field names and their snake-case column names are also removed from
 projected conflict columns. A sensitive custom tenant-field name is omitted
 while its tenant scope and mode remain available.
+New artifacts record `sensitiveFieldsExcluded: true`. For a legacy schema-v1
+artifact without that marker, the reader cross-checks the owning raw manifest
+and omits any field or structural identifier it cannot corroborate as safe.
 
 ## Cache Metadata
 

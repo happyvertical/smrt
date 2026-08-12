@@ -297,6 +297,7 @@ describe('SMRT knowledge index', () => {
       JSON.stringify(
         {
           schemaVersion: 1,
+          sensitiveFieldsExcluded: true,
           generatedAt: new Date().toISOString(),
           packageName: '@happyvertical/smrt-demo',
           packageVersion: '1.0.0',
@@ -528,6 +529,138 @@ describe('SMRT knowledge index', () => {
     });
     expect(architecture.promptBundle.contextMarkdown).toContain(
       '@happyvertical/smrt-demo:UnscopedArtifact — tenant unscoped',
+    );
+  });
+
+  it('uses the raw manifest to sanitize marker-less legacy artifacts', async () => {
+    await mkdir(join(rootDir, 'packages', 'demo', '.smrt'), {
+      recursive: true,
+    });
+    await writeFile(
+      join(rootDir, 'packages', 'demo', '.smrt', 'smrt-knowledge.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        packageName: '@happyvertical/smrt-demo',
+        sourceHashes: {},
+        exports: [],
+        dependencies: {},
+        smrtDependencies: [],
+        sdkDependencies: [],
+        tags: [],
+        risks: [],
+        objects: [
+          {
+            name: 'Demo',
+            qualifiedName: '@happyvertical/smrt-demo:Demo',
+            fields: [
+              { name: 'ownerId', type: 'foreignKey', related: 'Owner' },
+              { name: 'secretId', type: 'foreignKey', related: 'Secret' },
+              {
+                name: 'legacySecretId',
+                type: 'foreignKey',
+                related: 'LegacySecret',
+              },
+              { name: 'apiTokenID', type: 'text' },
+            ],
+            relationships: [
+              { name: 'ownerId', type: 'foreignKey', related: 'Owner' },
+              { name: 'secretId', type: 'foreignKey', related: 'Secret' },
+              {
+                name: 'legacySecretId',
+                type: 'foreignKey',
+                related: 'LegacySecret',
+              },
+            ],
+            methods: [],
+            tenant: { scoped: true, mode: 'optional', field: 'workspaceId' },
+            conflictColumns: [
+              'workspace_id',
+              'code',
+              'secret_id',
+              'legacy_secret_id',
+              'api_token_i_d',
+            ],
+            surfaces: [],
+            relationshipFeatures: [],
+            tags: [],
+            risks: [],
+          },
+          {
+            name: 'DemoLinks',
+            qualifiedName: '@happyvertical/smrt-demo:DemoLinks',
+            fields: [
+              { name: 'leftId', type: 'foreignKey', related: 'Left' },
+              { name: 'rightId', type: 'foreignKey', related: 'Right' },
+              {
+                name: 'privateTenantId',
+                type: 'foreignKey',
+                related: 'Tenant',
+              },
+            ],
+            relationships: [
+              { name: 'leftId', type: 'foreignKey', related: 'Left' },
+              { name: 'rightId', type: 'foreignKey', related: 'Right' },
+              {
+                name: 'privateTenantId',
+                type: 'foreignKey',
+                related: 'Tenant',
+              },
+            ],
+            methods: [],
+            tenant: {
+              scoped: true,
+              mode: 'required',
+              field: 'privateTenantId',
+            },
+            conflictColumns: ['left_id', 'right_id', 'private_tenant_id'],
+            surfaces: [],
+            relationshipFeatures: [],
+            tags: [],
+            risks: [],
+          },
+        ],
+        surfaces: [],
+        prompts: [],
+        relationshipsV2: {
+          foreignKeyFields: 0,
+          crossPackageRefFields: 0,
+          junctionCollections: 0,
+          hierarchicalObjects: 0,
+          polymorphicAssociations: 0,
+          uuidColumns: 0,
+        },
+      }),
+    );
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const pkg = index.packages.find(
+      (candidate) => candidate.name === '@happyvertical/smrt-demo',
+    );
+    const demo = pkg?.objects.find((object) => object.className === 'Demo');
+    const links = pkg?.objects.find(
+      (object) => object.className === 'DemoLinks',
+    );
+
+    expect(demo?.fields.map((field) => field.name)).toEqual(['ownerId']);
+    expect(demo?.relationships.map((field) => field.name)).toEqual(['ownerId']);
+    expect(demo?.conflictColumns).toEqual(['workspace_id', 'code']);
+    expect(links).toMatchObject({
+      tenant: { scoped: true, mode: 'required' },
+      conflictColumns: ['left_id', 'right_id'],
+    });
+    const serialized = JSON.stringify(pkg);
+    expect(serialized).not.toMatch(
+      /secretId|legacySecretId|apiTokenID|privateTenantId|secret_id|legacy_secret_id|api_token_i_d|private_tenant_id/,
+    );
+
+    const architecture = await buildArchitectureContext({
+      rootDir,
+      package: '@happyvertical/smrt-demo',
+      detail: 'full',
+    });
+    expect(architecture.promptBundle.contextMarkdown).not.toMatch(
+      /secretId|legacySecretId|apiTokenID|privateTenantId/,
     );
   });
 

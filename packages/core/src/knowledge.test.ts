@@ -84,6 +84,7 @@ describe('buildDomainKnowledgeManifest', () => {
     const order = artifact.objects.find((object) => object.name === 'Order');
 
     expect(artifact.schemaVersion).toBe(1);
+    expect(artifact.sensitiveFieldsExcluded).toBe(true);
     expect(order).toMatchObject({
       tenant: { scoped: true, mode: 'required', field: 'tenantId' },
       tableStrategy: 'sti',
