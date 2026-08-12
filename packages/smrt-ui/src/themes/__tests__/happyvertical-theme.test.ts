@@ -130,6 +130,19 @@ describe('happyvertical preset — WCAG AA (#2318)', () => {
       }
     });
 
+    it(`${scheme}: the bezel is never the same value as a surface it borders`, () => {
+      // outline-variant is a deliberately quiet hairline, but it still has to
+      // exist: authored at #2A3238, it originally collided byte-for-byte with
+      // surfaceContainerHighest and surfaceBright, so a bezel-bordered panel on
+      // either had a 1.00:1 border — no border at all.
+      for (const surface of SURFACES) {
+        expect(
+          palette[surface],
+          `${scheme} ${surface} must differ from outline-variant`,
+        ).not.toBe(palette.outlineVariant);
+      }
+    });
+
     it(`${scheme}: outline, focus ring, and status lamp clear 3:1 non-text`, () => {
       for (const surface of SURFACES) {
         for (const structural of ['outline', 'primary', 'success'] as const) {
@@ -192,12 +205,32 @@ describe('happyvertical preset — brand invariants (#2318)', () => {
     };
     walk(join(process.cwd(), 'src'));
 
-    // `color:` exactly — not `border-color:`, `background-color:`, or a custom
-    // property like `--alert-color:` that later paints a marker or fill.
-    const textPaint = /(?<![-\w])color\s*:\s*var\(\s*--smrt-color-success/;
-    const offenders = svelteFiles.filter((file) =>
-      textPaint.test(readFileSync(file, 'utf8')),
-    );
+    // Match on the DECLARATION VALUE rather than requiring `var(` to sit
+    // adjacent to `color:`, so wrappers count too — `color-mix(…)`,
+    // `light-dark(…)`, and `var(--x, var(--smrt-color-success))` all paint
+    // text just as directly. `(?![\w-])` keeps `--smrt-color-success-container`
+    // (a fill, with its own ink) from reading as a hit.
+    const declaration = /(?<![-\w])color\s*:\s*([^;{}]*)/g;
+    const successToken = /--smrt-color-success(?![\w-])/;
+    // One level of indirection: `--alert-color: var(--smrt-color-success)` and
+    // then `color: var(--alert-color)` is Alert.svelte's exact shape today, one
+    // edit away from painting text green invisibly.
+    const customProperty = /(--[\w-]+)\s*:\s*([^;{}]*)/g;
+
+    const offenders = svelteFiles.filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      const greenProperties = new Set<string>();
+      for (const [, name, value] of source.matchAll(customProperty)) {
+        if (successToken.test(value)) greenProperties.add(name);
+      }
+      for (const [, value] of source.matchAll(declaration)) {
+        if (successToken.test(value)) return true;
+        for (const property of greenProperties) {
+          if (value.includes(`var(${property}`)) return true;
+        }
+      }
+      return false;
+    });
 
     expect(
       offenders.map((file) => file.replace(process.cwd(), '')),

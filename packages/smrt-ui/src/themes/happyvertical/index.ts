@@ -45,11 +45,19 @@
  * `outline` and `outline-variant` are deliberately different strengths, and the
  * distinction is the a11y contract: `outline` is the boundary token and is
  * tuned to clear 3:1 on every surface, while `outline-variant` is the bezel —
- * the decorative hairline between panels — at ~1.3–1.5:1, which is the look the
- * design signs off on and the same register every other preset in this system
- * uses for its dividers. Never "fix" the bezel's contrast by raising its value;
- * a structure that must be perceivable (a control boundary, a focus ring)
- * should consume `outline` or `primary` instead.
+ * the decorative hairline between panels — which measures 1.25–1.54:1 in light
+ * and 1.03–1.43:1 in dark. That is the look the design signs off on and the
+ * same register every other preset here uses for its dividers. Never "fix" the
+ * bezel by raising its value; a structure that must be perceivable (a control
+ * boundary, a focus ring) should consume `outline` or `primary` instead.
+ *
+ * The dark bezel sits at the top of the surface ramp, so the ramp deliberately
+ * stops below it: `surfaceContainerHighest` and `surfaceBright` were originally
+ * authored AT `#2A3238` and a bezel-bordered panel on either was invisible at
+ * exactly 1.00:1. They are now distinct, and a test pins that no surface may
+ * ever equal `outline-variant` again. Separating them further would mean
+ * lifting the top of the ramp past the bezel, which drops `on-surface-variant`
+ * below AA on those surfaces — the wrong trade.
  */
 
 import { spacingScale } from '../shared.js';
@@ -201,11 +209,11 @@ const darkColors: ColorPalette = {
   onSurfaceVariant: '#97a29c',
   surfaceContainer: '#1c2226',
   surfaceContainerLow: '#171c20',
-  surfaceContainerHigh: '#222a2f',
-  surfaceContainerHighest: '#2a3238',
+  surfaceContainerHigh: '#212930',
+  surfaceContainerHighest: '#252d33',
   surfaceContainerLowest: '#0f1315',
   surfaceDim: '#101416',
-  surfaceBright: '#2a3238',
+  surfaceBright: '#283036',
 
   // Background - Night enamel
   background: '#14181b',
