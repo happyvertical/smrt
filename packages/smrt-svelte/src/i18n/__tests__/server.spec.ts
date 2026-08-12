@@ -62,4 +62,15 @@ describe('buildI18nSnapshot', () => {
     expect(snapshot.messages['ui.snapshot_test.a']).toBe('Alpha');
     expect(snapshot.messages['ui.snapshot_test.b']).toBeUndefined();
   });
+
+  it('includes Board defaults when only the server snapshot entrypoint is imported', async () => {
+    const snapshot = await buildI18nSnapshot({
+      locale: 'en',
+      keys: ['ui.board.move_failed'],
+    });
+
+    expect(snapshot.messages['ui.board.move_failed']).toBe(
+      'Could not move {card}. The board was restored.',
+    );
+  });
 });

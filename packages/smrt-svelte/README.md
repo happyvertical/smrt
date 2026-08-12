@@ -1,5 +1,33 @@
 # @happyvertical/smrt-svelte
 
+## Board
+
+`@happyvertical/smrt-svelte/board` provides a generic, accessible Svelte 5
+Kanban-style board. It has no project, sales, or support dependency: supply
+your own cards, columns, card-to-column getter/setter, and typed card snippet.
+`cards` is controlled; `defaultCards` enables local state. `onmove` receives a
+typed intent and can be async—rejections restore the previous view. Set
+`optimistic` to present controlled moves while persistence is pending.
+
+```svelte
+<script lang="ts">
+  import { Board } from '@happyvertical/smrt-svelte/board';
+</script>
+
+<Board
+  {columns}
+  {cards}
+  getCardColumnId={(card) => card.stage}
+  setCardColumnId={(card, stage) => ({ ...card, stage })}
+  getCardLabel={(card) => card.subject}
+  card={cardSnippet}
+  onmove={({ card, target }) => save({ ...card, stage: target.columnId })}
+/>
+```
+
+The same primitive can represent support queues (`card.queue`) or a sales
+pipeline (`opportunity.stage`) without importing `@happyvertical/projects`.
+
 Svelte 5 component library for the s-m-r-t framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
 
 ## Installation

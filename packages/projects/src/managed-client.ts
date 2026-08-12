@@ -2,6 +2,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { DevelopmentRequestCollection } from './collections/DevelopmentRequests';
 import { ProjectIntegrationCollection } from './collections/ProjectIntegrations';
 import type { ProjectIntegration } from './models/ProjectIntegration';
+import {
+  type ProjectBoardMoveIntent,
+  ProjectBoardService,
+} from './services/project-board-service';
 import type { ManagedDevelopmentRequestCreateInput } from './types';
 
 export class ManagedProjectClient {
@@ -65,6 +69,19 @@ export class ManagedProjectClient {
       integrationId: integration.id as string,
       requesterId: this.#requesterId,
     });
+  }
+
+  /**
+   * Move a project-board item through this authenticated integration.
+   *
+   * The browser submits only the move intent. This client keeps the credential
+   * authentication boundary server-side and ProjectBoardService reloads active
+   * capability state again immediately before the provider mutation.
+   */
+  async moveProjectBoardItem(input: ProjectBoardMoveIntent) {
+    const integration = await this.#requireCapability('projects:write');
+    const service = await ProjectBoardService.create({ db: this.#db });
+    return service.moveItem(integration, input);
   }
 
   async #requireCapability(capability: string): Promise<ProjectIntegration> {

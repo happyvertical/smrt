@@ -1,7 +1,17 @@
 <script lang="ts">
+import {
+  Board,
+  type BoardCard,
+  type BoardColumn,
+} from '@happyvertical/smrt-svelte/board';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { DevelopmentRequestView } from './delivery-types.js';
 import { M } from './i18n.js';
+
+interface DevelopmentBoardCard extends BoardCard {
+  request: DevelopmentRequestView;
+  columnId: string;
+}
 
 export interface Props {
   requests?: DevelopmentRequestView[];
@@ -15,89 +25,59 @@ let {
   onselect,
 }: Props = $props();
 const { t } = useI18n();
-const inColumn = (column: string) =>
-  requests.filter(
-    (request) =>
-      (request.deliveryStatus || request.status).toLowerCase() ===
-      column.toLowerCase(),
-  );
+const boardColumns = $derived<BoardColumn[]>(
+  columns.map((column) => ({
+    id: column.toLowerCase(),
+    label: column.replaceAll('_', ' '),
+  })),
+);
+const cards = $derived<DevelopmentBoardCard[]>(
+  requests.map((request) => ({
+    id: request.id,
+    request,
+    columnId: (request.deliveryStatus || request.status).toLowerCase(),
+  })),
+);
+const cardLabel = (card: DevelopmentBoardCard) =>
+  card.request.title ?? card.request.description;
 </script>
 
-<section class="board" aria-label={t(M['projects.development_board.aria'])}>
-  {#if requests.length === 0}
-    <p class="empty">{t(M['projects.development_board.empty'])}</p>
-  {:else}
-    {#each columns as column (column)}
-      <div class="lane">
-        <header>
-          <h3>{column.replaceAll('_', ' ')}</h3>
-          <span>{inColumn(column).length}</span>
-        </header>
-        <div class="lane__items">
-          {#each inColumn(column) as request (request.id)}
-            <!-- raw-primitive-allow: each board row is a semantic selection control -->
-            <button type="button" onclick={() => onselect?.(request)}>
-              <strong>{request.title ?? request.description}</strong>
-              <small>
-                {request.type}
-                {request.requesterLabel ? ` · ${request.requesterLabel}` : ''}
-              </small>
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/each}
-  {/if}
-</section>
+{#if requests.length === 0}
+  <section
+    class="empty"
+    aria-label={t(M['projects.development_board.aria'])}
+  >
+    <p>{t(M['projects.development_board.empty'])}</p>
+  </section>
+{:else}
+  <Board
+    columns={boardColumns}
+    {cards}
+    label={t(M['projects.development_board.aria'])}
+    getCardColumnId={(card) => card.columnId}
+    setCardColumnId={(card, columnId) => ({ ...card, columnId })}
+    getCardLabel={cardLabel}
+    onselect={(card) => onselect?.(card.request)}
+  >
+    {#snippet card({ card })}
+      <strong>{card.request.title ?? card.request.description}</strong>
+      <small>
+        {card.request.type}
+        {card.request.requesterLabel
+          ? ` · ${card.request.requesterLabel}`
+          : ''}
+      </small>
+    {/snippet}
+  </Board>
+{/if}
 
 <style>
-  .board {
-    display: grid;
-    gap: var(--smrt-spacing-5);
-    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-    overflow-x: auto;
-  }
-  .lane {
-    min-width: 0;
-  }
   .empty {
     color: var(--smrt-color-on-surface-variant);
-    grid-column: 1 / -1;
     margin: 0;
     padding: var(--smrt-spacing-5) var(--smrt-spacing-1);
   }
-  .lane header {
-    align-items: center;
-    border-bottom: 2px solid var(--smrt-color-primary);
-    display: flex;
-    justify-content: space-between;
-    padding: var(--smrt-spacing-2) var(--smrt-spacing-1);
-  }
-  .lane h3 {
-    font-size: var(--smrt-typography-label-medium-size);
-    margin: 0;
-    text-transform: uppercase;
-  }
-  .lane__items {
-    display: grid;
-  }
-  .lane__items button {
-    background: transparent;
-    border: 0;
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
-    color: inherit;
-    cursor: pointer;
-    display: grid;
-    gap: var(--smrt-spacing-1);
-    padding: var(--smrt-spacing-4) var(--smrt-spacing-1);
-    text-align: left;
-    transition: transform 120ms ease;
-  }
-  .lane__items button:hover,
-  .lane__items button:focus-visible {
-    transform: translateX(var(--smrt-spacing-1));
-  }
-  .lane small {
+  small {
     color: var(--smrt-color-on-surface-variant);
   }
 </style>
