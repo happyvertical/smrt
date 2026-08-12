@@ -103,10 +103,10 @@ test('root aggregate workbench shows package metadata', async ({ page }) => {
     'Content',
   );
   await expect(page.getByTestId('workbench-api-objects')).toContainText(
-    'Structured content object with metadata and body text',
+    'packages/content/src/content.ts',
   );
   await expect(page.getByTestId('workbench-api-objects')).toContainText(
-    'TypeDoc:',
+    'body text optional',
   );
   await page.getByTestId('workbench-api-tab-rest').click();
   await expect(page.getByTestId('workbench-api-rest')).toContainText(
