@@ -9,7 +9,7 @@
  * elevation).
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { generateThemeCSS, generateThemeVariables } from '../css-generator.js';
@@ -20,6 +20,10 @@ import type { ColorPalette } from '../types.js';
 // each package's suite with cwd === the package root.
 const staticCss = readFileSync(
   join(process.cwd(), 'src/themes/styles/happyvertical.css'),
+  'utf8',
+);
+const themeProviderSource = readFileSync(
+  join(process.cwd(), 'src/themes/ThemeProvider.svelte'),
   'utf8',
 );
 
@@ -173,6 +177,34 @@ describe('happyvertical preset — brand invariants (#2318)', () => {
     );
   });
 
+  it('is not undermined by a component painting text with the success token', () => {
+    // "Green is never text" is only a real guarantee if nothing renders it as
+    // one: light `#1e7a4b` measures 4.44:1 on the enamel ground, just under AA.
+    // Omitting `success` from ACCENT_TEXT above states the rule; this scan
+    // enforces it for the components this package owns.
+    const svelteFiles: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.svelte')) svelteFiles.push(full);
+      }
+    };
+    walk(join(process.cwd(), 'src'));
+
+    // `color:` exactly — not `border-color:`, `background-color:`, or a custom
+    // property like `--alert-color:` that later paints a marker or fill.
+    const textPaint = /(?<![-\w])color\s*:\s*var\(\s*--smrt-color-success/;
+    const offenders = svelteFiles.filter((file) =>
+      textPaint.test(readFileSync(file, 'utf8')),
+    );
+
+    expect(
+      offenders.map((file) => file.replace(process.cwd(), '')),
+      'success is a lamp/marker/fill, never a text color',
+    ).toEqual([]);
+  });
+
   it('uses one calm easing for every motion token', () => {
     const curves = new Set(Object.values(happyverticalTheme.easing));
     expect(curves.size).toBe(1);
@@ -189,15 +221,25 @@ describe('happyvertical preset — brand invariants (#2318)', () => {
     expect(dark['--smrt-font-family-mono']).toContain('B612 Mono');
   });
 
-  it('defines a 2px amber focus outline with offset', () => {
-    const focusBlock = staticCss.match(
-      /\[data-theme="happyvertical"\] :focus-visible \{([^}]*)\}/,
-    );
-    expect(focusBlock, 'focus-visible rule should exist').not.toBeNull();
-    expect(focusBlock?.[1]).toContain(
-      'outline: 2px solid var(--smrt-color-primary)',
-    );
-    expect(focusBlock?.[1]).toMatch(/outline-offset:\s*2px/);
+  it('defines a 2px amber focus outline with offset on BOTH delivery paths', () => {
+    // The preset ships two ways — a static stylesheet import and
+    // <ThemeProvider preset="happyvertical">. A focus rule that exists in only
+    // one of them means half the consumers silently lose the brand indicator.
+    const sources: [string, RegExp][] = [
+      [staticCss, /\[data-theme="happyvertical"\] :focus-visible \{([^}]*)\}/],
+      [
+        themeProviderSource,
+        /:global\(\[data-theme='happyvertical'\] :focus-visible\) \{([^}]*)\}/,
+      ],
+    ];
+    for (const [source, pattern] of sources) {
+      const focusBlock = source.match(pattern);
+      expect(focusBlock, 'focus-visible rule should exist').not.toBeNull();
+      expect(focusBlock?.[1]).toContain(
+        'outline: 2px solid var(--smrt-color-primary)',
+      );
+      expect(focusBlock?.[1]).toMatch(/outline-offset:\s*2px/);
+    }
   });
 });
 

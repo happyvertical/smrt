@@ -26,15 +26,30 @@
  *
  * `background` is the enamel ground and `surface` is the raised faceplate, so a
  * `Card` (which paints `--smrt-color-surface`) reads as a panel sitting on the
- * ground exactly as in the sign-off mock. The `surface-container-*` gradations
- * run between those two anchors — lightest at `lowest` in light, inverted in
- * dark.
+ * ground exactly as in the sign-off mock. The `surface-container-*` ramp is
+ * anchored on those two — lightest at `lowest` in light, inverted in dark — and
+ * deliberately extends one hand-tuned step past each anchor (`lowest`/`bright`
+ * a shade above faceplate, `highest`/`dim` a shade below enamel). Confining all
+ * seven levels strictly between enamel and faceplate would compress them into a
+ * ~12-value band, and components that stack container levels (DataTable rows
+ * under a header, nested panels) would lose their separation entirely.
  *
  * **Green is never text.** It is a status lamp, marker, or container fill only;
- * `success` is deliberately excluded from the accent-as-text contrast set in
- * `__tests__/happyvertical-theme.test.ts`. Every other text/surface pairing in
- * both schemes clears WCAG AA (4.5:1), and `outline` plus the amber focus ring
- * clear 3:1 non-text on every surface slot.
+ * light `#1E7A4B` measures 4.44:1 on the enamel ground, just under AA. The
+ * accent-as-text contrast set in `__tests__/happyvertical-theme.test.ts`
+ * excludes `success` and a companion scan enforces that no component in this
+ * package paints text with it. Every other text/surface pairing in both schemes
+ * clears WCAG AA (4.5:1), and `outline` plus the amber focus ring clear 3:1
+ * non-text on every surface slot.
+ *
+ * `outline` and `outline-variant` are deliberately different strengths, and the
+ * distinction is the a11y contract: `outline` is the boundary token and is
+ * tuned to clear 3:1 on every surface, while `outline-variant` is the bezel —
+ * the decorative hairline between panels — at ~1.3–1.5:1, which is the look the
+ * design signs off on and the same register every other preset in this system
+ * uses for its dividers. Never "fix" the bezel's contrast by raising its value;
+ * a structure that must be perceivable (a control boundary, a focus ring)
+ * should consume `outline` or `primary` instead.
  */
 
 import { spacingScale } from '../shared.js';
@@ -272,14 +287,14 @@ const typography: TypographyScale = {
     size: '1rem',
     lineHeight: '1.4',
     weight: '500',
-    tracking: '-0.005em',
+    tracking: '-0.01em',
     fontFamily: DISPLAY_FONT,
   },
   titleSmall: {
     size: '0.9rem',
     lineHeight: '1.4',
     weight: '500',
-    tracking: '0',
+    tracking: '-0.01em',
     fontFamily: DISPLAY_FONT,
   },
   bodyLarge: {

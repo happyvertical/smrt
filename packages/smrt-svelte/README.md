@@ -176,7 +176,7 @@ resolve against `smrt-ui`:
 | `@happyvertical/smrt-ui/feedback` | Modal, ConfirmDialog, LoadingOverlay, ProgressBar |
 | `@happyvertical/smrt-ui/chat` | Message bubble, reaction picker, typing indicator |
 | `@happyvertical/smrt-ui/registry` | ModuleUIRegistry for agent admin panels |
-| `@happyvertical/smrt-ui/themes` | Canonical ThemeProvider, Material/Glass/Studio/s-m-r-t presets, CSS generation |
+| `@happyvertical/smrt-ui/themes` | Canonical ThemeProvider, Material/Glass/Studio/s-m-r-t/HappyVertical presets, CSS generation |
 | `@happyvertical/smrt-ui/i18n` | Client i18n (`useI18n`, `Trans`) — the counterpart to `smrt-svelte`'s `/i18n/server` |
 | `@happyvertical/smrt-ui/styles/tokens.css` | Design tokens CSS |
 
