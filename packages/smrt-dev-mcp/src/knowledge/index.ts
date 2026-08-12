@@ -276,6 +276,13 @@ export interface ArchitectureContextResult {
   diagnostics: KnowledgeDiagnostic[];
 }
 
+export interface PackageSpecialistContextResult {
+  selectedPackage: KnowledgePackage;
+  selectedSdkPackages: KnowledgePackage[];
+  promptBundle: KnowledgePromptBundle;
+  sourceFiles: string[];
+}
+
 export interface SmrtReviewResult {
   mode: 'findings' | 'prompt-bundle' | 'both';
   selectedPackages: KnowledgePackage[];
@@ -1152,6 +1159,57 @@ export async function buildArchitectureContext(
     }),
     coverage: index.coverage,
     diagnostics: index.diagnostics,
+  };
+}
+
+export async function buildPackageSpecialistContext(
+  options: ContextSelectorOptions = {},
+): Promise<PackageSpecialistContextResult> {
+  const packageQuery = options.packageName ?? options.package;
+  if (!packageQuery) {
+    throw new Error('Package specialist context requires a package name');
+  }
+
+  const index = await buildKnowledgeIndex({
+    rootDir: options.rootDir,
+    includeDocs: true,
+  });
+  const selectedPackage = index.packages.find(
+    (pkg) =>
+      pkg.kind !== 'sdk' && packageMatches(pkg, packageQuery.toLowerCase()),
+  );
+
+  if (!selectedPackage) {
+    throw new Error(`Unknown SMRT package: ${packageQuery}`);
+  }
+
+  const selectedSdkPackages = selectSdkPackages(
+    index,
+    [selectedPackage],
+    [selectedPackage.name, ...selectedPackage.sdkDependencies],
+    {
+      scope: 'project',
+      packageName: selectedPackage.name,
+    },
+  );
+  const sourceFiles = packageSpecialistSourceFiles(
+    index.rootDir,
+    selectedPackage,
+  );
+
+  return {
+    selectedPackage,
+    selectedSdkPackages,
+    sourceFiles,
+    promptBundle: buildPromptBundle({
+      title: `SMRT package specialist: ${selectedPackage.name}`,
+      task: 'Act as a deterministic specialist for this package. Use only the supplied package docs, manifest/knowledge artifacts, routes, tests, prompts, and dependency context. Explain package concepts, integration surfaces, validation commands, and likely implementation risks with source references. Do not assume provider-backed chat or external model access.',
+      index,
+      packages: [selectedPackage],
+      sdkPackages: selectedSdkPackages,
+      sourceFiles,
+      extraContext: options.focus,
+    }),
   };
 }
 
@@ -3168,6 +3226,60 @@ function packageMatches(pkg: KnowledgePackage, query: string): boolean {
     pkg.name.toLowerCase().includes(normalized) ||
     shortName.toLowerCase() === normalized ||
     pkg.relativeDirectory.toLowerCase().endsWith(`/${normalized}`)
+  );
+}
+
+function packageSpecialistSourceFiles(
+  rootDir: string,
+  pkg: KnowledgePackage,
+): string[] {
+  const sourceFiles = new Set<string>();
+  const addIfExists = (relativePath: string) => {
+    if (existsSync(join(rootDir, relativePath))) {
+      sourceFiles.add(relativePath);
+    }
+  };
+
+  addIfExists(join(pkg.relativeDirectory, 'package.json'));
+  addIfExists(join(pkg.relativeDirectory, 'README.md'));
+  addIfExists(join(pkg.relativeDirectory, 'AGENTS.md'));
+  addIfExists(join(pkg.relativeDirectory, 'CHANGELOG.md'));
+
+  if (pkg.domainKnowledgePath) {
+    sourceFiles.add(pkg.domainKnowledgePath);
+  }
+  if (pkg.manifestPath) {
+    sourceFiles.add(pkg.manifestPath);
+  }
+
+  for (const prompt of pkg.prompts) {
+    sourceFiles.add(prompt.filePath);
+  }
+
+  const packageFiles = existsSync(pkg.directory)
+    ? walkFiles(pkg.directory)
+    : [];
+  for (const filePath of packageFiles) {
+    const relativeFilePath = relative(rootDir, filePath);
+    if (isPackageSpecialistSource(relativeFilePath)) {
+      sourceFiles.add(relativeFilePath);
+    }
+  }
+
+  return [...sourceFiles].sort().slice(0, 120);
+}
+
+function isPackageSpecialistSource(relativeFilePath: string): boolean {
+  return (
+    relativeFilePath.endsWith('/src/workbench.ts') ||
+    relativeFilePath.endsWith('/src/playground.ts') ||
+    relativeFilePath.endsWith('/src/route-module.ts') ||
+    relativeFilePath.includes('/src/svelte/playground') ||
+    relativeFilePath.includes('/src/svelte/routes/') ||
+    relativeFilePath.includes('/src/routes/') ||
+    relativeFilePath.includes('/src/prompts/') ||
+    /\.test\.[cm]?ts$/.test(relativeFilePath) ||
+    /\.spec\.[cm]?ts$/.test(relativeFilePath)
   );
 }
 

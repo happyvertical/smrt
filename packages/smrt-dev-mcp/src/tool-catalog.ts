@@ -387,6 +387,24 @@ const TOOL_DEFINITIONS: Array<
     },
   },
   {
+    name: 'build-package-specialist-context',
+    description:
+      'Build deterministic package specialist context for the SMRT workbench',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootDir: { type: 'string' },
+        package: {
+          type: 'string',
+          description:
+            'Package name or short package query, e.g. @happyvertical/smrt-content or content',
+        },
+        focus: { type: 'string' },
+      },
+      required: ['package'],
+    },
+  },
+  {
     name: 'build-domain-architecture-context',
     description:
       'Build domain-scoped model-ready SMRT architecture context and prompt bundle',

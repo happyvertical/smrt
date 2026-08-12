@@ -1,6 +1,7 @@
 packages:
   - 'packages/*'
   - 'packages/smrt-playground/host'
+  - 'packages/smrt-workbench/host'
 
 overrides:
   '@types/node': 24.13.2

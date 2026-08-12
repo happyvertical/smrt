@@ -18,6 +18,7 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `build-domain-review-context` | Domain-scoped review context builder with `scope`/`package` filters |
 | `smrt-review` | Returns deterministic review findings and a reusable review prompt bundle |
 | `build-architecture-context` | Builds architecture planning context from an idea or docs |
+| `build-package-specialist-context` | Builds deterministic package-specific Workbench context and source references |
 | `build-domain-architecture-context` | Domain-scoped architecture context builder with `scope`/`package` filters |
 | `smrt-architecture` | Recommends SMRT/SDK packages, object-model sketch, risks, and questions |
 | `list-agent-skills` | Lists bundled harness-agnostic agent skills |

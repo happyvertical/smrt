@@ -3,6 +3,7 @@ import {
   ColorSchemeToggle,
   ThemeProvider,
   ThemeSwitcher,
+  tryGetThemeContext,
 } from '@happyvertical/smrt-ui/themes';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
@@ -18,12 +19,18 @@ export interface Props {
   modules?: SmrtPlaygroundModule[];
   title?: string;
   subtitle?: string;
+  embedded?: boolean;
+  selectedEntryId?: string | null;
+  hideEntryList?: boolean;
 }
 
 let {
   modules = [],
   title = 's-m-r-t playground',
   subtitle = 'Shared package previews with app-local overrides',
+  embedded = false,
+  selectedEntryId: controlledSelectedEntryId = null,
+  hideEntryList = false,
 }: Props = $props();
 
 const foundationPackageName = '@happyvertical/smrt-ui';
@@ -38,6 +45,7 @@ let selectedModuleName = $state<string | null>(null);
 let selectedEntryId = $state<string | null>(null);
 let selectedMode = $state<SmrtPlaygroundMode>('mock');
 let isHydrated = $state(false);
+const inheritedThemeContext = tryGetThemeContext();
 
 onMount(() => {
   isHydrated = true;
@@ -125,7 +133,14 @@ const foundationGroups = $derived.by(() => {
 });
 
 $effect(() => {
-  const firstModule = orderedModules[0] ?? null;
+  const controlledModule = controlledSelectedEntryId
+    ? (orderedModules.find((module) =>
+        module.entries.some(
+          (entry) => entry.qualifiedId === controlledSelectedEntryId,
+        ),
+      ) ?? null)
+    : null;
+  const firstModule = controlledModule ?? orderedModules[0] ?? null;
   if (!firstModule) {
     selectedModuleName = null;
     selectedEntryId = null;
@@ -133,28 +148,32 @@ $effect(() => {
   }
 
   const activeModule =
+    controlledModule ??
     orderedModules.find(
       (module) => module.packageName === selectedModuleName,
-    ) ?? firstModule;
+    ) ??
+    firstModule;
 
   if (activeModule.packageName !== selectedModuleName) {
     selectedModuleName = activeModule.packageName;
     selectedEntryId =
-      activeModule.packageName === foundationPackageName
+      controlledSelectedEntryId ??
+      (activeModule.packageName === foundationPackageName || hideEntryList
         ? (activeModule.entries[0]?.qualifiedId ?? null)
-        : null;
+        : null);
     selectedMode = activeModule.entries[0]?.availableModes[0] ?? 'mock';
     return;
   }
 
-  if (selectedEntryId === null) {
+  const requestedEntryId = controlledSelectedEntryId ?? selectedEntryId;
+  if (requestedEntryId === null && !hideEntryList) {
     return;
   }
 
   const activeEntry =
     activeModule.entries.find(
-      (entry) => entry.qualifiedId === selectedEntryId,
-    ) ?? null;
+      (entry) => entry.qualifiedId === requestedEntryId,
+    ) ?? (hideEntryList ? (activeModule.entries[0] ?? null) : null);
 
   if (!activeEntry) {
     selectedEntryId = null;
@@ -174,8 +193,9 @@ const selectedModule = $derived(
 );
 const selectedEntry = $derived(
   selectedModule?.entries.find(
-    (entry) => entry.qualifiedId === selectedEntryId,
-  ) ?? null,
+    (entry) =>
+      entry.qualifiedId === (controlledSelectedEntryId ?? selectedEntryId),
+  ) ?? (hideEntryList ? (selectedModule?.entries[0] ?? null) : null),
 );
 const selectedModeConfig = $derived(
   selectedEntry ? (selectedEntry.modes[selectedMode] ?? null) : null,
@@ -297,8 +317,13 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
   </button>
 {/snippet}
 
-<ThemeProvider colorScheme="system" persist={true}>
-  <div class="playground-shell" data-hydrated={isHydrated ? 'true' : 'false'}>
+{#snippet playgroundShell()}
+  <div
+    class="playground-shell"
+    class:playground-shell--embedded={embedded}
+    data-hydrated={isHydrated ? 'true' : 'false'}
+  >
+    {#if !embedded}
     <aside class="catalog-nav">
       <header class="brand">
         <span class="brand__mark" aria-hidden="true">S</span>
@@ -377,6 +402,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
         <ColorSchemeToggle />
       </footer>
     </aside>
+    {/if}
 
     <main class="workspace">
       {#if selectedModule}
@@ -471,7 +497,15 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
       {/if}
     </main>
   </div>
-</ThemeProvider>
+{/snippet}
+
+{#if inheritedThemeContext}
+  {@render playgroundShell()}
+{:else}
+  <ThemeProvider colorScheme="system" persist={true}>
+    {@render playgroundShell()}
+  </ThemeProvider>
+{/if}
 
 <style>
   :global(body) {
@@ -490,6 +524,11 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     background: var(--smrt-color-background);
     color: var(--smrt-color-on-background);
     font-family: var(--smrt-font-family);
+  }
+
+  .playground-shell--embedded {
+    grid-template-columns: 1fr;
+    min-height: 0;
   }
 
   button,
@@ -699,6 +738,10 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
     align-content: start;
     gap: 1.25rem;
     padding: 1.25rem clamp(1.25rem, 3vw, 3rem) 3rem;
+  }
+
+  .playground-shell--embedded .workspace {
+    padding: 0;
   }
 
   .workspace-header {

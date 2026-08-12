@@ -232,6 +232,7 @@ export function createPackageConfig(
     // Framework wrapper library — has no @smrt() classes of its own; it
     // consumes generated definitions passed in as arguments (#1761).
     'smrt-web',
+    'smrt-workbench',
   ];
 
   return async () => {

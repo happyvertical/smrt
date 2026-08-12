@@ -64,7 +64,8 @@
       "@happyvertical/smrt-social",
       "@happyvertical/smrt-video",
       "@happyvertical/smrt-voice",
-      "@happyvertical/smrt-web"
+      "@happyvertical/smrt-web",
+      "@happyvertical/smrt-workbench"
     ]
   ],
   "linked": [],

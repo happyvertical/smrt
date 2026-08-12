@@ -69,6 +69,7 @@
     { "path": "./packages/users" },
     { "path": "./packages/smrt-svelte" },
     { "path": "./packages/smrt-playground" },
+    { "path": "./packages/smrt-workbench" },
 
     // MCP Servers
     { "path": "./packages/smrt-dev-mcp" },

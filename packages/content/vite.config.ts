@@ -32,6 +32,7 @@ export default defineConfig(async ({ mode }) => {
         'ui',
         'mock-smrt-client',
         'playground',
+        'workbench',
         'publish-readiness',
       ],
       svelte: 'svelte',

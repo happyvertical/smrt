@@ -1,17 +1,47 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.js';
-import type { ImageLike } from '../image-clients.js';
+import type {
+  ImageEditorClient,
+  ImageLike,
+  ImagesGalleryClient,
+} from '../image-clients.js';
 import { AssetsGallery, ImageEditor, ImageUploader } from '../index.js';
 
 const { t } = useI18n();
 
-let { apiBaseUrl = '/api/v1' }: { apiBaseUrl?: string } = $props();
+let {
+  apiBaseUrl = '/api/v1',
+  galleryClient = undefined,
+  editorClient = undefined,
+  initialImage = null,
+}: {
+  apiBaseUrl?: string;
+  galleryClient?: ImagesGalleryClient;
+  editorClient?: ImageEditorClient;
+  initialImage?: ImageLike | null;
+} = $props();
 
 type StudioImage = ImageLike;
 
 let selectedImage = $state<StudioImage | null>(null);
+let lastInitialImageId = $state<string | null>(null);
 let uploaderStatus = $state('No image selected from the uploader yet.');
+
+$effect(() => {
+  const nextInitialImageId = initialImage?.id || null;
+
+  if (nextInitialImageId === lastInitialImageId) {
+    return;
+  }
+
+  lastInitialImageId = nextInitialImageId;
+  selectedImage = initialImage;
+
+  if (initialImage) {
+    uploaderStatus = `Loaded “${initialImage.name}” from the workbench fixture.`;
+  }
+});
 
 function isPersistedImage(value: unknown): value is StudioImage {
   return (
@@ -69,7 +99,12 @@ function handleEditorSave(image: StudioImage) {
     </div>
 
     <div class="images-route__card">
-      <ImageUploader {apiBaseUrl} onSelect={handleUploaderSelect} />
+      <ImageUploader
+        {apiBaseUrl}
+        {galleryClient}
+        {editorClient}
+        onSelect={handleUploaderSelect}
+      />
     </div>
   </section>
 
@@ -83,12 +118,17 @@ function handleEditorSave(image: StudioImage) {
 
     <div class="images-route__workspace-grid">
       <div class="images-route__card images-route__gallery">
-        <AssetsGallery {apiBaseUrl} onSelect={handleGallerySelect} />
+        <AssetsGallery
+          {apiBaseUrl}
+          client={galleryClient}
+          onSelect={handleGallerySelect}
+        />
       </div>
 
       <div class="images-route__card images-route__editor">
         <ImageEditor
           {apiBaseUrl}
+          client={editorClient}
           image={selectedImage}
           onSave={handleEditorSave}
         />

@@ -141,6 +141,10 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - `@types/node` always `catalog:`
   - `vite`, `vitest`, `vite-plugin-dts`, `typescript` come from root devDependencies — do not redeclare per-package unless overriding
   - Pinning style: prefer caret (`^X.Y.Z`) for third-party deps; exact pins (`X.Y.Z`) only for tools where minor bumps cause breakage (document why)
+- **Coordinated releases**: every publishable `@happyvertical/smrt-*` package
+  belongs to the fixed release group in `.changeset/config.json` and carries
+  the same version as that group. `scripts/check-standards.mjs` enforces both
+  invariants before publish validation.
 - **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. **No `lint` or `format` scripts** — those are root-level Biome tasks only (`turbo lint` / `biome ci` / `npm run format-check`), which already gate every package on PRs; `scripts/check-standards.mjs` **forbids** per-package `lint`/`lint:fix`/`format`/`format-check` scripts so drift back to them is caught (S2, #1374). The presence of `typecheck` is likewise enforced by `scripts/check-standards.mjs`; the only carve-outs are the plain-JS template wrappers (`template-sveltekit`, `template-site-static-json`), whose typecheck obligation lives in their scaffolded `template/package.json` (see §10).
 - **`peerDependencies`**:
   - Svelte peer always `svelte: ^5.18.0` for packages shipping UI
@@ -434,7 +438,8 @@ never disable the scan.
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
     },
-    "./playground": { "types": "./dist/playground.d.ts", "import": "./dist/playground.js" }
+    "./playground": { "types": "./dist/playground.d.ts", "import": "./dist/playground.js" },
+    "./workbench": { "types": "./dist/workbench.d.ts", "import": "./dist/workbench.js" }
   }
 }
 ```
@@ -445,6 +450,7 @@ never disable the scan.
 - **`svelte/index.ts`**: uses `ModuleUIRegistry.register(...)` pattern. Pure re-exports without registry are deprecated.
 - **`./ui` subpath**: exports `MODULE_META` and `UI_SLOTS` constants. The vite config builds a `ui` entry; the package.json must declare the matching export. (`chat` currently has the entry without the export.)
 - **`./playground` subpath**: exports the package's playground module for use by `smrt-playground`
+- **`./workbench` subpath**: exports package-owned routes and workbench metadata for use by `smrt-workbench`
 - **Svelte peer**: `svelte: ^5.18.0` (uniform). Drop the `^4.0.0 || ^5.0.0` range.
 - **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json`
 - **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks via the a11y wrapper, e.g. `tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json` (see Accessibility enforcement below). SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript pass and the `svelte-check-a11y` wrapper pass.

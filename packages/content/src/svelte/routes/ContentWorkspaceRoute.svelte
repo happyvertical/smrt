@@ -17,6 +17,7 @@ import {
 } from './shared.js';
 
 interface ContentWorkspaceRouteProps {
+  client?: ReturnType<typeof createClient>;
   navigation?: ContentRouteNavigationItem[];
   apiBaseUrl?: string;
   getPublishedHref?: (content: ContentData) => string | null;
@@ -36,9 +37,10 @@ let {
   apiBaseUrl = '/api/v1',
   getPublishedHref = defaultGetPublishedHref,
   embedded = false,
+  client = undefined,
 }: ContentWorkspaceRouteProps = $props();
 
-const client = $derived(createClient(apiBaseUrl));
+const apiClient = $derived(client ?? createClient(apiBaseUrl));
 const governanceHref = $derived(
   getContentRouteHref(navigation, CONTENT_ROUTE_IDS.governance),
 );
@@ -64,7 +66,7 @@ onMount(async () => {
 async function loadContents() {
   try {
     loading = true;
-    const response = await client.contents.list();
+    const response = await apiClient.contents.list();
     contents = response.data;
     error = null;
   } catch (err) {
@@ -79,7 +81,7 @@ async function handleSaveContent(formData: ContentData) {
   try {
     const currentEditingContent = editingContent;
     if (currentEditingContent?.id) {
-      const response = await client.contents.update(
+      const response = await apiClient.contents.update(
         currentEditingContent.id,
         formData,
       );
@@ -94,7 +96,7 @@ async function handleSaveContent(formData: ContentData) {
         contents = [response.data, ...contents];
       }
     } else {
-      const response = await client.contents.create(formData);
+      const response = await apiClient.contents.create(formData);
       contents = [response.data, ...contents];
     }
 
@@ -107,7 +109,7 @@ async function handleSaveContent(formData: ContentData) {
 
 async function handleDeleteContent(content: ContentData) {
   try {
-    await client.contents.delete(content.id || '');
+    await apiClient.contents.delete(content.id || '');
     contents = contents.filter((item) => item.id !== content.id);
   } catch (err) {
     error =
@@ -117,9 +119,9 @@ async function handleDeleteContent(content: ContentData) {
 
 async function handleEditContent(content: ContentData) {
   try {
-    const response = await client.contents.get(content.id || '');
+    const response = await apiClient.contents.get(content.id || '');
     editingContent = response.data;
-    const governance = await client.contents.resolveGovernance({
+    const governance = await apiClient.contents.resolveGovernance({
       type: response.data.type,
       variant: response.data.variant,
     });
@@ -208,6 +210,9 @@ function closeForms() {
             {apiBaseUrl}
             content={editingContent || undefined}
             contentId={editingContent?.id || 'new'}
+            agentChatEnabled={!embedded}
+            agentChatNotice="Run the content package dev server to use live editor agent chat from this route."
+            showGovernancePanel={!embedded}
             onSave={handleSaveContent}
             onCancel={closeForms}
           />
@@ -216,6 +221,8 @@ function closeForms() {
             {apiBaseUrl}
             content={editingContent || undefined}
             contentId={editingContent?.id || 'new'}
+            agentChatEnabled={!embedded}
+            agentChatNotice="Run the content package dev server to use live editor agent chat from this route."
             onSave={handleSaveContent}
             onCancel={closeForms}
           />

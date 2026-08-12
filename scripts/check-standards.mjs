@@ -22,6 +22,12 @@ import { resolve, join } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const PKGS = join(ROOT, 'packages');
+const CHANGESET_CONFIG = JSON.parse(
+  readFileSync(join(ROOT, '.changeset', 'config.json'), 'utf8'),
+);
+const FIXED_RELEASE_GROUPS = Array.isArray(CHANGESET_CONFIG.fixed)
+  ? CHANGESET_CONFIG.fixed
+  : [];
 
 // Non-TypeScript packages (Kotlin Multiplatform/Gradle — ADR 0001, see
 // docs/content/standards.md §1 "Non-TypeScript packages"). Exempt from every
@@ -94,6 +100,17 @@ function readPkg(name) {
   const path = join(PKGS, name, 'package.json');
   if (!existsSync(path)) return null;
   return { path, json: JSON.parse(readFileSync(path, 'utf8')) };
+}
+
+function readPkgByPackageName(packageName) {
+  for (const directoryName of listPackages()) {
+    const pkg = readPkg(directoryName);
+    if (pkg?.json.name === packageName) {
+      return pkg;
+    }
+  }
+
+  return null;
 }
 
 // Recursively walk an exports map looking for any entry that has both `types`
@@ -175,6 +192,35 @@ function checkPackage(name) {
   // 2. type=module
   if (json.type !== 'module') {
     violations.push('package.json must set "type": "module"');
+  }
+
+  // 2b. Publishable SMRT packages move as one coordinated release train.
+  if (
+    json.private !== true &&
+    typeof json.name === 'string' &&
+    json.name.startsWith('@happyvertical/smrt-')
+  ) {
+    const fixedGroup = FIXED_RELEASE_GROUPS.find((group) =>
+      group.includes(json.name),
+    );
+    if (!fixedGroup) {
+      violations.push(
+        'publishable SMRT package is missing from .changeset/config.json fixed release group',
+      );
+    } else {
+      const referencePackageName = fixedGroup[0];
+      const referenceVersion =
+        readPkgByPackageName(referencePackageName)?.json.version;
+      if (!referenceVersion) {
+        violations.push(
+          `fixed release group reference package ${JSON.stringify(referencePackageName)} could not be resolved`,
+        );
+      } else if (json.version !== referenceVersion) {
+        violations.push(
+          `version ${JSON.stringify(json.version)} must match fixed release group version ${JSON.stringify(referenceVersion)}`,
+        );
+      }
+    }
   }
 
   // 3. author=HappyVertical

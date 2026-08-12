@@ -41,6 +41,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       knowledge: ${{ steps.filter.outputs.knowledge }}
+      workbench: ${{ steps.filter.outputs.workbench }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -64,6 +65,13 @@ jobs:
               - 'packages/smrt-app-mcp/**'
               - 'packages/smrt-dev-mcp/**'
               - 'scripts/check-knowledge.ts'
+            workbench:
+              - 'packages/smrt-workbench/**'
+              - 'packages/smrt-playground/**'
+              - 'packages/*/src/workbench.ts'
+              - 'packages/*/src/svelte/playground.ts'
+              - 'packages/cli/src/commands/workbench.ts'
+              - 'packages/cli/src/commands/__tests__/workbench.test.ts'
 
   build:
     name: Build
@@ -408,6 +416,60 @@ jobs:
         run: pnpm run check:mcp-config && pnpm knowledge:check --strict --format markdown
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  workbench-browser:
+    name: Workbench Consumer and Browser
+    # In affected mode, let the existing core/package shard sequence consume
+    # the fleet first. This browser lane then adds one runner without widening
+    # the shard burst. Full mode still starts after its required build.
+    needs: [affected-scope, affected-package-tests, build]
+    if: >-
+      always() &&
+      (
+        (inputs.mode == 'affected' &&
+        needs.affected-scope.outputs.workbench == 'true' &&
+        (needs.affected-package-tests.result == 'success' ||
+        needs.affected-package-tests.result == 'skipped')) ||
+        (inputs.mode == 'full' && needs.build.result == 'success')
+      )
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup environment
+        id: setup-environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24.18.0'
+          install-deps: 'true'
+          setup-playwright: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Playwright system dependencies after a browser cache hit
+        if: steps.setup-environment.outputs.playwright-cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Build consumer fixture packages
+        run: >-
+          pnpm turbo run build
+          --filter='@happyvertical/smrt-content...'
+          --filter='@happyvertical/smrt-workbench...'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify packed consumer host
+        run: pnpm --filter @happyvertical/smrt-workbench test:consumer
+
+      - name: Verify packed Workbench exports
+        run: pnpm --filter @happyvertical/smrt-workbench verify:pack
+
+      - name: Run workbench browser test
+        run: pnpm --dir packages/smrt-workbench/host test:e2e
 
   knowledge:
     name: Knowledge Freshness

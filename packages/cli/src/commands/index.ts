@@ -20,3 +20,4 @@ export { gnodeCommands } from './gnode.js';
 export { initCommands } from './init.js';
 export { playgroundCommands } from './playground.js';
 export { utilityCommands } from './utilities.js';
+export { workbenchCommands } from './workbench.js';

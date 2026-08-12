@@ -577,6 +577,9 @@ describe('CLIGenerator - preprocessObjectCommands', () => {
     expect(g.preprocessObjectCommands(['git', 'status'], [])).toEqual([
       'git:status',
     ]);
+    expect(g.preprocessObjectCommands(['workbench', 'dev'], [])).toEqual([
+      'workbench:dev',
+    ]);
   });
 
   it('combines when first arg is a registered object name', () => {

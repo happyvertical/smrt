@@ -386,6 +386,18 @@ then return a model-ready architecture prompt bundle.
 | `focus` | `string` | No | Architecture concern to prioritize |
 | `detail` | `'summary' \| 'full'` | No | Default `summary`; `full` embeds authored docs and full package records |
 
+### `build-package-specialist-context`
+
+Build deterministic package-specific context for the Workbench, including the
+package's authored docs, manifests, routes, tests, prompts, and SDK dependency
+context.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `package` | `string` | Yes | Package name or short package query |
+| `focus` | `string` | No | Package concern to prioritize |
+
 ### `build-domain-architecture-context`
 
 Domain-scoped alias for `build-architecture-context`.

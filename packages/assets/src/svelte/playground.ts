@@ -1,5 +1,3 @@
-import { ASSETS_ROUTE_META } from './routes/shared.js';
-
 function createPreviewAssetUri(label: string, accent: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
     <defs>
@@ -54,34 +52,20 @@ const sampleAssets = [
 ];
 
 const loadAssetGrid = () => import('./AssetGrid.svelte');
-const loadAssetManagerRoute = () => import('./routes/AssetManagerRoute.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-assets',
   displayName: 'Assets',
-  description: ASSETS_ROUTE_META.manager.description,
+  description:
+    'Component previews for asset browsing, selection, and media states.',
   entries: [
-    {
-      id: 'asset-manager-route',
-      title: 'Asset Manager Route',
-      description:
-        'Package-owned route surface for browsing, selecting, and reviewing assets.',
-      loadComponent: loadAssetManagerRoute,
-      order: 1,
-      tags: ['route', 'assets', 'admin'],
-      modes: {
-        mock: {
-          label: 'Mock',
-        },
-      },
-    },
     {
       id: 'asset-grid',
       title: 'Asset Grid',
       description:
         'Thumbnail grid preview showing selection state and missing-alt warnings.',
       loadComponent: loadAssetGrid,
-      order: 2,
+      order: 1,
       tags: ['grid', 'assets', 'media'],
       props: {
         assets: sampleAssets,
