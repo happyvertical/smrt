@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.65
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - generate SvelteKit routes before config inventory (#2314) (core)
+  - @happyvertical/smrt-config@0.40.65
+  - @happyvertical/smrt-types@0.40.65
+  - @happyvertical/smrt-scanner@0.40.65
+
 ## 0.40.64
 
 ### Patch Changes
