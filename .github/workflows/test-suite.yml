@@ -419,15 +419,21 @@ jobs:
 
   workbench-browser:
     name: Workbench Consumer and Browser
-    needs: [affected-scope, build]
+    # In affected mode, let the existing core/package shard sequence consume
+    # the fleet first. This browser lane then adds one runner without widening
+    # the shard burst. Full mode still starts after its required build.
+    needs: [affected-scope, affected-package-tests, build]
     if: >-
       always() &&
       (
-        (inputs.mode == 'affected' && needs.affected-scope.outputs.workbench == 'true') ||
+        (inputs.mode == 'affected' &&
+        needs.affected-scope.outputs.workbench == 'true' &&
+        (needs.affected-package-tests.result == 'success' ||
+        needs.affected-package-tests.result == 'skipped')) ||
         (inputs.mode == 'full' && needs.build.result == 'success')
       )
-    runs-on: arc-happyvertical
-    timeout-minutes: 15
+    runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -458,6 +464,9 @@ jobs:
 
       - name: Verify packed consumer host
         run: pnpm --filter @happyvertical/smrt-workbench test:consumer
+
+      - name: Verify packed Workbench exports
+        run: pnpm --filter @happyvertical/smrt-workbench verify:pack
 
       - name: Run workbench browser test
         run: pnpm --dir packages/smrt-workbench/host test:e2e
