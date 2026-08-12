@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.40.64
+
+### Patch Changes
+
+- ### Features
+
+  - enforce MCP documentation freshness (#2310) (dev-mcp)
+  - add bounded collection read plans (#2305) (core)
+
+  ### Bug Fixes
+
+  - preserve bundled registry identity (#2311) (core)
+  - @happyvertical/smrt-config@0.40.64
+  - @happyvertical/smrt-types@0.40.64
+  - @happyvertical/smrt-scanner@0.40.64
+
 ## 0.40.63
 
 ### Patch Changes
