@@ -85,7 +85,7 @@ const cards = $derived<ProjectBoardCard[]>(
     id: item.id,
     item,
     columnId: statusByName.has(item.status ?? '')
-      ? statusByName.get(item.status ?? '')?.id
+      ? (statusByName.get(item.status ?? '')?.id ?? unmatchedColumnId)
       : unmatchedColumnId,
   })),
 );
@@ -136,6 +136,7 @@ function cardLabel(card: ProjectBoardCard): string {
   getCardColumnId={(card) => card.columnId}
   setCardColumnId={(card, columnId) => ({ ...card, columnId })}
   getCardLabel={cardLabel}
+  allowSameColumnReorder={false}
   onmove={movementEnabled ? move : undefined}
   onselect={(card) => onselect?.(card.item)}
 >

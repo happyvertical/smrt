@@ -79,6 +79,12 @@ export interface BoardProps<
   /** Makes lane headers collapse their card lists. */
   collapsible?: boolean;
   /**
+   * Whether cards may be repositioned within their current lane. Defaults to
+   * `true`; set `false` for adapters whose persistence layer only supports
+   * column/status transitions.
+   */
+  allowSameColumnReorder?: boolean;
+  /**
    * In controlled mode, retain the locally reordered presentation until the
    * owner supplies a new `cards` array. The owner remains authoritative.
    */

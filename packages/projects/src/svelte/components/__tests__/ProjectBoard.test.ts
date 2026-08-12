@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import {
   expectNoA11yViolations,
+  fireEvent,
   render,
   screen,
   userEvent,
@@ -32,7 +33,52 @@ const items = [
   },
 ];
 
+const sameStatusItems = [
+  items[0],
+  {
+    id: 'item-3',
+    contentId: 'content-3',
+    title: 'Review release notes',
+    status: 'Todo',
+    fields: {},
+    type: 'Issue' as const,
+  },
+];
+
 describe('ProjectBoard', () => {
+  it('does not persist same-status keyboard or pointer reordering', async () => {
+    const onmove = vi.fn().mockResolvedValue(undefined);
+    const onrefresh = vi.fn().mockResolvedValue(undefined);
+    render(ProjectBoard, {
+      props: {
+        projectId: 'project-1',
+        statuses,
+        items: sameStatusItems,
+        onmove,
+        onrefresh,
+      },
+    });
+
+    const first = screen.getByRole('button', {
+      name: /Publish release notes/,
+    });
+    const second = screen.getByRole('button', {
+      name: /Review release notes/,
+    });
+    first.focus();
+    await userEvent.keyboard(' ');
+    await userEvent.keyboard('{ArrowDown}');
+    await userEvent.keyboard(' ');
+    fireEvent.dragStart(first, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.drop(second, { clientY: 999 });
+
+    expect(onmove).not.toHaveBeenCalled();
+    expect(onrefresh).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText(/Moved Publish release notes to Todo/i),
+    ).not.toBeInTheDocument();
+  });
+
   it('stays read-only when a browser move callback has no authoritative refresh', async () => {
     const onmove = vi.fn();
     render(ProjectBoard, {

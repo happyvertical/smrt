@@ -37,6 +37,7 @@ let {
   columnHeader,
   label,
   collapsible = false,
+  allowSameColumnReorder = true,
   optimistic = false,
   onselect,
   onmove,
@@ -70,6 +71,15 @@ $effect(() => {
 const presentationCards = $derived(
   cards === undefined ? localCards : (optimisticCards ?? cards),
 );
+const cardsByColumn = $derived.by(() => {
+  const next = new Map<string, Card[]>();
+  for (const column of columns) next.set(column.id, []);
+  for (const item of presentationCards) {
+    const columnCards = next.get(getCardColumnId(item));
+    if (columnCards) columnCards.push(item);
+  }
+  return next;
+});
 const movable = $derived(
   (cards === undefined || onmove !== undefined) && !movePending,
 );
@@ -93,9 +103,10 @@ function laneListId(index: number): string {
 }
 
 function cardsInColumn(columnId: string, withoutCardId?: string): Card[] {
-  return presentationCards.filter(
-    (item) => getCardColumnId(item) === columnId && item.id !== withoutCardId,
-  );
+  const items = cardsByColumn.get(columnId) ?? [];
+  return withoutCardId
+    ? items.filter((item) => item.id !== withoutCardId)
+    : items;
 }
 
 function findCard(cardId: string): Card | undefined {
@@ -200,6 +211,7 @@ function moveKeyboardTarget(
   if (drag?.mode !== 'keyboard') return;
   const target = { ...drag.target };
   if (direction === 'vertical') {
+    if (!allowSameColumnReorder) return;
     target.index = clamp(
       target.index + delta,
       cardsInColumn(target.columnId, drag.cardId).length,
@@ -441,6 +453,10 @@ function handlePointerMove(event: PointerEvent): void {
 
 function pointerTarget(columnId: string, index: number): void {
   if (drag?.mode !== 'pointer') return;
+  if (!allowSameColumnReorder && columnId === drag.source.columnId) {
+    drag = { ...drag, target: { ...drag.source } };
+    return;
+  }
   const max = cardsInColumn(columnId, drag.cardId).length;
   drag = { ...drag, target: { columnId, index: clamp(index, max) } };
 }
@@ -543,6 +559,7 @@ function toggleColumn(columnId: string): void {
                 <button
                   type="button"
                   class:smrt-board__card--dragging={drag?.cardId === item.id}
+                  class:smrt-board__card--touch-drag={movable}
                   class="smrt-board__card"
                   data-smrt-board-card-id={item.id}
                   draggable={movable && pointerSession === undefined}
@@ -585,7 +602,8 @@ function toggleColumn(columnId: string): void {
   .smrt-board__collapse { padding: 0; border: 0; background: transparent; cursor: pointer; text-align: start; }
   .smrt-board__collapse:focus-visible, .smrt-board__card:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .smrt-board__cards { display: grid; align-content: start; gap: var(--smrt-spacing-2); min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: var(--smrt-spacing-3); }
-  .smrt-board__card { display: block; inline-size: 100%; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); color: inherit; cursor: grab; text-align: start; touch-action: none; }
+  .smrt-board__card { display: block; inline-size: 100%; padding: var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-sm); background: var(--smrt-color-surface); color: inherit; cursor: grab; text-align: start; }
+  .smrt-board__card--touch-drag { touch-action: none; }
   .smrt-board__card:active { cursor: grabbing; }
   .smrt-board__card--dragging { opacity: 0.55; }
   .smrt-board__empty { margin: 0; color: var(--smrt-color-on-surface-variant); font: var(--smrt-typography-body-small-font); }

@@ -129,12 +129,74 @@ describe('Board', () => {
     const card = screen.getByRole('button', { name: 'Password reset' });
     expect(card).toHaveAttribute('draggable', 'false');
     expect(card).not.toHaveAttribute('aria-disabled');
+    expect(card).not.toHaveClass('smrt-board__card--touch-drag');
     card.focus();
     await user.keyboard(' ');
     expect(
       screen.queryByText(/Picked up Password reset/),
     ).not.toBeInTheDocument();
     expect(onselect).toHaveBeenCalledWith(initialCards[0]);
+  });
+
+  it('updates precomputed lane cards when controlled cards change', async () => {
+    const onmove = vi.fn();
+    const { rerender } = render(Board<SupportCard, BoardColumn>, {
+      props: props({ cards: initialCards, onmove }),
+    });
+    expect(lane('New')).toHaveAccessibleName('New, 2 cards');
+    const updatedCards = [
+      { ...initialCards[0], queue: 'assigned' },
+      ...initialCards.slice(1),
+    ];
+
+    await rerender(props({ cards: updatedCards, onmove }));
+
+    expect(lane('New')).toHaveAccessibleName('New, 1 cards');
+    expect(lane('Assigned')).toHaveAccessibleName('Assigned, 2 cards');
+    expect(
+      within(lane('Assigned')).getByText('Password reset'),
+    ).toBeInTheDocument();
+  });
+
+  it('can disable same-column reordering without suppressing cross-column moves', async () => {
+    const user = userEvent.setup();
+    const onmove = vi.fn();
+    render(Board<SupportCard, BoardColumn>, {
+      props: props({ allowSameColumnReorder: false, onmove }),
+    });
+    const card = screen.getByRole('button', { name: 'Password reset' });
+    card.focus();
+    await user.keyboard(' ');
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('{Enter}');
+
+    expect(onmove).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Moved Password reset/)).not.toBeInTheDocument();
+    expect(within(lane('New')).getAllByRole('button')[0]).toHaveAccessibleName(
+      'Password reset',
+    );
+
+    card.focus();
+    await user.keyboard(' ');
+    await user.keyboard('{ArrowRight}');
+    await user.keyboard('{Enter}');
+    expect(onmove).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { columnId: 'assigned', index: 0 } }),
+    );
+  });
+
+  it('does not emit a pointer same-column move when reordering is disabled', () => {
+    const onmove = vi.fn();
+    render(Board<SupportCard, BoardColumn>, {
+      props: props({ allowSameColumnReorder: false, onmove }),
+    });
+    const card = screen.getByRole('button', { name: 'Password reset' });
+    const sibling = screen.getByRole('button', { name: 'Billing question' });
+    fireEvent.dragStart(card, { dataTransfer: { setData: vi.fn() } });
+    fireEvent.drop(sibling, { clientY: 1 });
+
+    expect(onmove).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Moved Password reset/)).not.toBeInTheDocument();
   });
 
   it('uses native pointer drag and drop to emit a move', () => {

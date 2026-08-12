@@ -3,21 +3,10 @@ import { withTenant } from '@happyvertical/smrt-tenancy';
 import { ProjectIntegrationCollection } from '../collections/ProjectIntegrations.js';
 import { ProjectCollection } from '../collections/Projects.js';
 import { ProjectIntegration } from '../models/ProjectIntegration.js';
+import type { ProjectBoardMoveIntent } from '../project-board-types.js';
 import { requireActiveIntegrationCapability } from './delivery-service.js';
 
-/**
- * Browser-safe move intent emitted by a project-backed board.
- *
- * A SvelteKit action must obtain the authenticated ProjectIntegration through
- * a server-only path (normally ManagedProjectClient.authenticate()) and pass
- * it to ProjectBoardService. Browser payloads must never include integration
- * identifiers, capabilities, credentials, or provider clients.
- */
-export interface ProjectBoardMoveIntent {
-  projectId: string;
-  itemId: string;
-  status: string;
-}
+export type { ProjectBoardMoveIntent } from '../project-board-types.js';
 
 /** Pure data returned after a provider-backed project board move. */
 export interface ProjectBoardMoveResult {

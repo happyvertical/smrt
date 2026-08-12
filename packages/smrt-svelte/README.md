@@ -8,6 +8,8 @@ your own cards, columns, card-to-column getter/setter, and typed card snippet.
 `cards` is controlled; `defaultCards` enables local state. `onmove` receives a
 typed intent and can be async—rejections restore the previous view. Set
 `optimistic` to present controlled moves while persistence is pending.
+Set `allowSameColumnReorder={false}` when an adapter persists only lane/status
+transitions rather than a position within a lane.
 
 ```svelte
 <script lang="ts">
@@ -26,7 +28,7 @@ typed intent and can be async—rejections restore the previous view. Set
 ```
 
 The same primitive can represent support queues (`card.queue`) or a sales
-pipeline (`opportunity.stage`) without importing `@happyvertical/projects`.
+pipeline (`opportunity.stage`) without importing `@happyvertical/smrt-projects`.
 
 Svelte 5 component library for the s-m-r-t framework. Provides UI components, browser AI integration (STT/TTS/LLM with warm cache), a theme system, permission-aware rendering, and module UI registry for agent admin panels.
 
