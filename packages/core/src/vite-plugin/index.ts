@@ -4,7 +4,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   DomainKnowledgeConfig,
@@ -269,6 +269,25 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let config: ResolvedConfig | null = null; // Store resolved config for closeBundle hook
   let resolvedPluginNames: string[] = [];
   let hasFreshConfigResolvedManifest = false;
+  let configHookManifest: SmartObjectManifest | null = null;
+  let generatedRoutesDuringConfig = false;
+
+  async function generateConfiguredSvelteKitRoutes(
+    rootDir: string,
+    currentManifest: SmartObjectManifest,
+  ): Promise<void> {
+    await generateSvelteKitRoutes(rootDir, currentManifest, {
+      enabled: svelteKit.enabled,
+      routesDir: svelteKit.routesDir || 'src/routes/api',
+      objectsDir: svelteKit.objectsDir || 'src/lib/objects',
+      configPath: svelteKit.configPath || 'src/lib/server',
+      configFileName: svelteKit.configFileName || 'smrt.ts',
+      kebabRoutes: svelteKit.kebabRoutes ?? false,
+      changesRoute: svelteKit.changesRoute,
+      eventsRoute: svelteKit.eventsRoute,
+      knowledge: await resolveKnowledgeConfig(rootDir, currentManifest),
+    });
+  }
 
   /**
    * Write manifest to .smrt/manifest.json for CLI discovery.
@@ -517,6 +536,31 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
   return {
     name: 'smrt-auto-service',
+    // SvelteKit inventories routes in a `config.order = 'pre'` hook. Put SMRT
+    // in Vite's earlier plugin tier so this plugin's own pre hook runs first
+    // even when the documented plugin array lists sveltekit() before us.
+    enforce: 'pre',
+
+    // SvelteKit inventories filesystem routes in its config hook. Generate
+    // SMRT routes in an earlier config hook so a clean checkout's first build
+    // sees them; configResolved is too late because Vite runs those hooks
+    // concurrently (#2313).
+    config: {
+      order: 'pre',
+      async handler(userConfig) {
+        if (!svelteKit.enabled) return;
+
+        projectRoot =
+          configuredProjectRoot ??
+          resolve(process.cwd(), userConfig.root ?? '.');
+        configHookManifest = await scanAndGenerateManifest(projectRoot);
+        await generateConfiguredSvelteKitRoutes(
+          projectRoot,
+          configHookManifest,
+        );
+        generatedRoutesDuringConfig = true;
+      },
+    },
 
     // Expose options for external access (e.g., test manifest generation)
     api: {
@@ -560,7 +604,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       console.log(`[smrt] Running in ${pluginMode} mode`);
 
       // Scan files and generate initial manifest in all modes
-      manifest = await scanAndGenerateManifest(projectRoot);
+      manifest =
+        configHookManifest ?? (await scanAndGenerateManifest(projectRoot));
+      configHookManifest = null;
 
       // Write local manifest for CLI discovery (Issue #963)
       if (manifest) {
@@ -573,19 +619,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
 
       // Generate SvelteKit routes if enabled
-      if (svelteKit.enabled && manifest) {
-        await generateSvelteKitRoutes(projectRoot, manifest, {
-          enabled: svelteKit.enabled,
-          routesDir: svelteKit.routesDir || 'src/routes/api',
-          objectsDir: svelteKit.objectsDir || 'src/lib/objects',
-          configPath: svelteKit.configPath || 'src/lib/server',
-          configFileName: svelteKit.configFileName || 'smrt.ts',
-          kebabRoutes: svelteKit.kebabRoutes ?? false,
-          changesRoute: svelteKit.changesRoute,
-          eventsRoute: svelteKit.eventsRoute,
-          knowledge: await resolveKnowledgeConfig(projectRoot, manifest),
-        });
+      if (svelteKit.enabled && manifest && !generatedRoutesDuringConfig) {
+        await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
       }
+      generatedRoutesDuringConfig = false;
 
       // Vite calls buildStart immediately after configResolved for the initial
       // build. The manifest already reflects the same source tree, so let that
