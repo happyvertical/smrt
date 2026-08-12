@@ -211,11 +211,17 @@ function generateGlassVariables(
  * components stop hardcoding magic values and keeps overlay layering / mono
  * surfaces themeable.
  */
-function generateStaticTokens(prefix: string): Record<string, string> {
+function generateStaticTokens(
+  prefix: string,
+  fontFamilyMono?: string,
+): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const [alias, value] of Object.entries(fontFamilyAliases)) {
     vars[`${prefix}-font-family-${alias}`] = value;
   }
+  // A preset whose type stack names its own monospace face overrides the
+  // shared stack; every other preset keeps the #1431 default.
+  if (fontFamilyMono) vars[`${prefix}-font-family-mono`] = fontFamilyMono;
   for (const [name, value] of Object.entries(fontWeightTokens)) {
     vars[`${prefix}-typography-weight-${name}`] = value;
   }
@@ -273,7 +279,7 @@ export function generateThemeVariables(
     ...generateEasingVariables(theme.easing, prefix),
 
     // Theme-independent helper tokens (mono font, named weights, z-index)
-    ...generateStaticTokens(prefix),
+    ...generateStaticTokens(prefix, theme.fontFamilyMono),
 
     // Glass effects (if present)
     ...generateGlassVariables(theme.glass, prefix),
