@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.40.66
+
+### Patch Changes
+
+- ### Features
+
+  - add happyvertical "Day Shift" brand theme preset (#2321) (smrt-ui)
+  - project structural knowledge facts (#2309) (dev-mcp)
+  - add shared package and project workbench (#1916) (workbench)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.86.3 (#2315) (deps)
+  - @happyvertical/smrt-config@0.40.66
+  - @happyvertical/smrt-types@0.40.66
+  - @happyvertical/smrt-scanner@0.40.66
+
 ## 0.40.65
 
 ### Patch Changes
