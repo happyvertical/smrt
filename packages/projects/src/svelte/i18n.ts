@@ -13,6 +13,8 @@ export const M = defineMessages({
   'projects.development_request.list_aria': 'Development requests',
   'projects.development_board.aria': 'Development board',
   'projects.development_board.empty': 'No visible development work',
+  'projects.project_board.aria': 'Project board',
+  'projects.project_board.unassigned': 'Unassigned',
   'projects.development_request.detail_aria': 'Development request details',
   'projects.development_request.status': 'Status',
   'projects.development_request.visibility': 'Visibility',

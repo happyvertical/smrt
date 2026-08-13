@@ -25,6 +25,7 @@ import DeliveryStatus from './DeliveryStatus.svelte';
 import DevelopmentBoard from './DevelopmentBoard.svelte';
 import DevelopmentRequestDetail from './DevelopmentRequestDetail.svelte';
 import PreviewApprovalPanel from './PreviewApprovalPanel.svelte';
+import ProjectBoard from './ProjectBoard.svelte';
 import ServiceEvidenceList from './ServiceEvidenceList.svelte';
 
 // Export components
@@ -39,6 +40,7 @@ export {
   DevelopmentRequestList,
   DurationDisplay,
   PreviewApprovalPanel,
+  ProjectBoard,
   RejectDialog,
   ServiceEvidenceList,
   TimeEntryCard,
@@ -66,6 +68,7 @@ export type RejectDialogProps = ComponentProps<typeof RejectDialog>;
 export type PreviewApprovalPanelProps = ComponentProps<
   typeof PreviewApprovalPanel
 >;
+export type ProjectBoardProps = ComponentProps<typeof ProjectBoard>;
 export type ServiceEvidenceListProps = ComponentProps<
   typeof ServiceEvidenceList
 >;
@@ -74,6 +77,7 @@ export type TimeEntryListProps = ComponentProps<typeof TimeEntryList>;
 export type TimeSummaryProps = ComponentProps<typeof TimeSummary>;
 
 export * from './delivery-types.js';
+export type { ProjectBoardMoveIntent } from './project-board-types.js';
 // Export types and utilities
 export {
   type ApprovalStatus,
@@ -93,6 +97,11 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-projects',
   'development-board',
   DevelopmentBoard,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-projects',
+  'project-board',
+  ProjectBoard,
 );
 ModuleUIRegistry.register(
   '@happyvertical/smrt-projects',

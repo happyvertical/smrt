@@ -351,7 +351,7 @@ export function requireIntegrationCapability(
 
 export async function requireActiveIntegrationCapability(
   integrations: ProjectIntegrationCollection,
-  integration: ProjectIntegration,
+  integration: Pick<ProjectIntegration, 'id' | 'tenantId'>,
   capability: string,
 ): Promise<ProjectIntegration> {
   const integrationId = requiredId(integration.id, 'Project Integration');

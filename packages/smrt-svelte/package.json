@@ -26,6 +26,12 @@
       "import": "./dist/components/settings/index.js",
       "default": "./dist/components/settings/index.js"
     },
+    "./board": {
+      "types": "./dist/components/board/index.d.ts",
+      "svelte": "./dist/components/board/index.js",
+      "import": "./dist/components/board/index.js",
+      "default": "./dist/components/board/index.js"
+    },
     "./i18n/server": {
       "types": "./dist/i18n/server.d.ts",
       "import": "./dist/i18n/server.js",

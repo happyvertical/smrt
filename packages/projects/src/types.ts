@@ -96,6 +96,7 @@ export type ProjectIntegrationCapability =
   | 'requests:read-own'
   | 'delivery:write'
   | 'delivery:read'
+  | 'projects:write'
   | 'previews:approve'
   | 'assistance:create'
   | (string & {});

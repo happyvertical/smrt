@@ -47,13 +47,22 @@ export const PROJECTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     order: 4,
     propsInterface: 'DevelopmentBoardProps',
   },
+  'project-board': {
+    id: 'project-board',
+    label: 'Project Board',
+    description: 'Provider-backed project status board',
+    icon: 'columns',
+    category: 'display',
+    order: 5,
+    propsInterface: 'ProjectBoardProps',
+  },
   'delivery-status': {
     id: 'delivery-status',
     label: 'Delivery Status',
     description: 'Ordered timeline of delivery outcomes',
     icon: 'activity',
     category: 'display',
-    order: 5,
+    order: 6,
     propsInterface: 'DeliveryStatusProps',
   },
   'preview-approval': {

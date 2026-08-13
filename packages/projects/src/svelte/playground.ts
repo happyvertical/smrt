@@ -51,6 +51,8 @@ const pendingEntries = sampleTimeEntries.filter(
 const loadApprovalActions = () => import('./components/ApprovalActions.svelte');
 const loadTimeEntryList = () => import('./components/TimeEntryList.svelte');
 const loadTimeSummary = () => import('./components/TimeSummary.svelte');
+const loadDevelopmentBoard = () => import('./DevelopmentBoard.svelte');
+const loadProjectBoard = () => import('./ProjectBoard.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-projects',
@@ -59,12 +61,56 @@ export default {
   moduleMeta: PROJECTS_MODULE_META,
   entries: [
     {
+      id: 'project-board',
+      title: 'Project Board',
+      description: 'Controlled provider project board with canonical statuses.',
+      loadComponent: loadProjectBoard,
+      order: 0,
+      props: {
+        projectId: 'project-demo',
+        statuses: [
+          { id: 'todo', name: 'Todo', order: 0 },
+          { id: 'done', name: 'Done', order: 1 },
+        ],
+        items: [
+          {
+            id: 'item-demo',
+            contentId: 'content-demo',
+            title: 'Publish project board',
+            status: 'Todo',
+            fields: {},
+            type: 'Issue',
+          },
+        ],
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
+      id: 'development-board',
+      title: 'Development Board',
+      description: 'Read-only delivery-status projection.',
+      loadComponent: loadDevelopmentBoard,
+      order: 1,
+      props: {
+        requests: [
+          {
+            id: 'request-demo',
+            description: 'Publish project board',
+            type: 'feature',
+            status: 'planned',
+            requesterLabel: 'Project owner',
+          },
+        ],
+      },
+      modes: { mock: { label: 'Mock' } },
+    },
+    {
       id: 'time-entry-list',
       title: 'Time Entry List',
       description:
         'Selectable list view for recent time entries with billing context.',
       loadComponent: loadTimeEntryList,
-      order: 1,
+      order: 2,
       props: {
         entries: sampleTimeEntries,
         selectable: true,
@@ -84,7 +130,7 @@ export default {
       title: 'Time Summary',
       description: 'Hours and value summary cards for a project review period.',
       loadComponent: loadTimeSummary,
-      order: 2,
+      order: 3,
       props: {
         totalHours,
         totalAmount,
@@ -118,7 +164,7 @@ export default {
       description:
         'Status-sensitive action row for approving or returning submitted work.',
       loadComponent: loadApprovalActions,
-      order: 3,
+      order: 4,
       props: {
         status: 'submitted',
         onapprove: noop,

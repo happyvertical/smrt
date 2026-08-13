@@ -32,6 +32,7 @@ import {
 // registers the leaf's own primitive catalogs (`strings.ts` + `strings.ui.ts`).
 import '@happyvertical/smrt-ui/i18n';
 import './strings.forms.js';
+import './strings.board.js';
 import './strings.workspace.js';
 
 export interface BuildI18nSnapshotOptions {
