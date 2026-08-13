@@ -1,10 +1,10 @@
 # SMRT Svelte Themes
 
-A comprehensive, multi-theme system for SMRT Svelte with support for Material Design, Apple Glass, Google AI Studio, and the SMRT instrument-panel aesthetic. All themes include both light and dark modes.
+A comprehensive, multi-theme system for SMRT Svelte with support for Material Design, Apple Glass, Google AI Studio, the SMRT instrument-panel aesthetic, and the HappyVertical brand identity. All themes include both light and dark modes.
 
 ## Features
 
-- **4 Theme Presets**: Material (improved M3), Glass (Apple-style), Studio (Google AI Studio flat), SMRT (dark-first amber instrument panel)
+- **5 Theme Presets**: Material (improved M3), Glass (Apple-style), Studio (Google AI Studio flat), SMRT (dark-first amber instrument panel), HappyVertical (the "Day Shift" brand identity — calm enamel/faceplate panel, one amber accent)
 - **Light & Dark Modes**: Automatic system detection with manual override
 - **Runtime Theme Switching**: Change themes without page reload
 - **CSS Custom Properties**: Full theming via CSS variables
@@ -277,19 +277,21 @@ Import the theme styles in your app entry point:
 
 ```ts
 // Import all themes (for runtime switching)
-import '@smrt/svelte/themes/styles/all.css';
+import '@happyvertical/smrt-ui/themes/styles/all.css';
 
 // Or import specific theme only
-import '@smrt/svelte/themes/styles/material.css';
-import '@smrt/svelte/themes/styles/glass.css';
-import '@smrt/svelte/themes/styles/studio.css';
+import '@happyvertical/smrt-ui/themes/styles/material.css';
+import '@happyvertical/smrt-ui/themes/styles/glass.css';
+import '@happyvertical/smrt-ui/themes/styles/studio.css';
+import '@happyvertical/smrt-ui/themes/styles/smrt.css';
+import '@happyvertical/smrt-ui/themes/styles/happyvertical.css';
 ```
 
 ## ThemeProvider Props
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `preset` | `'material' \| 'glass' \| 'studio'` | `'material'` | Theme preset |
+| `preset` | `'material' \| 'glass' \| 'studio' \| 'smrt' \| 'happyvertical'` | `'material'` | Theme preset |
 | `colorScheme` | `'light' \| 'dark' \| 'system'` | `'system'` | Color scheme preference |
 | `primaryColor` | `string` | - | Override primary accent color |
 | `borderRadius` | `'none' \| 'sm' \| 'md' \| 'lg' \| 'xl' \| 'full'` | `'md'` | Border radius scale |
@@ -303,7 +305,7 @@ Use the context to switch themes programmatically:
 
 ```svelte
 <script>
-  import { getThemeContext, ThemeSwitcher } from '@smrt/svelte/themes';
+  import { getThemeContext, ThemeSwitcher } from '@happyvertical/smrt-ui/themes';
   
   const theme = getThemeContext();
   
@@ -405,6 +407,49 @@ deep low shadows, and a Space Grotesk / Inter / JetBrains Mono type stack.
 <div class="smrt-terminal"><pre>$ smrt …</pre></div>
 <div class="smrt-scope"><span class="smrt-scope-fill" style="width:42%"></span></div>
 <span class="smrt-glow">amber drop glow</span>
+```
+
+### HappyVertical ("Day Shift")
+
+The HappyVertical brand identity: a calm instrument panel. A warm-grey enamel
+ground (`#E8EBE9` / `#14181B`) carries raised faceplate panels separated by
+hairline bezels, graphite ink, and exactly one budgeted accent — a signal amber
+(`#9C5300` / `#FFB454`) that doubles as the focus ring. The execution rule is
+"calm is less for the brain to process, not theatre": no glow, no gradients,
+and nothing animates unless it represents a state change.
+
+- **Colors**: Enamel/faceplate surfaces, amber primary, instrument-blue
+  tertiary, green reserved for status lamps
+- **Elevation**: Flat with hairline bezels; minimal soft shadows above level 2
+- **Typography**: Archivo 500/600 display over B612 body, B612 Mono for legends
+- **Motion**: ~120ms state transitions on a single calm easing
+- **Use for**: HappyVertical Work and any surface that should read as calm
+  instrumentation rather than a marketing page
+
+Both schemes are hand-authored (the dark scheme is not generated from the light
+one), every text pairing clears WCAG AA, and structure plus the focus ring clear
+3:1 non-text. **Green is never a text color here** — it is a status lamp,
+marker, or container fill.
+
+```svelte
+<script>
+  // Bundled woff2 — Archivo / B612 / B612 Mono (SIL OFL). Omit to fall back to
+  // Helvetica / Verdana / ui-monospace stacks.
+  import '@happyvertical/smrt-ui/themes/styles/happyvertical-fonts.css';
+</script>
+
+<ThemeProvider preset="happyvertical" colorScheme="system">
+  <YourApp />
+</ThemeProvider>
+```
+
+**Day Shift Utility Classes** (opt-in, deliberately few):
+
+```html
+<div class="hv-panel">Faceplate panel on a hairline bezel</div>
+<div class="hv-legend">Channels</div> <!-- mono legend + hairline rule -->
+<span class="hv-lamp"></span> <!-- green status lamp; also -idle / -attention -->
+<a class="hv-quiet-link" href="/notes">Quiet link, amber on hover</a>
 ```
 
 ## Project Integration Patterns
@@ -583,7 +628,7 @@ For SSR or static sites, import CSS directly and set data attributes:
 
 ```svelte
 <script>
-  import { getThemeContext } from '@smrt/svelte/themes';
+  import { getThemeContext } from '@happyvertical/smrt-ui/themes';
   
   const theme = getThemeContext();
   
@@ -600,7 +645,7 @@ For SSR or static sites, import CSS directly and set data attributes:
 
 ```svelte
 <script>
-  import { getThemeContext } from '@smrt/svelte/themes';
+  import { getThemeContext } from '@happyvertical/smrt-ui/themes';
   
   const theme = getThemeContext();
   
@@ -616,17 +661,17 @@ For SSR or static sites, import CSS directly and set data attributes:
 
 ## Migration from Legacy Theme
 
-The legacy theme system (`@smrt/svelte/theme`) is still available but deprecated. To migrate:
+The legacy theme system (`@happyvertical/smrt-ui/theme`) is still available but deprecated. To migrate:
 
-1. Import from `@smrt/svelte/themes` instead
+1. Import from `@happyvertical/smrt-ui/themes` instead
 2. Wrap app with new `<ThemeProvider>` from themes
 3. Import theme CSS files
 4. Update any theme context usage to new API
 
 ```diff
-- import { ThemeProvider } from '@smrt/svelte/theme';
-+ import { ThemeProvider } from '@smrt/svelte/themes';
-+ import '@smrt/svelte/themes/styles/all.css';
+- import { ThemeProvider } from '@happyvertical/smrt-ui/theme';
++ import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
++ import '@happyvertical/smrt-ui/themes/styles/all.css';
 ```
 
 ## Troubleshooting

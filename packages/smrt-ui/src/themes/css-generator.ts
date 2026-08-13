@@ -204,18 +204,27 @@ function generateGlassVariables(
 }
 
 /**
- * Generate theme-independent helper tokens (issue #1431).
+ * Generate helper tokens that do not vary by color scheme (issue #1431).
  *
- * Monospace font family, named font weights, and z-index stacking levels are
- * the same across presets and color schemes. Emitting them as tokens lets
+ * Named font weights and z-index stacking levels are identical across every
+ * preset and scheme. The monospace family defaults to the same shared stack,
+ * but a preset whose type stack names its own mono face overrides it through
+ * `Theme.fontFamilyMono` (#2318) — so this token is per-preset, though still
+ * the same in both of that preset's schemes. Emitting them as tokens lets
  * components stop hardcoding magic values and keeps overlay layering / mono
  * surfaces themeable.
  */
-function generateStaticTokens(prefix: string): Record<string, string> {
+function generateStaticTokens(
+  prefix: string,
+  fontFamilyMono?: string,
+): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const [alias, value] of Object.entries(fontFamilyAliases)) {
     vars[`${prefix}-font-family-${alias}`] = value;
   }
+  // A preset whose type stack names its own monospace face overrides the
+  // shared stack; every other preset keeps the #1431 default.
+  if (fontFamilyMono) vars[`${prefix}-font-family-mono`] = fontFamilyMono;
   for (const [name, value] of Object.entries(fontWeightTokens)) {
     vars[`${prefix}-typography-weight-${name}`] = value;
   }
@@ -273,7 +282,7 @@ export function generateThemeVariables(
     ...generateEasingVariables(theme.easing, prefix),
 
     // Theme-independent helper tokens (mono font, named weights, z-index)
-    ...generateStaticTokens(prefix),
+    ...generateStaticTokens(prefix, theme.fontFamilyMono),
 
     // Glass effects (if present)
     ...generateGlassVariables(theme.glass, prefix),

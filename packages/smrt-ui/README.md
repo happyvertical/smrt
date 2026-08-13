@@ -105,8 +105,13 @@ separate so the UI can show a proposal before it changes user state.
 ## Themes
 
 `@happyvertical/smrt-ui/themes` is the canonical theme API and includes the
-Material, Glass, Studio, and s-m-r-t presets. The old `/theme` path forwards to the
-same provider and context for compatibility.
+Material, Glass, Studio, s-m-r-t, and HappyVertical ("Day Shift") presets. The
+old `/theme` path forwards to the same provider and context for compatibility.
+
+Day Shift is the HappyVertical brand identity: a calm instrument panel with an
+enamel ground, faceplate panels on hairline bezels, and a single amber accent
+that also serves as the focus ring. Both its light and dark schemes are
+hand-authored, and every text pairing clears WCAG AA.
 
 ```svelte
 <script>

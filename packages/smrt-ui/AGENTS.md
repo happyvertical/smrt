@@ -55,9 +55,11 @@ components are exempt — they *are* the primitives.
 | `./i18n` | i18n **client**: `useI18n`, `<Trans>`, `defineMessages`, `renderTemplate` (no `smrt-languages` import — the server resolver stays in `smrt-svelte/i18n/server`) |
 | `./registry` | `ModuleUIRegistry` for cross-package component discovery |
 | `./theme` | deprecated compatibility path forwarding to the canonical theme system |
-| `./themes` | canonical `ThemeProvider`, context, preset token system (material/glass/studio/smrt), and CSS generation |
+| `./themes` | canonical `ThemeProvider`, context, preset token system (material/glass/studio/smrt/happyvertical), and CSS generation |
 | `./themes/styles/smrt.css` | static SMRT theme CSS (dark-first amber instrument-panel look) + signature `.smrt-*` flourish utilities |
 | `./themes/styles/fonts.css` | optional self-hosted `@font-face` for the SMRT type stack (Space Grotesk / Inter / JetBrains Mono) |
+| `./themes/styles/happyvertical.css` | static HappyVertical "Day Shift" brand CSS (enamel/faceplate calm instrument panel) + amber focus rule + `.hv-*` utilities |
+| `./themes/styles/happyvertical-fonts.css` | optional self-hosted `@font-face` for the Day Shift type stack (Archivo / B612 / B612 Mono) |
 | `./styles/tokens.css` | base token stylesheet |
 
 Also internal: `actions/` (`ripple`, `permission`), `display/`, `data/`,
@@ -67,9 +69,30 @@ Also internal: `actions/` (`ripple`, `permission`), `display/`, `data/`,
 
 The package publishes `./playground` and keeps its workspace source at
 `src/svelte/playground.ts`. Previews inherit the shared host's active
-Material/Glass/Studio/SMRT preset and light/dark color scheme; preview
-components must consume `--smrt-*` tokens rather than installing their own
-theme provider or static preset stylesheet.
+Material/Glass/Studio/SMRT/HappyVertical preset and light/dark color scheme;
+preview components must consume `--smrt-*` tokens rather than installing their
+own theme provider or static preset stylesheet.
+
+## Theme presets
+
+Adding or editing a preset touches four things that must stay in lockstep:
+`src/themes/<id>/index.ts` (the `Theme`), the `ThemePreset` union in
+`src/themes/types.ts`, the `registry.ts` entry, and the static
+`src/themes/styles/<id>.css`. **The static stylesheet's `[data-theme="<id>"]`
+blocks are `generateThemeCSS()` output verbatim** — regenerate them after any
+token edit, never hand-patch a value. Two guards enforce this: the whole-block
+comparison in `__tests__/happyvertical-theme.test.ts` (per-preset, strictest),
+and the name-surface diff in `__tests__/token-aliases.test.ts` plus
+`scripts/check-svelte-tokens.mjs` (repo-wide). A preset that tunes shadows per
+scheme sets `darkElevation`; one whose type stack names its own monospace face
+sets `fontFamilyMono` (#1586, #1431).
+
+The **happyvertical** preset ("Day Shift", #2318) is the HappyVertical brand
+identity and carries hand-authored light *and* dark palettes — never regenerate
+its dark scheme from the light one. Its brand rules are executable in that test:
+green is a lamp/marker/fill and never a text color, dark keeps a blue-graphite
+cast with both accent hues, focus is a 2px amber outline with offset, and every
+other text pairing clears WCAG AA in both schemes.
 
 ## Rules
 
