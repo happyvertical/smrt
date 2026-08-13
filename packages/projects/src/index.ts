@@ -83,7 +83,7 @@ export {
 export { PullRequest, type PullRequestOptions } from './models/PullRequest';
 export { Repository, type RepositoryOptions } from './models/Repository';
 export * from './models/service-evidence.js';
-export type { ProjectBoardMoveIntent } from './project-board-types';
+export type { ProjectBoardMoveIntent } from './project-board-types.js';
 export { issueIncorporateFeedbackPrompt } from './prompts';
 export * from './services/index.js';
 
