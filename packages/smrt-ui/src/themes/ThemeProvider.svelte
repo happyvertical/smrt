@@ -367,4 +367,15 @@ $effect(() => {
     --smrt-glass-surface: var(--smrt-color-surface);
     --smrt-glass-border: var(--smrt-color-outline);
   }
+
+  /* HappyVertical ("Day Shift") focus indicator (#2318).
+   * The brand focus ring is part of the preset, so it has to travel on BOTH
+   * delivery paths: this mirrors the identical rule in
+   * themes/styles/happyvertical.css so an app using ThemeProvider without
+   * importing the static stylesheet still gets it. Component-scoped
+   * :focus-visible rules are more specific and continue to win. */
+  :global([data-theme='happyvertical'] :focus-visible) {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 2px;
+  }
 </style>

@@ -6,6 +6,7 @@
  */
 
 import { glassTheme } from './glass/index.js';
+import { happyverticalTheme } from './happyvertical/index.js';
 import { materialTheme } from './material/index.js';
 import { smrtTheme } from './smrt/index.js';
 import { studioTheme } from './studio/index.js';
@@ -19,6 +20,7 @@ export const themes: Record<ThemePreset, Theme> = {
   glass: glassTheme,
   studio: studioTheme,
   smrt: smrtTheme,
+  happyvertical: happyverticalTheme,
 };
 
 /**
@@ -29,6 +31,7 @@ export const availablePresets: ThemePreset[] = [
   'glass',
   'studio',
   'smrt',
+  'happyvertical',
 ];
 
 /**

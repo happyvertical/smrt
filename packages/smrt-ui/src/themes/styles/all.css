@@ -1,11 +1,12 @@
 /**
  * All Themes CSS
  *
- * Combined CSS file with all themes (Material, Glass, Studio, SMRT).
- * Use this if your app supports runtime theme switching.
+ * Combined CSS file with all themes (Material, Glass, Studio, SMRT,
+ * HappyVertical). Use this if your app supports runtime theme switching.
  *
- * Note: the SMRT theme's fonts are not imported here (they pull in woff2
- * binaries). Import './fonts.css' explicitly if you want the SMRT type stack.
+ * Note: the SMRT and HappyVertical fonts are not imported here (they pull in
+ * woff2 binaries). Import './fonts.css' or './happyvertical-fonts.css'
+ * explicitly if you want either type stack.
  *
  * @usage import '@happyvertical/smrt-ui/themes/styles/all.css';
  */
@@ -14,3 +15,4 @@
 @import './glass.css';
 @import './studio.css';
 @import './smrt.css';
+@import './happyvertical.css';

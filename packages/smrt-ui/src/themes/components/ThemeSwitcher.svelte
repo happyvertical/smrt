@@ -39,6 +39,7 @@ const themeIcons: Record<ThemePreset, string> = {
   glass: '💎',
   studio: '◻️',
   smrt: '🟠',
+  happyvertical: '🔶',
 };
 </script>
 

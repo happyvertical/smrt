@@ -260,6 +260,8 @@ function collectStaticPresetMissing() {
     material: 'material.css',
     glass: 'glass.css',
     studio: 'studio.css',
+    smrt: 'smrt.css',
+    happyvertical: 'happyvertical.css',
   };
   const missingByPreset = [];
 

@@ -1,0 +1,83 @@
+/**
+ * HappyVertical Theme Fonts — "Day Shift"
+ *
+ * Self-hosted @font-face declarations for the Day Shift type stack:
+ *   - Archivo   — display / headline / title (variable, used at 500–600)
+ *   - B612      — body / UI (400 and 700)
+ *   - B612 Mono — legends, readouts, code (400)
+ *
+ * These are the Google Fonts woff2 instances (Archivo latin + latin-ext as the
+ * variable font; B612 and B612 Mono ship a latin subset only), bundled for
+ * privacy-first, CDN-free delivery. All three are licensed under the SIL Open
+ * Font License 1.1 — see ../fonts/LICENSE.md.
+ *
+ * Import alongside the theme tokens when you want the full brand look:
+ *
+ *   import '@happyvertical/smrt-ui/themes/styles/happyvertical-fonts.css';
+ *   import '@happyvertical/smrt-ui/themes/styles/happyvertical.css';
+ *
+ * Font files are resolved relative to this stylesheet (../fonts/*.woff2) by
+ * your bundler. If you can't bundle the fonts, the theme falls back to
+ * Helvetica / Verdana / ui-monospace stacks automatically.
+ */
+
+/* Archivo — display / headline / title (variable weight) */
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../fonts/archivo-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../fonts/archivo-latin-ext.woff2') format('woff2');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* B612 — body / UI */
+@font-face {
+  font-family: 'B612';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/b612-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'B612';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../fonts/b612-bold-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+/* B612 Mono — legends / readouts / code */
+@font-face {
+  font-family: 'B612 Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/b612-mono-latin.woff2') format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}

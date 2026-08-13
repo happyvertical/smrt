@@ -110,6 +110,7 @@ const STATIC_STYLE_PATHS: Record<keyof typeof themes, string> = {
   glass: join(packageRoot, 'src/themes/styles/glass.css'),
   studio: join(packageRoot, 'src/themes/styles/studio.css'),
   smrt: join(packageRoot, 'src/themes/styles/smrt.css'),
+  happyvertical: join(packageRoot, 'src/themes/styles/happyvertical.css'),
 };
 
 function collectDefinedTokens(css: string): Set<string> {

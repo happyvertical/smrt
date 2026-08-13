@@ -22,7 +22,10 @@ export const themeStyles = {
   glass: './glass.css',
   studio: './studio.css',
   smrt: './smrt.css',
+  happyvertical: './happyvertical.css',
   /** @font-face declarations for the SMRT theme (Space Grotesk / Inter / JetBrains Mono). */
   fonts: './fonts.css',
+  /** @font-face declarations for the HappyVertical theme (Archivo / B612 / B612 Mono). */
+  happyverticalFonts: './happyvertical-fonts.css',
   all: './all.css',
 } as const;

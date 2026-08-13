@@ -1,11 +1,17 @@
 /**
  * Unified Theme System Types
  *
- * Core types for the multi-theme architecture supporting Material, Glass, Studio, and SMRT themes.
+ * Core types for the multi-theme architecture supporting Material, Glass,
+ * Studio, SMRT, and HappyVertical themes.
  */
 
 /** Available theme presets */
-export type ThemePreset = 'material' | 'glass' | 'studio' | 'smrt';
+export type ThemePreset =
+  | 'material'
+  | 'glass'
+  | 'studio'
+  | 'smrt'
+  | 'happyvertical';
 
 /** Color scheme mode */
 export type ColorScheme = 'light' | 'dark' | 'system';
@@ -249,6 +255,13 @@ export interface Theme {
   glass?: GlassEffects;
   /** Primary font family */
   fontFamily: string;
+  /**
+   * Optional monospace family override. When absent the preset inherits the
+   * shared `--smrt-font-family-mono` stack (#1431); presets whose type stack
+   * names its own mono face (e.g. happyvertical's B612 Mono) set it here so the
+   * JS generator and the static preset CSS emit the same value.
+   */
+  fontFamilyMono?: string;
 }
 
 /**

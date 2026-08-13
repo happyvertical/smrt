@@ -1,7 +1,8 @@
 /**
  * SMRT Svelte Themes
  *
- * Unified theme system with Material, Glass, Studio, and SMRT presets.
+ * Unified theme system with Material, Glass, Studio, SMRT, and HappyVertical
+ * ("Day Shift") presets.
  * Supports runtime theme switching, dark/light modes, and CSS custom properties.
  *
  * @example
@@ -43,6 +44,7 @@ export {
   variablesToStyleString,
 } from './css-generator.js';
 export { glassTheme } from './glass/index.js';
+export { happyverticalTheme } from './happyvertical/index.js';
 // Theme definitions
 export { materialTheme } from './material/index.js';
 
