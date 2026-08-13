@@ -122,6 +122,17 @@ client at all.
 Keep `manifest.json` runtime-focused. `smrt-knowledge.json` is the deterministic
 agent contract for downstream review and architecture tools.
 
+The schema-version-1 object projection is additive and high-signal: it retains
+normalized tenant mode/field, explicit `cti`/`sti` strategy, conflict columns,
+method signatures, and field defaults/constraints/readonly/transient flags.
+Sensitive fields are removed before both `fields` and `relationships` are
+derived, including legacy flags stored under `_meta`; matching field and
+snake-case column names are also removed from projected conflict columns, and a
+sensitive custom tenant field is omitted while retaining scope and mode.
+Generated artifacts assert this boundary with `sensitiveFieldsExcluded: true`;
+the optional marker keeps schema version 1 additive while letting readers
+identify older artifacts that require raw-manifest corroboration.
+
 Config precedence for knowledge is defaults → top-level `knowledge` in
 `smrt.config.ts` → `packages[packageName].knowledge` → plugin option →
 object-level `@smrt({ knowledge })`.

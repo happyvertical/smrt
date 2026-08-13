@@ -28,12 +28,16 @@ export type {
 } from './identity.js';
 export type {
   DomainKnowledgeConfig,
+  DomainKnowledgeField,
+  DomainKnowledgeFieldConstraints,
   DomainKnowledgeFreshnessResult,
   DomainKnowledgeManifest,
+  DomainKnowledgeMethodSignature,
   DomainKnowledgeModuleDoc,
   DomainKnowledgeObject,
   DomainKnowledgeSurface,
   DomainKnowledgeSurfaceKind,
+  DomainKnowledgeTenant,
 } from './knowledge.js';
 export type {
   ModuleComponentType,
