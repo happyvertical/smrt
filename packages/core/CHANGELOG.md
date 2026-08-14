@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.40.67
+
+### Patch Changes
+
+- ### Features
+
+  - add accessible project board (#2324) (svelte)
+  - @happyvertical/smrt-config@0.40.67
+  - @happyvertical/smrt-types@0.40.67
+  - @happyvertical/smrt-scanner@0.40.67
+
 ## 0.40.66
 
 ### Patch Changes

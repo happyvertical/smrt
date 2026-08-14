@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-reports",
-  "version": "0.40.66",
+  "version": "0.40.67",
   "description": "Materialized aggregate report models for SMRT",
   "type": "module",
   "main": "./dist/index.js",
