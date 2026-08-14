@@ -73,7 +73,10 @@ overrides:
   # has no newer release, so keep the resolved implementation on the first
   # patched line while preserving the package's public API surface.
   'pdfjs-dist@>=5.6.83 <6.2.108': 6.2.108
-  'nanoid@<3.3.17': 3.3.17
+  # nanoid <3.3.18 can loop indefinitely for size-zero custom alphabet/random
+  # calls (GHSA-2v37-7h3g-55p8). Vite/PostCSS accepts the patched 3.3.x
+  # release, so unify the transitive graph on the first fixed version.
+  'nanoid@<3.3.18': 3.3.18
   'axios@>=1.15.2 <1.18.0': 1.18.0
   'postcss@<=8.5.17': 8.5.18
   # The advisory names 14.1.2 as the first patched version, but that tag was
