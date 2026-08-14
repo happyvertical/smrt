@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1
+      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2
       # cosign-installer v4 shells out to envsubst, which is not part of the
       # provider-neutral general runner contract. Download the publisher-
       # compatible cosign v3 binary directly and verify its pinned SHA-256 so
