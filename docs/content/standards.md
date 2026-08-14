@@ -567,12 +567,12 @@ Use these terms consistently. Do not call every generated file or ambient input
 | Term | Meaning |
 |---|---|
 | **Source model** | Authored TypeScript classes, decorators, and SMRT configuration. This is the source of truth. |
-| **Runtime manifest** | `manifest.json`, the generated intermediate representation consumed by registry, schema, route, type, CLI, and MCP tooling. It describes objects; it is not a cross-invocation provenance envelope. |
+| **Runtime manifest** | The generated intermediate representation written to `.smrt/manifest.json` in development and `dist/manifest.json` in builds, then consumed by registry, schema, route, type, CLI, and MCP tooling. It describes objects; it is not a cross-invocation provenance envelope. |
 | **Domain knowledge artifact** | `smrt-knowledge.json`, the deterministic, sanitized agent/developer projection of manifests plus package knowledge. It is not loaded as the runtime manifest. |
 | **Review or architecture context** | A temporary prompt bundle assembled from knowledge artifacts and documentation for a specific model-assisted task. It is derived input, not a persisted runtime contract. |
 | **Generation snapshot** | The proposed, versioned and immutable reuse contract tracked by [#2328](https://github.com/happyvertical/smrt/issues/2328). A snapshot may contain manifest views, normalized generator inputs, portable paths, an output inventory, and digests. No current plugin or CLI option should be described as accepting a generation snapshot until that contract is implemented. |
 | **Runtime or request context** | Live dependencies and authority for an operation, such as database, tenant, principal, AI, CLI, REST, or MCP state. It must not be serialized into a generation snapshot. |
-| **Object context** | The `SmrtObject.context` logical namespace used with a slug. This is unrelated to prompt or generation context. |
+| **Object context** | A `SmrtObject` instance's `context` value, paired with its `slug` as a logical namespace. This is unrelated to prompt or generation context. |
 | **Learned context memory** | Values stored through `remember()` / `recall()` in `_smrt_contexts`. This is mutable runtime data and is unrelated to generated artifacts. |
 
 When a design needs to reuse generated state across processes, name the exact
