@@ -64,15 +64,12 @@ function normalizeManifestPaths<TManifest>(
     const isProjectDefinition =
       candidate.packageName === undefined ||
       candidate.packageName === packageName;
-    if (!isAbsolute(candidate.filePath)) {
-      if (isProjectDefinition) {
-        throw new Error(
-          `[smrt] Generation snapshot cannot normalize relative project source path: ${candidate.filePath}`,
-        );
-      }
-      continue;
-    }
-    if (!isInsideRoot(sourceRoot, candidate.filePath)) {
+    if (!isProjectDefinition && !isAbsolute(candidate.filePath)) continue;
+
+    const sourcePath = isAbsolute(candidate.filePath)
+      ? candidate.filePath
+      : resolve(sourceRoot, candidate.filePath);
+    if (!isInsideRoot(sourceRoot, sourcePath)) {
       if (isProjectDefinition) {
         throw new Error(
           `[smrt] Generation snapshot project source path is outside sourceRoot: ${candidate.filePath}`,
@@ -81,13 +78,10 @@ function normalizeManifestPaths<TManifest>(
       continue;
     }
 
-    const relativePath = relative(sourceRoot, candidate.filePath).replace(
-      /\\/g,
-      '/',
-    );
+    const relativePath = relative(sourceRoot, sourcePath).replace(/\\/g, '/');
     sourceDigests.set(
       relativePath,
-      sha256SmrtGenerationSnapshot(readFileSync(candidate.filePath)),
+      sha256SmrtGenerationSnapshot(readFileSync(sourcePath)),
     );
     candidate.filePath = `${SOURCE_ROOT_PREFIX}${relativePath}`;
   }
@@ -111,6 +105,14 @@ function hydrateManifestPaths<TManifest>(
     throw new Error('[smrt] Generation snapshot sourceRoot must be absolute');
   }
   const resolvedSourceRoot = resolve(sourceRoot);
+  if (
+    !existsSync(resolvedSourceRoot) ||
+    !statSync(resolvedSourceRoot).isDirectory()
+  ) {
+    throw new Error(
+      '[smrt] Generation snapshot sourceRoot must be an existing directory',
+    );
+  }
   const packageName = (manifest as { packageName?: string }).packageName;
   const consumedSourceDigests = new Set<string>();
 
@@ -164,7 +166,9 @@ function hydrateManifestPaths<TManifest>(
         `[smrt] Generation snapshot source path is missing under the current sourceRoot: ${hydratedPath}`,
       );
     }
-    const expectedSourceDigest = sourceDigests[relativePath];
+    const expectedSourceDigest = Object.hasOwn(sourceDigests, relativePath)
+      ? sourceDigests[relativePath]
+      : undefined;
     if (!expectedSourceDigest) {
       throw new Error(
         `[smrt] Generation snapshot has no source digest for: ${relativePath}`,

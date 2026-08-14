@@ -71,6 +71,16 @@ describe('verified generation snapshots', () => {
     ).toEqual(manifest);
   });
 
+  it('normalizes the workspace-relative paths emitted by manifest generation', () => {
+    manifest.objects['@fixture/app:LocalThing'].filePath = 'src/LocalThing.ts';
+    const options = writeArtifact();
+
+    expect(
+      loadVerifiedSmrtGenerationSnapshot<typeof manifest>(options, projectRoot)
+        .objects['@fixture/app:LocalThing'].filePath,
+    ).toBe(join(projectRoot, 'src/LocalThing.ts'));
+  });
+
   it('fails closed when the artifact is missing', () => {
     expect(() =>
       loadVerifiedSmrtGenerationSnapshot(
@@ -158,6 +168,12 @@ describe('verified generation snapshots', () => {
         projectRoot,
       ),
     ).toThrow(/provenance is required/);
+    expect(() =>
+      loadVerifiedSmrtGenerationSnapshot(
+        { ...options, sourceRoot: join(projectRoot, 'missing-root') },
+        projectRoot,
+      ),
+    ).toThrow(/sourceRoot must be an existing directory/);
   });
 
   it('rebases portable source paths and selects plugin-specific views', () => {
