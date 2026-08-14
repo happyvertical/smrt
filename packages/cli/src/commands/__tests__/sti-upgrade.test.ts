@@ -282,4 +282,142 @@ describe('resolveStiDiscriminatorUpgrade', () => {
       },
     ]);
   });
+
+  it('matches nullable STI conflict columns when finding qualified duplicates', async () => {
+    db = await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      __smrtSkipVitestSchemaPreparation: true,
+    });
+    await db.query(`
+      CREATE TABLE sti_upgrade_customs (
+        id TEXT PRIMARY KEY,
+        slug TEXT NOT NULL,
+        context TEXT NOT NULL DEFAULT '',
+        external_key TEXT,
+        _meta_type TEXT NOT NULL
+      )
+    `);
+    await db.query(`
+      INSERT INTO sti_upgrade_customs (id, slug, context, external_key, _meta_type)
+      VALUES ('legacy-1', 'legacy-slug', '', NULL, 'StiUpgradeCustomIdentity')
+    `);
+    await db.query(`
+      INSERT INTO sti_upgrade_customs (id, slug, context, external_key, _meta_type)
+      VALUES ('qualified-1', 'different-slug', '', NULL, '@happyvertical/smrt-cli:StiUpgradeCustomIdentity')
+    `);
+
+    const result = await repairStiDiscriminatorRows({
+      db,
+      tableName: 'sti_upgrade_customs',
+      className: 'StiUpgradeCustomIdentity',
+      legacyMetaType: 'StiUpgradeCustomIdentity',
+      qualifiedMetaType: '@happyvertical/smrt-cli:StiUpgradeCustomIdentity',
+    });
+
+    expect(result.updatedRows).toBe(0);
+    expect(result.conflicts).toEqual([
+      {
+        tableName: 'sti_upgrade_customs',
+        legacyMetaType: 'StiUpgradeCustomIdentity',
+        qualifiedMetaType: '@happyvertical/smrt-cli:StiUpgradeCustomIdentity',
+        legacyId: 'legacy-1',
+        qualifiedId: 'qualified-1',
+        conflictIdentity: {
+          external_key: null,
+        },
+      },
+    ]);
+  });
+
+  it.runIf(process.env.DATABASE_URL)(
+    'repairs non-null identities and detects null duplicates on PostgreSQL',
+    async () => {
+      const tableName = `sti_upgrade_pg_${Math.random().toString(36).slice(2, 10)}`;
+      db = await getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+
+      try {
+        await db.query(`
+          CREATE TABLE "${tableName}" (
+            id TEXT PRIMARY KEY,
+            slug TEXT NOT NULL,
+            context TEXT NOT NULL DEFAULT '',
+            external_key TEXT,
+            _meta_type TEXT NOT NULL
+          )
+        `);
+        await db.query(
+          `INSERT INTO "${tableName}" (id, slug, context, external_key, _meta_type)
+           VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)`,
+          'legacy-null',
+          'legacy-null',
+          '',
+          null,
+          'StiUpgradeCustomIdentity',
+          'qualified-null',
+          'qualified-null',
+          '',
+          null,
+          '@happyvertical/smrt-cli:StiUpgradeCustomIdentity',
+          'legacy-value',
+          'legacy-value',
+          '',
+          'unique-key',
+          'StiUpgradeCustomIdentity',
+        );
+
+        const result = await repairStiDiscriminatorRows({
+          db,
+          tableName,
+          className: 'StiUpgradeCustomIdentity',
+          legacyMetaType: 'StiUpgradeCustomIdentity',
+          qualifiedMetaType: '@happyvertical/smrt-cli:StiUpgradeCustomIdentity',
+        });
+
+        expect(result).toMatchObject({
+          checkedRows: 2,
+          updatedRows: 1,
+          wouldUpdateRows: 0,
+        });
+        expect(result.conflicts).toEqual([
+          {
+            tableName,
+            legacyMetaType: 'StiUpgradeCustomIdentity',
+            qualifiedMetaType:
+              '@happyvertical/smrt-cli:StiUpgradeCustomIdentity',
+            legacyId: 'legacy-null',
+            qualifiedId: 'qualified-null',
+            conflictIdentity: {
+              external_key: null,
+            },
+          },
+        ]);
+
+        const rows = (
+          await db.query(
+            `SELECT id, _meta_type FROM "${tableName}" ORDER BY id`,
+          )
+        ).rows;
+        expect(rows).toEqual([
+          {
+            id: 'legacy-null',
+            _meta_type: 'StiUpgradeCustomIdentity',
+          },
+          {
+            id: 'legacy-value',
+            _meta_type: '@happyvertical/smrt-cli:StiUpgradeCustomIdentity',
+          },
+          {
+            id: 'qualified-null',
+            _meta_type: '@happyvertical/smrt-cli:StiUpgradeCustomIdentity',
+          },
+        ]);
+      } finally {
+        await db.query(`DROP TABLE IF EXISTS "${tableName}"`);
+      }
+    },
+  );
 });

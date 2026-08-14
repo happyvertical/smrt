@@ -98,10 +98,12 @@ function getRowCount(result: QueryResult): number | undefined {
 }
 
 function buildNullSafeIdentityPredicate(columns: string[]): string {
+  // A separate `? IS NULL` parameter has no PostgreSQL type context (42P18).
+  // The column comparison keeps null-safe equality while binding once.
   return columns
     .map((column) => {
       const quoted = quoteIdentifier(column);
-      return `(${quoted} = ? OR (${quoted} IS NULL AND ? IS NULL))`;
+      return `${quoted} IS NOT DISTINCT FROM ?`;
     })
     .join(' AND ');
 }
@@ -117,11 +119,7 @@ function getRowId(row: DbRow): string | null {
 }
 
 function getIdentityParams(row: DbRow, columns: string[]): unknown[] {
-  const params: unknown[] = [];
-  for (const column of columns) {
-    params.push(row[column], row[column]);
-  }
-  return params;
+  return columns.map((column) => row[column]);
 }
 
 export function getStiConflictIdentityColumns(className: string): string[] {
