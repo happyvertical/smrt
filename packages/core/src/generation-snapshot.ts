@@ -17,6 +17,7 @@ export interface SmrtGenerationSnapshotArtifact<TManifest> {
   schemaVersion: 1;
   provenance: string;
   pathMode: 'source-root-relative';
+  sourceDigests: Record<string, string>;
   manifest: TManifest;
 }
 
@@ -50,10 +51,11 @@ function isInsideRoot(root: string, filePath: string): boolean {
 function normalizeManifestPaths<TManifest>(
   manifest: TManifest,
   sourceRoot: string,
-): TManifest {
+): { manifest: TManifest; sourceDigests: Record<string, string> } {
   const clone = structuredClone(manifest) as TManifest;
-  if (!isManifest(clone)) return clone;
+  if (!isManifest(clone)) return { manifest: clone, sourceDigests: {} };
   const packageName = (clone as { packageName?: string }).packageName;
+  const sourceDigests = new Map<string, string>();
 
   for (const definition of Object.values(clone.objects)) {
     if (!definition || typeof definition !== 'object') continue;
@@ -83,21 +85,52 @@ function normalizeManifestPaths<TManifest>(
       /\\/g,
       '/',
     );
+    sourceDigests.set(
+      relativePath,
+      sha256SmrtGenerationSnapshot(readFileSync(candidate.filePath)),
+    );
     candidate.filePath = `${SOURCE_ROOT_PREFIX}${relativePath}`;
   }
 
-  return clone;
+  return {
+    manifest: clone,
+    sourceDigests: Object.fromEntries(
+      [...sourceDigests.entries()].sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+  };
 }
 
 function hydrateManifestPaths<TManifest>(
   manifest: TManifest,
   sourceRoot: string,
+  sourceDigests: Record<string, string>,
 ): TManifest {
   if (!isAbsolute(sourceRoot)) {
     throw new Error('[smrt] Generation snapshot sourceRoot must be absolute');
   }
   const resolvedSourceRoot = resolve(sourceRoot);
   const packageName = (manifest as { packageName?: string }).packageName;
+  const consumedSourceDigests = new Set<string>();
+
+  for (const [relativePath, digest] of Object.entries(sourceDigests)) {
+    const hydratedPath = resolve(resolvedSourceRoot, relativePath);
+    if (
+      !relativePath ||
+      isAbsolute(relativePath) ||
+      !isInsideRoot(resolvedSourceRoot, hydratedPath)
+    ) {
+      throw new Error(
+        `[smrt] Generation snapshot contains an invalid source digest path: ${relativePath}`,
+      );
+    }
+    if (!/^sha256:[a-f0-9]{64}$/.test(digest)) {
+      throw new Error(
+        `[smrt] Generation snapshot contains an invalid source digest for: ${relativePath}`,
+      );
+    }
+  }
 
   for (const definition of Object.values(
     (manifest as { objects: Record<string, unknown> }).objects,
@@ -131,7 +164,31 @@ function hydrateManifestPaths<TManifest>(
         `[smrt] Generation snapshot source path is missing under the current sourceRoot: ${hydratedPath}`,
       );
     }
+    const expectedSourceDigest = sourceDigests[relativePath];
+    if (!expectedSourceDigest) {
+      throw new Error(
+        `[smrt] Generation snapshot has no source digest for: ${relativePath}`,
+      );
+    }
+    const actualSourceDigest = sha256SmrtGenerationSnapshot(
+      readFileSync(hydratedPath),
+    );
+    if (actualSourceDigest !== expectedSourceDigest) {
+      throw new Error(
+        `[smrt] Generation snapshot source digest mismatch for ${hydratedPath}: expected ${expectedSourceDigest}, received ${actualSourceDigest}`,
+      );
+    }
+    consumedSourceDigests.add(relativePath);
     candidate.filePath = hydratedPath;
+  }
+
+  const unreferencedSourceDigests = Object.keys(sourceDigests).filter(
+    (relativePath) => !consumedSourceDigests.has(relativePath),
+  );
+  if (unreferencedSourceDigests.length > 0) {
+    throw new Error(
+      `[smrt] Generation snapshot contains unreferenced source digest(s): ${unreferencedSourceDigests.join(', ')}`,
+    );
   }
 
   return manifest;
@@ -192,7 +249,7 @@ export function serializeSmrtGenerationSnapshot<TManifest>(
   if (!isManifest(manifest)) {
     throw new Error('[smrt] Generation snapshot requires a valid manifest');
   }
-  const portableManifest = normalizeManifestPaths(
+  const { manifest: portableManifest, sourceDigests } = normalizeManifestPaths(
     manifest,
     resolve(options.sourceRoot),
   );
@@ -201,6 +258,7 @@ export function serializeSmrtGenerationSnapshot<TManifest>(
       schemaVersion: 1,
       provenance,
       pathMode: 'source-root-relative',
+      sourceDigests,
       manifest: portableManifest,
     } satisfies SmrtGenerationSnapshotArtifact<TManifest>,
     null,
@@ -302,6 +360,15 @@ export function loadVerifiedSmrtGenerationSnapshot<TManifest>(
       `[smrt] Unsupported generation snapshot path mode at ${artifactPath}`,
     );
   }
+  if (
+    !envelope.sourceDigests ||
+    typeof envelope.sourceDigests !== 'object' ||
+    Array.isArray(envelope.sourceDigests)
+  ) {
+    throw new Error(
+      `[smrt] Generation snapshot at ${artifactPath} does not contain source digests`,
+    );
+  }
   if (!isManifest(envelope.manifest)) {
     throw new Error(
       `[smrt] Generation snapshot at ${artifactPath} does not contain a valid manifest`,
@@ -311,6 +378,7 @@ export function loadVerifiedSmrtGenerationSnapshot<TManifest>(
   const hydrated = hydrateManifestPaths(
     envelope.manifest as TManifest,
     options.sourceRoot,
+    envelope.sourceDigests,
   );
   return selectManifestView(hydrated, view);
 }

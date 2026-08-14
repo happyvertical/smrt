@@ -104,6 +104,7 @@ describe('verified generation snapshots', () => {
         schemaVersion: 1,
         provenance,
         pathMode: 'source-root-relative',
+        sourceDigests: {},
         manifest: {},
       }),
     );
@@ -129,6 +130,18 @@ describe('verified generation snapshots', () => {
     expect(() =>
       loadVerifiedSmrtGenerationSnapshot(options, projectRoot),
     ).toThrow(/source path is missing/);
+  });
+
+  it('rejects source-content drift even when provenance and artifact bytes match', () => {
+    const options = writeArtifact();
+    writeFileSync(
+      join(projectRoot, 'src/LocalThing.ts'),
+      'export const drift = true;\n',
+    );
+
+    expect(() =>
+      loadVerifiedSmrtGenerationSnapshot(options, projectRoot),
+    ).toThrow(/source digest mismatch/);
   });
 
   it('requires canonical digest and non-empty provenance inputs', () => {

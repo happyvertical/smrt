@@ -185,9 +185,10 @@ smrtConsumer({ generationSnapshot });
 ```
 
 Both plugins fail closed when the snapshot is missing, malformed, has different
-bytes, declares different provenance, or cannot resolve its portable paths.
-Reuse mode still generates routes, types, registration, and virtual modules,
-but it disables source/package scans, watch rescans, and manifest writes. Omit
+bytes, declares different provenance, cannot resolve its portable paths, or the
+current source-file digests differ from the prepared inputs. Reuse mode still
+generates routes, types, registration, and virtual modules, but it disables
+source/package scans, watch rescans, and manifest writes. Omit
 `generationSnapshot` for normal local development.
 
 ### Generated SvelteKit routes

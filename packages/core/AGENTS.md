@@ -197,11 +197,11 @@ emitDecoratorMetadata: true`.
 For independent CI invocations, both `smrtPlugin()` and `smrtConsumer()` accept
 the same `generationSnapshot: { path, sha256, provenance, sourceRoot }`. The
 schema-v1 snapshot produced by `serializeSmrtGenerationSnapshot()` contains the
-merged project/dependency manifest and portable source paths; each plugin
-selects its own view. Reuse mode fails closed on byte/provenance/path drift,
-skips scans and manifest writes, and still generates routes, types,
-registration, and virtual modules. Omit it for normal local development and
-watch mode.
+merged project/dependency manifest, portable source paths, and source-file
+digests; each plugin selects its own view. Reuse mode fails closed on
+byte/provenance/path/content drift, skips scans and manifest writes, and still
+generates routes, types, registration, and virtual modules. Omit it for normal
+local development and watch mode.
 
 ## Gotchas
 
