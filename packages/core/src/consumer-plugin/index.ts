@@ -6,10 +6,24 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin } from 'vite';
+import {
+  loadVerifiedSmrtGenerationSnapshot,
+  type SmrtGenerationSnapshotOptions,
+} from '../generation-snapshot.js';
 import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
+
+export {
+  loadVerifiedSmrtGenerationSnapshot,
+  type SerializeSmrtGenerationSnapshotOptions,
+  type SmrtGenerationSnapshotArtifact,
+  type SmrtGenerationSnapshotOptions,
+  type SmrtGenerationSnapshotView,
+  serializeSmrtGenerationSnapshot,
+  sha256SmrtGenerationSnapshot,
+} from '../generation-snapshot.js';
 
 /**
  * Loosely-typed view of an object definition as carried by an external
@@ -70,6 +84,12 @@ export interface SmrtConsumerOptions {
   typesDir?: string;
   /** Project root path */
   projectRoot?: string;
+  /**
+   * Reuse an immutable, verified aggregated manifest instead of discovering
+   * packages or writing `.smrt/manifest.json`. Registration and generated
+   * types still consume the verified manifest.
+   */
+  generationSnapshot?: SmrtGenerationSnapshotOptions;
   /** SvelteKit integration mode */
   svelteKit?: boolean;
   /**
@@ -107,6 +127,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     generateTypes = true,
     typesDir = 'src/types/smrt-generated',
     projectRoot = process.cwd(),
+    generationSnapshot,
     disableScanning = false,
     kebabRoutes = false,
   } = options;
@@ -114,6 +135,17 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   let smrtPackages: string[] = [];
   let typeManifest: ConsumerManifest | null = null;
   let typesGenerated = false;
+
+  function loadGenerationSnapshot(): ConsumerManifest {
+    if (!generationSnapshot) {
+      throw new Error('[smrt:consumer] Generation snapshot is not configured');
+    }
+    return loadVerifiedSmrtGenerationSnapshot<ConsumerManifest>(
+      generationSnapshot,
+      projectRoot,
+      'dependencies',
+    );
+  }
 
   return {
     name: 'smrt-consumer',
@@ -133,6 +165,19 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
 
     async buildStart() {
       console.log('[smrt:consumer] Initializing SMRT consumer plugin');
+
+      if (generationSnapshot) {
+        typeManifest = loadGenerationSnapshot();
+        console.log(
+          `[smrt:consumer] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
+        );
+        await generateRegistrationFile(typeManifest, projectRoot);
+        if (generateTypes && !typesGenerated) {
+          await generateProjectTypes(typeManifest, typesDir, projectRoot);
+          typesGenerated = true;
+        }
+        return;
+      }
 
       // Discover SMRT packages if not explicitly specified
       if (packages.length === 0 && !disableScanning) {
@@ -192,11 +237,13 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
       if (!typeManifest) {
-        typeManifest = {
-          version: '1.0.0',
-          timestamp: MANIFEST_TIMESTAMP,
-          objects: {},
-        };
+        typeManifest = generationSnapshot
+          ? loadGenerationSnapshot()
+          : {
+              version: '1.0.0',
+              timestamp: MANIFEST_TIMESTAMP,
+              objects: {},
+            };
       }
 
       switch (cleanId) {

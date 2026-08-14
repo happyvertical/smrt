@@ -204,6 +204,10 @@ interface DbMigrateOptions {
 
 interface DoctorOptions {
   fix?: boolean;
+  'generation-snapshot'?: string;
+  'generation-snapshot-sha256'?: string;
+  'generation-snapshot-provenance'?: string;
+  'generation-snapshot-source-root'?: string;
 }
 
 export interface ForceMigrationSelection {
@@ -2051,6 +2055,23 @@ export default testManifest;
         default: false,
         short: 'f',
       },
+      'generation-snapshot': {
+        type: 'string',
+        description: 'Verify a transported SMRT generation snapshot',
+      },
+      'generation-snapshot-sha256': {
+        type: 'string',
+        description: 'Expected sha256:<hex> digest for the generation snapshot',
+      },
+      'generation-snapshot-provenance': {
+        type: 'string',
+        description: 'Expected source provenance for the generation snapshot',
+      },
+      'generation-snapshot-source-root': {
+        type: 'string',
+        description:
+          'Absolute current checkout root for portable snapshot paths',
+      },
     },
     handler: async (_args: string[], options: DoctorOptions) => {
       const { existsSync, readFileSync } = await import('node:fs');
@@ -2182,6 +2203,58 @@ export default testManifest;
             undefined,
             'Pack verifier is unavailable in this SMRT CLI build',
           );
+        }
+        console.log();
+      }
+
+      const snapshotOptionNames = [
+        'generation-snapshot',
+        'generation-snapshot-sha256',
+        'generation-snapshot-provenance',
+        'generation-snapshot-source-root',
+      ] as const;
+      const hasSnapshotOption = snapshotOptionNames.some(
+        (name) => options[name] !== undefined,
+      );
+      if (hasSnapshotOption) {
+        console.log('📸 Generation Snapshot\n');
+        const missingOptions = snapshotOptionNames.filter(
+          (name) => !options[name]?.trim(),
+        );
+
+        if (missingOptions.length > 0) {
+          check(
+            'Generation snapshot verified',
+            false,
+            `Missing required option(s): ${missingOptions.map((name) => `--${name}`).join(', ')}`,
+          );
+        } else {
+          try {
+            const { loadVerifiedSmrtGenerationSnapshot } = await import(
+              '@happyvertical/smrt-core/vite-plugin'
+            );
+            const snapshot = loadVerifiedSmrtGenerationSnapshot<{
+              objects: Record<string, unknown>;
+            }>(
+              {
+                path: options['generation-snapshot'] ?? '',
+                sha256: options['generation-snapshot-sha256'] ?? '',
+                provenance: options['generation-snapshot-provenance'] ?? '',
+                sourceRoot: options['generation-snapshot-source-root'] ?? '',
+              },
+              cwd,
+            );
+            check(
+              `Generation snapshot verified (${Object.keys(snapshot.objects).length} object(s))`,
+              true,
+            );
+          } catch (error) {
+            check(
+              'Generation snapshot verified',
+              false,
+              error instanceof Error ? error.message : String(error),
+            );
+          }
         }
         console.log();
       }

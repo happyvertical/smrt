@@ -27,6 +27,18 @@ use a generic `smrt validate` command as a second project-health entry point.
 Artifact consumers must still verify their own inputs and fail closed—running
 `doctor` is an observability aid, not a prerequisite for safe loading.
 
+To inspect the same generation-snapshot contract used by the Vite plugins:
+
+```bash
+smrt doctor \
+  --generation-snapshot .ci/smrt-generation-snapshot.json \
+  --generation-snapshot-sha256 "$SMRT_GENERATION_SNAPSHOT_SHA256" \
+  --generation-snapshot-provenance "$GITHUB_SHA" \
+  --generation-snapshot-source-root "$GITHUB_WORKSPACE"
+```
+
+The four snapshot options are atomic: supplying any one requires all four.
+
 ### Database
 
 | Command | Description |

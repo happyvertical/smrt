@@ -20,6 +20,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  serializeSmrtGenerationSnapshot,
+  sha256SmrtGenerationSnapshot,
+} from '../generation-snapshot.js';
 import { smrtPlugin } from '../vite-plugin/index.js';
 import { smrtConsumer } from './index.js';
 
@@ -367,6 +371,95 @@ describe('smrtConsumer load with a populated manifest', () => {
 });
 
 describe('smrtConsumer buildStart package discovery', () => {
+  it('lets both plugins reuse one verified snapshot without discovery or manifest writes (#2328)', async () => {
+    writePackageJson(projectRoot, {
+      name: 'consumer-app',
+      version: '1.0.0',
+    });
+    const provenance = 'git-tree:fixture';
+    const artifactPath = join(projectRoot, 'generation-snapshot.json');
+    mkdirSync(join(projectRoot, 'src'), { recursive: true });
+    writeFileSync(join(projectRoot, 'src/LocalThing.ts'), 'export {};\n');
+    const contents = serializeSmrtGenerationSnapshot(
+      {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: 'consumer-app',
+        smrtDependencies: ['@acme/widgets'],
+        objects: {
+          'consumer-app:LocalThing': {
+            className: 'LocalThing',
+            qualifiedName: 'consumer-app:LocalThing',
+            packageName: 'consumer-app',
+            filePath: join(projectRoot, 'src/LocalThing.ts'),
+            collection: 'local_things',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          '@acme/widgets:Widget': {
+            className: 'Widget',
+            qualifiedName: '@acme/widgets:Widget',
+            packageName: '@acme/widgets',
+            packageVersion: '2.0.0',
+            importPath: '@acme/widgets',
+            exportName: 'Widget',
+            collection: 'widgets',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      },
+      provenance,
+      { sourceRoot: projectRoot },
+    );
+    writeFileSync(artifactPath, contents);
+
+    const generationSnapshot = {
+      path: artifactPath,
+      sha256: sha256SmrtGenerationSnapshot(contents),
+      provenance,
+      sourceRoot: projectRoot,
+    };
+    const consumer = smrtConsumer({
+      generateTypes: false,
+      projectRoot,
+      packages: ['this-package-must-not-be-read'],
+      generationSnapshot,
+    });
+    const producer: any = smrtPlugin({
+      generateTypes: false,
+      projectRoot,
+      generationSnapshot,
+    });
+    await producer.configResolved({
+      root: projectRoot,
+      build: {},
+      plugins: [consumer],
+    });
+    await consumer.buildStart?.call({} as any);
+
+    const producerManifest = await getHook(producer, 'load').call(
+      producer,
+      '\0smrt:manifest',
+    );
+    const consumerManifest = await getHook(consumer, 'load').call(
+      consumer,
+      '\0smrt-consumer:manifest',
+    );
+
+    expect(existsSync(join(projectRoot, '.smrt', 'manifest.json'))).toBe(false);
+    expect(
+      readFileSync(join(projectRoot, '.smrt', 'register.js'), 'utf8'),
+    ).toContain("from '@acme/widgets'");
+    expect(producerManifest).toContain('LocalThing');
+    expect(producerManifest).not.toContain('@acme/widgets:Widget');
+    expect(consumerManifest).toContain('@acme/widgets:Widget');
+    expect(consumerManifest).not.toContain('LocalThing');
+    expect(readFileSync(artifactPath, 'utf8')).toBe(contents);
+  });
+
   it('writes an aggregated manifest and discovers packages from package.json', async () => {
     // Auto-discovery (packages: []) scans dependencies whose names include "smrt".
     mkdirSync(

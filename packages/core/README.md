@@ -136,6 +136,61 @@ pnpm smrt db:migrate
 Runtime verifies application tables but does not create them. Rebuild the
 manifest and rerun the migration after changing persisted object fields.
 
+#### Reuse a verified generation snapshot in CI
+
+Independent Vite invocations can reuse one generation snapshot prepared by an
+earlier job without rescanning or rewriting it. First run one normal generation
+invocation with `smrtPlugin()` and `smrtConsumer()` enabled. After both plugins
+finish, `.smrt/manifest.json` contains the project and dependency views. Wrap
+that aggregate once:
+
+```typescript
+import { readFileSync, writeFileSync } from 'node:fs';
+import {
+  serializeSmrtGenerationSnapshot,
+  sha256SmrtGenerationSnapshot,
+} from '@happyvertical/smrt-core/vite-plugin';
+
+const provenance = process.env.GITHUB_SHA!;
+const sourceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+const manifest = JSON.parse(readFileSync('.smrt/manifest.json', 'utf8'));
+const bytes = serializeSmrtGenerationSnapshot(manifest, provenance, {
+  sourceRoot,
+});
+writeFileSync('.ci/smrt-generation-snapshot.json', bytes);
+console.log(sha256SmrtGenerationSnapshot(bytes));
+```
+
+Transport the exact bytes and digest together, then configure the consumers
+with caller-trusted provenance (normally the checked-out commit or tree). Both
+plugins use the same snapshot; each selects its own manifest view. `sourceRoot`
+is the current checkout root, so normalized source paths remain portable across
+workers:
+
+```typescript
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
+
+const provenance = process.env.GITHUB_SHA!;
+
+const generationSnapshot = {
+  path: '.ci/smrt-generation-snapshot.json',
+  sha256: process.env.SMRT_GENERATION_SNAPSHOT_SHA256!,
+  provenance,
+  sourceRoot: process.env.GITHUB_WORKSPACE ?? process.cwd(),
+};
+
+smrtPlugin({ generationSnapshot });
+smrtConsumer({ generationSnapshot });
+```
+
+Both plugins fail closed when the snapshot is missing, malformed, has different
+bytes, declares different provenance, cannot resolve its portable paths, or the
+current source-file digests differ from the prepared inputs. Reuse mode still
+generates routes, types, registration, and virtual modules, but it disables
+source/package scans, watch rescans, and manifest writes. Omit
+`generationSnapshot` for normal local development.
+
 ### Generated SvelteKit routes
 
 Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its

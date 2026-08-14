@@ -11,6 +11,10 @@ import type {
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
 import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
+import {
+  loadVerifiedSmrtGenerationSnapshot,
+  type SmrtGenerationSnapshotOptions,
+} from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
@@ -44,6 +48,15 @@ import {
   selectWebCollectionEntries,
 } from './web-collections.js';
 
+export {
+  loadVerifiedSmrtGenerationSnapshot,
+  type SerializeSmrtGenerationSnapshotOptions,
+  type SmrtGenerationSnapshotArtifact,
+  type SmrtGenerationSnapshotOptions,
+  type SmrtGenerationSnapshotView,
+  serializeSmrtGenerationSnapshot,
+  sha256SmrtGenerationSnapshot,
+} from '../generation-snapshot.js';
 export type {
   CliApiCoherenceViolation,
   SvelteKitOptions,
@@ -72,6 +85,12 @@ interface PackageJsonShape {
 export interface SmrtPluginOptions {
   /** Root directory that owns generated manifests and SvelteKit routes. */
   projectRoot?: string;
+  /**
+   * Reuse an immutable, verified manifest instead of scanning sources or
+   * writing manifest files. Generated routes, virtual modules, and type
+   * declarations still consume the verified manifest.
+   */
+  generationSnapshot?: SmrtGenerationSnapshotOptions;
   /** Glob patterns for SMRT source files */
   include?: string[];
   /** Patterns to exclude */
@@ -215,6 +234,7 @@ export function generateInlineRegisterModule(
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
     projectRoot: configuredProjectRoot,
+    generationSnapshot,
     include = ['src/**/*.ts', 'src/**/*.js'],
     exclude = ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
     followSymbolicLinks = false,
@@ -568,6 +588,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         ...(configuredProjectRoot === undefined
           ? {}
           : { projectRoot: configuredProjectRoot }),
+        ...(generationSnapshot === undefined ? {} : { generationSnapshot }),
         baseClasses,
         followImports,
         include,
@@ -609,8 +630,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       configHookManifest = null;
 
       // Write local manifest for CLI discovery (Issue #963)
-      if (manifest) {
+      if (manifest && !generationSnapshot) {
         await writeLocalManifest(manifest, projectRoot);
+      }
+      if (manifest) {
         validateLibraryMinifySetup(manifest, 'configResolved');
         validateConsumerPluginSetup(manifest, 'configResolved');
         if (validateCliApiCoherence) {
@@ -651,8 +674,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       manifest = await scanAndGenerateManifest(projectRoot);
 
       // Write local manifest for CLI discovery (Issue #963)
-      if (manifest) {
+      if (manifest && !generationSnapshot) {
         await writeLocalManifest(manifest, projectRoot);
+      }
+      if (manifest) {
         validateLibraryMinifySetup(manifest, 'buildStart');
         validateConsumerPluginSetup(manifest, 'buildStart');
         if (validateCliApiCoherence) {
@@ -738,7 +763,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       });
 
       // Set up file watching in all modes when enabled
-      if (watch && hmr) {
+      if (watch && hmr && !generationSnapshot) {
         // Watch for file changes
         const watcher = devServer.watcher;
 
@@ -970,7 +995,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     async closeBundle() {
       // Write manifest to disk during library builds
       // This allows published packages to include their manifest
-      if (!manifest || !config?.build?.lib) {
+      if (!manifest || !config?.build?.lib || generationSnapshot) {
         return;
       }
 
@@ -1020,6 +1045,25 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   async function scanAndGenerateManifest(
     rootDir: string,
   ): Promise<SmartObjectManifest> {
+    if (generationSnapshot) {
+      const verified = loadVerifiedSmrtGenerationSnapshot<SmartObjectManifest>(
+        generationSnapshot,
+        rootDir,
+        'project',
+      );
+      console.log(
+        `[smrt] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
+      );
+      if (generateTypes && server) {
+        await generateTypeDeclarationFile(
+          verified,
+          rootDir,
+          typeDeclarationsPath,
+        );
+      }
+      return verified;
+    }
+
     // NOTE: We do NOT use the framework's static manifest here
     // The static manifest JSON that core emits at build time
     // contains framework objects (like 'pleb') which should not be included

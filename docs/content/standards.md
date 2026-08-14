@@ -570,7 +570,7 @@ Use these terms consistently. Do not call every generated file or ambient input
 | **Runtime manifest** | The generated intermediate representation written to `.smrt/manifest.json` in development and `dist/manifest.json` in builds, then consumed by registry, schema, route, type, CLI, and MCP tooling. It describes objects; it is not a cross-invocation provenance envelope. |
 | **Domain knowledge artifact** | `smrt-knowledge.json`, the deterministic, sanitized agent/developer projection of manifests plus package knowledge. It is not loaded as the runtime manifest. |
 | **Review or architecture context** | A temporary prompt bundle assembled from knowledge artifacts and documentation for a specific model-assisted task. It is derived input, not a persisted runtime contract. |
-| **Generation snapshot** | The proposed, versioned and immutable reuse contract tracked by [#2328](https://github.com/happyvertical/smrt/issues/2328). A snapshot may contain manifest views, normalized generator inputs, portable paths, an output inventory, and digests. No current plugin or CLI option should be described as accepting a generation snapshot until that contract is implemented. |
+| **Generation snapshot** | The versioned, immutable reuse envelope implemented by `generationSnapshot` in `smrtPlugin()` and `smrtConsumer()`. It carries one merged runtime manifest with portable source paths, source-file digests, and caller-verified provenance; consumers verify its exact bytes and current source contents before selecting the project, dependency, or aggregate view they need. Future schema versions may add more normalized generator inputs or an output inventory without turning runtime/request state into persisted context. |
 | **Runtime or request context** | Live dependencies and authority for an operation, such as database, tenant, principal, AI, CLI, REST, or MCP state. It must not be serialized into a generation snapshot. |
 | **Object context** | A `SmrtObject` instance's `context` value, paired with its `slug` as a logical namespace. This is unrelated to prompt or generation context. |
 | **Learned context memory** | Values stored through `remember()` / `recall()` in `_smrt_contexts`. This is mutable runtime data and is unrelated to generated artifacts. |
@@ -592,8 +592,9 @@ Diagnostics report contract violations; they are not the enforcement boundary.
 Every loader, plugin, or generator that consumes a prepared artifact must call
 the same verifier directly, perform no scan or write in prepared mode, and fail
 closed on missing, stale, incompatible, or unverifiable inputs. `smrt doctor`
-may expose that verifier's result for humans and CI, but a passing doctor run
-must never be required to make an unsafe consumer reject invalid state.
+exposes that verifier through its atomic `--generation-snapshot*` option set for
+humans and CI, but a passing doctor run must never be required to make an unsafe
+consumer reject invalid state.
 
 Keep checks read-only by default, return actionable evidence, and support
 machine-readable output when a check is intended for CI. Any future repair mode

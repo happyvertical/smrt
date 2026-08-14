@@ -6,6 +6,7 @@ Developer CLI with lazy-loaded commands, manifest discovery, and class introspec
 
 ```
 smrt introspect              # Discover SMRT objects in project
+smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
 smrt db:status               # Pending schema changes + failed migration classification
 smrt db:migrate              # Apply migrations
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch

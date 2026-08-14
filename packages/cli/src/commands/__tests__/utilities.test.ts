@@ -1,6 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import {
+  serializeSmrtGenerationSnapshot,
+  sha256SmrtGenerationSnapshot,
+} from '@happyvertical/smrt-core/vite-plugin';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseCliCommandArgs } from '../../cli-generator.js';
 import {
@@ -499,25 +503,38 @@ describe('utilities', () => {
       'export {};\n',
     );
     await writeFile(resolve(projectDir, '.env'), '\n');
+    const manifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: 'healthy-fixture',
+      objects: {},
+    };
     await writeFile(
       resolve(projectDir, '.smrt/manifest.json'),
-      JSON.stringify({
-        version: '1.0.0',
-        timestamp: Date.now(),
-        packageName: 'healthy-fixture',
-        objects: {},
-      }),
+      JSON.stringify(manifest),
     );
+    const provenance = 'git-tree:doctor-fixture';
+    const snapshotPath = resolve(projectDir, 'generation-snapshot.json');
+    const snapshot = serializeSmrtGenerationSnapshot(manifest, provenance, {
+      sourceRoot: projectDir,
+    });
+    await writeFile(snapshotPath, snapshot);
 
     const originalCwd = process.cwd();
     process.chdir(projectDir);
 
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await utilityCommands.doctor.handler([], {});
+    await utilityCommands.doctor.handler([], {
+      'generation-snapshot': snapshotPath,
+      'generation-snapshot-sha256': sha256SmrtGenerationSnapshot(snapshot),
+      'generation-snapshot-provenance': provenance,
+      'generation-snapshot-source-root': projectDir,
+    });
 
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('SMRT Doctor');
+    expect(output).toContain('Generation snapshot verified (0 object(s))');
     expect(output).toContain('package.json exists');
     expect(output).toContain('SvelteKit detected');
     expect(output).toContain('smrtPlugin in vite.config');
@@ -554,7 +571,10 @@ describe('utilities', () => {
 
     // Issues present (missing smrt-core, missing config) => exits 1.
     await expect(
-      utilityCommands.doctor.handler([], { fix: true }),
+      utilityCommands.doctor.handler([], {
+        fix: true,
+        'generation-snapshot': 'snapshot.json',
+      }),
     ).rejects.toThrow('exit:1');
 
     const output = logSpy.mock.calls.flat().join('\n');
@@ -562,6 +582,8 @@ describe('utilities', () => {
     expect(output).toContain('Not a SvelteKit project');
     expect(output).toContain('.env.example exists');
     expect(output).toContain('Auto-fix is not yet implemented');
+    expect(output).toContain('Missing required option(s)');
+    expect(output).toContain('--generation-snapshot-sha256');
     expect(output).toContain('Issues to fix');
 
     exitSpy.mockRestore();
