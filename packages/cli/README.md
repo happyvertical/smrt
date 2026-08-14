@@ -19,6 +19,13 @@ pnpm add -D @happyvertical/smrt-cli
 | `smrt objects` | List all registered s-m-r-t objects |
 | `smrt schema <object>` | Show detailed schema for an object |
 | `smrt status` | Show system status (database, AI, registry) |
+| `smrt doctor` | Run the umbrella project-health diagnostics (aliases: `check`, `diagnose`) |
+
+`smrt doctor` reports project-health and integration problems. Noun-scoped
+validators such as `smrt db:validate` retain their narrower contracts; do not
+use a generic `smrt validate` command as a second project-health entry point.
+Artifact consumers must still verify their own inputs and fail closed—running
+`doctor` is an observability aid, not a prerequisite for safe loading.
 
 ### Database
 
