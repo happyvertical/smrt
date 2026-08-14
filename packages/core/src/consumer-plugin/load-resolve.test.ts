@@ -20,6 +20,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  serializeSmrtPrebuiltManifest,
+  sha256SmrtPrebuiltManifest,
+} from '../prebuilt-manifest.js';
 import { smrtPlugin } from '../vite-plugin/index.js';
 import { smrtConsumer } from './index.js';
 
@@ -367,6 +371,56 @@ describe('smrtConsumer load with a populated manifest', () => {
 });
 
 describe('smrtConsumer buildStart package discovery', () => {
+  it('reuses a verified aggregate without discovery or manifest writes (#2328)', async () => {
+    writePackageJson(projectRoot, {
+      name: 'consumer-app',
+      version: '1.0.0',
+    });
+    const provenance = 'git-tree:fixture';
+    const artifactPath = join(projectRoot, 'consumer-context.json');
+    const contents = serializeSmrtPrebuiltManifest(
+      {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: 'consumer-app',
+        objects: {
+          '@acme/widgets:Widget': {
+            className: 'Widget',
+            qualifiedName: '@acme/widgets:Widget',
+            packageName: '@acme/widgets',
+            packageVersion: '2.0.0',
+            importPath: '@acme/widgets',
+            exportName: 'Widget',
+            collection: 'widgets',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      },
+      provenance,
+    );
+    writeFileSync(artifactPath, contents);
+
+    const plugin = smrtConsumer({
+      generateTypes: false,
+      projectRoot,
+      packages: ['this-package-must-not-be-read'],
+      prebuiltManifest: {
+        path: artifactPath,
+        sha256: sha256SmrtPrebuiltManifest(contents),
+        provenance,
+      },
+    });
+    await plugin.buildStart?.call({} as any);
+
+    expect(existsSync(join(projectRoot, '.smrt', 'manifest.json'))).toBe(false);
+    expect(
+      readFileSync(join(projectRoot, '.smrt', 'register.js'), 'utf8'),
+    ).toContain("from '@acme/widgets'");
+    expect(readFileSync(artifactPath, 'utf8')).toBe(contents);
+  });
+
   it('writes an aggregated manifest and discovers packages from package.json', async () => {
     // Auto-discovery (packages: []) scans dependencies whose names include "smrt".
     mkdirSync(

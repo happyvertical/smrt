@@ -14,6 +14,10 @@ import type { Plugin, ResolvedConfig, ViteDevServer } from 'vite';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
+  loadVerifiedSmrtPrebuiltManifest,
+  type SmrtPrebuiltManifestOptions,
+} from '../prebuilt-manifest.js';
+import {
   DETERMINISTIC_GENERATED_AT,
   MANIFEST_TIMESTAMP,
   type SmartObjectManifest,
@@ -44,6 +48,13 @@ import {
   selectWebCollectionEntries,
 } from './web-collections.js';
 
+export {
+  loadVerifiedSmrtPrebuiltManifest,
+  type SmrtPrebuiltManifestArtifact,
+  type SmrtPrebuiltManifestOptions,
+  serializeSmrtPrebuiltManifest,
+  sha256SmrtPrebuiltManifest,
+} from '../prebuilt-manifest.js';
 export type {
   CliApiCoherenceViolation,
   SvelteKitOptions,
@@ -72,6 +83,12 @@ interface PackageJsonShape {
 export interface SmrtPluginOptions {
   /** Root directory that owns generated manifests and SvelteKit routes. */
   projectRoot?: string;
+  /**
+   * Reuse an immutable, verified manifest instead of scanning sources or
+   * writing manifest files. Generated routes, virtual modules, and type
+   * declarations still consume the verified manifest.
+   */
+  prebuiltManifest?: SmrtPrebuiltManifestOptions;
   /** Glob patterns for SMRT source files */
   include?: string[];
   /** Patterns to exclude */
@@ -215,6 +232,7 @@ export function generateInlineRegisterModule(
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
     projectRoot: configuredProjectRoot,
+    prebuiltManifest,
     include = ['src/**/*.ts', 'src/**/*.js'],
     exclude = ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
     followSymbolicLinks = false,
@@ -568,6 +586,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         ...(configuredProjectRoot === undefined
           ? {}
           : { projectRoot: configuredProjectRoot }),
+        ...(prebuiltManifest === undefined ? {} : { prebuiltManifest }),
         baseClasses,
         followImports,
         include,
@@ -609,8 +628,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       configHookManifest = null;
 
       // Write local manifest for CLI discovery (Issue #963)
-      if (manifest) {
+      if (manifest && !prebuiltManifest) {
         await writeLocalManifest(manifest, projectRoot);
+      }
+      if (manifest) {
         validateLibraryMinifySetup(manifest, 'configResolved');
         validateConsumerPluginSetup(manifest, 'configResolved');
         if (validateCliApiCoherence) {
@@ -651,8 +672,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       manifest = await scanAndGenerateManifest(projectRoot);
 
       // Write local manifest for CLI discovery (Issue #963)
-      if (manifest) {
+      if (manifest && !prebuiltManifest) {
         await writeLocalManifest(manifest, projectRoot);
+      }
+      if (manifest) {
         validateLibraryMinifySetup(manifest, 'buildStart');
         validateConsumerPluginSetup(manifest, 'buildStart');
         if (validateCliApiCoherence) {
@@ -738,7 +761,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       });
 
       // Set up file watching in all modes when enabled
-      if (watch && hmr) {
+      if (watch && hmr && !prebuiltManifest) {
         // Watch for file changes
         const watcher = devServer.watcher;
 
@@ -970,7 +993,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     async closeBundle() {
       // Write manifest to disk during library builds
       // This allows published packages to include their manifest
-      if (!manifest || !config?.build?.lib) {
+      if (!manifest || !config?.build?.lib || prebuiltManifest) {
         return;
       }
 
@@ -1020,6 +1043,24 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   async function scanAndGenerateManifest(
     rootDir: string,
   ): Promise<SmartObjectManifest> {
+    if (prebuiltManifest) {
+      const verified = loadVerifiedSmrtPrebuiltManifest<SmartObjectManifest>(
+        prebuiltManifest,
+        rootDir,
+      );
+      console.log(
+        `[smrt] Reusing verified prebuilt manifest (${prebuiltManifest.provenance})`,
+      );
+      if (generateTypes && server) {
+        await generateTypeDeclarationFile(
+          verified,
+          rootDir,
+          typeDeclarationsPath,
+        );
+      }
+      return verified;
+    }
+
     // NOTE: We do NOT use the framework's static manifest here
     // The static manifest JSON that core emits at build time
     // contains framework objects (like 'pleb') which should not be included

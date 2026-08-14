@@ -136,6 +136,58 @@ pnpm smrt db:migrate
 Runtime verifies application tables but does not create them. Rebuild the
 manifest and rerun the migration after changing persisted object fields.
 
+#### Reuse verified manifests in CI
+
+Independent Vite invocations can reuse manifests prepared by an earlier job
+without rescanning or rewriting the shared artifacts. Wrap the local manifest
+and the consumer plugin's aggregate separately so each plugin receives the
+same manifest shape it normally creates:
+
+```typescript
+import { writeFileSync } from 'node:fs';
+import {
+  serializeSmrtPrebuiltManifest,
+  sha256SmrtPrebuiltManifest,
+} from '@happyvertical/smrt-core/vite-plugin';
+
+const provenance = process.env.GITHUB_SHA!;
+const bytes = serializeSmrtPrebuiltManifest(manifest, provenance);
+writeFileSync('.ci/smrt-local.json', bytes);
+console.log(sha256SmrtPrebuiltManifest(bytes));
+```
+
+Transport the exact bytes and digest together, then configure the consumers
+with caller-trusted provenance (normally the checked-out commit or tree):
+
+```typescript
+import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin';
+import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
+
+const provenance = process.env.GITHUB_SHA!;
+
+smrtPlugin({
+  prebuiltManifest: {
+    path: '.ci/smrt-local.json',
+    sha256: process.env.SMRT_LOCAL_MANIFEST_SHA256!,
+    provenance,
+  },
+});
+
+smrtConsumer({
+  prebuiltManifest: {
+    path: '.ci/smrt-consumer.json',
+    sha256: process.env.SMRT_CONSUMER_MANIFEST_SHA256!,
+    provenance,
+  },
+});
+```
+
+Both plugins fail closed when the artifact is missing, malformed, has different
+bytes, or declares different provenance. Reuse mode still generates routes,
+types, registration, and virtual modules, but it disables source/package scans,
+watch rescans, and manifest writes. Omit `prebuiltManifest` for normal local
+development.
+
 ### Generated SvelteKit routes
 
 Enable SvelteKit route generation with `svelteKit: { enabled: true }`. Its

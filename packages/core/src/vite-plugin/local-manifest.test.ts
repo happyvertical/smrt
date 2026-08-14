@@ -15,6 +15,10 @@ import {
 import { join, resolve } from 'node:path';
 import { resolveConfig } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  serializeSmrtPrebuiltManifest,
+  sha256SmrtPrebuiltManifest,
+} from '../prebuilt-manifest.js';
 import { smrtPlugin } from './index';
 
 function createExternalSmrtPackage(
@@ -145,6 +149,82 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
     expect(manifest).toHaveProperty('version');
     expect(manifest).toHaveProperty('objects');
+  });
+
+  it('reuses a verified manifest without scanning or rewriting it (#2328)', async () => {
+    const provenance = 'git-tree:fixture';
+    const artifactPath = join(tmpDir, 'prebuilt-manifest.json');
+    const contents = serializeSmrtPrebuiltManifest(
+      {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: 'test-app',
+        objects: {
+          'test-app:PrebuiltThing': {
+            className: 'PrebuiltThing',
+            qualifiedName: 'test-app:PrebuiltThing',
+            collection: 'prebuilt_things',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      },
+      provenance,
+    );
+    writeFileSync(artifactPath, contents);
+
+    const plugin: any = smrtPlugin({
+      include: ['missing/**/*.ts'],
+      generateTypes: true,
+      prebuiltManifest: {
+        path: artifactPath,
+        sha256: sha256SmrtPrebuiltManifest(contents),
+        provenance,
+      },
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    try {
+      await plugin.configResolved({
+        root: tmpDir,
+        build: {},
+        plugins: [],
+      });
+      plugin.configureServer({
+        config: { root: tmpDir },
+        middlewares: { use: vi.fn() },
+        moduleGraph: { getModuleById: vi.fn() },
+        reloadModule: vi.fn(),
+        watcher: { on: vi.fn() },
+      });
+      await plugin.buildStart();
+      await plugin.buildStart();
+
+      const load =
+        typeof plugin.load === 'function' ? plugin.load : plugin.load.handler;
+      expect(await load.call(plugin, '\0smrt:manifest')).toContain(
+        'PrebuiltThing',
+      );
+      expect(await load.call(plugin, '\0smrt:routes')).toContain(
+        'prebuilt_things',
+      );
+      expect(await load.call(plugin, '\0smrt:types')).toContain(
+        'PrebuiltThing',
+      );
+      expect(
+        readFileSync(join(tmpDir, 'src/types/virtual-modules.d.ts'), 'utf8'),
+      ).toContain('PrebuiltThingData');
+      expect(existsSync(join(tmpDir, '.smrt', 'manifest.json'))).toBe(false);
+      expect(readFileSync(artifactPath, 'utf8')).toBe(contents);
+      expect(
+        logSpy.mock.calls.some(([message]) =>
+          String(message).includes('OXC scan completed'),
+        ),
+      ).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it("uses an explicit project root instead of Vite's invoking root (#2199)", async () => {

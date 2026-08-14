@@ -194,6 +194,13 @@ decorators through `oxc.decorator` instead. Consumers still pinned on vite<8 nee
 the legacy `esbuild.tsconfigRaw` form with `experimentalDecorators: true,
 emitDecoratorMetadata: true`.
 
+For independent CI invocations, both `smrtPlugin()` and `smrtConsumer()` accept
+`prebuiltManifest: { path, sha256, provenance }`. The artifact must use the
+schema-v1 envelope produced by `serializeSmrtPrebuiltManifest()`. Reuse mode
+fails closed on byte/provenance drift, skips scans and manifest writes, and
+still generates routes, types, registration, and virtual modules. Omit it for
+normal local development and watch mode.
+
 ## Gotchas
 
 - **Filesystem support is a lazy boundary (#1979)**: `SmrtClass` acquires `options.fs` adapters via `createFilesystemAdapter()` (`src/filesystem-loader.ts`), never a static `@happyvertical/files` import — the files SDK statically pulls @aws-sdk/client-s3 and reaches googleapis, and a static edge here would land it in every downstream SSR bundle. Node/tsx/vite-dev runtimes resolve it on first use; fully-bundled deployments import `@happyvertical/smrt-core/filesystem` at startup. Use `importOptionalDependency()` (`src/lazy-external.ts`) for any similar optional heavyweight dependency.
