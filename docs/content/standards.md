@@ -559,6 +559,47 @@ If a package exports `./smrt-knowledge.json`, the package `files` allowlist must
 publish `dist` or `dist/smrt-knowledge.json`, and the deterministic checker must
 be able to find a current artifact.
 
+### Artifact and context vocabulary
+
+Use these terms consistently. Do not call every generated file or ambient input
+"context":
+
+| Term | Meaning |
+|---|---|
+| **Source model** | Authored TypeScript classes, decorators, and SMRT configuration. This is the source of truth. |
+| **Runtime manifest** | The generated intermediate representation written to `.smrt/manifest.json` in development and `dist/manifest.json` in builds, then consumed by registry, schema, route, type, CLI, and MCP tooling. It describes objects; it is not a cross-invocation provenance envelope. |
+| **Domain knowledge artifact** | `smrt-knowledge.json`, the deterministic, sanitized agent/developer projection of manifests plus package knowledge. It is not loaded as the runtime manifest. |
+| **Review or architecture context** | A temporary prompt bundle assembled from knowledge artifacts and documentation for a specific model-assisted task. It is derived input, not a persisted runtime contract. |
+| **Generation snapshot** | The versioned, immutable reuse envelope implemented by `generationSnapshot` in `smrtPlugin()` and `smrtConsumer()`. It carries one merged runtime manifest with portable source paths and caller-verified provenance; consumers verify its exact-byte digest and select the project, dependency, or aggregate view they need. Future schema versions may add normalized generator inputs or an output inventory without turning runtime/request state into persisted context. |
+| **Runtime or request context** | Live dependencies and authority for an operation, such as database, tenant, principal, AI, CLI, REST, or MCP state. It must not be serialized into a generation snapshot. |
+| **Object context** | A `SmrtObject` instance's `context` value, paired with its `slug` as a logical namespace. This is unrelated to prompt or generation context. |
+| **Learned context memory** | Values stored through `remember()` / `recall()` in `_smrt_contexts`. This is mutable runtime data and is unrelated to generated artifacts. |
+
+When a design needs to reuse generated state across processes, name the exact
+artifact (`runtime manifest`, `domain knowledge artifact`, or `generation
+snapshot`) instead of using unqualified `context`. A runtime manifest alone is
+not sufficient proof that its source inputs, generator configuration, or
+companion outputs match.
+
+### Diagnostics SOP
+
+`smrt doctor` is the umbrella developer command for project-health diagnostics.
+Add focused, composable checks beneath it rather than introducing a generic
+`smrt validate` command; noun-scoped validators such as `smrt db:validate` keep
+their narrower contracts. `check` and `diagnose` remain aliases for `doctor`.
+
+Diagnostics report contract violations; they are not the enforcement boundary.
+Every loader, plugin, or generator that consumes a prepared artifact must call
+the same verifier directly, perform no scan or write in prepared mode, and fail
+closed on missing, stale, incompatible, or unverifiable inputs. `smrt doctor`
+exposes that verifier through its atomic `--generation-snapshot*` option set for
+humans and CI, but a passing doctor run must never be required to make an unsafe
+consumer reject invalid state.
+
+Keep checks read-only by default, return actionable evidence, and support
+machine-readable output when a check is intended for CI. Any future repair mode
+must identify its exact mutations and remain separate from verification.
+
 ### Model-assisted knowledge workflow
 
 Use models as optional local reviewers, not as freshness gates:

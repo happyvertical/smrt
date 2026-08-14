@@ -94,6 +94,12 @@ the Vite plugin consumes deterministic `dist/` artifacts.
   `smrt knowledge:architecture-context` with the narrowest scope/package.
 - Runtime manifests stay runtime-focused; `.smrt/smrt-knowledge.json` and
   `dist/smrt-knowledge.json` are the agent/developer contract.
+- Use **generation snapshot** for the proposed versioned, immutable provenance
+  bundle in #2328; do not call a runtime manifest or prompt bundle generically
+  "context". See `docs/content/standards.md` for the artifact vocabulary.
+- `smrt doctor` is the umbrella project-health diagnostic. Artifact consumers
+  enforce validity themselves with the same verifier and fail closed; doctor is
+  observability, not an enforcement prerequisite.
 
 ## Frequent hazards
 
