@@ -1,5 +1,25 @@
 # @happyvertical/smrt-core
 
+## 0.40.68
+
+### Patch Changes
+
+- ### Features
+
+  - reuse verified generation snapshots (#2337) (core)
+
+  ### Bug Fixes
+
+  - type PostgreSQL STI repair identity parameters (#2330) (cli)
+  - patch nanoid audit finding (#2332) (deps)
+
+  ### Other Changes
+
+  - docs: define SMRT artifact terminology (#2336)
+  - @happyvertical/smrt-config@0.40.68
+  - @happyvertical/smrt-types@0.40.68
+  - @happyvertical/smrt-scanner@0.40.68
+
 ## 0.40.67
 
 ### Patch Changes
