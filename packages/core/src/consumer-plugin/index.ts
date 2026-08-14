@@ -6,22 +6,24 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Plugin } from 'vite';
-import { generateDeclarations } from '../prebuild/index.js';
 import {
-  loadVerifiedSmrtPrebuiltManifest,
-  type SmrtPrebuiltManifestOptions,
-} from '../prebuilt-manifest.js';
+  loadVerifiedSmrtGenerationSnapshot,
+  type SmrtGenerationSnapshotOptions,
+} from '../generation-snapshot.js';
+import { generateDeclarations } from '../prebuild/index.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { MANIFEST_TIMESTAMP } from '../scanner/types.js';
 import { generateClientModule } from '../vite-plugin/generated-client.js';
 
 export {
-  loadVerifiedSmrtPrebuiltManifest,
-  type SmrtPrebuiltManifestArtifact,
-  type SmrtPrebuiltManifestOptions,
-  serializeSmrtPrebuiltManifest,
-  sha256SmrtPrebuiltManifest,
-} from '../prebuilt-manifest.js';
+  loadVerifiedSmrtGenerationSnapshot,
+  type SerializeSmrtGenerationSnapshotOptions,
+  type SmrtGenerationSnapshotArtifact,
+  type SmrtGenerationSnapshotOptions,
+  type SmrtGenerationSnapshotView,
+  serializeSmrtGenerationSnapshot,
+  sha256SmrtGenerationSnapshot,
+} from '../generation-snapshot.js';
 
 /**
  * Loosely-typed view of an object definition as carried by an external
@@ -87,7 +89,7 @@ export interface SmrtConsumerOptions {
    * packages or writing `.smrt/manifest.json`. Registration and generated
    * types still consume the verified manifest.
    */
-  prebuiltManifest?: SmrtPrebuiltManifestOptions;
+  generationSnapshot?: SmrtGenerationSnapshotOptions;
   /** SvelteKit integration mode */
   svelteKit?: boolean;
   /**
@@ -125,7 +127,7 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     generateTypes = true,
     typesDir = 'src/types/smrt-generated',
     projectRoot = process.cwd(),
-    prebuiltManifest,
+    generationSnapshot,
     disableScanning = false,
     kebabRoutes = false,
   } = options;
@@ -134,13 +136,14 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
   let typeManifest: ConsumerManifest | null = null;
   let typesGenerated = false;
 
-  function loadPrebuiltManifest(): ConsumerManifest {
-    if (!prebuiltManifest) {
-      throw new Error('[smrt:consumer] Prebuilt manifest is not configured');
+  function loadGenerationSnapshot(): ConsumerManifest {
+    if (!generationSnapshot) {
+      throw new Error('[smrt:consumer] Generation snapshot is not configured');
     }
-    return loadVerifiedSmrtPrebuiltManifest<ConsumerManifest>(
-      prebuiltManifest,
+    return loadVerifiedSmrtGenerationSnapshot<ConsumerManifest>(
+      generationSnapshot,
       projectRoot,
+      'dependencies',
     );
   }
 
@@ -163,10 +166,10 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
     async buildStart() {
       console.log('[smrt:consumer] Initializing SMRT consumer plugin');
 
-      if (prebuiltManifest) {
-        typeManifest = loadPrebuiltManifest();
+      if (generationSnapshot) {
+        typeManifest = loadGenerationSnapshot();
         console.log(
-          `[smrt:consumer] Reusing verified prebuilt manifest (${prebuiltManifest.provenance})`,
+          `[smrt:consumer] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
         );
         await generateRegistrationFile(typeManifest, projectRoot);
         if (generateTypes && !typesGenerated) {
@@ -234,8 +237,8 @@ export function smrtConsumer(options: SmrtConsumerOptions = {}): Plugin {
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
       if (!typeManifest) {
-        typeManifest = prebuiltManifest
-          ? loadPrebuiltManifest()
+        typeManifest = generationSnapshot
+          ? loadGenerationSnapshot()
           : {
               version: '1.0.0',
               timestamp: MANIFEST_TIMESTAMP,

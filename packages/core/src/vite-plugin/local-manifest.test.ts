@@ -16,9 +16,9 @@ import { join, resolve } from 'node:path';
 import { resolveConfig } from 'vite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  serializeSmrtPrebuiltManifest,
-  sha256SmrtPrebuiltManifest,
-} from '../prebuilt-manifest.js';
+  serializeSmrtGenerationSnapshot,
+  sha256SmrtGenerationSnapshot,
+} from '../generation-snapshot.js';
 import { smrtPlugin } from './index';
 
 function createExternalSmrtPackage(
@@ -154,7 +154,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
   it('reuses a verified manifest without scanning or rewriting it (#2328)', async () => {
     const provenance = 'git-tree:fixture';
     const artifactPath = join(tmpDir, 'prebuilt-manifest.json');
-    const contents = serializeSmrtPrebuiltManifest(
+    const contents = serializeSmrtGenerationSnapshot(
       {
         version: '1.0.0',
         timestamp: 0,
@@ -171,16 +171,18 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
         },
       },
       provenance,
+      { sourceRoot: tmpDir },
     );
     writeFileSync(artifactPath, contents);
 
     const plugin: any = smrtPlugin({
       include: ['missing/**/*.ts'],
       generateTypes: true,
-      prebuiltManifest: {
+      generationSnapshot: {
         path: artifactPath,
-        sha256: sha256SmrtPrebuiltManifest(contents),
+        sha256: sha256SmrtGenerationSnapshot(contents),
         provenance,
+        sourceRoot: tmpDir,
       },
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

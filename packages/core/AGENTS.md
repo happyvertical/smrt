@@ -195,11 +195,13 @@ the legacy `esbuild.tsconfigRaw` form with `experimentalDecorators: true,
 emitDecoratorMetadata: true`.
 
 For independent CI invocations, both `smrtPlugin()` and `smrtConsumer()` accept
-`prebuiltManifest: { path, sha256, provenance }`. The artifact must use the
-schema-v1 envelope produced by `serializeSmrtPrebuiltManifest()`. Reuse mode
-fails closed on byte/provenance drift, skips scans and manifest writes, and
-still generates routes, types, registration, and virtual modules. Omit it for
-normal local development and watch mode.
+the same `generationSnapshot: { path, sha256, provenance, sourceRoot }`. The
+schema-v1 snapshot produced by `serializeSmrtGenerationSnapshot()` contains the
+merged project/dependency manifest and portable source paths; each plugin
+selects its own view. Reuse mode fails closed on byte/provenance/path drift,
+skips scans and manifest writes, and still generates routes, types,
+registration, and virtual modules. Omit it for normal local development and
+watch mode.
 
 ## Gotchas
 
