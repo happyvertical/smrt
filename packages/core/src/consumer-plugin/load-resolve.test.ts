@@ -377,7 +377,7 @@ describe('smrtConsumer buildStart package discovery', () => {
       version: '1.0.0',
     });
     const provenance = 'git-tree:fixture';
-    const artifactPath = join(projectRoot, 'consumer-context.json');
+    const artifactPath = join(projectRoot, 'generation-snapshot.json');
     mkdirSync(join(projectRoot, 'src'), { recursive: true });
     writeFileSync(join(projectRoot, 'src/LocalThing.ts'), 'export {};\n');
     const contents = serializeSmrtGenerationSnapshot(

@@ -54,10 +54,10 @@ describe('verified generation snapshots', () => {
       sourceRoot: projectRoot,
     }),
   ) {
-    const path = join(projectRoot, 'context.json');
+    const path = join(projectRoot, 'generation-snapshot.json');
     writeFileSync(path, contents);
     return {
-      path: 'context.json',
+      path: 'generation-snapshot.json',
       sha256: sha256SmrtGenerationSnapshot(readFileSync(path)),
       provenance,
       sourceRoot: projectRoot,
@@ -97,7 +97,7 @@ describe('verified generation snapshots', () => {
 
   it('rejects artifact byte drift before parsing', () => {
     const options = writeArtifact();
-    writeFileSync(join(projectRoot, 'context.json'), '{}\n');
+    writeFileSync(join(projectRoot, 'generation-snapshot.json'), '{}\n');
     expect(() =>
       loadVerifiedSmrtGenerationSnapshot(options, projectRoot),
     ).toThrow(/digest mismatch/);
