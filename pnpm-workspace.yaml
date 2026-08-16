@@ -124,33 +124,33 @@ minimumReleaseAgeExclude:
   - '@happyvertical/utils@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0'
 
 catalog:
-  '@aws-sdk/client-sqs': ^3.1079.0
-  '@google-cloud/tasks': ^6.2.3
-  '@happyvertical/ai': ^0.87.0
-  '@happyvertical/cache': ^0.87.0
-  '@happyvertical/documents': ^0.87.0
-  '@happyvertical/email': ^0.87.0
-  '@happyvertical/encryption': ^0.87.0
-  '@happyvertical/files': ^0.87.0
-  '@happyvertical/geo': ^0.87.0
-  '@happyvertical/images': ^0.87.0
-  '@happyvertical/jobs': ^0.87.0
-  '@happyvertical/json': ^0.87.0
-  '@happyvertical/logger': ^0.87.0
-  '@happyvertical/messages': ^0.87.0
-  '@happyvertical/ocr': ^0.61.4
+  '@aws-sdk/client-sqs': ^3.1111.0
+  '@google-cloud/tasks': ^7.0.0
+  '@happyvertical/ai': ^0.88.0
+  '@happyvertical/cache': ^0.88.0
+  '@happyvertical/documents': ^0.88.0
+  '@happyvertical/email': ^0.88.0
+  '@happyvertical/encryption': ^0.88.0
+  '@happyvertical/files': ^0.88.0
+  '@happyvertical/geo': ^0.88.0
+  '@happyvertical/images': ^0.88.0
+  '@happyvertical/jobs': ^0.88.0
+  '@happyvertical/json': ^0.88.0
+  '@happyvertical/logger': ^0.88.0
+  '@happyvertical/messages': ^0.88.0
+  '@happyvertical/ocr': ^0.61.5
   '@happyvertical/pdf': ^0.65.9
-  '@happyvertical/projects': ^0.87.0
-  '@happyvertical/repos': ^0.87.0
-  '@happyvertical/secrets': ^0.87.0
-  '@happyvertical/signatures': ^0.87.0
-  '@happyvertical/speech': ^0.87.0
+  '@happyvertical/projects': ^0.88.0
+  '@happyvertical/repos': ^0.88.0
+  '@happyvertical/secrets': ^0.88.0
+  '@happyvertical/signatures': ^0.88.0
+  '@happyvertical/speech': ^0.88.0
   '@happyvertical/spider': ^1.1.13
-  '@happyvertical/sql': ^0.87.0
-  '@happyvertical/utils': ^0.87.0
-  '@sentry/node': ^10.63.0
+  '@happyvertical/sql': ^0.88.0
+  '@happyvertical/utils': ^0.88.0
+  '@sentry/node': ^10.70.0
   bull: ^4.16.5
-  bullmq: ^5.79.2
+  bullmq: ^6.1.1
   jimp: ^1.6.1
   sharp: ^0.35.3
 

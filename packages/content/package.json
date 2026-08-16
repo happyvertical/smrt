@@ -79,11 +79,11 @@
     "@happyvertical/spider": "catalog:",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "fast-xml-parser": "^5.10.1",
+    "fast-xml-parser": "^5.11.0",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "svelte": "^5.56.4"
+    "svelte": "^5.56.9"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -91,15 +91,15 @@
     }
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.5.0",
+    "@faker-js/faker": "^10.6.0",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@sveltejs/kit": "^2.69.1",
+    "@sveltejs/kit": "2.69.1",
     "@sveltejs/package": "^2.5.8",
-    "@sveltejs/vite-plugin-svelte": "^7.1.2",
-    "@types/node": "24.13.2",
-    "svelte": "^5.56.4",
-    "svelte-check": "^4.7.1",
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@types/node": "24.13.3",
+    "svelte": "^5.56.9",
+    "svelte-check": "^4.7.6",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

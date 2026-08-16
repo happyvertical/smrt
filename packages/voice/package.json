@@ -16,7 +16,7 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "peerDependencies": {
-    "svelte": "^5.56.4"
+    "svelte": "^5.56.9"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -48,7 +48,7 @@
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.3",
     "typescript": "5.9.3",
     "vite": "8.1.4",
     "vitest": "4.1.10"

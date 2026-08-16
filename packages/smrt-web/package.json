@@ -19,9 +19,9 @@
     }
   },
   "dependencies": {
-    "@tanstack/db": "^0.6.14",
-    "@tanstack/query-core": "^5.101.2",
-    "@tanstack/query-db-collection": "^1.0.46"
+    "@tanstack/db": "^0.7.2",
+    "@tanstack/query-core": "^5.101.4",
+    "@tanstack/query-db-collection": "^1.2.4"
   },
   "scripts": {
     "build": "vite build --mode library && node ../../scripts/check-smrt-web-engine-boundary.mjs",
@@ -35,7 +35,7 @@
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "devDependencies": {
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.3",
     "fake-indexeddb": "^6.2.5",
     "typescript": "5.9.3",
     "vite": "8.1.4",
