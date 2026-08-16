@@ -57,8 +57,19 @@ const { t } = useI18n();
     text-decoration: none;
   }
 
-  .smrt-system-status-chips [data-tone='success'] {
-    color: var(--smrt-color-success);
+  /* Success is the one status colour that is not reliably text-safe: a green
+     that reads as "running" at a glance sits in a narrow luminance band, and
+     under the happyvertical light scheme it measures 4.2–4.4:1 on several
+     surfaces — under the AA floor for normal text. Carry it as a lamp beside
+     on-surface text rather than painting the letterforms (#2323). Warning and
+     error stay as text: both clear AA on every surface in every preset. */
+  .smrt-system-status-chips [data-tone='success']::before {
+    content: '';
+    flex: none;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-success);
   }
 
   .smrt-system-status-chips [data-tone='warning'] {
