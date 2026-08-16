@@ -62,7 +62,7 @@
   --smrt-color-on-background: #000000;
 
   /* Outline - Subtle translucent borders */
-  --smrt-color-outline: rgba(120, 120, 128, 0.29);
+  --smrt-color-outline: rgba(80, 80, 88, 0.75);
   --smrt-color-outline-variant: rgba(120, 120, 128, 0.16);
 
   /* Inverse */
@@ -177,7 +177,7 @@
   --smrt-color-on-background: #ffffff;
 
   /* Outline */
-  --smrt-color-outline: rgba(84, 84, 88, 0.65);
+  --smrt-color-outline: rgba(160, 160, 166, 0.8);
   --smrt-color-outline-variant: rgba(84, 84, 88, 0.35);
 
   /* Inverse */

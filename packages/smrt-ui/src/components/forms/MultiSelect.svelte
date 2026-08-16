@@ -152,7 +152,7 @@ useControlRegistration(() => {
 </div>
 <style>
   .multi-select { position: relative; display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); } .label { font: var(--smrt-typography-label-large-font); }
-  .trigger { width: 100%; min-height: 2.5rem; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; text-align: left; }
+  .trigger { width: 100%; min-height: 2.5rem; padding: var(--smrt-spacing-2) var(--smrt-spacing-3); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: inherit; text-align: left; }
   .options { position: absolute; z-index: var(--smrt-z-index-dropdown); top: 100%; left: 0; right: 0; display: grid; padding: var(--smrt-spacing-1); border: 1px solid var(--smrt-color-outline-variant); background: var(--smrt-color-surface-container); box-shadow: var(--smrt-elevation-2); }
   .options button { display: grid; grid-template-columns: 1.25rem 1fr; gap: var(--smrt-spacing-2); padding: var(--smrt-spacing-2); border: 0; background: transparent; color: inherit; text-align: left; } .options button[aria-selected='true'] { background: var(--smrt-color-secondary-container); }
   :global(.multi-select[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; }

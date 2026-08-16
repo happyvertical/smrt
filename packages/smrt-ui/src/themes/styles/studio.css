@@ -62,7 +62,7 @@
   --smrt-color-on-background: #202124;
 
   /* Outline - Light gray borders */
-  --smrt-color-outline: #dadce0;
+  --smrt-color-outline: #78797b;
   --smrt-color-outline-variant: #e8eaed;
 
   /* Inverse */
@@ -169,7 +169,7 @@
   --smrt-color-on-background: #e8eaed;
 
   /* Outline */
-  --smrt-color-outline: #5f6368;
+  --smrt-color-outline: #8c8e92;
   --smrt-color-outline-variant: #3c4043;
 
   /* Inverse */

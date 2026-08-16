@@ -236,10 +236,17 @@ $effect(() => {
     color: var(--smrt-color-on-surface);
     white-space: nowrap;
   }
-  .dropdown__item:hover:not(:disabled),
+  .dropdown__item:hover:not(:disabled) {
+    background: var(--smrt-color-surface-container-high);
+  }
+  /* Keyboard focus needs its own indicator: the hover background alone is a
+     ~1.1:1 change against the menu surface in every preset, which is invisible
+     and fails WCAG 2.4.11. The ring is inset so it is not clipped by the
+     menu's overflow (#2322). */
   .dropdown__item:focus-visible {
     background: var(--smrt-color-surface-container-high);
-    outline: none;
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
   }
   .dropdown__item:disabled {
     opacity: 0.5;

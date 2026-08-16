@@ -270,10 +270,17 @@ $effect(() => {
     text-align: left;
   }
 
-  .option:hover,
+  .option:hover {
+    background: var(--smrt-color-surface-container-high, #f3f4f6);
+  }
+  /* Keyboard focus needs its own indicator: the hover background alone is a
+     ~1.1:1 change against the list surface in every preset, which is invisible
+     and fails WCAG 2.4.11. Inset so it is not clipped by the list's overflow
+     (#2322). */
   .option:focus-visible {
     background: var(--smrt-color-surface-container-high, #f3f4f6);
-    outline: none;
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline-offset: -2px;
   }
 
   .option.selected {

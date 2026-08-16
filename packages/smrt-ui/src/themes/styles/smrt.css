@@ -18,7 +18,7 @@
 
 [data-theme="smrt"][data-color-scheme="light"] {
   --smrt-theme-id: smrt;
-  --smrt-theme-name: SMRT;
+  --smrt-theme-name: s-m-r-t;
   --smrt-color-scheme: light;
   --smrt-font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --smrt-color-primary: #e35d12;
@@ -58,7 +58,7 @@
   --smrt-color-surface-bright: #ffffff;
   --smrt-color-background: #edeff2;
   --smrt-color-on-background: #14171c;
-  --smrt-color-outline: #c6ccd4;
+  --smrt-color-outline: #7c7f85;
   --smrt-color-outline-variant: #dfe3e8;
   --smrt-color-inverse-surface: #14171c;
   --smrt-color-inverse-on-surface: #f4f6f8;
@@ -243,7 +243,7 @@
 
 [data-theme="smrt"][data-color-scheme="dark"] {
   --smrt-theme-id: smrt;
-  --smrt-theme-name: SMRT;
+  --smrt-theme-name: s-m-r-t;
   --smrt-color-scheme: dark;
   --smrt-font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --smrt-color-primary: #ff7a1a;
@@ -283,7 +283,7 @@
   --smrt-color-surface-bright: #23272e;
   --smrt-color-background: #0b0c0e;
   --smrt-color-on-background: #c9cdd3;
-  --smrt-color-outline: #333842;
+  --smrt-color-outline: #70747b;
   --smrt-color-outline-variant: #23272e;
   --smrt-color-inverse-surface: #edeff2;
   --smrt-color-inverse-on-surface: #14171c;
