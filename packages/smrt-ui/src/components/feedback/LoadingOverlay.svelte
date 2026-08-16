@@ -259,7 +259,7 @@ function handleKeydown(e: KeyboardEvent) {
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 		color: var(--smrt-color-on-surface-variant, #6b7280);
 		background: transparent;
-		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+		border: 1px solid var(--smrt-color-outline, #9ca3af);
 		border-radius: var(--smrt-radius-md, 8px);
 		cursor: pointer;
 		transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);

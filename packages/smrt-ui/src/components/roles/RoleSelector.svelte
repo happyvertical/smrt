@@ -199,7 +199,7 @@ $effect(() => {
     width: 100%;
     padding: 0.5rem 0.75rem;
     background: var(--smrt-color-surface, white);
-    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+    border: 1px solid var(--smrt-color-outline, #6b7280);
     border-radius: var(--smrt-radius-small, 0.375rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
