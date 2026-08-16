@@ -18,7 +18,7 @@
 
 [data-theme="smrt"][data-color-scheme="light"] {
   --smrt-theme-id: smrt;
-  --smrt-theme-name: SMRT;
+  --smrt-theme-name: s-m-r-t;
   --smrt-color-scheme: light;
   --smrt-font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --smrt-color-primary: #e35d12;
@@ -243,7 +243,7 @@
 
 [data-theme="smrt"][data-color-scheme="dark"] {
   --smrt-theme-id: smrt;
-  --smrt-theme-name: SMRT;
+  --smrt-theme-name: s-m-r-t;
   --smrt-color-scheme: dark;
   --smrt-font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --smrt-color-primary: #ff7a1a;

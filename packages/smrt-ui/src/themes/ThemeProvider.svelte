@@ -3,7 +3,7 @@ import type { Snippet } from 'svelte';
 import { onMount, untrack } from 'svelte';
 import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { generateThemeVariables } from './css-generator.js';
-import { getTheme, isValidPreset } from './registry.js';
+import { availablePresets, getTheme, isValidPreset } from './registry.js';
 import type {
   ColorScheme,
   Theme,
@@ -34,6 +34,16 @@ interface Props {
   persist?: boolean;
   /** Storage key for persistence */
   storageKey?: string;
+  /**
+   * Force runtime generation of the full CSS variable set onto the wrapper's
+   * inline style (the legacy delivery path). Defaults to `true` for custom
+   * registered themes — they have no static stylesheet — and `false` for
+   * built-in presets, whose variables ship as static CSS
+   * (`themes/styles/<preset>.css`) selected by the `data-theme` /
+   * `data-color-scheme` attributes. Leave unset unless you cannot import the
+   * static stylesheet for a built-in preset.
+   */
+  inlineVariables?: boolean;
   /** Content */
   children: Snippet;
 }
@@ -47,6 +57,7 @@ let {
   paintSurface = true,
   persist = defaultThemeConfig.persist,
   storageKey = defaultThemeConfig.storageKey,
+  inlineVariables,
   children,
 }: Props = $props();
 
@@ -85,39 +96,41 @@ const resolvedScheme = $derived<'light' | 'dark'>(
 
 const isDark = $derived(resolvedScheme === 'dark');
 
-// Generate CSS variables - using $derived with immediate value
-const cssVariables = $derived.by(() => {
-  const vars = generateThemeVariables(currentTheme, isDark);
+// Static-first variable delivery: built-in presets ship their full variable
+// set as static stylesheets (`themes/styles/<preset>.css`) selected by the
+// data-theme/data-color-scheme attributes, so the wrapper carries no ~200-var
+// inline style. Custom registered themes have no static file, so they keep the
+// legacy runtime generation (opt built-ins back in with `inlineVariables`).
+const isBuiltInPreset = $derived(
+  (availablePresets as string[]).includes(config.preset),
+);
+const useInlineVariables = $derived(inlineVariables ?? !isBuiltInPreset);
+
+// Convert to style string — full variable set only on the runtime path;
+// otherwise just the explicit accent/overrides so they layer over static CSS.
+const styleString = $derived.by(() => {
+  const declarations: string[] = [];
+
+  if (useInlineVariables) {
+    for (const [key, value] of Object.entries(
+      generateThemeVariables(currentTheme, isDark),
+    )) {
+      declarations.push(`${key}: ${value}`);
+    }
+  }
 
   // Apply primary color override
   if (config.primaryColor) {
-    vars['--smrt-color-primary'] = config.primaryColor;
+    declarations.push(`--smrt-color-primary: ${config.primaryColor}`);
     // Recalculate dependent colors would go here in a full implementation
   }
 
-  // Apply border radius override
-  if (config.borderRadius && config.borderRadius !== 'md') {
-    // The border radius values are already in CSS vars, but we could
-    // add logic here to override specific radius values
+  // Apply custom overrides
+  for (const [key, value] of Object.entries(config.overrides ?? {})) {
+    declarations.push(`${key}: ${value}`);
   }
 
-  // Apply custom overrides
-  return { ...vars, ...config.overrides };
-});
-
-// Convert to style string
-const styleString = $derived.by(() => {
-  return Object.entries(cssVariables)
-    .map(([key, value]) => {
-      const isExplicitOverride =
-        Object.hasOwn(config.overrides ?? {}, key) ||
-        (key === '--smrt-color-primary' && config.primaryColor);
-      const bootstrapKey = key.replace(/^--smrt-/, '--smrt-bootstrap-');
-      return `${key}: ${
-        isExplicitOverride ? value : `var(${bootstrapKey}, ${value})`
-      }`;
-    })
-    .join('; ');
+  return declarations.join('; ');
 });
 
 // Theme state for context
@@ -258,21 +271,6 @@ $effect(() => {
   }
 });
 
-// The pre-paint aliases only bridge SSR to the hydrated provider. Remove them
-// after the provider has applied the persisted config so later runtime theme
-// changes use the component's reactive variables normally.
-$effect(() => {
-  if (typeof document !== 'undefined' && mounted) {
-    const html = document.documentElement;
-    for (const property of Array.from(html.style)) {
-      if (property.startsWith('--smrt-bootstrap-')) {
-        html.style.removeProperty(property);
-      }
-    }
-    html.removeAttribute('data-smrt-theme-bootstrap');
-  }
-});
-
 // Sync props to state — but only on actual prop changes. config is seeded
 // from the initial props above and onMount applies persisted preferences, so
 // re-asserting the initial prop values here would clobber the persisted
@@ -339,7 +337,7 @@ $effect(() => {
   class:dark={isDark}
   class:no-paint={!paintSurface}
   class:smrt-theme-glass={config.preset === 'glass'}
-  style={styleString}
+  style={styleString || undefined}
   data-theme={config.preset}
   data-color-scheme={resolvedScheme}
 >
