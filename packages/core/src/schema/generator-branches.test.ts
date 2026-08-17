@@ -973,3 +973,335 @@ describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
     );
   });
 });
+
+describe('SchemaGenerator declared indexes (#2357)', () => {
+  const generator = new SchemaGenerator();
+
+  const compositeDeclaration = {
+    indexes: [
+      {
+        name: 'posts_tenant_id_publish_date_idx',
+        columns: ['tenantId', 'publish_date'],
+      },
+    ],
+  };
+
+  function fakeRegistry(fieldsByClass: Record<string, Map<string, any>>) {
+    return {
+      getDescendants: () => Object.keys(fieldsByClass).slice(1),
+      getAllFields: async (className: string) =>
+        fieldsByClass[className] ?? new Map(),
+    };
+  }
+
+  function manifest(
+    objects: Record<string, SmartObjectDefinition>,
+  ): SmartObjectManifest {
+    return {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: '@happyvertical/smrt-test',
+      objects,
+    };
+  }
+
+  // The point of the feature is that a declaration survives whichever schema
+  // path the object happens to take. The runtime paths rebuild their config bag
+  // by hand and dropped `indexes` entirely before this issue, so assert each.
+  describe('every schema path honours the declaration', () => {
+    it('build-time AST path (generateSchema)', () => {
+      const schema = generator.generateSchema(
+        objectDef(
+          'Post',
+          {
+            tenantId: { type: 'text' },
+            publish_date: { type: 'datetime' },
+            title: { type: 'text' },
+          },
+          compositeDeclaration,
+        ),
+      );
+
+      const declared = schema.indexes.find(
+        (index) => index.name === 'posts_tenant_id_publish_date_idx',
+      );
+      // Column order is the access path: filter column first, sort column last.
+      // The AST path keys columns by field name, so `tenantId` resolves as-is.
+      expect(declared?.columns).toEqual(['tenantId', 'publish_date']);
+      expect(declared?.unique).toBeUndefined();
+    });
+
+    it('runtime CTI path (generateSchemaFromRegistry)', () => {
+      const schema = generator.generateSchemaFromRegistry(
+        'Post',
+        'posts',
+        new Map<string, any>([
+          ['tenantId', { type: 'text' }],
+          ['publish_date', { type: 'datetime' }],
+        ]),
+        compositeDeclaration,
+      );
+
+      const declared = schema.indexes.find(
+        (index) => index.name === 'posts_tenant_id_publish_date_idx',
+      );
+      // Runtime columns are snake_cased, so the field name is mapped through.
+      expect(declared?.columns).toEqual(['tenant_id', 'publish_date']);
+    });
+
+    it('runtime STI path (generateSTISchemaFromRegistry)', async () => {
+      const schema = await generator.generateSTISchemaFromRegistry(
+        'Post',
+        'posts',
+        new Map(),
+        {
+          ...compositeDeclaration,
+          registry: fakeRegistry({
+            Post: new Map<string, any>([
+              ['tenantId', { type: 'text' }],
+              ['publish_date', { type: 'datetime' }],
+            ]),
+          }) as any,
+        },
+      );
+
+      const declared = schema.indexes.find(
+        (index) => index.name === 'posts_tenant_id_publish_date_idx',
+      );
+      expect(declared?.columns).toEqual(['tenant_id', 'publish_date']);
+    });
+
+    it('manifest CTI path (generateCTISchemaFromManifest)', () => {
+      const schema = generator.generateCTISchemaFromManifest(
+        'Post',
+        'posts',
+        {
+          tenantId: { type: 'text' },
+          publish_date: { type: 'datetime' },
+        },
+        compositeDeclaration,
+      );
+
+      const declared = schema.indexes.find(
+        (index) => index.name === 'posts_tenant_id_publish_date_idx',
+      );
+      expect(declared?.columns).toEqual(['tenant_id', 'publish_date']);
+    });
+
+    it('manifest STI path (generateSTISchemaFromManifest)', () => {
+      const m = manifest({
+        Post: objectDef(
+          'Post',
+          {
+            tenantId: { type: 'text' },
+            publish_date: { type: 'datetime' },
+          },
+          compositeDeclaration,
+        ),
+      });
+
+      const schema = generator.generateSTISchemaFromManifest(
+        'Post',
+        'posts',
+        m.objects.Post.fields,
+        m,
+        m.objects.Post.decoratorConfig,
+      );
+
+      const declared = schema.indexes.find(
+        (index) => index.name === 'posts_tenant_id_publish_date_idx',
+      );
+      expect(declared?.columns).toEqual(['tenant_id', 'publish_date']);
+    });
+  });
+
+  it('carries unique and partial-index options through', () => {
+    const schema = generator.generateSchemaFromRegistry(
+      'Ticket',
+      'tickets',
+      new Map<string, any>([
+        ['code', { type: 'text' }],
+        ['active', { type: 'boolean' }],
+      ]),
+      {
+        indexes: [
+          {
+            name: 'tickets_active_code_idx',
+            columns: ['code'],
+            unique: true,
+            where: 'active = true',
+          },
+        ],
+      },
+    );
+
+    const declared = schema.indexes.find(
+      (index) => index.name === 'tickets_active_code_idx',
+    );
+    expect(declared?.unique).toBe(true);
+    expect(declared?.where).toBe('active = true');
+  });
+
+  it('leaves generated indexes untouched when nothing is declared', () => {
+    const fields = () => new Map<string, any>([['title', { type: 'text' }]]);
+    const without = generator.generateSchemaFromRegistry(
+      'Plain',
+      'plains',
+      fields(),
+    );
+    const withEmpty = generator.generateSchemaFromRegistry(
+      'Plain',
+      'plains',
+      fields(),
+      { indexes: [] },
+    );
+    expect(withEmpty.indexes).toEqual(without.indexes);
+  });
+
+  // A dropped index is invisible until production slows down, so every
+  // unusable declaration fails generation instead.
+  describe('rejects unusable declarations rather than dropping them', () => {
+    const titleOnly = () => new Map<string, any>([['title', { type: 'text' }]]);
+
+    it('an `indexes` value that is not an array', () => {
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: { name: 'posts_idx', columns: ['title'] } as never,
+        }),
+      ).toThrow(/must be an array of index declarations/);
+    });
+
+    it('a non-object entry', () => {
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: ['posts_idx'] as never,
+        }),
+      ).toThrow(/must be an object/);
+    });
+
+    it('a non-array columns value', () => {
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [{ name: 'posts_idx', columns: 'title' }] as never,
+        }),
+      ).toThrow(/non-empty "columns" array/);
+    });
+
+    it('a column the object does not have', () => {
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [{ name: 'posts_bad_idx', columns: ['title', 'nope'] }],
+        }),
+      ).toThrow(/unknown column\(s\): nope/);
+    });
+
+    it('an `Object.prototype` key that is not a real column', () => {
+      // `'toString' in columns` is true for any plain object, so an `in` check
+      // would accept this and emit an index on a column that does not exist.
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [
+            { name: 'posts_proto_idx', columns: ['toString', 'constructor'] },
+          ],
+        }),
+      ).toThrow(/unknown column\(s\): toString, constructor/);
+    });
+
+    it('an empty columns list', () => {
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [{ name: 'posts_empty_idx', columns: [] }],
+        }),
+      ).toThrow(/non-empty "columns" array/);
+    });
+
+    it('a declaration with no name', () => {
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [{ columns: ['title'] } as any],
+        }),
+      ).toThrow(/non-empty "name"/);
+    });
+
+    it('an empty partial-index predicate', () => {
+      // `WHERE ''` would render `CREATE INDEX ... WHERE ;`, and silently
+      // ignoring it would widen a partial index into a full one.
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [
+            { name: 'posts_where_idx', columns: ['title'], where: '  ' },
+          ],
+        }),
+      ).toThrow(/empty or non-string "where"/);
+    });
+
+    it('a non-boolean unique flag', () => {
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [
+            { name: 'posts_unique_idx', columns: ['title'], unique: 'yes' },
+          ] as never,
+        }),
+      ).toThrow(/non-boolean "unique"/);
+    });
+
+    it('a name already taken by a different generated index', () => {
+      // `posts_slug_context_idx` is the generated conflict index; the legacy
+      // `<table>_id_idx` is no longer emitted on any path (#2359).
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [{ name: 'posts_slug_context_idx', columns: ['title'] }],
+        }),
+      ).toThrow(/collides with a different index/);
+    });
+
+    it('but accepts a re-declaration identical to the generated index', () => {
+      const schema = generator.generateSchemaFromRegistry(
+        'Post',
+        'posts',
+        titleOnly(),
+        {
+          indexes: [
+            {
+              name: 'posts_slug_context_idx',
+              columns: ['slug', 'context'],
+              unique: true,
+            },
+          ],
+        },
+      );
+      expect(
+        schema.indexes.filter(
+          (index) => index.name === 'posts_slug_context_idx',
+        ).length,
+      ).toBe(1);
+    });
+  });
+
+  it('suppresses the standalone tenant index when a declared composite leads with tenant_id (#2384)', () => {
+    const schema = generator.generateSchemaFromRegistry(
+      'Post',
+      'posts',
+      new Map<string, any>([
+        [
+          'tenantId',
+          { type: 'text', _meta: { __tenancy: { isTenantIdField: true } } },
+        ],
+        ['publish_date', { type: 'datetime' }],
+      ]),
+      compositeDeclaration,
+    );
+
+    const tenantColumn = Object.entries(schema.columns).find(
+      ([, column]) => column.referenceKind === 'tenantId',
+    )?.[0];
+    expect(tenantColumn).toBe('tenant_id');
+    const leading = schema.indexes.filter(
+      (index) => index.columns[0] === tenantColumn,
+    );
+    // Only the declared composite — no redundant standalone tenant index.
+    expect(leading.map((index) => index.name)).toEqual([
+      'posts_tenant_id_publish_date_idx',
+    ]);
+  });
+});
