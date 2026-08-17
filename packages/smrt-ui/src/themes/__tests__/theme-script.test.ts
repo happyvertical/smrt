@@ -5,8 +5,6 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTheme, registerTheme } from '../create-theme.js';
-import { generateThemeVariables } from '../css-generator.js';
-import { studioTheme } from '../studio/index.js';
 import { themeScript } from '../theme-script.js';
 
 function mockSystemDark(matches: boolean) {
@@ -27,13 +25,7 @@ describe('themeScript', () => {
     localStorage.clear();
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-color-scheme');
-    document.documentElement.removeAttribute('data-smrt-theme-bootstrap');
     document.documentElement.classList.remove('dark');
-    for (const property of Array.from(document.documentElement.style)) {
-      if (property.startsWith('--smrt-bootstrap-')) {
-        document.documentElement.style.removeProperty(property);
-      }
-    }
   });
 
   it('resolves system preference when nothing is stored', () => {
@@ -60,13 +52,21 @@ describe('themeScript', () => {
       'light',
     );
     expect(document.documentElement.classList.contains('dark')).toBe(false);
-    expect(
-      document.documentElement.style.getPropertyValue(
-        '--smrt-bootstrap-color-background',
-      ),
-    ).toBe(
-      generateThemeVariables(studioTheme, false)['--smrt-color-background'],
-    );
+  });
+
+  it('ships no inline variable payload — static CSS owns the values', () => {
+    mockSystemDark(false);
+    const script = themeScript({ preset: 'studio' });
+    // The pre-paint script only stamps attributes; variable values come from
+    // the static per-preset stylesheets selected by those attributes.
+    expect(script).not.toContain('--smrt-');
+    expect(script).not.toContain('bootstrap');
+    expect(script.length).toBeLessThan(1024);
+
+    run(script);
+    for (const property of Array.from(document.documentElement.style)) {
+      expect(property.startsWith('--smrt-')).toBe(false);
+    }
   });
 
   it('uses the custom storageKey', () => {
@@ -127,7 +127,7 @@ describe('themeScript', () => {
     );
   });
 
-  it('bootstraps a registered custom theme from persistence', () => {
+  it('stamps a persisted registered custom theme pre-paint', () => {
     const brandTheme = createTheme({
       id: 'bootstrap-test-brand',
       name: 'Bootstrap Test Brand',
@@ -149,11 +149,10 @@ describe('themeScript', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'bootstrap-test-brand',
     );
-    expect(
-      document.documentElement.style.getPropertyValue(
-        '--smrt-bootstrap-color-background',
-      ),
-    ).toBe(generateThemeVariables(brandTheme, true)['--smrt-color-background']);
+    expect(document.documentElement.getAttribute('data-color-scheme')).toBe(
+      'dark',
+    );
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 
   it('still applies the fallback when localStorage access throws', () => {

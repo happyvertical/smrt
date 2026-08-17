@@ -6,7 +6,6 @@ import {
 } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
-import AILoadingOverlay from './browser-ai/svelte/components/AILoadingOverlay.svelte';
 import { logger } from './internal/logger.js';
 import type {
   AIConfig,
@@ -205,10 +204,14 @@ onDestroy(() => {
 </script>
 
 {#if ai && showLoadingOverlay}
-  <AILoadingOverlay
-    message={ai.loadingMessage}
-    dismissible={true}
-  />
+  <!-- Lazy: the overlay and its browser-ai component tree stay out of the
+       initial bundle for pages that never configure AI. -->
+  {#await import('./browser-ai/svelte/components/AILoadingOverlay.svelte') then m}
+    <m.default
+      message={ai.loadingMessage}
+      dismissible={true}
+    />
+  {/await}
 {/if}
 
 {@render children()}

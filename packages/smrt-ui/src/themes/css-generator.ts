@@ -240,6 +240,11 @@ function generateStaticTokens(
  * @param isDark - Whether to use dark mode colors
  * @param options - Generation options
  * @returns Object with CSS variable names and values
+ * @deprecated Prefer the static per-preset stylesheets
+ * (`themes/styles/<preset>.css`) selected by `data-theme`/`data-color-scheme`
+ * attributes — ThemeProvider uses them by default for built-in presets. This
+ * runtime path remains for custom registered themes, which have no static
+ * stylesheet, and for the `inlineVariables` escape hatch.
  */
 export function generateThemeVariables(
   theme: Theme,
