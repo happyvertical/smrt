@@ -425,7 +425,26 @@ Every `SmrtObject`/`SmrtCollection` can persist learned knowledge via `remember(
 | `AIError` | AI provider failures |
 | `ValidationError` | Field/object validation failures |
 | `RuntimeError` | General runtime failures |
-| `ErrorUtils` | Sanitization and formatting helpers |
+| `ErrorUtils` | Retry policy (`withRetry`, `isRetryable`) plus sanitization helpers |
+
+### Database error classification
+
+Driver errors reach the model layer wrapped by `@happyvertical/sql`, which
+stringifies the driver text into `context.originalError` — so the constraint
+wording never appears on `error.message`. Classify through the cause chain
+instead of matching messages.
+
+| Export | Description |
+|--------|------------|
+| `classifyDatabaseError` | Walks the cause chain and returns the kind plus `deterministic` / `retryable` |
+| `classifyDialectMessage` | Matches a single raw dialect message (the DuckDB fallback) |
+| `isUniqueViolationError` | Unique or primary-key violation anywhere in the chain |
+| `isNotNullViolationError` | NOT NULL violation anywhere in the chain |
+| `isAbortedTransactionError` | Statement issued inside an aborted PostgreSQL transaction (`25P02`) |
+| `isDeterministicDatabaseError` | A retry cannot change the outcome |
+| `isTransientDatabaseError` | Contention or availability; a retry may succeed |
+| `DatabaseErrorKind` | Union of classification kinds |
+| `DatabaseErrorClassification` | Structured result of `classifyDatabaseError` |
 
 ### Tools (AI Function Calling)
 
