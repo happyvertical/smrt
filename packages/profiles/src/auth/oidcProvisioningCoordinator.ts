@@ -82,15 +82,19 @@ export interface OidcProvisioningCoordinatorOptions<T> {
 export async function coordinateOidcProvisioning<T>(
   options: OidcProvisioningCoordinatorOptions<T>,
 ): Promise<T> {
-  // Establish the shared backfill table outside the provisioning transaction.
-  // Transaction-bound callers are handled below via savepoints and must not
-  // leak DDL into their caller's transaction.
   const rootBackfillTableReady =
     typeof options.db.beginTransaction === 'function';
-  if (rootBackfillTableReady) {
-    await new BackfillTracker({ db: options.db }).initialize();
-  }
   return withProvisioningLocks(options.db, options.lockKeys, async () => {
+    // Establish the shared backfill table outside the provisioning
+    // transaction but inside the coordinator locks. Transaction-bound callers
+    // are handled below via savepoints and must not leak DDL into their
+    // caller's transaction, and SQLite and DuckDB root handles multiplex one
+    // native connection: a statement issued here while a concurrent flow
+    // holds that connection's transaction races it, and DuckDB then fails the
+    // in-flight prepared statement outright (#2352).
+    if (rootBackfillTableReady) {
+      await new BackfillTracker({ db: options.db }).initialize();
+    }
     const result = await retryProvisioning(options, () =>
       withProvisioningTransaction(
         options.db,

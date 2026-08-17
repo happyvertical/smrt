@@ -295,9 +295,12 @@ the package root).
   private `oidc_profile_email_reservations.email_key`, `User.emailKey`, and the
   unique `User.profileId`; local callbacks acquire exact issuer/subject and normalized
   email locks in deterministic order so changed email claims also serialize.
-  SQLite and DuckDB callbacks additionally serialize transactions per database
-  URL because one adapter cannot safely overlap unrelated root transactions;
-  owner-authorized DuckDB callbacks use that same root-handle serialization;
+  SQLite and DuckDB callbacks additionally serialize every root-handle statement
+  the coordinator owns per database URL — `_smrt_backfills` initialization, the
+  transaction, and the post-commit rebind — because one adapter multiplexes a
+  single native connection and cannot safely overlap unrelated root
+  transactions; owner-authorized DuckDB callbacks use that same root-handle
+  serialization;
   PostgreSQL deadlock and serialization errors use a bounded transaction retry.
   Newly provisioned Profiles use non-semantic per-profile slugs so equal IdP
   display names cannot trigger a natural-key upsert;
