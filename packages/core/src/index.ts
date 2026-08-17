@@ -196,6 +196,18 @@ export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
 } from './polymorphic-association';
+// Shared list query bounds for every generated read surface (#2367)
+export {
+  buildDefaultListOrderBy,
+  DEFAULT_LIST_LIMIT,
+  DEFAULT_LIST_ORDER_BY,
+  type ListBoundOptions,
+  MAX_LIST_LIMIT,
+  QueryBoundsError,
+  QueryOrderByError,
+  resolveListLimit,
+  resolveListOffset,
+} from './query-bounds';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities

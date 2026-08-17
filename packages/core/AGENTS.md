@@ -76,7 +76,7 @@ references). Re-adding either requires the query builder to support it first;
 `src/__tests__/issue-2276-where-contract.test.ts` executes every accepted
 operator against a database to keep the two in step.
 
-STI child collections auto-filter by `_meta_type`.
+STI child collections auto-filter by `_meta_type`. Query bounds — `LIMIT 1` on `get()`, the `limit`/`offset` parser, the `orderBy` whitelist and sensitive/permission refusals, and the deterministic generated-list ordering (#2367) — are in [agents/query-bounds.md](agents/query-bounds.md).
 
 ## Bounded Collection Read Plans
 
