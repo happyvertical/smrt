@@ -204,6 +204,29 @@ describe('#2367 REST list query bounds', () => {
     await expect(res.json()).resolves.toEqual([]);
   });
 
+  it('rejects ordering by a system column the model does not have', async () => {
+    // `id`/`slug`/`context` are whitelisted unconditionally, but the schema
+    // generator omits them for a custom-primary-key class. Without the guard
+    // this reached the driver as `no such column: id` and answered 500.
+    const res = await pkHandler(
+      new Request(
+        'http://localhost/api/v2/restboundspkwidgets?orderBy=id%20ASC',
+      ),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toMatch(/column-backed/i);
+  });
+
+  it('still orders a custom-primary-key model by its own columns', async () => {
+    const res = await pkHandler(
+      new Request(
+        'http://localhost/api/v2/restboundspkwidgets?orderBy=sku%20ASC',
+      ),
+    );
+    expect(res.status).toBe(200);
+  });
+
   it('does not borrow a tiebreak from an unrelated class', async () => {
     // The tiebreak is resolved from this object's own + inherited fields only.
     // A helper that unions STI siblings/descendants would let another class's

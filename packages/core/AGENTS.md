@@ -99,10 +99,14 @@ are **clamped** to `MAX_LIST_LIMIT` (1000) rather than rejected, and an explicit
   and `@field({ readPermission })` columns — ordering is a comparison, and
   `?orderBy=api_secret&limit=1` is an oracle over a column the request may neither
   filter on nor project — and for fields that are registered but **not
-  column-backed** (`oneToMany`/`manyToMany`/`meta`/`transient`), which otherwise
-  reach the driver as `no such column` and surface as a 500. The whitelist is
-  skipped only for manifest-less inline test classes (#869), exactly as `where`
-  skips it.
+  column-backed** — `oneToMany`/`manyToMany`/`meta`/`transient`, plus the
+  `id`/`slug`/`context` system columns on a custom-primary-key class, which the
+  schema generator omits — all of which otherwise reach the driver as
+  `no such column` and surface as a 500. The whitelist is skipped only for
+  manifest-less inline test classes (#869), exactly as `where` skips it. `where`
+  still whitelists those omitted system columns; that is a pre-existing gap of
+  the same family, not closed here because `where: { id }` is on internal
+  hydration paths.
 - Every generated list surface (REST, SvelteKit, MCP, and the emitted stdio MCP
   runtime) pages with `ORDER BY created_at DESC, <pk> ASC` unless the caller
   supplies `orderBy` — `LIMIT`/`OFFSET` with no ordering is not pagination, and

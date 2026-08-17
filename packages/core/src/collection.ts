@@ -597,6 +597,22 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       definitionByColumn.set(this.toDbColumnName(fieldName), fieldDef);
     }
 
+    // `id`/`slug`/`context` are added to the whitelist unconditionally, but the
+    // schema generator omits them for a class that declares its own primary key.
+    // Without this, `?orderBy=id` on such a model passes the whitelist, matches
+    // no definition, and reaches the driver as `no such column: id` — a 500.
+    // Same derivation `resolveProjectionSelect` uses for `select`.
+    const customPrimaryKey = this.hasCustomPrimaryKey(fields);
+    const registeredFields = ObjectRegistry.getFields(
+      this.getResolvedItemQualifiedName(),
+    );
+    const explicitFieldNames = new Set(
+      (registeredFields.size > 0
+        ? registeredFields
+        : ObjectRegistry.getFields(itemClassName)
+      ).keys(),
+    );
+
     const terms = orderByItems.map((item) => {
       const [field, direction = 'ASC'] = String(item).trim().split(/\s+/);
 
@@ -684,7 +700,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         fieldType === 'meta' ||
         fieldType === 'oneToMany' ||
         fieldType === 'manyToMany' ||
-        isTransient
+        isTransient ||
+        this.isOmittedCustomPrimaryKeySystemField(
+          columnName,
+          customPrimaryKey,
+          explicitFieldNames,
+        )
       ) {
         throw new QueryOrderByError(
           `Invalid orderBy field: '${field}'. Field is not column-backed on ${itemClassName}.`,
