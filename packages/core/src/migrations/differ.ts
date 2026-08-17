@@ -2035,15 +2035,13 @@ export class SchemaComparer {
       followUps.push(
         `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))} ON ${quotedTable} (${quotedCol})`,
       );
-      if (!inlineConstraintsAllowed) {
-        // DuckDB honours `ON CONFLICT` only for inline UNIQUE constraints and
-        // has no `ADD CONSTRAINT`, so a unique column added to an existing
-        // table enforces uniqueness but is not an upsert target there. Say so
-        // at plan time rather than at the first upsert.
-        logger.warn(
-          `[SchemaComparer] ${this.engine} cannot add an inline UNIQUE constraint to an existing table; ${tableName}.${colName} gets a separate unique index (${uniqueColumnIndexName(tableName, colName)}) that enforces uniqueness but is not an ON CONFLICT target on ${this.engine}`,
-        );
-      }
+      // DuckDB has no `ADD CONSTRAINT`, so this is the only way to add
+      // uniqueness to an existing table there. The DuckDB strategy's
+      // `requiresInlineUnique()` note (DuckDB #12684: ON CONFLICT ignored
+      // separate unique indexes) no longer holds on the bundled DuckDB 1.4.x —
+      // `INSERT … ON CONFLICT (col) DO UPDATE` resolves through this index;
+      // the #2369 DuckDB test pins that. Older DuckDB builds may still need
+      // the inline form for upserts on such a column.
     }
 
     const statements = [addColumn, ...followUps];

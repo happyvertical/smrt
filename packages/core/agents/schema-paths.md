@@ -207,10 +207,11 @@ and always reports what it will not touch:
   rejects inline `UNIQUE` (separate `CREATE UNIQUE INDEX <table>_<col>_key`, the
   PostgreSQL constraint-index name, so the orphan sweep leaves it alone) and
   `NOT NULL` without a default on a populated table; PostgreSQL keeps constraints
-  inline. Caveat: DuckDB's `ON CONFLICT` only honours *inline* UNIQUE
-  constraints, so a `unique: true` column added to an existing DuckDB table via
-  this plan enforces uniqueness but is not an upsert target there (logged as a
-  warning at plan time; DuckDB has no `ADD CONSTRAINT`). A required column with no default is enforced only on an empty table;
+  inline. DuckDB has no `ADD CONSTRAINT`, so the separate index is the only
+  way to add uniqueness there; the bundled DuckDB 1.4.x resolves
+  `ON CONFLICT (col)` through that index (the old #12684 limitation the DuckDB
+  strategy's `requiresInlineUnique()` note describes no longer reproduces —
+  the #2369 DuckDB test pins the upsert), older DuckDB builds may not. A required column with no default is enforced only on an empty table;
   on a populated one it is added nullable and the `NOT NULL` is reported as a
   manual follow-up on every engine.
 - **SQLite** has no `ALTER COLUMN`: nullability/default alterations are manual

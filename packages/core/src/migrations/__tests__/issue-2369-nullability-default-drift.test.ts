@@ -494,6 +494,18 @@ for (const { name, type, engine } of engines) {
         manifest,
       );
       expect(after.changes).toEqual([]);
+
+      if (engine === 'duckdb') {
+        // DuckDB has no ADD CONSTRAINT; the separate unique index must still
+        // be an upsert target (DuckDB #12684 no longer reproduces on 1.4.x).
+        await db.query(
+          "INSERT INTO users (id, name, email) VALUES ('u2', 'b2', 'b@x') ON CONFLICT (email) DO UPDATE SET name = excluded.name",
+        );
+        const rows = (
+          await db.query("SELECT name FROM users WHERE email = 'b@x'")
+        ).rows as Array<Record<string, unknown>>;
+        expect(rows).toEqual([{ name: 'b2' }]);
+      }
     });
 
     it('reports a stale unique constraint index once the manifest column is no longer unique', async () => {
