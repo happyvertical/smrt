@@ -246,9 +246,11 @@ describe('db:rollback (real SQLite)', () => {
       const parsed = lastJson();
       expect(process.exitCode).toBe(1);
       expect(parsed.error).toContain('Refusing to roll back');
-      expect(parsed.nonReversible).toEqual([
+      expect(parsed.unrecoverable).toEqual([
         { name: 'jn_one', reason: 'was applied without a DOWN script' },
       ]);
+      // Back-compat: the pre-#2378 payload listed plain names under this key.
+      expect(parsed.nonReversible).toEqual(['jn_one']);
       expect(parsed.guidance.join(' ')).toContain('--mark-only');
       expect((await statusByName()).jn_one).toBe('completed');
     });
@@ -273,10 +275,13 @@ describe('db:rollback (real SQLite)', () => {
 
       const parsed = lastJson();
       expect(process.exitCode).toBe(1);
-      expect(parsed.nonReversible[0].name).toBe('custom_one');
-      expect(parsed.nonReversible[0].reason).toContain(
+      expect(parsed.unrecoverable[0].name).toBe('custom_one');
+      expect(parsed.unrecoverable[0].reason).toContain(
         'cannot be reconstructed',
       );
+      // A row the tracking table calls reversible still lands in the
+      // compat key, because this run cannot reverse it either.
+      expect(parsed.nonReversible).toEqual(['custom_one']);
       expect(await tableExists('custom_tbl')).toBe(true);
     });
 
@@ -502,6 +507,23 @@ describe('db:rollback (real SQLite)', () => {
 
     expect(process.exitCode).toBe(1);
     expect(errorOutput()).toContain('Refusing to roll back');
+    const history = await readHistory();
+    expect(history.every((m) => m.status === 'completed')).toBe(true);
+  });
+
+  it('marks an unrecoverable migration with ⊘ in --dry-run --mark-only output', async () => {
+    // The only preview that lists an unrecoverable row: without --mark-only the
+    // run refuses before reaching the dry-run listing.
+    await seedMigrations([nonReversibleDef('dm_one')]);
+
+    await dbRollbackCommand.handler([], {
+      dryRun: true,
+      markOnly: true,
+      force: true,
+    });
+
+    expect(output()).toContain('⊘ dm_one (no DOWN script)');
+    expect(output()).not.toContain('↩ dm_one');
     const history = await readHistory();
     expect(history.every((m) => m.status === 'completed')).toBe(true);
   });

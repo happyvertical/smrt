@@ -10,7 +10,7 @@
  * records for `create_table_<table>` migrations. Everything else is refused
  * rather than flipped to `rolled_back` with the schema untouched (#2378).
  * `--mark-only` is the explicit, honestly-labelled opt-in for the record-only
- * flip an operator who reverted the schema by hand actually wants.
+ * flip that an operator who reverted the schema by hand actually wants.
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -51,9 +51,15 @@ interface RollbackResult {
 const CREATE_TABLE_MIGRATION_PREFIX = 'create_table_';
 
 /**
- * Table names SMRT generates are plain snake_case identifiers. Anything else
- * in a `create_table_*` row was not written by `db:migrate`, so its DOWN is not
- * ours to reconstruct.
+ * The suffix of a `create_table_*` row must be a bare SQL identifier before it
+ * is interpolated into the reconstructed `DROP TABLE`. Quotes, whitespace,
+ * semicolons and dots all fail closed (the migration is refused) rather than
+ * producing a statement that drops something other than the recorded table.
+ *
+ * Deliberately not lowercase-only: `classnameToTablename` yields snake_case,
+ * but `@smrt({ tableName })` passes a consumer-supplied name through verbatim,
+ * so a legitimately reversible table can carry capitals. This is a shape and
+ * injection guard, not a naming-convention check.
  */
 const SAFE_TABLE_NAME_RE = /^[A-Za-z_][A-Za-z0-9_$]*$/;
 
@@ -327,7 +333,12 @@ export const dbRollbackCommand: CLICommand = {
               {
                 error: REFUSAL_ERROR,
                 dryRun: Boolean(dryRun),
-                nonReversible: unrecoverable,
+                // `unrecoverable` is the accurate key: it also covers rows
+                // recorded reversible whose DOWN SQL was never persisted.
+                // `nonReversible` keeps the pre-#2378 name-array shape for
+                // existing JSON consumers.
+                unrecoverable,
+                nonReversible: unrecoverable.map((entry) => entry.name),
                 guidance: REFUSAL_GUIDANCE,
               },
               null,
@@ -397,10 +408,12 @@ export const dbRollbackCommand: CLICommand = {
               : 'Would execute the DOWN script of the following migrations:',
           );
           for (const { migration, recovery } of plan) {
+            // Same markers as the plan listing above: `⊘` never stands for a
+            // migration this run could revert.
             const status = recovery.recoverable
-              ? `(${recovery.statements.length} DOWN statement(s))`
-              : '(no DOWN script)';
-            console.log(`  ↩ ${migration.name} ${status}`);
+              ? `↩ ${migration.name} (${recovery.statements.length} DOWN statement(s))`
+              : `⊘ ${migration.name} (no DOWN script)`;
+            console.log(`  ${status}`);
           }
           console.log();
         }
