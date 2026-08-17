@@ -14,6 +14,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { parsePostgresTimeoutMs } from '../migrations/tracker.js';
 import {
   applyPostgresRuntimeTimeouts,
   applyPostgresTimeoutsToUrl,
@@ -63,6 +64,41 @@ describe('parseTimeoutMs', () => {
     expect(parseTimeoutMs(Number.NaN, 99)).toBe(99);
     expect(parseTimeoutMs('soon', 99)).toBe(99);
     expect(parseTimeoutMs('30 seconds', 99)).toBe(99);
+  });
+
+  it('agrees with the migration timeout parser on every input (#2362)', () => {
+    // Runtime and migrate timeouts are configured in the same spelling, so the
+    // two parsers must not drift. The runtime path deliberately keeps its own
+    // copy: importing the migration tracker would drag the whole migration
+    // engine into the connection path.
+    const inputs: (string | number | undefined)[] = [
+      undefined,
+      '',
+      '   ',
+      0,
+      '0',
+      '0s',
+      1500,
+      '1500',
+      '250ms',
+      '30s',
+      ' 5S ',
+      '2m',
+      '2min',
+      '1h',
+      '1.5s',
+      -1,
+      Number.NaN,
+      'soon',
+      '30 seconds',
+    ];
+
+    for (const input of inputs) {
+      expect([input, parseTimeoutMs(input, 99)]).toEqual([
+        input,
+        parsePostgresTimeoutMs(input, 99),
+      ]);
+    }
   });
 });
 
@@ -153,6 +189,12 @@ describe('isPostgresTarget', () => {
 
   it('lets an explicit non-PostgreSQL type win over a PostgreSQL-looking URL', () => {
     expect(isPostgresTarget(PG_URL, 'sqlite')).toBe(false);
+  });
+
+  it('treats an empty type as unspecified and reads the URL', () => {
+    expect(isPostgresTarget(PG_URL, '')).toBe(true);
+    expect(isPostgresTarget(PG_URL, '  ')).toBe(true);
+    expect(isPostgresTarget(':memory:', '')).toBe(false);
   });
 });
 

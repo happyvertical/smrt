@@ -246,8 +246,8 @@ export function resolvePostgresTimeouts(
  * into the connection path.
  */
 export function isPostgresTarget(url?: string, type?: string): boolean {
-  if (typeof type === 'string') {
-    const normalized = type.toLowerCase();
+  const normalized = typeof type === 'string' ? type.trim().toLowerCase() : '';
+  if (normalized) {
     if (
       normalized === 'postgres' ||
       normalized === 'postgresql' ||
@@ -256,7 +256,8 @@ export function isPostgresTarget(url?: string, type?: string): boolean {
       return true;
     }
     // An explicit non-PostgreSQL type wins over a URL that merely looks like
-    // one; the adapter that will actually run is the one named here.
+    // one; the adapter that will actually run is the one named here. An empty
+    // or whitespace `type` is not an answer, so it falls through to the URL.
     return false;
   }
 
@@ -347,11 +348,13 @@ export interface PostgresTimeoutAwareConfig {
  * applying the same deterministic rewrite is what keeps them one pool when the
  * timeouts match.
  *
- * A PostgreSQL configuration given as discrete `host`/`port`/`database` fields
- * with no `url` has nowhere to carry the session parameters and receives only
- * `connectionTimeoutMillis`. No SMRT runtime path builds one — `resolveDatabase`
- * and `SmrtClass` both require a URL for non-SQLite engines — so this is a
- * documented edge, not a supported hole.
+ * A PostgreSQL configuration with no `url` — discrete `host`/`port`/`database`
+ * fields, or a bare `{ type: 'postgres' }` that lets the adapter read
+ * `HAVE_SQL_URL`/`SQLOO_URL` — has nowhere to carry the session parameters and
+ * receives only `connectionTimeoutMillis`. Reproducing the adapter's own
+ * environment precedence here to synthesize a URL would fork it; pass the URL
+ * through the config (or set the `SMRT_PG_*` variables on a config that does
+ * carry one) to get the session timeouts.
  *
  * The `timeouts` key is consumed here and not forwarded — `@happyvertical/sql`
  * would ignore it, and leaving it in the options object would make it look
