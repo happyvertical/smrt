@@ -129,22 +129,69 @@ describe('ThemeProvider persistence', () => {
     });
   });
 
-  it('emits bootstrap-aware SSR variable fallbacks', () => {
+  it('renders no inline variable payload for built-in presets (static-first)', () => {
     mockSystemDark(false);
     const { container } = render(ThemeProvider, {
       props: { children: child() },
     });
+    const root = container.querySelector('.smrt-theme-root');
+    const style = root?.getAttribute('style') ?? '';
+
+    // Built-in presets ship their full variable set as static stylesheets
+    // selected by the data attributes — the wrapper carries no ~200-var style.
+    expect(style).not.toContain('--smrt-color-background');
+    expect(root).toHaveAttribute('data-theme');
+    expect(root).toHaveAttribute('data-color-scheme');
+  });
+
+  it('applies only the explicit accent/overrides inline for built-in presets', () => {
+    mockSystemDark(false);
+    const { container } = render(ThemeProvider, {
+      props: {
+        primaryColor: '#123456',
+        overrides: { '--smrt-color-tertiary': '#654321' },
+        children: child(),
+      },
+    });
     const style =
       container.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
-    const bootstrapBackground = [
-      '--smrt',
-      'bootstrap',
-      'color',
-      'background',
-    ].join('-');
 
-    expect(style).toContain(
-      `--smrt-color-background: var(${bootstrapBackground},`,
+    expect(style).toContain('--smrt-color-primary: #123456');
+    expect(style).toContain('--smrt-color-tertiary: #654321');
+    expect(style).not.toContain('--smrt-color-background');
+  });
+
+  it('keeps runtime variable generation for custom registered themes', async () => {
+    const { createTheme, registerTheme } = await import('../create-theme.js');
+    registerTheme(
+      createTheme({
+        id: 'provider-test-brand',
+        name: 'Provider Test Brand',
+        light: { primary: '#336699', background: '#fefefe' },
+        dark: { primary: '#99ccff', background: '#101820' },
+      }),
     );
+    mockSystemDark(false);
+
+    const { container } = render(ThemeProvider, {
+      props: { preset: 'provider-test-brand', children: child() },
+    });
+    const style =
+      container.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
+
+    // No static stylesheet can exist for a registered custom theme, so the
+    // provider falls back to the legacy runtime-generated variable set.
+    expect(style).toContain('--smrt-color-background: #fefefe');
+  });
+
+  it('opts a built-in preset back into runtime generation via inlineVariables', () => {
+    mockSystemDark(false);
+    const { container } = render(ThemeProvider, {
+      props: { preset: 'material', inlineVariables: true, children: child() },
+    });
+    const style =
+      container.querySelector('.smrt-theme-root')?.getAttribute('style') ?? '';
+
+    expect(style).toContain('--smrt-color-background');
   });
 });

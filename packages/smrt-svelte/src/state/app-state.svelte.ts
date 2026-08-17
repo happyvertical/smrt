@@ -8,18 +8,24 @@
 import {
   canEnableSmrtMode,
   detectCapabilities,
-  type GetLLMOptions,
-  type GetSTTOptions,
-  type GetTTSOptions,
-  getLLM,
-  getSTT,
-  getTTS,
-  type LLMAdapter,
-  type OnProgress,
-  type STTAdapter,
-  type TTSAdapter,
-  type TTSOptions,
+} from '../browser-ai/capabilities/detector.js';
+import type {
+  GetLLMOptions,
+  GetSTTOptions,
+  GetTTSOptions,
+  LLMAdapter,
+  OnProgress,
+  STTAdapter,
+  TTSAdapter,
+  TTSOptions,
 } from '../browser-ai/index.js';
+
+// NOTE: The adapter factories (getSTT/getTTS/getLLM) are intentionally NOT
+// imported statically. The browser-ai index re-exports every adapter module,
+// so a static factory import pulls the whole adapter layer (whisper STT,
+// TTS, LLM wrappers) into the initial chunk of every page that mounts a
+// Provider — including pages that never use AI. They are dynamically
+// imported at the call sites below, which only run when AI is configured.
 
 import {
   type AIConfig,
@@ -663,6 +669,7 @@ export class SmrtAppStateManager {
     };
 
     try {
+      const { getSTT } = await import('../browser-ai/index.js');
       const adapter = await getSTT(options);
       await adapter.ensureInitialized(onProgress);
 
@@ -806,6 +813,7 @@ export class SmrtAppStateManager {
     };
 
     try {
+      const { getTTS } = await import('../browser-ai/index.js');
       const adapter = await getTTS(options);
       await adapter.ensureInitialized(onProgress);
 
@@ -968,6 +976,7 @@ export class SmrtAppStateManager {
     };
 
     try {
+      const { getLLM } = await import('../browser-ai/index.js');
       const adapter = await getLLM(options);
       await adapter.ensureInitialized(modelId, onProgress);
 
