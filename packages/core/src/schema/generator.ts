@@ -81,6 +81,9 @@ export class SchemaGenerator {
     const dependencies = this.extractDependencies(objectDef, foreignKeys);
     const version = this.generateVersion(objectDef);
 
+    // Tenancy injects `tenant_id` but nothing indexes it (#2356).
+    this.ensureTenantIdIndex(indexes, columns, tableName);
+
     return {
       tableName,
       columns,
@@ -342,6 +345,48 @@ export class SchemaGenerator {
   /**
    * Generate index definitions
    */
+  /**
+   * Ensure a tenancy-injected `tenant_id` column has an index leading with it.
+   *
+   * Tenancy injects the column but nothing indexed it: the generated set covers
+   * foreign keys, unique columns, `updated_at` and the STI discriminator, and
+   * `tenant_id` is in none of those. Every tenant-scoped read filters on it, so
+   * without an index each one scans the whole multi-tenant table — measured in
+   * one production database, 164 of 212 tenant-scoped tables had no such index
+   * (#2356).
+   *
+   * "Leading with it" rather than "always add": a table that already has a
+   * composite index starting on `tenant_id` (commonly from `conflictColumns`)
+   * is already served, and a standalone duplicate would only cost writes.
+   */
+  private ensureTenantIdIndex(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+    }>,
+    columns: Record<string, { referenceKind?: string } | undefined>,
+    tableName: string,
+  ): void {
+    const tenantColumn = Object.entries(columns).find(
+      ([, columnDef]) => columnDef?.referenceKind === 'tenantId',
+    )?.[0];
+    if (!tenantColumn) return;
+
+    const alreadyLeading = indexes.some(
+      (index) => index.columns?.[0] === tenantColumn,
+    );
+    if (alreadyLeading) return;
+
+    // No `description`: ManifestIndexDefinition has no such field, and this
+    // helper feeds the manifest paths as well as the structured ones.
+    indexes.push({
+      name: `${tableName}_${tenantColumn}_idx`,
+      columns: [tenantColumn],
+    });
+  }
+
   private generateIndexes(
     objectDef: SmartObjectDefinition,
     columns: Record<string, ColumnDefinition>,
@@ -736,6 +781,9 @@ export class SchemaGenerator {
       });
     }
 
+    // Tenancy injects `tenant_id` but nothing indexes it (#2356).
+    this.ensureTenantIdIndex(indexes, columns, tableName);
+
     return {
       tableName,
       columns,
@@ -1052,6 +1100,9 @@ export class SchemaGenerator {
       });
     }
 
+    // Tenancy injects `tenant_id` but nothing indexes it (#2356).
+    this.ensureTenantIdIndex(indexes, columns, tableName);
+
     return {
       tableName,
       columns,
@@ -1273,6 +1324,10 @@ export class SchemaGenerator {
     }
 
     // Generate DDL
+    // Tenancy injects `tenant_id` but nothing indexes it (#2356). Added
+    // before the DDL is rendered so the emitted SQL creates it too.
+    this.ensureTenantIdIndex(indexes, columns, tableName);
+
     const schemaDefinition: SchemaDefinition = {
       tableName,
       columns: this.convertManifestColumnsToSchemaColumns(columns),
@@ -1449,6 +1504,10 @@ export class SchemaGenerator {
     }
 
     // Generate DDL
+    // Tenancy injects `tenant_id` but nothing indexes it (#2356). Added
+    // before the DDL is rendered so the emitted SQL creates it too.
+    this.ensureTenantIdIndex(indexes, columns, tableName);
+
     const schemaDefinition: SchemaDefinition = {
       tableName,
       columns: this.convertManifestColumnsToSchemaColumns(columns),
