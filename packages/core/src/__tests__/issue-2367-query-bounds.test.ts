@@ -54,6 +54,12 @@ class QueryBoundsWidget extends SmrtObject {
   @field({ related: 'QueryBoundsWidget', type: 'oneToMany' })
   children: QueryBoundsWidget[] = [];
 
+  // Leading underscore: `toSnakeCase()` strips it (`_rank` → `rank`) while
+  // `toDbColumnName()` preserves it, so the whitelist and the lookups must
+  // agree on both forms or a legitimate column is rejected.
+  @field({ type: 'integer' })
+  _rank: number = 0;
+
   constructor(options: any = {}) {
     super(options);
     if (options.label !== undefined) this.label = options.label;
@@ -268,6 +274,29 @@ describe('Issue #2367: collection query bounds', () => {
         code: 'INVALID_ORDER_BY_NOT_COLUMN_BACKED',
         status: 400,
       });
+    });
+
+    it('resolves an underscore-prefixed field to its real column', async () => {
+      // `SchemaGenerator` names the column with `toSnakeCase`, which strips the
+      // leading underscore, so a declared `_rank` field lives in `rank`.
+      // Both spellings must reach that one column: neither may be rejected as
+      // unknown, and neither may emit a `_rank` column that does not exist.
+      const querySpy = vi.spyOn(db, 'query');
+      let calls: unknown[][];
+      try {
+        await collection.list({ limit: 1, orderBy: '_rank DESC' });
+        await collection.list({ limit: 1, orderBy: 'rank ASC' });
+      } finally {
+        calls = querySpy.mock.calls.map((call) => [...call]);
+        querySpy.mockRestore();
+      }
+
+      const ordered = calls
+        .map((call) => String(call[0]))
+        .filter((sql) => sql.includes('ORDER BY'));
+      expect(ordered).toHaveLength(2);
+      expect(ordered[0]).toContain('ORDER BY rank DESC');
+      expect(ordered[1]).toContain('ORDER BY rank ASC');
     });
 
     it('accepts declared and framework columns', async () => {

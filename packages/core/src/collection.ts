@@ -451,6 +451,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     readPermissionFieldNames: Set<string>;
     skipFieldValidation: boolean;
   } {
+    // `toSnakeCase()` — the SAME function `SchemaGenerator` names columns with
+    // (`schema/generator.ts`) — so this set holds real column names. Note it
+    // STRIPS a leading underscore, while `toDbColumnName()` preserves one; the
+    // two disagree for a declared `_rank` field, whose actual column is `rank`.
+    // `orderBy` reconciles that at the term (see `buildOrderBySql`).
     const validFieldNames = new Set(
       Object.keys(fields).map((f) => toSnakeCase(f)),
     );
@@ -591,10 +596,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     } = this.collectQueryableFieldNames(fields);
 
     // Column → definition, so a term can be checked for column-backing after it
-    // passes the name whitelist. Keyed by the same normalization the terms use.
+    // passes the name whitelist. Keyed by `toSnakeCase` because that is what
+    // `SchemaGenerator` names the column with — a declared `_rank` field lives
+    // in a column called `rank`, not `_rank`.
     const definitionByColumn = new Map<string, CollectionFieldDefinition>();
     for (const [fieldName, fieldDef] of Object.entries(fields)) {
-      definitionByColumn.set(this.toDbColumnName(fieldName), fieldDef);
+      definitionByColumn.set(toSnakeCase(fieldName), fieldDef);
     }
 
     // `id`/`slug`/`context` are added to the whitelist unconditionally, but the
@@ -637,10 +644,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
-      // Normalize to the column name. `toDbColumnName` (not bare
-      // `toSnakeCase`) so a leading-underscore field such as `_metaType`
-      // resolves to `_meta_type` rather than the non-existent `meta_type`.
-      const columnName = this.toDbColumnName(field);
+      // Resolve the term to a real column. The two normalizations disagree on a
+      // leading underscore, and each is right for a different case:
+      //
+      // - a DECLARED field is named by `toSnakeCase`, which strips it, so
+      //   `_rank` lives in a column called `rank`;
+      // - the STI framework columns `_meta_type`/`_meta_data` really do carry
+      //   the underscore and are never declared fields.
+      //
+      // Prefer the declared column when one exists, otherwise keep the
+      // underscore-preserving form so `_metaType` still reaches `_meta_type`.
+      // Emitting the resolved name (rather than one normalization applied
+      // blindly) is what keeps a term that passes the whitelist from naming a
+      // column that does not exist.
+      const strippedName = toSnakeCase(field);
+      const columnName = definitionByColumn.has(strippedName)
+        ? strippedName
+        : this.toDbColumnName(field);
 
       // Security (#2367): refuse sensitive columns before the whitelist check,
       // so the rejection reason for a secret is never "no such field" (which
