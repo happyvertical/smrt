@@ -266,6 +266,9 @@ production never gets: the suite runs on a richer schema than it ships.
 - Tenant scoping is whole-path: every unique constraint and conflict target on a
   tenant-scoped table carries the tenant column, and every read path — not only
   `list()` — is interceptor-aware.
+- Rolling indexes out is part of the change: a bulk `CREATE INDEX` batch needs
+  the bounded, concurrent migrate path (#2362, Gotchas), or it takes production
+  down on deploy.
 
 ## Gotchas
 
@@ -273,6 +276,7 @@ production never gets: the suite runs on a richer schema than it ships.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`src/schema/table-verifier.ts`) — no column, type, or index check
+- **PostgreSQL migrate batches are always time-bounded (#2362)**: `MigrationTracker.applyAll({ atomic: true })` emits `SET LOCAL lock_timeout`/`statement_timeout` before any DDL, so a batch blocked on one table cannot hold its earlier locks indefinitely. `postgresSafe: true` adds concurrent-index mode — non-index DDL commits atomically, then index DDL runs `CONCURRENTLY` on a session pinned via `db.acquireSession()` (a pooled `db.query` would not keep the `SET` and the DDL on one connection). That mode is deliberately **not atomic**: unfinished index migrations are recorded `failed`, not `running`, and their `error_message` carries a `[smrt: concurrent-index phase 1 committed]` marker so a reconciling re-run resumes at the index build instead of replaying committed DDL. INVALID indexes are found via `pg_index.indisvalid` (`pg_indexes` reports them as present) and dropped before rebuild. Operational detail: `packages/cli/AGENTS.md`.
 - **Retry logic**: `db.get()` (3 retries, 250ms) and `db.upsert()` (3 retries, 500ms) have built-in retry
 - **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)
