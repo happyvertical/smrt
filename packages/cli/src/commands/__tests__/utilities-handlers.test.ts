@@ -141,14 +141,25 @@ vi.mock('../schema-contract.js', async () => {
   };
 });
 
-vi.mock('@happyvertical/smrt-core/migrations', () => ({
-  MigrationTracker: class {
-    initialize = h.trackerInitialize;
-    getEngine = h.trackerGetEngine;
-    applyAll = h.trackerApplyAll;
-  },
-  shortChecksum: (s: string) => (s ? s.slice(0, 8) : 'nochk'),
-}));
+vi.mock('@happyvertical/smrt-core/migrations', async () => {
+  // `buildConcurrentIndexPlan` and `parsePostgresTimeoutMs` are pure helpers
+  // the command reads config through (issue #2362); use the real ones so this
+  // mock cannot drift from their behaviour.
+  const actual = await vi.importActual<
+    typeof import('@happyvertical/smrt-core/migrations')
+  >('@happyvertical/smrt-core/migrations');
+
+  return {
+    buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,
+    MigrationTracker: class {
+      initialize = h.trackerInitialize;
+      getEngine = h.trackerGetEngine;
+      applyAll = h.trackerApplyAll;
+    },
+    parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
+    shortChecksum: (s: string) => (s ? s.slice(0, 8) : 'nochk'),
+  };
+});
 
 vi.mock('@happyvertical/smrt-core/schema/utils', () => ({
   ensureSchema: (...a: unknown[]) => h.ensureSchema(...a),
