@@ -108,11 +108,18 @@ describe('coordinateOidcProvisioning shared-connection ordering', () => {
         await releaseFirstTransaction.promise;
         return 'first';
       });
-      await firstTransactionOpen.promise;
+      first.catch(() => undefined);
+      // Racing the flow itself turns an early failure into that failure
+      // rather than a hook timeout waiting for a signal that never arrives.
+      await Promise.race([firstTransactionOpen.promise, first]);
 
       // The second flow must block on the adapter lock rather than touch the
-      // connection the first flow's transaction owns.
+      // connection the first flow's transaction owns. Mark it handled up
+      // front: when this guard catches a regression the flow rejects while
+      // nothing awaits it yet, and the unhandled rejection would drown the
+      // assertion that actually names the offending statement.
       second = coordinate('identity:second', async () => 'second');
+      second.catch(() => undefined);
       await settleEventLoop();
       expect(statementsDuringTransaction).toEqual([]);
 
