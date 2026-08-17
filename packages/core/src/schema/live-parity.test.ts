@@ -229,6 +229,32 @@ describe('checkLiveSchemaParity (application tables)', () => {
     expect(finding?.table).toBe('widgets');
   });
 
+  it('does not accept a partial unique index as a conflict target', async () => {
+    const database = await openDatabase();
+    await database.query(
+      `CREATE TABLE widgets (id TEXT PRIMARY KEY, slug TEXT, context TEXT, tenant_id TEXT, owner_id TEXT, price REAL, description TEXT)`,
+    );
+    // A partial unique index constrains only the rows its predicate selects,
+    // so it cannot arbitrate `ON CONFLICT (slug, context)`.
+    await database.query(
+      `CREATE UNIQUE INDEX widgets_slug_context_idx ON widgets(slug, context) WHERE description IS NOT NULL`,
+    );
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: widgetSchema(),
+      conflictTargets: {
+        widgets: [{ columns: ['slug', 'context'], source: 'Widget' }],
+      },
+      includeSystemTables: false,
+    });
+
+    const finding = find(report.findings, 'conflict_target_unindexed');
+    expect(finding?.severity).toBe('error');
+    expect(finding?.message).toContain('partial index');
+    expect(finding?.target).toBe('widgets_slug_context_idx');
+  });
+
   it('flags a declared-unique column that nothing enforces', async () => {
     const database = await openDatabase();
     await database.query(

@@ -626,48 +626,62 @@ function compareIndexes(
       continue;
     }
 
-    const match = liveIndexes.find(
-      (index) => sameColumnSet(index.columns, target.columns) && index.unique,
-    );
-    if (match) continue;
-
-    const nonUnique = liveIndexes.find((index) =>
+    const candidates = liveIndexes.filter((index) =>
       sameColumnSet(index.columns, target.columns),
     );
+    // A *partial* unique index cannot arbitrate a plain `ON CONFLICT (cols)`:
+    // PostgreSQL only infers an index whose predicate the statement repeats,
+    // and on other engines it simply does not constrain the excluded rows.
+    if (candidates.some((index) => index.unique && !index.partial)) {
+      continue;
+    }
+
+    const partialUnique = candidates.find(
+      (index) => index.unique && index.partial,
+    );
+    const nonUnique = candidates.find((index) => !index.unique);
     const columnList = target.columns.join(', ');
     const suffix = target.source ? ` (declared by ${target.source})` : '';
 
-    findings.push(
-      nonUnique
-        ? {
-            kind: 'conflict_target_not_unique',
-            severity: 'error',
-            table: table.name,
-            target: nonUnique.name,
-            origin: table.origin,
-            message: `Upsert conflict target \`${table.name}\` (${columnList})${suffix} is backed by \`${nonUnique.name}\`, which is not UNIQUE.`,
-            recommendation:
-              'Recreate the index as UNIQUE (`smrt db:migrate`); until then upserts insert duplicates instead of updating.',
-          }
-        : {
-            kind: 'conflict_target_unindexed',
-            severity: 'error',
-            table: table.name,
-            target: columnList,
-            origin: table.origin,
-            message: `Upsert conflict target \`${table.name}\` (${columnList})${suffix} has no matching UNIQUE index in the live database.`,
-            recommendation:
-              'Create the UNIQUE index (`smrt db:migrate`); PostgreSQL rejects the upsert outright and other engines duplicate rows.',
-          },
-    );
+    if (nonUnique) {
+      findings.push({
+        kind: 'conflict_target_not_unique',
+        severity: 'error',
+        table: table.name,
+        target: nonUnique.name,
+        origin: table.origin,
+        message: `Upsert conflict target \`${table.name}\` (${columnList})${suffix} is backed by \`${nonUnique.name}\`, which is not UNIQUE.`,
+        recommendation:
+          'Recreate the index as UNIQUE (`smrt db:migrate`); until then upserts insert duplicates instead of updating.',
+      });
+      continue;
+    }
+
+    findings.push({
+      kind: 'conflict_target_unindexed',
+      severity: 'error',
+      table: table.name,
+      target: partialUnique ? partialUnique.name : columnList,
+      origin: table.origin,
+      message: partialUnique
+        ? `Upsert conflict target \`${table.name}\` (${columnList})${suffix} is backed only by the partial index \`${partialUnique.name}\`, which cannot arbitrate the upsert.`
+        : `Upsert conflict target \`${table.name}\` (${columnList})${suffix} has no matching UNIQUE index in the live database.`,
+      recommendation:
+        'Create a full UNIQUE index over exactly these columns (`smrt db:migrate`); PostgreSQL rejects the upsert outright and other engines duplicate rows.',
+    });
   }
 
   // 3. Columns declared unique that are not actually unique live.
   for (const column of table.columns) {
     if (!column.unique) continue;
     if (!liveColumns.has(column.name)) continue;
+    // A partial unique index constrains only the rows its predicate selects,
+    // so it does not make the column unique as declared.
     const unique = liveIndexes.some(
-      (index) => index.unique && sameColumnSet(index.columns, [column.name]),
+      (index) =>
+        index.unique &&
+        !index.partial &&
+        sameColumnSet(index.columns, [column.name]),
     );
     if (unique) continue;
 
