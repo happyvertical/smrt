@@ -78,8 +78,14 @@ const lightColors: ColorPalette = {
   background: '#f2f2f7',
   onBackground: '#000000',
 
-  // Outline - Subtle translucent borders
-  outline: 'rgba(120, 120, 128, 0.29)',
+  // Outline - Translucent borders.
+  // `outline` is the boundary role and must clear 3:1 non-text once its alpha
+  // is composited over the frosted surface (WCAG 1.4.11). At the original
+  // rgba(120, 120, 128, 0.29) it composited to 1.42:1 — a control border no one
+  // could see. Darkened the hue rather than pushing alpha toward opaque, which
+  // keeps the translucent character (#2322). `outlineVariant` stays the quiet
+  // hairline for dividers and panel edges.
+  outline: 'rgba(80, 80, 88, 0.75)',
   outlineVariant: 'rgba(120, 120, 128, 0.16)',
 
   // Inverse
@@ -154,8 +160,10 @@ const darkColors: ColorPalette = {
   background: '#000000',
   onBackground: '#ffffff',
 
-  // Outline
-  outline: 'rgba(84, 84, 88, 0.65)',
+  // Outline — see the light-scheme note. Composited over the dark frosted
+  // surface the original rgba(84, 84, 88, 0.65) measured 1.70:1; lightening the
+  // hue clears 3:1 while staying translucent (#2322).
+  outline: 'rgba(160, 160, 166, 0.8)',
   outlineVariant: 'rgba(84, 84, 88, 0.35)',
 
   // Inverse

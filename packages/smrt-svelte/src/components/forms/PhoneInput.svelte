@@ -473,12 +473,15 @@ function handleInput(e: Event) {
     opacity: 0.7;
   }
 
+  /* The green lives in `.listening-dot` below; the label reads as ordinary
+     secondary text. Painting the words with `success` measured 4.2–4.4:1 on
+     several light-scheme surfaces, under the AA floor (#2323). */
   .listening-indicator {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: var(--smrt-color-success);
+    color: var(--smrt-color-on-surface-variant);
     margin-top: var(--smrt-spacing-1, 4px);
   }
 

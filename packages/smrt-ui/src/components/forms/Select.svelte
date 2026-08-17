@@ -136,7 +136,7 @@ export function getElement(): HTMLSelectElement | null {
 		background-position: right 0.5rem center;
 		background-repeat: no-repeat;
 		background-size: 1.5em 1.5em;
-		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+		border: 1px solid var(--smrt-color-outline, #6b7280);
 		border-radius: 0.375rem;
 		appearance: none;
 		cursor: pointer;

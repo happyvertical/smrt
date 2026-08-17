@@ -91,6 +91,67 @@ describe('theme CSS generator', () => {
       expect(dark['--smrt-elevation-5']).toContain('rgba(0, 0, 0, 0.25)');
     });
 
+    it('matches every static preset CSS on colour values (drift guard)', () => {
+      // The elevation guard below caught shadows drifting; colours drifted too
+      // and nothing noticed — smrt.css carried `--smrt-theme-name: SMRT` long
+      // after the theme was renamed `s-m-r-t` (#2322). The alias test only
+      // checks that token NAMES appear in each stylesheet, so a stale VALUE
+      // sails through it. Compare the values themselves, for every preset.
+      const files: Record<string, string> = {
+        material: 'material.css',
+        glass: 'glass.css',
+        studio: 'studio.css',
+        smrt: 'smrt.css',
+        happyvertical: 'happyvertical.css',
+      };
+
+      const drift: string[] = [];
+      for (const [id, file] of Object.entries(files)) {
+        const css = readFileSync(
+          join(process.cwd(), 'src/themes/styles', file),
+          'utf8',
+        );
+        for (const scheme of ['light', 'dark'] as const) {
+          const selector = `[data-theme="${id}"][data-color-scheme="${scheme}"]`;
+          const start = css.indexOf(selector);
+          expect(start, `${file} must define ${selector}`).toBeGreaterThan(-1);
+          const open = css.indexOf('{', start);
+          const body = css.slice(open + 1, css.indexOf('\n}', open));
+
+          const defined: Record<string, string> = {};
+          for (const match of body.matchAll(
+            /(--smrt-[a-z0-9-]+):\s*([^;]+);/gi,
+          )) {
+            defined[match[1]] = match[2].trim();
+          }
+
+          const generated = generateThemeVariables(
+            getTheme(id as never),
+            scheme === 'dark',
+          );
+          for (const [token, value] of Object.entries(generated)) {
+            if (
+              !token.startsWith('--smrt-color-') &&
+              token !== '--smrt-theme-name'
+            )
+              continue;
+            // Only compare tokens the stylesheet actually declares; absence is
+            // the alias test's job, not this one's.
+            if (
+              defined[token] !== undefined &&
+              defined[token] !== String(value)
+            ) {
+              drift.push(
+                `${file} ${scheme} ${token}: css=${defined[token]} generator=${value}`,
+              );
+            }
+          }
+        }
+      }
+
+      expect(drift).toEqual([]);
+    });
+
     it('matches the static studio.css for both schemes (drift guard)', () => {
       // The static-CSS delivery path and the JS generator must agree on VALUES,
       // not just token names — this is what let the studio dark shadows diverge.

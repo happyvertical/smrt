@@ -49,7 +49,7 @@
   --smrt-color-surface-bright: rgba(255, 255, 255, 0.95);
   --smrt-color-background: #f2f2f7;
   --smrt-color-on-background: #000000;
-  --smrt-color-outline: rgba(120, 120, 128, 0.29);
+  --smrt-color-outline: rgba(80, 80, 88, 0.75);
   --smrt-color-outline-variant: rgba(120, 120, 128, 0.16);
   --smrt-color-inverse-surface: #1c1c1e;
   --smrt-color-inverse-on-surface: #ffffff;
@@ -280,7 +280,7 @@
   --smrt-color-surface-bright: rgba(58, 58, 60, 0.9);
   --smrt-color-background: #000000;
   --smrt-color-on-background: #ffffff;
-  --smrt-color-outline: rgba(84, 84, 88, 0.65);
+  --smrt-color-outline: rgba(160, 160, 166, 0.8);
   --smrt-color-outline-variant: rgba(84, 84, 88, 0.35);
   --smrt-color-inverse-surface: #f2f2f7;
   --smrt-color-inverse-on-surface: #000000;

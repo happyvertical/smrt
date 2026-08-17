@@ -78,7 +78,11 @@ const lightColors: ColorPalette = {
   onBackground: '#202124',
 
   // Outline - Light gray borders
-  outline: '#dadce0',
+  // Boundary role: must clear 3:1 non-text on every surface in this scheme so
+  // control borders are perceivable (WCAG 1.4.11). Was #dadce0, a divider-weight
+  // grey measuring 1.21–1.37:1 — invisible as a control boundary (#2322).
+  // outlineVariant below stays the quiet hairline for dividers and panels.
+  outline: '#78797b',
   outlineVariant: '#e8eaed',
 
   // Inverse
@@ -150,7 +154,7 @@ const darkColors: ColorPalette = {
   onBackground: '#e8eaed',
 
   // Outline
-  outline: '#5f6368',
+  outline: '#8c8e92',
   outlineVariant: '#3c4043',
 
   // Inverse
