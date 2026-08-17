@@ -157,9 +157,11 @@ export interface CollectedManifestTable {
    */
   definition: SchemaDefinition;
   /**
-   * `true` when every contributor exposed structured columns, i.e. the table
-   * can be rendered by a DDL strategy. `false` means at least one contributor
-   * carried only a cached `ddl` string and the table must fall back to it.
+   * `true` when every contributor exposed structured columns, i.e. the whole
+   * table is rendered by a DDL strategy. `false` means at least one
+   * contributor carried only a cached `ddl` string: the CREATE TABLE is then
+   * the strategy render of the structured contributors (if any) merged with
+   * the cached strings of the column-less ones.
    */
   structured: boolean;
   /**
@@ -244,18 +246,30 @@ export function collectManifestTables(
  * Structured tables go through the engine strategy for the CREATE TABLE
  * (per-engine types, inline UNIQUE where the engine needs it) and for every
  * index (partial `WHERE`, JSON-path expressions, engine-specific syntax).
- * Legacy tables keep the merged cached `ddl` string, made minimally safe with
- * `materializeManifestDDLForEngine`, but still render their indexes through
- * the strategy — the string never carried them.
+ * Tables with a column-less contributor keep that contributor's cached `ddl`
+ * string, made minimally safe with `materializeManifestDDLForEngine`, merged
+ * on top of the strategy render of any structured contributors — so a
+ * structured STI base never loses its engine typing to a hand-authored
+ * subclass, and the subclass's extra columns and table constraints survive.
+ * Indexes always render through the strategy — the string never carried them.
  */
 export function renderCollectedManifestTable(
   table: CollectedManifestTable,
   engine: DatabaseEngine,
 ): EngineSpecificDDL {
   const strategy = getDDLStrategy(engine);
-  const createTable = table.structured
-    ? strategy.generateCreateTable(table.definition)
-    : materializeManifestDDLForEngine(table.legacyDdl, engine);
+  const hasColumns = Object.keys(table.definition.columns).length > 0;
+  let createTable: string;
+  if (table.structured) {
+    createTable = strategy.generateCreateTable(table.definition);
+  } else if (hasColumns) {
+    createTable = mergeManifestDDL(
+      strategy.generateCreateTable(table.definition),
+      materializeManifestDDLForEngine(table.legacyDdl, engine),
+    );
+  } else {
+    createTable = materializeManifestDDLForEngine(table.legacyDdl, engine);
+  }
   return {
     createTable,
     indexes: strategy.generateIndexes(table.definition),

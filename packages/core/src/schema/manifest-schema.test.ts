@@ -234,19 +234,20 @@ describe('collectManifestTables + renderCollectedManifestTable', () => {
     ]);
   });
 
-  it('degrades a table to the cached-ddl merge when any contributor lacks columns', () => {
+  it('merges a column-less contributor on top of the strategy render when contributors are mixed', () => {
     const structured = {
       tableName: 'contents',
-      ddl: 'CREATE TABLE IF NOT EXISTS "contents" ("id" TEXT PRIMARY KEY NOT NULL, "title" TEXT);',
+      // A structured contributor need not carry a cached ddl at all.
       columns: {
-        id: { type: 'TEXT', primaryKey: true, notNull: true },
+        id: { type: 'UUID', primaryKey: true, notNull: true },
         title: { type: 'TEXT' },
+        payload: { type: 'JSON' },
       },
       indexes: [],
     };
     const legacy = {
       tableName: 'contents',
-      ddl: 'CREATE TABLE IF NOT EXISTS "contents" ("id" TEXT PRIMARY KEY NOT NULL, "title" TEXT, "meeting_id" TEXT);',
+      ddl: 'CREATE TABLE IF NOT EXISTS "contents" ("id" TEXT PRIMARY KEY NOT NULL, "title" TEXT, "meeting_id" TEXT, "seen_at" TIMESTAMP, CHECK (length("id") > 0));',
       indexes: [{ name: 'contents_meeting_id_idx', columns: ['meeting_id'] }],
     };
     const tables = collectManifestTables([
@@ -256,10 +257,19 @@ describe('collectManifestTables + renderCollectedManifestTable', () => {
     const table = tables.get('contents');
     expect(table?.structured).toBe(false);
     if (!table) throw new Error('missing');
-    const sqlite = renderCollectedManifestTable(table, 'sqlite');
-    expect(sqlite.createTable).toContain('"meeting_id" TEXT');
-    expect(sqlite.createTable).toContain('"title" TEXT');
-    expect(sqlite.indexes).toEqual([
+
+    const pg = renderCollectedManifestTable(table, 'postgres');
+    // Structured contributor keeps its engine typing (not the legacy string's
+    // "id" TEXT / "payload" JSON), the legacy-only columns and table
+    // constraint are appended, and shared columns are not duplicated.
+    expect(pg.createTable).toContain('"id" uuid PRIMARY KEY NOT NULL');
+    expect(pg.createTable).toContain('"payload" JSONB');
+    expect(pg.createTable).toContain('"meeting_id" TEXT');
+    expect(pg.createTable).toContain('"seen_at" TIMESTAMPTZ');
+    expect(pg.createTable).toContain('CHECK (length("id") > 0)');
+    expect(pg.createTable.match(/"title" TEXT/g)).toHaveLength(1);
+    expect(pg.createTable.match(/"id" /g)).toHaveLength(1);
+    expect(pg.indexes).toEqual([
       'CREATE INDEX IF NOT EXISTS "contents_meeting_id_idx" ON "contents" ("meeting_id");',
     ]);
   });
