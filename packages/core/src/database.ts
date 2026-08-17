@@ -46,6 +46,30 @@ export type DatabaseConfig =
   | DatabaseInterface;
 
 /**
+ * Canonical declaration of the request-scoped database global.
+ *
+ * The value is installed by whichever package owns request scoping (today
+ * `@happyvertical/smrt-users`, via its session permission context) and is read
+ * by the SvelteKit runtime config that `smrt-core`'s vite plugin generates into
+ * consumer apps. Both sides used to `declare global` this name independently
+ * with different types — `DatabaseConfig` here, a package-private
+ * `QueryableDatabase` there — and TypeScript requires merged `var` declarations
+ * to be *identical*, not merely compatible. Consumers whose program contained
+ * both then failed to type-check (#2342).
+ *
+ * `smrt-core` owns the declaration because it is the base package every other
+ * SMRT package and consumer already depends on. Writers should keep assigning a
+ * live `DatabaseInterface`; it satisfies `DatabaseConfig` through that arm of
+ * the union. Never redeclare this global elsewhere.
+ */
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtGetRequestScopedDatabase:
+    | (() => DatabaseConfig | undefined)
+    | undefined;
+}
+
+/**
  * Type guard to check if a value is a DatabaseInterface instance
  *
  * @param value - Value to check

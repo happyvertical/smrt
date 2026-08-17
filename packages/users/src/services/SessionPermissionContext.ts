@@ -104,10 +104,11 @@ declare global {
   var __smrtGetRequestPermissionContext:
     | (() => SessionPermissionRuntimeContext | undefined)
     | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtGetRequestScopedDatabase:
-    | (() => QueryableDatabase | undefined)
-    | undefined;
+  // `__smrtGetRequestScopedDatabase` is declared canonically by
+  // @happyvertical/smrt-core (see DatabaseConfig in core/src/database.ts).
+  // Redeclaring it here with the package-private QueryableDatabase type broke
+  // consumer type-checking (#2342); QueryableDatabase extends DatabaseInterface
+  // and so already satisfies the canonical DatabaseConfig signature.
 }
 
 // globalThis key for the shared AsyncLocalStorage. Bundler pipelines can
