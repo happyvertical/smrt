@@ -339,11 +339,16 @@ function isCommentOnlySql(sql: string): boolean {
 
 /**
  * Surface changes the differ produced but that the migrator cannot apply
- * automatically — either `type_mismatch` entries (the differ explicitly
- * gives up on these) or `type_upgrade` entries whose generated SQL is
- * advisory-comment-only (SQLite table-recreation cases, etc.). Callers
- * use this to distinguish "schema is in sync" from "schema is drifted but
- * we can't fix it from here."
+ * automatically — `type_mismatch` entries (the differ explicitly gives up on
+ * these), `type_upgrade`/`alter_column` entries whose generated SQL is
+ * advisory-comment-only (SQLite in-place limitations), and warning-level
+ * report-only advisories (an orphan NOT NULL column that will break inserts,
+ * a required column that could not be enforced, a stale unique constraint,
+ * a relaxation the caller has not opted into). Info-level advisories (a
+ * harmless orphan column, a stale default) are deliberately excluded so
+ * `hasManualDrift` keeps meaning "something needs an operator". Callers use
+ * this to distinguish "schema is in sync" from "schema is drifted but we
+ * can't fix it from here."
  */
 function collectUnactionableChanges(
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
@@ -355,10 +360,13 @@ function collectUnactionableChanges(
       continue;
     }
     const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
-    if (
-      statements.length > 0 &&
-      statements.every((stmt) => isCommentOnlySql(stmt.trim()))
-    ) {
+    if (statements.length === 0) {
+      if (change.advisory?.severity === 'warning') {
+        unactionable.push(change);
+      }
+      continue;
+    }
+    if (statements.every((stmt) => isCommentOnlySql(stmt.trim()))) {
       unactionable.push(change);
     }
   }

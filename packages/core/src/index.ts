@@ -177,6 +177,8 @@ export {
   generateSchemaDiff,
   getSQLFromDiff,
   hasActionableChanges,
+  isAdvisoryOnlyChange,
+  isManualOrAdvisoryChange,
   SchemaComparer,
 } from './migrations/differ';
 export * from './object';

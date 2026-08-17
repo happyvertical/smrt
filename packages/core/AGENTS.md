@@ -222,6 +222,10 @@ production never gets: the suite runs on a richer schema than it ships.
 - Tenant scoping is whole-path: every unique constraint and conflict target on a
   tenant-scoped table carries the tenant column, and every read path — not only
   `list()` — is interceptor-aware.
+- The differ compares type, nullability and default; orphan columns/tables/unique
+  constraints are always reported, drops and relaxations stay opt-in
+  (`includeDroppedColumns`/`relaxColumns`, `--drop-columns`/`--relax-columns`);
+  SQLite in-place `ALTER COLUMN` stays manual until #2370 (#2369, see the module doc).
 
 ## Gotchas
 

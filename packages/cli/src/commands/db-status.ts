@@ -50,7 +50,13 @@ type FailedMigrationSummary = {
   details: Array<{
     name: string;
     resolution: 'action_required' | 'superseded' | 'manual_review';
-    kind: 'add_column' | 'add_index' | 'type_upgrade' | 'other';
+    kind:
+      | 'add_column'
+      | 'drop_column'
+      | 'alter_column'
+      | 'add_index'
+      | 'type_upgrade'
+      | 'other';
     reason: string;
     errorMessage: string | null;
   }>;
@@ -214,7 +220,10 @@ export function summarizeSchemaDiff(diff: {
       expected: string;
       actual: string;
     };
+    alteration?: string;
+    advisory?: { severity: 'warning' | 'info'; message: string };
     sql?: string;
+    sqlStatements?: string[];
   }>;
 }): StatusDrift[] {
   const drift: StatusDrift[] = [];
@@ -280,6 +289,71 @@ export function summarizeSchemaDiff(diff: {
           recommendation: change.mismatch
             ? `Manual intervention required: expected ${change.mismatch.expected}, found ${change.mismatch.actual}.`
             : 'Manual intervention required to reconcile this incompatible live column type.',
+        });
+        break;
+
+      // Nullability / default drift (#2369). Executable repairs are applied
+      // by db:migrate; comment-only ones need a manual step; report-only
+      // relaxations carry the differ's advisory.
+      case 'alter_column': {
+        const name = `${change.table}.${change.name ?? '(unknown)'}`;
+        const driftType =
+          change.alteration === 'set_not_null' ||
+          change.alteration === 'drop_not_null'
+            ? 'nullability_drift'
+            : 'default_drift';
+        const hasSql = Boolean(change.sql || change.sqlStatements?.length);
+        if (!hasSql && change.advisory) {
+          drift.push({
+            name,
+            type: driftType,
+            recommendation: change.advisory.message,
+          });
+        } else if (classifyTypeUpgradeSql(change.sql) === 'executable') {
+          drift.push({
+            name,
+            type: driftType,
+            recommendation: `Run \`smrt db:migrate\` to repair this live column (${change.alteration ?? 'alter_column'}: expected ${change.mismatch?.expected ?? '?'}, found ${change.mismatch?.actual ?? '?'}).`,
+          });
+        } else {
+          drift.push({
+            name,
+            type: driftType,
+            recommendation: `Manual intervention required: expected ${change.mismatch?.expected ?? '?'}, found ${change.mismatch?.actual ?? '?'} (${change.alteration ?? 'alter_column'}; cannot auto-apply on this database engine or live data blocks it).`,
+          });
+        }
+        break;
+      }
+
+      case 'orphan_column':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type:
+            change.advisory?.severity === 'warning'
+              ? 'orphan_column_blocking'
+              : 'orphan_column',
+          recommendation:
+            change.advisory?.message ??
+            'Column exists in the database but not in the manifest.',
+        });
+        break;
+
+      case 'orphan_index':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'orphan_unique_constraint',
+          recommendation:
+            change.advisory?.message ??
+            'Unique constraint exists in the database but not in the manifest.',
+        });
+        break;
+
+      case 'drop_column':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'orphan_column',
+          recommendation:
+            'Run `smrt db:migrate --drop-columns` to drop this orphan column (destructive).',
         });
         break;
     }

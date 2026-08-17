@@ -235,6 +235,39 @@ export interface DriftReport {
 }
 
 /**
+ * Which column property an `alter_column` change repairs (#2369).
+ *
+ * - `set_not_null` / `set_default`: the manifest is stricter than the live
+ *   column (strengthening). The differ emits executable SQL for these on
+ *   engines that support `ALTER COLUMN`.
+ * - `drop_not_null` / `drop_default`: the live column is stricter than the
+ *   manifest (relaxing). Reported as an advisory by default and only made
+ *   executable when the caller opts in (`DiffOptions.relaxColumns`), because
+ *   weakening a production column on the strength of a manifest that may
+ *   itself be under-specified is not something to do silently.
+ */
+export type ColumnAlteration =
+  | 'set_not_null'
+  | 'drop_not_null'
+  | 'set_default'
+  | 'drop_default';
+
+/**
+ * Advisory attached to a change the differ reports but does not execute
+ * (orphan columns/indexes, or relaxations the caller has not opted into).
+ * `suggestedSql` is remediation the operator can run by hand; it is never
+ * part of the executable statement stream.
+ */
+export interface SchemaChangeAdvisory {
+  /** `warning` when the state will break application writes; `info` otherwise. */
+  severity: 'warning' | 'info';
+  /** Human-readable explanation of the drift and how to resolve it. */
+  message: string;
+  /** Remediation SQL the differ suggests but does not run. */
+  suggestedSql?: string[];
+}
+
+/**
  * Schema difference for a single change
  */
 export interface SchemaChange {
@@ -244,8 +277,11 @@ export interface SchemaChange {
     | 'drop_table'
     | 'add_column'
     | 'drop_column'
+    | 'alter_column'
+    | 'orphan_column'
     | 'add_index'
     | 'drop_index'
+    | 'orphan_index'
     | 'type_mismatch'
     | 'type_upgrade';
   /** Affected table name */
@@ -256,11 +292,25 @@ export interface SchemaChange {
   column?: ColumnDefinition;
   /** Index definition (for add_index) */
   index?: IndexDefinition;
-  /** For type mismatches and upgrades: expected vs actual */
+  /**
+   * For type mismatches/upgrades: expected vs actual type. For
+   * `alter_column`: the expected vs actual constraint rendering (e.g.
+   * `NOT NULL` vs `NULL`, `DEFAULT ''` vs `(no default)`). For
+   * `orphan_column`: `expected` is `(not in manifest)` and `actual` is the
+   * live column shape.
+   */
   mismatch?: {
     expected: string;
     actual: string;
   };
+  /** Which property an `alter_column` change repairs. */
+  alteration?: ColumnAlteration;
+  /**
+   * Present on report-only changes (`orphan_column`, `orphan_index`, and
+   * `alter_column` relaxations the caller has not opted into). A change
+   * carrying an advisory and no `sql`/`sqlStatements` is never executed.
+   */
+  advisory?: SchemaChangeAdvisory;
   /** Generated SQL statement */
   sql?: string;
   /**
@@ -278,8 +328,19 @@ export interface SchemaDiff {
   added_tables: SchemaDefinition[];
   /** Tables to drop (only if explicitly requested) */
   dropped_tables: string[];
+  /**
+   * Application tables present in the database but absent from the manifest
+   * (system `_smrt_*` / `sqlite_*` tables excluded). Always reported so a
+   * stale table is never silently retained; dropping stays opt-in via
+   * `dropped_tables`. Informational — does not affect `has_changes`.
+   */
+  orphan_tables?: string[];
   /** Changes to existing tables */
   changes: SchemaChange[];
-  /** Whether any differences were found */
+  /**
+   * Whether any executable, manual, or warning-level difference was found.
+   * Info-level report-only notes in `changes` (a harmless orphan column, a
+   * stale default) and `orphan_tables` do not set it.
+   */
   has_changes: boolean;
 }
