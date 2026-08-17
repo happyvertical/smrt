@@ -262,7 +262,13 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # Fleet-only throttle. Two workers is politeness toward an 8-slot pool,
+      # not a property of the suite, so it rides the same repository variable
+      # as `runs-on` above. On hosted it was the only queue left: in
+      # merge_group run 31990188105 every job waited 2-7s except shard 3/3 of
+      # each matrix, which waited 190-231s behind this cap. `3` equals the
+      # shard count, so the hosted lane runs the matrix flat.
+      max-parallel: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 3 || 2 }}
       matrix:
         shard: ['1/3', '2/3', '3/3']
     steps:
@@ -298,22 +304,22 @@ jobs:
           NODE_ENV: test
 
   affected-package-tests:
-    # Keep the affected test lane at two matrix workers. GitHub scopes
-    # max-parallel to one matrix job, so allowing this matrix to overlap the
-    # core matrix would consume four fleet slots and move the old serial delay
-    # into queue pressure. A skipped core matrix (no core test task selected)
-    # still permits package tests.
-    needs: [affected-test-scope, affected-core-tests]
-    if: >-
-      always() && inputs.mode == 'affected' &&
-      needs.affected-test-scope.result == 'success' &&
-      (needs.affected-core-tests.result == 'success' ||
-      needs.affected-core-tests.result == 'skipped')
+    # Runs concurrently with affected-core-tests rather than behind it. The two
+    # matrices shard disjoint package sets, and a failing core shard already
+    # fails `Required CI`, so chaining them only bought fleet politeness — at
+    # the cost of serialising two ~10-minute matrices into 30-37 minutes of PR
+    # feedback. Depending on affected-test-scope alone also means a narrowed
+    # closure that selects no core test task no longer has to be special-cased
+    # here. On the fleet the two matrices can now hold four slots at once; the
+    # per-matrix cap below is what keeps that bounded.
+    needs: affected-test-scope
+    if: inputs.mode == 'affected' && needs.affected-test-scope.result == 'success'
     runs-on: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || 'arc-happyvertical-nodocker' }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # Fleet-only throttle; see affected-core-tests above.
+      max-parallel: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 3 || 2 }}
       matrix:
         shard: ['1/3', '2/3', '3/3']
     steps:
@@ -419,9 +425,11 @@ jobs:
 
   workbench-browser:
     name: Workbench Consumer and Browser
-    # In affected mode, let the existing core/package shard sequence consume
-    # the fleet first. This browser lane then adds one runner without widening
-    # the shard burst. Full mode still starts after its required build.
+    # In affected mode, let the core and package shard matrices consume the
+    # fleet first. This browser lane then adds one runner without widening the
+    # shard burst. Full mode still starts after its required build. The `if:`
+    # below deliberately accepts a skipped affected-package-tests, which an
+    # upstream affected-test-scope failure produces.
     needs: [affected-scope, affected-package-tests, build]
     if: >-
       always() &&
@@ -593,7 +601,8 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # Fleet-only throttle; see affected-core-tests.
+      max-parallel: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 3 || 2 }}
       matrix:
         shard: ['1/3', '2/3', '3/3']
 
@@ -686,7 +695,8 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 2
+      # Fleet-only throttle; see affected-core-tests.
+      max-parallel: ${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 3 || 2 }}
       matrix:
         shard: ['1/3', '2/3', '3/3']
 

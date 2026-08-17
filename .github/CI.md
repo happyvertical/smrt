@@ -76,7 +76,9 @@ never prevent the tests from running.
   is live. The release publish path, standalone build, and postgres jobs stay
   on the self-hosted label and queue instead. actionlint does not validate
   labels inside expressions, so the allowlist in `.github/actionlint.yaml` is
-  unaffected. The variable selects only the runner: on `pull_request_target`
+  unaffected. The variable selects the runner and the matrix `max-parallel`
+  cap (see Pull requests and merge groups), and nothing else — in particular
+  it confers no additional trust: on `pull_request_target`
   events both main-scoped cache write paths stay closed — the Turbo shim
   refuses the event and the pnpm-store `actions/cache` step is skipped (see
   Hosted Turbo cache) — so fallback PR validation builds and installs cold
@@ -259,10 +261,31 @@ reversal lever.
   Turbo's dry-run task list, log selected/total package counts, and emit each
   selected non-core test task exactly once, so wide core closures use the full
   suite's parallel shape without silently changing coverage. The core and
-  package matrices deliberately do not overlap: each permits two runners, and
-  a shared four-runner burst would transfer feedback latency to fleet queue
-  pressure. Only when knowledge-sensitive paths change do PRs also run
-  affected knowledge freshness. The complete suite runs for `merge_group`.
+  package matrices run concurrently. Only when knowledge-sensitive paths change
+  do PRs also run affected knowledge freshness. The complete suite runs for
+  `merge_group`.
+
+All four test matrices — `affected-core-tests`, `affected-package-tests`,
+`test-core`, and `test-packages` — throttle themselves on the fleet only:
+`max-parallel` is
+`${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 3 || 2 }}`, the same
+repository variable the `runs-on` expressions read. Two workers per matrix is
+politeness toward an 8-slot pool, not a property of the suite; `3` equals the
+shard count, so the hosted lane runs each matrix flat while the fleet keeps its
+cap. `jobs.<job_id>.strategy` is one of the scopes GitHub documents as
+accepting the `vars` context, so this is one expression rather than two
+literals to keep in sync.
+
+`affected-package-tests` used to chain behind `affected-core-tests` so the two
+matrices could never overlap the fleet. That chain is gone (#2383). The
+matrices shard disjoint package sets, and a failing core shard already fails
+`Required CI`, so serialising them bought queue politeness at the cost of
+doubling affected-mode wall clock — 30-37 minutes of PR feedback for about ten
+minutes of longest-job work. `affected-package-tests` now depends on
+`affected-test-scope` alone. The trade is that on the fleet the two matrices
+can hold four slots at once instead of two; the per-matrix cap is what bounds
+it. `workbench-browser` still waits on `affected-package-tests` and its `if:`
+already accepts that job's `skipped` result.
 
 Coverage Gate and Publish Dry Run are merge-group only (#2214 items 4 and 8).
 Both used to run in both lanes while the merge group re-ran them in full
@@ -420,8 +443,8 @@ temporarily fall back to Changesets through manual dispatch.
 The hosted Turbo cache lane has two independent clearable levers:
 `CI_HOSTED_TURBO_CACHE_ENABLED` stops scheduled and push seeding (entries then
 expire within seven days), and `CI_HOSTED_FALLBACK_ENABLED` returns
-`test-suite.yml` to the self-hosted label. The per-call `turbo-cache-shim:
-'off'` input disables the shim for a single caller.
+`test-suite.yml` to the self-hosted label and to the two-worker matrix cap. The
+per-call `turbo-cache-shim: 'off'` input disables the shim for a single caller.
 
 The fallback lever has been rehearsed. With `CI_HOSTED_FALLBACK_ENABLED` set
 to `true`, PR validation re-resolved every job from the self-hosted label to
@@ -444,10 +467,12 @@ they were at the 90-minute heavy-suite ceiling when the rehearsal ran.
 
 Two limits on what that rehearsal proves. It exercised the pull-request path
 in `affected` mode, not a `merge_group` run in `full` mode, so the six
-`test-core` and `test-packages` shards remain unmeasured on hosted. And the
-lever is repository-wide: flipping it moves every open pull request, not only
-the one being tested. Re-measure with a full merge-group transit before
-treating hosted as an equivalent lane rather than an emergency one.
+`test-core` and `test-packages` shards were unmeasured on hosted when it was
+written; #2349's trial has since measured them, and the throttle finding is
+below. And the lever is repository-wide: flipping it moves every open pull
+request, not only the one being tested. Re-measure with a full merge-group
+transit before treating hosted as an equivalent lane rather than an emergency
+one.
 
 ### Phase 0 hosted pinning (#2236)
 
@@ -477,3 +502,35 @@ does not improve, the freed slots were not the binding constraint and the
 capacity oracle in phases 1-2 of happyvertical/iac#1349 is the next lever, not
 a wider pinning. Rollback is per-job and independent: restore the lever
 expression and the 90-minute heavy-suite ceiling on any job that regresses.
+
+### Lane-conditional matrix throttles (#2383)
+
+The hosted trial (#2349) supplies the measurement the Phase-0 table asked for,
+and it points at our own settings rather than at capacity. In `merge_group` run
+31990188105, with `CI_HOSTED_FALLBACK_ENABLED` `true`, queue wait was 2-7 s for
+every job **except** shard 3/3 of each three-shard matrix, which waited
+190-231 s. Nothing else was contending: that wait was `max-parallel: 2`. On the
+pull-request side, runs took 30-37 minutes for roughly ten minutes of
+longest-job work, because the two affected matrices ran end to end.
+
+Both constraints were fleet politeness, so both now key off the lane: the cap
+is an expression on all four matrix jobs, and the affected matrices no longer
+chain (see Pull requests and merge groups for the shape and the fleet trade).
+
+A workflow change cannot be proven on its own pull request — PR validation runs
+main's copy of the YAML on `pull_request_target` — so `actionlint`, `yamllint`,
+and a diff read are the pre-merge gates, and the first execution is the
+merge-group transit that lands the change. Watch there:
+
+| measure | before | after |
+| --- | --- | --- |
+| `test-core` shard 3/3 queue wait | 190-231 s hosted | |
+| `test-packages` shard 3/3 queue wait | 190-231 s hosted | |
+| spread between first and last shard `startedAt` per matrix | one shard's runtime | |
+| `Required CI` wall clock, `merge_group` | | |
+| affected-mode PR wall clock | 30-37 min | |
+
+If the fleet lane is ever selected again, re-check the other direction: the cap
+should resolve to 2, and the two affected matrices can now overlap for up to
+four slots. If that pushes fleet queue wait back up, reinstate the chain rather
+than lowering the hosted cap.
