@@ -301,6 +301,23 @@ describe('sourceMayContainMonetaryIntegerField', () => {
     }
   });
 
+  it('recognizes the parenthesis-free decorator form the parser accepts', () => {
+    // `@smrt` without a call is a valid decorator to the scanner, so a marker
+    // that demanded `@smrt(` would skip this file silently.
+    const source = [
+      '@smrt',
+      'class Ledger {',
+      '  total: number = 0;',
+      '}',
+      '',
+    ].join('\n');
+
+    expect(
+      lintNumericPrecision(parseSource(source, 'model.ts').classes, source),
+    ).toHaveLength(1);
+    expect(sourceMayContainMonetaryIntegerField(source)).toBe(true);
+  });
+
   it('skips sources that cannot produce a finding', () => {
     // No persisted-class marker, no numeric initializer, no monetary word —
     // each condition alone is enough to skip.

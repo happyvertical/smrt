@@ -131,8 +131,14 @@ export function hasMonetaryHeadNoun(name: string): boolean {
   return false;
 }
 
-/** Text a file must contain before it can declare a field this lint reports. */
-const PERSISTED_CLASS_MARKER = /@smrt\s*\(|extends\s+Smrt[A-Za-z]*/;
+/**
+ * Text a file must contain before it can declare a field this lint reports.
+ *
+ * `@smrt` is matched without requiring parentheses because the parser accepts
+ * the bare identifier form too, and the decorator name is never resolved
+ * through an import alias — so the literal text is always present.
+ */
+const PERSISTED_CLASS_MARKER = /@smrt\b|extends\s+Smrt/;
 
 /** Any numeric initializer. Deliberately does not require a terminator. */
 const NUMERIC_INITIALIZER = /=\s*-?\d/;
