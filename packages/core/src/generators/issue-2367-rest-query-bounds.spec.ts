@@ -204,6 +204,15 @@ describe('#2367 REST list query bounds', () => {
     await expect(res.json()).resolves.toEqual([]);
   });
 
+  it('does not borrow a tiebreak from an unrelated class', async () => {
+    // The tiebreak is resolved from this object's own + inherited fields only.
+    // A helper that unions STI siblings/descendants would let another class's
+    // primary key become this one's tiebreak — the query would still succeed
+    // (STI variants share a table) while ordering on a mostly-NULL column.
+    const { options } = await listOptionsFor('');
+    expect(options).toMatchObject({ orderBy: ['created_at DESC', 'id ASC'] });
+  });
+
   it('rejects ordering by a sensitive field at the API boundary', async () => {
     const res = await handler(listUrl('?orderBy=apiSecret%20DESC&limit=1'));
     expect(res.status).toBe(400);

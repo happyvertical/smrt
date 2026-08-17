@@ -448,6 +448,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   ): {
     validFieldNames: Set<string>;
     sensitiveFieldNames: Set<string>;
+    readPermissionFieldNames: Set<string>;
     skipFieldValidation: boolean;
   } {
     const validFieldNames = new Set(
@@ -460,6 +461,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // oracle (e.g. `apiSecret[like]=sk-%`), exfiltrating the secret one
     // character at a time even though it's excluded from serialization.
     const sensitiveFieldNames = this.collectSensitiveFieldNames(fields);
+
+    // Security (#2367): the same collection for `@field({ readPermission })`
+    // columns. These are stripped from `toPublicJSON()` for callers without the
+    // permission and are refused outright by `select`, so ordering by one is the
+    // same oracle in a different door. Kept in its own set because `where`
+    // (#1540) deliberately does not consult it and this must not change that.
+    const readPermissionFieldNames =
+      this.collectReadPermissionFieldNames(fields);
 
     // Add standard SMRT fields that are always valid
     validFieldNames.add('id');
@@ -506,6 +515,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           validFieldNames.add(toSnakeCase(fieldName));
         }
         this.collectSensitiveFieldNames(ancestorFields, sensitiveFieldNames);
+        this.collectReadPermissionFieldNames(
+          ancestorFields,
+          readPermissionFieldNames,
+        );
       }
 
       // Security (#1540): a base collection serializes (and so must protect)
@@ -515,9 +528,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase) {
         for (const descendant of ObjectRegistry.getDescendants(stiBase)) {
+          const descendantFields = ObjectRegistry.getFields(descendant);
           this.collectSensitiveFieldNames(
-            ObjectRegistry.getFields(descendant),
+            descendantFields,
             sensitiveFieldNames,
+          );
+          this.collectReadPermissionFieldNames(
+            descendantFields,
+            readPermissionFieldNames,
           );
         }
       }
@@ -527,6 +545,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // skip field validation. Invalid fields will fail at SQL level instead.
     // This commonly happens for inline test classes decorated with @smrt().
     return {
+      readPermissionFieldNames,
       skipFieldValidation: Object.keys(fields).length === 0,
       sensitiveFieldNames,
       validFieldNames,
@@ -564,8 +583,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (orderByItems.length === 0) return '';
 
     const itemClassName = this.getResolvedItemClassName();
-    const { sensitiveFieldNames, skipFieldValidation, validFieldNames } =
-      this.collectQueryableFieldNames(fields);
+    const {
+      readPermissionFieldNames,
+      sensitiveFieldNames,
+      skipFieldValidation,
+      validFieldNames,
+    } = this.collectQueryableFieldNames(fields);
+
+    // Column → definition, so a term can be checked for column-backing after it
+    // passes the name whitelist. Keyed by the same normalization the terms use.
+    const definitionByColumn = new Map<string, CollectionFieldDefinition>();
+    for (const [fieldName, fieldDef] of Object.entries(fields)) {
+      definitionByColumn.set(this.toDbColumnName(fieldName), fieldDef);
+    }
 
     const terms = orderByItems.map((item) => {
       const [field, direction = 'ASC'] = String(item).trim().split(/\s+/);
@@ -611,6 +641,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
 
+      // Security (#2367): same for `@field({ readPermission })` columns.
+      // `toPublicJSON()` redacts them per caller and `select` refuses them, so
+      // an ordering over one is the same oracle through a different door.
+      if (
+        readPermissionFieldNames.has(columnName) ||
+        readPermissionFieldNames.has(field)
+      ) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Ordering by permission-gated fields is not allowed.`,
+          `Invalid orderBy field: '${field}'. Ordering by permission-gated fields is not allowed.`,
+          'INVALID_ORDER_BY_RESTRICTED',
+          { field },
+        );
+      }
+
       // Whitelist, mirroring `where`. Skipped for manifest-less inline test
       // classes with no registered fields (#869), exactly as `where` does.
       if (!skipFieldValidation && !validFieldNames.has(columnName)) {
@@ -621,6 +666,30 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           // detail an unauthenticated caller has no need for.
           `Invalid orderBy field: '${field}'.`,
           'INVALID_ORDER_BY_UNKNOWN_FIELD',
+          { field, itemClassName },
+        );
+      }
+
+      // Being a registered field is not the same as being a column (#2367).
+      // `oneToMany`/`manyToMany` are relationship-only, `meta` lives inside the
+      // STI `_meta_data` blob, and `transient` is never persisted — the schema
+      // generator emits no column for any of them. Ordering by one reached the
+      // driver as `no such column`, which carries no 4xx status and so surfaced
+      // as a 500 on a public endpoint. `select` already rejects the same set.
+      const fieldDef = definitionByColumn.get(columnName);
+      const fieldType = fieldDef?.type;
+      const isTransient =
+        fieldDef?.transient === true || fieldDef?._meta?.transient === true;
+      if (
+        fieldType === 'meta' ||
+        fieldType === 'oneToMany' ||
+        fieldType === 'manyToMany' ||
+        isTransient
+      ) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Field is not column-backed on ${itemClassName}.`,
+          `Invalid orderBy field: '${field}'. Field is not column-backed.`,
+          'INVALID_ORDER_BY_NOT_COLUMN_BACKED',
           { field, itemClassName },
         );
       }
@@ -1008,6 +1077,34 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         // Store both the snake_case column form and the raw property name so
         // STI `@meta` fields probed via `_meta_data.<prop>` JSON paths (which
         // keep the camelCase key) are also rejected.
+        target.add(toSnakeCase(fieldName));
+        target.add(fieldName);
+      }
+    }
+
+    return target;
+  }
+
+  /**
+   * The `collectSensitiveFieldNames` sibling for `@field({ readPermission })`
+   * columns (#2367).
+   *
+   * These are per-caller redacted by `toPublicJSON()` and refused outright by
+   * `select`, so an ordering over one leaks comparisons about a value the
+   * caller may not read. `list()` has no permission context, so — exactly as
+   * `select` does — they are refused unconditionally rather than conditionally.
+   */
+  private collectReadPermissionFieldNames(
+    fieldMap:
+      | Record<string, CollectionFieldDefinition>
+      | Map<string, CollectionFieldDefinition>,
+    target = new Set<string>(),
+  ): Set<string> {
+    const entries =
+      fieldMap instanceof Map ? fieldMap.entries() : Object.entries(fieldMap);
+
+    for (const [fieldName, fieldDef] of entries) {
+      if (this.getReadPermissionFieldDefinition(fieldDef) !== undefined) {
         target.add(toSnakeCase(fieldName));
         target.add(fieldName);
       }

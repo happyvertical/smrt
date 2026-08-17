@@ -693,8 +693,10 @@ const total = await collection.count({
 `limit` and `offset` must be non-negative integers; anything else (`NaN`, a
 negative, a fraction) is rejected as a client error rather than bound into the
 query. `orderBy` terms are validated against the model's fields and refused for
-`@field({ sensitive: true })` columns, the same rail `where` and `select` use —
-ordering by a secret is an oracle over it.
+`@field({ sensitive: true })` and `@field({ readPermission })` columns — the same
+rail `where` and `select` use, because ordering by a value you may not read is an
+oracle over it — and for fields that exist but have no column
+(`oneToMany`/`manyToMany`/`@meta()`/`transient`).
 
 `list()` applies no default page size, because relationship, junction and
 `listByIds()` callers rely on receiving every matching row. Opt into bounds per

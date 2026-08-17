@@ -1518,14 +1518,25 @@ export class APIGenerator {
    * The flag is read from both `_meta.primaryKey` and the top level: manifest
    * field definitions carry it under `_meta`, decorator option bags mirror some
    * flags at the top level.
+   *
+   * Deliberately reads only this object's own + inherited fields, NOT
+   * `getFieldMapsForPublicPolicy()`. That helper unions the STI base and every
+   * descendant because it answers a union question ("does any variant carry a
+   * read-permission field?"). Used here it would let a *sibling's* primary key
+   * become this object's tiebreak — and since STI variants share one table, the
+   * query would still succeed while tie-breaking on a mostly-NULL sibling
+   * column, silently defeating the total ordering this exists to provide.
    */
   private resolveDefaultListOrderBy(objectName: string | undefined): string[] {
     if (!objectName) return buildDefaultListOrderBy();
-    for (const fields of this.getFieldMapsForPublicPolicy(objectName)) {
-      for (const [fieldName, def] of fields) {
-        if (def?._meta?.primaryKey === true || def?.primaryKey === true) {
-          return buildDefaultListOrderBy(fieldName);
-        }
+    const registered = ObjectRegistry.getClass(objectName);
+    const className =
+      registered?.qualifiedName ?? registered?.name ?? objectName;
+    const fields =
+      registered?.inheritedFields || ObjectRegistry.getFields(className);
+    for (const [fieldName, def] of fields) {
+      if (def?._meta?.primaryKey === true || def?.primaryKey === true) {
+        return buildDefaultListOrderBy(fieldName);
       }
     }
     return buildDefaultListOrderBy();

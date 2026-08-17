@@ -96,10 +96,13 @@ are **clamped** to `MAX_LIST_LIMIT` (1000) rather than rejected, and an explicit
   untrusted input regardless.
 - `orderBy` runs the same rail as `where` (#1540) and `select` (#1902): terms are
   checked against the field whitelist and refused for `@field({ sensitive: true })`
-  columns. Ordering is a comparison, and `?orderBy=api_secret&limit=1` is an
-  oracle over a column the request may neither filter on nor project. The
-  whitelist is skipped only for manifest-less inline test classes (#869), exactly
-  as `where` skips it.
+  and `@field({ readPermission })` columns — ordering is a comparison, and
+  `?orderBy=api_secret&limit=1` is an oracle over a column the request may neither
+  filter on nor project — and for fields that are registered but **not
+  column-backed** (`oneToMany`/`manyToMany`/`meta`/`transient`), which otherwise
+  reach the driver as `no such column` and surface as a 500. The whitelist is
+  skipped only for manifest-less inline test classes (#869), exactly as `where`
+  skips it.
 - Every generated list surface (REST, SvelteKit, MCP, and the emitted stdio MCP
   runtime) pages with `ORDER BY created_at DESC, <pk> ASC` unless the caller
   supplies `orderBy` — `LIMIT`/`OFFSET` with no ordering is not pagination, and

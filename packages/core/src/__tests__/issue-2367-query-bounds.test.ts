@@ -40,6 +40,20 @@ class QueryBoundsWidget extends SmrtObject {
   @field({ type: 'text', sensitive: true })
   apiSecret: string = '';
 
+  // Redacted per caller by `toPublicJSON()` and refused by `select`; ordering
+  // over it is the same oracle through a different door.
+  @field({ readPermission: 'widgets.read_internal', type: 'text' })
+  internalNote: string = '';
+
+  // Registered fields that are NOT columns: the schema generator emits nothing
+  // for a transient field or a relationship-only field, so ordering by one used
+  // to reach the driver as `no such column` and surface as a 500.
+  @field({ transient: true, type: 'text' })
+  computedLabel: string = '';
+
+  @field({ related: 'QueryBoundsWidget', type: 'oneToMany' })
+  children: QueryBoundsWidget[] = [];
+
   constructor(options: any = {}) {
     super(options);
     if (options.label !== undefined) this.label = options.label;
@@ -231,6 +245,31 @@ describe('Issue #2367: collection query bounds', () => {
       ).rejects.toThrow(/direction/i);
     });
 
+    it('rejects ordering by a readPermission-gated field', async () => {
+      await expect(
+        collection.list({ limit: 1, orderBy: 'internalNote DESC' }),
+      ).rejects.toThrow(/permission-gated/i);
+      await expect(
+        collection.list({ limit: 1, orderBy: 'internal_note ASC' }),
+      ).rejects.toThrow(/permission-gated/i);
+    });
+
+    it.each([
+      ['computedLabel'],
+      ['computed_label'],
+      ['children'],
+    ])('rejects ordering by the non-column-backed field %s', async (fieldName) => {
+      // These pass the name whitelist (they are registered fields) but the
+      // schema generator emits no column for them, so without this guard the
+      // driver answered `no such column` and the API answered 500.
+      await expect(
+        collection.list({ limit: 1, orderBy: `${fieldName} ASC` }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_ORDER_BY_NOT_COLUMN_BACKED',
+        status: 400,
+      });
+    });
+
     it('accepts declared and framework columns', async () => {
       await expect(
         collection.list({ limit: 1, orderBy: 'label ASC' }),
@@ -305,6 +344,33 @@ describe('Issue #2367: collection query bounds', () => {
       expect(await bounded.listByIds(createdIds)).toHaveLength(
         createdIds.length,
       );
+    });
+
+    it('shrinks the chunk to a maxListLimit below the id count', async () => {
+      // The chunk's explicit limit is itself clamped by `maxListLimit`, so the
+      // chunk must not exceed it or the clamp would silently drop ids.
+      const bounded = await QueryBoundsWidgetCollection.create({
+        db,
+        maxListLimit: 2,
+      });
+
+      const querySpy = vi.spyOn(db, 'query');
+      let found: QueryBoundsWidget[];
+      let calls: unknown[][];
+      try {
+        found = await bounded.listByIds(createdIds);
+      } finally {
+        calls = querySpy.mock.calls.map((call) => [...call]);
+        querySpy.mockRestore();
+      }
+
+      expect(found).toHaveLength(createdIds.length);
+      const selects = calls.filter((call) => String(call[0]).includes('IN ('));
+      expect(selects).toHaveLength(3); // 5 ids at 2 per chunk
+      for (const call of selects) {
+        // db.query(sql, ...whereValues, limit): 2 ids + the limit.
+        expect(call.length - 1).toBeLessThanOrEqual(3);
+      }
     });
   });
 });
