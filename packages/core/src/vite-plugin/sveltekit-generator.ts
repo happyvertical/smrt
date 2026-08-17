@@ -11,7 +11,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join, relative } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import { resolveCustomActionMetadata } from '../generators/custom-action.js';
@@ -1517,6 +1517,32 @@ async function generateRegistrationFile(
     ).replace(/\\/g, '/');
     consumerRegistrationImport = `import '${consumerRegistrationPath.startsWith('.') ? consumerRegistrationPath : `./${consumerRegistrationPath}`}';`;
   }
+  /**
+   * Strip machine specifics from an object definition before it is embedded in
+   * generated source.
+   *
+   * `smrt-register.ts` is a tracked file in consumer repositories, and the
+   * scanner records `filePath` as an absolute path. Embedding it verbatim wrote
+   * the generating machine's home directory into the repository, so the file
+   * could never be committed without breaking every other checkout and CI, and
+   * every build left a dirty working tree (#2341). The field is only produced
+   * at scan time — nothing reads it back through `_manifest` at runtime — so a
+   * project-relative path keeps the shape without the machine.
+   */
+  function portableObjectManifest(
+    root: string,
+    objectDef: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const filePath = objectDef.filePath;
+    if (typeof filePath !== 'string' || !isAbsolute(filePath)) {
+      return objectDef;
+    }
+    return {
+      ...objectDef,
+      filePath: relative(root, filePath).split(sep).join('/'),
+    };
+  }
+
   const registrationManifests = Object.fromEntries(
     Object.entries(manifest.objects).flatMap(([className, objectDef]) => {
       if (isCollectionManifestClass(manifest, objectDef)) return [];
@@ -1533,7 +1559,9 @@ async function generateRegistrationFile(
           {
             ...manifest,
             packageName,
-            objects: { [className]: objectDef },
+            objects: {
+              [className]: portableObjectManifest(projectRoot, objectDef),
+            },
           },
         ],
       ];

@@ -526,6 +526,26 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationContent).toContain(
         'const smrtRegistrationManifests = JSON.parse(',
       );
+
+      // #2341: smrt-register.ts is tracked in consumer repositories, so the
+      // embedded manifest must never carry the generating machine's absolute
+      // paths — that made the file uncommittable and left every build dirty.
+      expect(registrationContent).not.toContain(projectRoot);
+      const embedded = JSON.parse(
+        JSON.parse(
+          registrationContent.match(
+            /const smrtRegistrationManifests = JSON\.parse\((".*?")\);/s,
+          )?.[1] as string,
+        ),
+      ) as Record<string, { objects: Record<string, { filePath?: string }> }>;
+      expect(embedded.LocalThing.objects.LocalThing.filePath).toBe(
+        'src/lib/objects/LocalThing.ts',
+      );
+      for (const entry of Object.values(embedded)) {
+        for (const objectDef of Object.values(entry.objects)) {
+          expect(objectDef.filePath).not.toMatch(/^([/\\]|[A-Za-z]:[/\\])/);
+        }
+      }
     });
 
     it('should fall back to object package metadata and skip empty re-registrations', async () => {
