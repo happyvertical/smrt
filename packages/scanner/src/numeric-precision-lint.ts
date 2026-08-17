@@ -144,19 +144,27 @@ const PERSISTED_CLASS_MARKER = /@smrt\b|extends\s+Smrt/;
 const NUMERIC_INITIALIZER = /=\s*-?\d/;
 
 /**
- * A monetary word at a camelCase/underscore boundary — the same boundaries
- * {@link splitIdentifierWords} cuts on, which is what makes this filter
- * conservative rather than merely plausible. Case matters: a lowercase word
- * must start the identifier or follow a non-letter, and a capitalized word must
- * follow another identifier character. Matching case-insensitively instead
- * would both admit prose and, worse, miss `unitPrice` — where `price` is
- * preceded by a letter and only the capitalized arm can see it.
+ * A monetary word starting an identifier — any case, since `Price` and `price`
+ * are both legal there. Case-insensitivity also matches prose in comments,
+ * which costs a parse and nothing else.
  */
-const MONETARY_WORD_AT_BOUNDARY = new RegExp(
-  `(?<![A-Za-z])(?:${[...MONETARY_HEAD_WORDS].join('|')})` +
-    `|(?<=[A-Za-z0-9])(?:${[...MONETARY_HEAD_WORDS]
-      .map((word) => word[0].toUpperCase() + word.slice(1))
-      .join('|')})`,
+const MONETARY_WORD_AT_START = new RegExp(
+  `(?<![A-Za-z])(?:${[...MONETARY_HEAD_WORDS].join('|')})`,
+  'i',
+);
+
+/**
+ * A monetary word after a camel hump (`unitPrice`, `USDPrice`), where it is
+ * necessarily capitalized and necessarily preceded by an identifier character.
+ * This arm cannot be case-insensitive: `generate` would then match on `rate`.
+ *
+ * Together the two arms cover exactly the boundaries {@link splitIdentifierWords}
+ * cuts on, which is what makes the filter conservative rather than plausible.
+ */
+const MONETARY_WORD_AFTER_HUMP = new RegExp(
+  `(?<=[A-Za-z0-9])(?:${[...MONETARY_HEAD_WORDS]
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join('|')})`,
 );
 
 /**
@@ -176,7 +184,8 @@ export function sourceMayContainMonetaryIntegerField(source: string): boolean {
   return (
     PERSISTED_CLASS_MARKER.test(source) &&
     NUMERIC_INITIALIZER.test(source) &&
-    MONETARY_WORD_AT_BOUNDARY.test(source)
+    (MONETARY_WORD_AT_START.test(source) ||
+      MONETARY_WORD_AFTER_HUMP.test(source))
   );
 }
 
