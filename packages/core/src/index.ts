@@ -90,6 +90,18 @@ export {
   type ResolveDatabaseOptions,
   resolveDatabase,
 } from './database';
+// Driver-error classification for the persistence path (#2366)
+export {
+  classifyDatabaseError,
+  classifyDialectMessage,
+  type DatabaseErrorClassification,
+  type DatabaseErrorKind,
+  isAbortedTransactionError,
+  isDeterministicDatabaseError,
+  isNotNullViolationError,
+  isTransientDatabaseError,
+  isUniqueViolationError,
+} from './db-errors';
 export {
   applyPendingDecoratorRegistrations,
   type CompatiblePropertyDecorator,
