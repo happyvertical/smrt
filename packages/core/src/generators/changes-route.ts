@@ -32,6 +32,7 @@ import {
   ensureChangeFeedTable,
   getTenantScopedChangesSince,
 } from '../change-feed.js';
+import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -88,7 +89,9 @@ export function resolveChangesDb(
     let resolved = resolvedInstanceDbs.get(dbOption);
     if (!resolved) {
       resolved = getDatabase(
-        dbOption as Parameters<typeof getDatabase>[0],
+        applyPostgresRuntimeTimeouts({
+          ...(dbOption as Record<string, unknown>),
+        }) as Parameters<typeof getDatabase>[0],
       ) as Promise<DatabaseInterface>;
       resolvedInstanceDbs.set(dbOption, resolved);
     }
@@ -98,12 +101,15 @@ export function resolveChangesDb(
   if (typeof dbOption === 'string' && dbOption) {
     let resolved = resolvedUrlDbs.get(dbOption);
     if (!resolved) {
-      // Match SmrtClass's connection-sharing convention for file-backed URLs.
+      // Match SmrtClass's connection-sharing convention for file-backed URLs,
+      // including the runtime PostgreSQL timeout bounds and the dbid derived
+      // from the bounded URL (#2377).
       const isMemoryDb = dbOption === ':memory:';
+      const bounded = applyPostgresRuntimeTimeouts({ url: dbOption });
       resolved = getDatabase({
-        url: dbOption,
-        ...(isMemoryDb ? {} : { dbid: `smrt:${dbOption}` }),
-      }) as Promise<DatabaseInterface>;
+        ...bounded,
+        ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url}` }),
+      } as Parameters<typeof getDatabase>[0]) as Promise<DatabaseInterface>;
       resolvedUrlDbs.set(dbOption, resolved);
     }
     return resolved;
